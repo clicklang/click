@@ -9,7 +9,7 @@ use super::*;
 fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
     let base = Pointer::symbolic(Variable(920_000));
     let alias = Pointer::symbolic(Variable(920_001));
-    let n = Bitvector32Term::Variable(Variable(920_002));
+    let n = MachineTerm::Variable(Variable(920_002));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
         ConditionTerm::pointer_equal(base.clone(), alias.clone()),
@@ -21,7 +21,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
         let mut resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
         for i in 0..size {
-            let end = Bitvector32Term::Variable(Variable(921_000 + i));
+            let end = MachineTerm::Variable(Variable(921_000 + i));
             resources = resources.unchecked_with_fact(CResourceFact::view_memory(range(
                 &base,
                 0u32.into(),
@@ -41,7 +41,7 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
                 let uncertain = range(
                     &alias,
                     0u32.into(),
-                    Bitvector32Term::Variable(Variable(950_000)),
+                    MachineTerm::Variable(Variable(950_000)),
                 );
                 assert_eq!(
                     resources.symbolic_range_read_supported(&uncertain, &facts, None),
@@ -74,8 +74,8 @@ fn symbolic_footprint_selection_does_not_scan_same_base_ranges() {
 fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
     let base = Pointer::symbolic(Variable(960_000));
     let alias = Pointer::symbolic(Variable(960_001));
-    let n = Bitvector32Term::Variable(Variable(960_002));
-    let m = Bitvector32Term::Variable(Variable(960_003));
+    let n = MachineTerm::Variable(Variable(960_002));
+    let m = MachineTerm::Variable(Variable(960_003));
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
@@ -96,7 +96,7 @@ fn symbolic_byte_read_consumer_refuses_ambiguous_suppliers_without_search() {
             resources = resources.unchecked_with_fact(CResourceFact::view_memory(range(
                 &base,
                 0u32.into(),
-                Bitvector32Term::Variable(Variable(961_000 + i)),
+                MachineTerm::Variable(Variable(961_000 + i)),
             )));
         }
         resources.synchronize_memory_equalities(&facts);

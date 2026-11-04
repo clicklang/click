@@ -6,7 +6,7 @@
 //! `a - b` is zero. Only this direction holds, and only for equality.
 
 use super::{Operation, Relation, range, representation};
-use crate::kernel::{Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType};
+use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm};
 use num_bigint::BigInt;
 
 /// Reference spelling of the old 32-bit admission consequence, retained for
@@ -43,7 +43,7 @@ pub(crate) fn wrapped_equality_at(
     if representation::word_bits(modulus) != Some(width) {
         return None;
     }
-    let reduce = |constant: &BigInt| -> Option<Bitvector32Term> {
+    let reduce = |constant: &BigInt| -> Option<MachineTerm> {
         let modulo = BigInt::from(1) << width;
         let residue = ((constant % &modulo) + &modulo) % &modulo;
         range::constant_word(modulus, &residue)
@@ -53,10 +53,10 @@ pub(crate) fn wrapped_equality_at(
             term: &IntegerTerm,
             modulus: MachineIntegerType,
             width: u32,
-            reduce: &dyn Fn(&BigInt) -> Option<Bitvector32Term>,
+            reduce: &dyn Fn(&BigInt) -> Option<MachineTerm>,
             nodes: &mut usize,
             observed: &mut bool,
-        ) -> Option<Bitvector32Term> {
+        ) -> Option<MachineTerm> {
             *nodes += 1;
             if *nodes > 64 {
                 return None;

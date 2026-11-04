@@ -693,14 +693,14 @@ pub(crate) fn fact_list_entry_counts() -> [usize; 2] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Variable};
+    use crate::kernel::{ConditionTerm, MachineTerm, Variable};
 
     fn condition(variable: u64) -> ConditionTerm {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(variable))),
+            right: Box::new(MachineTerm::constant(0)),
         }
     }
 

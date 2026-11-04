@@ -6,7 +6,7 @@ fn guided_condition_instantiation_skips_unrelated_target_variables_scaling() {
     let _session = crate::kernel::VerificationSession::enter();
     for count in [16, 128, 1024] {
         let target_term = (0..count).fold(0u32.into(), |sum, i| {
-            Bitvector32Term::add(sum, variable(998_200 + i))
+            MachineTerm::add(sum, variable(998_200 + i))
         });
         let target = ConditionTerm::equal(target_term, variable(999_500));
         // These scalars do not match any bound occurrence in the array

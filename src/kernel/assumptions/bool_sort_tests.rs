@@ -10,13 +10,13 @@ pub(super) fn binder(id: u64) -> ConditionTerm {
     ConditionTerm::Variable(Variable(id))
 }
 
-pub(super) fn word(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+pub(super) fn word(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 
 /// `x > 0` over the `int32` word `x`.
 pub(super) fn positive(id: u64) -> ConditionTerm {
-    ConditionTerm::signed_greater_than(word(id), Bitvector32Term::constant(0))
+    ConditionTerm::signed_greater_than(word(id), MachineTerm::constant(0))
 }
 
 /// The application `name(x)` of a `-> Bool` function to the `int32` word `x`.
@@ -261,11 +261,11 @@ fn substitution_reaches_every_part_of_a_bool_value() {
 }
 
 /// `b as int32` (rule C1, Stage 5).
-pub(super) fn cast(condition: ConditionTerm) -> Bitvector32Term {
-    Bitvector32Term::bool_cast(MachineIntegerType::Int32, condition)
+pub(super) fn cast(condition: ConditionTerm) -> MachineTerm {
+    MachineTerm::bool_cast(MachineIntegerType::Int32, condition)
 }
 
-fn word_equal(left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+fn word_equal(left: MachineTerm, right: MachineTerm) -> ConditionTerm {
     ConditionTerm::equal(left, right)
 }
 
@@ -280,10 +280,7 @@ fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
     let with = |value: u32, truth: bool| {
         PureFactContext::new()
             .assume_condition(word_equal(x.clone(), cast(b.clone())), true)
-            .assume_condition(
-                word_equal(x.clone(), Bitvector32Term::constant(value)),
-                truth,
-            )
+            .assume_condition(word_equal(x.clone(), MachineTerm::constant(value)), truth)
     };
     assert_eq!(with(0, true).decide(&b), Some(false));
     assert_eq!(with(1, true).decide(&b), Some(true));
@@ -291,11 +288,11 @@ fn rule_c1_links_a_cast_with_its_bool_in_both_directions() {
     assert_eq!(with(1, false).decide(&b), Some(false));
     let decided = PureFactContext::new().assume_condition(b.clone(), true);
     assert_eq!(
-        decided.decide(&word_equal(cast(b.clone()), Bitvector32Term::constant(1))),
+        decided.decide(&word_equal(cast(b.clone()), MachineTerm::constant(1))),
         Some(true)
     );
     let two = PureFactContext::new()
-        .assume_condition(word_equal(cast(b), Bitvector32Term::constant(2)), true);
+        .assume_condition(word_equal(cast(b), MachineTerm::constant(2)), true);
     assert!(two.is_inconsistent());
 }
 
@@ -332,13 +329,12 @@ fn a_bool_equality_fact_decides_one_operand_from_the_other() {
 fn a_bool_binder_takes_the_truth_of_its_instance() {
     let _session = VerificationSession::enter();
     let flag = Variable(90);
-    let value =
-        Bitvector32Term::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Variable(flag));
+    let value = MachineTerm::bool_cast(MachineIntegerType::UInt8, ConditionTerm::Variable(flag));
     let instance = applied("q", 91);
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable(
         &value,
         flag,
-        &Bitvector32Term::bool_cast(MachineIntegerType::UInt8, instance.clone()),
+        &MachineTerm::bool_cast(MachineIntegerType::UInt8, instance.clone()),
     );
     assert_eq!(substituted.bool_cast_operand(), Some(&instance));
 }

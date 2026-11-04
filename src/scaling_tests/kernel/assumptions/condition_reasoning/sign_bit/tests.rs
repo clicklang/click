@@ -6,7 +6,7 @@ fn sign_bit_readings_retain_growing_shared_prefixes() {
     let samples = [16usize, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
         let mut term = KernelTerm::variable(KernelType::C(Ty::UInt32.c_type()), Variable(189221));
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let context = PureFactContext::new();
         let exports = KernelTermExport::machine_export_count();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {

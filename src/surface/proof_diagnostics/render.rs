@@ -11,10 +11,10 @@ use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, Bitvector32Term,
-    CExpressionOutcome, CMemory, CResource, CState, ConditionTerm, IntegerRangeFoldIndex,
-    IntegerTerm, Pointer, PointerOffsetTerm, Proposition, PureFunctionArgument, Sort,
-    SpecCaptureRefusal, Term, Variable,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, AlgebraicValueType, CExpressionOutcome,
+    CMemory, CResource, CState, ConditionTerm, IntegerRangeFoldIndex, IntegerTerm, MachineTerm,
+    Pointer, PointerOffsetTerm, Proposition, PureFunctionArgument, Sort, SpecCaptureRefusal, Term,
+    Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
@@ -86,7 +86,7 @@ pub(crate) struct SnapshotLabels {
 /// or parameter holding a promoted value is named, and typed, as the word
 /// it holds, as it was when promotion reused the word. Only the widening is
 /// read through; a σ keeps its own node.
-fn widened_word(term: &Bitvector32Term) -> &Bitvector32Term {
+fn widened_word(term: &MachineTerm) -> &MachineTerm {
     match term.narrow_widening32_operand() {
         Some((_, word)) => word,
         None => term,
@@ -95,10 +95,10 @@ fn widened_word(term: &Bitvector32Term) -> &Bitvector32Term {
 
 /// The binder a parameter's value is, if it is one: a scalar's variable, or
 /// a `Bool` binder carried as its cast (Stage 5).
-fn value_binder(term: &Bitvector32Term) -> Option<Variable> {
+fn value_binder(term: &MachineTerm) -> Option<Variable> {
     match widened_word(term) {
-        Bitvector32Term::Variable(variable) => Some(*variable),
-        Bitvector32Term::BoolCast { value, .. } => match value.as_ref() {
+        MachineTerm::Variable(variable) => Some(*variable),
+        MachineTerm::BoolCast { value, .. } => match value.as_ref() {
             crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
             _ => None,
         },
@@ -112,7 +112,7 @@ impl SnapshotLabels {
     }
     pub(crate) fn source_value_type(&mut self, value: &crate::kernel::CValue) {
         if let crate::kernel::arithmetic_c_value!(term) = value
-            && let Bitvector32Term::Variable(variable) = widened_word(term)
+            && let MachineTerm::Variable(variable) = widened_word(term)
         {
             self.source_type(*variable, value.c_type());
         }
@@ -126,7 +126,7 @@ impl SnapshotLabels {
     pub(crate) fn source_result(&mut self, value: &crate::kernel::CValue) {
         self.source_value_type(value);
         match value {
-            crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable))
+            crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable))
                 if crate::kernel::registered_load_for_variable(variable).is_none()
                     && crate::kernel::model_fields::model_field_spelling(*variable).is_none() =>
             {
@@ -1836,13 +1836,13 @@ impl Renderer<'_> {
             _ => self.push("condition(<bounded operation>)"),
         }
     }
-    fn binary_condition_bv(&mut self, a: &Bitvector32Term, b: &Bitvector32Term, label: &str) {
+    fn binary_condition_bv(&mut self, a: &MachineTerm, b: &MachineTerm, label: &str) {
         // Equality shares one 32-bit kernel form between signed and unsigned
         // C values. Retained type metadata disambiguates a returned value
         // even when it has no source name.
         let unsigned_equality = label == "int32 ="
             && [a, b].iter().any(|value| {
-                matches!(value, Bitvector32Term::Variable(variable)
+                matches!(value, MachineTerm::Variable(variable)
                 if self.labels.source_types.get(variable) == Some(&crate::kernel::CType::UInt32))
             });
         self.push(if unsigned_equality { "uint32 =" } else { label });
@@ -1853,7 +1853,7 @@ impl Renderer<'_> {
         self.comparison_bitvector(b, signed);
         self.push(")");
     }
-    fn comparison_bitvector(&mut self, value: &Bitvector32Term, signed: bool) {
+    fn comparison_bitvector(&mut self, value: &MachineTerm, signed: bool) {
         if signed && let bits32_constant!(value) = value {
             self.fmt(format_args!("{}", constant_u32(*value) as i32));
         } else {
@@ -1862,8 +1862,8 @@ impl Renderer<'_> {
     }
     fn overflow_condition_bv(
         &mut self,
-        a: &Bitvector32Term,
-        b: &Bitvector32Term,
+        a: &MachineTerm,
+        b: &MachineTerm,
         width: &str,
         operator: &str,
     ) {
@@ -2015,7 +2015,7 @@ impl Renderer<'_> {
         self.integer_shared(right);
         self.push(")");
     }
-    fn bitvector(&mut self, v: &Bitvector32Term) {
+    fn bitvector(&mut self, v: &MachineTerm) {
         if self.truncated || !self.visit() || self.depth >= MAX_DEPTH {
             self.truncated = true;
             return;
@@ -2023,7 +2023,7 @@ impl Renderer<'_> {
         self.depth += 1;
         // Rule C1: a specification `Bool` travels as its cast to `uint8`,
         // which reads as the `Bool` itself.
-        if let Bitvector32Term::BoolCast { to, value } = v {
+        if let MachineTerm::BoolCast { to, value } = v {
             if *to == crate::kernel::MachineIntegerType::UInt8 {
                 self.condition(value);
             } else {
@@ -2034,7 +2034,7 @@ impl Renderer<'_> {
             self.depth -= 1;
             return;
         }
-        if let Bitvector32Term::MemoryLoad(snapshot, pointer, kind) = v {
+        if let MachineTerm::MemoryLoad(snapshot, pointer, kind) = v {
             // `memory` prints its own `snapshot=` prefix.
             if self.trace_facts {
                 self.fmt(format_args!("read<{}>(", trace_load_kind(*kind)));
@@ -2054,7 +2054,7 @@ impl Renderer<'_> {
         // numbers, and printing only the address made them look identical;
         // neither says which memory each side reads, which is the whole
         // question wherever a load fact fails to carry across a step.
-        if let Bitvector32Term::Variable(variable) = v
+        if let MachineTerm::Variable(variable) = v
             && crate::kernel::is_load_variable(variable)
             && let Some((snapshot, pointer)) = crate::kernel::registered_load_for_variable(variable)
         {
@@ -2092,13 +2092,13 @@ impl Renderer<'_> {
             // and the field is the part a reader compares. The id is kept
             // beside it here, as a load variable's is, because this renderer
             // prints the kernel's own goal and premises.
-            Bitvector32Term::Variable(v)
+            MachineTerm::Variable(v)
                 if let Some(spelling) = crate::kernel::model_fields::model_field_spelling(*v) =>
             {
                 let name = self.variable_name(*v, "value");
                 self.fmt(format_args!("{name}={spelling}"))
             }
-            Bitvector32Term::Variable(v) => {
+            MachineTerm::Variable(v) => {
                 let name = self.variable_name(*v, "value");
                 self.push(&name);
             }
@@ -2106,7 +2106,7 @@ impl Renderer<'_> {
             binary_term!(Int32, Subtract, a, b) => self.binary_bv("-", a, b),
             binary_term!(Int32, Multiply, a, b) => self.binary_bv("*", a, b),
             _ if self.machine_operation(v) => {}
-            Bitvector32Term::RangeFold {
+            MachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -2128,7 +2128,7 @@ impl Renderer<'_> {
                 self.bound_names.pop();
                 self.push(")");
             }
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication { name, arguments } => {
                 self.push(name);
                 self.push("(");
                 for (index, argument) in arguments.iter().enumerate() {
@@ -2142,13 +2142,13 @@ impl Renderer<'_> {
                 }
                 self.push(")");
             }
-            Bitvector32Term::ClickFunctionApplication { name, arguments } => {
+            MachineTerm::ClickFunctionApplication { name, arguments } => {
                 self.push(name);
                 self.push("(");
                 self.pure_arguments(arguments);
                 self.push(")");
             }
-            Bitvector32Term::AlgebraicMatch { scrutinee, arms } => {
+            MachineTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.push("match ");
                 self.algebraic(scrutinee);
                 self.push(" { ");
@@ -2165,12 +2165,12 @@ impl Renderer<'_> {
                 }
                 self.push(" }");
             }
-            Bitvector32Term::PointerAddress(pointer, _) => {
+            MachineTerm::PointerAddress(pointer, _) => {
                 self.push("address(");
                 self.pointer(pointer);
                 self.push(")");
             }
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 to: destination,
@@ -2187,7 +2187,7 @@ impl Renderer<'_> {
         }
         self.depth -= 1;
     }
-    fn binary_bv(&mut self, op: &str, left: &Bitvector32Term, right: &Bitvector32Term) {
+    fn binary_bv(&mut self, op: &str, left: &MachineTerm, right: &MachineTerm) {
         self.push("(");
         self.bitvector(left);
         self.push(op);
@@ -2419,7 +2419,7 @@ impl Renderer<'_> {
                 self.bitvector(iterated.guard().value());
                 self.push(", element=");
                 self.resource(&CResource::Memory(
-                    iterated.element_range(&Bitvector32Term::Variable(index)),
+                    iterated.element_range(&MachineTerm::Variable(index)),
                 ));
                 self.bound_names.pop();
                 self.push(", holes=[");
@@ -2619,12 +2619,12 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(988002))),
+                left: Box::new(MachineTerm::Variable(Variable(988002))),
                 right: Box::new(binary_node!(
                     Int32,
                     Add,
-                    Box::new(Bitvector32Term::Variable(Variable(988001))),
-                    Box::new(Bitvector32Term::constant(1)),
+                    Box::new(MachineTerm::Variable(Variable(988001))),
+                    Box::new(MachineTerm::constant(1)),
                 )),
             },
             true,
@@ -2687,7 +2687,7 @@ mod tests {
                 .with_block(format!("local:{local}"), 4)
                 .store(
                     pointer,
-                    crate::kernel::CValue::Int32(Bitvector32Term::constant(7)),
+                    crate::kernel::CValue::Int32(MachineTerm::constant(7)),
                 );
             assert_eq!(SnapshotLabels::default().describe_state(&memory), expected);
         }
@@ -2701,8 +2701,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::Variable(Variable(8))),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::Variable(Variable(8))),
             },
             true,
         );
@@ -2749,8 +2749,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Variable(variable)),
-                    right: Box::new(Bitvector32Term::constant(0)),
+                    left: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
                 false,
             )
@@ -2791,17 +2791,17 @@ mod tests {
 
     #[test]
     fn range_fold_keeps_bounds_and_body_variables() {
-        let fold = Bitvector32Term::RangeFold {
-            start: Box::new(Bitvector32Term::constant(1)),
-            end: Box::new(Bitvector32Term::constant(4)),
-            initial: Box::new(Bitvector32Term::constant(0)),
+        let fold = MachineTerm::RangeFold {
+            start: Box::new(MachineTerm::constant(1)),
+            end: Box::new(MachineTerm::constant(4)),
+            initial: Box::new(MachineTerm::constant(0)),
             accumulator: crate::kernel::Variable(8),
             item: crate::kernel::Variable(9),
-            body: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(10))),
+            body: Box::new(MachineTerm::Variable(crate::kernel::Variable(10))),
         };
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(fold),
-            Term::Bitvector32(Bitvector32Term::constant(0)),
+            Term::Bitvector32(MachineTerm::constant(0)),
         ));
         assert!(rendered.contains("fold("));
         assert!(rendered.contains("acc=acc, item=item"), "{rendered}");
@@ -2815,7 +2815,7 @@ mod tests {
                 block: crate::kernel::PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            bytes: Bitvector32Term::constant(1),
+            bytes: MachineTerm::constant(1),
             wide: false,
         }
     }
@@ -2898,18 +2898,18 @@ mod tests {
 
     #[test]
     fn deep_bitvector_tree_is_bounded() {
-        let mut value = Bitvector32Term::constant(1);
+        let mut value = MachineTerm::constant(1);
         for _ in 0..128 {
             value = binary_node!(
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             );
         }
         let rendered = render_proposition(&Proposition::Equal(
             Term::Bitvector32(value),
-            Term::Bitvector32(Bitvector32Term::constant(0)),
+            Term::Bitvector32(MachineTerm::constant(0)),
         ));
         assert!(rendered.contains("truncated"));
     }
@@ -2942,8 +2942,8 @@ mod tests {
     #[test]
     fn machine_and_c_value_types_remain_visible() {
         let int32 = render_proposition(&Proposition::Equal(
-            Term::CValue(crate::kernel::CValue::Int32(Bitvector32Term::constant(1))),
-            Term::CValue(crate::kernel::CValue::UInt32(Bitvector32Term::constant(1))),
+            Term::CValue(crate::kernel::CValue::Int32(MachineTerm::constant(1))),
+            Term::CValue(crate::kernel::CValue::UInt32(MachineTerm::constant(1))),
         ));
         assert!(int32.contains("int32(1)"));
         assert!(int32.contains("uint32(1)"));
@@ -2954,7 +2954,7 @@ mod tests {
         let resource = CResourceFact::View(CResource::Token {
             name: "child_ref".into(),
             arguments: std::sync::Arc::from([AlgebraicValue::C(crate::kernel::CValue::Int32(
-                Bitvector32Term::constant(7),
+                MachineTerm::constant(7),
             ))]),
         });
         assert_eq!(render_resource_fact(&resource), "views child_ref(int32(7))");
@@ -2970,8 +2970,8 @@ mod wide_range_reader_tests {
     fn wide_resource_diagnostics_keep_the_high_bits_of_bounds() {
         let wide = CMemoryRange::new_wide(
             Pointer::symbolic(Variable(985_500)),
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             4,
         );
         let fact = Proposition::CResourceContains {
@@ -3003,7 +3003,7 @@ mod resource_detail_tests {
                 flag.clone(),
                 ResourceDescription::new(
                     "payload".into(),
-                    vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::constant(
+                    vec![AlgebraicValue::C(CValue::Int32(MachineTerm::constant(
                         value,
                     )))]
                     .into(),
@@ -3035,14 +3035,14 @@ mod resource_detail_tests {
             2,
             0,
             1,
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(8),
-            CIteratedGuard::new(guard, CType::Int32, 4, true, Bitvector32Term::constant(1)),
+            MachineTerm::constant(0),
+            MachineTerm::constant(8),
+            CIteratedGuard::new(guard, CType::Int32, 4, true, MachineTerm::constant(1)),
         )
         .unwrap();
         let render = |hole| {
             let fact = CResourceFact::own(CResource::Iterated(std::sync::Arc::new(
-                iterated.with_hole(Bitvector32Term::constant(hole)),
+                iterated.with_hole(MachineTerm::constant(hole)),
             )));
             let mut labels = SnapshotLabels::default();
             let mut text = render_resource_fact_labeled(&fact, &mut labels);

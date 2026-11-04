@@ -1463,8 +1463,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
-            left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::constant(1)),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::constant(1)),
         },
         false,
     );
@@ -1473,8 +1473,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(2))),
-            right: Box::new(Bitvector32Term::constant(7)),
+            left: Box::new(MachineTerm::Variable(Variable(2))),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -1499,8 +1499,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::Variable(Variable(2))),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::Variable(Variable(2))),
         },
         true,
     );
@@ -1508,8 +1508,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::Variable(Variable(2))),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::Variable(Variable(2))),
         },
         false,
     );
@@ -1519,8 +1519,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(Bitvector32Term::Variable(Variable(2))),
-            right: Box::new(Bitvector32Term::Variable(Variable(1))),
+            left: Box::new(MachineTerm::Variable(Variable(2))),
+            right: Box::new(MachineTerm::Variable(Variable(1))),
         },
         true,
     );
@@ -1528,8 +1528,8 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
-            left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::Variable(Variable(2))),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::Variable(Variable(2))),
         },
         true,
     );

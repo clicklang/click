@@ -103,7 +103,7 @@ fn raw_read_address_registration_does_not_walk_memory_history() {
             CValue::Int32(0u32.into()),
         );
         let load = |memory: &CMemory| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 intern_c_memory_ref(memory),
                 Box::new(field.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -193,7 +193,7 @@ fn zero_index_read_condition_ignores_unrelated_read_predicates() {
         let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
         let next = load(
             &memory,
-            &base.offset_by_elements(Bitvector32Term::add(index.clone(), 1u32.into()), 4),
+            &base.offset_by_elements(MachineTerm::add(index.clone(), 1u32.into()), 4),
             4,
         );
         context =
@@ -231,7 +231,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             for index in 0..size {
                 history = history.store(
                     address(500_000 + index),
-                    CValue::Int32(Bitvector32Term::constant(index as u32)),
+                    CValue::Int32(MachineTerm::constant(index as u32)),
                 );
             }
             let source = intern_c_memory(history.clone());
@@ -239,7 +239,7 @@ fn narrow_read_projection_edge_does_not_walk_memory_history() {
             let cell = address(1);
             crate::kernel::reasoning::record_canonical_load_projection(&source, &projected, &cell);
             let read = |memory: &SharedCMemory| {
-                Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                     memory, &cell, kind, bytes,
                 ))
             };

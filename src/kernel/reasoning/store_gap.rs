@@ -61,7 +61,7 @@
 
 use crate::kernel::binary_term;
 use crate::kernel::bits32_constant;
-use crate::kernel::{Bitvector32Term, Pointer, PointerOffsetTerm, PureFactContext};
+use crate::kernel::{MachineTerm, Pointer, PointerOffsetTerm, PureFactContext};
 
 /// The widest cell there is: no `CValue` is wider, and a cell holding
 /// `Void` stands in this width too.
@@ -208,7 +208,7 @@ pub(in crate::kernel) fn anchor_is_normal(
     if !anchor
         .scaled_values()
         .into_iter()
-        .all(|value| matches!(value, Bitvector32Term::Variable(_)))
+        .all(|value| matches!(value, MachineTerm::Variable(_)))
     {
         return false;
     }
@@ -248,8 +248,8 @@ mod tests {
     use super::*;
     use crate::kernel::{CMemory, CValue, ConditionTerm, Variable};
 
-    fn variable(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    fn variable(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
     /// The anchors the generated offsets are built on: a scaled parameter
@@ -284,8 +284,8 @@ mod tests {
             let field = store.offset_by_bytes(8);
             let connected = PureFactContext::new().assume_condition(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::pointer_address(store.clone()),
-                    Bitvector32Term::pointer_address(other.clone()),
+                    MachineTerm::pointer_address(store.clone()),
+                    MachineTerm::pointer_address(other.clone()),
                 ),
                 true,
             );
@@ -311,8 +311,8 @@ mod tests {
             let aliased_field = other.offset_by_bytes(8);
             let overlaps = PureFactContext::new().assume_condition(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::pointer_address(store.clone()),
-                    Bitvector32Term::pointer_address(aliased_field.clone()),
+                    MachineTerm::pointer_address(store.clone()),
+                    MachineTerm::pointer_address(aliased_field.clone()),
                 ),
                 true,
             );
@@ -329,8 +329,8 @@ mod tests {
         match width {
             1 => crate::kernel::uint8(seed & 0xff),
             2 => crate::kernel::int16(seed & 0x7fff),
-            4 => CValue::Int32(Bitvector32Term::constant(seed)),
-            8 => CValue::Int64(Bitvector32Term::int64_constant(i64::from(seed))),
+            4 => CValue::Int32(MachineTerm::constant(seed)),
+            8 => CValue::Int64(MachineTerm::int64_constant(i64::from(seed))),
             16 => match crate::kernel::c_uint128_literal((1u128 << 127) | u128::from(seed)) {
                 crate::kernel::CExpression::Value(value) => value,
                 _ => unreachable!("literal is a value"),
@@ -344,20 +344,20 @@ mod tests {
         vec![
             PureFactContext::new(),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(index.clone(), Bitvector32Term::constant(2)),
+                ConditionTerm::equal(index.clone(), MachineTerm::constant(2)),
                 true,
             ),
             PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone()),
+                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_than(index, Bitvector32Term::constant(3)),
+                    ConditionTerm::signed_less_than(index, MachineTerm::constant(3)),
                     true,
                 ),
             PureFactContext::new().assume_condition(
-                ConditionTerm::equal(variable(900), Bitvector32Term::constant(1)),
+                ConditionTerm::equal(variable(900), MachineTerm::constant(1)),
                 true,
             ),
         ]
@@ -486,8 +486,8 @@ mod tests {
         let anchor = PointerOffsetTerm::scale_int32(variable(900), 4);
         let shifted =
             |shift: i64| PointerOffsetTerm::add(anchor.clone(), PointerOffsetTerm::Constant(shift));
-        let int32 = |value: u32| CValue::Int32(Bitvector32Term::constant(value));
-        let int64 = |value: i64| CValue::Int64(Bitvector32Term::int64_constant(value));
+        let int32 = |value: u32| CValue::Int32(MachineTerm::constant(value));
+        let int64 = |value: i64| CValue::Int64(MachineTerm::int64_constant(value));
         // Far cells on both sides, which every later store skips.
         let far = [(shifted(-64), int32(90)), (shifted(64), int32(91))];
 
@@ -606,7 +606,7 @@ mod tests {
             // A load, which normalization may rewrite.
             PointerOffsetTerm::add(
                 PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::MemoryLoad(
+                    MachineTerm::MemoryLoad(
                         crate::kernel::intern_c_memory(CMemory::new()),
                         Box::new(at(&PointerOffsetTerm::Constant(0))),
                         crate::kernel::LoadKind::Int32,

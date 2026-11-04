@@ -93,7 +93,7 @@ fn exit_address_argument_tracks_only_the_declared_current_local() {
         let CValue::Pointer(pointer) = value else {
             unreachable!()
         };
-        AlgebraicValue::C(CValue::UInt64(Bitvector32Term::pointer_address(
+        AlgebraicValue::C(CValue::UInt64(MachineTerm::pointer_address(
             pointer.pointer().clone(),
         )))
     };

@@ -30,9 +30,9 @@ fn invariant_body_evidence_requires_exact_complete_root_and_context() {
     let checks = [0, 1].map(|value| {
         CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(value))),
+                left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(value))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(value))),
+                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(value))),
             },
             None,
             None,
@@ -183,9 +183,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
     let checks = vec![
         CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
             },
             None,
             None,
@@ -263,9 +263,9 @@ fn invariant_bundle_closure_checks_retained_evidence_and_context_locally() {
         );
         let changed_checks = vec![CLoopInvariantCheck::new(
             SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(1))),
+                left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(1))),
                 operator: CComparisonOperator::LessEqual,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(1))),
+                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(1))),
             },
             None,
             None,
@@ -371,7 +371,7 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
             &(0..size)
                 .map(|i| Proposition::Predicate {
                     name: format!("unrelated_match_{i}"),
-                    arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(Variable(i)))],
+                    arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(i)))],
                 })
                 .collect::<Vec<_>>(),
         );
@@ -381,8 +381,8 @@ fn pure_match_and_payload_freshening_ignore_unrelated_facts() {
                 ProofObligation::Proposition(PropositionObligation::new(
                     Proposition::ConditionIs(
                         crate::kernel::ConditionTerm::equal(
-                            Bitvector32Term::Variable(Variable(1)),
-                            Bitvector32Term::Variable(Variable(1)),
+                            MachineTerm::Variable(Variable(1)),
+                            MachineTerm::Variable(Variable(1)),
                         ),
                         true,
                     ),
@@ -452,7 +452,7 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
     let binder = Variable(186);
     let body = Proposition::Predicate {
         name: "holds".into(),
-        arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(binder))],
+        arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder))],
     };
     let goal = Proposition::ForAll {
         name: Default::default(),
@@ -465,12 +465,12 @@ fn typed_universal_intro_adds_fresh_bounds_without_scanning_ambient_facts() {
             .map(|index| {
                 Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
-                        Bitvector32Term::Variable(if related {
+                        MachineTerm::Variable(if related {
                             binder
                         } else {
                             Variable(700_000 + index)
                         }),
-                        Bitvector32Term::constant(1000 + index as u32),
+                        MachineTerm::constant(1000 + index as u32),
                     ),
                     true,
                 )

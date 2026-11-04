@@ -8,7 +8,7 @@ use super::*;
 #[test]
 fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
     for size in [16u64, 64, 256, 512] {
-        let scalar = |id| Bitvector32Term::Variable(Variable(92_000 + id));
+        let scalar = |id| MachineTerm::Variable(Variable(92_000 + id));
         let offset = |id| PointerOffsetTerm::scale_int32(scalar(id), 4);
         let named = PointerOffsetTerm::Variable(Variable(94_000));
         let mut context = PureFactContext::new().assume_condition(
@@ -39,11 +39,11 @@ fn memory_resolution_graph_offset_queries_scale_without_legacy_fact_index() {
 fn stored_load_alias_lookup_ignores_unrelated_cells() {
     let target = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(8_991_001)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(8_991_001)), 4),
     };
     let alias = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(8_991_002)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(8_991_002)), 4),
     };
     let assumptions = PureFactContext::new().assume_condition(
         ConditionTerm::pointer_offset_equal(target.offset.clone(), alias.offset.clone()),
@@ -58,7 +58,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Constant(index * 4),
                 },
-                CValue::Int32(Bitvector32Term::constant(0)),
+                CValue::Int32(MachineTerm::constant(0)),
             );
         }
         // Snapshot construction/interning belongs to the producer. Measure
@@ -69,7 +69,7 @@ fn stored_load_alias_lookup_ignores_unrelated_cells() {
         });
         assert!(absent.is_none());
         samples.push(work);
-        let value = CValue::Int32(Bitvector32Term::constant(17));
+        let value = CValue::Int32(MachineTerm::constant(17));
         memory = memory.store(alias.clone(), value.clone());
         assert_eq!(
             stored_value_at_equal_pointer(&memory, &target, &assumptions),
@@ -170,8 +170,8 @@ fn interior_base_alias_frames_only_distinct_objects_and_is_indexed() {
 #[test]
 fn mixed_index_offsets_work_ignores_unrelated_facts() {
     use crate::kernel::{IntegerTerm, MachineIntegerType};
-    let wide = Bitvector32Term::Variable(Variable(82001));
-    let narrow = Bitvector32Term::Variable(Variable(82002));
+    let wide = MachineTerm::Variable(Variable(82001));
+    let narrow = MachineTerm::Variable(Variable(82002));
     let native = PointerOffsetTerm::scale_int64(wide.clone(), 1, true);
     let signed = PointerOffsetTerm::scale_int32(narrow.clone(), 1);
     let fact = ConditionTerm::IntegerEqual(

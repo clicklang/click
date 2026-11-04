@@ -503,11 +503,11 @@ fn proposition_mentions_pointer(
     false
 }
 
-fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer) -> bool {
+fn term_mentions_pointer(term: &MachineTerm, target: &crate::kernel::Pointer) -> bool {
     let mut pending = vec![term];
     while let Some(current) = pending.pop() {
         match current {
-            Bitvector32Term::PointerAddress(pointer, _) => {
+            MachineTerm::PointerAddress(pointer, _) => {
                 if bounded_pointer_equal(pointer, target) {
                     return true;
                 }
@@ -515,7 +515,7 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
             binary_term!(Bits32, Add, left, right)
             | binary_term!(Bits32, Subtract, left, right)
             | binary_term!(Bits32, Multiply, left, right)
-            | Bitvector32Term::Binary {
+            | MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op:
                     MachineBinaryOp::Add
@@ -528,12 +528,12 @@ fn term_mentions_pointer(term: &Bitvector32Term, target: &crate::kernel::Pointer
                 left,
                 right,
             }
-            | Bitvector32Term::Float32Binary { left, right, .. }
-            | Bitvector32Term::Float64Binary { left, right, .. } => {
+            | MachineTerm::Float32Binary { left, right, .. }
+            | MachineTerm::Float64Binary { left, right, .. } => {
                 pending.push(left);
                 pending.push(right);
             }
-            Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+            MachineTerm::PureFunctionApplication { arguments, .. } => {
                 pending.extend(arguments.iter());
             }
             _ => {}
@@ -871,7 +871,7 @@ fn bounded_offset_work(root: &crate::kernel::PointerOffsetTerm) -> bool {
     true
 }
 
-fn bounded_term_work(root: &Bitvector32Term) -> bool {
+fn bounded_term_work(root: &MachineTerm) -> bool {
     let mut pending = vec![root];
     let mut count = 0usize;
     while let Some(term) = pending.pop() {
@@ -883,7 +883,7 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
             binary_term!(Bits32, Add, left, right)
             | binary_term!(Bits32, Subtract, left, right)
             | binary_term!(Bits32, Multiply, left, right)
-            | Bitvector32Term::Binary {
+            | MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op:
                     MachineBinaryOp::Add
@@ -900,12 +900,10 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
                 pending.push(right);
             }
             cast_term!(UInt32From64, value) => pending.push(value),
-            Bitvector32Term::PointerAddress(pointer, _)
-                if !bounded_offset_work(&pointer.offset) =>
-            {
+            MachineTerm::PointerAddress(pointer, _) if !bounded_offset_work(&pointer.offset) => {
                 return false;
             }
-            Bitvector32Term::PointerAddress(pointer, _)
+            MachineTerm::PointerAddress(pointer, _)
                 if !bounded_pointer_block_work(&pointer.block) =>
             {
                 return false;
@@ -932,7 +930,7 @@ fn bounded_pointer_block_work(block: &crate::kernel::PointerBlock) -> bool {
     size <= 256 && !crate::instrumentation::deadline_exceeded_with_work(size.max(1))
 }
 
-fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
+fn bounded_term_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     let mut pending = vec![(left, right)];
     let mut count = 0usize;
     while let Some((left, right)) = pending.pop() {
@@ -947,16 +945,16 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             (bits32_constant!(a), bits32_constant!(b)) if constant_u32(*a) == constant_u32(*b) => {}
             (int64_constant!(a), int64_constant!(b)) if constant_i64(*a) == constant_i64(*b) => {}
             (uint64_constant!(a), uint64_constant!(b)) if constant_u64(*a) == constant_u64(*b) => {}
-            (Bitvector32Term::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
-            (Bitvector32Term::PointerAddress(_, _), Bitvector32Term::PointerAddress(_, _)) => {
+            (MachineTerm::Variable(a), MachineTerm::Variable(b)) if a == b => {}
+            (MachineTerm::PointerAddress(_, _), MachineTerm::PointerAddress(_, _)) => {
                 return false;
             }
             (
-                Bitvector32Term::PureFunctionApplication {
+                MachineTerm::PureFunctionApplication {
                     name: left_name,
                     arguments: left_arguments,
                 },
-                Bitvector32Term::PureFunctionApplication {
+                MachineTerm::PureFunctionApplication {
                     name: right_name,
                     arguments: right_arguments,
                 },
@@ -1002,7 +1000,7 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
     true
 }
 
-fn bounded_u64_constant(term: &Bitvector32Term) -> Option<u64> {
+fn bounded_u64_constant(term: &MachineTerm) -> Option<u64> {
     match term {
         uint64_constant!(value) => Some(constant_u64(*value)),
         bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
@@ -1028,7 +1026,7 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
     } else {
         return None;
     };
-    let Bitvector32Term::Binary {
+    let MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
         left,
@@ -1038,10 +1036,8 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
         return None;
     };
     let (pointer, mask) = match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::PointerAddress(pointer, _), mask)
-        | (mask, Bitvector32Term::PointerAddress(pointer, _)) => {
-            (pointer, bounded_u64_constant(mask)?)
-        }
+        (MachineTerm::PointerAddress(pointer, _), mask)
+        | (mask, MachineTerm::PointerAddress(pointer, _)) => (pointer, bounded_u64_constant(mask)?),
         _ => return None,
     };
     let alignment = mask.checked_add(1)?;
@@ -1053,7 +1049,7 @@ fn alignment_shape(condition: &ConditionTerm) -> Option<(&crate::kernel::Pointer
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, CComparisonOperator, Variable};
+    use crate::kernel::{CComparisonOperator, MachineTerm, Variable};
 
     fn bound(value: usize) -> ClickProposition {
         ClickProposition::Comparison {
@@ -1108,13 +1104,13 @@ mod tests {
 
     #[test]
     fn deep_float_candidate_is_rejected_before_recursive_helpers() {
-        let mut term = Bitvector32Term::Variable(Variable(1));
+        let mut term = MachineTerm::Variable(Variable(1));
         for _ in 0..300 {
             term = binary_node!(
                 Int32,
                 Add,
                 Box::new(term),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             );
         }
         let goal = Proposition::ConditionIs(
@@ -1137,7 +1133,7 @@ mod tests {
 
     #[test]
     fn finite_candidate_scan_charges_unrelated_premises() {
-        let value = Bitvector32Term::Variable(Variable(2));
+        let value = MachineTerm::Variable(Variable(2));
         let goal = Proposition::ConditionIs(
             ConditionTerm::Float32(CFloatCondition::Comparison {
                 operator: CComparisonOperator::Equal,
@@ -1152,8 +1148,8 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(100 + i))),
-                        right: Box::new(Bitvector32Term::constant(i as u32)),
+                        left: Box::new(MachineTerm::Variable(Variable(100 + i))),
+                        right: Box::new(MachineTerm::constant(i as u32)),
                     },
                     true,
                 )

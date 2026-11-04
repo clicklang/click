@@ -620,7 +620,7 @@ read's *value* is the read's kind's question, below.
 A load term is a value, and what a read returns depends on more than its
 address: a byte of `0xFF` is `-1` read as `int8` and `255` read as `uint8`, and
 an `int32` read at the same address returns all four bytes. A
-`Bitvector32Term::MemoryLoad` therefore carries a `LoadKind`
+`MachineTerm::MemoryLoad` therefore carries a `LoadKind`
 (`src/kernel/primitives.rs`) beside its snapshot and address: `UInt8`,
 `Int16`, `UInt16`, `Int32`, `UInt32`, `Bits64`, `Float32` or `Float64`.
 Four- and eight-byte integer reads keep their bit pattern in the term;
@@ -641,7 +641,7 @@ pointer field's cells hold it.
 read. A signed (`Int8`) read of the byte is not a load term of its own; it is
 the two's-complement conversion of that one term,
 the generic `Cast { UInt8 -> Int8 }`, built only by
-`Bitvector32Term::memory_read` (and `canonical_form_of_load`, which delegates
+`MachineTerm::memory_read` (and `canonical_form_of_load`, which delegates
 to it for the `Int8` kind). So a signed and an unsigned read of the same byte
 are related by construction: `s[i] == -1` names the same unknown as
 `u[i] == 255`. A `MemoryLoad` of kind `Int8` is never formed; the load

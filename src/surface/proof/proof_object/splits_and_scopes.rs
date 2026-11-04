@@ -1141,7 +1141,7 @@ impl<'a> Proof<'a> {
                 },
                 operator: ComparisonOperator::LessEqual,
                 right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-                    Bitvector32Term::uint64_constant(constant_u64(*limit)),
+                    MachineTerm::uint64_constant(constant_u64(*limit)),
                 ))),
             };
             if self

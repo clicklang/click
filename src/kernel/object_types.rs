@@ -369,10 +369,8 @@ mod tests {
         let CValue::Pointer(source) = &original else {
             unreachable!()
         };
-        let bits = Bitvector32Term::object_pointer_address(
-            source.pointer().clone(),
-            source.object_class(),
-        );
+        let bits =
+            MachineTerm::object_pointer_address(source.pointer().clone(), source.object_class());
         let decoded = super::super::eval::pointer_tags::cast_tagged_address_to_pointer(
             &bits,
             &PureFactContext::new(),

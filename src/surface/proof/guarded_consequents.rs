@@ -280,7 +280,7 @@ impl<'a> Proof<'a> {
                     .iter()
                     .filter_map(|(name, binding)| match binding {
                         ContractExpression::CFragment(CExpression::Value(
-                            crate::kernel::integer64_c_value!(Bitvector32Term::Variable(variable)),
+                            crate::kernel::integer64_c_value!(MachineTerm::Variable(variable)),
                         )) => Some((*variable, name.clone())),
                         _ => None,
                     })
@@ -304,7 +304,7 @@ type BinaryExpression = fn(Box<ContractExpression>, Box<ContractExpression>) -> 
 /// The operands and the written operator of a no-overflow condition.
 fn overflow_operands(
     condition: &ConditionTerm,
-) -> Option<(&Bitvector32Term, &Bitvector32Term, BinaryExpression)> {
+) -> Option<(&MachineTerm, &MachineTerm, BinaryExpression)> {
     let (left, right, construct): (_, _, BinaryExpression) = match condition {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -532,10 +532,7 @@ impl GuardedTermSpeller<'_, '_> {
         })
     }
 
-    fn field_value<'s>(
-        state: &'s CState,
-        access: &ResourceFieldAccess,
-    ) -> Option<&'s Bitvector32Term> {
+    fn field_value<'s>(state: &'s CState, access: &ResourceFieldAccess) -> Option<&'s MachineTerm> {
         match state
             .resource_instance_at_path(access.identity, &access.children)?
             .fields()
@@ -548,7 +545,7 @@ impl GuardedTermSpeller<'_, '_> {
 
     /// A model field the goal names, read at the current state, at function
     /// entry, or at the newest recorded snapshot that holds this value.
-    fn field_spelling(&self, term: &Bitvector32Term) -> Option<ContractExpression> {
+    fn field_spelling(&self, term: &MachineTerm) -> Option<ContractExpression> {
         let named = |access: &ResourceFieldAccess| {
             Box::new(ContractExpression::ResourceField(access.clone()))
         };
@@ -575,8 +572,8 @@ impl GuardedTermSpeller<'_, '_> {
         None
     }
 
-    fn term(&self, term: &Bitvector32Term) -> Option<ContractExpression> {
-        if let Bitvector32Term::Variable(variable) = term
+    fn term(&self, term: &MachineTerm) -> Option<ContractExpression> {
+        if let MachineTerm::Variable(variable) = term
             && let Some(name) = self.bound.get(variable)
         {
             return Some(ContractExpression::CFragment(CExpression::Variable(
@@ -586,7 +583,7 @@ impl GuardedTermSpeller<'_, '_> {
         if let Some(field) = self.field_spelling(term) {
             return Some(field);
         }
-        let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
+        let binary = |left: &MachineTerm, right: &MachineTerm| {
             Some((Box::new(self.term(left)?), Box::new(self.term(right)?)))
         };
         let composite = match term {
@@ -597,19 +594,19 @@ impl GuardedTermSpeller<'_, '_> {
                 binary(left, right).map(|(left, right)| ContractExpression::Subtract(left, right))
             }
             binary_term!(Int32, Multiply, left, right)
-            | Bitvector32Term::Binary {
+            | MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Multiply,
                 left,
                 right,
             } => binary(left, right).map(|(left, right)| ContractExpression::Multiply(left, right)),
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
                 right,
             } => binary(left, right).map(|(left, right)| ContractExpression::Add(left, right)),
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Subtract,
                 left,

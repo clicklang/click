@@ -47,13 +47,13 @@ fn pure_pointer_dag_substitution_and_capture_collection_scale_linearly() {
 #[test]
 fn pure_pointer_legacy_scalar_substitution_visits_the_shared_dag_once() {
     let variable = Variable(710);
-    let replacement = Bitvector32Term::constant(9);
+    let replacement = MachineTerm::constant(9);
     let mut measurements = Vec::new();
     for depth in [8, 16, 32] {
         let mut input = call(
             "scalar",
             vec![PureFunctionArgument::Value(CValue::Int32(
-                Bitvector32Term::Variable(variable),
+                MachineTerm::Variable(variable),
             ))],
         );
         let mut expected = call(
@@ -166,7 +166,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: PointerOffsetTerm::scale_int32(
-                            Bitvector32Term::Variable(Variable(id)),
+                            MachineTerm::Variable(Variable(id)),
                             1,
                         ),
                     },
@@ -184,7 +184,7 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
                 PointerOffsetTerm::add(
                     offset,
                     PointerOffsetTerm::scale_int32(
-                        Bitvector32Term::Variable(Variable(920_000 + index)),
+                        MachineTerm::Variable(Variable(920_000 + index)),
                         1,
                     ),
                 )
@@ -226,13 +226,13 @@ fn displaced_full_pointer_rewrite_scales_with_the_selected_offset() {
 
 #[test]
 fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
-    let word = Bitvector32Term::Variable(Variable(912));
-    let replacement = Bitvector32Term::uint64_constant(1);
+    let word = MachineTerm::Variable(Variable(912));
+    let replacement = MachineTerm::uint64_constant(1);
     let mut costs = Vec::new();
     for depth in [8, 16, 32] {
-        let mut input = Pointer::integer_address(Bitvector32Term::uint64_bitwise_and(
+        let mut input = Pointer::integer_address(MachineTerm::uint64_bitwise_and(
             word.clone(),
-            Bitvector32Term::uint64_constant(!3),
+            MachineTerm::uint64_constant(!3),
         ));
         for _ in 0..depth {
             input = call("pair", vec![argument(input.clone()), argument(input)]);
@@ -273,12 +273,12 @@ fn integer_address_rewrite_visits_a_shared_pointer_dag_once() {
 
 #[test]
 fn integer_address_rewrite_ignores_unrelated_interned_applications() {
-    let word = Bitvector32Term::Variable(Variable(913));
-    let input = Pointer::integer_address(Bitvector32Term::uint64_bitwise_and(
+    let word = MachineTerm::Variable(Variable(913));
+    let input = Pointer::integer_address(MachineTerm::uint64_bitwise_and(
         word.clone(),
-        Bitvector32Term::uint64_constant(!3),
+        MachineTerm::uint64_constant(!3),
     ));
-    let replacement = Bitvector32Term::uint64_constant(1);
+    let replacement = MachineTerm::uint64_constant(1);
     let mut costs = Vec::new();
     for size in [0, 64, 256] {
         let _unrelated = (0..size)

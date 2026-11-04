@@ -51,8 +51,8 @@ thread_local! {
 /// nothing; a refusal uses it to say which bound it could not show.
 #[derive(Clone, Debug)]
 pub(crate) struct MemoryAccessElementBound {
-    pub(crate) index: Bitvector32Term,
-    pub(crate) count: Bitvector32Term,
+    pub(crate) index: MachineTerm,
+    pub(crate) count: MachineTerm,
     pub(crate) stride: u32,
 }
 
@@ -63,7 +63,7 @@ pub(crate) fn memory_access_element_bound(
 ) -> Option<MemoryAccessElementBound> {
     let size = memory.block_size(&pointer.block)?;
     let mut pending = vec![&pointer.offset];
-    let mut widest: Option<(&Bitvector32Term, u32)> = None;
+    let mut widest: Option<(&MachineTerm, u32)> = None;
     while let Some(term) = pending.pop() {
         match term {
             PointerOffsetTerm::Add(left, right) => {
@@ -128,14 +128,14 @@ use contract_certification::{
     resources_certify_loadability,
 };
 
-pub fn int32(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn int32(bits: impl Into<MachineTerm>) -> CValue {
     CValue::Int32(bits.into())
 }
 
 /// The C `bool` value of a `bool` cell whose byte is the `uint8` term
 /// `byte`: the byte rule (Stage 5), the `Bool` `byte != 0` at `uint8`,
 /// carried as its cast (rule C1).
-pub fn bool_value(byte: impl Into<Bitvector32Term>) -> CValue {
+pub fn bool_value(byte: impl Into<MachineTerm>) -> CValue {
     CValue::of_bool(ConditionTerm::truth_of_bool_word(
         &byte.into().in_narrow_format(MachineIntegerType::UInt8),
     ))
@@ -155,14 +155,14 @@ pub fn bool_value(byte: impl Into<Bitvector32Term>) -> CValue {
 pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>> {
     let cast = match value.numeric_value() {
         CValue::Bool(word) => {
-            Bitvector32Term::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
+            MachineTerm::bool_cast(MachineIntegerType::Int32, word.bool_cast_operand()?.clone())
         }
         crate::kernel::integer64_c_value!(term) if term.bool_cast_operand().is_some() => {
             term.clone()
         }
         _ => return None,
     };
-    let Bitvector32Term::BoolCast { to, .. } = &cast else {
+    let MachineTerm::BoolCast { to, .. } = &cast else {
         return None;
     };
     // An 8- or 16-bit cast states its range in its own format.
@@ -174,7 +174,7 @@ pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>
             )?)
         };
         let (zero, one) = (constant(0)?, constant(1)?);
-        let compare = |relation, constant: &Bitvector32Term| {
+        let compare = |relation, constant: &MachineTerm| {
             Proposition::ConditionIs(
                 ConditionTerm::machine_compare(*to, relation, cast.clone(), constant.clone()),
                 true,
@@ -194,19 +194,19 @@ pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>
     let (zero, one) = if wide {
         if to.format().is_signed() {
             (
-                Bitvector32Term::int64_constant(0),
-                Bitvector32Term::int64_constant(1),
+                MachineTerm::int64_constant(0),
+                MachineTerm::int64_constant(1),
             )
         } else {
             (
-                Bitvector32Term::uint64_constant(0),
-                Bitvector32Term::uint64_constant(1),
+                MachineTerm::uint64_constant(0),
+                MachineTerm::uint64_constant(1),
             )
         }
     } else {
-        (Bitvector32Term::constant(0), Bitvector32Term::constant(1))
+        (MachineTerm::constant(0), MachineTerm::constant(1))
     };
-    let equals = |constant: &Bitvector32Term| {
+    let equals = |constant: &MachineTerm| {
         Proposition::ConditionIs(
             if wide {
                 if to.format().is_signed() {
@@ -237,7 +237,7 @@ pub(crate) fn c_bool_cast_range_facts(value: &CValue) -> Option<Vec<Proposition>
 /// The range `[lower, upper]` every value of a narrow C integer type lies
 /// in, with the term holding it: a `uint8` is in `[0, 255]`, an `int16` in
 /// `[-32768, 32767]`. `None` for every other type, whose range is its word.
-pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&Bitvector32Term, i32, i32)> {
+pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&MachineTerm, i32, i32)> {
     match value {
         CValue::Int8(term) => Some((term, i32::from(i8::MIN), i32::from(i8::MAX))),
         CValue::Int16(term) => Some((term, i32::from(i16::MIN), i32::from(i16::MAX))),
@@ -248,30 +248,30 @@ pub(crate) fn c_narrow_integer_range(value: &CValue) -> Option<(&Bitvector32Term
 }
 
 /// An `int8` value. A 32-bit constant given for it is read as its value's
-/// word (`Bitvector32Term::in_narrow_format`).
-pub fn int8(bits: impl Into<Bitvector32Term>) -> CValue {
+/// word (`MachineTerm::in_narrow_format`).
+pub fn int8(bits: impl Into<MachineTerm>) -> CValue {
     CValue::Int8(bits.into().in_narrow_format(MachineIntegerType::Int8))
 }
 
 /// An `int16` value; see [`int8`].
-pub fn int16(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn int16(bits: impl Into<MachineTerm>) -> CValue {
     CValue::Int16(bits.into().in_narrow_format(MachineIntegerType::Int16))
 }
 
 /// A `uint8` value; see [`int8`].
-pub fn uint8(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn uint8(bits: impl Into<MachineTerm>) -> CValue {
     CValue::UInt8(bits.into().in_narrow_format(MachineIntegerType::UInt8))
 }
 
 /// A `uint16` value; see [`int8`].
-pub fn uint16(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn uint16(bits: impl Into<MachineTerm>) -> CValue {
     CValue::UInt16(bits.into().in_narrow_format(MachineIntegerType::UInt16))
 }
 
 /// A `uint32` value. A root 32-bit constant takes the `uint32` format
-/// (`Bitvector32Term::in_format32`), so it prints as itself.
+/// (`MachineTerm::in_format32`), so it prints as itself.
 #[track_caller]
-pub fn uint32(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn uint32(bits: impl Into<MachineTerm>) -> CValue {
     let bits = bits.into();
     if crate::kernel::machine_integer::format_audit::is_sign_free_word_operator(&bits) {
         crate::kernel::machine_integer::format_audit::record(
@@ -285,27 +285,25 @@ pub fn uint32(bits: impl Into<Bitvector32Term>) -> CValue {
 /// A 64-bit value. A plain 32-bit constant, as `int64(-1)` writes, is widened
 /// to the 64-bit constant it denotes, sign-extended for `int64` and
 /// zero-extended for `uint64`, so the value's term has the value's width.
-pub fn int64(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn int64(bits: impl Into<MachineTerm>) -> CValue {
     CValue::Int64(match bits.into() {
-        bits32_constant!(bits) => {
-            Bitvector32Term::int64_constant(i64::from(constant_u32(bits) as i32))
-        }
+        bits32_constant!(bits) => MachineTerm::int64_constant(i64::from(constant_u32(bits) as i32)),
         term => term,
     })
 }
 
-pub fn uint64(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn uint64(bits: impl Into<MachineTerm>) -> CValue {
     CValue::UInt64(match bits.into() {
-        bits32_constant!(bits) => Bitvector32Term::uint64_constant(u64::from(constant_u32(bits))),
+        bits32_constant!(bits) => MachineTerm::uint64_constant(u64::from(constant_u32(bits))),
         term => term,
     })
 }
 
-pub fn float32(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn float32(bits: impl Into<MachineTerm>) -> CValue {
     CValue::Float32(bits.into())
 }
 
-pub fn float64(bits: impl Into<Bitvector32Term>) -> CValue {
+pub fn float64(bits: impl Into<MachineTerm>) -> CValue {
     CValue::Float64(bits.into())
 }
 
@@ -1803,43 +1801,43 @@ fn abstract_c_state_for_join_across_with_policy(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::Int8 => int8(Bitvector32Term::Variable(join_variable(
+                CType::Int8 => int8(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::Int16 => int16(Bitvector32Term::Variable(join_variable(
+                CType::Int16 => int16(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::Int32 => int32(Bitvector32Term::Variable(join_variable(
+                CType::Int32 => int32(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::Int64 => CValue::Int64(Bitvector32Term::Variable(join_variable(
+                CType::Int64 => CValue::Int64(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::UInt32 => uint32(Bitvector32Term::Variable(join_variable(
+                CType::UInt32 => uint32(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::UInt8 => uint8(Bitvector32Term::Variable(join_variable(
+                CType::UInt8 => uint8(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::UInt16 => uint16(Bitvector32Term::Variable(join_variable(
+                CType::UInt16 => uint16(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(join_variable(
+                CType::UInt64 => CValue::UInt64(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::Float32 => CValue::Float32(Bitvector32Term::Variable(join_variable(
+                CType::Float32 => CValue::Float32(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
-                CType::Float64 => CValue::Float64(Bitvector32Term::Variable(join_variable(
+                CType::Float64 => CValue::Float64(MachineTerm::Variable(join_variable(
                     &mut variables,
                     &mut budget,
                 )?)),
@@ -2037,8 +2035,8 @@ fn validate_branch_memory_delta_against_loans(
         }
         let range = CMemoryRange::new_with_element_width(
             pointer,
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(byte_width),
+            MachineTerm::constant(0),
+            MachineTerm::constant(byte_width),
             1,
         );
         if let Err(error) = ledger.permits_memory_access(&range) {
@@ -2283,15 +2281,15 @@ pub fn c_pointer_offset_bytes(pointer: CExpression, bytes: u32) -> CExpression {
 }
 
 pub fn c_int32_literal(value: u32) -> CExpression {
-    CExpression::Value(int32(Bitvector32Term::constant(value)))
+    CExpression::Value(int32(MachineTerm::constant(value)))
 }
 
 pub fn c_uint8_literal(value: u8) -> CExpression {
-    CExpression::Value(uint8(Bitvector32Term::constant(u32::from(value))))
+    CExpression::Value(uint8(MachineTerm::constant(u32::from(value))))
 }
 
 pub fn c_uint32_literal(value: u32) -> CExpression {
-    CExpression::Value(uint32(Bitvector32Term::constant(value)))
+    CExpression::Value(uint32(MachineTerm::constant(value)))
 }
 
 /// Signed wide literal in the common checked machine arena.
@@ -2319,19 +2317,19 @@ pub fn c_uint128_literal(value: u128) -> CExpression {
 }
 
 pub fn c_int64_literal(value: i64) -> CExpression {
-    CExpression::Value(int64(Bitvector32Term::int64_constant(value)))
+    CExpression::Value(int64(MachineTerm::int64_constant(value)))
 }
 
 pub fn c_uint64_literal(value: u64) -> CExpression {
-    CExpression::Value(uint64(Bitvector32Term::uint64_constant(value)))
+    CExpression::Value(uint64(MachineTerm::uint64_constant(value)))
 }
 
 pub fn c_float32_literal(bits: u32) -> CExpression {
-    CExpression::Value(float32(Bitvector32Term::constant(bits)))
+    CExpression::Value(float32(MachineTerm::constant(bits)))
 }
 
 pub fn c_float64_literal(bits: u64) -> CExpression {
-    CExpression::Value(float64(Bitvector32Term::uint64_constant(bits)))
+    CExpression::Value(float64(MachineTerm::uint64_constant(bits)))
 }
 
 pub fn c_pointer_value(pointer: Pointer) -> CExpression {
@@ -4549,7 +4547,7 @@ pub fn proposition_and_all(mut propositions: Vec<Proposition>) -> Proposition {
 pub fn substitute_int32_variable_in_proposition(
     proposition: &Proposition,
     variable: Variable,
-    value: Bitvector32Term,
+    value: MachineTerm,
 ) -> Proposition {
     substitute_bitvector_variable_in_proposition(proposition, variable, &value)
 }
@@ -4562,7 +4560,7 @@ pub fn substitute_int32_variable_in_proposition(
 pub fn forall_instantiation_candidate_values(
     quantified: &Proposition,
     target: &Proposition,
-) -> Vec<Bitvector32Term> {
+) -> Vec<MachineTerm> {
     let Proposition::ForAll { var, body, .. } = quantified else {
         return Vec::new();
     };
@@ -4595,7 +4593,7 @@ pub fn forall_instantiation_candidate_values(
 pub fn forall_guided_instantiation_candidate_values(
     quantified: &Proposition,
     target: &Proposition,
-) -> Vec<Bitvector32Term> {
+) -> Vec<MachineTerm> {
     let Proposition::ForAll { var, body, .. } = quantified else {
         return Vec::new();
     };
@@ -4660,7 +4658,7 @@ pub fn c_max_state(a: CValue, b: CValue) -> CState {
 }
 
 #[cfg(test)]
-pub fn c_max_lt_condition(a: Bitvector32Term, b: Bitvector32Term) -> ConditionTerm {
+pub fn c_max_lt_condition(a: MachineTerm, b: MachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_than(a, b)
 }
 
@@ -5831,8 +5829,8 @@ mod proof_case_evidence_tests {
         };
         let escrow = CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         ));
         let support = ResourceContext::new()
             .unchecked_with_fact(escrow.clone())
@@ -6319,7 +6317,7 @@ fn checked_int32_reassociated_add_domain_as_written(
         let sum = match [a, b] {
             [View::Legacy(a), View::Legacy(b)] => crate::kernel::SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::add(a.clone(), b.clone()),
+                MachineTerm::add(a.clone(), b.clone()),
             ),
             operands => {
                 let roots = operands.map(|operand| match operand {
@@ -6340,7 +6338,7 @@ fn checked_int32_reassociated_add_domain_as_written(
                     // boundary until they acquire shared operand identities.
                     crate::kernel::SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        Bitvector32Term::add(
+                        MachineTerm::add(
                             a.retain(MachineIntegerType::Int32).value().clone(),
                             b.retain(MachineIntegerType::Int32).value().clone(),
                         ),
@@ -6463,7 +6461,7 @@ pub fn prove_owned_resource_quantity_nonnegative(
     }
     let quantity = owned.owned_quantity_term()?.clone();
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), quantity),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), quantity),
         true,
     );
     if claimed != &conclusion {
@@ -7409,8 +7407,8 @@ pub fn prove_c_function_satisfies_specification_with_environment(
 
 #[cfg(test)]
 pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem> {
-    let a_bits = Bitvector32Term::Variable(a);
-    let b_bits = Bitvector32Term::Variable(b);
+    let a_bits = MachineTerm::Variable(a);
+    let b_bits = MachineTerm::Variable(b);
     let a_value = int32(a_bits.clone());
     let b_value = int32(b_bits.clone());
     let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
@@ -7445,8 +7443,8 @@ pub fn prove_c_max_lt_returns_right(a: Variable, b: Variable) -> Option<Theorem>
 
 #[cfg(test)]
 pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theorem> {
-    let a_bits = Bitvector32Term::Variable(a);
-    let b_bits = Bitvector32Term::Variable(b);
+    let a_bits = MachineTerm::Variable(a);
+    let b_bits = MachineTerm::Variable(b);
     let a_value = int32(a_bits.clone());
     let b_value = int32(b_bits.clone());
     let condition = c_max_lt_condition(a_bits, b_bits);
@@ -7482,19 +7480,13 @@ pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theor
 /// Signed int32 increment preserves a strict upper bound as a non-strict
 /// bound. The strict premise also rules out signed overflow: if `value` were
 /// `INT_MAX`, no int32 `upper` could be greater than it.
-pub fn prove_int32_increment_upper_bound(
-    value: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int32_increment_upper_bound(value: MachineTerm, upper: MachineTerm) -> Theorem {
     let premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(value.clone(), upper.clone()),
         true,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::add(value, Bitvector32Term::constant(1)),
-            upper,
-        ),
+        ConditionTerm::signed_less_equal(MachineTerm::add(value, MachineTerm::constant(1)), upper),
         true,
     );
     implication([premise], conclusion)
@@ -7502,16 +7494,13 @@ pub fn prove_int32_increment_upper_bound(
 
 /// A signed int32 increment is strictly greater than its input when a strict
 /// upper bound rules out overflow.
-pub fn prove_int32_increment_strictly_increases(
-    value: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int32_increment_strictly_increases(value: MachineTerm, upper: MachineTerm) -> Theorem {
     let premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(
             value.clone(),
-            Bitvector32Term::add(value, Bitvector32Term::constant(1)),
+            MachineTerm::add(value, MachineTerm::constant(1)),
         ),
         true,
     );
@@ -7521,9 +7510,9 @@ pub fn prove_int32_increment_strictly_increases(
 /// Signed int32 increment preserves a non-strict lower bound when a strict
 /// upper bound rules out signed overflow.
 pub fn prove_int32_increment_lower_bound(
-    value: Bitvector32Term,
-    lower: Bitvector32Term,
-    upper: Bitvector32Term,
+    value: MachineTerm,
+    lower: MachineTerm,
+    upper: MachineTerm,
 ) -> Theorem {
     let lower_premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(lower.clone(), value.clone()),
@@ -7532,10 +7521,7 @@ pub fn prove_int32_increment_lower_bound(
     let upper_premise =
         Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            lower,
-            Bitvector32Term::add(value, Bitvector32Term::constant(1)),
-        ),
+        ConditionTerm::signed_less_equal(lower, MachineTerm::add(value, MachineTerm::constant(1))),
         true,
     );
     implication([lower_premise, upper_premise], conclusion)
@@ -7543,7 +7529,7 @@ pub fn prove_int32_increment_lower_bound(
 
 /// Two signed int32 values are equal when the first is no greater than the
 /// second and is not strictly less than it.
-pub fn prove_int32_le_antisymmetric(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Theorem {
     let le_premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
@@ -7566,10 +7552,7 @@ pub fn prove_int32_le_antisymmetric(left: Bitvector32Term, right: Bitvector32Ter
 
 /// A signed int32 value at most another is equal to it when it is not
 /// strictly smaller.
-pub fn prove_int32_le_and_not_lt_implies_eq(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int32_le_and_not_lt_implies_eq(left: MachineTerm, right: MachineTerm) -> Theorem {
     let le_premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
@@ -7593,7 +7576,7 @@ pub fn prove_int32_le_and_not_lt_implies_eq(
 /// A signed int32 value no greater than another and unequal to it is strictly
 /// smaller. The explicit inequality premise keeps this deterministic rule on
 /// the simple-certificate surface instead of relying on arithmetic search.
-pub fn prove_int32_le_and_neq_implies_lt(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int32_le_and_neq_implies_lt(left: MachineTerm, right: MachineTerm) -> Theorem {
     let le_premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(left.clone(), right.clone()),
         true,
@@ -7612,13 +7595,13 @@ pub fn prove_int32_le_and_neq_implies_lt(left: Bitvector32Term, right: Bitvector
 }
 
 /// Any positive signed int32 value is nonnegative.
-pub fn prove_int32_positive_is_nonnegative(value: Bitvector32Term) -> Theorem {
+pub fn prove_int32_positive_is_nonnegative(value: MachineTerm) -> Theorem {
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value.clone()),
+        ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
         true,
     );
     let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), value),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), value),
         true,
     );
     implication([premise], conclusion)
@@ -7677,13 +7660,10 @@ pub fn prove_population_member_count_zero(
     )?;
     Some(implication(
         [Proposition::ConditionIs(
-            ConditionTerm::equal(total, Bitvector32Term::constant(0)),
+            ConditionTerm::equal(total, MachineTerm::constant(0)),
             true,
         )],
-        Proposition::ConditionIs(
-            ConditionTerm::equal(member, Bitvector32Term::constant(0)),
-            true,
-        ),
+        Proposition::ConditionIs(ConditionTerm::equal(member, MachineTerm::constant(0)), true),
     ))
 }
 
@@ -7731,13 +7711,12 @@ pub fn prove_integer_range_fold_append(
     let (extended, guard, item_value) = match &index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
             let original_end = end.value().clone();
-            let increment =
-                Bitvector32Term::add(original_end.clone(), Bitvector32Term::constant(1));
+            let increment = MachineTerm::add(original_end.clone(), MachineTerm::constant(1));
             let guard =
                 ConditionTerm::signed_less_equal(start.value().clone(), end.value().clone());
             let safe = ConditionTerm::signed_less_than(
                 end.value().clone(),
-                Bitvector32Term::constant(i32::MAX as u32),
+                MachineTerm::constant(i32::MAX as u32),
             );
             let extended = IntegerRangeFoldIndex::Int32 {
                 start: start.clone(),
@@ -7758,15 +7737,13 @@ pub fn prove_integer_range_fold_append(
         // not wrap.
         IntegerRangeFoldIndex::UInt64 { start, end } => {
             let original_end = end.value().clone();
-            let increment = Bitvector32Term::uint64_add(
-                original_end.clone(),
-                Bitvector32Term::uint64_constant(1),
-            );
+            let increment =
+                MachineTerm::uint64_add(original_end.clone(), MachineTerm::uint64_constant(1));
             let guard =
                 ConditionTerm::uint64_less_equal(start.value().clone(), end.value().clone());
             let safe = ConditionTerm::uint64_less_than(
                 end.value().clone(),
-                Bitvector32Term::uint64_constant(u64::MAX),
+                MachineTerm::uint64_constant(u64::MAX),
             );
             let extended = IntegerRangeFoldIndex::UInt64 {
                 start: start.clone(),
@@ -7831,8 +7808,7 @@ fn integer_range_fold_predecessor_index(
 ) -> Option<(IntegerRangeFoldIndex, IntegerTerm)> {
     match index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
-            let predecessor =
-                Bitvector32Term::subtract(end.value().clone(), Bitvector32Term::constant(1));
+            let predecessor = MachineTerm::subtract(end.value().clone(), MachineTerm::constant(1));
             Some((
                 IntegerRangeFoldIndex::Int32 {
                     start: start.clone(),
@@ -7842,10 +7818,8 @@ fn integer_range_fold_predecessor_index(
             ))
         }
         IntegerRangeFoldIndex::UInt64 { start, end } => {
-            let predecessor = Bitvector32Term::uint64_subtract(
-                end.value().clone(),
-                Bitvector32Term::uint64_constant(1),
-            );
+            let predecessor =
+                MachineTerm::uint64_subtract(end.value().clone(), MachineTerm::uint64_constant(1));
             Some((
                 IntegerRangeFoldIndex::UInt64 {
                     start: start.clone(),
@@ -8027,15 +8001,15 @@ pub fn integer_range_fold_predecessor_application(
     let mut arguments = applied.arguments().to_vec();
     arguments[position] = match arguments.get(position)? {
         PureFunctionArgument::Value(CValue::Int32(endpoint)) => {
-            PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::subtract(
+            PureFunctionArgument::Value(CValue::Int32(MachineTerm::subtract(
                 endpoint.clone(),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(1),
             )))
         }
         PureFunctionArgument::Value(CValue::UInt64(endpoint)) => {
-            PureFunctionArgument::Value(CValue::UInt64(Bitvector32Term::uint64_subtract(
+            PureFunctionArgument::Value(CValue::UInt64(MachineTerm::uint64_subtract(
                 endpoint.clone(),
-                Bitvector32Term::uint64_constant(1),
+                MachineTerm::uint64_constant(1),
             )))
         }
         _ => return None,
@@ -8166,16 +8140,16 @@ pub fn prove_integer_range_fold_over_equal_terms(
 }
 
 /// Incrementing a signed int32 value below `INT_MAX` is defined.
-pub fn prove_int32_increment_below_max_is_defined(value: Bitvector32Term) -> Theorem {
+pub fn prove_int32_increment_below_max_is_defined(value: MachineTerm) -> Theorem {
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), Bitvector32Term::constant(i32::MAX as u32)),
+        ConditionTerm::signed_less_than(value.clone(), MachineTerm::constant(i32::MAX as u32)),
         true,
     );
     let conclusion = Proposition::signed_arithmetic_domain(
         MachineIntegerType::Int32,
         MachineBinaryOp::Add,
         &value,
-        &Bitvector32Term::constant(1),
+        &MachineTerm::constant(1),
     );
     implication([premise], conclusion)
 }
@@ -8789,44 +8763,44 @@ pub(crate) fn prove_executed_concrete_contract_refinement(
 }
 
 fn rewrite_int32_term_by_exact_equality(
-    term: &Bitvector32Term,
-    from: &Bitvector32Term,
-    to: &Bitvector32Term,
-) -> Bitvector32Term {
+    term: &MachineTerm,
+    from: &MachineTerm,
+    to: &MachineTerm,
+) -> MachineTerm {
     if term == from {
         return to.clone();
     }
-    let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
+    let binary = |left: &MachineTerm, right: &MachineTerm| {
         (
             rewrite_int32_term_by_exact_equality(left, from, to),
             rewrite_int32_term_by_exact_equality(right, from, to),
         )
     };
     match term {
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
         } => term.clone(),
 
         binary_term!(Int32, Add, left, right) => {
             let (left, right) = binary(left, right);
-            Bitvector32Term::add(left, right)
+            MachineTerm::add(left, right)
         }
         binary_term!(Int32, Subtract, left, right) => {
             let (left, right) = binary(left, right);
-            Bitvector32Term::subtract(left, right)
+            MachineTerm::subtract(left, right)
         }
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
-        } => Bitvector32Term::If {
+        } => MachineTerm::If {
             condition: condition.clone(),
             then_term: Box::new(rewrite_int32_term_by_exact_equality(then_term, from, to)),
             else_term: Box::new(rewrite_int32_term_by_exact_equality(else_term, from, to)),
         },
-        Bitvector32Term::PureFunctionApplication { name, arguments } => {
-            Bitvector32Term::PureFunctionApplication {
+        MachineTerm::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
@@ -8834,12 +8808,13 @@ fn rewrite_int32_term_by_exact_equality(
                     .collect(),
             }
         }
-        Bitvector32Term::ClickFunctionApplication { .. }
-        | Bitvector32Term::AlgebraicMatch { .. } => term.clone(),
+        MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {
+            term.clone()
+        }
         bits32_constant!(_)
-        | Bitvector32Term::Variable(_)
-        | Bitvector32Term::MemoryLoad(_, _, _)
-        | Bitvector32Term::PointerAddress(_, _)
+        | MachineTerm::Variable(_)
+        | MachineTerm::MemoryLoad(_, _, _)
+        | MachineTerm::PointerAddress(_, _)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
@@ -8851,9 +8826,9 @@ fn rewrite_int32_term_by_exact_equality(
         | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..)
-        | Bitvector32Term::RangeFold { .. }
-        | Bitvector32Term::BoolCast { .. }
-        | Bitvector32Term::IntegerToMachine { .. } => term.clone(),
+        | MachineTerm::RangeFold { .. }
+        | MachineTerm::BoolCast { .. }
+        | MachineTerm::IntegerToMachine { .. } => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => op.build_raw(
                 rewrite_int32_term_by_exact_equality(left, from, to),
@@ -8936,11 +8911,11 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
 /// Adding a nonnegative signed int32 amount within the remaining positive
 /// headroom is defined.
 pub fn prove_int32_nonnegative_add_within_max_is_defined(
-    value: Bitvector32Term,
-    amount: Bitvector32Term,
+    value: MachineTerm,
+    amount: MachineTerm,
 ) -> Theorem {
     let amount_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), amount.clone()),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), amount.clone()),
         true,
     );
     let within_headroom = Proposition::ConditionIs(
@@ -8949,7 +8924,7 @@ pub fn prove_int32_nonnegative_add_within_max_is_defined(
             binary_node!(
                 Int32,
                 Subtract,
-                Box::new(Bitvector32Term::constant(i32::MAX as u32)),
+                Box::new(MachineTerm::constant(i32::MAX as u32)),
                 Box::new(amount.clone()),
             ),
         ),
@@ -8967,11 +8942,11 @@ pub fn prove_int32_nonnegative_add_within_max_is_defined(
 /// Subtracting a nonnegative signed int32 amount no larger than the value is
 /// defined.
 pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
-    value: Bitvector32Term,
-    amount: Bitvector32Term,
+    value: MachineTerm,
+    amount: MachineTerm,
 ) -> Theorem {
     let amount_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), amount.clone()),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), amount.clone()),
         true,
     );
     let amount_within_value = Proposition::ConditionIs(
@@ -8988,27 +8963,21 @@ pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
 }
 
 /// Mathematical bounds on the exact sum establish signed C addition safety.
-pub fn prove_int32_add_defined_by_integer_bounds(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int32_add_defined_by_integer_bounds(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int32, left, right, false)
 }
 
 /// Mathematical bounds on the exact sum establish signed 64-bit C addition
 /// safety.
-pub fn prove_int64_add_defined_by_integer_bounds(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int64_add_defined_by_integer_bounds(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int64, left, right, false)
 }
 
 /// Mathematical bounds on the exact difference establish signed 64-bit C
 /// subtraction safety.
 pub fn prove_int64_subtract_defined_by_integer_bounds(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
 ) -> Theorem {
     prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int64, left, right, true)
 }
@@ -9017,8 +8986,8 @@ pub fn prove_int64_subtract_defined_by_integer_bounds(
 /// lies in the type's range: overflow is exactly leaving that range.
 fn prove_signed_operation_defined_by_integer_bounds(
     ty: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
     subtract: bool,
 ) -> Theorem {
     let observe = |value| {
@@ -9072,7 +9041,7 @@ pub fn prove_integer_machine_round_trip(
     destination: MachineIntegerType,
 ) -> Theorem {
     let (lower, upper) = super::spec::integer_machine_bounds(destination);
-    let converted = Bitvector32Term::IntegerToMachine {
+    let converted = MachineTerm::IntegerToMachine {
         value: value.clone().into(),
         destination,
     };
@@ -9096,7 +9065,7 @@ pub fn prove_integer_machine_round_trip(
     )
 }
 
-fn uint32_exact_sum_bound(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+fn uint32_exact_sum_bound(left: MachineTerm, right: MachineTerm) -> Proposition {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
@@ -9112,13 +9081,13 @@ fn uint32_exact_sum_bound(left: Bitvector32Term, right: Bitvector32Term) -> Prop
 
 /// Unsigned machine addition agrees with mathematical addition precisely
 /// under the explicit no-wrap bound. Definedness alone permits wrapping.
-pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_add_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     let premise = uint32_exact_sum_bound(left.clone(), right.clone());
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
     };
-    let observed_sum = observe(Bitvector32Term::add_at(
+    let observed_sum = observe(MachineTerm::add_at(
         MachineIntegerType::UInt32,
         left.clone(),
         right.clone(),
@@ -9135,12 +9104,12 @@ pub fn prove_uint32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term
 
 /// Exact mathematical observation of unsigned subtraction without underflow.
 /// Native definedness alone permits wrapping, including 0u32 - 1u32.
-pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_subtract_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
     };
-    let difference = observe(Bitvector32Term::subtract_at(
+    let difference = observe(MachineTerm::subtract_at(
         MachineIntegerType::UInt32,
         left.clone(),
         right.clone(),
@@ -9161,13 +9130,13 @@ pub fn prove_uint32_subtract_to_integer(left: Bitvector32Term, right: Bitvector3
 /// Unsigned multiplication has its exact mathematical value under the native
 /// checked-multiplication guard. The zero factor branch does not divide by zero.
 /// Definedness of a wrapping u32 product alone is insufficient.
-pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_mul_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     let premise = uint32_mul_guard(left.clone(), right.clone());
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
     };
-    let product = observe(Bitvector32Term::multiply_at(
+    let product = observe(MachineTerm::multiply_at(
         MachineIntegerType::UInt32,
         left.clone(),
         right.clone(),
@@ -9182,16 +9151,16 @@ pub fn prove_uint32_mul_to_integer(left: Bitvector32Term, right: Bitvector32Term
     )
 }
 
-fn uint32_mul_guard(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+fn uint32_mul_guard(left: MachineTerm, right: MachineTerm) -> Proposition {
     Proposition::Or(
         Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(right.clone(), Bitvector32Term::constant(0)),
+            ConditionTerm::equal(right.clone(), MachineTerm::constant(0)),
             true,
         )),
         Box::new(Proposition::ConditionIs(
             ConditionTerm::unsigned_less_equal(
                 left,
-                Bitvector32Term::unsigned_divide(Bitvector32Term::constant(u32::MAX), right),
+                MachineTerm::unsigned_divide(MachineTerm::constant(u32::MAX), right),
             ),
             true,
         )),
@@ -9201,10 +9170,7 @@ fn uint32_mul_guard(left: Bitvector32Term, right: Bitvector32Term) -> Propositio
 /// A mathematical product that fits u32 establishes Rust's checked native
 /// multiplication guard. Unsigned observations are nonnegative, so the
 /// nonzero branch is exactly left <= floor(u32::MAX / right).
-pub fn prove_uint32_mul_guard_by_integer_bound(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_uint32_mul_guard_by_integer_bound(left: MachineTerm, right: MachineTerm) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
             .expect("every uint32 bit pattern has an unsigned Integer interpretation")
@@ -9223,18 +9189,18 @@ pub fn prove_uint32_mul_guard_by_integer_bound(
 
 /// Observe unsigned machine division in Integer arithmetic. Both domains
 /// explicitly exclude a zero divisor; no no-wrap premise is needed.
-pub fn prove_uint32_divide_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_divide_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_uint32_integer_division_bridge(left, right, false)
 }
 
 /// Observe unsigned machine remainder in nonnegative Integer arithmetic.
-pub fn prove_uint32_remainder_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_uint32_integer_division_bridge(left, right, true)
 }
 
 fn prove_uint32_integer_division_bridge(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
     remainder: bool,
 ) -> Theorem {
     let observe = |value| {
@@ -9244,7 +9210,7 @@ fn prove_uint32_integer_division_bridge(
     let dividend = observe(left.clone());
     let divisor = observe(right.clone());
     let native_nonzero = Proposition::ConditionIs(
-        ConditionTerm::equal(right.clone(), Bitvector32Term::constant(0)),
+        ConditionTerm::equal(right.clone(), MachineTerm::constant(0)),
         false,
     );
     let integer_nonzero = Proposition::ConditionIs(
@@ -9253,12 +9219,12 @@ fn prove_uint32_integer_division_bridge(
     );
     let (machine, exact) = if remainder {
         (
-            Bitvector32Term::unsigned_remainder(left, right),
+            MachineTerm::unsigned_remainder(left, right),
             IntegerTerm::TruncatingRemainder(dividend.into(), divisor.into()),
         )
     } else {
         (
-            Bitvector32Term::unsigned_divide(left, right),
+            MachineTerm::unsigned_divide(left, right),
             IntegerTerm::TruncatingQuotient(dividend.into(), divisor.into()),
         )
     };
@@ -9272,17 +9238,17 @@ fn prove_uint32_integer_division_bridge(
 /// An unsigned remainder is strictly below its nonzero divisor.
 /// No upper bound on the dividend is needed; zero division is excluded.
 pub fn prove_uint32_remainder_less_than_divisor(
-    value: Bitvector32Term,
-    divisor: Bitvector32Term,
+    value: MachineTerm,
+    divisor: MachineTerm,
 ) -> Theorem {
     implication(
         [Proposition::ConditionIs(
-            ConditionTerm::equal(divisor.clone(), Bitvector32Term::constant(0)),
+            ConditionTerm::equal(divisor.clone(), MachineTerm::constant(0)),
             false,
         )],
         Proposition::ConditionIs(
             ConditionTerm::unsigned_less_than(
-                Bitvector32Term::unsigned_remainder(value, divisor.clone()),
+                MachineTerm::unsigned_remainder(value, divisor.clone()),
                 divisor,
             ),
             true,
@@ -9292,7 +9258,7 @@ pub fn prove_uint32_remainder_less_than_divisor(
 
 /// A dividend strictly below an unsigned divisor is already its remainder.
 /// The strict unsigned premise also excludes division by zero.
-pub fn prove_uint32_remainder_of_lt(value: Bitvector32Term, divisor: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_remainder_of_lt(value: MachineTerm, divisor: MachineTerm) -> Theorem {
     implication(
         [Proposition::ConditionIs(
             ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
@@ -9300,7 +9266,7 @@ pub fn prove_uint32_remainder_of_lt(value: Bitvector32Term, divisor: Bitvector32
         )],
         Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::unsigned_remainder(value.clone(), divisor),
+                MachineTerm::unsigned_remainder(value.clone(), divisor),
                 value,
             ),
             true,
@@ -9310,24 +9276,18 @@ pub fn prove_uint32_remainder_of_lt(value: Bitvector32Term, divisor: Bitvector32
 
 /// Preserve native unsigned u32 order in exact mathematical observations.
 /// The unsigned interpretation includes values above the signed sign bit.
-pub fn prove_uint32_less_equal_to_integer(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_uint32_less_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_machine_integer_order_bridge(MachineIntegerType::UInt32, left, right, false)
 }
 
 /// Reflect mathematical order into native unsigned u32 order.
-pub fn prove_uint32_less_equal_of_to_integer(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_uint32_less_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_machine_integer_order_bridge(MachineIntegerType::UInt32, left, right, true)
 }
 
 /// Exact mathematical observation of a defined signed 32-bit addition.
 /// The overflow premise is essential: the machine term alone is modular.
-pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int32_add_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, false)
 }
 
@@ -9341,8 +9301,8 @@ pub fn prove_int32_add_to_integer(left: Bitvector32Term, right: Bitvector32Term)
 /// disjoint, and the high shift must preserve all bits.
 pub fn prove_unsigned_pack_u16_to_integer(
     ty: MachineIntegerType,
-    low: Bitvector32Term,
-    high: Bitvector32Term,
+    low: MachineTerm,
+    high: MachineTerm,
 ) -> Option<Theorem> {
     prove_unsigned_pack_u16_in_order_to_integer(ty, low, high, false)
 }
@@ -9350,16 +9310,16 @@ pub fn prove_unsigned_pack_u16_to_integer(
 /// The same disjoint-field packing law for `(high << 16) | low`.
 pub fn prove_unsigned_pack_u16_high_first_to_integer(
     ty: MachineIntegerType,
-    low: Bitvector32Term,
-    high: Bitvector32Term,
+    low: MachineTerm,
+    high: MachineTerm,
 ) -> Option<Theorem> {
     prove_unsigned_pack_u16_in_order_to_integer(ty, low, high, true)
 }
 
 fn prove_unsigned_pack_u16_in_order_to_integer(
     ty: MachineIntegerType,
-    low: Bitvector32Term,
-    high: Bitvector32Term,
+    low: MachineTerm,
+    high: MachineTerm,
     high_first: bool,
 ) -> Option<Theorem> {
     let (packed, low_bound, high_bound) = match ty {
@@ -9372,23 +9332,20 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
                     UInt32,
                     ShiftLeft,
                     high.clone().into(),
-                    Bitvector32Term::uint32_constant(16).into(),
+                    MachineTerm::uint32_constant(16).into(),
                 )
                 .into(),
             ),
-            ConditionTerm::unsigned_less_equal(low.clone(), Bitvector32Term::constant(65535)),
-            ConditionTerm::unsigned_less_equal(high.clone(), Bitvector32Term::constant(65535)),
+            ConditionTerm::unsigned_less_equal(low.clone(), MachineTerm::constant(65535)),
+            ConditionTerm::unsigned_less_equal(high.clone(), MachineTerm::constant(65535)),
         ),
         MachineIntegerType::UInt64 => (
-            Bitvector32Term::uint64_bitwise_or(
+            MachineTerm::uint64_bitwise_or(
                 low.clone(),
-                Bitvector32Term::uint64_shift_left(
-                    high.clone(),
-                    Bitvector32Term::int64_constant(16),
-                ),
+                MachineTerm::uint64_shift_left(high.clone(), MachineTerm::int64_constant(16)),
             ),
-            ConditionTerm::uint64_less_equal(low.clone(), Bitvector32Term::uint64_constant(65535)),
-            ConditionTerm::uint64_less_equal(high.clone(), Bitvector32Term::uint64_constant(65535)),
+            ConditionTerm::uint64_less_equal(low.clone(), MachineTerm::uint64_constant(65535)),
+            ConditionTerm::uint64_less_equal(high.clone(), MachineTerm::uint64_constant(65535)),
         ),
         _ => return None,
     };
@@ -9401,16 +9358,13 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
                     UInt32,
                     ShiftLeft,
                     high.clone().into(),
-                    Bitvector32Term::uint32_constant(16).into(),
+                    MachineTerm::uint32_constant(16).into(),
                 )
                 .into(),
                 low.clone().into(),
             ),
-            MachineIntegerType::UInt64 => Bitvector32Term::uint64_bitwise_or(
-                Bitvector32Term::uint64_shift_left(
-                    high.clone(),
-                    Bitvector32Term::int64_constant(16),
-                ),
+            MachineIntegerType::UInt64 => MachineTerm::uint64_bitwise_or(
+                MachineTerm::uint64_shift_left(high.clone(), MachineTerm::int64_constant(16)),
                 low.clone(),
             ),
             _ => unreachable!("packing accepts unsigned word types"),
@@ -9438,18 +9392,18 @@ fn prove_unsigned_pack_u16_in_order_to_integer(
 
 /// Recover the low word of `(high << 16) | low` for two bounded uint16 fields.
 /// The bounds are part of the issued theorem, never inferred from its operands.
-pub fn prove_uint32_unpack_uint16_low(low: Bitvector32Term, high: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_unpack_uint16_low(low: MachineTerm, high: MachineTerm) -> Theorem {
     prove_uint32_unpack_uint16_word(low, high, false)
 }
 
 /// Recover the high word using an unsigned (logical) right shift and mask.
-pub fn prove_uint32_unpack_uint16_high(low: Bitvector32Term, high: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_unpack_uint16_high(low: MachineTerm, high: MachineTerm) -> Theorem {
     prove_uint32_unpack_uint16_word(low, high, true)
 }
 
 fn prove_uint32_unpack_uint16_word(
-    low: Bitvector32Term,
-    high: Bitvector32Term,
+    low: MachineTerm,
+    high: MachineTerm,
     high_word: bool,
 ) -> Theorem {
     // Each bound confines the field to 16 bits. Shifting high left 16 then
@@ -9463,7 +9417,7 @@ fn prove_uint32_unpack_uint16_word(
             UInt32,
             ShiftLeft,
             high.clone().into(),
-            Bitvector32Term::uint32_constant(16).into()
+            MachineTerm::uint32_constant(16).into()
         )
         .into(),
         low.clone().into(),
@@ -9473,7 +9427,7 @@ fn prove_uint32_unpack_uint16_word(
             UInt32,
             ShiftRight,
             packed.into(),
-            Bitvector32Term::uint32_constant(16).into()
+            MachineTerm::uint32_constant(16).into()
         )
     } else {
         packed
@@ -9482,17 +9436,17 @@ fn prove_uint32_unpack_uint16_word(
         UInt32,
         BitwiseAnd,
         selected.into(),
-        Bitvector32Term::uint32_constant(65535).into()
+        MachineTerm::uint32_constant(65535).into()
     );
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
             Proposition::ConditionIs(
-                ConditionTerm::unsigned_less_equal(low, Bitvector32Term::constant(65535)),
+                ConditionTerm::unsigned_less_equal(low, MachineTerm::constant(65535)),
                 true,
             ),
             Proposition::ConditionIs(
-                ConditionTerm::unsigned_less_equal(high, Bitvector32Term::constant(65535)),
+                ConditionTerm::unsigned_less_equal(high, MachineTerm::constant(65535)),
                 true,
             ),
         ],
@@ -9503,30 +9457,29 @@ fn prove_uint32_unpack_uint16_word(
 /// Recover a bounded uint16 field from the LP64 C packing expression.
 /// Both bounds are necessary: no operand may overlap the other field.
 fn prove_uint64_unpack_uint16_word(
-    low: Bitvector32Term,
-    high: Bitvector32Term,
+    low: MachineTerm,
+    high: MachineTerm,
     high_word: bool,
 ) -> Theorem {
-    let packed = Bitvector32Term::uint64_bitwise_or(
+    let packed = MachineTerm::uint64_bitwise_or(
         low.clone(),
-        Bitvector32Term::uint64_shift_left(high.clone(), Bitvector32Term::int64_constant(16)),
+        MachineTerm::uint64_shift_left(high.clone(), MachineTerm::int64_constant(16)),
     );
     let selected = if high_word {
-        Bitvector32Term::uint64_logical_shift_right(packed, Bitvector32Term::int64_constant(16))
+        MachineTerm::uint64_logical_shift_right(packed, MachineTerm::int64_constant(16))
     } else {
         packed
     };
-    let extracted =
-        Bitvector32Term::uint64_bitwise_and(selected, Bitvector32Term::uint64_constant(65535));
+    let extracted = MachineTerm::uint64_bitwise_and(selected, MachineTerm::uint64_constant(65535));
     let exact = if high_word { high.clone() } else { low.clone() };
     implication(
         [
             Proposition::ConditionIs(
-                ConditionTerm::uint64_less_equal(low, Bitvector32Term::uint64_constant(65535)),
+                ConditionTerm::uint64_less_equal(low, MachineTerm::uint64_constant(65535)),
                 true,
             ),
             Proposition::ConditionIs(
-                ConditionTerm::uint64_less_equal(high, Bitvector32Term::uint64_constant(65535)),
+                ConditionTerm::uint64_less_equal(high, MachineTerm::uint64_constant(65535)),
                 true,
             ),
         ],
@@ -9536,8 +9489,8 @@ fn prove_uint64_unpack_uint16_word(
 
 pub fn prove_uint64_integer_bridge(
     name: &str,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
 ) -> Option<Theorem> {
     if matches!(
         name,
@@ -9625,7 +9578,7 @@ pub fn prove_uint64_integer_bridge(
                 true,
             );
             (
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: left.into(),
@@ -9642,7 +9595,7 @@ pub fn prove_uint64_integer_bridge(
                 true,
             );
             (
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left: left.into(),
@@ -9658,7 +9611,7 @@ pub fn prove_uint64_integer_bridge(
                 true,
             );
             (
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Subtract,
                     left: left.into(),
@@ -9671,7 +9624,7 @@ pub fn prove_uint64_integer_bridge(
         "click::integer::uint64_divide_to_integer"
         | "click::integer::uint64_remainder_to_integer" => {
             let native_nonzero = Proposition::ConditionIs(
-                ConditionTerm::uint64_equal(right.clone(), Bitvector32Term::uint64_constant(0)),
+                ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0)),
                 false,
             );
             let integer_nonzero = Proposition::ConditionIs(
@@ -9680,7 +9633,7 @@ pub fn prove_uint64_integer_bridge(
             );
             let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
                 (
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Divide,
                         left: left.into(),
@@ -9690,7 +9643,7 @@ pub fn prove_uint64_integer_bridge(
                 )
             } else {
                 (
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Remainder,
                         left: left.into(),
@@ -9719,25 +9672,22 @@ pub fn prove_uint64_integer_bridge(
 /// Signed int32 order is preserved by its exact mathematical observation.
 /// Every int32 bit pattern has an Integer interpretation, so this law needs
 /// only the corresponding C order premise and no definedness side condition.
-pub fn prove_int32_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int32_less_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_machine_integer_order_bridge(MachineIntegerType::Int32, left, right, false)
 }
 
 /// Reflect mathematical order into native signed int32 order.
-pub fn prove_int32_less_equal_of_to_integer(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int32_less_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_machine_integer_order_bridge(MachineIntegerType::Int32, left, right, true)
 }
 
 /// Preserve native signed int64 order in its mathematical observation.
-pub fn prove_int64_less_equal_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int64_less_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, false)
 }
 
 /// Preserve a strict native signed int64 comparison in Integer arithmetic.
-pub fn prove_int64_less_than_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int64_less_than_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     let integer = ConditionTerm::IntegerLessThan(
         IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
             .unwrap()
@@ -9756,10 +9706,7 @@ pub fn prove_int64_less_than_to_integer(left: Bitvector32Term, right: Bitvector3
 }
 
 /// Preserve the source's signed greater-or-equal comparison without changing its operands.
-pub fn prove_int64_greater_equal_to_integer(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int64_greater_equal_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     let integer = ConditionTerm::IntegerGreaterEqual(
         IntegerTerm::from_machine(MachineIntegerType::Int64, left.clone())
             .unwrap()
@@ -9778,17 +9725,14 @@ pub fn prove_int64_greater_equal_to_integer(
 }
 
 /// Reflect mathematical order into native signed int64 order.
-pub fn prove_int64_less_equal_of_to_integer(
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Theorem {
+pub fn prove_int64_less_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_machine_integer_order_bridge(MachineIntegerType::Int64, left, right, true)
 }
 
 fn prove_machine_integer_order_bridge(
     ty: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
     reverse: bool,
 ) -> Theorem {
     let observe = |value| {
@@ -9820,21 +9764,21 @@ fn prove_machine_integer_order_bridge(
 }
 
 /// Signed int64 observation is injective, including the full 64-bit extrema.
-pub fn prove_int64_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int64_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_integer_equality_bridge(MachineIntegerType::Int64, left, right)
 }
 
 /// Unsigned uint32 observation is injective: every 32-bit pattern has one
 /// exact Integer value in `0..=4294967295`, including the patterns above the
 /// signed sign bit, so equal observations have the same pattern.
-pub fn prove_uint32_equal_of_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_equal_of_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_integer_equality_bridge(MachineIntegerType::UInt32, left, right)
 }
 
 fn prove_integer_equality_bridge(
     ty: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
 ) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(ty, value)
@@ -9856,14 +9800,14 @@ fn prove_integer_equality_bridge(
 }
 
 /// Exact mathematical observation of a defined signed 32-bit subtraction.
-pub fn prove_int32_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int32_subtract_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, true)
 }
 
 /// Exact mathematical remainder of a defined signed 32-bit operation.
 /// Both zero division and MIN / -1 are excluded by the native definedness
 /// premise, even though mathematical remainder itself has no overflow.
-pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::Int32, value)
             .expect("typed operands have exact Integer interpretations")
@@ -9886,14 +9830,14 @@ pub fn prove_int32_remainder_to_integer(left: Bitvector32Term, right: Bitvector3
 }
 
 /// Exact mathematical observation of a defined signed 64-bit subtraction.
-pub fn prove_int64_subtract_to_integer(left: Bitvector32Term, right: Bitvector32Term) -> Theorem {
+pub fn prove_int64_subtract_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
     prove_signed_operation_to_integer(MachineIntegerType::Int64, left, right, true)
 }
 
 fn prove_signed_operation_to_integer(
     ty: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
     subtract: bool,
 ) -> Theorem {
     let observe = |value| {
@@ -9906,7 +9850,7 @@ fn prove_signed_operation_to_integer(
         MachineBinaryOp::Add
     };
     let domain = Proposition::signed_arithmetic_domain(ty, op, &left, &right);
-    let machine = Bitvector32Term::Binary {
+    let machine = MachineTerm::Binary {
         format: ty,
         op,
         left: Box::new(left.clone()),
@@ -9927,19 +9871,19 @@ fn prove_signed_operation_to_integer(
 }
 
 /// Decrementing a positive signed int32 value produces a nonnegative value.
-pub fn prove_int32_positive_predecessor_is_nonnegative(value: Bitvector32Term) -> Theorem {
+pub fn prove_int32_positive_predecessor_is_nonnegative(value: MachineTerm) -> Theorem {
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value.clone()),
+        ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
         true,
     );
     let conclusion = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             binary_node!(
                 Int32,
                 Subtract,
                 Box::new(value),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             ),
         ),
         true,
@@ -9951,11 +9895,11 @@ pub fn prove_int32_positive_predecessor_is_nonnegative(value: Bitvector32Term) -
 /// upper bound: nonnegativity rules out the `INT_MIN` wraparound, so the
 /// predecessor stays strictly below the value and hence at most the bound.
 pub fn prove_int32_nonnegative_predecessor_upper_bound(
-    value: Bitvector32Term,
-    bound: Bitvector32Term,
+    value: MachineTerm,
+    bound: MachineTerm,
 ) -> Theorem {
     let nonnegative_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), value.clone()),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), value.clone()),
         true,
     );
     let bound_premise = Proposition::ConditionIs(
@@ -9968,7 +9912,7 @@ pub fn prove_int32_nonnegative_predecessor_upper_bound(
                 Int32,
                 Subtract,
                 Box::new(value),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             ),
             bound,
         ),
@@ -9978,9 +9922,9 @@ pub fn prove_int32_nonnegative_predecessor_upper_bound(
 }
 
 /// Decrementing a positive signed int32 value strictly decreases it.
-pub fn prove_int32_positive_predecessor_strictly_decreases(value: Bitvector32Term) -> Theorem {
+pub fn prove_int32_positive_predecessor_strictly_decreases(value: MachineTerm) -> Theorem {
     let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value.clone()),
+        ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
         true,
     );
     let conclusion = Proposition::ConditionIs(
@@ -9989,7 +9933,7 @@ pub fn prove_int32_positive_predecessor_strictly_decreases(value: Bitvector32Ter
                 Int32,
                 Subtract,
                 Box::new(value.clone()),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::constant(1)),
             ),
             value,
         ),
@@ -10020,15 +9964,15 @@ fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theo
 /// Decrementing a nonzero uint32 value strictly decreases it. A nonzero
 /// value has a predecessor that does not wrap; at zero the predecessor is
 /// `UINT_MAX`, which the premise excludes.
-pub fn prove_uint32_positive_predecessor_strictly_decreases(value: Bitvector32Term) -> Theorem {
+pub fn prove_uint32_positive_predecessor_strictly_decreases(value: MachineTerm) -> Theorem {
     uint32_implication(
-        ConditionTerm::unsigned_less_than(Bitvector32Term::constant(0), value.clone()),
+        ConditionTerm::unsigned_less_than(MachineTerm::constant(0), value.clone()),
         ConditionTerm::unsigned_less_than(
             binary_node!(
                 UInt32,
                 Subtract,
                 Box::new(value.clone()),
-                Box::new(Bitvector32Term::uint32_constant(1)),
+                Box::new(MachineTerm::uint32_constant(1)),
             ),
             value,
         ),
@@ -10038,17 +9982,14 @@ pub fn prove_uint32_positive_predecessor_strictly_decreases(value: Bitvector32Te
 /// A uint32 increment preserves a strict upper bound as a non-strict bound.
 /// The strict premise rules out wraparound: if `value` were `UINT_MAX`, no
 /// uint32 `upper` could be greater than it.
-pub fn prove_uint32_increment_upper_bound(
-    value: Bitvector32Term,
-    upper: Bitvector32Term,
-) -> Theorem {
+pub fn prove_uint32_increment_upper_bound(value: MachineTerm, upper: MachineTerm) -> Theorem {
     uint32_implication(
         ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
         ConditionTerm::unsigned_less_equal(
-            Bitvector32Term::add_at(
+            MachineTerm::add_at(
                 MachineIntegerType::UInt32,
                 value,
-                Bitvector32Term::uint32_constant(1),
+                MachineTerm::uint32_constant(1),
             ),
             upper,
         ),
@@ -10058,13 +9999,13 @@ pub fn prove_uint32_increment_upper_bound(
 /// The uint32 difference `upper - value` is nonzero when `value` is strictly
 /// below `upper`. The subtraction does not wrap, because `value <= upper`.
 pub fn prove_uint32_lt_implies_positive_difference(
-    value: Bitvector32Term,
-    upper: Bitvector32Term,
+    value: MachineTerm,
+    upper: MachineTerm,
 ) -> Theorem {
     uint32_implication(
         ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
         ConditionTerm::unsigned_less_than(
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             binary_node!(UInt32, Subtract, Box::new(upper), Box::new(value)),
         ),
     )
@@ -10077,13 +10018,13 @@ pub fn prove_uint32_lt_implies_positive_difference(
 /// the first is `bound - 1 - value` in `[0, bound - 1]` and the second is
 /// one more.
 pub fn prove_uint32_difference_decreases_after_increment(
-    value: Bitvector32Term,
-    bound: Bitvector32Term,
+    value: MachineTerm,
+    bound: MachineTerm,
 ) -> Theorem {
     let negated = binary_node!(
         UInt32,
         Subtract,
-        Box::new(Bitvector32Term::uint32_constant(0)),
+        Box::new(MachineTerm::uint32_constant(0)),
         Box::new(value.clone()),
     );
     uint32_implication(
@@ -10097,7 +10038,7 @@ pub fn prove_uint32_difference_decreases_after_increment(
                     UInt32,
                     Subtract,
                     Box::new(bound.clone()),
-                    Box::new(Bitvector32Term::uint32_constant(1)),
+                    Box::new(MachineTerm::uint32_constant(1)),
                 )),
             ),
             binary_node!(UInt32, Add, Box::new(negated), Box::new(bound)),
@@ -10121,9 +10062,9 @@ fn uint32_transitivity(
 
 /// Unsigned non-strict order followed by strict order is strict order.
 pub fn prove_uint32_le_lt_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
+    first: MachineTerm,
+    middle: MachineTerm,
+    last: MachineTerm,
 ) -> Theorem {
     uint32_transitivity(
         ConditionTerm::unsigned_less_equal(first.clone(), middle.clone()),
@@ -10133,10 +10074,7 @@ pub fn prove_uint32_le_lt_transitive(
 }
 
 /// `lower < greater` and `greater > lower` are one uint32 order.
-pub fn prove_uint32_lt_implies_reversed_gt(
-    lower: Bitvector32Term,
-    greater: Bitvector32Term,
-) -> Theorem {
+pub fn prove_uint32_lt_implies_reversed_gt(lower: MachineTerm, greater: MachineTerm) -> Theorem {
     uint32_implication(
         ConditionTerm::unsigned_less_than(lower.clone(), greater.clone()),
         ConditionTerm::unsigned_greater_than(greater, lower),
@@ -10144,10 +10082,7 @@ pub fn prove_uint32_lt_implies_reversed_gt(
 }
 
 /// `greater >= lower` and `lower <= greater` are one uint32 order.
-pub fn prove_uint32_ge_implies_reversed_le(
-    greater: Bitvector32Term,
-    lower: Bitvector32Term,
-) -> Theorem {
+pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineTerm) -> Theorem {
     uint32_implication(
         ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
         ConditionTerm::unsigned_less_equal(lower, greater),
@@ -10174,9 +10109,9 @@ pub fn is_wide_order_transitivity_name(name: &str) -> bool {
 /// is strict when either premise is.
 pub fn prove_wide_order_transitive(
     name: &str,
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
+    first: MachineTerm,
+    middle: MachineTerm,
+    last: MachineTerm,
 ) -> Option<Theorem> {
     let name = name.strip_prefix("click::integer::")?;
     let ("uint64", shape) = name.split_once('_')? else {
@@ -10187,7 +10122,7 @@ pub fn prove_wide_order_transitive(
         "less_equal_transitive" => (false, false),
         _ => return None,
     };
-    let order = |lower: Bitvector32Term, upper: Bitvector32Term, strict: bool| {
+    let order = |lower: MachineTerm, upper: MachineTerm, strict: bool| {
         Proposition::ConditionIs(
             if strict {
                 ConditionTerm::uint64_less_than(lower, upper)
@@ -10208,9 +10143,9 @@ pub fn prove_wide_order_transitive(
 
 /// Signed non-strict order followed by strict order is strict order.
 pub fn prove_int32_le_lt_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
+    first: MachineTerm,
+    middle: MachineTerm,
+    last: MachineTerm,
 ) -> Theorem {
     let first_premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(first.clone(), middle.clone()),
@@ -10224,9 +10159,9 @@ pub fn prove_int32_le_lt_transitive(
 
 /// Signed non-strict order is transitive.
 pub fn prove_int32_le_transitive(
-    first: Bitvector32Term,
-    middle: Bitvector32Term,
-    last: Bitvector32Term,
+    first: MachineTerm,
+    middle: MachineTerm,
+    last: MachineTerm,
 ) -> Theorem {
     let first_premise = Proposition::ConditionIs(
         ConditionTerm::signed_less_equal(first.clone(), middle.clone()),

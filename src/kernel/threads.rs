@@ -21,9 +21,9 @@ use crate::persistent::PersistentMap;
 use super::functions::suspend_verified_worker;
 use super::loans::{LoanLedger, LoanViewBinding, LoanViewBindings, StableViewTransferPlan};
 use super::{
-    Bitvector32Term, CExecutionEnvironment, CMemory, CMemoryRange, CResourceFact, CRuntimeError,
-    CState, CValue, CVerifiedFunctionRule, CVerifiedFunctionTerminationRule, ConditionTerm,
-    ExecutionBudget, ExecutionPureFact, ExecutionResult, Pointer, PointerBlock, Proposition,
+    CExecutionEnvironment, CMemory, CMemoryRange, CResourceFact, CRuntimeError, CState, CValue,
+    CVerifiedFunctionRule, CVerifiedFunctionTerminationRule, ConditionTerm, ExecutionBudget,
+    ExecutionPureFact, ExecutionResult, MachineTerm, Pointer, PointerBlock, Proposition,
     PureFactContext, ResourceContext,
 };
 
@@ -78,7 +78,7 @@ pub(super) struct DeferredMemberExchange {
     pub(super) block: PointerBlock,
     pub(super) description: super::ResourceDescription,
     pub(super) produce: bool,
-    pub(super) quantity: Bitvector32Term,
+    pub(super) quantity: MachineTerm,
     pub(super) exclusive: bool,
 }
 
@@ -168,7 +168,7 @@ impl PendingCreateAuthority {
 
 struct PendingThreadCreateStorage {
     identity: u64,
-    status: Bitvector32Term,
+    status: MachineTerm,
     handle_slot: Pointer,
     handle_value: CValue,
     success_memory: CMemory,
@@ -197,7 +197,7 @@ impl PendingThreadCreate {
     }
 
     pub(super) fn new(
-        status: Bitvector32Term,
+        status: MachineTerm,
         handle_slot: Pointer,
         handle_value: CValue,
         success: &CState,
@@ -259,7 +259,7 @@ impl PendingThreadCreate {
 
     pub(super) fn map_terms(
         &self,
-        status: impl Fn(&Bitvector32Term) -> Bitvector32Term,
+        status: impl Fn(&MachineTerm) -> MachineTerm,
         resources: impl Fn(&ResourceContext) -> ResourceContext,
         pointer: impl Fn(&Pointer) -> Pointer,
         value: impl Fn(&CValue) -> CValue,
@@ -320,7 +320,7 @@ impl PendingThreadCreate {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(self.storage.status.clone()),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let success = assumptions.decide(&zero)?;
         let mut selected = visible.clone();
@@ -637,7 +637,7 @@ impl ThreadLedger {
 
 impl ThreadHandle {
     pub(super) fn c_value(self) -> CValue {
-        CValue::UInt64(super::Bitvector32Term::PureFunctionApplication {
+        CValue::UInt64(super::MachineTerm::PureFunctionApplication {
             // This name cannot be spelled by C or Click source. The term is
             // copied as an opaque pthread_t value, never derived from its
             // machine integer representation.
@@ -648,7 +648,7 @@ impl ThreadHandle {
 
     pub(super) fn from_c_value(value: &CValue) -> Option<Self> {
         match value {
-            CValue::UInt64(super::Bitvector32Term::PureFunctionApplication { name, arguments })
+            CValue::UInt64(super::MachineTerm::PureFunctionApplication { name, arguments })
                 if arguments.is_empty() =>
             {
                 name.strip_prefix("\0click.pthread.handle:")?
@@ -672,7 +672,7 @@ mod handle_tests {
         let substituted = super::super::reasoning::substitute_bitvector_variable_in_c_value(
             &value,
             super::super::Variable(42),
-            &super::super::Bitvector32Term::Variable(super::super::Variable(43)),
+            &super::super::MachineTerm::Variable(super::super::Variable(43)),
         );
         assert_eq!(substituted, value);
         assert_eq!(ThreadHandle::from_c_value(&substituted), Some(handle));

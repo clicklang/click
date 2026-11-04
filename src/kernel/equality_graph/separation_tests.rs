@@ -16,8 +16,8 @@ fn separate(a: &Pointer, b: &Pointer) -> Proposition {
 
 fn numeric(a: &Pointer, b: &Pointer) -> ConditionTerm {
     ConditionTerm::uint64_equal(
-        Bitvector32Term::pointer_address(a.clone()),
-        Bitvector32Term::pointer_address(b.clone()),
+        MachineTerm::pointer_address(a.clone()),
+        MachineTerm::pointer_address(b.clone()),
     )
 }
 fn different(a: &Pointer, b: &Pointer) -> Proposition {
@@ -123,7 +123,7 @@ fn empty_unknown_ranges_views_and_pointer_value_inequality_supply_no_address_sep
         left: Box::new(CResource::Memory(CMemoryRange::new(
             a.clone(),
             0u32.into(),
-            Bitvector32Term::Variable(Variable(990_050)),
+            MachineTerm::Variable(Variable(990_050)),
         ))),
         right: Box::new(CResource::Memory(range(&b, 0, 1))),
     };

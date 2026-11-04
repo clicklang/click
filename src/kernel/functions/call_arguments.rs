@@ -59,8 +59,8 @@ pub(super) fn with_contract_interface_argument_views(
                 .unchecked_with_fact(CResourceFact::view_memory(
                     CMemoryRange::new_with_element_width(
                         pointer.pointer().clone(),
-                        Bitvector32Term::constant(0),
-                        Bitvector32Term::constant(i32::MAX as u32),
+                        MachineTerm::constant(0),
+                        MachineTerm::constant(i32::MAX as u32),
                         element_width,
                     ),
                 ));
@@ -399,18 +399,18 @@ pub(crate) fn symbolic_call_result(c_type: CType, variable: Variable) -> CValue 
         CType::VoidPointer | CType::VoidPointerPointer => {
             CValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }
-        CType::Int8 => CValue::Int8(Bitvector32Term::Variable(variable)),
-        CType::Int16 => CValue::Int16(Bitvector32Term::Variable(variable)),
-        CType::Int32 => CValue::Int32(Bitvector32Term::Variable(variable)),
-        CType::UInt8 => CValue::UInt8(Bitvector32Term::Variable(variable)),
-        CType::UInt16 => CValue::UInt16(Bitvector32Term::Variable(variable)),
-        CType::UInt32 => CValue::UInt32(Bitvector32Term::Variable(variable)),
-        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable)),
-        CType::Int128 => CValue::Int128(Bitvector32Term::Variable(variable)),
-        CType::UInt128 => CValue::UInt128(Bitvector32Term::Variable(variable)),
-        CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
-        CType::Float64 => CValue::Float64(Bitvector32Term::Variable(variable)),
+        CType::Int8 => CValue::Int8(MachineTerm::Variable(variable)),
+        CType::Int16 => CValue::Int16(MachineTerm::Variable(variable)),
+        CType::Int32 => CValue::Int32(MachineTerm::Variable(variable)),
+        CType::UInt8 => CValue::UInt8(MachineTerm::Variable(variable)),
+        CType::UInt16 => CValue::UInt16(MachineTerm::Variable(variable)),
+        CType::UInt32 => CValue::UInt32(MachineTerm::Variable(variable)),
+        CType::Int64 => CValue::Int64(MachineTerm::Variable(variable)),
+        CType::UInt64 => CValue::UInt64(MachineTerm::Variable(variable)),
+        CType::Int128 => CValue::Int128(MachineTerm::Variable(variable)),
+        CType::UInt128 => CValue::UInt128(MachineTerm::Variable(variable)),
+        CType::Float32 => CValue::Float32(MachineTerm::Variable(variable)),
+        CType::Float64 => CValue::Float64(MachineTerm::Variable(variable)),
         CType::Int8Pointer | CType::Int8PointerPointer => {
             CValue::typed_pointer(Pointer::symbolic(variable), c_type)
         }
@@ -638,7 +638,7 @@ pub(super) fn append_string_literal_loadable_facts(
         let proposition = Proposition::CMemoryLoadable {
             memory: state.memory.clone(),
             base,
-            bytes: Bitvector32Term::constant(literal.bytes().len() as u32),
+            bytes: MachineTerm::constant(literal.bytes().len() as u32),
             wide: false,
         };
         if !facts.iter().any(|fact| fact.proposition() == &proposition) {

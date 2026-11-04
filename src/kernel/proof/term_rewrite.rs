@@ -10,7 +10,7 @@ use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
     AlgebraicValue, PureFunctionArgument,
 };
-use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_term};
+use crate::kernel::{MachineCastSpelling, MachineTerm, cast_term};
 #[cfg(test)]
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
@@ -76,7 +76,7 @@ enum BindingCarrier {
 /// cannot be substituted accidentally.
 #[derive(Clone)]
 pub(crate) enum TypedCReplacement {
-    Bitvector(Bitvector32Term),
+    Bitvector(MachineTerm),
     /// The whole value: a use of the bound variable's address adopts its
     /// subobject extent.
     Pointer(CPointerValue),
@@ -159,9 +159,9 @@ impl CarrierVariables {
 fn c_value_variable(value: &CValue) -> Option<Variable> {
     match value {
         CValue::PointerInteger(record) => c_value_variable(&record.numeric),
-        CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
+        CValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
         // A `Bool` binder (Stage 5), carried as its cast.
-        CValue::Bool(Bitvector32Term::BoolCast { value, .. })
+        CValue::Bool(MachineTerm::BoolCast { value, .. })
             if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
         {
             match value.as_ref() {
@@ -169,16 +169,16 @@ fn c_value_variable(value: &CValue) -> Option<Variable> {
                 _ => None,
             }
         }
-        CValue::Bool(Bitvector32Term::Variable(variable))
-        | CValue::Int16(Bitvector32Term::Variable(variable))
-        | CValue::UInt8(Bitvector32Term::Variable(variable))
-        | CValue::UInt16(Bitvector32Term::Variable(variable))
-        | CValue::Int32(Bitvector32Term::Variable(variable))
-        | CValue::UInt32(Bitvector32Term::Variable(variable))
-        | CValue::Int64(Bitvector32Term::Variable(variable))
-        | CValue::UInt64(Bitvector32Term::Variable(variable))
-        | CValue::Float32(Bitvector32Term::Variable(variable))
-        | CValue::Float64(Bitvector32Term::Variable(variable)) => Some(*variable),
+        CValue::Bool(MachineTerm::Variable(variable))
+        | CValue::Int16(MachineTerm::Variable(variable))
+        | CValue::UInt8(MachineTerm::Variable(variable))
+        | CValue::UInt16(MachineTerm::Variable(variable))
+        | CValue::Int32(MachineTerm::Variable(variable))
+        | CValue::UInt32(MachineTerm::Variable(variable))
+        | CValue::Int64(MachineTerm::Variable(variable))
+        | CValue::UInt64(MachineTerm::Variable(variable))
+        | CValue::Float32(MachineTerm::Variable(variable))
+        | CValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
         CValue::Pointer(pointer) => match &pointer.block {
             PointerBlock::Symbolic(variable) | PointerBlock::FunctionSymbolic(variable) => {
                 Some(*variable)
@@ -268,7 +268,7 @@ fn typed_binding_variable(
 
 /// The integer a `bool` value converts, `w` in C's conversion `w != 0`
 /// (Stage 5: the cast of the `Bool` `not (w == 0)`), or `None`.
-fn bool_operand(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+fn bool_operand(term: &MachineTerm) -> Option<&MachineTerm> {
     let condition = term.bool_cast_operand()?.bool_negation_operand()?;
     let ConditionTerm::Compare {
         format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -292,7 +292,7 @@ fn bool_binder_variable(value: &CValue) -> Option<Variable> {
         return Some(*variable);
     }
     match bool_operand(term)? {
-        Bitvector32Term::Variable(variable) => Some(*variable),
+        MachineTerm::Variable(variable) => Some(*variable),
         _ => None,
     }
 }
@@ -326,9 +326,9 @@ fn typed_field_replacement(binding: &AlgebraicValue, field: &CValue) -> Option<T
 fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
     match value {
         CValue::PointerInteger(record) => c_value_declaration_variable(&record.numeric),
-        CValue::Int8(Bitvector32Term::Variable(variable)) => Some(*variable),
+        CValue::Int8(MachineTerm::Variable(variable)) => Some(*variable),
         // A `Bool` binder (Stage 5), carried as its cast.
-        CValue::Bool(Bitvector32Term::BoolCast { value, .. })
+        CValue::Bool(MachineTerm::BoolCast { value, .. })
             if matches!(value.as_ref(), crate::kernel::ConditionTerm::Variable(_)) =>
         {
             match value.as_ref() {
@@ -336,16 +336,16 @@ fn c_value_declaration_variable(value: &CValue) -> Option<Variable> {
                 _ => None,
             }
         }
-        CValue::Bool(Bitvector32Term::Variable(variable))
-        | CValue::Int16(Bitvector32Term::Variable(variable))
-        | CValue::UInt8(Bitvector32Term::Variable(variable))
-        | CValue::UInt16(Bitvector32Term::Variable(variable))
-        | CValue::Int32(Bitvector32Term::Variable(variable))
-        | CValue::UInt32(Bitvector32Term::Variable(variable))
-        | CValue::Int64(Bitvector32Term::Variable(variable))
-        | CValue::UInt64(Bitvector32Term::Variable(variable))
-        | CValue::Float32(Bitvector32Term::Variable(variable))
-        | CValue::Float64(Bitvector32Term::Variable(variable)) => Some(*variable),
+        CValue::Bool(MachineTerm::Variable(variable))
+        | CValue::Int16(MachineTerm::Variable(variable))
+        | CValue::UInt8(MachineTerm::Variable(variable))
+        | CValue::UInt16(MachineTerm::Variable(variable))
+        | CValue::Int32(MachineTerm::Variable(variable))
+        | CValue::UInt32(MachineTerm::Variable(variable))
+        | CValue::Int64(MachineTerm::Variable(variable))
+        | CValue::UInt64(MachineTerm::Variable(variable))
+        | CValue::Float32(MachineTerm::Variable(variable))
+        | CValue::Float64(MachineTerm::Variable(variable)) => Some(*variable),
         CValue::Pointer(pointer)
             if matches!(
                 &pointer.pointer().block,
@@ -370,8 +370,8 @@ fn replace_binding_variable(
 ) {
     match (carrier, value) {
         (BindingCarrier::C, AlgebraicValue::C(value)) => match value {
-            CValue::Int8(term) if matches!(term, Bitvector32Term::Variable(_)) => {
-                *term = Bitvector32Term::Variable(variable);
+            CValue::Int8(term) if matches!(term, MachineTerm::Variable(_)) => {
+                *term = MachineTerm::Variable(variable);
             }
             CValue::Bool(term)
             | CValue::Int16(term)
@@ -385,9 +385,9 @@ fn replace_binding_variable(
             | CValue::UInt128(term)
             | CValue::Float32(term)
             | CValue::Float64(term)
-                if matches!(term, Bitvector32Term::Variable(_)) =>
+                if matches!(term, MachineTerm::Variable(_)) =>
             {
-                *term = Bitvector32Term::Variable(variable);
+                *term = MachineTerm::Variable(variable);
             }
             CValue::Pointer(pointer)
                 if matches!(
@@ -830,13 +830,13 @@ fn collect_condition_carriers(condition: &ConditionTerm, variables: &mut Carrier
     }
 }
 
-fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVariables) {
+fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariables) {
     if !variables.visit() {
         return;
     }
     match term {
-        Bitvector32Term::Constant { .. } => {}
-        Bitvector32Term::Variable(variable) => {
+        MachineTerm::Constant { .. } => {}
+        MachineTerm::Variable(variable) => {
             variables.c.insert(*variable);
             collect_registered_load_carriers(*variable, variables);
         }
@@ -848,8 +848,8 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
             collect_bitvector_carriers(right, variables);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_carriers(value, variables),
-        Bitvector32Term::BoolCast { value, .. } => collect_condition_carriers(value, variables),
-        Bitvector32Term::If {
+        MachineTerm::BoolCast { value, .. } => collect_condition_carriers(value, variables),
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -864,7 +864,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
             }
             collect_bitvector_carriers(else_term, variables);
         }
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -891,7 +891,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
             variables.c.insert(*accumulator);
             variables.c.insert(*item);
         }
-        Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+        MachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_carriers(argument, variables);
                 if variables.exhausted() {
@@ -899,7 +899,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
                 }
             }
         }
-        Bitvector32Term::ClickFunctionApplication { arguments, .. } => {
+        MachineTerm::ClickFunctionApplication { arguments, .. } => {
             let mut seen = BTreeSet::new();
             for argument in arguments {
                 collect_argument_carriers(argument, variables, &mut seen);
@@ -908,7 +908,7 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
                 }
             }
         }
-        Bitvector32Term::AlgebraicMatch { scrutinee, arms } => {
+        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
             let mut seen = BTreeSet::new();
             collect_algebraic_carriers_seen(scrutinee, variables, &mut seen);
             if variables.exhausted() {
@@ -929,17 +929,17 @@ fn collect_bitvector_carriers(term: &Bitvector32Term, variables: &mut CarrierVar
         }
         // Memory snapshots are opaque proof-state values.  Only the selected
         // pointer expression participates in freshness collection.
-        Bitvector32Term::MemoryLoad(_, pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
-        Bitvector32Term::PointerAddress(pointer, _) => {
+        MachineTerm::PointerAddress(pointer, _) => {
             collect_pointer_carriers(pointer, variables);
         }
-        Bitvector32Term::IntegerToMachine { value, .. } => {
+        MachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_shared_carriers(value, variables, &mut BTreeSet::new());
         }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
+        MachineTerm::Float32Binary { left, right, .. }
+        | MachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_carriers(left, variables);
             if variables.exhausted() {
                 return;
@@ -1045,7 +1045,7 @@ pub(in crate::kernel::proof) fn folded_machine_condition(
 ///
 /// *Exactness.* Only the exact pointer is looked up. No alias is decided, no
 /// pointer is compared, and no fact set is consulted.
-fn materialized_registered_load_value(variable: Variable) -> Option<Bitvector32Term> {
+fn materialized_registered_load_value(variable: Variable) -> Option<MachineTerm> {
     let (memory, pointer) = crate::kernel::eval::registered_load_for_variable(&variable)?;
     let kind = crate::kernel::eval::registered_load_kind_for_variable(&variable)?;
     if !kind.is_word32() || !pointer_addresses_four_byte_elements(&pointer) {
@@ -1321,10 +1321,10 @@ fn exhausted_c_value(value: &CValue) -> CValue {
         CValue::Int16(_) => crate::kernel::int16(0),
         CValue::UInt8(_) => crate::kernel::uint8(0),
         CValue::UInt16(_) => crate::kernel::uint16(0),
-        CValue::Int32(_) => CValue::Int32(Bitvector32Term::constant(0)),
-        CValue::UInt32(_) => CValue::UInt32(Bitvector32Term::uint32_constant(0)),
-        CValue::Int64(_) => CValue::Int64(Bitvector32Term::int64_constant(0)),
-        CValue::UInt64(_) => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
+        CValue::Int32(_) => CValue::Int32(MachineTerm::constant(0)),
+        CValue::UInt32(_) => CValue::UInt32(MachineTerm::uint32_constant(0)),
+        CValue::Int64(_) => CValue::Int64(MachineTerm::int64_constant(0)),
+        CValue::UInt64(_) => CValue::UInt64(MachineTerm::uint64_constant(0)),
         CValue::Int128(_) => MachineIntegerType::Int128
             .constant_value(
                 crate::kernel::MachineIntegerConstant::from_signed(
@@ -1343,8 +1343,8 @@ fn exhausted_c_value(value: &CValue) -> CValue {
                 .unwrap(),
             )
             .unwrap(),
-        CValue::Float32(_) => CValue::Float32(Bitvector32Term::constant(0)),
-        CValue::Float64(_) => CValue::Float64(Bitvector32Term::uint64_constant(0)),
+        CValue::Float32(_) => CValue::Float32(MachineTerm::constant(0)),
+        CValue::Float64(_) => CValue::Float64(MachineTerm::uint64_constant(0)),
         CValue::Pointer(pointer) => CValue::Pointer(
             CPointerValue::new(exhausted_pointer(), pointer.c_type())
                 .with_pointee_volatile(pointer.pointee_volatile())
@@ -1384,7 +1384,7 @@ fn exhausted_argument(argument: &PureFunctionArgument) -> PureFunctionArgument {
 fn exhausted_term(term: &Term) -> Term {
     match term {
         Term::Condition(_) => Term::Condition(ConditionTerm::Constant(false)),
-        Term::Bitvector32(_) => Term::Bitvector32(Bitvector32Term::constant(0)),
+        Term::Bitvector32(_) => Term::Bitvector32(MachineTerm::constant(0)),
         Term::Integer(value) => Term::Integer(exhausted_integer(value)),
         Term::PointerOffset(_) => Term::PointerOffset(exhausted_offset()),
         Term::CValue(value) => Term::CValue(exhausted_c_value(value)),
@@ -1433,7 +1433,7 @@ pub(crate) struct CSubstitutionScope {
 // normalization never prepares this pointer-only index.
 fn bounded_uint64_indices(
     conditions: &HashMap<ConditionTerm, bool>,
-) -> std::collections::HashSet<Bitvector32Term> {
+) -> std::collections::HashSet<MachineTerm> {
     conditions
         .iter()
         .filter_map(|(condition, value)| {
@@ -1525,7 +1525,7 @@ pub(crate) struct TermRewrite<'a> {
     // identities. Ordinary equality rewrites retain the written nodes.
     comparison_arithmetic: bool,
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
-    bitvector: Option<(&'a Bitvector32Term, &'a Bitvector32Term)>,
+    bitvector: Option<(&'a MachineTerm, &'a MachineTerm)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
     pointer_addresses_only: bool,
@@ -1537,7 +1537,7 @@ pub(crate) struct TermRewrite<'a> {
     condition_exact: Option<(&'a ConditionTerm, &'a ConditionTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
-    bounded_uint64_indices: Option<std::collections::HashSet<Bitvector32Term>>,
+    bounded_uint64_indices: Option<std::collections::HashSet<MachineTerm>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
@@ -1765,16 +1765,12 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
-    pub(crate) fn for_bits(from: &'a Bitvector32Term, to: &'a Bitvector32Term) -> Self {
+    pub(crate) fn for_bits(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
         Self::for_bits_with_budget(from, to, false)
     }
 
-    fn for_bits_with_budget(
-        from: &'a Bitvector32Term,
-        to: &'a Bitvector32Term,
-        budgeted: bool,
-    ) -> Self {
+    fn for_bits_with_budget(from: &'a MachineTerm, to: &'a MachineTerm, budgeted: bool) -> Self {
         let mut replacement_carriers = CarrierVariables::for_rewrite(budgeted);
         collect_bitvector_carriers(to, &mut replacement_carriers);
         let CarrierVariables {
@@ -1849,7 +1845,7 @@ impl<'a> TermRewrite<'a> {
     /// Construct the checked machine rewrite used by range-fold laws. Setup
     /// collection and the subsequent traversal share the tactic's bounded
     /// work state, so a partial term is never accepted as a checked result.
-    pub(crate) fn for_bits_checked(from: &'a Bitvector32Term, to: &'a Bitvector32Term) -> Self {
+    pub(crate) fn for_bits_checked(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
         let mut rewrite = Self::for_bits_with_budget(from, to, true);
         rewrite.enforce_integer_work_limit = true;
@@ -1916,8 +1912,8 @@ impl<'a> TermRewrite<'a> {
             // A cell holding a stored read of the same kind reads as it.
             let stored = match memory.memory().known_value(&rewritten) {
                 Some(
-                    CValue::Int32(Bitvector32Term::Variable(stored))
-                    | CValue::UInt32(Bitvector32Term::Variable(stored)),
+                    CValue::Int32(MachineTerm::Variable(stored))
+                    | CValue::UInt32(MachineTerm::Variable(stored)),
                 ) if crate::kernel::is_load_variable(&stored)
                     && crate::kernel::registered_load_kind_for_variable(&stored) == Some(kind) =>
                 {
@@ -2423,22 +2419,22 @@ impl<'a> TermRewrite<'a> {
     /// narrowing is a value of its own width; only its widening has a word.
     fn widened_narrowed_cast_carrier(
         &mut self,
-        original: &Bitvector32Term,
-        rewritten: &Bitvector32Term,
+        original: &MachineTerm,
+        rewritten: &MachineTerm,
         source: crate::kernel::MachineIntegerType,
         destination: crate::kernel::MachineIntegerType,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         if !crate::kernel::is_narrow_widening32(source, destination) {
             return None;
         }
         let (
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: original,
                 from: original_source,
                 to: original_destination,
             },
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: rewritten,
                 from: rewritten_source,
@@ -2459,11 +2455,11 @@ impl<'a> TermRewrite<'a> {
 
     fn narrowed_cast_carrier(
         &mut self,
-        original: &Bitvector32Term,
-        rewritten: &Bitvector32Term,
+        original: &MachineTerm,
+        rewritten: &MachineTerm,
         source: crate::kernel::MachineIntegerType,
         destination: crate::kernel::MachineIntegerType,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         let (bounds, carrier) =
             crate::kernel::assumptions::narrowed_cast_identity(rewritten, source, destination)?;
         if let Some(collected) = &mut self.collected_conditions {
@@ -2703,7 +2699,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_bitvector_variables_once(&mut self, term: &Bitvector32Term) {
+    fn reserve_bitvector_variables_once(&mut self, term: &MachineTerm) {
         if self.source_variables_reserved {
             return;
         }
@@ -3682,7 +3678,7 @@ impl<'a> TermRewrite<'a> {
         }
         let integer_source = self.integer_variables.as_ref().map(|mapping| mapping.from);
         let c_source = self.bitvector.and_then(|(from, _)| match from {
-            Bitvector32Term::Variable(variable) => Some(*variable),
+            MachineTerm::Variable(variable) => Some(*variable),
             _ => None,
         });
 
@@ -4097,7 +4093,7 @@ impl<'a> TermRewrite<'a> {
         &mut self,
         scrutinee: &AlgebraicTerm,
         arms: &[AlgebraicBitvectorMatchArm],
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         let fields = scrutinee.checked_constructor_fields()?;
         let AlgebraicTermNode::Constructor { variant, .. } = &scrutinee.node else {
             return None;
@@ -4315,7 +4311,7 @@ impl<'a> TermRewrite<'a> {
 
     fn has_composite_bitvector_source(&self) -> bool {
         self.bitvector
-            .is_some_and(|(source, _)| !matches!(source, Bitvector32Term::Variable(_)))
+            .is_some_and(|(source, _)| !matches!(source, MachineTerm::Variable(_)))
     }
 
     fn reserve_algebraic_match_variables(
@@ -4352,7 +4348,7 @@ impl<'a> TermRewrite<'a> {
         self.reserve_source_variables(variables);
     }
 
-    fn reserve_bitvector_scope_variables(&mut self, term: &Bitvector32Term) {
+    fn reserve_bitvector_scope_variables(&mut self, term: &MachineTerm) {
         self.ensure_replacement_carriers();
         if self.source_variables_reserved {
             return;
@@ -4367,7 +4363,7 @@ impl<'a> TermRewrite<'a> {
             BindingCarrier::C => {
                 matches!(
                     self.bitvector,
-                    Some((Bitvector32Term::Variable(source), _)) if *source == variable
+                    Some((MachineTerm::Variable(source), _)) if *source == variable
                 ) || self
                     .pointer_variable
                     .is_some_and(|(source, _)| source == variable)
@@ -4858,7 +4854,7 @@ impl<'a> TermRewrite<'a> {
                 if bounded {
                     self.changed = true;
                     PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(Bitvector32Term::uint32_from_64(value)),
+                        value: Box::new(MachineTerm::uint32_from_64(value)),
                         byte_width: *byte_width,
                     }
                 } else if self.resolve_registered_loads {
@@ -4975,8 +4971,8 @@ impl<'a> TermRewrite<'a> {
                 let right = self.bits(b);
                 if matches!(
                     (&left, &right),
-                    (Bitvector32Term::PointerAddress(_, _), zero)
-                        | (zero, Bitvector32Term::PointerAddress(_, _))
+                    (MachineTerm::PointerAddress(_, _), zero)
+                        | (zero, MachineTerm::PointerAddress(_, _))
                         if zero.uint64_as_const() == Some(0)
                 ) {
                     // Rewriting can expose a null address after the original
@@ -5227,21 +5223,21 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
-    pub(crate) fn bits(&mut self, v: &Bitvector32Term) -> Bitvector32Term {
+    pub(crate) fn bits(&mut self, v: &MachineTerm) -> MachineTerm {
         self.reserve_bitvector_variables_once(v);
         if self.checked_work_exhausted() {
-            return Bitvector32Term::constant(0);
+            return MachineTerm::constant(0);
         }
         self.visit();
         if self.checked_work_exhausted() {
-            return Bitvector32Term::constant(0);
+            return MachineTerm::constant(0);
         }
-        if let Bitvector32Term::Variable(variable) = v
+        if let MachineTerm::Variable(variable) = v
             && let Some(mapped) = self.scope.c.get(variable)
         {
-            return Bitvector32Term::Variable(*mapped);
+            return MachineTerm::Variable(*mapped);
         }
-        if let Bitvector32Term::Variable(variable) = v
+        if let MachineTerm::Variable(variable) = v
             && let Some(replacements) = &self.typed_variables
             && let Some(TypedCReplacement::Bitvector(replacement)) = replacements.c.get(variable)
         {
@@ -5256,7 +5252,7 @@ impl<'a> TermRewrite<'a> {
             return to.clone();
         }
         if self.resolve_registered_loads
-            && let Bitvector32Term::Variable(variable) = v
+            && let MachineTerm::Variable(variable) = v
             && crate::kernel::is_load_variable(variable)
         {
             // Keep the load's snapshot exact and rewrite only its selected
@@ -5276,17 +5272,17 @@ impl<'a> TermRewrite<'a> {
                     self.changed = true;
                     return value;
                 }
-                return Bitvector32Term::Variable(rewritten);
+                return MachineTerm::Variable(rewritten);
             }
             if self.checked_work_exhausted() {
-                return Bitvector32Term::constant(0);
+                return MachineTerm::constant(0);
             }
             if self.unsupported_integer_scope {
-                return Bitvector32Term::Variable(*variable);
+                return MachineTerm::Variable(*variable);
             }
         }
         let result = match v {
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -5297,7 +5293,7 @@ impl<'a> TermRewrite<'a> {
                 if self.integer_exact.is_some() {
                     // Exact Integer congruence preserves native syntax. Folding
                     // an unrelated cast changes the opaque observation's ID.
-                    Bitvector32Term::Cast {
+                    MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value: Box::new(value),
                         from: *source,
@@ -5308,20 +5304,20 @@ impl<'a> TermRewrite<'a> {
                 {
                     carrier
                 } else {
-                    Bitvector32Term::machine_integer_cast(*source, *destination, value)
+                    MachineTerm::machine_integer_cast(*source, *destination, value)
                 }
             }
 
-            Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => v.clone(),
+            MachineTerm::Constant { .. } | MachineTerm::Variable(_) => v.clone(),
             cast_term!(UInt32From64, v) => {
                 let value = self.bits(v);
                 if self.integer_exact.is_some() {
-                    Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(value))
+                    MachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(value))
                 } else {
-                    Bitvector32Term::uint32_from_64(value)
+                    MachineTerm::uint32_from_64(value)
                 }
             }
-            Bitvector32Term::If {
+            MachineTerm::If {
                 condition,
                 then_term,
                 else_term,
@@ -5332,7 +5328,7 @@ impl<'a> TermRewrite<'a> {
                 // Re-run the condition through its own smart constructor. A
                 // rewrite that replaced the compared terms by literals has
                 // decided this conditional, and a decided conditional is one
-                // of its arms: `Bitvector32Term::if_then_else` would never
+                // of its arms: `MachineTerm::if_then_else` would never
                 // have built it, so leaving it standing is a term that no
                 // lowering of the same source produces.
                 let condition = self.condition(condition);
@@ -5349,17 +5345,17 @@ impl<'a> TermRewrite<'a> {
                 let then_term = self.bits(then_term);
                 let else_term = self.bits(else_term);
                 // Arms the rewrite made equal decide nothing either, as
-                // `Bitvector32Term::if_then_else` would have built them.
+                // `MachineTerm::if_then_else` would have built them.
                 if self.integer_exact.is_none() {
-                    return Bitvector32Term::if_then_else(condition, then_term, else_term);
+                    return MachineTerm::if_then_else(condition, then_term, else_term);
                 }
-                Bitvector32Term::If {
+                MachineTerm::If {
                     condition: Box::new(condition),
                     then_term: Box::new(then_term),
                     else_term: Box::new(else_term),
                 }
             }
-            Bitvector32Term::RangeFold {
+            MachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -5369,30 +5365,30 @@ impl<'a> TermRewrite<'a> {
             } => {
                 self.reserve_bitvector_scope_variables(v);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
                 let start = self.bits(start);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
                 let end = self.bits(end);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
                 let initial = self.bits(initial);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
                 let saved_scope_id = self.scope_id;
                 let saved_shadowed = self.integer_shadowed;
                 let mut changes = Vec::new();
                 let Some(accumulator) = self.rewrite_c_binder(*accumulator, &mut changes) else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 };
                 let Some(item) = self.rewrite_c_binder(*item, &mut changes) else {
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 };
                 let body = if self.conditions.is_some() {
                     body.clone()
@@ -5401,9 +5397,9 @@ impl<'a> TermRewrite<'a> {
                 };
                 self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
-                Bitvector32Term::RangeFold {
+                MachineTerm::RangeFold {
                     start: Box::new(start),
                     end: Box::new(end),
                     initial: Box::new(initial),
@@ -5412,40 +5408,40 @@ impl<'a> TermRewrite<'a> {
                     body,
                 }
             }
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication { name, arguments } => {
                 let mut rewritten = Vec::with_capacity(arguments.len());
                 for argument in arguments {
                     rewritten.push(self.bits(argument));
                     if self.checked_work_exhausted() {
-                        return Bitvector32Term::constant(0);
+                        return MachineTerm::constant(0);
                     }
                 }
-                Bitvector32Term::PureFunctionApplication {
+                MachineTerm::PureFunctionApplication {
                     name: name.clone(),
                     arguments: rewritten,
                 }
             }
-            Bitvector32Term::ClickFunctionApplication { name, arguments } => {
+            MachineTerm::ClickFunctionApplication { name, arguments } => {
                 let mut rewritten = Vec::with_capacity(arguments.len());
                 for argument in arguments {
                     rewritten.push(self.argument(argument));
                     if self.checked_work_exhausted() {
-                        return Bitvector32Term::constant(0);
+                        return MachineTerm::constant(0);
                     }
                 }
-                Bitvector32Term::ClickFunctionApplication {
+                MachineTerm::ClickFunctionApplication {
                     name: name.clone(),
                     arguments: rewritten,
                 }
             }
-            Bitvector32Term::AlgebraicMatch { scrutinee, arms } => {
+            MachineTerm::AlgebraicMatch { scrutinee, arms } => {
                 self.reserve_bitvector_scope_variables(v);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
                 let scrutinee = self.algebraic(scrutinee);
                 if self.checked_work_exhausted() {
-                    return Bitvector32Term::constant(0);
+                    return MachineTerm::constant(0);
                 }
                 let mut rewritten_arms = Vec::with_capacity(arms.len());
                 for arm in arms {
@@ -5455,7 +5451,7 @@ impl<'a> TermRewrite<'a> {
                     let mut bindings = arm.bindings.clone();
                     if !self.rewrite_match_bindings(&mut bindings, &mut changes) {
                         self.restore_scope(&changes, saved_scope_id, saved_shadowed);
-                        return Bitvector32Term::constant(0);
+                        return MachineTerm::constant(0);
                     }
                     let body = if self.conditions.is_some() {
                         arm.body.clone()
@@ -5464,7 +5460,7 @@ impl<'a> TermRewrite<'a> {
                     };
                     self.restore_scope(&changes, saved_scope_id, saved_shadowed);
                     if self.checked_work_exhausted() {
-                        return Bitvector32Term::constant(0);
+                        return MachineTerm::constant(0);
                     }
                     rewritten_arms.push(AlgebraicBitvectorMatchArm {
                         binding_names: arm.binding_names.clone(),
@@ -5477,26 +5473,24 @@ impl<'a> TermRewrite<'a> {
                 {
                     return value;
                 }
-                Bitvector32Term::AlgebraicMatch {
+                MachineTerm::AlgebraicMatch {
                     scrutinee: Box::new(scrutinee),
                     arms: rewritten_arms,
                 }
             }
-            Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
-                Bitvector32Term::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
+            MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
             }
-            Bitvector32Term::PointerAddress(pointer, class) => {
-                Bitvector32Term::object_pointer_address(self.pointer(pointer), class.class())
+            MachineTerm::PointerAddress(pointer, class) => {
+                MachineTerm::object_pointer_address(self.pointer(pointer), class.class())
             }
-            Bitvector32Term::IntegerToMachine { value, destination } => {
-                Bitvector32Term::IntegerToMachine {
-                    value: self.integer_shared(value).into(),
-                    destination: *destination,
-                }
-            }
+            MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
+                value: self.integer_shared(value).into(),
+                destination: *destination,
+            },
             // Rule C1: the cast of the rewritten `Bool`, folded when the
             // rewrite decided it. The `Bool` guards its cast's value.
-            Bitvector32Term::BoolCast { to, value } => {
+            MachineTerm::BoolCast { to, value } => {
                 if let Some(conditions) = &mut self.collected_conditions
                     && !matches!(value.as_ref(), ConditionTerm::Constant(_))
                 {
@@ -5504,12 +5498,12 @@ impl<'a> TermRewrite<'a> {
                 }
                 let value = self.condition(value);
                 if self.integer_exact.is_some() {
-                    Bitvector32Term::BoolCast {
+                    MachineTerm::BoolCast {
                         to: *to,
                         value: Box::new(value),
                     }
                 } else {
-                    Bitvector32Term::bool_cast(*to, folded_machine_condition(value))
+                    MachineTerm::bool_cast(*to, folded_machine_condition(value))
                 }
             }
             term => match (term.as_binary(), term.as_unary()) {
@@ -5567,7 +5561,7 @@ impl<'a> TermRewrite<'a> {
             }
         }
         if self.checked_work_exhausted() {
-            Bitvector32Term::constant(0)
+            MachineTerm::constant(0)
         } else {
             result
         }
@@ -5578,16 +5572,16 @@ impl<'a> TermRewrite<'a> {
 /// after witness substitution. Pointer offsets use the canonical constant
 /// form, while ordinary Integer-to-machine observations remain symbolic so
 /// their surrounding range obligations are still visible to proof checking.
-fn canonicalize_integer_to_machine_constant(value: Bitvector32Term) -> Bitvector32Term {
-    let Bitvector32Term::IntegerToMachine { value, destination } = value else {
+fn canonicalize_integer_to_machine_constant(value: MachineTerm) -> MachineTerm {
+    let MachineTerm::IntegerToMachine { value, destination } = value else {
         return value;
     };
     let Some(constant) = value.as_ref().as_const() else {
-        return Bitvector32Term::IntegerToMachine { value, destination };
+        return MachineTerm::IntegerToMachine { value, destination };
     };
     let converted = MachineIntegerConstant::from_integer(destination.format(), constant)
         .and_then(|value| destination.constant_term(value));
-    converted.unwrap_or(Bitvector32Term::IntegerToMachine { value, destination })
+    converted.unwrap_or(MachineTerm::IntegerToMachine { value, destination })
 }
 
 #[cfg(test)]
@@ -5604,15 +5598,12 @@ mod tests {
     #[test]
     fn signed_byte_offset_constants_fold_only_inside_their_range() {
         for value in [-129, -128, -1, 0, 127, 128] {
-            let input = Bitvector32Term::IntegerToMachine {
+            let input = MachineTerm::IntegerToMachine {
                 value: IntegerTerm::constant_i64(value).into(),
                 destination: MachineIntegerType::Int8,
             };
             let expected = if (-128..=127).contains(&value) {
-                Bitvector32Term::narrow_constant(
-                    MachineIntegerType::Int8,
-                    value as i8 as u8 as u128,
-                )
+                MachineTerm::narrow_constant(MachineIntegerType::Int8, value as i8 as u8 as u128)
             } else {
                 input.clone()
             };
@@ -5622,14 +5613,14 @@ mod tests {
 
     #[test]
     fn narrowing_rewrite_visits_scale_with_selected_expression() {
-        let from = Bitvector32Term::Variable(Variable(91));
-        let to = Bitvector32Term::Variable(Variable(92));
-        let make = |value: &Bitvector32Term, size| {
-            Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+        let from = MachineTerm::Variable(Variable(91));
+        let to = MachineTerm::Variable(Variable(92));
+        let make = |value: &MachineTerm, size| {
+            Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![
                     PureFunctionArgument::Value(CValue::UInt32(
-                        Bitvector32Term::legacy_cast(
+                        MachineTerm::legacy_cast(
                             MachineCastSpelling::UInt32From64,
                             Box::new(value.clone())
                         )
@@ -5651,23 +5642,23 @@ mod tests {
         let condition = ConditionTerm::Variable(Variable(51));
         let conditions = HashMap::from([(condition.clone(), true)]);
         for size in [16, 64, 256] {
-            let input = Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+            let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![
-                    PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::If {
+                    PureFunctionArgument::Value(CValue::Int32(MachineTerm::If {
                         condition: Box::new(condition.clone()),
-                        then_term: Box::new(Bitvector32Term::constant(7)),
-                        else_term: Box::new(Bitvector32Term::constant(0)),
+                        then_term: Box::new(MachineTerm::constant(7)),
+                        else_term: Box::new(MachineTerm::constant(0)),
                     },));
                     size
                 ],
             });
-            let expected = Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+            let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![
-                    PureFunctionArgument::Value(CValue::Int32(
-                        Bitvector32Term::constant(7),
-                    ));
+                    PureFunctionArgument::Value(
+                        CValue::Int32(MachineTerm::constant(7),)
+                    );
                     size
                 ],
             });
@@ -5683,20 +5674,20 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let conditions = HashMap::from([(condition.clone(), true)]);
-        let input = Bitvector32Term::RangeFold {
-            start: Box::new(Bitvector32Term::constant(0)),
-            end: Box::new(Bitvector32Term::constant(2)),
-            initial: Box::new(Bitvector32Term::constant(0)),
+        let input = MachineTerm::RangeFold {
+            start: Box::new(MachineTerm::constant(0)),
+            end: Box::new(MachineTerm::constant(2)),
+            initial: Box::new(MachineTerm::constant(0)),
             accumulator: Variable(52),
             item: variable,
-            body: Box::new(Bitvector32Term::If {
+            body: Box::new(MachineTerm::If {
                 condition: Box::new(condition),
-                then_term: Box::new(Bitvector32Term::constant(7)),
-                else_term: Box::new(Bitvector32Term::constant(0)),
+                then_term: Box::new(MachineTerm::constant(7)),
+                else_term: Box::new(MachineTerm::constant(0)),
             }),
         };
         assert_eq!(TermRewrite::for_conditions(&conditions).bits(&input), input);
@@ -5732,18 +5723,16 @@ mod tests {
         };
         for size in [16, 64, 256] {
             let argument = |value: &AlgebraicTerm| {
-                PureFunctionArgument::Value(CValue::Int32(
-                    Bitvector32Term::ClickFunctionApplication {
-                        name: "observe".into(),
-                        arguments: vec![PureFunctionArgument::Algebraic(value.clone())],
-                    },
-                ))
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::ClickFunctionApplication {
+                    name: "observe".into(),
+                    arguments: vec![PureFunctionArgument::Algebraic(value.clone())],
+                }))
             };
-            let input = Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+            let input = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![argument(&from); size],
             });
-            let expected = Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+            let expected = Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "many".into(),
                 arguments: vec![argument(&to); size],
             });
@@ -5841,7 +5830,7 @@ mod tests {
     fn integer_rewrite_preserves_product_identities_and_scales() {
         let x = IntegerTerm::from_machine(
             MachineIntegerType::UInt32,
-            Bitvector32Term::Variable(Variable(65006)),
+            MachineTerm::Variable(Variable(65006)),
         )
         .unwrap();
         let y = IntegerTerm::var(Variable(65007));
@@ -5935,23 +5924,23 @@ mod tests {
         let payload = SharedIntegerTerm::from(IntegerTerm::Machine(
             crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(880)),
+                MachineTerm::Variable(Variable(880)),
             ),
         ));
-        let input = Term::Bitvector32(Bitvector32Term::IntegerToMachine {
+        let input = Term::Bitvector32(MachineTerm::IntegerToMachine {
             value: payload,
             destination: crate::kernel::MachineIntegerType::UInt32,
         });
-        let from = Bitvector32Term::Variable(Variable(880));
-        let to = Bitvector32Term::Variable(Variable(881));
+        let from = MachineTerm::Variable(Variable(880));
+        let to = MachineTerm::Variable(Variable(881));
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&input);
         assert!(
-            matches!(output, Term::Bitvector32(Bitvector32Term::IntegerToMachine {
+            matches!(output, Term::Bitvector32(MachineTerm::IntegerToMachine {
             destination: crate::kernel::MachineIntegerType::UInt32,
             ref value,
         }) if matches!(value.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(Variable(881))))
+            if machine.value() == &MachineTerm::Variable(Variable(881))))
         );
     }
 
@@ -5964,7 +5953,7 @@ mod tests {
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
         let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
+            value: Box::new(MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
             }),
@@ -5974,7 +5963,7 @@ mod tests {
         assert!(matches!(
             rewritten,
             Term::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
-                if matches!(value.as_ref(), Bitvector32Term::IntegerToMachine {
+                if matches!(value.as_ref(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if value.as_ref().as_const().and_then(|value| value.to_i64())
@@ -5991,7 +5980,7 @@ mod tests {
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
         let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
+            value: Box::new(MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
             }),
@@ -6001,7 +5990,7 @@ mod tests {
         assert!(matches!(
             rewritten,
             Term::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
-                if matches!(value.as_ref(), Bitvector32Term::IntegerToMachine {
+                if matches!(value.as_ref(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903)))
@@ -6017,7 +6006,7 @@ mod tests {
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
         let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
+            value: Box::new(MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
             }),
@@ -6156,40 +6145,41 @@ mod tests {
             block: PointerBlock::Symbolic(source),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let condition_for = |memory: CMemory, depth: usize, fanout: usize| {
-            let mut right = Bitvector32Term::Variable(source);
-            for index in 0..depth as u64 {
-                let mut arguments = Vec::with_capacity(fanout + 1);
-                arguments.push(PureFunctionArgument::Value(CValue::Int32(right)));
-                arguments.extend((0..fanout).map(|_| {
-                    PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::constant(0)))
-                }));
-                let fanout = Bitvector32Term::ClickFunctionApplication {
-                    name: "wide_condition".into(),
-                    arguments,
-                };
-                right = Bitvector32Term::If {
-                    condition: Box::new(ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                        right: Box::new(Bitvector32Term::constant(0)),
-                    }),
-                    then_term: Box::new(fanout),
-                    else_term: Box::new(Bitvector32Term::constant(0)),
-                };
-            }
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::MemoryLoad(
-                    memory.into(),
-                    Box::new(pointer.clone()),
-                    crate::kernel::LoadKind::Int32,
-                )),
-                right: Box::new(right),
-            }
-        };
+        let condition_for =
+            |memory: CMemory, depth: usize, fanout: usize| {
+                let mut right = MachineTerm::Variable(source);
+                for index in 0..depth as u64 {
+                    let mut arguments = Vec::with_capacity(fanout + 1);
+                    arguments.push(PureFunctionArgument::Value(CValue::Int32(right)));
+                    arguments.extend((0..fanout).map(|_| {
+                        PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(0)))
+                    }));
+                    let fanout = MachineTerm::ClickFunctionApplication {
+                        name: "wide_condition".into(),
+                        arguments,
+                    };
+                    right = MachineTerm::If {
+                        condition: Box::new(ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
+                            right: Box::new(MachineTerm::constant(0)),
+                        }),
+                        then_term: Box::new(fanout),
+                        else_term: Box::new(MachineTerm::constant(0)),
+                    };
+                }
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(MachineTerm::MemoryLoad(
+                        memory.into(),
+                        Box::new(pointer.clone()),
+                        crate::kernel::LoadKind::Int32,
+                    )),
+                    right: Box::new(right),
+                }
+            };
         let memory_with_unrelated_blocks = |count: u64| {
             let mut memory = CMemory::new().with_block("array", 8);
             for index in 0..count {
@@ -6200,7 +6190,7 @@ mod tests {
         let run = |condition: ConditionTerm, tactic: crate::instrumentation::TacticEvent| {
             let c_replacements = BTreeMap::from([(
                 source,
-                TypedCReplacement::Bitvector(Bitvector32Term::Variable(replacement)),
+                TypedCReplacement::Bitvector(MachineTerm::Variable(replacement)),
             )]);
             let integer_replacements = BTreeMap::new();
             let algebraic_replacements = BTreeMap::new();
@@ -6302,7 +6292,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(field_integer)),
-                    AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(field_c))),
+                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(field_c))),
                 ],
             },
         };
@@ -6310,7 +6300,7 @@ mod tests {
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(bound_integer).into()),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(bound_c))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(bound_c))),
             ],
         ));
         let input = IntegerTerm::AlgebraicMatch {
@@ -6330,7 +6320,7 @@ mod tests {
                     variant: "Wrapped".into(),
                     bindings: vec![
                         AlgebraicValue::Integer(IntegerTerm::var(bound_integer)),
-                        AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(bound_c))),
+                        AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(bound_c))),
                     ],
                     body: body.clone().into(),
                 },
@@ -6350,7 +6340,7 @@ mod tests {
             "observe".into(),
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(field_integer).into()),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(field_c))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(field_c))),
             ],
         ));
         assert_eq!(output, expected);
@@ -6363,7 +6353,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 fields: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(field_integer)),
-                    AlgebraicValue::C(CValue::Int64(Bitvector32Term::Variable(field_c))),
+                    AlgebraicValue::C(CValue::Int64(MachineTerm::Variable(field_c))),
                 ],
             },
         };
@@ -6387,8 +6377,8 @@ mod tests {
         arms[1].bindings[1] = AlgebraicValue::C(CValue::Int32(binary_node!(
             Int32,
             Add,
-            Box::new(Bitvector32Term::Variable(bound_c)),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::Variable(bound_c)),
+            Box::new(MachineTerm::constant(1)),
         )));
         let mut malformed_binding_rewrite = TermRewrite::for_typed_variables(
             &c_replacements,
@@ -6432,39 +6422,35 @@ mod tests {
             algebraic_type,
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
-                fields: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::constant(
-                    7,
-                )))],
+                fields: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::constant(7)))],
             },
         };
-        let goal = Bitvector32Term::AlgebraicMatch {
+        let goal = MachineTerm::AlgebraicMatch {
             scrutinee: Box::new(scrutinee.clone()),
             arms: vec![AlgebraicBitvectorMatchArm {
                 binding_names: Default::default(),
                 variant: "Wrapped".into(),
-                bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                     bound,
                 )))],
-                body: Bitvector32Term::Variable(bound),
+                body: MachineTerm::Variable(bound),
             }],
         };
         let mut rewrite = TermRewrite::new(&scrutinee, &constructor);
-        assert_eq!(rewrite.bits(&goal), Bitvector32Term::constant(7));
+        assert_eq!(rewrite.bits(&goal), MachineTerm::constant(7));
         assert!(rewrite.changed);
 
         let malformed = AlgebraicTerm {
             algebraic_type: constructor.algebraic_type.clone(),
             node: AlgebraicTermNode::Constructor {
                 variant: "Wrapped".into(),
-                fields: vec![AlgebraicValue::C(CValue::Int64(Bitvector32Term::constant(
-                    7,
-                )))],
+                fields: vec![AlgebraicValue::C(CValue::Int64(MachineTerm::constant(7)))],
             },
         };
         let mut malformed_rewrite = TermRewrite::new(&scrutinee, &malformed);
         assert!(matches!(
             malformed_rewrite.bits(&goal),
-            Bitvector32Term::AlgebraicMatch { .. }
+            MachineTerm::AlgebraicMatch { .. }
         ));
     }
 
@@ -6478,7 +6464,7 @@ mod tests {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let address = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(index), 8),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index), 8),
         };
         let loaded = Pointer::loaded_value(&memory, &address);
         let mut carriers = CarrierVariables::default();
@@ -6521,7 +6507,7 @@ mod tests {
         let mut c_replacements = BTreeMap::new();
         c_replacements.insert(
             c_source,
-            TypedCReplacement::Bitvector(Bitvector32Term::Variable(replacement)),
+            TypedCReplacement::Bitvector(MachineTerm::Variable(replacement)),
         );
         let mut integer_replacements = BTreeMap::new();
         integer_replacements.insert(integer_source, IntegerTerm::var(replacement));
@@ -6533,7 +6519,7 @@ mod tests {
             vec![
                 PureFunctionArgument::Integer(IntegerTerm::var(integer_source).into()),
                 PureFunctionArgument::Integer(IntegerTerm::var(replacement).into()),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(c_source))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(c_source))),
                 PureFunctionArgument::Algebraic(algebraic_from),
             ],
         ));
@@ -6552,7 +6538,7 @@ mod tests {
             &[
                 PureFunctionArgument::Integer(IntegerTerm::var(replacement).into()),
                 PureFunctionArgument::Integer(IntegerTerm::constant_i64(7).into()),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(replacement))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(replacement))),
                 PureFunctionArgument::Algebraic(algebraic_to.clone()),
             ]
         );
@@ -6624,13 +6610,13 @@ mod tests {
     #[test]
     fn checked_machine_rewrite_stops_after_work_exhaustion() {
         let source = Variable(880);
-        let mut payload = Bitvector32Term::Variable(source);
+        let mut payload = MachineTerm::Variable(source);
         for _ in 0..128 {
             payload = binary_node!(
                 Int32,
                 Add,
                 Box::new(payload),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             );
         }
         let input = Term::Integer(IntegerTerm::Machine(
@@ -6659,8 +6645,8 @@ mod tests {
                     crate::instrumentation::emit(
                         crate::instrumentation::VerificationEvent::TacticStarted(tactic.clone()),
                     );
-                    let source_term = Bitvector32Term::Variable(source);
-                    let replacement = Bitvector32Term::constant(7);
+                    let source_term = MachineTerm::Variable(source);
+                    let replacement = MachineTerm::constant(7);
                     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
                     let output = rewrite.term(&input);
                     let visits = rewrite.visits;
@@ -6682,14 +6668,14 @@ mod tests {
 
     #[test]
     fn checked_machine_replacement_collection_stops_before_rewrite() {
-        let source = Bitvector32Term::Variable(Variable(3_025_000));
-        let mut replacement = Bitvector32Term::Variable(Variable(3_025_001));
+        let source = MachineTerm::Variable(Variable(3_025_000));
+        let mut replacement = MachineTerm::Variable(Variable(3_025_001));
         for _ in 0..128 {
             replacement = binary_node!(
                 Int32,
                 Add,
                 Box::new(replacement),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::constant(1)),
             );
         }
         let (output, visits, exhausted) = with_checked_simple_budget(4, || {
@@ -6710,9 +6696,9 @@ mod tests {
 
     #[test]
     fn checked_rewrite_stops_before_wide_sibling_payloads() {
-        let source = Bitvector32Term::Variable(Variable(3_020_000));
-        let replacement = Bitvector32Term::constant(7);
-        let input = Term::Bitvector32(Bitvector32Term::PureFunctionApplication {
+        let source = MachineTerm::Variable(Variable(3_020_000));
+        let replacement = MachineTerm::constant(7);
+        let input = Term::Bitvector32(MachineTerm::PureFunctionApplication {
             name: "wide_checked_payload".into(),
             arguments: vec![source.clone(); 256],
         });
@@ -6731,7 +6717,7 @@ mod tests {
         let binder = Variable(990);
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            Bitvector32Term::Variable(binder),
+            MachineTerm::Variable(binder),
         ));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Integer {
@@ -6743,8 +6729,8 @@ mod tests {
             binder,
             body,
         );
-        let from = Bitvector32Term::Variable(binder);
-        let to = Bitvector32Term::constant(7);
+        let from = MachineTerm::Variable(binder);
+        let to = MachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&Term::Integer(fold));
         let Term::Integer(IntegerTerm::RangeFold { body, .. }) = output else {
@@ -6761,24 +6747,20 @@ mod tests {
         let binder = Variable(990);
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            Bitvector32Term::Variable(binder),
+            MachineTerm::Variable(binder),
         ));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    2,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
             },
             IntegerTerm::constant_i64(0),
             Variable(991),
             binder,
             body,
         );
-        let from = Bitvector32Term::Variable(binder);
-        let to = Bitvector32Term::constant(7);
+        let from = MachineTerm::Variable(binder);
+        let to = MachineTerm::constant(7);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let output = rewrite.term(&Term::Integer(fold));
         let Term::Integer(IntegerTerm::RangeFold { item, body, .. }) = output else {
@@ -6786,7 +6768,7 @@ mod tests {
         };
         assert_eq!(item, binder);
         assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(binder)));
+            if machine.value() == &MachineTerm::Variable(binder)));
     }
 
     #[test]
@@ -6794,14 +6776,14 @@ mod tests {
         let binder = Variable(992);
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            Bitvector32Term::Variable(binder),
+            MachineTerm::Variable(binder),
         ));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::Variable(Variable(993)),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::Variable(
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(
+                    Variable(993),
+                )),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(
                     Variable(994),
                 )),
             },
@@ -6810,8 +6792,8 @@ mod tests {
             binder,
             body,
         );
-        let from = Bitvector32Term::Variable(Variable(996));
-        let to = Bitvector32Term::Variable(binder);
+        let from = MachineTerm::Variable(Variable(996));
+        let to = MachineTerm::Variable(binder);
         let mut rewrite = TermRewrite::for_bits(&from, &to);
         let Term::Integer(IntegerTerm::RangeFold { item, body, .. }) =
             rewrite.term(&Term::Integer(fold))
@@ -6820,7 +6802,7 @@ mod tests {
         };
         assert_ne!(item, binder);
         assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(item)));
+            if machine.value() == &MachineTerm::Variable(item)));
     }
 
     #[test]
@@ -6830,18 +6812,14 @@ mod tests {
             IntegerTerm::Variable(source).into(),
             IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                Bitvector32Term::Variable(source),
+                MachineTerm::Variable(source),
             ))
             .into(),
         );
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(1_021),
@@ -6863,7 +6841,7 @@ mod tests {
         };
         assert!(matches!(integer.as_ref(), IntegerTerm::Constant(value) if value == &7.into()));
         assert!(matches!(machine.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(source)));
+            if machine.value() == &MachineTerm::Variable(source)));
     }
 
     #[test]
@@ -6874,16 +6852,12 @@ mod tests {
         let nested_accumulator = Variable(1_103);
         let leaf = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            Bitvector32Term::Variable(source),
+            MachineTerm::Variable(source),
         ));
         let nested = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             nested_accumulator,
@@ -6892,20 +6866,16 @@ mod tests {
         );
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(1_104),
             replacement_item,
             nested,
         );
-        let source_term = Bitvector32Term::Variable(source);
-        let replacement = Bitvector32Term::Variable(replacement_item);
+        let source_term = MachineTerm::Variable(source);
+        let replacement = MachineTerm::Variable(replacement_item);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
         let Term::Integer(IntegerTerm::RangeFold { item, body, .. }) =
             rewrite.term(&Term::Integer(fold))
@@ -6937,7 +6907,7 @@ mod tests {
             IntegerTerm::Variable(accumulator).into(),
             IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                Bitvector32Term::Variable(source),
+                MachineTerm::Variable(source),
             ))
             .into(),
         );
@@ -6951,11 +6921,11 @@ mod tests {
             Variable(1_032),
             body,
         );
-        let replacement = Bitvector32Term::IntegerToMachine {
+        let replacement = MachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(accumulator)),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
-        let source_term = Bitvector32Term::Variable(source);
+        let source_term = MachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
         let Term::Integer(IntegerTerm::RangeFold {
             accumulator: fresh_accumulator,
@@ -7001,7 +6971,7 @@ mod tests {
                 nested,
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(source),
+                    MachineTerm::Variable(source),
                 )),
             ),
         );
@@ -7015,11 +6985,11 @@ mod tests {
             Variable(1_054),
             body,
         );
-        let replacement = Bitvector32Term::IntegerToMachine {
+        let replacement = MachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(IntegerTerm::Variable(accumulator)),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
-        let source_term = Bitvector32Term::Variable(source);
+        let source_term = MachineTerm::Variable(source);
         let mut rewrite = TermRewrite::for_bits(&source_term, &replacement);
         let Term::Integer(IntegerTerm::RangeFold {
             accumulator: fresh_accumulator,
@@ -7081,7 +7051,7 @@ mod tests {
                 IntegerTerm::var(integer_source).into(),
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(c_source),
+                    MachineTerm::Variable(c_source),
                 ))
                 .into(),
             )
@@ -7096,14 +7066,14 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
-                    AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(collision_c))),
+                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(collision_c))),
                 ],
                 body: match_body().into(),
             }],
         };
         let c_replacements = BTreeMap::from([(
             c_source,
-            TypedCReplacement::Bitvector(Bitvector32Term::Variable(collision_c)),
+            TypedCReplacement::Bitvector(MachineTerm::Variable(collision_c)),
         )]);
         let integer_replacements =
             BTreeMap::from([(integer_source, IntegerTerm::var(collision_integer))]);
@@ -7114,12 +7084,8 @@ mod tests {
         // scope must freshen independently before walking the nested body.
         let fold_with_match = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             collision_integer,
@@ -7154,7 +7120,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(variable)))
+            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(variable)))
                 if *variable != collision_c
         ));
         let mut free_integer = BTreeSet::new();
@@ -7162,11 +7128,11 @@ mod tests {
             &IntegerTerm::RangeFold {
                 index: crate::kernel::IntegerRangeFoldIndex::Int32 {
                     start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::constant(0),
+                        MachineTerm::constant(0),
                     ),
-                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::constant(1),
-                    ),
+                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(
+                        1,
+                    )),
                 },
                 initial: IntegerTerm::constant_i64(0).into(),
                 accumulator,
@@ -7181,11 +7147,11 @@ mod tests {
             &IntegerTerm::RangeFold {
                 index: crate::kernel::IntegerRangeFoldIndex::Int32 {
                     start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::constant(0),
+                        MachineTerm::constant(0),
                     ),
-                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                        Bitvector32Term::constant(1),
-                    ),
+                    end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(
+                        1,
+                    )),
                 },
                 initial: IntegerTerm::constant_i64(0).into(),
                 accumulator,
@@ -7208,7 +7174,7 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(collision_integer)),
-                    AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(collision_c))),
+                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(collision_c))),
                 ],
                 body: IntegerTerm::range_fold(
                     crate::kernel::IntegerRangeFoldIndex::Integer {
@@ -7240,7 +7206,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(variable)))
+            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(variable)))
                 if *variable != collision_c
         ));
         let IntegerTerm::RangeFold {
@@ -7344,28 +7310,25 @@ mod tests {
                 variant: "Wrapped".into(),
                 bindings: vec![
                     AlgebraicValue::Integer(IntegerTerm::var(integer_x)),
-                    AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(c_x))),
+                    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(c_x))),
                 ],
                 body: IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                     "observe_typed_capture".into(),
                     vec![
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_x).into()),
                         PureFunctionArgument::Integer(IntegerTerm::var(integer_y).into()),
-                        PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(c_x))),
-                        PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(c_y))),
+                        PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(c_x))),
+                        PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(c_y))),
                     ],
                 ))
                 .into(),
             }],
         };
         let c_replacements = BTreeMap::from([
-            (
-                c_x,
-                TypedCReplacement::Bitvector(Bitvector32Term::constant(0)),
-            ),
+            (c_x, TypedCReplacement::Bitvector(MachineTerm::constant(0))),
             (
                 c_y,
-                TypedCReplacement::Bitvector(Bitvector32Term::Variable(c_x)),
+                TypedCReplacement::Bitvector(MachineTerm::Variable(c_x)),
             ),
         ]);
         let integer_replacements = BTreeMap::from([
@@ -7390,7 +7353,7 @@ mod tests {
         ));
         assert!(matches!(
             &arm.bindings[1],
-            AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(variable)))
+            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(variable)))
                 if *variable != c_x
         ));
         let IntegerTerm::PureFunctionApplication(application) = arm.body.as_ref() else {
@@ -7409,12 +7372,12 @@ mod tests {
         assert!(matches!(
             &application.arguments()[2],
             PureFunctionArgument::Value(CValue::Int32(value))
-                if matches!(value, Bitvector32Term::Variable(variable) if *variable != c_x)
+                if matches!(value, MachineTerm::Variable(variable) if *variable != c_x)
         ));
         assert!(matches!(
             &application.arguments()[3],
             PureFunctionArgument::Value(CValue::Int32(value))
-                if matches!(value, Bitvector32Term::Variable(variable) if *variable == c_x)
+                if matches!(value, MachineTerm::Variable(variable) if *variable == c_x)
         ));
     }
 
@@ -7429,18 +7392,14 @@ mod tests {
         let source = binary_node!(
             Int32,
             Add,
-            Box::new(Bitvector32Term::Variable(source_variable)),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::Variable(source_variable)),
+            Box::new(MachineTerm::constant(1)),
         );
-        let replacement = Bitvector32Term::Variable(Variable(3_104_001));
+        let replacement = MachineTerm::Variable(Variable(3_104_001));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(3_104_002),
@@ -7460,18 +7419,14 @@ mod tests {
         let source = binary_node!(
             Int32,
             Add,
-            Box::new(Bitvector32Term::Variable(source_variable)),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::Variable(source_variable)),
+            Box::new(MachineTerm::constant(1)),
         );
-        let replacement = Bitvector32Term::Variable(Variable(3_103_001));
+        let replacement = MachineTerm::Variable(Variable(3_103_001));
         let fold = IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             Variable(3_103_002),
@@ -7498,11 +7453,11 @@ mod tests {
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(source)),
+                    value: Box::new(MachineTerm::Variable(source)),
                     byte_width: 4,
                 },
             },
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -7608,8 +7563,8 @@ mod pointer_integer_rewrite_tests {
     #[test]
     fn numeric_index_rewrite_keeps_nested_pointer_read_versions_and_snapshots() {
         let _session = crate::kernel::VerificationSession::enter();
-        let from = Bitvector32Term::Variable(Variable(996_020));
-        let to = Bitvector32Term::Variable(Variable(996_021));
+        let from = MachineTerm::Variable(Variable(996_020));
+        let to = MachineTerm::Variable(Variable(996_021));
         let address = |index| Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(index, 8),
@@ -7656,7 +7611,7 @@ mod pointer_integer_rewrite_tests {
         )
         .unwrap();
         let from = crate::kernel::spec::c_value_bitvector_term(&word).unwrap();
-        let alias = Bitvector32Term::Variable(Variable(996_002));
+        let alias = MachineTerm::Variable(Variable(996_002));
         let rewritten = TermRewrite::for_bits(&from, &alias).value(&word);
         let CValue::PointerInteger(record) = &rewritten else {
             panic!("complete word")

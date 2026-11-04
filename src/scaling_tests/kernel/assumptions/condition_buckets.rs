@@ -3,7 +3,7 @@ fn strict_upper_bound_queries_do_not_scan_condition_side_buckets() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| Bitvector32Term::Variable(Variable(940_000 + id));
+        let var = |id| MachineTerm::Variable(Variable(940_000 + id));
         let mut facts = PureFactContext::new();
         for index in 1..=size {
             facts =
@@ -29,7 +29,7 @@ fn constant_interval_queries_do_not_scan_symbolic_side_bounds() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let var = |id| Bitvector32Term::Variable(Variable(950_000 + id));
+            let var = |id| MachineTerm::Variable(Variable(950_000 + id));
             let order = |a, b| {
                 if unsigned {
                     ConditionTerm::unsigned_less_equal(a, b)
@@ -67,7 +67,7 @@ fn constant_interval_queries_do_not_scan_symbolic_side_bounds() {
 #[test]
 fn direct_order_extrema_preserve_truth_formats_and_branch_isolation() {
     let _session = crate::kernel::VerificationSession::enter();
-    let x = Bitvector32Term::Variable(Variable(951_000));
+    let x = MachineTerm::Variable(Variable(951_000));
     let upper = ConditionTerm::signed_greater_equal(x.clone(), 100u32.into());
     let lower = ConditionTerm::signed_less_than(x.clone(), 10u32.into());
     let parent = PureFactContext::new()
@@ -95,7 +95,7 @@ fn growing_constant_bound_buckets_keep_extrema_and_update_cost_indexed() {
     let mut samples = Vec::new();
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = Bitvector32Term::Variable(Variable(952_000));
+        let x = MachineTerm::Variable(Variable(952_000));
         let mut facts = PureFactContext::new();
         for bound in 1..=size {
             facts = facts.assume_condition(
@@ -136,7 +136,7 @@ fn equality_queries_do_not_scan_shared_endpoint_buckets() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let var = |id| Bitvector32Term::Variable(Variable(970_000 + id));
+            let var = |id| MachineTerm::Variable(Variable(970_000 + id));
             let mut facts = PureFactContext::new();
             for index in 1..=size {
                 facts = facts
@@ -172,7 +172,7 @@ fn interval_queries_do_not_walk_symbolic_order_components() {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128] {
             let _session = crate::kernel::VerificationSession::enter();
-            let var = |id| Bitvector32Term::Variable(Variable(971_000 + id));
+            let var = |id| MachineTerm::Variable(Variable(971_000 + id));
             let mut facts = PureFactContext::new()
                 .assume_condition(ConditionTerm::signed_less_equal(0u32.into(), var(0)), true);
             for index in 1..=size {
@@ -207,7 +207,7 @@ fn equality_class_hits_and_anchored_misses_stay_indexed() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| Bitvector32Term::Variable(Variable(972_000 + id));
+        let var = |id| MachineTerm::Variable(Variable(972_000 + id));
         let mut facts = PureFactContext::new();
         for index in 1..=size {
             facts = facts.assume_condition(ConditionTerm::equal(var(0), var(index)), true);
@@ -244,7 +244,7 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
     let mut samples = Vec::new();
     for size in [8u32, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = Bitvector32Term::Variable(Variable(973_000));
+        let x = MachineTerm::Variable(Variable(973_000));
         let mut facts = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_equal(0u32.into(), x.clone()),
@@ -295,7 +295,7 @@ fn contiguous_exclusion_queries_skip_runs_and_preserve_branches() {
 #[test]
 fn excluded_runs_keep_duplicate_sources_and_widths_separate() {
     let _session = crate::kernel::VerificationSession::enter();
-    let x = Bitvector32Term::Variable(Variable(974_000));
+    let x = MachineTerm::Variable(Variable(974_000));
     let forward = ConditionTerm::equal(x.clone(), 0u32.into());
     let reverse = ConditionTerm::equal(0u32.into(), x.clone());
     let mut index = checked_scalar_facts::CheckedScalarFacts::default();
@@ -315,7 +315,7 @@ fn excluded_runs_keep_duplicate_sources_and_widths_separate() {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: x.clone().into(),
-        right: Bitvector32Term::int64_constant(0).into(),
+        right: MachineTerm::int64_constant(0).into(),
     };
     index.adjust(&wide, false, true);
     assert_eq!(
@@ -329,7 +329,7 @@ fn constant_equality_evidence_does_not_enumerate_symbolic_bounds() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let var = |id| Bitvector32Term::Variable(Variable(975_000 + id));
+        let var = |id| MachineTerm::Variable(Variable(975_000 + id));
         let mut facts = PureFactContext::new();
         for index in 1..=size {
             facts =

@@ -18,20 +18,20 @@ fn graph_condition_reduction_scales_with_the_expression_not_ambient_facts() {
                 TermRewrite::for_conditions_with_graph(&empty, &graph).bits(&choice())
             })
         });
-        assert_eq!(output, Bitvector32Term::constant(7));
+        assert_eq!(output, MachineTerm::constant(7));
         assert!(work < 100, "size={size}, work={work}");
         assert!(
             map_work < 100 * (size.ilog2() as usize + 1),
             "size={size}, map work={map_work}"
         );
-        let input = Bitvector32Term::ClickFunctionApplication {
+        let input = MachineTerm::ClickFunctionApplication {
             name: "many".into(),
             arguments: vec![PureFunctionArgument::Value(CValue::Int32(choice())); size],
         };
-        let expected = Bitvector32Term::ClickFunctionApplication {
+        let expected = MachineTerm::ClickFunctionApplication {
             name: "many".into(),
             arguments: vec![
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::constant(7)));
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(7)));
                 size
             ],
         };
@@ -47,16 +47,16 @@ fn graph_condition_reduction_scales_with_the_expression_not_ambient_facts() {
 fn int32_guard_queries_ignore_unrelated_graph_equalities() {
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let var = |id| Bitvector32Term::Variable(Variable(id));
+        let var = |id| MachineTerm::Variable(Variable(id));
         let mut graph = EqualityGraph::default();
         graph.add_int32_equality(&var(1), &var(2));
         for i in 0..size {
             graph.add_int32_equality(&var(100 + 2 * i), &var(101 + 2 * i));
         }
-        let choice = Bitvector32Term::If {
+        let choice = MachineTerm::If {
             condition: Box::new(ConditionTerm::equal(var(1), var(2))),
-            then_term: Box::new(Bitvector32Term::constant(7)),
-            else_term: Box::new(Bitvector32Term::constant(0)),
+            then_term: Box::new(MachineTerm::constant(7)),
+            else_term: Box::new(MachineTerm::constant(0)),
         };
         let empty = HashMap::new();
         let ((output, work), map_work) = crate::persistent::measure_persistent_work(|| {
@@ -64,7 +64,7 @@ fn int32_guard_queries_ignore_unrelated_graph_equalities() {
                 TermRewrite::for_conditions_with_graph(&empty, &graph).bits(&choice)
             })
         });
-        assert_eq!(output, Bitvector32Term::constant(7));
+        assert_eq!(output, MachineTerm::constant(7));
         assert!(work < 100, "size={size}, work={work}");
         assert!(
             map_work < 100 * (size.ilog2() as usize + 1),

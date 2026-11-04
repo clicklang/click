@@ -41,7 +41,7 @@ fn fact_transport_graph_queries_scale_without_building_the_legacy_index() {
         for index in 0..size {
             context = context.assume_condition(eq(&var(index), &var(index + 1)), true);
         }
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let source = ConditionTerm::signed_less_than(sum(var(0)), var(size + 2));
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
@@ -64,13 +64,13 @@ fn resolved_four_byte_load_graph_queries_scale_without_fact_index() {
             block: "resolved-int32-scale".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let memory = intern_c_memory(
             CMemory::new()
                 .with_block("resolved-int32-scale", 4)
                 .store(pointer.clone(), CValue::Int32(sum(var(0)))),
         );
-        let load = Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+        let load = MachineTerm::Variable(load_variable_for_cell_with_origin(
             &memory,
             &pointer,
             crate::kernel::LoadKind::Int32,
@@ -101,7 +101,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
             block: "two-resolved-int32-scale".into(),
             offset: PointerOffsetTerm::Constant(offset),
         };
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let memory = intern_c_memory(
             CMemory::new()
                 .with_block("two-resolved-int32-scale", 8)
@@ -109,7 +109,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
                 .store(pointer(4), CValue::Int32(sum(var(size)))),
         );
         let load = |offset| {
-            Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+            MachineTerm::Variable(load_variable_for_cell_with_origin(
                 &memory,
                 &pointer(offset),
                 crate::kernel::LoadKind::Int32,
@@ -138,7 +138,7 @@ fn two_resolved_four_byte_load_queries_scale_without_fact_index() {
 fn direct_composite_int32_argument_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let resource = |value| CResource::Composite {
             name: "indexed-value-scale".into(),
             arguments: vec![CValue::Int32(sum(value)).into()].into(),
@@ -173,7 +173,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
         let schema =
             ResourceFieldSchema::new(vec![("stamp".into(), ResourceFieldType::C(CType::Int32))])
                 .unwrap();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let instance = |value| {
             CResource::Instance(
                 ResourceInstance::new(
@@ -181,7 +181,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
                     "instance-value-scale".into(),
                     vec![CValue::Int32(sum(value)).into()].into(),
                     schema.clone(),
-                    vec![CValue::Int32(Bitvector32Term::constant(3)).into()].into(),
+                    vec![CValue::Int32(MachineTerm::constant(3)).into()].into(),
                 )
                 .unwrap(),
             )
@@ -213,7 +213,7 @@ fn resource_instance_int32_argument_graph_queries_scale_without_fact_index() {
 fn typed_int32_value_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let left = CValue::Int32(sum(var(0)));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -238,7 +238,7 @@ fn typed_int32_value_graph_queries_scale_without_fact_index() {
 fn certified_int32_graph_queries_scale_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
         let left = sum(var(0));
         let mut context = PureFactContext::new();
         for index in 0..size {
@@ -269,15 +269,13 @@ fn graph_equal_addend_matching_scales_without_the_legacy_index() {
         }
         let fixed = var(size + 2);
         let last = var(size + 3);
-        let left = Bitvector32Term::add(Bitvector32Term::add(var(0), fixed.clone()), last.clone());
+        let left = MachineTerm::add(MachineTerm::add(var(0), fixed.clone()), last.clone());
         let _scope = context.enter_id_scope();
         PureFactContext::reset_bitvector_equality_index_fact_visits();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for index in 1..=size {
-                let right = Bitvector32Term::add(
-                    var(index),
-                    Bitvector32Term::add(fixed.clone(), last.clone()),
-                );
+                let right =
+                    MachineTerm::add(var(index), MachineTerm::add(fixed.clone(), last.clone()));
                 assert!(context.bitvector_add_terms_proven_equal(&left, &right));
             }
         });
@@ -345,16 +343,12 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
                 memory = memory.with_block(format!("unrelated-{i}"), 4);
             }
             let memory = intern_c_memory(
-                memory.store(address.clone(), CValue::Int32(Bitvector32Term::constant(7))),
+                memory.store(address.clone(), CValue::Int32(MachineTerm::constant(7))),
             );
-            let load = Bitvector32Term::MemoryLoad(
-                memory,
-                Box::new(address),
-                crate::kernel::LoadKind::Int32,
-            );
+            let load =
+                MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32);
             crate::instrumentation::measure_deterministic_work(|| {
-                PureFactContext::new()
-                    .assume_condition(eq(&load, &Bitvector32Term::constant(7)), true)
+                PureFactContext::new().assume_condition(eq(&load, &MachineTerm::constant(7)), true)
             })
         })
         .join()
@@ -374,14 +368,7 @@ fn scalar_support_tracking_does_not_compare_unrelated_snapshot_contents_across_a
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn offset_premise_shallow_decision_and_forks_scale() {
-    let add = |v| {
-        binary_node!(
-            Int32,
-            Add,
-            Box::new(v),
-            Box::new(Bitvector32Term::constant(1))
-        )
-    };
+    let add = |v| binary_node!(Int32, Add, Box::new(v), Box::new(MachineTerm::constant(1)));
     for size in [16u64, 64, 256, 512] {
         let _session = VerificationSession::enter();
         let mut parent = PureFactContext::new();
@@ -439,7 +426,7 @@ fn shared_constant_discovery_scales_with_the_admitted_chain() {
             }
             context = context
                 .clone()
-                .assume_condition(eq(&var(size), &Bitvector32Term::constant(37)), true);
+                .assume_condition(eq(&var(size), &MachineTerm::constant(37)), true);
             assert_eq!(
                 context.known_signed_constant_after_normalization(&var(0)),
                 Some(37)
@@ -616,7 +603,7 @@ fn constant_queries_ignore_other_snapshot_candidates() {
                     &PureFactContext::new(),
                     None,
                 );
-                let load = Bitvector32Term::MemoryLoad(
+                let load = MachineTerm::MemoryLoad(
                     intern_c_memory(memory.clone()),
                     Box::new(address),
                     LoadKind::Int32,
@@ -626,7 +613,7 @@ fn constant_queries_ignore_other_snapshot_candidates() {
                     unknown_reads.push(load);
                 } else {
                     context = context.assume_condition(
-                        eq(&load, &Bitvector32Term::constant((index - size + 1) as u32)),
+                        eq(&load, &MachineTerm::constant((index - size + 1) as u32)),
                         true,
                     );
                 }

@@ -75,7 +75,7 @@ impl KernelTermImport {
                 // Keep the entire condition, including pointer metadata. Do not
                 // key this payload by ConditionTerm's semantic equality.
                 let leaf = KernelTerm::legacy(PureFunctionArgument::Value(CValue::Bool(
-                    Bitvector32Term::BoolCast {
+                    MachineTerm::BoolCast {
                         to: MachineIntegerType::UInt8,
                         value: Box::new(condition.clone()),
                     },
@@ -145,9 +145,8 @@ impl KernelTermExport {
                     .collect::<Result<Vec<_>, _>>()?,
             )),
             Node::LegacyBool(payload) => {
-                let PureFunctionArgument::Value(CValue::Bool(Bitvector32Term::BoolCast {
-                    value,
-                    ..
+                let PureFunctionArgument::Value(CValue::Bool(MachineTerm::BoolCast {
+                    value, ..
                 })) = payload.value()
                 else {
                     return Err("expected exact legacy Bool payload");
@@ -218,8 +217,8 @@ mod tests {
         let comparison = |format| ConditionTerm::Compare {
             format,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(961_001))),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(961_001))),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let signed = comparison(MachineIntegerType::Int32);
         let unsigned = comparison(MachineIntegerType::UInt32);
@@ -246,7 +245,7 @@ mod tests {
             ConditionTerm::BoolApplication(SharedPureApplication::intern(
                 "predicate".into(),
                 vec![PureFunctionArgument::Value(CValue::Int32(
-                    Bitvector32Term::Variable(Variable(961_003)),
+                    MachineTerm::Variable(Variable(961_003)),
                 ))],
             )),
             ConditionTerm::IntegerEqual(
@@ -262,7 +261,7 @@ mod tests {
             ] {
                 let source = PureFunctionArgument::Value(super::super::machine::wrap_exact(
                     destination,
-                    Bitvector32Term::BoolCast {
+                    MachineTerm::BoolCast {
                         to: destination,
                         value: Box::new(condition.clone()),
                     },

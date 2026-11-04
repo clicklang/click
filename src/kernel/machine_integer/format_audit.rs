@@ -54,11 +54,11 @@ impl WordIdentity {
 /// Whether `term`'s root is a sign-free 32-bit operator (`+ - * << & | ^`
 /// or `~`), which the term arena files at `int32` whatever the signedness
 /// of the value it computes. One match on the root.
-pub(crate) fn is_sign_free_word_operator(term: &crate::kernel::Bitvector32Term) -> bool {
+pub(crate) fn is_sign_free_word_operator(term: &crate::kernel::MachineTerm) -> bool {
     use crate::kernel::{MachineBinaryOp as Op, MachineIntegerType as Ty};
     matches!(
         term,
-        crate::kernel::Bitvector32Term::Binary {
+        crate::kernel::MachineTerm::Binary {
             format: Ty::Int32,
             op: Op::Add
                 | Op::Subtract
@@ -68,7 +68,7 @@ pub(crate) fn is_sign_free_word_operator(term: &crate::kernel::Bitvector32Term) 
                 | Op::BitwiseOr
                 | Op::BitwiseXor,
             ..
-        } | crate::kernel::Bitvector32Term::Unary {
+        } | crate::kernel::MachineTerm::Unary {
             format: Ty::Int32,
             ..
         }
@@ -164,7 +164,7 @@ fn clean(text: &str) -> String {
 #[cfg(all(test, debug_assertions))]
 mod tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType, Variable};
+    use crate::kernel::{CValue, IntegerTerm, MachineIntegerType, MachineTerm, Variable};
 
     fn kinds(lines: &[String]) -> Vec<&str> {
         lines
@@ -180,27 +180,27 @@ mod tests {
     /// word (decision G1) and recorded.
     #[test]
     fn an_operator_keeps_its_sign_cast_and_an_index_records_its_peel() {
-        let x = Bitvector32Term::Variable(Variable(1));
+        let x = MachineTerm::Variable(Variable(1));
         let plain = capture(|| {
-            let _ = Bitvector32Term::add(x.clone(), Bitvector32Term::constant(1));
+            let _ = MachineTerm::add(x.clone(), MachineTerm::constant(1));
         });
         assert!(plain.is_empty(), "{plain:?}");
-        let sigma = Bitvector32Term::sign_cast32(
+        let sigma = MachineTerm::sign_cast32(
             MachineIntegerType::UInt32,
             MachineIntegerType::Int32,
             x.clone(),
         );
         let mut sum = None;
         let lines = capture(|| {
-            sum = Some(Bitvector32Term::add(
+            sum = Some(MachineTerm::add(
                 sigma.clone(),
-                Bitvector32Term::uint32_constant(1),
+                MachineTerm::uint32_constant(1),
             ));
         });
         assert_eq!(kinds(&lines), vec!["uint32-constant-peeled"], "{lines:?}");
         assert!(matches!(
             sum,
-            Some(Bitvector32Term::Binary { left, .. }) if *left == sigma
+            Some(MachineTerm::Binary { left, .. }) if *left == sigma
         ));
         let lines = capture(|| {
             let _ = sigma.clone().into_index_word32();
@@ -220,16 +220,16 @@ mod tests {
     #[test]
     fn a_uint32_value_spelled_by_an_int32_sum_records_its_filing() {
         let (a, b) = (
-            Bitvector32Term::Variable(Variable(1)),
-            Bitvector32Term::Variable(Variable(2)),
+            MachineTerm::Variable(Variable(1)),
+            MachineTerm::Variable(Variable(2)),
         );
         let signed = capture(|| {
-            let _ = crate::kernel::int32(Bitvector32Term::add(a.clone(), b.clone()));
+            let _ = crate::kernel::int32(MachineTerm::add(a.clone(), b.clone()));
             let _ = crate::kernel::ConditionTerm::equal(a.clone(), b.clone());
         });
         assert!(signed.is_empty(), "{signed:?}");
         let lines = capture(|| {
-            let _ = crate::kernel::uint32(Bitvector32Term::add(a.clone(), b.clone()));
+            let _ = crate::kernel::uint32(MachineTerm::add(a.clone(), b.clone()));
             let _ = crate::kernel::ConditionTerm::uint32_equal(a.clone(), b.clone());
         });
         assert_eq!(kinds(&lines), vec!["uint32-operator-at-int32"], "{lines:?}");
@@ -239,7 +239,7 @@ mod tests {
     /// observation of a variable does not.
     #[test]
     fn a_narrow_observation_of_a_word_sum_records_it() {
-        let a = Bitvector32Term::Variable(Variable(1));
+        let a = MachineTerm::Variable(Variable(1));
         let plain = capture(|| {
             let _ = IntegerTerm::from_machine(MachineIntegerType::UInt8, a.clone());
         });
@@ -247,7 +247,7 @@ mod tests {
         let lines = capture(|| {
             let _ = IntegerTerm::from_machine(
                 MachineIntegerType::UInt8,
-                Bitvector32Term::add(a.clone(), Bitvector32Term::constant(1)),
+                MachineTerm::add(a.clone(), MachineTerm::constant(1)),
             );
         });
         assert_eq!(kinds(&lines), vec!["narrow-value-as-word"], "{lines:?}");
@@ -258,14 +258,14 @@ mod tests {
     #[test]
     fn the_audit_changes_no_term_and_no_work() {
         let build = || {
-            let sigma = Bitvector32Term::sign_cast32(
+            let sigma = MachineTerm::sign_cast32(
                 MachineIntegerType::UInt32,
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(3)),
+                MachineTerm::Variable(Variable(3)),
             );
-            crate::kernel::uint32(Bitvector32Term::multiply(
+            crate::kernel::uint32(MachineTerm::multiply(
                 sigma,
-                Bitvector32Term::uint32_constant(7),
+                MachineTerm::uint32_constant(7),
             ))
         };
         let (off, off_work) = crate::instrumentation::measure_deterministic_work(build);

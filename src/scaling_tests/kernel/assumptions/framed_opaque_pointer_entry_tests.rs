@@ -23,7 +23,7 @@ fn an_opaque_candidate_does_not_walk_its_unusable_memory_frame() {
         for index in 0..size {
             memory = memory.store(
                 field.clone().offset_by_bytes((8 + index * 8) as u32),
-                CValue::UInt64(Bitvector32Term::uint64_constant(index)),
+                CValue::UInt64(MachineTerm::uint64_constant(index)),
             );
         }
         let current = CPointerValue::new(
@@ -86,7 +86,7 @@ fn framed_pointer_refusals_do_not_scan_same_address_sources() {
         for index in 0..size {
             let memory = CMemory::new().store(
                 field.offset_by_bytes(8),
-                CValue::UInt64(Bitvector32Term::uint64_constant(index)),
+                CValue::UInt64(MachineTerm::uint64_constant(index)),
             );
             let source = CPointerValue::new(
                 Pointer::loaded_value(&intern_c_memory_ref(&memory), &field),

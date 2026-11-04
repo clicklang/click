@@ -159,7 +159,7 @@ pub(super) fn record(spelled: bool, role: &str, kind: &str, claim: &str, tactic:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, Sort, Variable};
+    use crate::kernel::{MachineTerm, Sort, Variable};
 
     #[test]
     fn hidden_child_fields_have_structural_resource_spellings() {
@@ -662,8 +662,8 @@ theorem add3_adds_four() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(1))),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::Variable(Variable(1))),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );

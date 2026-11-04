@@ -31,7 +31,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
     let pointer = |index| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(index))),
+            value: Box::new(MachineTerm::Variable(Variable(index))),
             byte_width: 1,
         },
     };
@@ -39,7 +39,7 @@ fn call_frame_retains_a_view_without_scanning_other_views() {
     crate::kernel::eval::declare_load_access_width(&target, 4);
     let before = CMemory::new();
     let load = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(target.clone()),
             crate::kernel::LoadKind::Int32,

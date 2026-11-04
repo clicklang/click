@@ -42,7 +42,7 @@ fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
     for size in [4usize, 16, 64, 256] {
         let mut values = BTreeMap::from([(
             "x".into(),
-            CValue::Int32(crate::kernel::Bitvector32Term::Variable(
+            CValue::Int32(crate::kernel::MachineTerm::Variable(
                 crate::kernel::Variable(90_000),
             )),
         )]);
@@ -61,7 +61,7 @@ fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
         forms.record_lowering(&guard, &lowered).unwrap();
         for index in 0..size {
             let name = format!("unused_{index}");
-            let value = CValue::Int32(crate::kernel::Bitvector32Term::Variable(
+            let value = CValue::Int32(crate::kernel::MachineTerm::Variable(
                 crate::kernel::Variable(100_000 + index as u64),
             ));
             values.insert(name.clone(), value);

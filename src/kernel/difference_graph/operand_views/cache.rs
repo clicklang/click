@@ -120,10 +120,10 @@ mod tests {
     use super::super::*;
     use crate::kernel::{KernelTermImport, VerificationSession};
 
-    fn variable(n: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(crate::kernel::Variable(998100 + n))
+    fn variable(n: u64) -> MachineTerm {
+        MachineTerm::Variable(crate::kernel::Variable(998100 + n))
     }
-    fn range(graph: &mut DifferenceGraph, value: &Bitvector32Term, lo: u32, hi: u32) {
+    fn range(graph: &mut DifferenceGraph, value: &MachineTerm, lo: u32, hi: u32) {
         graph.assume_condition(
             &ConditionTerm::signed_less_equal(lo.into(), value.clone()),
             true,
@@ -133,7 +133,7 @@ mod tests {
             true,
         );
     }
-    fn interval(graph: &DifferenceGraph, term: &Bitvector32Term) -> (i128, i128) {
+    fn interval(graph: &DifferenceGraph, term: &MachineTerm) -> (i128, i128) {
         let root = KernelTermImport::default()
             .machine_arithmetic(MachineIntegerType::Int32, term)
             .unwrap();
@@ -145,7 +145,7 @@ mod tests {
     fn cached_missing_nodes_and_tightened_bounds_follow_only_the_changed_branch() {
         let _session = VerificationSession::enter();
         let x = variable(0);
-        let sum = Bitvector32Term::add(x.clone(), 1u32.into());
+        let sum = MachineTerm::add(x.clone(), 1u32.into());
         let empty = DifferenceGraph::new();
         assert_eq!(interval(&empty, &sum), Domain::Int32.range());
         let mut parent = empty.clone();
@@ -163,7 +163,7 @@ mod tests {
     fn cached_subtraction_tracks_new_and_tightened_edges() {
         let _session = VerificationSession::enter();
         let (x, y) = (variable(1), variable(2));
-        let difference = Bitvector32Term::subtract(x.clone(), y.clone());
+        let difference = MachineTerm::subtract(x.clone(), y.clone());
         let mut parent = DifferenceGraph::new();
         range(&mut parent, &x, 0, 100);
         range(&mut parent, &y, 0, 100);
@@ -182,7 +182,7 @@ mod tests {
     fn cached_structural_range_notices_an_explicit_compound_node() {
         let _session = VerificationSession::enter();
         let (x, y) = (variable(3), variable(4));
-        let product = Bitvector32Term::multiply(x.clone(), y.clone());
+        let product = MachineTerm::multiply(x.clone(), y.clone());
         let mut graph = DifferenceGraph::new();
         range(&mut graph, &x, 0, 10);
         range(&mut graph, &y, 0, 10);
@@ -209,7 +209,7 @@ mod tests {
                 true,
             );
         }
-        let term = Bitvector32Term::add(leaves.last().unwrap().clone(), 1u32.into());
+        let term = MachineTerm::add(leaves.last().unwrap().clone(), 1u32.into());
         assert_eq!(interval(&parent, &term), (1, 101));
         let mut child = parent.clone();
         range(&mut child, &source, 0, 3);
@@ -234,17 +234,17 @@ mod tests {
         let mut parent = DifferenceGraph::new();
         assert_eq!(read(&parent), Domain::UInt64.range());
         parent.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(Bitvector32Term::int64_constant(0), x.clone()),
+            &ConditionTerm::int64_signed_less_equal(MachineTerm::int64_constant(0), x.clone()),
             true,
         );
         parent.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(x.clone(), Bitvector32Term::int64_constant(10)),
+            &ConditionTerm::int64_signed_less_equal(x.clone(), MachineTerm::int64_constant(10)),
             true,
         );
         assert_eq!(read(&parent), (0, 10));
         let mut child = parent.clone();
         child.assume_condition(
-            &ConditionTerm::int64_signed_less_equal(x.clone(), Bitvector32Term::int64_constant(4)),
+            &ConditionTerm::int64_signed_less_equal(x.clone(), MachineTerm::int64_constant(4)),
             true,
         );
         assert_eq!(read(&child), (0, 4));

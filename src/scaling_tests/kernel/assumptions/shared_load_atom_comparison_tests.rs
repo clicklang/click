@@ -10,7 +10,7 @@ fn growing_shared_snapshot_comparisons_reuse_syntax_but_recheck_loads() {
         let mut left = KernelTerm::variable(KernelType::C(ty.c_type()), a);
         let mut right = KernelTerm::variable(KernelType::C(ty.c_type()), b);
         let zero =
-            crate::kernel::KernelTermImport::default().machine(ty, &Bitvector32Term::constant(0));
+            crate::kernel::KernelTermImport::default().machine(ty, &MachineTerm::constant(0));
         let condition = |root| {
             ConditionTerm::integer_less_equal(
                 IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap()),

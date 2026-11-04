@@ -1830,7 +1830,7 @@ fn composite_definition_members_keep_separation_work_compact() {
 /// by repeated passes cost the whole context once per link.
 #[test]
 fn condition_premise_selection_walks_a_reversed_chain_once() {
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
     use crate::surface::planning::proposition_search::{
         PropositionSearch, condition_selection_visits, reset_condition_selection_visits,
     };
@@ -1840,8 +1840,8 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(Bitvector32Term::Variable(Variable(left))),
-                right: Box::new(Bitvector32Term::Variable(Variable(right))),
+                left: Box::new(MachineTerm::Variable(Variable(left))),
+                right: Box::new(MachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -1853,8 +1853,8 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(Variable(441_000 + index as u64))),
-                    right: Box::new(Bitvector32Term::constant(1_000 + index as u32)),
+                    left: Box::new(MachineTerm::Variable(Variable(441_000 + index as u64))),
+                    right: Box::new(MachineTerm::constant(1_000 + index as u32)),
                 },
                 true,
             ));
@@ -1934,8 +1934,7 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 #[test]
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     use crate::kernel::{
-        Bitvector32Term, CMemory, Pointer, PointerOffsetTerm, Proposition, PureFactContext,
-        Variable,
+        CMemory, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
     };
     use crate::surface::planning::proposition_search::{
         PropositionSearch, candidate_visits, reset_candidate_visits,
@@ -1952,7 +1951,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
     let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: Bitvector32Term::constant(bytes),
+        bytes: MachineTerm::constant(bytes),
         wide: false,
     };
     // (sources stated about the goal's object, goal, premises the
@@ -2056,7 +2055,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 #[test]
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
     use crate::kernel::{
-        Bitvector32Term, CMemory, CMemoryRange, CResource, CType, ConditionTerm, Pointer,
+        CMemory, CMemoryRange, CResource, CType, ConditionTerm, MachineTerm, Pointer,
         PointerOffsetTerm, Proposition, PureFactContext, Variable,
     };
     use crate::surface::planning::proposition_search::{
@@ -2076,8 +2075,8 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
     let range = |base: Pointer, start: u32, end: u32| {
         CResource::Memory(CMemoryRange::new(
             base,
-            Bitvector32Term::constant(start),
-            Bitvector32Term::constant(end),
+            MachineTerm::constant(start),
+            MachineTerm::constant(end),
         ))
     };
     let separate =
@@ -4218,7 +4217,7 @@ fn solve_equality_chain_is_linear_and_unrelated_queries_are_flat() {
 /// the goal, so the failing derivation's work stays flat as they grow.
 #[test]
 fn failing_solve_derivation_ignores_unrelated_disjunctions() {
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, PureFactContext, Variable};
+    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, PureFactContext, Variable};
     use crate::surface::planning::proposition_search::PropositionSearch;
 
     let equal = |variable: u64, value: u32| {
@@ -4226,8 +4225,8 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-                right: Box::new(Bitvector32Term::constant(value)),
+                left: Box::new(MachineTerm::Variable(Variable(variable))),
+                right: Box::new(MachineTerm::constant(value)),
             },
             true,
         )
@@ -4247,8 +4246,8 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(Variable(433_000))),
-                    right: Box::new(Bitvector32Term::constant(5)),
+                    left: Box::new(MachineTerm::Variable(Variable(433_000))),
+                    right: Box::new(MachineTerm::constant(5)),
                 },
                 true,
             );
@@ -4274,7 +4273,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
 fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicTerm, AlgebraicTermNode, AlgebraicType, AlgebraicValueType,
-        AlgebraicVariantType, Bitvector32Term, ConditionTerm, Proposition, PureFactContext, Term,
+        AlgebraicVariantType, ConditionTerm, MachineTerm, Proposition, PureFactContext, Term,
         Variable,
     };
     use crate::surface::planning::proposition_search::PropositionSearch;
@@ -4330,8 +4329,8 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(Variable(435_000))),
-                    right: Box::new(Bitvector32Term::constant(5)),
+                    left: Box::new(MachineTerm::Variable(Variable(435_000))),
+                    right: Box::new(MachineTerm::constant(5)),
                 },
                 true,
             );
@@ -5970,7 +5969,7 @@ fn entry_resource_clauses_do_not_rebuild_every_parameter() {
         let c_function = syntax::parse_function(&format!("void f({parameters}) {{ }}")).unwrap();
         let arguments = (0..count as u64)
             .map(|index| {
-                CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
+                CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
                     9_100_000 + index,
                 ))))
             })
@@ -6646,7 +6645,7 @@ fn the_automatic_loop_closer_joins_c_branches_instead_of_walking_every_path() {
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn atomic_memory_evidence_cites_only_connected_conditions() {
     use crate::kernel::{
-        Bitvector32Term, CMemory, ConditionTerm, Pointer, PointerOffsetTerm, Proposition,
+        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Variable,
     };
     use crate::surface::planning::proposition_search::PropositionSearch;
@@ -6656,14 +6655,14 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     let at = |variable: u64| Pointer {
         block: "goal".into(),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            value: Box::new(MachineTerm::Variable(Variable(variable))),
             byte_width: 4,
         },
     };
     let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base,
-        bytes: Bitvector32Term::constant(bytes),
+        bytes: MachineTerm::constant(bytes),
         wide: false,
     };
     let equal = |left: u64, right: u64| {
@@ -6671,8 +6670,8 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(left))),
-                right: Box::new(Bitvector32Term::Variable(Variable(right))),
+                left: Box::new(MachineTerm::Variable(Variable(left))),
+                right: Box::new(MachineTerm::Variable(Variable(right))),
             },
             true,
         )
@@ -6734,7 +6733,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                                 block: format!("other{index}").as_str().into(),
                                 offset: PointerOffsetTerm::Constant(0),
                             },
-                            bytes: Bitvector32Term::constant(16),
+                            bytes: MachineTerm::constant(16),
                             wide: false,
                         });
                 }
@@ -6802,7 +6801,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
 #[test]
 fn atomic_load_dependencies_ignore_other_snapshot_cells() {
     use crate::kernel::{
-        Bitvector32Term, CMemory, CValue, ConditionTerm, Pointer, PointerOffsetTerm, Proposition,
+        CMemory, CValue, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Variable,
     };
     use crate::surface::planning::proposition_search::PropositionSearch;
@@ -6811,13 +6810,13 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
         block: "selected-index".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let index = Bitvector32Term::Variable(Variable(490_000));
+    let index = MachineTerm::Variable(Variable(490_000));
     let equality = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(index.clone()),
-            right: Box::new(Bitvector32Term::constant(2)),
+            right: Box::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -6826,7 +6825,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
         let mut memory = CMemory::new().store(index_cell.clone(), CValue::Int32(index.clone()));
         let mut context = PureFactContext::new();
         for i in 0..size {
-            let value = Bitvector32Term::Variable(Variable(491_000 + i as u64));
+            let value = MachineTerm::Variable(Variable(491_000 + i as u64));
             memory = memory.store(
                 Pointer {
                     block: format!("other-cell-{i}").as_str().into(),
@@ -6839,7 +6838,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(value),
-                    right: Box::new(Bitvector32Term::constant(7)),
+                    right: Box::new(MachineTerm::constant(7)),
                 },
                 true,
             ));
@@ -6853,18 +6852,18 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
         };
         let source = Proposition::CMemoryLoadable {
             memory: memory.clone(),
-            base: at(Bitvector32Term::constant(2)),
-            bytes: Bitvector32Term::constant(4),
+            base: at(MachineTerm::constant(2)),
+            bytes: MachineTerm::constant(4),
             wide: false,
         };
         let goal = Proposition::CMemoryLoadable {
             memory: memory.clone(),
-            base: at(Bitvector32Term::MemoryLoad(
+            base: at(MachineTerm::MemoryLoad(
                 memory.into(),
                 Box::new(index_cell.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         };
         context = context
@@ -6900,14 +6899,14 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
 #[test]
 fn atomic_evidence_without_one_source_cites_connected_facts() {
     use crate::kernel::{
-        Bitvector32Term, CMemory, ConditionTerm, Pointer, PointerOffsetTerm, Proposition,
+        CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Sort, Variable,
     };
     use crate::surface::planning::proposition_search::PropositionSearch;
 
     let memory = CMemory::new();
     let load = |offset: PointerOffsetTerm| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(Pointer {
                 block: "data".into(),
@@ -6916,7 +6915,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let equal = |left: Bitvector32Term, right: Bitvector32Term| {
+    let equal = |left: MachineTerm, right: MachineTerm| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -6927,7 +6926,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             true,
         )
     };
-    let less = |left: Bitvector32Term, right: Bitvector32Term, holds: bool| {
+    let less = |left: MachineTerm, right: MachineTerm, holds: bool| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -6938,7 +6937,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             holds,
         )
     };
-    let variable = |id: u64| Bitvector32Term::Variable(Variable(id));
+    let variable = |id: u64| MachineTerm::Variable(Variable(id));
     let index = Variable(480_000);
     // forall index. index < exit ==> data[index] == index
     let quantified = Proposition::ForAll {
@@ -6957,10 +6956,10 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         )),
     };
     // not (exit < 3), so index 2 is below exit.
-    let bound = less(variable(480_001), Bitvector32Term::constant(3), false);
+    let bound = less(variable(480_001), MachineTerm::constant(3), false);
     let goal = equal(
         load(PointerOffsetTerm::Constant(8)),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(2),
     );
     let context = |unrelated: u64, with_bound: bool| {
         let mut context = PureFactContext::new();
@@ -6980,7 +6979,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             byte_width: 4,
                         },
                     },
-                    bytes: Bitvector32Term::constant(16),
+                    bytes: MachineTerm::constant(16),
                     wide: false,
                 });
         }
@@ -7058,7 +7057,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                             block: format!("extension{step}").as_str().into(),
                             offset: PointerOffsetTerm::Constant(0),
                         },
-                        bytes: Bitvector32Term::constant(16),
+                        bytes: MachineTerm::constant(16),
                         wide: false,
                     });
                 let proof = available
@@ -7821,12 +7820,12 @@ fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
 
 #[test]
 fn recorded_value_names_index_only_the_locals_each_point_changes() {
-    use crate::kernel::{Bitvector32Term, Variable};
+    use crate::kernel::{MachineTerm, Variable};
     let point = |index| ProgramPointRef {
         region: CodeRegionRef::Region(index),
         kind: ProgramPointKind::Exit,
     };
-    let value = |index: usize| Bitvector32Term::Variable(Variable(700_000 + index as u64));
+    let value = |index: usize| MachineTerm::Variable(Variable(700_000 + index as u64));
     let schema = crate::kernel::ResourceFieldSchema::new(vec![(
         "size".into(),
         crate::kernel::ResourceFieldType::C(CType::Int32),
@@ -9731,11 +9730,11 @@ fn post_return_function_equations_scale_with_explicit_unfolds() {
 
 #[test]
 fn recorded_call_results_scale_and_replace_execution_occurrences() {
-    use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType, Variable};
+    use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm, Variable};
     for size in [16usize, 64, 256, 1024] {
         let mut snapshots = RecordedSnapshots::new();
         let value = |index| {
-            CValue::Bool(Bitvector32Term::bool_cast(
+            CValue::Bool(MachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
                 ConditionTerm::Variable(Variable(700_000 + index)),
             ))

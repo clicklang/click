@@ -17,7 +17,7 @@ fn at(block: PointerBlock, offset: i64) -> Pointer {
 }
 
 fn one() -> CValue {
-    CValue::Int32(Bitvector32Term::constant(1))
+    CValue::Int32(MachineTerm::constant(1))
 }
 
 fn point(memory: &CMemory) -> ProgramPoint {
@@ -170,8 +170,8 @@ fn a_call_havoc_carries_a_cell_outside_its_write_set_only() {
     let entry = entry_memory();
     let ranges = vec![CMemoryRange::new(
         at(block("global:g"), 0),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
     )];
     let after =
         entry
@@ -218,8 +218,8 @@ fn a_call_havoc_carries_a_block_outside_its_write_set_only() {
     let entry = entry_memory();
     let ranges = vec![CMemoryRange::new(
         at(block("global:g"), 0),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
     )];
     let after =
         entry
@@ -283,8 +283,8 @@ fn a_loop_havoc_carries_a_block_outside_its_checked_write_set() {
     let entry = entry_memory().store(at(block("global:h"), 0), one());
     let ranges = vec![CMemoryRange::new(
         at(block("global:g"), 0),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
     )];
     let after = entry.clone().with_loop_memory_havoc_preserving_loans(
         Variable(904),
@@ -531,7 +531,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
             block: PointerBlock::Symbolic(Variable(1_000)),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::constant(16),
+        MachineTerm::constant(16),
         false,
     );
     assert_eq!(entry.blocks, requested.blocks);
@@ -650,7 +650,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         .clone()
         .store(at(PointerBlock::Symbolic(Variable(80)), 0), one());
     let load = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             intern_c_memory(memory.clone()),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -662,7 +662,7 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memory)),
-                right: Box::new(Bitvector32Term::constant(5)),
+                right: Box::new(MachineTerm::constant(5)),
             },
             true,
         )
@@ -687,8 +687,8 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::constant(5)),
-            right: Box::new(Bitvector32Term::constant(5)),
+            left: Box::new(MachineTerm::constant(5)),
+            right: Box::new(MachineTerm::constant(5)),
         },
         true,
     );
@@ -738,10 +738,10 @@ mod saved_states {
         ResourceInstance::new(
             Variable(identity),
             "cell".into(),
-            vec![CValue::Int32(Bitvector32Term::constant(7)).into()].into(),
+            vec![CValue::Int32(MachineTerm::constant(7)).into()].into(),
             schema(),
             vec![
-                AlgebraicValue::C(CValue::Int32(Bitvector32Term::constant(rank))),
+                AlgebraicValue::C(CValue::Int32(MachineTerm::constant(rank))),
                 AlgebraicValue::Integer(IntegerTerm::constant(num_bigint::BigInt::from(mark))),
             ]
             .into(),
@@ -909,8 +909,8 @@ mod footprints {
     fn bytes(base: Pointer, count: u32) -> CMemoryRange {
         CMemoryRange::new_with_element_width(
             base,
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(count),
+            MachineTerm::constant(0),
+            MachineTerm::constant(count),
             1,
         )
     }
@@ -1027,7 +1027,7 @@ mod footprints {
 #[test]
 fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let cell = at(block("global:g"), 0);
-    let index = Bitvector32Term::Variable(Variable(0));
+    let index = MachineTerm::Variable(Variable(0));
     let written = Pointer {
         block: block("global:g"),
         offset: PointerOffsetTerm::Int32Scaled {
@@ -1035,18 +1035,18 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
             byte_width: 4,
         },
     };
-    let three = CValue::Int32(Bitvector32Term::constant(3));
+    let three = CValue::Int32(MachineTerm::constant(3));
     let no_facts = PureFactContext::new();
     let before = entry_memory().store(cell.clone(), three.clone());
     let after = before
         .clone()
         .without_possible_aliasing_cells(&written, 4, &no_facts)
-        .store(written.clone(), CValue::Int32(Bitvector32Term::constant(7)));
+        .store(written.clone(), CValue::Int32(MachineTerm::constant(7)));
     assert_eq!(after.known_value(&cell), None, "the store dropped the cell");
     let after = intern_c_memory(after);
     let index_is_zero = |value| {
         PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-            ConditionTerm::equal(index.clone(), Bitvector32Term::constant(0)),
+            ConditionTerm::equal(index.clone(), MachineTerm::constant(0)),
             value,
         ))
     };
@@ -1070,7 +1070,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
             cell.clone(),
             crate::kernel::CType::Int32,
             index.clone(),
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             index_is_zero(false),
         ),
     )
@@ -1103,7 +1103,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     );
     assert_eq!(
         cell_value_on_path(&after, &cell, 4, &index_is_zero(true)),
-        Some(CValue::Int32(Bitvector32Term::constant(7)))
+        Some(CValue::Int32(MachineTerm::constant(7)))
     );
     assert_eq!(cell_value_on_path(&after, &cell, 4, &no_facts), None);
 }
@@ -1117,7 +1117,7 @@ fn branch_join_preserves_uncached_reads_only_when_every_arm_agrees() {
         let first = before.clone().store(other.clone(), one());
         let second = before
             .clone()
-            .store(other, CValue::Int32(Bitvector32Term::constant(2)));
+            .store(other, CValue::Int32(MachineTerm::constant(2)));
         let joined = first
             .clone()
             .with_interface_memory_havoc(
@@ -1174,7 +1174,7 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
     let a = before.clone().store(other.clone(), one());
     let b = before
         .clone()
-        .store(other.clone(), CValue::Int32(Bitvector32Term::constant(2)));
+        .store(other.clone(), CValue::Int32(MachineTerm::constant(2)));
     let unchanged = a
         .clone()
         .with_interface_memory_havoc(
@@ -1185,11 +1185,11 @@ fn branch_join_identity_retains_inputs_through_read_projection() {
         .unwrap();
     let c = a.store(
         cell.clone(),
-        CValue::UInt64(Bitvector32Term::uint64_constant(9)),
+        CValue::UInt64(MachineTerm::uint64_constant(9)),
     );
     let d = b.store(
         cell.clone(),
-        CValue::UInt64(Bitvector32Term::uint64_constant(10)),
+        CValue::UInt64(MachineTerm::uint64_constant(10)),
     );
     let changed = c
         .clone()
@@ -1411,9 +1411,8 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
             memory_dag_cell_source_with_stop(&changed, &pointer, 4, &assumptions, true).unwrap();
         assert_eq!(stop, CellWalkStop::Affected);
         assert_eq!(cell.resolved_value(&pointer, LoadKind::Int32), Some(one()));
-        let load = |memory| {
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32)
-        };
+        let load =
+            |memory| MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32);
         assert!(
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
                 &load(source.clone()),

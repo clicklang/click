@@ -49,24 +49,22 @@ fn variable_collection_after_a_store_costs_the_store() {
         for index in 0..cells {
             memory = memory.store(
                 at(4 * index as i64),
-                CValue::Int32(Bitvector32Term::Variable(Variable(
-                    7_000_000 + index as u64,
-                ))),
+                CValue::Int32(MachineTerm::Variable(Variable(7_000_000 + index as u64))),
             );
         }
         let before = crate::kernel::intern_c_memory(memory.clone());
         crate::kernel::reasoning::variable_collection::clear_shared_memory_variables();
         let mut variables = BTreeSet::new();
         crate::kernel::reasoning::collect_bitvector_variables(
-            &Bitvector32Term::MemoryLoad(before, Box::new(at(0)), crate::kernel::LoadKind::Int32),
+            &MachineTerm::MemoryLoad(before, Box::new(at(0)), crate::kernel::LoadKind::Int32),
             &mut variables,
         );
         assert_eq!(variables.len(), cells);
         let after = memory.store(
             at(0),
-            CValue::Int32(Bitvector32Term::Variable(Variable(7_900_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
-        let load = Bitvector32Term::MemoryLoad(
+        let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(after),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,
@@ -120,11 +118,7 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         let (variables, entry_work) = crate::instrumentation::measure_deterministic_work(|| {
             let mut variables = BTreeSet::new();
             crate::kernel::reasoning::collect_bitvector_variables(
-                &Bitvector32Term::MemoryLoad(
-                    before,
-                    Box::new(at(0)),
-                    crate::kernel::LoadKind::Int32,
-                ),
+                &MachineTerm::MemoryLoad(before, Box::new(at(0)), crate::kernel::LoadKind::Int32),
                 &mut variables,
             );
             variables
@@ -140,9 +134,9 @@ fn variable_collection_after_a_store_into_a_symbolic_array_costs_the_store() {
         );
         let after = memory.clone().store(
             at(0),
-            CValue::Int32(Bitvector32Term::Variable(Variable(7_900_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(7_900_000))),
         );
-        let load = Bitvector32Term::MemoryLoad(
+        let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(after),
             Box::new(at(4)),
             crate::kernel::LoadKind::Int32,

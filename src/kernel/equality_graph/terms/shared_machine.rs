@@ -3,8 +3,8 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::{
-    Bitvector32Term as T, BitvectorBinaryOp as B, CarrierWidth as W, KernelMachineLiteral as L,
-    KernelTerm, KernelTermNode as N,
+    BitvectorBinaryOp as B, CarrierWidth as W, KernelMachineLiteral as L, KernelTerm,
+    KernelTermNode as N, MachineTerm as T,
 };
 
 impl TermClasses {

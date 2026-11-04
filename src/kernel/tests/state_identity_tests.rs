@@ -480,14 +480,11 @@ fn binding_a_local_copies_a_search_path_not_the_frame() {
     for size in [64, 1024] {
         let mut state = CState::new();
         for index in 0..size {
-            state = state.with_local(
-                format!("p{index}"),
-                CValue::Int32(Bitvector32Term::constant(0)),
-            );
+            state = state.with_local(format!("p{index}"), CValue::Int32(MachineTerm::constant(0)));
         }
         let shared = state.clone();
         let before = crate::persistent::persistent_node_allocations();
-        let bound = state.with_local("next", CValue::Int32(Bitvector32Term::constant(1)));
+        let bound = state.with_local("next", CValue::Int32(MachineTerm::constant(1)));
         copied.push(crate::persistent::persistent_node_allocations() - before);
         assert!(shared.locals.get("next").is_none());
         assert!(bound.locals.get("next").is_some());

@@ -221,8 +221,8 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
         return Some(match target_type {
             CType::Int8 => crate::kernel::int8(value as i32 as u32),
             CType::Int16 => crate::kernel::int16(value as i32 as u32),
-            CType::Int32 => CValue::Int32(Bitvector32Term::constant(value as i32 as u32)),
-            CType::Int64 => CValue::Int64(Bitvector32Term::int64_constant(value as i64)),
+            CType::Int32 => CValue::Int32(MachineTerm::constant(value as i32 as u32)),
+            CType::Int64 => CValue::Int64(MachineTerm::int64_constant(value as i64)),
             _ => unreachable!(),
         });
     }
@@ -237,8 +237,8 @@ fn float_to_integer_value(negative: bool, magnitude: u128, target_type: CType) -
     Some(match target_type {
         CType::UInt8 => crate::kernel::uint8(value as u32),
         CType::UInt16 => crate::kernel::uint16(value as u32),
-        CType::UInt32 => CValue::UInt32(Bitvector32Term::uint32_constant(value as u32)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::uint64_constant(value)),
+        CType::UInt32 => CValue::UInt32(MachineTerm::uint32_constant(value as u32)),
+        CType::UInt64 => CValue::UInt64(MachineTerm::uint64_constant(value)),
         _ => unreachable!(),
     })
 }
@@ -288,19 +288,17 @@ fn integer_to_float_value(value: CValue, target_type: CType) -> Option<CValue> {
     };
     if let Some((negative, magnitude)) = integer_constant_as_sign_magnitude(&value) {
         return Some(match target_type {
-            CType::Float32 => CValue::Float32(Bitvector32Term::constant(integer_to_float32_bits(
+            CType::Float32 => CValue::Float32(MachineTerm::constant(integer_to_float32_bits(
                 negative, magnitude,
             ))),
-            CType::Float64 => CValue::Float64(Bitvector32Term::uint64_constant(
+            CType::Float64 => CValue::Float64(MachineTerm::uint64_constant(
                 integer_to_float64_bits(negative, magnitude),
             )),
             _ => unreachable!(),
         });
     }
-    let term = Bitvector32Term::opaque_conversion(
-        format!("c_{source_name}_to_{target_name}"),
-        term.clone(),
-    );
+    let term =
+        MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), term.clone());
     Some(match target_type {
         CType::Float32 => CValue::Float32(term),
         CType::Float64 => CValue::Float64(term),
@@ -312,19 +310,19 @@ fn float_integer_bound_bits(
     source_type: CType,
     exponent: u32,
     negative: bool,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     let magnitude = 1u128.checked_shl(exponent)?;
     Some(match source_type {
-        CType::Float32 => Bitvector32Term::constant(integer_to_float32_bits(negative, magnitude)),
+        CType::Float32 => MachineTerm::constant(integer_to_float32_bits(negative, magnitude)),
         CType::Float64 => {
-            Bitvector32Term::uint64_constant(integer_to_float64_bits(negative, magnitude))
+            MachineTerm::uint64_constant(integer_to_float64_bits(negative, magnitude))
         }
         _ => return None,
     })
 }
 
 fn add_float_to_integer_obligations(
-    value: &Bitvector32Term,
+    value: &MachineTerm,
     source_type: CType,
     target_type: CType,
     obligations: &mut Vec<ProofObligation>,
@@ -395,12 +393,12 @@ fn add_float_to_integer_obligations(
         let lower = match source_type {
             CType::Float32 => ConditionTerm::float32_compare(
                 value.clone(),
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
                 CComparisonOperator::GreaterEqual,
             ),
             CType::Float64 => ConditionTerm::float64_compare(
                 value.clone(),
-                Bitvector32Term::uint64_constant(0),
+                MachineTerm::uint64_constant(0),
                 CComparisonOperator::GreaterEqual,
             ),
             _ => unreachable!(),
@@ -434,7 +432,7 @@ fn add_float_to_integer_obligations(
 }
 
 fn float_to_integer_conversion_value(
-    value: Bitvector32Term,
+    value: MachineTerm,
     source_type: CType,
     target_type: CType,
     obligations: &mut Vec<ProofObligation>,
@@ -457,8 +455,7 @@ fn float_to_integer_conversion_value(
         CType::UInt64 => "uint64",
         _ => return None,
     };
-    let term =
-        Bitvector32Term::opaque_conversion(format!("c_{source_name}_to_{target_name}"), value);
+    let term = MachineTerm::opaque_conversion(format!("c_{source_name}_to_{target_name}"), value);
     Some(match target_type {
         CType::Int8 => CValue::Int8(term),
         CType::Int16 => CValue::Int16(term),
@@ -643,13 +640,12 @@ pub(in crate::kernel) fn add_narrow_integer_range_execution_pure_facts(
 pub(in crate::kernel) fn promote_c_path_value(
     value: CValue,
     destination: MachineIntegerType,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     let value = value.numeric_value().clone();
     let to = destination.format();
     // Rule C1: a promoted `Bool` is its cast at the operation's format.
     if let CValue::Bool(word) = value {
-        return matches!(to.bits(), 32 | 64)
-            .then(|| Bitvector32Term::bool_word_as(destination, &word));
+        return matches!(to.bits(), 32 | 64).then(|| MachineTerm::bool_word_as(destination, &word));
     }
     let source = MachineIntegerType::from_c_type(value.c_type())?;
     let from = source.format();
@@ -769,7 +765,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             let destination = MachineIntegerType::from_c_type(target_type)?;
             return CValue::from_bitvector_term(
                 target_type,
-                Bitvector32Term::bool_word_as(destination, word),
+                MachineTerm::bool_word_as(destination, word),
             );
         }
         let source = MachineIntegerType::from_c_type(value.c_type())?;
@@ -853,26 +849,26 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
             CValue::Bool(word),
         ) => CValue::from_bitvector_term(
             target,
-            Bitvector32Term::bool_word_as(MachineIntegerType::from_c_type(target)?, &word),
+            MachineTerm::bool_word_as(MachineIntegerType::from_c_type(target)?, &word),
         ),
         // C's widening between narrow formats is a conversion node of the
         // destination's width, as the source writes it.
         (CType::Int16, CValue::Int8(value)) => {
-            Some(CValue::Int16(Bitvector32Term::machine_integer_cast(
+            Some(CValue::Int16(MachineTerm::machine_integer_cast(
                 MachineIntegerType::Int8,
                 MachineIntegerType::Int16,
                 value,
             )))
         }
         (CType::Int16, CValue::UInt8(value)) => {
-            Some(CValue::Int16(Bitvector32Term::machine_integer_cast(
+            Some(CValue::Int16(MachineTerm::machine_integer_cast(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::Int16,
                 value,
             )))
         }
         (CType::UInt16, CValue::UInt8(value)) => {
-            Some(CValue::UInt16(Bitvector32Term::machine_integer_cast(
+            Some(CValue::UInt16(MachineTerm::machine_integer_cast(
                 MachineIntegerType::UInt8,
                 MachineIntegerType::UInt16,
                 value,
@@ -893,20 +889,16 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
         (CType::Float32, CValue::Float64(value)) => {
             let converted = value
                 .float64_as_const()
-                .map(|value| Bitvector32Term::constant(float64_to_float32_bits(value)))
-                .unwrap_or_else(|| {
-                    Bitvector32Term::opaque_conversion("c_float64_to_float32", value)
-                });
+                .map(|value| MachineTerm::constant(float64_to_float32_bits(value)))
+                .unwrap_or_else(|| MachineTerm::opaque_conversion("c_float64_to_float32", value));
             Some(CValue::Float32(converted))
         }
         (CType::Float64, CValue::Float64(value)) => Some(CValue::Float64(value)),
         (CType::Float64, CValue::Float32(value)) => {
             let converted = value
                 .float32_as_const()
-                .map(|value| Bitvector32Term::uint64_constant(float32_to_float64_bits(value)))
-                .unwrap_or_else(|| {
-                    Bitvector32Term::opaque_conversion("c_float32_to_float64", value)
-                });
+                .map(|value| MachineTerm::uint64_constant(float32_to_float64_bits(value)))
+                .unwrap_or_else(|| MachineTerm::opaque_conversion("c_float32_to_float64", value));
             Some(CValue::Float64(converted))
         }
         (
@@ -976,7 +968,7 @@ pub(in crate::kernel) fn coerce_c_value_to_type_as(
 /// its operand: the reasoning layer replaces it by the operand's carrier
 /// once the context proves the range (`narrowed_cast_identity`), in search
 /// and checker alike. A byte converted from an unsigned byte is the
-/// one-byte-one-name signed read of that byte, `Bitvector32Term::signed_byte`.
+/// one-byte-one-name signed read of that byte, `MachineTerm::signed_byte`.
 /// Into `int32` the low word already is the value modulo 2^32, and into
 /// `int64` the same 64 bits read as signed.
 ///
@@ -1010,7 +1002,7 @@ fn narrow_integer(
                             format: MachineIntegerType::UInt64,
                             relation: CompareRelation::LessEqual,
                             left: term.clone().into(),
-                            right: Bitvector32Term::uint64_constant(i32::MAX as u64).into(),
+                            right: MachineTerm::uint64_constant(i32::MAX as u64).into(),
                         },
                         "int32 narrowing upper bound",
                     )]
@@ -1021,7 +1013,7 @@ fn narrow_integer(
                                 format: MachineIntegerType::Int64,
                                 relation: CompareRelation::GreaterEqual,
                                 left: term.clone().into(),
-                                right: Bitvector32Term::int64_constant(i64::from(i32::MIN)).into(),
+                                right: MachineTerm::int64_constant(i64::from(i32::MIN)).into(),
                             },
                             "int32 narrowing lower bound",
                         ),
@@ -1030,7 +1022,7 @@ fn narrow_integer(
                                 format: MachineIntegerType::Int64,
                                 relation: CompareRelation::LessEqual,
                                 left: term.clone().into(),
-                                right: Bitvector32Term::int64_constant(i64::from(i32::MAX)).into(),
+                                right: MachineTerm::int64_constant(i64::from(i32::MAX)).into(),
                             },
                             "int32 narrowing upper bound",
                         ),
@@ -1055,7 +1047,7 @@ fn narrow_integer(
                         format: MachineIntegerType::UInt64,
                         relation: CompareRelation::LessEqual,
                         left: term.clone().into(),
-                        right: Bitvector32Term::uint64_constant(i64::MAX as u64).into(),
+                        right: MachineTerm::uint64_constant(i64::MAX as u64).into(),
                     },
                     "int64 narrowing upper bound",
                 )?;
@@ -1127,7 +1119,7 @@ fn checked_narrowing_identity_readings(
         _ => return None,
     };
     let converted = converted_term(converted)?;
-    let Bitvector32Term::Cast {
+    let MachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value,
         from: cast_source,
@@ -1150,9 +1142,9 @@ fn checked_narrowing_identity_readings(
     if source_type.format().bits() <= 32 {
         // The narrow result is a value of its own width; its widening is the
         // operand's word, itself widened when the operand is narrow too.
-        let word = |ty: MachineIntegerType, term: &Bitvector32Term| {
+        let word = |ty: MachineIntegerType, term: &MachineTerm| {
             if ty.format().bits() < 32 {
-                Bitvector32Term::machine_integer_cast(ty, MachineIntegerType::Int32, term.clone())
+                MachineTerm::machine_integer_cast(ty, MachineIntegerType::Int32, term.clone())
             } else {
                 term.clone()
             }
@@ -1165,7 +1157,7 @@ fn checked_narrowing_identity_readings(
     Some(identities)
 }
 
-fn converted_term(value: &CValue) -> Option<&Bitvector32Term> {
+fn converted_term(value: &CValue) -> Option<&MachineTerm> {
     match value {
         CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
             Some(term)
@@ -1312,7 +1304,7 @@ fn cast_c_value_to_type_with_integer_origin(
                 if term.uint64_as_const() == Some(0)
                     || assumptions.decide(&ConditionTerm::uint64_equal(
                         term.clone(),
-                        Bitvector32Term::uint64_constant(0),
+                        MachineTerm::uint64_constant(0),
                     )) == Some(true)
                 {
                     return Ok(CValue::typed_pointer(Pointer::null(), target_type));
@@ -1371,10 +1363,8 @@ fn cast_c_value_to_type_with_integer_origin(
                 "function addresses do not convert to integers".to_string(),
             ));
         }
-        let address = Bitvector32Term::object_pointer_address(
-            pointer.pointer().clone(),
-            pointer.object_class(),
-        );
+        let address =
+            MachineTerm::object_pointer_address(pointer.pointer().clone(), pointer.object_class());
         let numeric = match target_type {
             CType::UInt64 => CValue::UInt64(address),
             _ => CValue::Int64(address),
@@ -1666,7 +1656,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                     if !assumptions.proves_memory_loadable(
                         state.memory(),
                         pointer.pointer(),
-                        &Bitvector32Term::constant(width),
+                        &MachineTerm::constant(width),
                     ) && state.resources().permits_memory_read(
                         pointer.pointer(),
                         width,
@@ -1680,7 +1670,7 @@ pub(in crate::kernel) fn evaluate_c_expression_paths(
                         Proposition::CMemoryLoadable {
                             memory: state.memory().clone(),
                             base: pointer.pointer().clone(),
-                            bytes: Bitvector32Term::constant(width),
+                            bytes: MachineTerm::constant(width),
                             wide: false,
                         },
                         Some("reference binding requires live storage for the complete referent"),
@@ -2197,7 +2187,7 @@ fn evaluate_c_cast_paths(
                         bits.uint64_as_const() != Some(0)
                             && effective_assumptions.decide(&ConditionTerm::uint64_equal(
                                 bits.clone(),
-                                Bitvector32Term::uint64_constant(0),
+                                MachineTerm::uint64_constant(0),
                             )) != Some(true)
                     }
                     _ => false,
@@ -2249,7 +2239,7 @@ fn evaluate_c_cast_paths(
                 } else if integer_mode == CIntegerCastMode::UInt64BitsToInt64 {
                     match (target_type, value.numeric_value().clone()) {
                         (CType::Int64, CValue::UInt64(bits)) => {
-                            Ok(CValue::Int64(Bitvector32Term::int64_from_uint64_bits(bits)))
+                            Ok(CValue::Int64(MachineTerm::int64_from_uint64_bits(bits)))
                         }
                         _ => Err(CRuntimeError::TypeMismatch),
                     }
@@ -2307,7 +2297,7 @@ fn evaluate_c_cast_paths(
                     };
                     if effective_assumptions.decide(&ConditionTerm::uint64_equal(
                         bits.clone(),
-                        Bitvector32Term::uint64_constant(0),
+                        MachineTerm::uint64_constant(0),
                     )) == Some(true)
                     {
                         return Ok(CValue::typed_pointer(Pointer::null(), target_type));
@@ -2346,7 +2336,7 @@ fn evaluate_c_cast_paths(
                     && matches!(
                         crate::kernel::c_narrow_integer_range(value),
                         Some((
-                            Bitvector32Term::Cast {
+                            MachineTerm::Cast {
                                 spelling: MachineCastSpelling::Generic,
                                 ..
                             },
@@ -2461,10 +2451,10 @@ fn evaluate_c_float_negate_paths(
         } = path;
         let outcome = match outcome {
             CExpressionOutcome::Value(CValue::Float32(value)) => {
-                CExpressionOutcome::Value(CValue::Float32(Bitvector32Term::float32_negate(value)))
+                CExpressionOutcome::Value(CValue::Float32(MachineTerm::float32_negate(value)))
             }
             CExpressionOutcome::Value(CValue::Float64(value)) => {
-                CExpressionOutcome::Value(CValue::Float64(Bitvector32Term::float64_negate(value)))
+                CExpressionOutcome::Value(CValue::Float64(MachineTerm::float64_negate(value)))
             }
             CExpressionOutcome::Value(_) => {
                 CExpressionOutcome::RuntimeError(CRuntimeError::TypeMismatch)
@@ -3449,8 +3439,8 @@ fn read_c_lvalue_paths_without_ranges(
                             resource: Box::new(CResourceFact::view_memory(
                                 CMemoryRange::new_with_element_width(
                                     pointer.clone(),
-                                    Bitvector32Term::constant(0),
-                                    Bitvector32Term::constant(1),
+                                    MachineTerm::constant(0),
+                                    MachineTerm::constant(1),
                                     // The element the permission check
                                     // counts: a loaded pointer is one
                                     // four-byte logical field.
@@ -3760,7 +3750,7 @@ pub(in crate::kernel) fn condition_as_c_int32_paths_valued(
         }],
         // A Rust `Bool` value (decision D5) is the condition, as its cast.
         None if ConditionValueScope::is_active() => vec![CExpressionPath {
-            outcome: CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::bool_cast(
+            outcome: CExpressionOutcome::Value(CValue::Int32(MachineTerm::bool_cast(
                 MachineIntegerType::Int32,
                 if negated {
                     ConditionTerm::bool_not(condition)
@@ -3850,7 +3840,7 @@ pub(in crate::kernel) fn c_truthiness_paths(
             }
         }
         CValue::Int8(bits) => {
-            let is_zero = ConditionTerm::equal(bits, Bitvector32Term::constant(0));
+            let is_zero = ConditionTerm::equal(bits, MachineTerm::constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(true) => vec![CTruthinessPath {
                     is_true: false,
@@ -3891,7 +3881,7 @@ pub(in crate::kernel) fn c_truthiness_paths(
         | CValue::UInt8(bits)
         | CValue::UInt16(bits)
         | CValue::UInt32(bits) => {
-            let is_zero = ConditionTerm::equal(bits, Bitvector32Term::constant(0));
+            let is_zero = ConditionTerm::equal(bits, MachineTerm::constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(true) => vec![CTruthinessPath {
                     is_true: false,
@@ -3928,7 +3918,7 @@ pub(in crate::kernel) fn c_truthiness_paths(
             }
         }
         CValue::Int64(bits) => {
-            let is_zero = ConditionTerm::int64_equal(bits, Bitvector32Term::int64_constant(0));
+            let is_zero = ConditionTerm::int64_equal(bits, MachineTerm::int64_constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(is_zero) => vec![CTruthinessPath {
                     is_true: !is_zero,
@@ -3958,7 +3948,7 @@ pub(in crate::kernel) fn c_truthiness_paths(
             }
         }
         CValue::UInt64(bits) => {
-            let is_zero = ConditionTerm::uint64_equal(bits, Bitvector32Term::uint64_constant(0));
+            let is_zero = ConditionTerm::uint64_equal(bits, MachineTerm::uint64_constant(0));
             match decide_with_facts(assumptions, &facts, &is_zero) {
                 Some(is_zero) => vec![CTruthinessPath {
                     is_true: !is_zero,
@@ -4227,7 +4217,7 @@ mod pointer_integer_tests {
             cast(member_word.clone(), CType::VoidPointer, &context).unwrap(),
             CValue::Pointer(member.with_type(CType::VoidPointer))
         );
-        let variable = Bitvector32Term::Variable(Variable(991_003));
+        let variable = MachineTerm::Variable(Variable(991_003));
         let context = context.assume_condition(
             ConditionTerm::uint64_equal(
                 variable.clone(),
@@ -4283,7 +4273,7 @@ mod pointer_integer_cast_identity_tests {
     #[test]
     fn identical_numeric_bits_cannot_copy_a_casts_established_bounds() {
         let source = CPointerValue::new(Pointer::symbolic(Variable(997_001)), CType::Int32Pointer);
-        let bits = Bitvector32Term::pointer_address(source.pointer().clone());
+        let bits = MachineTerm::pointer_address(source.pointer().clone());
         let context = PureFactContext::new();
         let cast = |origin| {
             cast_c_value_to_type_with_integer_origin(
@@ -4340,31 +4330,29 @@ mod packed_word_contract_tests {
 
     #[test]
     fn modulo_conversion_observes_bits_and_discards_the_word_carrier() {
-        let word = CValue::UInt64(Bitvector32Term::uint64_constant(4_294_967_297))
+        let word = CValue::UInt64(MachineTerm::uint64_constant(4_294_967_297))
             .complete_word(Pointer::symbolic(Variable(997_030)));
         assert_eq!(
             crate::kernel::machine_integer::conversion::convert_value(
                 word.clone(),
                 MachineIntegerType::UInt32
             ),
-            Some(CValue::UInt32(Bitvector32Term::uint32_constant(1)))
+            Some(CValue::UInt32(MachineTerm::uint32_constant(1)))
         );
         assert_eq!(
             crate::kernel::machine_integer::conversion::convert_value(
                 word,
                 MachineIntegerType::UInt64
             ),
-            Some(CValue::UInt64(Bitvector32Term::uint64_constant(
-                4_294_967_297
-            )))
+            Some(CValue::UInt64(MachineTerm::uint64_constant(4_294_967_297)))
         );
     }
 
     #[test]
     fn complete_word_narrowing_uses_its_numeric_equality() {
-        let bits = Bitvector32Term::Variable(Variable(997_020));
+        let bits = MachineTerm::Variable(Variable(997_020));
         let context = PureFactContext::new().assume_condition(
-            ConditionTerm::uint64_equal(bits.clone(), Bitvector32Term::uint64_constant(41)),
+            ConditionTerm::uint64_equal(bits.clone(), MachineTerm::uint64_constant(41)),
             true,
         );
         let word = CValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_021)));
@@ -4372,7 +4360,7 @@ mod packed_word_contract_tests {
             coerce_c_value_to_type(word, CType::Int32, &mut Vec::new(), &context).unwrap();
         let term = crate::kernel::spec::c_value_bitvector_term(&narrowed).unwrap();
         assert_eq!(
-            context.decide(&ConditionTerm::equal(term, Bitvector32Term::constant(41))),
+            context.decide(&ConditionTerm::equal(term, MachineTerm::constant(41))),
             Some(true)
         );
     }
@@ -4380,7 +4368,7 @@ mod packed_word_contract_tests {
     #[test]
     fn incoming_word_carriers_need_full_equality_and_lose_it_on_withdrawal() {
         let _session = crate::kernel::VerificationSession::enter();
-        let bits = Bitvector32Term::Variable(Variable(997_001));
+        let bits = MachineTerm::Variable(Variable(997_001));
         let word = CValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_002)));
         let other = CValue::UInt64(bits).complete_word(Pointer::symbolic(Variable(997_003)));
         let empty = PureFactContext::new();
@@ -4416,7 +4404,7 @@ mod packed_word_contract_tests {
     fn modified_incoming_word_tag_bits_must_be_cleared_before_casting() {
         let _session = crate::kernel::VerificationSession::enter();
         let context = PureFactContext::new();
-        let word = CValue::UInt64(Bitvector32Term::Variable(Variable(997_010)))
+        let word = CValue::UInt64(MachineTerm::Variable(Variable(997_010)))
             .complete_word(Pointer::symbolic(Variable(997_011)));
         let original = cast(word.clone(), &context);
         let value_of = |paths: Vec<CExpressionPath>| {
@@ -4430,7 +4418,7 @@ mod packed_word_contract_tests {
         };
         let tagged = value_of(super::super::operators::apply_c_bitwise_binary(
             word,
-            CValue::Int32(Bitvector32Term::constant(1)),
+            CValue::Int32(MachineTerm::constant(1)),
             ExecutionFacts::new(),
             Vec::new(),
             &context,
@@ -4448,7 +4436,7 @@ mod packed_word_contract_tests {
         );
         let cleared = value_of(super::super::operators::apply_c_bitwise_binary(
             tagged,
-            CValue::Int32(Bitvector32Term::constant(!1)),
+            CValue::Int32(MachineTerm::constant(!1)),
             ExecutionFacts::new(),
             Vec::new(),
             &context,

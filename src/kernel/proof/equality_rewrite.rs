@@ -2,8 +2,8 @@
 
 use super::fact_reasoning::exactly_available_fact;
 use super::{ProofFacts, PropositionObligation, PropositionSource};
-use crate::kernel::Bitvector32Term;
 use crate::kernel::CompareRelation;
+use crate::kernel::MachineTerm;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
@@ -548,7 +548,7 @@ fn rewrite_with_admitted_equality_as_written(
 /// One byte, one name: an admitted `int8(u) == k`, with `u` a byte load and
 /// `k` in `-128..=127`, rewrites as `u == k mod 256`.
 ///
-/// A signed byte read is `Bitvector32Term::signed_byte(u)`, the conversion
+/// A signed byte read is `MachineTerm::signed_byte(u)`, the conversion
 /// of the byte's single (unsigned) name `u`, so every occurrence of the
 /// signed read contains `u`. Substituting `u` therefore rewrites both the
 /// signed reads (`int8(k mod 256)` folds back to `k`) and the unsigned reads
@@ -576,7 +576,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
     let byte = from.signed_byte_operand()?;
     if !matches!(
         crate::kernel::eval::viewed_as_memory_load(byte),
-        Some(Bitvector32Term::MemoryLoad(_, _, LoadKind::UInt8))
+        Some(MachineTerm::MemoryLoad(_, _, LoadKind::UInt8))
     ) {
         return None;
     }
@@ -586,7 +586,7 @@ fn signed_byte_equality_as_byte_equality(equality: &Proposition) -> Option<Propo
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(byte.clone()),
-            right: Box::new(Bitvector32Term::constant(u32::from(signed as u8))),
+            right: Box::new(MachineTerm::constant(u32::from(signed as u8))),
         },
         true,
     ))
@@ -644,10 +644,10 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
 /// term or named by its variable. Deterministic: the registry view and the
 /// canonical form are the same on check.
 fn rewrite_through_load_variable(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
-) -> Option<Bitvector32Term> {
-    let Bitvector32Term::Variable(variable) = term else {
+) -> Option<MachineTerm> {
+    let MachineTerm::Variable(variable) = term else {
         return None;
     };
     if !crate::kernel::is_load_variable(variable) {
@@ -706,8 +706,8 @@ fn rewrite_through_loaded_pointer_block(
         // discard the rewritten read or cease to be a pointer carrier.
         let load = crate::kernel::canonical_form_of_load(memory, address, kind);
         let variable = match load {
-            Bitvector32Term::Variable(variable) => variable,
-            load @ Bitvector32Term::MemoryLoad(_, _, _) => {
+            MachineTerm::Variable(variable) => variable,
+            load @ MachineTerm::MemoryLoad(_, _, _) => {
                 crate::kernel::load_variable_for_term(&load)?.0
             }
             _ => return None,
@@ -926,7 +926,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
     }
     fn rewrite_c_value(
         value: &CValue,
-        rewrite_term: &impl Fn(&Bitvector32Term) -> Bitvector32Term,
+        rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
     ) -> CValue {
         match value {
@@ -964,7 +964,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     fn rewrite_algebraic(
         term: &AlgebraicTerm,
-        rewrite_term: &impl Fn(&Bitvector32Term) -> Bitvector32Term,
+        rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
     ) -> AlgebraicTerm {
         let node = match &term.node {
@@ -1050,7 +1050,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     fn rewrite_algebraic_value(
         value: &AlgebraicValue,
-        rewrite_term: &impl Fn(&Bitvector32Term) -> Bitvector32Term,
+        rewrite_term: &impl Fn(&MachineTerm) -> MachineTerm,
         rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
     ) -> AlgebraicValue {
         match value {
@@ -1163,17 +1163,17 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
         }
         fn rewrite_term_offset(
-            term: &Bitvector32Term,
+            term: &MachineTerm,
             left: &PointerOffsetTerm,
             right: &PointerOffsetTerm,
-        ) -> Bitvector32Term {
+        ) -> MachineTerm {
             let rewrite_pointer = |pointer: &Pointer| Pointer {
                 block: pointer.block.clone(),
                 offset: rewrite_offset(&pointer.offset, left, right),
             };
             match term {
-                Bitvector32Term::PureFunctionApplication { name, arguments } => {
-                    Bitvector32Term::PureFunctionApplication {
+                MachineTerm::PureFunctionApplication { name, arguments } => {
+                    MachineTerm::PureFunctionApplication {
                         name: name.clone(),
                         arguments: arguments
                             .iter()
@@ -1181,25 +1181,23 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             .collect(),
                     }
                 }
-                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(rewrite_pointer(pointer)),
                     *kind,
                 ),
-                Bitvector32Term::PointerAddress(pointer, class) => {
-                    Bitvector32Term::object_pointer_address(rewrite_pointer(pointer), class.class())
+                MachineTerm::PointerAddress(pointer, class) => {
+                    MachineTerm::object_pointer_address(rewrite_pointer(pointer), class.class())
                 }
-                Bitvector32Term::Variable(_) => {
-                    rewrite_through_load_variable(term, &rewrite_pointer)
-                        .unwrap_or_else(|| term.clone())
-                }
-                Bitvector32Term::If { .. }
-                | Bitvector32Term::BoolCast { .. }
-                | Bitvector32Term::RangeFold { .. }
-                | Bitvector32Term::ClickFunctionApplication { .. }
-                | Bitvector32Term::AlgebraicMatch { .. }
-                | Bitvector32Term::IntegerToMachine { .. }
-                | Bitvector32Term::Constant { .. } => term.clone(),
+                MachineTerm::Variable(_) => rewrite_through_load_variable(term, &rewrite_pointer)
+                    .unwrap_or_else(|| term.clone()),
+                MachineTerm::If { .. }
+                | MachineTerm::BoolCast { .. }
+                | MachineTerm::RangeFold { .. }
+                | MachineTerm::ClickFunctionApplication { .. }
+                | MachineTerm::AlgebraicMatch { .. }
+                | MachineTerm::IntegerToMachine { .. }
+                | MachineTerm::Constant { .. } => term.clone(),
                 term => match (term.as_binary(), term.as_unary()) {
                     // The 32-bit word operators are rebuilt as bare nodes, the rest
                     // through their smart constructors.
@@ -1296,7 +1294,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             }
             Proposition::ConditionIs(condition, expected) => {
-                let rewrite_term = |term: &Bitvector32Term| rewrite_term_offset(term, left, right);
+                let rewrite_term = |term: &MachineTerm| rewrite_term_offset(term, left, right);
                 let rewritten = match condition {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -1389,7 +1387,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 child: Box::new(rewrite_resource_offset(child, left, right)),
             },
             Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
-                let rewrite_term = |term: &Bitvector32Term| rewrite_term_offset(term, left, right);
+                let rewrite_term = |term: &MachineTerm| rewrite_term_offset(term, left, right);
                 let rewrite_pointer = |pointer: &Pointer| Pointer {
                     block: pointer.block.clone(),
                     offset: rewrite_offset(&pointer.offset, left, right),
@@ -1550,25 +1548,23 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // the loaded pointer with its proven-equal form is exact term
         // congruence, with work bounded by the goal's size.
         fn rewrite_load_pointers(
-            term: &Bitvector32Term,
+            term: &MachineTerm,
             rewrite_pointer: &impl Fn(&Pointer) -> Pointer,
-        ) -> Bitvector32Term {
-            let binary = |left_term: &Bitvector32Term, right_term: &Bitvector32Term| {
+        ) -> MachineTerm {
+            let binary = |left_term: &MachineTerm, right_term: &MachineTerm| {
                 (
                     Box::new(rewrite_load_pointers(left_term, rewrite_pointer)),
                     Box::new(rewrite_load_pointers(right_term, rewrite_pointer)),
                 )
             };
             match term {
-                Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(rewrite_pointer(pointer)),
                     *kind,
                 ),
-                Bitvector32Term::Variable(_) => {
-                    rewrite_through_load_variable(term, rewrite_pointer)
-                        .unwrap_or_else(|| term.clone())
-                }
+                MachineTerm::Variable(_) => rewrite_through_load_variable(term, rewrite_pointer)
+                    .unwrap_or_else(|| term.clone()),
                 binary_term!(Bits32 @ format32, Add, left_term, right_term) => {
                     let (left, right) = binary(left_term, right_term);
                     binary_node!(@ *format32, Add, left, right)
@@ -1636,7 +1632,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             ),
             Proposition::ConditionIs(condition, expected) => {
                 let rewrite_term =
-                    |term: &Bitvector32Term| rewrite_load_pointers(term, &rewrite_pointer);
+                    |term: &MachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
                 let rewritten = match condition {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
@@ -1718,7 +1714,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
                 let rewrite_term =
-                    |term: &Bitvector32Term| rewrite_load_pointers(term, &rewrite_pointer);
+                    |term: &MachineTerm| rewrite_load_pointers(term, &rewrite_pointer);
                 Proposition::Equal(
                     Term::Algebraic(rewrite_algebraic(
                         goal_left,
@@ -1765,12 +1761,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
     // Address annotations describe a producer's object class, not the bits
     // observed by a numeric equality. Keep the pointer and mask themselves
     // exact; no pointer-value or memory-snapshot identity is substituted.
-    fn same_address_observation(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
-        fn key(term: &Bitvector32Term) -> Option<(&Pointer, Option<u64>)> {
+    fn same_address_observation(left: &MachineTerm, right: &MachineTerm) -> bool {
+        fn key(term: &MachineTerm) -> Option<(&Pointer, Option<u64>)> {
             if let Some(pointer) = term.address_pointer() {
                 return Some((pointer, None));
             }
-            let Bitvector32Term::Binary {
+            let MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseAnd,
                 left,
@@ -1788,15 +1784,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
         }
         matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
     }
-    fn rewrite_term(
-        term: &Bitvector32Term,
-        from: &Bitvector32Term,
-        to: &Bitvector32Term,
-    ) -> Bitvector32Term {
+    fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {
         fn rewrite_offset(
             offset: &PointerOffsetTerm,
-            from: &Bitvector32Term,
-            to: &Bitvector32Term,
+            from: &MachineTerm,
+            to: &MachineTerm,
         ) -> PointerOffsetTerm {
             match offset {
                 PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::add(
@@ -1831,15 +1823,11 @@ fn rewrite_atomic_proposition_by_exact_equality(
         // replacement keeps that cast, including its signedness. Never
         // identify a full-width literal by truncating it to 32 bits.
         if let bits32_constant!(_) = from {
-            let casts: &[fn(Bitvector32Term) -> Bitvector32Term] = match term {
-                int64_constant!(_) => &[
-                    Bitvector32Term::int64_from_32,
-                    Bitvector32Term::int64_from_uint32,
-                ],
-                uint64_constant!(_) => &[
-                    Bitvector32Term::uint64_from_32,
-                    Bitvector32Term::uint64_from_int32,
-                ],
+            let casts: &[fn(MachineTerm) -> MachineTerm] = match term {
+                int64_constant!(_) => &[MachineTerm::int64_from_32, MachineTerm::int64_from_uint32],
+                uint64_constant!(_) => {
+                    &[MachineTerm::uint64_from_32, MachineTerm::uint64_from_int32]
+                }
                 _ => &[],
             };
             for cast in casts {
@@ -1848,7 +1836,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }
             }
         }
-        let binary = |left: &Bitvector32Term, right: &Bitvector32Term| {
+        let binary = |left: &MachineTerm, right: &MachineTerm| {
             (
                 Box::new(rewrite_term(left, from, to)),
                 Box::new(rewrite_term(right, from, to)),
@@ -1862,30 +1850,25 @@ fn rewrite_atomic_proposition_by_exact_equality(
             binary_term!(Int32, Add, left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
-                    (bits32_constant!(first), bits32_constant!(second)) => {
-                        Bitvector32Term::constant(
-                            constant_u32(*first).wrapping_add(constant_u32(*second)),
-                        )
-                    }
+                    (bits32_constant!(first), bits32_constant!(second)) => MachineTerm::constant(
+                        constant_u32(*first).wrapping_add(constant_u32(*second)),
+                    ),
                     _ => binary_node!(Int32, Add, left, right),
                 }
             }
             binary_term!(Int32, Subtract, left, right) => {
                 let (left, right) = binary(left, right);
                 match (left.as_ref(), right.as_ref()) {
-                    (bits32_constant!(first), bits32_constant!(second)) => {
-                        Bitvector32Term::constant(
-                            constant_u32(*first).wrapping_sub(constant_u32(*second)),
-                        )
-                    }
+                    (bits32_constant!(first), bits32_constant!(second)) => MachineTerm::constant(
+                        constant_u32(*first).wrapping_sub(constant_u32(*second)),
+                    ),
                     _ => binary_node!(Int32, Subtract, left, right),
                 }
             }
-            binary_term!(Int32, Multiply, left, right) => Bitvector32Term::multiply(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            binary_term!(Int32, BitwiseAnd, left, right) => Bitvector32Term::bitwise_and(
+            binary_term!(Int32, Multiply, left, right) => {
+                MachineTerm::multiply(rewrite_term(left, from, to), rewrite_term(right, from, to))
+            }
+            binary_term!(Int32, BitwiseAnd, left, right) => MachineTerm::bitwise_and(
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
@@ -1894,7 +1877,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 // checked separately during expression evaluation. Preserve
                 // unsigned high-bit results when substitution makes both
                 // operands constant.
-                Bitvector32Term::unsigned_shift_left(
+                MachineTerm::unsigned_shift_left(
                     rewrite_term(left, from, to),
                     rewrite_term(right, from, to),
                 )
@@ -1905,7 +1888,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 let (left, right) = binary(left, right);
                 match (left.constant32(), right.constant32()) {
                     (Some(first), Some(second)) => {
-                        Bitvector32Term::uint32_constant(first.wrapping_add(second))
+                        MachineTerm::uint32_constant(first.wrapping_add(second))
                     }
                     _ => binary_node!(UInt32, Add, left, right),
                 }
@@ -1914,27 +1897,27 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 let (left, right) = binary(left, right);
                 match (left.constant32(), right.constant32()) {
                     (Some(first), Some(second)) => {
-                        Bitvector32Term::uint32_constant(first.wrapping_sub(second))
+                        MachineTerm::uint32_constant(first.wrapping_sub(second))
                     }
                     _ => binary_node!(UInt32, Subtract, left, right),
                 }
             }
-            binary_term!(UInt32, Multiply, left, right) => Bitvector32Term::multiply_at(
+            binary_term!(UInt32, Multiply, left, right) => MachineTerm::multiply_at(
                 MachineIntegerType::UInt32,
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
-            binary_term!(UInt32, BitwiseAnd, left, right) => Bitvector32Term::bitwise_and_at(
+            binary_term!(UInt32, BitwiseAnd, left, right) => MachineTerm::bitwise_and_at(
                 MachineIntegerType::UInt32,
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
-            binary_term!(UInt32, ShiftLeft, left, right) => Bitvector32Term::uint32_shift_left(
+            binary_term!(UInt32, ShiftLeft, left, right) => MachineTerm::uint32_shift_left(
                 rewrite_term(left, from, to),
                 rewrite_term(right, from, to),
             ),
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
-                Bitvector32Term::PureFunctionApplication {
+            MachineTerm::PureFunctionApplication { name, arguments } => {
+                MachineTerm::PureFunctionApplication {
                     name: name.clone(),
                     arguments: arguments
                         .iter()
@@ -1944,7 +1927,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             }
             // The memory snapshot is fixed, but its address is an ordinary
             // expression: exact equality substitution is congruent there too.
-            Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
@@ -1952,28 +1935,24 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 }),
                 *kind,
             ),
-            Bitvector32Term::PointerAddress(pointer, class) => {
-                Bitvector32Term::object_pointer_address(
-                    Pointer {
-                        block: pointer.block.clone(),
-                        offset: rewrite_offset(&pointer.offset, from, to),
-                    },
-                    class.class(),
-                )
-            }
-            Bitvector32Term::Variable(_) => {
-                rewrite_through_load_variable(term, &|pointer| Pointer {
+            MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
+                Pointer {
                     block: pointer.block.clone(),
                     offset: rewrite_offset(&pointer.offset, from, to),
-                })
-                .unwrap_or_else(|| term.clone())
-            }
-            Bitvector32Term::If { .. }
-            | Bitvector32Term::BoolCast { .. }
-            | Bitvector32Term::RangeFold { .. }
-            | Bitvector32Term::ClickFunctionApplication { .. }
-            | Bitvector32Term::AlgebraicMatch { .. }
-            | Bitvector32Term::IntegerToMachine { .. } => {
+                },
+                class.class(),
+            ),
+            MachineTerm::Variable(_) => rewrite_through_load_variable(term, &|pointer| Pointer {
+                block: pointer.block.clone(),
+                offset: rewrite_offset(&pointer.offset, from, to),
+            })
+            .unwrap_or_else(|| term.clone()),
+            MachineTerm::If { .. }
+            | MachineTerm::BoolCast { .. }
+            | MachineTerm::RangeFold { .. }
+            | MachineTerm::ClickFunctionApplication { .. }
+            | MachineTerm::AlgebraicMatch { .. }
+            | MachineTerm::IntegerToMachine { .. } => {
                 let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
                 let rewritten = rewrite.bits(term);
                 // The walker reports a scope it will not substitute through,
@@ -1988,7 +1967,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
                     rewritten
                 }
             }
-            Bitvector32Term::Constant { .. } => term.clone(),
+            MachineTerm::Constant { .. } => term.clone(),
             term => match (term.as_binary(), term.as_unary()) {
                 // The 32-bit word operators are rebuilt as bare nodes, the rest
                 // through their smart constructors.
@@ -2009,8 +1988,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
 
     fn rewrite_offset_term(
         offset: &PointerOffsetTerm,
-        from: &Bitvector32Term,
-        to: &Bitvector32Term,
+        from: &MachineTerm,
+        to: &MachineTerm,
     ) -> PointerOffsetTerm {
         match offset {
             PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::add(
@@ -2043,8 +2022,8 @@ fn rewrite_atomic_proposition_by_exact_equality(
     // retaining the carrier when it remains symbolic.
     fn rewrite_integer_observation(
         term: &SharedIntegerTerm,
-        from: &Bitvector32Term,
-        to: &Bitvector32Term,
+        from: &MachineTerm,
+        to: &MachineTerm,
     ) -> SharedIntegerTerm {
         match term.as_ref() {
             IntegerTerm::Machine(machine) => {
@@ -2136,7 +2115,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             true
         )
     );
-    let rewrite_range_bound = |range: &CMemoryRange, bound: &Bitvector32Term| {
+    let rewrite_range_bound = |range: &CMemoryRange, bound: &MachineTerm| {
         // A narrow equality cannot replace the complete value of a native
         // bound, even when both are represented by the same term variant.
         if range.wide_bounds().is_some() && !full_width_equality {
@@ -2307,7 +2286,7 @@ fn rewrite_atomic_proposition_by_exact_equality(
             wide: *wide,
         },
         Proposition::Equal(Term::Algebraic(goal_left), Term::Algebraic(goal_right)) => {
-            let rewrite_term = |term: &Bitvector32Term| rewrite_term(term, left, right);
+            let rewrite_term = |term: &MachineTerm| rewrite_term(term, left, right);
             let rewrite_pointer = |pointer: &Pointer| Pointer {
                 block: pointer.block.clone(),
                 offset: rewrite_offset_term(&pointer.offset, left, right),
@@ -2348,13 +2327,10 @@ mod tests {
         for bytes in [4, 8] {
             let _session = VerificationSession::enter();
             let memory = intern_c_memory(CMemory::new());
-            let index = Bitvector32Term::Variable(Variable(73_001));
+            let index = MachineTerm::Variable(Variable(73_001));
             let base = Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::Variable(Variable(73_002)),
-                    4,
-                ),
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(73_002)), 4),
             };
             let address = base.offset_by_int32_elements(index.clone());
             crate::kernel::eval::record_load_access_width(memory.memory(), &address, bytes);
@@ -2367,7 +2343,7 @@ mod tests {
             else {
                 panic!("rewritten scalar comparison");
             };
-            let Bitvector32Term::Variable(variable) = *left else {
+            let MachineTerm::Variable(variable) = *left else {
                 panic!("rewritten read retains its name");
             };
             assert_eq!(registered_load_bytes_for_variable(&variable), Some(bytes));
@@ -2477,7 +2453,7 @@ mod tests {
             CMemory::new().store(to.clone(), CValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
-            let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+            let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
                 memory.clone(),
                 address.clone(),
                 LoadKind::Int32,
@@ -2502,19 +2478,19 @@ mod tests {
         );
     }
 
-    fn observed_native_bound(ty: MachineIntegerType) -> Bitvector32Term {
+    fn observed_native_bound(ty: MachineIntegerType) -> MachineTerm {
         match ty {
-            MachineIntegerType::Int64 => Bitvector32Term::int64_constant(10),
-            MachineIntegerType::UInt64 => Bitvector32Term::uint64_constant(10),
-            _ => Bitvector32Term::constant(10),
+            MachineIntegerType::Int64 => MachineTerm::int64_constant(10),
+            MachineIntegerType::UInt64 => MachineTerm::uint64_constant(10),
+            _ => MachineTerm::constant(10),
         }
     }
 
     fn observed_native_condition(
         ty: MachineIntegerType,
         operation: usize,
-        left: Bitvector32Term,
-        right: Bitvector32Term,
+        left: MachineTerm,
+        right: MachineTerm,
     ) -> ConditionTerm {
         use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
         match (ty, operation) {
@@ -2575,7 +2551,7 @@ mod tests {
     #[test]
     fn integer_rewrite_reaches_observations_beside_an_already_rewritten_integer_leaf() {
         use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
-        let word = Bitvector32Term::Variable(Variable(74_001));
+        let word = MachineTerm::Variable(Variable(74_001));
         let target: SharedIntegerTerm = IntegerTerm::var(Variable(74_002)).into();
         let bound: SharedIntegerTerm = IntegerTerm::constant_i64(10).into();
         for ty in [Int32, UInt32, Int64, UInt64] {
@@ -2673,7 +2649,7 @@ mod tests {
     #[test]
     fn integer_rewrite_keeps_other_observation_formats_and_operands_in_compounds() {
         use MachineIntegerType::{Int32, Int64, UInt32, UInt64};
-        let word = Bitvector32Term::Variable(Variable(74_101));
+        let word = MachineTerm::Variable(Variable(74_101));
         let target: SharedIntegerTerm = IntegerTerm::var(Variable(74_102)).into();
         let bound: SharedIntegerTerm = IntegerTerm::constant_i64(10).into();
         for source_ty in [Int32, UInt32, Int64, UInt64] {
@@ -2720,7 +2696,7 @@ mod tests {
                 observed_native_condition(
                     source_ty,
                     1,
-                    Bitvector32Term::Variable(Variable(74_103)),
+                    MachineTerm::Variable(Variable(74_103)),
                     observed_native_bound(source_ty),
                 ),
                 true,
@@ -2732,7 +2708,7 @@ mod tests {
     #[test]
     fn integer_observation_rewrite_keeps_quantifier_capture_checks() {
         let variable = Variable(74_151);
-        let word = Bitvector32Term::Variable(variable);
+        let word = MachineTerm::Variable(variable);
         let source = IntegerTerm::from_machine(MachineIntegerType::Int32, word.clone()).unwrap();
         let cited = integer_equality(source, IntegerTerm::var(Variable(74_152)));
         let goal = Proposition::ForAll {
@@ -2752,7 +2728,7 @@ mod tests {
         assert!(rewrite_with_admitted_equality(&goal, &cited).is_err());
     }
 
-    fn equality(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn equality(left: MachineTerm, right: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -2774,21 +2750,21 @@ mod tests {
     /// rewrite search never stacks σ(σ(x)) or files `x` at `uint32`.
     #[test]
     fn a_sign_cast_equality_with_its_operand_is_a_vacuous_rewrite() {
-        let x = Bitvector32Term::Variable(Variable(73_101));
-        let tag = Bitvector32Term::Variable(Variable(73_102));
-        let sigma_x = Bitvector32Term::sign_cast32(
+        let x = MachineTerm::Variable(Variable(73_101));
+        let tag = MachineTerm::Variable(Variable(73_102));
+        let sigma_x = MachineTerm::sign_cast32(
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
             x.clone(),
         );
         let goal = Proposition::ConditionIs(
             ConditionTerm::unsigned_less_equal(
-                Bitvector32Term::add_at(MachineIntegerType::UInt32, tag, sigma_x.clone()),
-                Bitvector32Term::uint32_constant(2000),
+                MachineTerm::add_at(MachineIntegerType::UInt32, tag, sigma_x.clone()),
+                MachineTerm::uint32_constant(2000),
             ),
             true,
         );
-        let observed = |ty, term: &Bitvector32Term| {
+        let observed = |ty, term: &MachineTerm| {
             IntegerTerm::from_machine(ty, term.clone()).expect("a symbolic observation")
         };
         for equality in [
@@ -2817,15 +2793,15 @@ mod tests {
 
     #[test]
     fn integer_rewrite_presentation_accepts_only_the_same_normalized_claim() {
-        let index = Bitvector32Term::Variable(Variable(9901));
+        let index = MachineTerm::Variable(Variable(9901));
         let value = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::Variable(Variable(9902)),
+            MachineTerm::Variable(Variable(9902)),
         )
         .unwrap();
         let other = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::Variable(Variable(9903)),
+            MachineTerm::Variable(Variable(9903)),
         )
         .unwrap();
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, index.clone()).unwrap();
@@ -2837,7 +2813,7 @@ mod tests {
             ConditionTerm::IntegerLessEqual(value.clone().into(), rhs.into()),
             true,
         );
-        let cited = equality(index, Bitvector32Term::constant(16));
+        let cited = equality(index, MachineTerm::constant(16));
         let facts = ProofFacts::default().with_fact(cited.clone());
         let mut rewrite = facts.check_equality_rewrite(&goal, &cited).unwrap();
         let raw = rewrite.proposition().clone();
@@ -2877,27 +2853,27 @@ mod tests {
 
     #[test]
     fn native_equality_rewrite_retains_folded_literal_widening() {
-        let source = Bitvector32Term::constant(u32::MAX);
-        let replacement = Bitvector32Term::Variable(Variable(193_024));
-        let value = Bitvector32Term::Variable(Variable(193_025));
+        let source = MachineTerm::constant(u32::MAX);
+        let replacement = MachineTerm::Variable(Variable(193_024));
+        let value = MachineTerm::Variable(Variable(193_025));
         let cited = equality(source.clone(), replacement.clone());
         let facts = ProofFacts::default().with_fact(cited.clone());
         for (folded, lifted) in [
             (
-                Bitvector32Term::int64_constant(-1),
-                Bitvector32Term::int64_from_32(replacement.clone()),
+                MachineTerm::int64_constant(-1),
+                MachineTerm::int64_from_32(replacement.clone()),
             ),
             (
-                Bitvector32Term::int64_constant(i64::from(u32::MAX)),
-                Bitvector32Term::int64_from_uint32(replacement.clone()),
+                MachineTerm::int64_constant(i64::from(u32::MAX)),
+                MachineTerm::int64_from_uint32(replacement.clone()),
             ),
             (
-                Bitvector32Term::uint64_constant(u64::MAX),
-                Bitvector32Term::uint64_from_int32(replacement.clone()),
+                MachineTerm::uint64_constant(u64::MAX),
+                MachineTerm::uint64_from_int32(replacement.clone()),
             ),
             (
-                Bitvector32Term::uint64_constant(u64::from(u32::MAX)),
-                Bitvector32Term::uint64_from_32(replacement.clone()),
+                MachineTerm::uint64_constant(u64::from(u32::MAX)),
+                MachineTerm::uint64_from_32(replacement.clone()),
             ),
         ] {
             let condition = |bound| {
@@ -2922,9 +2898,9 @@ mod tests {
         // These full-width values have the same low bits as the source, but
         // no matching widening of it. The equality grants no substitution.
         for bound in [
-            Bitvector32Term::uint64_constant(0x1_ffff_ffff),
-            Bitvector32Term::int64_constant(0x1_ffff_ffff),
-            Bitvector32Term::int64_constant(-0x1_0000_0001),
+            MachineTerm::uint64_constant(0x1_ffff_ffff),
+            MachineTerm::int64_constant(0x1_ffff_ffff),
+            MachineTerm::int64_constant(-0x1_0000_0001),
         ] {
             let goal = Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -2941,15 +2917,14 @@ mod tests {
 
     #[test]
     fn native_equality_rewrite_recovers_unsigned_32_bit_order_bias() {
-        let value = Bitvector32Term::Variable(Variable(193_026));
-        let divisor = Bitvector32Term::Variable(Variable(193_027));
+        let value = MachineTerm::Variable(Variable(193_026));
+        let divisor = MachineTerm::Variable(Variable(193_027));
         for source in [65521, 0x8000_0001, u32::MAX] {
-            let source = Bitvector32Term::constant(source);
+            let source = MachineTerm::constant(source);
             let cited = equality(source.clone(), divisor.clone());
             let facts = ProofFacts::default().with_fact(cited.clone());
             for make in [
-                ConditionTerm::unsigned_less_than
-                    as fn(Bitvector32Term, Bitvector32Term) -> ConditionTerm,
+                ConditionTerm::unsigned_less_than as fn(MachineTerm, MachineTerm) -> ConditionTerm,
                 ConditionTerm::unsigned_less_equal,
             ] {
                 for truth in [false, true] {
@@ -2979,8 +2954,8 @@ mod tests {
 
     #[test]
     fn native_equality_rewrite_enters_integer_observation_bounds() {
-        let x = Bitvector32Term::Variable(Variable(193_022));
-        let y = Bitvector32Term::Variable(Variable(193_023));
+        let x = MachineTerm::Variable(Variable(193_022));
+        let y = MachineTerm::Variable(Variable(193_023));
         let cited = equality(x.clone(), y.clone());
         let observe = |value| IntegerTerm::from_machine(MachineIntegerType::UInt32, value).unwrap();
         let comparisons = [
@@ -3166,7 +3141,7 @@ mod tests {
             MachineIntegerType::Int128,
         ] {
             let cast = |value: IntegerTerm| {
-                Term::Bitvector32(Bitvector32Term::IntegerToMachine {
+                Term::Bitvector32(MachineTerm::IntegerToMachine {
                     value: value.into(),
                     destination,
                 })
@@ -3206,9 +3181,8 @@ mod tests {
         );
         // One bitvector carrier can be observed at several widths and signs.
         // Equalities between its int64 observations grant no cross-type match.
-        let observe = |ty| {
-            IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(193_015))).unwrap()
-        };
+        let observe =
+            |ty| IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(193_015))).unwrap();
         let wide = integer_equality(observe(MachineIntegerType::Int64), y.clone());
         for ty in [
             MachineIntegerType::Int32,
@@ -3236,12 +3210,12 @@ mod tests {
         let before = CMemory::new().with_block("integer-rewrite-snapshot", 8);
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int64(Bitvector32Term::int64_constant(9)),
+            CValue::Int64(MachineTerm::int64_constant(9)),
         );
         let observe = |memory: CMemory| {
             IntegerTerm::from_machine(
                 MachineIntegerType::Int64,
-                Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory(memory),
                     Box::new(pointer.clone()),
                     LoadKind::Bits64,
@@ -3306,32 +3280,32 @@ mod tests {
         // These raw native forms are valid opaque observation identities.
         // Congruence must not fold them while rewriting an unrelated Integer.
         let terms = [
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
-                value: Box::new(Bitvector32Term::constant(1)),
+                value: Box::new(MachineTerm::constant(1)),
                 from: MachineIntegerType::Int32,
                 to: MachineIntegerType::Int64,
             },
-            Bitvector32Term::legacy_cast(
+            MachineTerm::legacy_cast(
                 MachineCastSpelling::Int64FromUInt32,
-                Box::new(Bitvector32Term::legacy_cast(
+                Box::new(MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(Bitvector32Term::uint64_constant(1)),
+                    Box::new(MachineTerm::uint64_constant(1)),
                 )),
             ),
-            Bitvector32Term::If {
+            MachineTerm::If {
                 condition: Box::new(ConditionTerm::Constant(true)),
-                then_term: Box::new(Bitvector32Term::int64_constant(1)),
-                else_term: Box::new(Bitvector32Term::int64_constant(2)),
+                then_term: Box::new(MachineTerm::int64_constant(1)),
+                else_term: Box::new(MachineTerm::int64_constant(2)),
             },
         ];
         for term in terms {
             let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int64,
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::Int64,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(Bitvector32Term::Variable(Variable(193_043))),
+                    left: Box::new(MachineTerm::Variable(Variable(193_043))),
                     right: Box::new(term),
                 },
             ));
@@ -3356,9 +3330,9 @@ mod tests {
         let cast = |value: IntegerTerm| {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int64,
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
-                    value: Box::new(Bitvector32Term::IntegerToMachine {
+                    value: Box::new(MachineTerm::IntegerToMachine {
                         value: value.into(),
                         destination: MachineIntegerType::Int32,
                     }),
@@ -3378,9 +3352,9 @@ mod tests {
 
     #[test]
     fn checked_rewrite_requires_the_cited_equality_in_its_own_context() {
-        let x = Bitvector32Term::Variable(Variable(901));
-        let y = Bitvector32Term::Variable(Variable(902));
-        let one = Bitvector32Term::constant(1);
+        let x = MachineTerm::Variable(Variable(901));
+        let y = MachineTerm::Variable(Variable(902));
+        let one = MachineTerm::constant(1);
         let cited = equality(x.clone(), y.clone());
         let goal = equality(x.clone(), one.clone());
         let empty = ProofFacts::default();
@@ -3402,14 +3376,14 @@ mod tests {
 
     #[test]
     fn checked_rewrite_rejects_forged_presentation_without_changing_result() {
-        let x = Bitvector32Term::Variable(Variable(911));
-        let y = Bitvector32Term::Variable(Variable(912));
+        let x = MachineTerm::Variable(Variable(911));
+        let y = MachineTerm::Variable(Variable(912));
         let cited = equality(x.clone(), y.clone());
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
-        let goal = equality(x, Bitvector32Term::constant(3));
-        let expected = equality(y, Bitvector32Term::constant(3));
+        let goal = equality(x, MachineTerm::constant(3));
+        let expected = equality(y, MachineTerm::constant(3));
         let mut result = facts.check_equality_rewrite(&goal, &cited).unwrap();
-        let forged = equality(Bitvector32Term::constant(0), Bitvector32Term::constant(0));
+        let forged = equality(MachineTerm::constant(0), MachineTerm::constant(0));
         assert!(!result.try_present_as(&forged));
         assert!(result.try_present_as(&expected));
         let (obligation, retained) = result.into_obligation("display", None::<()>);
@@ -3432,9 +3406,9 @@ mod tests {
             let changed = after.clone().store(
                 pointer.clone(),
                 if wide {
-                    CValue::UInt64(Bitvector32Term::uint64_constant(7))
+                    CValue::UInt64(MachineTerm::uint64_constant(7))
                 } else {
-                    CValue::Int32(Bitvector32Term::constant(7))
+                    CValue::Int32(MachineTerm::constant(7))
                 },
             );
             let kind = if wide {
@@ -3444,20 +3418,20 @@ mod tests {
             };
             crate::kernel::eval::declare_load_access_width(&pointer, if wide { 8 } else { 4 });
             let load = |memory: &CMemory, pointer: Pointer, kind| {
-                Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(memory),
                     Box::new(pointer),
                     kind,
                 )
             };
             let one = if wide {
-                Bitvector32Term::uint64_constant(1)
+                MachineTerm::uint64_constant(1)
             } else {
-                Bitvector32Term::constant(1)
+                MachineTerm::constant(1)
             };
             let mask = |value| {
                 if wide {
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseAnd,
                         left: Box::new(value),
@@ -3529,7 +3503,7 @@ mod tests {
                     kind,
                 )),
                 if wide {
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseOr,
                         left: Box::new(load(&after, pointer.clone(), kind)),
@@ -3564,17 +3538,17 @@ mod tests {
         let before = CMemory::new().with_block("compound-rewrite-work", 8);
         let after = before.clone().with_block("local:compound-rewrite-work", 4);
         let expression = |memory: &CMemory, size| {
-            let mut term = Bitvector32Term::MemoryLoad(
+            let mut term = MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),
                 LoadKind::Bits64,
             );
             for index in 0..size {
-                term = Bitvector32Term::Binary {
+                term = MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::BitwiseXor,
                     left: Box::new(term),
-                    right: Box::new(Bitvector32Term::Variable(Variable(931_000 + index))),
+                    right: Box::new(MachineTerm::Variable(Variable(931_000 + index))),
                 };
             }
             term
@@ -3592,21 +3566,15 @@ mod tests {
         };
         let mut costs = Vec::new();
         for size in [8, 32, 128] {
-            let cited = eq(
-                expression(&before, size),
-                Bitvector32Term::uint64_constant(1),
-            );
-            let goal = eq(
-                expression(&after, size),
-                Bitvector32Term::uint64_constant(1),
-            );
+            let cited = eq(expression(&before, size), MachineTerm::uint64_constant(1));
+            let goal = eq(expression(&after, size), MachineTerm::uint64_constant(1));
             let mut context_costs = Vec::new();
             for ambient in [0, 32, 128] {
                 let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
                 for i in 0..ambient {
                     facts = facts.with_fact(equality(
-                        Bitvector32Term::Variable(Variable(930_000 + i)),
-                        Bitvector32Term::constant(i as u32),
+                        MachineTerm::Variable(Variable(930_000 + i)),
+                        MachineTerm::constant(i as u32),
                     ));
                 }
                 crate::kernel::eval::clear_load_canonicalization_caches();
@@ -3638,34 +3606,32 @@ mod tests {
         // of its own width, and a load whose width nobody recorded is taken
         // as the widest scalar access, which no `int32` store supplies.
         crate::kernel::eval::declare_load_access_width(&pointer, 4);
-        let memory = CMemory::new().with_block("rewrite-presentation", 4).store(
-            pointer.clone(),
-            CValue::Int32(Bitvector32Term::constant(42)),
-        );
-        let changed = memory.clone().store(
-            pointer.clone(),
-            CValue::Int32(Bitvector32Term::constant(43)),
-        );
+        let memory = CMemory::new()
+            .with_block("rewrite-presentation", 4)
+            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(42)));
+        let changed = memory
+            .clone()
+            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(43)));
         let load = |memory| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let x = Bitvector32Term::Variable(Variable(931));
-        let y = Bitvector32Term::Variable(Variable(932));
+        let x = MachineTerm::Variable(Variable(931));
+        let y = MachineTerm::Variable(Variable(932));
         let cited = equality(x.clone(), y.clone());
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&cited));
         let mut result = facts
             .check_equality_rewrite(&equality(x, load(memory)), &cited)
             .unwrap();
         assert!(!result.try_present_as(&equality(y.clone(), load(changed))));
-        assert!(result.try_present_as(&equality(y.clone(), Bitvector32Term::constant(42))));
+        assert!(result.try_present_as(&equality(y.clone(), MachineTerm::constant(42))));
         let (obligation, _) = result.into_obligation((), None::<()>);
         assert_eq!(
             obligation.proposition(),
-            &equality(y, Bitvector32Term::constant(42))
+            &equality(y, MachineTerm::constant(42))
         );
     }
 
@@ -3693,7 +3659,7 @@ mod tests {
                 true,
             )
         };
-        let variable = |id| Bitvector32Term::Variable(id);
+        let variable = |id| MachineTerm::Variable(id);
         let quantified = |body| Proposition::ForAll {
             name: Default::default(),
             var: bound,
@@ -3701,15 +3667,15 @@ mod tests {
             body: Box::new(body),
         };
 
-        let shadowed = atom(variable(bound), Bitvector32Term::constant(0));
-        let shadowed_goal = quantified(atom(variable(bound), Bitvector32Term::constant(0)));
+        let shadowed = atom(variable(bound), MachineTerm::constant(0));
+        let shadowed_goal = quantified(atom(variable(bound), MachineTerm::constant(0)));
         assert!(
             checked_rewrite(&shadowed_goal, &shadowed, std::slice::from_ref(&shadowed),).is_err(),
             "an outer equality cannot replace the bound occurrence"
         );
 
         let capturing = atom(variable(free), variable(bound));
-        let capturing_goal = quantified(atom(variable(free), Bitvector32Term::constant(0)));
+        let capturing_goal = quantified(atom(variable(free), MachineTerm::constant(0)));
         assert!(
             checked_rewrite(
                 &capturing_goal,
@@ -3723,7 +3689,7 @@ mod tests {
             name: "witness".to_string(),
             var: bound,
             sort: Sort::CInt32,
-            body: Box::new(atom(variable(free), Bitvector32Term::constant(0))),
+            body: Box::new(atom(variable(free), MachineTerm::constant(0))),
         };
         assert!(
             checked_rewrite(&existential, &capturing, std::slice::from_ref(&capturing),).is_err(),
@@ -3732,7 +3698,7 @@ mod tests {
 
         let hidden_capture = atom(
             variable(free),
-            Bitvector32Term::ClickFunctionApplication {
+            MachineTerm::ClickFunctionApplication {
                 name: "f".to_string(),
                 arguments: vec![PureFunctionArgument::Value(CValue::Int32(variable(bound)))],
             },
@@ -3747,7 +3713,7 @@ mod tests {
             "a variable inside a pure-function argument must not become bound"
         );
 
-        let safe = atom(variable(free), Bitvector32Term::constant(0));
+        let safe = atom(variable(free), MachineTerm::constant(0));
         assert_eq!(
             checked_rewrite(&capturing_goal, &safe, std::slice::from_ref(&safe),)
                 .expect("an unrelated equality may still rewrite under the binder"),
@@ -3773,7 +3739,7 @@ mod wide_range_reader_tests {
     fn wide_resource_bounds_survive_offset_and_scalar_rewriting() {
         let _session = crate::kernel::VerificationSession::enter();
         let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(984_700))),
+            value: Box::new(MachineTerm::Variable(Variable(984_700))),
             byte_width: 4,
         };
         let base = Pointer {
@@ -3782,8 +3748,8 @@ mod wide_range_reader_tests {
         };
         let wide = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             4,
         );
         let goal = Proposition::CResourceContains {
@@ -3802,7 +3768,7 @@ mod wide_range_reader_tests {
         assert_eq!(range.kind(), crate::kernel::RangeIndexKind::UInt64);
         assert_eq!(range.bound_terms(), wide.bound_terms());
         let scalar_eq = Proposition::ConditionIs(
-            ConditionTerm::equal(Bitvector32Term::Variable(Variable(984_700)), 0u32.into()),
+            ConditionTerm::equal(MachineTerm::Variable(Variable(984_700)), 0u32.into()),
             true,
         );
         let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &scalar_eq).unwrap();
@@ -3820,10 +3786,10 @@ mod wide_bound_equality_reader_tests {
     #[test]
     fn wide_range_bound_substitution_requires_full_width_equality() {
         let _session = crate::kernel::VerificationSession::enter();
-        let end = Bitvector32Term::Variable(Variable(985_900));
+        let end = MachineTerm::Variable(Variable(985_900));
         let wide = CMemoryRange::new_wide(
             Pointer::symbolic(Variable(985_901)),
-            Bitvector32Term::uint64_constant(0),
+            MachineTerm::uint64_constant(0),
             end.clone(),
             1,
         );
@@ -3842,7 +3808,7 @@ mod wide_bound_equality_reader_tests {
             true,
         );
         assert!(rewrite_atomic_proposition_by_exact_equality(&goal, &narrow).is_err());
-        let high = Bitvector32Term::uint64_constant(1 << 33);
+        let high = MachineTerm::uint64_constant(1 << 33);
         let full = Proposition::ConditionIs(ConditionTerm::uint64_equal(end, high.clone()), true);
         let rewritten = rewrite_atomic_proposition_by_exact_equality(&goal, &full).unwrap();
         let (_, range) = rewritten.memory_containment().unwrap();
@@ -3860,7 +3826,7 @@ mod numeric_address_annotation_tests {
             crate::kernel::effective_type::CStructClass::opaque("node"),
         );
         let observed = |pointer: &Pointer| {
-            Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone()))
+            MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()))
         };
         let equality = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(observed(&p), observed(&q)),
@@ -3869,11 +3835,11 @@ mod numeric_address_annotation_tests {
         let mask = |pointer: &Pointer| {
             Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::uint64_bitwise_and(
+                    MachineTerm::uint64_bitwise_and(
                         observed(pointer),
-                        Bitvector32Term::uint64_constant(1),
+                        MachineTerm::uint64_constant(1),
                     ),
-                    Bitvector32Term::uint64_constant(0),
+                    MachineTerm::uint64_constant(0),
                 ),
                 true,
             )
@@ -3895,12 +3861,9 @@ mod numeric_address_annotation_tests {
         let nested = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 observed(&p),
-                Bitvector32Term::uint64_add(
+                MachineTerm::uint64_add(
                     observed(&q),
-                    Bitvector32Term::uint64_bitwise_and(
-                        observed(&p),
-                        Bitvector32Term::uint64_constant(1),
-                    ),
+                    MachineTerm::uint64_bitwise_and(observed(&p), MachineTerm::uint64_constant(1)),
                 ),
             ),
             true,
@@ -3934,8 +3897,8 @@ mod numeric_address_annotation_tests {
             Pointer::symbolic(Variable(998_822)),
         );
         check(
-            Pointer::integer_address(Bitvector32Term::Variable(Variable(998_823))),
-            Pointer::integer_address(Bitvector32Term::Variable(Variable(998_824))),
+            Pointer::integer_address(MachineTerm::Variable(Variable(998_823))),
+            Pointer::integer_address(MachineTerm::Variable(Variable(998_824))),
         );
     }
 }

@@ -20,8 +20,8 @@ use crate::kernel::CompareRelation;
 use crate::kernel::OverflowOperation;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_op, cast_term};
 use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
+use crate::kernel::{MachineCastSpelling, MachineTerm, cast_op, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -79,10 +79,10 @@ fn spelled(text: String, precedence: u8) -> Spelled {
 /// A machine arithmetic result must be observed before it participates in
 /// a specification comparison. Otherwise `+`, `-`, and `*` are read as
 /// exact Integer arithmetic and the printed comparison changes meaning.
-fn comparison_operand(term: &Bitvector32Term, value: Spelled) -> Spelled {
+fn comparison_operand(term: &MachineTerm, value: Spelled) -> Spelled {
     if matches!(
         term,
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             op: MachineBinaryOp::Add | MachineBinaryOp::Subtract | MachineBinaryOp::Multiply,
             ..
         }
@@ -418,7 +418,7 @@ impl Printer<'_> {
                         AlgebraicTermNode::Variable(variable) => Some(variable),
                         _ => None,
                     },
-                    crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                    crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
                         Some(*variable)
                     }
                     _ => None,
@@ -957,7 +957,7 @@ impl Printer<'_> {
                 Some(false)
             } else if is_equality {
                 [left, right].iter().find_map(|term| {
-                    let Bitvector32Term::Variable(variable) = term else {
+                    let MachineTerm::Variable(variable) = term else {
                         return None;
                     };
                     match self.labels.source_types.get(variable) {
@@ -1018,8 +1018,8 @@ impl Printer<'_> {
         &mut self,
         condition: &ConditionTerm,
         operator: crate::kernel::BitvectorComparisonOp,
-        a: &Bitvector32Term,
-        b: &Bitvector32Term,
+        a: &MachineTerm,
+        b: &MachineTerm,
         polarity: bool,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1101,7 +1101,7 @@ impl Printer<'_> {
     /// The exact policy's operand spelling, kept for proof traces.
     fn exact_operand(
         &mut self,
-        value: &Bitvector32Term,
+        value: &MachineTerm,
         signed: Option<bool>,
         depth: usize,
     ) -> Option<String> {
@@ -1128,7 +1128,7 @@ impl Printer<'_> {
 
     /// `value` read as `hint`: a constant written in that type and any
     /// other operand of another known type converted with a cast.
-    fn as_type(&mut self, value: &Bitvector32Term, hint: Hint, depth: usize) -> Option<Spelled> {
+    fn as_type(&mut self, value: &MachineTerm, hint: Hint, depth: usize) -> Option<Spelled> {
         let literal = matches!(
             value,
             bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
@@ -1175,8 +1175,8 @@ impl Printer<'_> {
     }
 
     /// The source type of a term, where it shows.
-    fn hint_of(&self, value: &Bitvector32Term) -> Option<Hint> {
-        use Bitvector32Term as B;
+    fn hint_of(&self, value: &MachineTerm) -> Option<Hint> {
+        use MachineTerm as B;
         match value {
             int64_constant!(_) => Some(Hint::Int64),
             uint64_constant!(_) => Some(Hint::UInt64),
@@ -1341,7 +1341,7 @@ impl Printer<'_> {
     /// cast prerequisites copyable even without decimal float tokens.
     fn float_operand(
         &mut self,
-        value: &Bitvector32Term,
+        value: &MachineTerm,
         single: bool,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1376,7 +1376,7 @@ impl Printer<'_> {
 
     fn bitvector(
         &mut self,
-        value: &Bitvector32Term,
+        value: &MachineTerm,
         hint: Option<Hint>,
         depth: usize,
     ) -> Option<Spelled> {
@@ -1384,7 +1384,7 @@ impl Printer<'_> {
             return elided;
         }
         let depth = depth + 1;
-        use Bitvector32Term as B;
+        use MachineTerm as B;
         match value {
             int32_constant!(value) => return self.constant(constant_u32(*value), hint),
             // A `uint32` constant is written in its own type.
@@ -1850,7 +1850,7 @@ impl Printer<'_> {
         if !self.source_mode() {
             return None;
         }
-        if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) =
+        if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
             crate::kernel::logical_pointer_read_term(pointer)
         {
             return Some(self.pointer_cell(memory.memory(), &address, depth));
@@ -1941,7 +1941,7 @@ impl Printer<'_> {
     fn byte_range(
         &mut self,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
         wide: bool,
         depth: usize,
     ) -> String {
@@ -1981,7 +1981,7 @@ impl Printer<'_> {
                     Some(atom(format!("{}u64", constant_u64(*value) as i64 / width)))
                 }
                 binary_term!(Int32, Multiply, left, right)
-                | Bitvector32Term::Binary {
+                | MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left,
@@ -1990,7 +1990,7 @@ impl Printer<'_> {
                     self.bitvector(left, hint, depth)
                 }
                 binary_term!(Int32, Multiply, left, right)
-                | Bitvector32Term::Binary {
+                | MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left,
@@ -2326,7 +2326,7 @@ impl Printer<'_> {
                 _ => None,
             };
         }
-        let typed = |printer: &mut Self, value: &Bitvector32Term, hint: Hint, suffix: &str| {
+        let typed = |printer: &mut Self, value: &MachineTerm, hint: Hint, suffix: &str| {
             let spelled_value = printer.bitvector(value, Some(hint), depth)?;
             Some(match value {
                 bits32_constant!(_) | native_constant!(_, _) if !suffix.is_empty() => {
@@ -2758,13 +2758,13 @@ mod tests {
     use super::*;
     use crate::kernel::{CPointerValue, CType, CValue, LoadKind, PointerBlock, SharedCMemory};
 
-    fn equality(value: Bitvector32Term) -> Proposition {
+    fn equality(value: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         )
@@ -2785,12 +2785,8 @@ mod tests {
             ),
         ];
         let arguments = [
-            crate::kernel::CExpression::Value(CValue::Float64(Bitvector32Term::Variable(
-                Variable(7),
-            ))),
-            crate::kernel::CExpression::Value(CValue::Float32(Bitvector32Term::Variable(
-                Variable(8),
-            ))),
+            crate::kernel::CExpression::Value(CValue::Float64(MachineTerm::Variable(Variable(7)))),
+            crate::kernel::CExpression::Value(CValue::Float32(MachineTerm::Variable(Variable(8)))),
         ];
         let mut labels = SnapshotLabels::naming(ParameterBinding::new(&parameters, &arguments));
         for (value, expected) in [
@@ -2803,8 +2799,8 @@ mod tests {
             let fact = Proposition::ConditionIs(
                 ConditionTerm::Float64(crate::kernel::CFloatCondition::Comparison {
                     operator: crate::kernel::CComparisonOperator::GreaterEqual,
-                    left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                    right: Box::new(Bitvector32Term::uint64_constant(value.to_bits())),
+                    left: Box::new(MachineTerm::Variable(Variable(7))),
+                    right: Box::new(MachineTerm::uint64_constant(value.to_bits())),
                 }),
                 true,
             );
@@ -2813,12 +2809,12 @@ mod tests {
         let fact = Proposition::ConditionIs(
             ConditionTerm::Float32(crate::kernel::CFloatCondition::Comparison {
                 operator: crate::kernel::CComparisonOperator::LessThan,
-                left: Box::new(Bitvector32Term::Float32Binary {
+                left: Box::new(MachineTerm::Float32Binary {
                     operator: crate::kernel::CFloatBinaryOperator::Add,
-                    left: Box::new(Bitvector32Term::Variable(Variable(8))),
-                    right: Box::new(Bitvector32Term::constant(1.5_f32.to_bits())),
+                    left: Box::new(MachineTerm::Variable(Variable(8))),
+                    right: Box::new(MachineTerm::constant(1.5_f32.to_bits())),
                 }),
-                right: Box::new(Bitvector32Term::constant(2.0_f32.to_bits())),
+                right: Box::new(MachineTerm::constant(2.0_f32.to_bits())),
             }),
             true,
         );
@@ -2827,8 +2823,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::uint64_constant(1.5_f64.to_bits())),
-                right: Box::new(Bitvector32Term::Variable(Variable(9))),
+                left: Box::new(MachineTerm::uint64_constant(1.5_f64.to_bits())),
+                right: Box::new(MachineTerm::Variable(Variable(9))),
             },
             true,
         );
@@ -2842,7 +2838,7 @@ mod tests {
         let application = crate::kernel::SharedPureApplication::intern(
             "size".into(),
             vec![PureFunctionArgument::Value(CValue::Int32(
-                Bitvector32Term::Variable(Variable(7)),
+                MachineTerm::Variable(Variable(7)),
             ))],
         );
         let fact = Proposition::Equal(
@@ -2856,13 +2852,13 @@ mod tests {
     fn unnamed_operands_keep_their_context_without_becoming_exact_citations() {
         let mut labels = SnapshotLabels::default();
         for depth in [0, 16, 64, 256] {
-            let mut term = Bitvector32Term::Variable(Variable(999));
+            let mut term = MachineTerm::Variable(Variable(999));
             for _ in 0..depth {
                 term = binary_node!(
                     Int32,
                     Add,
                     Box::new(term),
-                    Box::new(Bitvector32Term::constant(1))
+                    Box::new(MachineTerm::constant(1))
                 );
             }
             let fact = equality(term);
@@ -2881,8 +2877,8 @@ mod tests {
     #[test]
     fn source_facts_share_placeholder_identities_within_one_report() {
         let mut labels = SnapshotLabels::default();
-        let first = equality(Bitvector32Term::Variable(Variable(998)));
-        let second = equality(Bitvector32Term::Variable(Variable(999)));
+        let first = equality(MachineTerm::Variable(Variable(998)));
+        let second = equality(MachineTerm::Variable(Variable(999)));
         assert_eq!(source(&first, &mut labels), "<unnamed A> == 0");
         assert_eq!(source(&second, &mut labels), "<unnamed B> == 0");
         assert_eq!(source(&first, &mut labels), "<unnamed A> == 0");
@@ -2891,21 +2887,19 @@ mod tests {
 
     #[test]
     fn narrowed_wide_values_keep_the_signed_comparison_view() {
-        let state = CState::new().with_local(
-            "size",
-            CValue::UInt64(Bitvector32Term::Variable(Variable(94))),
-        );
+        let state =
+            CState::new().with_local("size", CValue::UInt64(MachineTerm::Variable(Variable(94))));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
-        let value = Bitvector32Term::legacy_cast(
+        let value = MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(Bitvector32Term::Variable(Variable(94))),
+            Box::new(MachineTerm::Variable(Variable(94))),
         );
         let fact = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -2926,8 +2920,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::constant((-56i32) as u32)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant((-56i32) as u32)),
             },
             true,
         );
@@ -2936,8 +2930,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(8))),
-                right: Box::new(Bitvector32Term::constant((-56i32) as u32)),
+                left: Box::new(MachineTerm::Variable(Variable(8))),
+                right: Box::new(MachineTerm::constant((-56i32) as u32)),
             },
             false,
         );
@@ -2947,8 +2941,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::constant(1073741823)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant(1073741823)),
             },
             true,
         );
@@ -2973,15 +2967,15 @@ mod tests {
                 (MachineBinaryOp::Subtract, "-"),
                 (MachineBinaryOp::Multiply, "*"),
             ] {
-                let arithmetic = Bitvector32Term::Binary {
+                let arithmetic = MachineTerm::Binary {
                     format: if format == MachineIntegerType::UInt32 {
                         MachineIntegerType::Int32
                     } else {
                         format
                     },
                     op,
-                    left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                    right: Box::new(Bitvector32Term::Variable(Variable(8))),
+                    left: Box::new(MachineTerm::Variable(Variable(7))),
+                    right: Box::new(MachineTerm::Variable(Variable(8))),
                 };
                 let fact = Proposition::ConditionIs(
                     ConditionTerm::Compare {
@@ -3006,8 +3000,8 @@ mod tests {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(7), "a".into());
         labels.source_name(Variable(8), "b".into());
-        let a = || Box::new(Bitvector32Term::Variable(Variable(7)));
-        let b = || Box::new(Bitvector32Term::Variable(Variable(8)));
+        let a = || Box::new(MachineTerm::Variable(Variable(7)));
+        let b = || Box::new(MachineTerm::Variable(Variable(8)));
         let product = binary_node!(
             Int32,
             Multiply,
@@ -3028,7 +3022,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(binary_node!(Int32, BitwiseAnd, a(), b())),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -3144,14 +3138,11 @@ mod tests {
     fn the_contract_result_local_prints_as_result() {
         let state = CState::new().with_local(
             crate::kernel::C_CONTRACT_RESULT_NAME,
-            CValue::Int32(Bitvector32Term::Variable(Variable(7))),
+            CValue::Int32(MachineTerm::Variable(Variable(7))),
         );
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
         assert_eq!(
-            source(
-                &equality(Bitvector32Term::Variable(Variable(7))),
-                &mut labels
-            ),
+            source(&equality(MachineTerm::Variable(Variable(7))), &mut labels),
             "result == 0"
         );
     }
@@ -3172,7 +3163,7 @@ mod tests {
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
         let load = |memory: &CMemory, kind| {
-            equality(Bitvector32Term::MemoryLoad(
+            equality(MachineTerm::MemoryLoad(
                 SharedCMemory::from(memory.clone()),
                 Box::new(pointer.clone()),
                 kind,
@@ -3216,21 +3207,21 @@ mod tests {
         let after = CState::new().with_memory(CMemory::new().with_block("global:a", 8));
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &after);
         labels.source_state(&before, "pre".into());
-        labels.source_result(&CValue::Int32(Bitvector32Term::Variable(index)));
+        labels.source_result(&CValue::Int32(MachineTerm::Variable(index)));
         // An allocation no local holds is the returned pointer.
         labels.source_result(&CValue::Pointer(CPointerValue::new(
             heap.clone(),
             CType::Int32Pointer,
         )));
         let load = |memory: &CMemory| {
-            equality(Bitvector32Term::MemoryLoad(
+            equality(MachineTerm::MemoryLoad(
                 SharedCMemory::from(memory.clone()),
                 Box::new(heap.clone()),
                 LoadKind::Int32,
             ))
         };
         assert_eq!(
-            source(&equality(Bitvector32Term::Variable(index)), &mut labels),
+            source(&equality(MachineTerm::Variable(index)), &mut labels),
             "result == 0"
         );
         assert_eq!(source(&load(after.memory()), &mut labels), "*result == 0");
@@ -3245,25 +3236,19 @@ mod tests {
     #[test]
     fn reassigned_parameters_do_not_rename_their_old_value_as_current() {
         let entry =
-            CState::new().with_local("i", CValue::Int32(Bitvector32Term::Variable(Variable(7))));
+            CState::new().with_local("i", CValue::Int32(MachineTerm::Variable(Variable(7))));
         let current = entry
             .clone()
-            .with_local("i", CValue::Int32(Bitvector32Term::Variable(Variable(8))));
+            .with_local("i", CValue::Int32(MachineTerm::Variable(Variable(8))));
         let (names, values) = crate::surface::diagnostics::local_naming_tables(&entry);
         let mut labels =
             SnapshotLabels::with_state(ParameterBinding::new(&names, &values), &current);
         assert_eq!(
-            render(
-                &equality(Bitvector32Term::Variable(Variable(7))),
-                &mut labels
-            ),
+            render(&equality(MachineTerm::Variable(Variable(7))), &mut labels),
             Some("old(i) == 0".into())
         );
         assert_eq!(
-            render(
-                &equality(Bitvector32Term::Variable(Variable(8))),
-                &mut labels
-            ),
+            render(&equality(MachineTerm::Variable(Variable(8))), &mut labels),
             Some("i == 0".into())
         );
     }
@@ -3294,7 +3279,7 @@ mod resource_tests {
         let resource = |memory: &CMemory| {
             CResourceFact::view_composite(
                 "sampled".into(),
-                vec![CValue::Int32(Bitvector32Term::MemoryLoad(
+                vec![CValue::Int32(MachineTerm::MemoryLoad(
                     SharedCMemory::from(memory.clone()),
                     Box::new(pointer.clone()),
                     LoadKind::Int32,
@@ -3343,7 +3328,7 @@ mod resource_tests {
         let mut labels = SnapshotLabels::default();
         labels.source_name(Variable(987551), "left_model".into());
         labels.source_name(Variable(987552), "right_model".into());
-        let left = CResourceFact::own_quantity(resource(987551), Bitvector32Term::constant(2));
+        let left = CResourceFact::own_quantity(resource(987551), MachineTerm::constant(2));
         let right = CResourceFact::View(resource(987552));
         assert_eq!(
             source_resource_fact(&left, &mut labels),

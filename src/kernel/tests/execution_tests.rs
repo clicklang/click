@@ -197,8 +197,8 @@ fn active_stable_loan_rejects_direct_local_assignment_and_alias_store() {
     let pointer = state.locals().slot("x").cloned().expect("local pointer");
     let loan = active_memory_loan(CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let state = state.with_loan_ledger(Some(loan));
 
@@ -319,8 +319,8 @@ fn active_stable_loan_allows_a_disjoint_local_store() {
     let base = state.locals().slot("a").cloned().expect("array pointer");
     let loan = active_memory_loan(CMemoryRange::new(
         base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let state = state.with_loan_ledger(Some(loan)).with_local(
         "p",
@@ -454,8 +454,8 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
             .unchecked_with_fact(CResourceFact::own_allocation(allocation.clone(), 16))
             .unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
                 allocation,
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(4),
+                MachineTerm::constant(0),
+                MachineTerm::constant(4),
             ))),
     );
     let freed = execute_c_statement_paths(
@@ -500,24 +500,21 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
 #[test]
 fn final_iteration_condition_can_use_the_pre_body_bound() {
     let original = Variable(91_001);
-    let original_bits = Bitvector32Term::Variable(original);
+    let original_bits = MachineTerm::Variable(original);
     let state = CState::new().with_local(
         "i",
-        int32(Bitvector32Term::add(
+        int32(MachineTerm::add(
             original_bits.clone(),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(1),
         )),
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(
-                original_bits.clone(),
-                Bitvector32Term::constant(0),
-            ),
+            ConditionTerm::signed_greater_equal(original_bits.clone(), MachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(original_bits, Bitvector32Term::constant(1)),
+            ConditionTerm::signed_less_than(original_bits, MachineTerm::constant(1)),
             true,
         );
 
@@ -533,7 +530,7 @@ fn final_iteration_condition_can_use_the_pre_body_bound() {
 
 #[test]
 fn join_state_forgets_changed_scalars_and_memory() {
-    let stable_x = int32(Bitvector32Term::Variable(Variable(7)));
+    let stable_x = int32(MachineTerm::Variable(Variable(7)));
     let pointer = Pointer {
         block: "heap".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -747,8 +744,8 @@ fn concrete_max_function_call_preserves_caller_locals() {
 fn symbolic_max_function_call_reports_branch_facts() {
     let a = Variable(14);
     let b = Variable(15);
-    let a_bits = Bitvector32Term::Variable(a);
-    let b_bits = Bitvector32Term::Variable(b);
+    let a_bits = MachineTerm::Variable(a);
+    let b_bits = MachineTerm::Variable(b);
     let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state = CState::new();
     let function = c_max_function();
@@ -998,8 +995,8 @@ fn concrete_function_specification_is_native_theorem() {
 fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
     let a = Variable(16);
     let b = Variable(17);
-    let a_bits = Bitvector32Term::Variable(a);
-    let b_bits = Bitvector32Term::Variable(b);
+    let a_bits = MachineTerm::Variable(a);
+    let b_bits = MachineTerm::Variable(b);
     let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
     let function = c_max_function();
     let specification = c_function_specification(
@@ -1010,7 +1007,7 @@ fn symbolic_function_specification_uses_requirements_as_execution_pure_facts() {
         ],
         vec![Proposition::ConditionIs(condition.clone(), true)],
         CFunctionOutcome::Return {
-            value: int32(Bitvector32Term::Variable(b)),
+            value: int32(MachineTerm::Variable(b)),
             state: Box::new(CState::new()),
         },
     );
@@ -1041,12 +1038,12 @@ fn incomplete_symbolic_function_specification_does_not_prove() {
     let specification = c_function_specification(
         CState::new(),
         vec![
-            CExpression::Value(int32(Bitvector32Term::Variable(a))),
-            CExpression::Value(int32(Bitvector32Term::Variable(b))),
+            CExpression::Value(int32(MachineTerm::Variable(a))),
+            CExpression::Value(int32(MachineTerm::Variable(b))),
         ],
         Vec::new(),
         CFunctionOutcome::Return {
-            value: int32(Bitvector32Term::Variable(b)),
+            value: int32(MachineTerm::Variable(b)),
             state: Box::new(CState::new()),
         },
     );
@@ -1323,8 +1320,8 @@ fn conditional_catch_has_a_continuing_call_outcome_and_a_terminal_one() {
         CState::new(),
         caller,
         vec![
-            CExpression::Value(bool_value(Bitvector32Term::Variable(Variable(80_001)))),
-            CExpression::Value(bool_value(Bitvector32Term::Variable(Variable(80_002)))),
+            CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_001)))),
+            CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_002)))),
         ],
         PureFactContext::new(),
         CExecutionEnvironment::new().with_function(helper),
@@ -1541,9 +1538,9 @@ fn statement_checks_share_one_execution_environment_variable_index() {
         CType::Int32,
         "indexed",
         Vec::new(),
-        c_return(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(reserved),
-        ))),
+        c_return(CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            reserved,
+        )))),
     );
     let environment = CExecutionEnvironment::new().with_function(indexed_function);
     let cloned_before_initialization = environment.clone();
@@ -1583,9 +1580,9 @@ fn statement_checks_share_one_execution_environment_variable_index() {
         CType::Int32,
         "changed",
         Vec::new(),
-        c_return(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(1_000_001)),
-        ))),
+        c_return(CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            Variable(1_000_001),
+        )))),
     ));
     assert_eq!(changed.variable_index.build_count(), 0);
     let changed_index = execution_environment_variable_index(&changed);
@@ -1644,7 +1641,7 @@ fn environment_variable_scans_do_not_multiply_by_statement_count() {
             body = c_seq(
                 c_assign(
                     "symbolic",
-                    CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
+                    CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
                         1_000_000 + index,
                     )))),
                 ),
@@ -1856,7 +1853,7 @@ fn unreadable_guard_operand_leaves_the_condition_undecided() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let state = CState::new()
-        .with_local("a", int32(Bitvector32Term::Variable(Variable(1))))
+        .with_local("a", int32(MachineTerm::Variable(Variable(1))))
         .with_local("p", CValue::typed_pointer(pointer, CType::Int32Pointer));
     let condition = c_and(
         c_not_equal(c_variable("a"), c_int32_literal(0)),
@@ -2000,7 +1997,7 @@ fn executor_budgets_cap_steps_calls_and_paths() {
     );
 
     let branchy_statement = c_if(
-        CExpression::Value(int32(Bitvector32Term::Variable(Variable(75)))),
+        CExpression::Value(int32(MachineTerm::Variable(Variable(75)))),
         c_return(c_int32_literal(1)),
         c_return(c_int32_literal(0)),
     );
@@ -2084,7 +2081,7 @@ fn while_invariant_is_proof_obligation() {
     let invariant = Proposition::CMemoryLoadable {
         memory: CMemory::new(),
         base: pointer,
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let state = CState::new().with_local("x", int32(0));
@@ -2189,9 +2186,9 @@ fn verified_loop_rules_are_selected_by_their_exact_prerequisites() {
 fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
     let (statement, base_rule) = prerequisite_loop_rule_fixture();
     let state = CState::new().with_local("i", int32(0));
-    let bound = Bitvector32Term::Variable(Variable(900_001));
-    let required = ConditionTerm::signed_greater_equal(bound.clone(), Bitvector32Term::constant(0));
-    let stronger = ConditionTerm::signed_greater_equal(bound, Bitvector32Term::constant(1));
+    let bound = MachineTerm::Variable(Variable(900_001));
+    let required = ConditionTerm::signed_greater_equal(bound.clone(), MachineTerm::constant(0));
+    let stronger = ConditionTerm::signed_greater_equal(bound, MachineTerm::constant(1));
     let mut rule = base_rule;
     rule.required_assumptions = PureFactContext::new().assume_condition(required.clone(), true);
     let environment = CExecutionEnvironment::new().with_verified_loop_rules([rule]);
@@ -2222,8 +2219,8 @@ fn verified_loop_rule_prerequisites_are_not_reproved_from_ambient_facts() {
 
 fn loop_rule_guard(value: u32) -> ConditionTerm {
     ConditionTerm::equal(
-        Bitvector32Term::Variable(Variable(900_000)),
-        Bitvector32Term::constant(value),
+        MachineTerm::Variable(Variable(900_000)),
+        MachineTerm::constant(value),
     )
 }
 
@@ -2413,7 +2410,7 @@ fn loop_entry_goals_retain_satisfied_duplicate_declarations() {
 
 #[test]
 fn loop_entry_goals_preserve_guarded_judgments() {
-    let state = CState::new().with_local("i", int32(Bitvector32Term::Variable(Variable(600))));
+    let state = CState::new().with_local("i", int32(MachineTerm::Variable(Variable(600))));
     let proposition = SpecProposition::Comparison {
         left: SpecExpression::Value(int32(0)),
         operator: CComparisonOperator::LessEqual,
@@ -2456,8 +2453,8 @@ fn guard_operand_fact(variable: u64, nonzero: bool) -> Proposition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(variable))),
+            right: Box::new(MachineTerm::constant(0)),
         },
         !nonzero,
     )
@@ -2536,7 +2533,7 @@ fn a_post_join_allocation_never_reuses_a_join_abstracted_variable() {
         arms_next_kernel_variable,
     )
     .expect("the arms have one deterministic abstraction");
-    let Some(CValue::Int32(Bitvector32Term::Variable(abstracted))) =
+    let Some(CValue::Int32(MachineTerm::Variable(abstracted))) =
         abstraction.state.locals().get("picked")
     else {
         panic!("a local the arms disagree on abstracts to one symbolic int32");
@@ -2694,7 +2691,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
             &mut budget,
         )
         .expect("the execution's counter is nowhere near its ceiling");
-        let [AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(field)))] = fields.as_ref()
+        let [AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(field)))] = fields.as_ref()
         else {
             panic!("an int32 model field is one symbolic int32: {fields:?}");
         };
@@ -2724,7 +2721,7 @@ fn a_rebound_binder_field_never_reuses_a_havocked_local_variable() {
 fn loop_preservation_contexts_allocate_above_the_executions_counter() {
     let loop_entry_state = CState::new()
         .with_local("i", int32(0))
-        .with_local("n", int32(Bitvector32Term::Variable(Variable(7))));
+        .with_local("n", int32(MachineTerm::Variable(Variable(7))));
     let condition = c_less_than(c_variable("i"), c_variable("n"));
     let body = c_assign("i", c_add(c_variable("i"), c_int32_literal(1)));
 

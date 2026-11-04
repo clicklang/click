@@ -38,13 +38,13 @@ fn provisional_ensure_loadability_work_ignores_unrelated_facts() {
         PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: data.clone(),
-            bytes: Bitvector32Term::constant(8),
+            bytes: MachineTerm::constant(8),
             wide: false,
         });
     let element_loadable = Proposition::CMemoryLoadable {
         memory,
-        base: data.offset_by_int32_elements(Bitvector32Term::constant(1)),
-        bytes: Bitvector32Term::constant(4),
+        base: data.offset_by_int32_elements(MachineTerm::constant(1)),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let mut work_by_size = Vec::new();

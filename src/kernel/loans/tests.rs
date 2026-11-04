@@ -190,8 +190,8 @@ fn parameter_range(variable: u64, start: u32, end: u32, width: u32) -> CMemoryRa
             block: PointerBlock::ExternalArgument,
             offset: crate::kernel::PointerOffsetTerm::Variable(Variable(variable)),
         },
-        Bitvector32Term::constant(start),
-        Bitvector32Term::constant(end),
+        MachineTerm::constant(start),
+        MachineTerm::constant(end),
         width,
     )
 }
@@ -202,8 +202,8 @@ fn local_job_range() -> CMemoryRange {
             block: "local:job".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
         4,
     )
 }
@@ -385,8 +385,8 @@ fn buffer_range(start: u32, end: u32, width: u32) -> CMemoryRange {
             block: "buffer".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::constant(start),
-        Bitvector32Term::constant(end),
+        MachineTerm::constant(start),
+        MachineTerm::constant(end),
         width,
     )
 }
@@ -1197,14 +1197,8 @@ fn mutex_contract_input_return_requires_unsplit_unit_ownership() {
     let fact = ledger.mutex_use_resource(input.usage, holder).unwrap();
     for invalid in [
         CResourceFact::View(fact.resource().clone()),
-        CResourceFact::Own(
-            fact.resource().clone(),
-            Box::new(Bitvector32Term::constant(0)),
-        ),
-        CResourceFact::Own(
-            fact.resource().clone(),
-            Box::new(Bitvector32Term::constant(2)),
-        ),
+        CResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(0))),
+        CResourceFact::Own(fact.resource().clone(), Box::new(MachineTerm::constant(2))),
     ] {
         assert!(
             ledger
@@ -2792,8 +2786,8 @@ pub(super) fn memory(start: u32, end: u32, own: bool) -> CResourceFact {
             block: "buffer".into(),
             offset: crate::kernel::PointerOffsetTerm::Constant(0),
         },
-        crate::kernel::Bitvector32Term::constant(start),
-        crate::kernel::Bitvector32Term::constant(end),
+        crate::kernel::MachineTerm::constant(start),
+        crate::kernel::MachineTerm::constant(end),
     );
     if own {
         CResourceFact::own_memory(range)
@@ -3175,7 +3169,7 @@ fn composite_planner_keeps_other_counted_token_units_usable() {
         name: "unit".into(),
         arguments: Vec::new().into(),
     };
-    let owned_units = CResourceFact::own_quantity(token.clone(), Bitvector32Term::constant(3));
+    let owned_units = CResourceFact::own_quantity(token.clone(), MachineTerm::constant(3));
     let view = CResourceFact::View(token);
     let caller = ResourceContext::new().unchecked_with_fact(owned_units.clone());
     let plan = plan_stable_view_transfer(
@@ -3193,7 +3187,7 @@ fn composite_planner_keeps_other_counted_token_units_usable() {
                 name: "unit".into(),
                 arguments: Vec::new().into(),
             },
-            Bitvector32Term::constant(2),
+            MachineTerm::constant(2),
         ),
         &assumptions,
     ));
@@ -3555,7 +3549,7 @@ fn composite_backing_tamper_and_instance_frontier_are_refused() {
     );
 }
 
-fn symbolic_memory(start: Bitvector32Term, end: Bitvector32Term, own: bool) -> CResourceFact {
+fn symbolic_memory(start: MachineTerm, end: MachineTerm, own: bool) -> CResourceFact {
     let range = crate::kernel::CMemoryRange::new(
         crate::kernel::Pointer {
             block: "buffer".into(),
@@ -3751,7 +3745,7 @@ fn joint_planner_empty_views_need_no_backing_or_loan() {
     let assumptions = PureFactContext::new();
     let resources = ResourceContext::new();
     let (ledger, caller, callee) = participants();
-    let endpoint = Bitvector32Term::Variable(Variable(71_003));
+    let endpoint = MachineTerm::Variable(Variable(71_003));
     for view in [
         memory(0, 0, false),
         symbolic_memory(endpoint.clone(), endpoint, false),
@@ -3796,8 +3790,8 @@ fn joint_planner_refuses_an_uncovered_symbolic_view_without_consuming_state() {
     let (ledger, caller, callee) = participants();
     let before = ledger.clone();
     let symbolic = symbolic_memory(
-        Bitvector32Term::Variable(Variable(71_001)),
-        Bitvector32Term::constant(4),
+        MachineTerm::Variable(Variable(71_001)),
+        MachineTerm::constant(4),
         false,
     );
     // Nothing bounds the symbolic start, so the concrete owner does not
@@ -3819,11 +3813,11 @@ fn joint_planner_refuses_an_uncovered_symbolic_view_without_consuming_state() {
 #[test]
 fn joint_planner_backs_a_covered_symbolic_view_with_its_whole_owner() {
     let assumptions = PureFactContext::new();
-    let end = Bitvector32Term::Variable(Variable(71_002));
-    let owner = symbolic_memory(Bitvector32Term::constant(0), end.clone(), true);
+    let end = MachineTerm::Variable(Variable(71_002));
+    let owner = symbolic_memory(MachineTerm::constant(0), end.clone(), true);
     let caller_resources = ResourceContext::new().unchecked_with_fact(owner.clone());
     let (ledger, caller, callee) = participants();
-    let view = symbolic_memory(Bitvector32Term::constant(0), end, false);
+    let view = symbolic_memory(MachineTerm::constant(0), end, false);
     let plan = plan_stable_view_transfer(
         &caller_resources,
         &[checked(view.clone())],
@@ -3854,12 +3848,12 @@ fn joint_planner_backs_a_covered_symbolic_view_with_its_whole_owner() {
 #[test]
 fn joint_planner_shares_one_loan_between_two_covered_symbolic_views() {
     let assumptions = PureFactContext::new();
-    let end = Bitvector32Term::Variable(Variable(71_003));
-    let owner = symbolic_memory(Bitvector32Term::constant(0), end.clone(), true);
+    let end = MachineTerm::Variable(Variable(71_003));
+    let owner = symbolic_memory(MachineTerm::constant(0), end.clone(), true);
     let caller_resources = ResourceContext::new().unchecked_with_fact(owner);
     let (ledger, caller, callee) = participants();
-    let first = symbolic_memory(Bitvector32Term::constant(0), end.clone(), false);
-    let second = symbolic_memory(Bitvector32Term::constant(0), end, false);
+    let first = symbolic_memory(MachineTerm::constant(0), end.clone(), false);
+    let second = symbolic_memory(MachineTerm::constant(0), end, false);
     let plan = plan_stable_view_transfer(
         &caller_resources,
         &[checked(first), checked(second)],
@@ -4223,7 +4217,7 @@ fn nested_view_reborrow_pins_parent_and_restores_exact_binding() {
 fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
     let base = crate::kernel::Pointer::symbolic(Variable(72_000));
     let alias = crate::kernel::Pointer::symbolic(Variable(72_001));
-    let offset = Bitvector32Term::Variable(Variable(72_002));
+    let offset = MachineTerm::Variable(Variable(72_002));
     let empty = PureFactContext::new();
     let assumptions = empty
         .clone()
@@ -4240,7 +4234,7 @@ fn nested_view_reborrow_accepts_checked_offset_alias_and_preserves_authority() {
         )
         .assume_condition(
             crate::kernel::ConditionTerm::signed_less_equal(
-                Bitvector32Term::add(offset, 4u32.into()),
+                MachineTerm::add(offset, 4u32.into()),
                 16u32.into(),
             ),
             true,
@@ -4420,8 +4414,8 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
     };
     let protected = CResourceFact::own_memory(CMemoryRange::new(
         protected_base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
     ));
     let opening = lend_test(&ledger, owner, reader, protected);
     let ledger = ledger.apply(&opening.transition).unwrap();
@@ -4441,8 +4435,8 @@ fn indexed_loan_blocks_write_through_exact_pointer_alias() {
     );
     let query = CMemoryRange::new(
         query_base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     );
 
     assert_eq!(
@@ -4467,8 +4461,8 @@ fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
     };
     let protected = CMemoryRange::new_with_element_width(
         protected_base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
         4,
     );
     let opening = lend_test(&ledger, owner, reader, CResourceFact::own_memory(protected));
@@ -4489,8 +4483,8 @@ fn symbolic_loan_fallback_checks_equal_pointer_alias_buckets() {
     );
     let query = CMemoryRange::new_with_element_width(
         query_base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
         4,
     );
 

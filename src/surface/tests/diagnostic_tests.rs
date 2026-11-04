@@ -588,12 +588,12 @@ fn concise_reason_keeps_list_entries_and_definitions_whole() {
 
 #[test]
 fn click_addition_cancels_a_negated_pointer_base() {
-    let base = Bitvector32Term::Variable(Variable(90));
-    let index = Bitvector32Term::Variable(Variable(91));
+    let base = MachineTerm::Variable(Variable(90));
+    let index = MachineTerm::Variable(Variable(91));
     let negative_base = binary_node!(
         Int32,
         Subtract,
-        Box::new(Bitvector32Term::constant(0)),
+        Box::new(MachineTerm::constant(0)),
         Box::new(base.clone()),
     );
 
@@ -748,7 +748,7 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
     let base = |variable: u64| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            value: Box::new(MachineTerm::Variable(Variable(variable))),
             byte_width: 4,
         },
     };
@@ -766,7 +766,7 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         offset: PointerOffsetTerm::Add(
             Box::new(base(100_001).offset),
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(1_000_000))),
+                value: Box::new(MachineTerm::Variable(Variable(1_000_000))),
                 byte_width: 4,
             }),
         ),
@@ -786,7 +786,7 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100000))),
+            value: Box::new(MachineTerm::Variable(Variable(100000))),
             byte_width: 4,
         },
     };
@@ -796,7 +796,7 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
         super::checking::pointer_element_index_from_base(&field, &base, &PureFactContext::new())
     });
 
-    assert_eq!(index, Some(Bitvector32Term::constant(1)));
+    assert_eq!(index, Some(MachineTerm::constant(1)));
 }
 
 #[test]
@@ -838,15 +838,15 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
             after: after.clone(),
             mutable_ranges: vec![CMemoryRange::new(
                 pointer.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )],
         }),
         ExecutionPureFact::new(Proposition::CHeapAllocationFreed {
             before,
             after,
             allocation_base: pointer,
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
         }),
     ];
 
@@ -872,15 +872,15 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
 /// neither the goal nor any premise.
 #[test]
 fn a_condition_search_miss_spells_its_goal_and_premises() {
-    let x = Bitvector32Term::Variable(Variable(1));
-    let y = Bitvector32Term::Variable(Variable(2));
-    let at_most = |term: &Bitvector32Term, bound: u32| {
+    let x = MachineTerm::Variable(Variable(1));
+    let y = MachineTerm::Variable(Variable(2));
+    let at_most = |term: &MachineTerm, bound: u32| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(term.clone()),
-                right: Box::new(Bitvector32Term::constant(bound)),
+                right: Box::new(MachineTerm::constant(bound)),
             },
             true,
         )
@@ -922,8 +922,8 @@ fn verifier_diagnostics_bound_fact_items() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::constant(index)),
-                    right: Box::new(Bitvector32Term::constant(index)),
+                    left: Box::new(MachineTerm::constant(index)),
+                    right: Box::new(MachineTerm::constant(index)),
                 },
                 true,
             )
@@ -1267,7 +1267,7 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 
 #[test]
 fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
-    use crate::kernel::{Bitvector32Term, CMemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
 
     let pointer = Pointer {
@@ -1276,8 +1276,8 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
     };
     let selected = CResourceFact::own_memory(CMemoryRange::new(
         pointer,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
     ));
     let diagnostic = LoanRefusal::ActiveDependency.diagnostic_with_subject(
         LoanRefusalOperation::MemoryAccess,
@@ -1296,7 +1296,7 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
 
 #[test]
 fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
-    use crate::kernel::{Bitvector32Term, CMemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
 
     let range = CMemoryRange::new(
@@ -1304,8 +1304,8 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
             block: PointerBlock::Concrete("selected_range".to_string()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::constant(1),
-        Bitvector32Term::constant(3),
+        MachineTerm::constant(1),
+        MachineTerm::constant(3),
     );
     let diagnostic = LoanRefusal::UnsupportedPartition.diagnostic_with_subject(
         LoanRefusalOperation::Plan,
@@ -1448,9 +1448,9 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 
     // An inequality the facts already state is not offered again: stating it
     // a second time cannot change what this check concludes.
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
-    let i = Bitvector32Term::Variable(Variable(1));
-    let j = Bitvector32Term::Variable(Variable(2));
+    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
+    let i = MachineTerm::Variable(Variable(1));
+    let j = MachineTerm::Variable(Variable(2));
     let differ = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -1478,7 +1478,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(i.clone()),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         false,
     );
@@ -1526,8 +1526,8 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
             after,
             mutable_ranges: vec![CMemoryRange::new(
                 alias,
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )],
         }),
     ];
@@ -1560,14 +1560,14 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
 /// `uint32` order reads as an unsigned comparison of its operands.
 #[test]
 fn a_conditional_term_spells_its_unsigned_guard() {
-    let x = Bitvector32Term::Variable(crate::kernel::Variable(7));
-    let term = Bitvector32Term::If {
+    let x = MachineTerm::Variable(crate::kernel::Variable(7));
+    let term = MachineTerm::If {
         condition: Box::new(ConditionTerm::unsigned_less_than(
             x.clone(),
-            Bitvector32Term::constant(4),
+            MachineTerm::constant(4),
         )),
         then_term: Box::new(x),
-        else_term: Box::new(Bitvector32Term::constant(5)),
+        else_term: Box::new(MachineTerm::constant(5)),
     };
     let rendered = super::diagnostics::describe_bitvector(&term);
     assert!(rendered.contains(" < 4 (unsigned)"), "{rendered}");
@@ -1579,8 +1579,8 @@ fn a_conditional_term_spells_its_unsigned_guard() {
 #[test]
 fn a_uint32_order_is_named_as_unsigned() {
     let (x, y) = (
-        Bitvector32Term::Variable(crate::kernel::Variable(8)),
-        Bitvector32Term::Variable(crate::kernel::Variable(9)),
+        MachineTerm::Variable(crate::kernel::Variable(8)),
+        MachineTerm::Variable(crate::kernel::Variable(9)),
     );
     for (condition, kind) in [
         (
@@ -2018,8 +2018,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 #[test]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
-        Bitvector32Term, CMemoryRange, CPointerValue, CType, Pointer, PointerBlock,
-        PointerOffsetTerm,
+        CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
     };
     let base = Pointer {
         block: PointerBlock::Concrete("unknown".into()),
@@ -2030,11 +2029,7 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
         CValue::Pointer(CPointerValue::new(base.clone(), CType::Int32Pointer)),
     );
     let (parameters, arguments) = super::diagnostics::local_naming_tables_with_source(&state, None);
-    let range = CMemoryRange::new(
-        base,
-        Bitvector32Term::constant(1),
-        Bitvector32Term::constant(2),
-    );
+    let range = CMemoryRange::new(base, MachineTerm::constant(1), MachineTerm::constant(2));
     assert_eq!(
         super::diagnostics::describe_memory_range(
             &range,
@@ -2703,7 +2698,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     let before = CMemory::new();
     let blocked = before.clone().store(
         written.clone(),
-        CValue::UInt64(Bitvector32Term::uint64_constant(42)),
+        CValue::UInt64(MachineTerm::uint64_constant(42)),
     );
     let after = blocked.clone().store(
         Pointer {
@@ -2713,7 +2708,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
         int32(1),
     );
     let load = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             intern_c_memory(memory.clone()),
             Box::new(read.clone()),
             LoadKind::Bits64,
@@ -2899,15 +2894,15 @@ void call(int32* p, int32* q, int32* anchor) {
 
 #[test]
 fn call_resource_diagnostic_read_shows_snapshot_and_access() {
-    use crate::kernel::{Bitvector32Term, CMemoryRange, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     let address = Pointer {
         block: PointerBlock::Concrete("selected_child_cell".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
     let required = CResourceFact::View(crate::kernel::CResource::Memory(CMemoryRange::new(
         address,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     )));
     let error = crate::kernel::CRuntimeError::ContractResourceDiagnostic {
         reason: "resource `child` argument 1 could not be evaluated: required access authority is unavailable".into(),
@@ -3267,7 +3262,7 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
-        Bitvector32Term, CMemory, CRuntimeError, ConditionTerm, Pointer, PointerOffsetTerm,
+        CMemory, CRuntimeError, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm,
         ProofObligation, Proposition,
     };
     use crate::surface::proof_diagnostics::render::{SnapshotLabels, render_proposition_labeled};
@@ -3280,12 +3275,12 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -3425,12 +3420,12 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
                     binary_node!(
                         Int32,
                         Subtract,
-                        Box::new(Bitvector32Term::MemoryLoad(
+                        Box::new(MachineTerm::MemoryLoad(
                             intern_c_memory(memory),
                             Box::new(read.clone()),
                             LoadKind::Int32,
                         )),
-                        Box::new(Bitvector32Term::Variable(Variable(993451))),
+                        Box::new(MachineTerm::Variable(Variable(993451))),
                     ),
                     4,
                 ),
@@ -4128,8 +4123,8 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
     for (start, end) in [(0, 4), (1, 3)] {
         let range = CMemoryRange::from_pointer_value(
             &pointer,
-            Bitvector32Term::constant(start),
-            Bitvector32Term::constant(end),
+            MachineTerm::constant(start),
+            MachineTerm::constant(end),
             8,
         );
         assert_eq!(

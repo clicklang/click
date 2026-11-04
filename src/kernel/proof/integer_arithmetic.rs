@@ -1364,9 +1364,9 @@ mod tests {
 
     #[test]
     fn machine_observations_are_sorted_opaque_affine_atoms() {
-        use crate::kernel::{Bitvector32Term, MachineIntegerType};
+        use crate::kernel::{MachineIntegerType, MachineTerm};
         let observe = |ty, bits| IntegerTerm::from_machine(ty, bits).unwrap();
-        let bits = Bitvector32Term::Variable(Variable(490));
+        let bits = MachineTerm::Variable(Variable(490));
         let x = observe(MachineIntegerType::Int32, bits.clone());
         let same = observe(MachineIntegerType::Int32, bits.clone());
         let unsigned = observe(MachineIntegerType::UInt32, bits.clone());
@@ -1384,7 +1384,7 @@ mod tests {
         let wrong_signedness = proposition(ConditionTerm::integer_equal(x.clone(), unsigned));
         assert!(certificate.check(&wrong_signedness, &[]).is_err());
 
-        let y_bits = Bitvector32Term::Variable(Variable(492));
+        let y_bits = MachineTerm::Variable(Variable(492));
         let y = observe(MachineIntegerType::Int32, y_bits.clone());
         let machine_sum = observe(
             MachineIntegerType::Int32,
@@ -1413,12 +1413,10 @@ mod tests {
         use crate::kernel::{IntegerRangeFoldIndex, SharedIntegerRangeEndpoint};
         IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(
-                    crate::kernel::Bitvector32Term::constant(start),
-                ),
-                end: SharedIntegerRangeEndpoint::intern(crate::kernel::Bitvector32Term::constant(
-                    end,
+                start: SharedIntegerRangeEndpoint::intern(crate::kernel::MachineTerm::constant(
+                    start,
                 )),
+                end: SharedIntegerRangeEndpoint::intern(crate::kernel::MachineTerm::constant(end)),
             },
             IntegerTerm::constant_i64(0),
             Variable(accumulator),
@@ -1457,7 +1455,7 @@ mod tests {
     fn machine_item(item: u64) -> IntegerTerm {
         IntegerTerm::from_machine(
             crate::kernel::MachineIntegerType::Int32,
-            crate::kernel::Bitvector32Term::Variable(Variable(item)),
+            crate::kernel::MachineTerm::Variable(Variable(item)),
         )
         .expect("a symbolic Int32 item should be a machine observation")
     }
@@ -1532,7 +1530,7 @@ mod tests {
     #[test]
     fn fold_atom_identity_retains_the_exact_memory_snapshot() {
         use crate::kernel::{
-            Bitvector32Term, CMemory, CValue, IntegerRangeFoldIndex, MachineIntegerType, Pointer,
+            CMemory, CValue, IntegerRangeFoldIndex, MachineIntegerType, MachineTerm, Pointer,
             PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm,
         };
         let pointer = Pointer {
@@ -1545,21 +1543,21 @@ mod tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7))),
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
         );
         let load_fold =
             |memory: &crate::kernel::SharedCMemory, accumulator: u64, item: u64| -> IntegerTerm {
                 IntegerTerm::range_fold(
                     IntegerRangeFoldIndex::Int32 {
-                        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-                        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
+                        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
                     },
                     IntegerTerm::constant_i64(0),
                     Variable(accumulator),
                     Variable(item),
                     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                         MachineIntegerType::Int32,
-                        Bitvector32Term::MemoryLoad(
+                        MachineTerm::MemoryLoad(
                             memory.clone(),
                             Box::new(pointer.clone()),
                             crate::kernel::LoadKind::Int32,
@@ -1873,8 +1871,8 @@ mod tests {
 
     #[test]
     fn operation_bounds_hold_only_for_operations_by_positive_constants() {
-        use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
-        let x = || Box::new(Bitvector32Term::Variable(Variable(97201)));
+        use crate::kernel::{MachineIntegerType, MachineTerm, SharedMachineIntegerTerm};
+        let x = || Box::new(MachineTerm::Variable(Variable(97201)));
         let operand = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::UInt64,
             *x(),
@@ -1882,11 +1880,11 @@ mod tests {
         let machine = |ty, value| SharedMachineIntegerTerm::intern(ty, value);
         let quotient = machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Divide,
                 left: x(),
-                right: Box::new(Bitvector32Term::uint64_constant(1000)),
+                right: Box::new(MachineTerm::uint64_constant(1000)),
             },
         );
         let observed = IntegerTerm::Machine(quotient.clone());
@@ -1911,11 +1909,11 @@ mod tests {
         // `x >> 32` is `x / 2^32`.
         let shifted = machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::ShiftRight,
                 left: x(),
-                right: Box::new(Bitvector32Term::int64_constant(32)),
+                right: Box::new(MachineTerm::int64_constant(32)),
             },
         );
         let two_to_32 = IntegerTerm::Multiply(
@@ -1929,11 +1927,11 @@ mod tests {
         // A remainder has only its upper bound; the type range is its lower.
         let remainder = machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Remainder,
                 left: x(),
-                right: Box::new(Bitvector32Term::uint64_constant(10)),
+                right: Box::new(MachineTerm::uint64_constant(10)),
             },
         );
         assert_eq!(
@@ -1951,29 +1949,29 @@ mod tests {
         for value in [
             machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Divide,
                     left: x(),
-                    right: Box::new(Bitvector32Term::uint64_constant(0)),
+                    right: Box::new(MachineTerm::uint64_constant(0)),
                 },
             ),
             machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::ShiftRight,
                     left: x(),
-                    right: Box::new(Bitvector32Term::int64_constant(64)),
+                    right: Box::new(MachineTerm::int64_constant(64)),
                 },
             ),
             machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Divide,
                     left: x(),
-                    right: Box::new(Bitvector32Term::Variable(Variable(97202))),
+                    right: Box::new(MachineTerm::Variable(Variable(97202))),
                 },
             ),
             machine(
@@ -1982,17 +1980,12 @@ mod tests {
                     Int32,
                     Divide,
                     x(),
-                    Box::new(Bitvector32Term::constant(-1000i32 as u32))
+                    Box::new(MachineTerm::constant(-1000i32 as u32))
                 ),
             ),
             machine(
                 MachineIntegerType::UInt32,
-                binary_node!(
-                    Int32,
-                    Divide,
-                    x(),
-                    Box::new(Bitvector32Term::constant(1000))
-                ),
+                binary_node!(Int32, Divide, x(), Box::new(MachineTerm::constant(1000))),
             ),
         ] {
             assert_eq!(operation_bound(&value, false), None);
@@ -2023,9 +2016,9 @@ mod tests {
 
     #[test]
     fn a_disequality_bounds_only_at_a_type_endpoint() {
-        use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
+        use crate::kernel::{MachineIntegerType, MachineTerm, SharedMachineIntegerTerm};
         let value =
-            |ty| SharedMachineIntegerTerm::intern(ty, Bitvector32Term::Variable(Variable(97301)));
+            |ty| SharedMachineIntegerTerm::intern(ty, MachineTerm::Variable(Variable(97301)));
         let differs = |ty, constant: i64| {
             Proposition::ConditionIs(
                 ConditionTerm::integer_equal(
@@ -2093,10 +2086,10 @@ mod tests {
 
     #[test]
     fn type_range_nodes_state_exactly_the_machine_type_bounds() {
-        use crate::kernel::{Bitvector32Term, MachineIntegerType, SharedMachineIntegerTerm};
+        use crate::kernel::{MachineIntegerType, MachineTerm, SharedMachineIntegerTerm};
         let word = SharedMachineIntegerTerm::intern(
             MachineIntegerType::UInt32,
-            Bitvector32Term::Variable(Variable(97101)),
+            MachineTerm::Variable(Variable(97101)),
         );
         let observed = IntegerTerm::Machine(word.clone());
         // `x <= 4294967295` and `0 <= x` give `x - 4294967295 <= 0` from the
@@ -2139,7 +2132,7 @@ mod tests {
         // A signed observation of the same carrier has its own range.
         let signed = SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(Variable(97101)),
+            MachineTerm::Variable(Variable(97101)),
         );
         let signed_goal = less_equal(
             IntegerTerm::constant_i64(-2_147_483_648),

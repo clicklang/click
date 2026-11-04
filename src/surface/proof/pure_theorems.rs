@@ -483,8 +483,8 @@ pub(super) fn pure_induction_hypothesis(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Proposition, ClickError> {
     let (current_variable, unsigned) = match context.values.get(&setup.parameter) {
-        Some(CValue::Int32(Bitvector32Term::Variable(variable))) => (variable, false),
-        Some(CValue::UInt64(Bitvector32Term::Variable(variable))) => (variable, true),
+        Some(CValue::Int32(MachineTerm::Variable(variable))) => (variable, false),
+        Some(CValue::UInt64(MachineTerm::Variable(variable))) => (variable, true),
         _ => return Err(ClickError::new("invalid scalar induction parameter")),
     };
     // Lower the hypothesis in its own requirement scope. These premises
@@ -518,7 +518,7 @@ pub(super) fn pure_induction_hypothesis(
     // The decrease guard names the measure beside the binder, so the binder
     // avoids it even when neither the goal nor a requirement mentions it.
     let variable = fresh_int32_variable_for_propositions(&propositions, &[*current_variable]);
-    let value = Bitvector32Term::Variable(variable);
+    let value = MachineTerm::Variable(variable);
     let substitute = |proposition: &Proposition| {
         substitute_int32_variable_in_proposition(proposition, *current_variable, value.clone())
     };
@@ -544,16 +544,13 @@ pub(super) fn pure_induction_hypothesis(
     }
     let smaller = Proposition::ConditionIs(
         if unsigned {
-            ConditionTerm::uint64_less_than(
-                value.clone(),
-                Bitvector32Term::Variable(*current_variable),
-            )
+            ConditionTerm::uint64_less_than(value.clone(), MachineTerm::Variable(*current_variable))
         } else {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(value.clone()),
-                right: Box::new(Bitvector32Term::Variable(*current_variable)),
+                right: Box::new(MachineTerm::Variable(*current_variable)),
             }
         },
         true,
@@ -565,7 +562,7 @@ pub(super) fn pure_induction_hypothesis(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
                 left: Box::new(value),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1421,7 +1418,7 @@ pub(in crate::surface) fn assumed_theorem_certification_authorities(
             .parameters()
             .iter()
             .map(|parameter| match context.values.get(parameter.name()) {
-                Some(CValue::Int32(Bitvector32Term::Variable(variable))) => Some(*variable),
+                Some(CValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
                 _ => None,
             })
             .collect::<Option<Vec<_>>>()
@@ -1511,10 +1508,8 @@ fn pure_theorem_parameter_values_with_generic_pointers(
         .filter_map(|(index, parameter)| {
             let c_type = parameter.click_type().c_type()?;
             let value = match c_type {
-                C0Type::Int128 => CValue::Int128(Bitvector32Term::Variable(Variable(index as u64))),
-                C0Type::UInt128 => {
-                    CValue::UInt128(Bitvector32Term::Variable(Variable(index as u64)))
-                }
+                C0Type::Int128 => CValue::Int128(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::UInt128 => CValue::UInt128(MachineTerm::Variable(Variable(index as u64))),
                 C0Type::Parameter(name) => crate::kernel::symbolic_call_result(
                     CType::Parameter(name),
                     Variable(index as u64),
@@ -1526,7 +1521,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                 C0Type::Void => unreachable!("pure theorem parameters cannot be void"),
                 // A `Bool` parameter is a binder of the kernel sort (Stage 5),
                 // carried as its cast to `uint8` (rule C1).
-                C0Type::Bool => CValue::Bool(Bitvector32Term::bool_cast(
+                C0Type::Bool => CValue::Bool(MachineTerm::bool_cast(
                     crate::kernel::MachineIntegerType::UInt8,
                     crate::kernel::ConditionTerm::Variable(Variable(index as u64)),
                 )),
@@ -1534,7 +1529,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             1,
@@ -1542,35 +1537,27 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     },
                     c_type.to_kernel_type(),
                 ),
-                C0Type::Int8 => CValue::Int8(Bitvector32Term::Variable(Variable(index as u64))),
-                C0Type::Int16 => CValue::Int16(Bitvector32Term::Variable(Variable(index as u64))),
-                C0Type::Int32 => CValue::Int32(Bitvector32Term::Variable(Variable(index as u64))),
-                C0Type::UInt32 => CValue::UInt32(Bitvector32Term::Variable(Variable(index as u64))),
+                C0Type::Int8 => CValue::Int8(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int16 => CValue::Int16(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int32 => CValue::Int32(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::UInt32 => CValue::UInt32(MachineTerm::Variable(Variable(index as u64))),
                 C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) => {
-                    CValue::UInt8(Bitvector32Term::Variable(Variable(index as u64)))
+                    CValue::UInt8(MachineTerm::Variable(Variable(index as u64)))
                 }
                 C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
-                    CValue::Int8(Bitvector32Term::Variable(Variable(index as u64)))
+                    CValue::Int8(MachineTerm::Variable(Variable(index as u64)))
                 }
-                C0Type::UInt8 => CValue::UInt8(Bitvector32Term::Variable(Variable(index as u64))),
-                C0Type::UInt16 => CValue::UInt16(Bitvector32Term::Variable(Variable(index as u64))),
-                C0Type::Int64(_) => {
-                    CValue::Int64(Bitvector32Term::Variable(Variable(index as u64)))
-                }
-                C0Type::UInt64(_) => {
-                    CValue::UInt64(Bitvector32Term::Variable(Variable(index as u64)))
-                }
-                C0Type::Float32 => {
-                    CValue::Float32(Bitvector32Term::Variable(Variable(index as u64)))
-                }
-                C0Type::Float64 => {
-                    CValue::Float64(Bitvector32Term::Variable(Variable(index as u64)))
-                }
+                C0Type::UInt8 => CValue::UInt8(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::UInt16 => CValue::UInt16(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Int64(_) => CValue::Int64(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::UInt64(_) => CValue::UInt64(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Float32 => CValue::Float32(MachineTerm::Variable(Variable(index as u64))),
+                C0Type::Float64 => CValue::Float64(MachineTerm::Variable(Variable(index as u64))),
                 C0Type::Int8Pointer | C0Type::Int8Array(_) => CValue::typed_pointer(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             1,
@@ -1582,7 +1569,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             2,
@@ -1594,7 +1581,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             2,
@@ -1606,7 +1593,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             4,
@@ -1621,7 +1608,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             1,
@@ -1633,7 +1620,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             4,
@@ -1645,7 +1632,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             8,
@@ -1657,7 +1644,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             16,
@@ -1669,7 +1656,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             8,
@@ -1681,7 +1668,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             16,
@@ -1693,7 +1680,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             4,
@@ -1705,7 +1692,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             8,
@@ -1723,7 +1710,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
                             offset: scale_int32_offset(
-                                Bitvector32Term::Variable(Variable(
+                                MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                                 )),
                                 i64::from(element_width),
@@ -1753,7 +1740,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                         Pointer {
                             block: PointerBlock::ExternalArgument,
                             offset: scale_int32_offset(
-                                Bitvector32Term::Variable(Variable(
+                                MachineTerm::Variable(Variable(
                                     POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                                 )),
                                 i64::from(element_width),
@@ -1770,7 +1757,7 @@ fn pure_theorem_parameter_values_with_generic_pointers(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(Variable(
+                            MachineTerm::Variable(Variable(
                                 POINTER_ARGUMENT_VARIABLE_BASE + index as u64,
                             )),
                             8,
@@ -2033,7 +2020,7 @@ fn verify_theorem_ensure(
         .parameters()
         .iter()
         .map(|parameter| match context.values.get(parameter.name()) {
-            Some(CValue::Int32(Bitvector32Term::Variable(variable))) => Some(*variable),
+            Some(CValue::Int32(MachineTerm::Variable(variable))) => Some(*variable),
             _ => None,
         })
         .collect::<Option<Vec<_>>>();
@@ -3766,7 +3753,7 @@ mod tests {
     #[test]
     fn axiom_comparison_states_each_order_as_less_than_or_less_equal() {
         use crate::kernel::ConditionTerm as Condition;
-        let word = |index| Box::new(Bitvector32Term::Variable(crate::kernel::Variable(index)));
+        let word = |index| Box::new(MachineTerm::Variable(crate::kernel::Variable(index)));
         let fact = |condition| Proposition::ConditionIs(condition, true);
         let greater = Proposition::Implies(
             Box::new(fact(Condition::Compare {

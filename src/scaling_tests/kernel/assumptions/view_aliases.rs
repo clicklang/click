@@ -44,9 +44,9 @@ fn selected_view_checks_alias_coordinates_without_enumerating_the_class() {
             let query = Pointer::symbolic(Variable(820_002));
             let extent = |n| {
                 if wide {
-                    Bitvector32Term::uint64_constant(n)
+                    MachineTerm::uint64_constant(n)
                 } else {
-                    Bitvector32Term::constant(n as u32)
+                    MachineTerm::constant(n as u32)
                 }
             };
             let fact = Proposition::CMemoryLoadable {
@@ -221,9 +221,9 @@ fn selected_views_follow_same_block_aliases_without_walking_the_star() {
             let memory = CMemory::new();
             let extent = |n| {
                 if wide {
-                    Bitvector32Term::uint64_constant(n)
+                    MachineTerm::uint64_constant(n)
                 } else {
-                    Bitvector32Term::constant(n as u32)
+                    MachineTerm::constant(n as u32)
                 }
             };
             let mut context =

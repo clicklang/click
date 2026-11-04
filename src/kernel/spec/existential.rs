@@ -138,8 +138,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::constant(value)),
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::constant(value)),
             },
             true,
         )
@@ -218,7 +218,7 @@ mod tests {
             let instantiated = substitute_int32_variable_in_proposition(
                 &body,
                 variable,
-                Bitvector32Term::constant(witness),
+                MachineTerm::constant(witness),
             );
             assert!(PureFactContext::new().proves_exact(&Proposition::Not(Box::new(instantiated))));
         }

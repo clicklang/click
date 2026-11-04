@@ -349,7 +349,7 @@ fn checked_surface_comparison_fact_in_state_with_availability(
         let mut names = BTreeMap::<Variable, Option<String>>::new();
         for (name, expression) in bindings.iter() {
             if let ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(variable),
+                MachineTerm::Variable(variable),
             ))) = expression
             {
                 names

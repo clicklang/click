@@ -51,7 +51,7 @@ fn update(
         } else {
             let value = KernelTermImport::default().machine(
                 MachineIntegerType::Int32,
-                &Bitvector32Term::constant_at32(format, coefficient),
+                &MachineTerm::constant_at32(format, coefficient),
             );
             KernelTerm::machine_binary_shared_as(
                 MachineIntegerType::Int32,
@@ -112,11 +112,11 @@ impl EndpointKeys {
             V::Shared(term) => self.shared(term),
         }
     }
-    pub(super) fn normalized_legacy(&mut self, term: &Bitvector32Term) -> Key {
+    pub(super) fn normalized_legacy(&mut self, term: &MachineTerm) -> Key {
         self.normalized_legacy_pair(term).1
     }
 
-    pub(super) fn normalized_legacy_pair(&mut self, term: &Bitvector32Term) -> (Key, Key) {
+    pub(super) fn normalized_legacy_pair(&mut self, term: &MachineTerm) -> (Key, Key) {
         match KernelTermImport::default().machine_arithmetic(MachineIntegerType::Int32, term) {
             Some(term) => (Key::new(V::Shared(&term)), self.shared(&term)),
             None => {
@@ -195,10 +195,8 @@ impl EndpointKeys {
         let sum = self.sums.get(&(root.id(), format)).unwrap();
         let rendered = sum.tree.as_ref().map(|tree| tree.rendered.clone());
         let result = if sum.constant != 0 || rendered.is_none() {
-            let constant = KernelTermImport::default().machine(
-                format,
-                &Bitvector32Term::constant_at32(format, sum.constant),
-            );
+            let constant = KernelTermImport::default()
+                .machine(format, &MachineTerm::constant_at32(format, sum.constant));
             match rendered {
                 Some(root) => KernelTerm::machine_binary_shared_as(
                     MachineIntegerType::Int32,

@@ -212,7 +212,7 @@ impl Framer<'_> {
                     crate::kernel::substitute_int32_variable_in_proposition(
                         to_body,
                         *to_var,
-                        Bitvector32Term::Variable(*from_var),
+                        MachineTerm::Variable(*from_var),
                     )
                 };
                 let both = Proposition::And(from_body.clone(), Box::new(to_body));
@@ -332,18 +332,14 @@ impl Framer<'_> {
 /// at two snapshots, shown to hold one version by the kernel's checked load
 /// equality, exactly as the condition bridge
 /// (`conditions_equal_modulo_origin_unchanged`) asks it.
-fn loads_unchanged(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-    assumptions: &PureFactContext,
-) -> bool {
+fn loads_unchanged(left: &MachineTerm, right: &MachineTerm, assumptions: &PureFactContext) -> bool {
     crate::instrumentation::record_deterministic_work(1);
     if left == right {
         return true;
     }
     let (
-        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
+        MachineTerm::MemoryLoad(_, left_pointer, left_kind),
+        MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (left, right)
     else {
         return false;
@@ -363,7 +359,7 @@ fn loads_unchanged(
         return false;
     }
     let right_at_left_address =
-        Bitvector32Term::MemoryLoad(right_memory.clone(), left_pointer.clone(), *right_kind);
+        MachineTerm::MemoryLoad(right_memory.clone(), left_pointer.clone(), *right_kind);
     crate::kernel::memory_provenance::explicit_atomic_equality_from_memory_derivations(
         left,
         &right_at_left_address,
@@ -388,10 +384,10 @@ mod wide_condition_tests {
         let before = CMemory::new().with_block("wide-equality-frame", 16);
         let after = before.clone().store(
             pointer.offset_by_bytes(8),
-            CValue::UInt64(Bitvector32Term::uint64_constant(3)),
+            CValue::UInt64(MachineTerm::uint64_constant(3)),
         );
         let load = |memory: &CMemory, kind| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),
                 kind,
@@ -403,7 +399,7 @@ mod wide_condition_tests {
             left: Box::new(read),
             right: Box::new(value),
         };
-        let stamp = Bitvector32Term::uint64_constant(0x1_0000_0001);
+        let stamp = MachineTerm::uint64_constant(0x1_0000_0001);
         let source = condition(load(&before, LoadKind::Bits64), stamp.clone());
         let target = condition(load(&after, LoadKind::Bits64), stamp.clone());
         let carried = |target: &ConditionTerm| {
@@ -418,11 +414,11 @@ mod wide_condition_tests {
         )));
         assert!(!carried(&condition(
             load(&after, LoadKind::Bits64),
-            Bitvector32Term::uint64_constant(1),
+            MachineTerm::uint64_constant(1),
         )));
         let partial = before.clone().store(
             pointer.offset_by_bytes(4),
-            CValue::Int32(Bitvector32Term::constant(0)),
+            CValue::Int32(MachineTerm::constant(0)),
         );
         assert!(!carried(&condition(
             load(&partial, LoadKind::Bits64),
@@ -434,7 +430,7 @@ mod wide_condition_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(&after, LoadKind::Bits64)),
-                right: Box::new(Bitvector32Term::constant(1))
+                right: Box::new(MachineTerm::constant(1))
             },
             &|_, _| true,
         ));

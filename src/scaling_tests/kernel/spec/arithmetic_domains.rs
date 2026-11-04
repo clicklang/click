@@ -1,8 +1,8 @@
 fn division_paths(context: &PureFactContext) -> Vec<CExpressionPath> {
     apply_spec_arithmetic(
         crate::kernel::MachineBinaryOp::Divide,
-        CValue::UInt32(Bitvector32Term::uint32_constant(7)),
-        CValue::UInt32(Bitvector32Term::Variable(Variable(690_000))),
+        CValue::UInt32(MachineTerm::uint32_constant(7)),
+        CValue::UInt32(MachineTerm::Variable(Variable(690_000))),
         ExecutionFacts::default(),
         Vec::new(),
         context,
@@ -19,8 +19,8 @@ fn value_path(paths: Vec<CExpressionPath>) -> Option<CExpressionPath> {
 #[test]
 fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
     let zero = ConditionTerm::uint32_equal(
-        Bitvector32Term::Variable(Variable(690_000)),
-        Bitvector32Term::uint32_constant(0),
+        MachineTerm::Variable(Variable(690_000)),
+        MachineTerm::uint32_constant(0),
     );
     let mut samples = Vec::new();
     for size in [32u64, 128, 512] {
@@ -32,8 +32,8 @@ fn impossible_arithmetic_keeps_its_term_without_scanning_the_parent() {
         for index in 0..size {
             base = base.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(691_000 + index)),
-                    Bitvector32Term::constant(1000),
+                    MachineTerm::Variable(Variable(691_000 + index)),
+                    MachineTerm::constant(1000),
                 ),
                 true,
             );
@@ -78,16 +78,15 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
         for i in 0..unrelated {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(695_000 + i)),
+                    MachineTerm::Variable(Variable(695_000 + i)),
                     1000u32.into(),
                 ),
                 true,
             );
         }
         let claim = |i| {
-            let value = SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
-                694_000 + i,
-            ))));
+            let value =
+                SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(694_000 + i))));
             SpecProposition::ExistsInt32 {
                 name: "k".into(),
                 variable: Variable(694_000 + i),
@@ -132,7 +131,7 @@ fn native_existential_domains_scale_with_claims_not_ambient_facts() {
 fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
     fn sample(claims: u64, related: u64, unrelated: u64) -> usize {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = Bitvector32Term::Variable(Variable(696_000));
+        let variable = MachineTerm::Variable(Variable(696_000));
         let mut context = PureFactContext::new();
         for i in 0..related {
             context = context.assume_condition(
@@ -143,7 +142,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
         for i in 0..unrelated {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(697_000 + i)),
+                    MachineTerm::Variable(Variable(697_000 + i)),
                     1000u32.into(),
                 ),
                 true,
@@ -176,7 +175,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                 assert_eq!(paths.len(), 1);
                 assert_eq!(
                     paths[0].outcome,
-                    CExpressionOutcome::Value(int32(Bitvector32Term::add(
+                    CExpressionOutcome::Value(int32(MachineTerm::add(
                         variable.clone(),
                         1u32.into()
                     ),))
@@ -189,7 +188,7 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
                         crate::kernel::MachineIntegerType::Int32,
                         crate::kernel::MachineBinaryOp::Add,
                         &variable,
-                        &Bitvector32Term::constant(1),
+                        &MachineTerm::constant(1),
                     )
                 );
             }
@@ -206,13 +205,13 @@ fn structural_signed_addition_keeps_its_debt_independent_of_ambient_facts() {
 
 #[test]
 fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
-    let count = Bitvector32Term::Variable(Variable(696_000));
+    let count = MachineTerm::Variable(Variable(696_000));
     let invalid =
-        ConditionTerm::uint64_greater_equal(count.clone(), Bitvector32Term::uint64_constant(32));
+        ConditionTerm::uint64_greater_equal(count.clone(), MachineTerm::uint64_constant(32));
     let lower = |context: &PureFactContext| {
         apply_spec_arithmetic(
             crate::kernel::MachineBinaryOp::ShiftRight,
-            CValue::UInt32(Bitvector32Term::Variable(Variable(696_001))),
+            CValue::UInt32(MachineTerm::Variable(Variable(696_001))),
             CValue::UInt64(count.clone()),
             ExecutionFacts::default(),
             Vec::new(),
@@ -229,8 +228,8 @@ fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
         for i in 0..size {
             base = base.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(697_000 + i)),
-                    Bitvector32Term::constant(1000),
+                    MachineTerm::Variable(Variable(697_000 + i)),
+                    MachineTerm::constant(1000),
                 ),
                 true,
             );
@@ -261,11 +260,11 @@ fn logical_shift_shape_and_work_ignore_ambient_count_facts() {
 
 #[test]
 fn wide_logical_product_keeps_operands_when_equalities_grow() {
-    let operand = Bitvector32Term::Variable(Variable(698_000));
+    let operand = MachineTerm::Variable(Variable(698_000));
     let lower = |context: &PureFactContext| {
         apply_spec_arithmetic(
             crate::kernel::MachineBinaryOp::Multiply,
-            CValue::Int128(Bitvector32Term::Variable(Variable(698_001))),
+            CValue::Int128(MachineTerm::Variable(Variable(698_001))),
             CValue::Int64(operand.clone()),
             ExecutionFacts::default(),
             Vec::new(),
@@ -282,14 +281,14 @@ fn wide_logical_product_keeps_operands_when_equalities_grow() {
         for i in 0..size {
             context = context.assume_condition(
                 ConditionTerm::int64_equal(
-                    Bitvector32Term::Variable(Variable(699_000 + i)),
-                    Bitvector32Term::int64_constant(i as i64),
+                    MachineTerm::Variable(Variable(699_000 + i)),
+                    MachineTerm::int64_constant(i as i64),
                 ),
                 true,
             );
         }
         context = context.assume_condition(
-            ConditionTerm::int64_equal(operand.clone(), Bitvector32Term::int64_constant(0)),
+            ConditionTerm::int64_equal(operand.clone(), MachineTerm::int64_constant(0)),
             true,
         );
         let (actual, work) = crate::instrumentation::measure_deterministic_work(|| lower(&context));
@@ -311,13 +310,13 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
         let mut costs = Vec::new();
         for size in [0, 128, 512] {
             let _session = crate::kernel::VerificationSession::enter();
-            let value = Bitvector32Term::Variable(Variable(780_000 + size * 4));
+            let value = MachineTerm::Variable(Variable(780_000 + size * 4));
             let mut context = PureFactContext::new();
             for i in 0..size {
                 context = context.assume_condition(
                     ConditionTerm::equal(
                         value.clone(),
-                        Bitvector32Term::Variable(Variable(790_000 + i)),
+                        MachineTerm::Variable(Variable(790_000 + i)),
                     ),
                     true,
                 );
@@ -326,7 +325,7 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
                 context = context.assume_condition(
                     ConditionTerm::signed_less_than(
                         value.clone(),
-                        Bitvector32Term::constant(i32::MAX as u32),
+                        MachineTerm::constant(i32::MAX as u32),
                     ),
                     true,
                 );
@@ -335,7 +334,7 @@ fn complete_arithmetic_domain_checks_ignore_related_alias_stars() {
                 crate::kernel::MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
                 &value,
-                &Bitvector32Term::constant(1),
+                &MachineTerm::constant(1),
             );
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
                 context.settles_exactly(&domain)

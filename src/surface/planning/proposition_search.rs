@@ -1270,7 +1270,7 @@ impl PropositionSearch for PureFactContext {
             if reasoning_interrupted() {
                 return None;
             }
-            let witness = Bitvector32Term::Variable(variable);
+            let witness = MachineTerm::Variable(variable);
             let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
             let derivation = self.derive_proposition_using(&instantiated, false);
             if let Some(derivation) = derivation {
@@ -1324,7 +1324,7 @@ impl PropositionSearch for PureFactContext {
         if sort != &Sort::CInt32 {
             return None;
         }
-        let witness = Bitvector32Term::constant(0);
+        let witness = MachineTerm::constant(0);
         let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
         if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
             return None;
@@ -1571,18 +1571,9 @@ mod monotone_forall_tests {
                 true,
             )
         };
-        let old_is_zero = equality(
-            Bitvector32Term::Variable(outer),
-            Bitvector32Term::constant(0),
-        );
-        let old_equals_other = equality(
-            Bitvector32Term::Variable(outer),
-            Bitvector32Term::Variable(other),
-        );
-        let body = equality(
-            Bitvector32Term::Variable(other),
-            Bitvector32Term::constant(0),
-        );
+        let old_is_zero = equality(MachineTerm::Variable(outer), MachineTerm::constant(0));
+        let old_equals_other = equality(MachineTerm::Variable(outer), MachineTerm::Variable(other));
+        let body = equality(MachineTerm::Variable(other), MachineTerm::constant(0));
         let goal = Proposition::ForAll {
             name: Default::default(),
             var: outer,
@@ -1700,7 +1691,7 @@ mod condition_premise_tests {
                 true,
             )
         };
-        let constant = Bitvector32Term::constant(7);
+        let constant = MachineTerm::constant(7);
         let left = equal(term(1), constant.clone());
         let right = equal(constant, term(2));
         let goal = equal(term(1), term(2));
@@ -1710,7 +1701,7 @@ mod condition_premise_tests {
         for index in 8..136 {
             context = context.assume_proposition(Proposition::Not(Box::new(equal(
                 term(1),
-                Bitvector32Term::constant(index),
+                MachineTerm::constant(index),
             ))));
         }
         reset_condition_selection_visits();
@@ -1729,7 +1720,7 @@ mod condition_premise_tests {
         }
         assert!(
             context
-                .derive_atomic_proposition(&equal(term(1), Bitvector32Term::constant(8)))
+                .derive_atomic_proposition(&equal(term(1), MachineTerm::constant(8)))
                 .is_none()
         );
         let exact_constant_only = PureFactContext::new().assume_proposition(left.clone());
@@ -1746,8 +1737,8 @@ mod condition_premise_tests {
         );
     }
 
-    fn term(index: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(index))
+    fn term(index: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(index))
     }
 
     fn order(left: u64, right: u64) -> ConditionTerm {
@@ -1765,7 +1756,7 @@ mod condition_premise_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(term(1)),
-                right: Box::new(Bitvector32Term::constant(1000)),
+                right: Box::new(MachineTerm::constant(1000)),
             }
         } else {
             order(index, index - 1)
@@ -1786,7 +1777,7 @@ mod condition_premise_tests {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
             left: Box::new(term(size as u64)),
-            right: Box::new(Bitvector32Term::constant(1000)),
+            right: Box::new(MachineTerm::constant(1000)),
         };
         (context, Proposition::ConditionIs(goal, true))
     }
@@ -1858,11 +1849,8 @@ mod condition_premise_tests {
             },
             CValue::Int32(term(70)),
         );
-        let load = Bitvector32Term::MemoryLoad(
-            intern_c_memory(memory),
-            Box::new(pointer),
-            LoadKind::Int32,
-        );
+        let load =
+            MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
         let fact = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -1978,7 +1966,7 @@ pub(crate) fn connected_equalities(
             continue;
         }
         // `σ(x) == x` is `x == x` under rule K6: true of every word and no
-        // rewrite (`Bitvector32Term::is_sign_cast32_of`).
+        // rewrite (`MachineTerm::is_sign_cast32_of`).
         if let Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
@@ -2276,7 +2264,7 @@ fn reduce_solve_atomic_premises(
             },
             true,
         ) => match (left.as_ref(), right.as_ref()) {
-            (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => {
+            (MachineTerm::Variable(left), MachineTerm::Variable(right)) => {
                 Some(AtomicReductionQuery::VariableEquality32(*left, *right))
             }
             _ => None,
@@ -2291,15 +2279,15 @@ fn reduce_solve_atomic_premises(
             true,
         ) => match (left.as_ref(), right.as_ref()) {
             (
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Subtract,
                     left: base,
                     right: amount,
                 },
-                Bitvector32Term::Variable(upper),
+                MachineTerm::Variable(upper),
             ) => match (base.as_ref(), amount.as_ref()) {
-                (Bitvector32Term::Variable(base), uint64_constant!(amount)) => {
+                (MachineTerm::Variable(base), uint64_constant!(amount)) => {
                     Some(AtomicReductionQuery::UnsignedSubtractionLessThan(
                         *base,
                         constant_u64(*amount),
@@ -2401,7 +2389,7 @@ mod shared_atomic_premise_tests {
         for size in [8u64, 16, 32, 64] {
             let predicate = |index| Proposition::Predicate {
                 name: "wide-index".to_string(),
-                arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(Variable(
+                arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(
                     800_000 + index,
                 )))],
             };
@@ -2452,9 +2440,9 @@ mod atomic_reduction_tests {
     use super::*;
 
     fn selection(size: usize, middle: Variable) -> (PureFactContext, Proposition, u64) {
-        let left = Bitvector32Term::Variable(Variable(785_001));
-        let right = Bitvector32Term::Variable(Variable(785_002));
-        let middle = Bitvector32Term::Variable(middle);
+        let left = MachineTerm::Variable(Variable(785_001));
+        let right = MachineTerm::Variable(Variable(785_002));
+        let middle = MachineTerm::Variable(middle);
         let equal = |left, right| ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,

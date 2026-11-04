@@ -123,7 +123,7 @@ mod tests {
         SpecialArithmeticCertificate, SpecialArithmeticNode,
     };
     use crate::kernel::{
-        Bitvector32Term, IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, Variable,
+        IntegerTerm, MachineIntegerConstant, MachineIntegerType as Ty, MachineTerm, Variable,
     };
     use num_bigint::BigInt;
 
@@ -131,9 +131,9 @@ mod tests {
         Proposition::ConditionIs(ConditionTerm::integer_less_equal(a, b), true)
     }
     fn inputs(source: Ty, destination: Ty) -> (Vec<Proposition>, Proposition) {
-        let value = Bitvector32Term::Variable(Variable(168_001));
+        let value = MachineTerm::Variable(Variable(168_001));
         let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
-        let cast = Bitvector32Term::machine_integer_cast(source, destination, value);
+        let cast = MachineTerm::machine_integer_cast(source, destination, value);
         let observed = IntegerTerm::from_machine(destination, cast).unwrap();
         let (lo, hi) = destination.format().bounds();
         (
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn unsigned_subword_read_observations_require_bounds_on_the_word() {
-        let carrier = Bitvector32Term::Variable(Variable(168_012));
+        let carrier = MachineTerm::Variable(Variable(168_012));
         for source in [Ty::Int32, Ty::UInt32] {
             for destination in [Ty::UInt8, Ty::UInt16] {
                 let original = IntegerTerm::from_machine(source, carrier.clone()).unwrap();
@@ -193,20 +193,20 @@ mod tests {
 
     #[test]
     fn narrowed_subword_carriers_require_destination_bounds_on_the_source() {
-        let word = Bitvector32Term::Variable(Variable(168_013));
-        let wide = Bitvector32Term::Variable(Variable(168_014));
+        let word = MachineTerm::Variable(Variable(168_013));
+        let wide = MachineTerm::Variable(Variable(168_014));
         for (source, original_carrier, carrier) in [
             (Ty::Int32, word.clone(), word.clone()),
             (Ty::UInt32, word.clone(), word.clone()),
             (
                 Ty::Int64,
                 wide.clone(),
-                Bitvector32Term::uint32_from_64(wide.clone()),
+                MachineTerm::uint32_from_64(wide.clone()),
             ),
             (
                 Ty::UInt64,
                 wide.clone(),
-                Bitvector32Term::uint32_from_64(wide.clone()),
+                MachineTerm::uint32_from_64(wide.clone()),
             ),
         ] {
             for destination in [Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16] {
@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn integer_cast_identity_checks_legacy_conversions_and_rejects_wrong_carriers() {
         let types = [Ty::Int32, Ty::UInt32, Ty::Int64, Ty::UInt64];
-        let value = Bitvector32Term::Variable(Variable(168_001));
+        let value = MachineTerm::Variable(Variable(168_001));
         for source in types {
             for destination in types {
                 let original = IntegerTerm::from_machine(source, value.clone()).unwrap();
@@ -371,7 +371,7 @@ mod tests {
                     );
                 }
                 if source != destination {
-                    let unrelated = Bitvector32Term::Variable(Variable(168_002));
+                    let unrelated = MachineTerm::Variable(Variable(168_002));
                     let wrong = Proposition::ConditionIs(
                         ConditionTerm::integer_equal(
                             IntegerTerm::from_machine(destination, unrelated).unwrap(),
@@ -391,17 +391,16 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_normalized_nested_conversions() {
-        let variable = Bitvector32Term::Variable(Variable(168_001));
+        let variable = MachineTerm::Variable(Variable(168_001));
         for (source, intermediate, destination) in [
             (Ty::Int32, Ty::UInt32, Ty::UInt16),
             (Ty::UInt32, Ty::Int32, Ty::UInt16),
             (Ty::UInt8, Ty::UInt32, Ty::UInt16),
             (Ty::Int128, Ty::UInt64, Ty::Int32),
         ] {
-            let widened =
-                Bitvector32Term::machine_integer_cast(source, intermediate, variable.clone());
+            let widened = MachineTerm::machine_integer_cast(source, intermediate, variable.clone());
             let narrowed =
-                Bitvector32Term::machine_integer_cast(intermediate, destination, widened.clone());
+                MachineTerm::machine_integer_cast(intermediate, destination, widened.clone());
             let original = IntegerTerm::from_machine(intermediate, widened).unwrap();
             let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
             let goal = Proposition::ConditionIs(
@@ -447,9 +446,8 @@ mod tests {
 
         // Widening after a truncation cannot be treated as a direct cast of the
         // pre-truncation value, even if that value fits the final destination.
-        let truncated =
-            Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, variable.clone());
-        let widened = Bitvector32Term::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
+        let truncated = MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, variable.clone());
+        let widened = MachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt16, truncated);
         let original = IntegerTerm::from_machine(Ty::UInt32, variable).unwrap();
         let observed = IntegerTerm::from_machine(Ty::UInt16, widened).unwrap();
         let goal = Proposition::ConditionIs(
@@ -469,7 +467,7 @@ mod tests {
 
     #[test]
     fn integer_cast_identity_checks_unsigned_byte_readback_masks() {
-        let value = Bitvector32Term::Variable(Variable(168_001));
+        let value = MachineTerm::Variable(Variable(168_001));
         let original = IntegerTerm::from_machine(Ty::UInt32, value.clone()).unwrap();
         for destination in [Ty::UInt8, Ty::UInt16] {
             let mask = (1u32 << destination.format().bits()) - 1;
@@ -478,7 +476,7 @@ mod tests {
                     Int32,
                     BitwiseAnd,
                     Box::new(value.clone()),
-                    Box::new(Bitvector32Term::constant(mask)),
+                    Box::new(MachineTerm::constant(mask)),
                 );
                 let observed = IntegerTerm::from_machine(destination, narrowed).unwrap();
                 Proposition::ConditionIs(
@@ -559,7 +557,7 @@ mod tests {
             );
         }
         let original =
-            IntegerTerm::from_machine(Ty::Int128, Bitvector32Term::Variable(Variable(168_001)))
+            IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
                 .unwrap();
         let (lo, hi) = Ty::Int64.format().bounds();
         for altered in [
@@ -623,21 +621,16 @@ mod tests {
         use crate::kernel::SharedMachineIntegerTerm;
         let (premises, _) = inputs(Ty::Int128, Ty::Int64);
         let original =
-            IntegerTerm::from_machine(Ty::Int128, Bitvector32Term::Variable(Variable(168_001)))
+            IntegerTerm::from_machine(Ty::Int128, MachineTerm::Variable(Variable(168_001)))
                 .unwrap();
         for (ty, source, destination, value) in [
             (
                 Ty::Int32,
                 Ty::Int128,
                 Ty::Int64,
-                Bitvector32Term::Variable(Variable(168_001)),
+                MachineTerm::Variable(Variable(168_001)),
             ),
-            (
-                Ty::Int64,
-                Ty::Int128,
-                Ty::Int64,
-                Bitvector32Term::constant(1),
-            ),
+            (Ty::Int64, Ty::Int128, Ty::Int64, MachineTerm::constant(1)),
             (
                 Ty::Int64,
                 Ty::UInt128,
@@ -652,7 +645,7 @@ mod tests {
         ] {
             let cast = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 ty,
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: crate::kernel::MachineCastSpelling::Generic,
                     from: source,
                     to: destination,

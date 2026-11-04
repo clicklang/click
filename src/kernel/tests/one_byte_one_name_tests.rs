@@ -12,20 +12,16 @@ fn byte(offset: i64) -> Pointer {
     }
 }
 
-fn read(offset: i64, kind: LoadKind) -> Bitvector32Term {
+fn read(offset: i64, kind: LoadKind) -> MachineTerm {
     let memory = crate::kernel::intern_c_memory(CMemory::new());
-    Bitvector32Term::memory_read(memory, byte(offset), kind)
+    MachineTerm::memory_read(memory, byte(offset), kind)
 }
 
-fn constant(format: MachineIntegerType, value: i64) -> Bitvector32Term {
-    Bitvector32Term::narrow_constant(format, value as u128)
+fn constant(format: MachineIntegerType, value: i64) -> MachineTerm {
+    MachineTerm::narrow_constant(format, value as u128)
 }
 
-fn equal(
-    format: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> ConditionTerm {
+fn equal(format: MachineIntegerType, left: MachineTerm, right: MachineTerm) -> ConditionTerm {
     ConditionTerm::narrow_compare(format, CompareRelation::Equal, left, right)
 }
 
@@ -45,10 +41,10 @@ const BYTE_PAIRS: [(i64, i64); 7] = [
 fn a_signed_byte_read_is_its_own_load() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = crate::kernel::intern_c_memory(CMemory::new());
-    let signed = Bitvector32Term::memory_read(memory.clone(), byte(0), LoadKind::Int8);
+    let signed = MachineTerm::memory_read(memory.clone(), byte(0), LoadKind::Int8);
     assert!(matches!(
         signed,
-        Bitvector32Term::MemoryLoad(_, _, LoadKind::Int8)
+        MachineTerm::MemoryLoad(_, _, LoadKind::Int8)
     ));
     assert_eq!(signed.signed_byte_operand(), None);
     // Its canonical form is its own load's, and the read is named.
@@ -59,7 +55,7 @@ fn a_signed_byte_read_is_its_own_load() {
     assert!(crate::kernel::eval::load_variable_for_term(&signed).is_some());
     // The native sign cast still folds a constant: the byte 0xC8 is -56.
     assert_eq!(
-        Bitvector32Term::signed_byte(constant(MachineIntegerType::UInt8, 0xC8)),
+        MachineTerm::signed_byte(constant(MachineIntegerType::UInt8, 0xC8)),
         constant(MachineIntegerType::Int8, -56)
     );
 }
@@ -161,8 +157,8 @@ fn reads_of_different_bytes_are_not_related() {
 fn a_native_sign_cast_constant_decides_its_operand() {
     use MachineIntegerType::{Int8, UInt8};
     let _session = crate::kernel::VerificationSession::enter();
-    let operand = Bitvector32Term::Variable(Variable(612_201));
-    let signed = Bitvector32Term::signed_byte(operand.clone());
+    let operand = MachineTerm::Variable(Variable(612_201));
+    let signed = MachineTerm::signed_byte(operand.clone());
     for (signed_value, unsigned_value) in BYTE_PAIRS {
         let context = PureFactContext::new().assume_condition(
             equal(Int8, signed.clone(), constant(Int8, signed_value)),

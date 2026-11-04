@@ -37,7 +37,7 @@ fn compact_scalar_arrays_copy_uniform_values_without_expanding_storage_or_work()
         );
         assert_eq!(
             memory.load(&pointer("local:array-target", i64::from(count - 1) * 4)),
-            CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(912_345))))
+            CExpressionOutcome::Value(CValue::UInt32(MachineTerm::Variable(Variable(912_345))))
         );
         assert!(memory.has_initialized_bytes_at(&pointer("local:array-target", 0), count * 4));
         let mutated = memory.clone().store(
@@ -106,9 +106,9 @@ fn scalar_array_copy_after_call_captures_unknown_initialized_values_compactly() 
             assert!(matches!(held, CExpressionOutcome::Value(CValue::UInt32(_))));
             assert_ne!(
                 held,
-                CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(
-                    912_345
-                )),))
+                CExpressionOutcome::Value(
+                    CValue::UInt32(MachineTerm::Variable(Variable(912_345)),)
+                )
             );
             let changed = copied.clone().store(
                 pointer("local:array-source", i64::from(index) * 4),
@@ -211,7 +211,7 @@ fn scalar_array_snapshots_preserve_sparse_lanes_without_extent_work() {
         let _session = crate::kernel::VerificationSession::enter();
         let source = pointer("local:array-source", 0);
         let target = pointer("local:array-target", 0);
-        let lane = CValue::UInt32(Bitvector32Term::Variable(Variable(912_346)));
+        let lane = CValue::UInt32(MachineTerm::Variable(Variable(912_346)));
         let memory = seeded(count).store(source.clone(), lane.clone()).store(
             pointer("local:array-source", i64::from(count - 1) * 4),
             CValue::UInt32(17u32.into()),
@@ -246,7 +246,7 @@ fn scalar_array_snapshots_preserve_sparse_lanes_without_extent_work() {
         assert_eq!(changed.load(&target), CExpressionOutcome::Value(lane));
         assert_eq!(
             changed.load(&pointer("local:array-source", 4)),
-            CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(912_345))))
+            CExpressionOutcome::Value(CValue::UInt32(MachineTerm::Variable(Variable(912_345))))
         );
         samples.push((count, work));
     }

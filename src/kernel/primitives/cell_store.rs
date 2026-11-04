@@ -60,8 +60,8 @@ use super::{
     AliasCandidates, CType, CValue, Pointer, PointerBlock, PointerOffsetTerm, SharedCMemory,
     SnapshotMap, SnapshotMapChange, SnapshotSet,
 };
-use crate::kernel::primitives::Bitvector32Term;
 use crate::kernel::primitives::LoadKind;
+use crate::kernel::primitives::MachineTerm;
 use crate::kernel::{PureFactContext, Variable};
 use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
@@ -429,8 +429,8 @@ impl CellRun {
     pub(crate) fn range(&self) -> super::CMemoryRange {
         super::CMemoryRange::new_with_element_width(
             self.base.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(self.count),
+            MachineTerm::constant(0),
+            MachineTerm::constant(self.count),
             self.element_width,
         )
     }
@@ -761,7 +761,7 @@ impl BlockKeyed for RunKey {
 /// load is `load`: the load itself for a scalar, the load's truth for a
 /// `bool`, a complete typed read for an object pointer, and the load's function
 /// identity for a function pointer.
-pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CValue {
+pub(crate) fn cell_run_value(element_type: CType, load: MachineTerm) -> CValue {
     match element_type {
         // The byte rule (Stage 5): the `Bool` `load != 0`.
         CType::Bool => crate::kernel::bool_value(load),
@@ -779,16 +779,12 @@ pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CVal
         CType::Float64 => CValue::Float64(load),
         CType::FunctionPointer(_) => {
             let variable = match &load {
-                Bitvector32Term::Variable(variable)
-                    if crate::kernel::is_load_variable(variable) =>
-                {
+                MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
                     *variable
                 }
-                Bitvector32Term::MemoryLoad(_, _, _) => {
-                    crate::kernel::load_variable_for_term(&load)
-                        .map(|(variable, _)| variable)
-                        .expect("exact function-pointer loads have canonical identities")
-                }
+                MachineTerm::MemoryLoad(_, _, _) => crate::kernel::load_variable_for_term(&load)
+                    .map(|(variable, _)| variable)
+                    .expect("exact function-pointer loads have canonical identities"),
                 _ => unreachable!(
                     "symbolic function-pointer fields use raw or canonical exact loads"
                 ),
@@ -800,16 +796,14 @@ pub(crate) fn cell_run_value(element_type: CType, load: Bitvector32Term) -> CVal
             // C load observes it. Retain its exact producer definition so a
             // later logical read through an alias can use load congruence.
             let definition = match &load {
-                Bitvector32Term::MemoryLoad(_, _, _) => Some(load.clone()),
-                Bitvector32Term::Variable(variable) => {
+                MachineTerm::MemoryLoad(_, _, _) => Some(load.clone()),
+                MachineTerm::Variable(variable) => {
                     crate::kernel::registered_load_term_for_variable(variable)
                 }
                 _ => None,
             };
             let value = Pointer::loaded(&load).expect("a pointer cell's canonical read is a load");
-            if let Some(Bitvector32Term::MemoryLoad(snapshot, address, LoadKind::Int32)) =
-                definition
-            {
+            if let Some(MachineTerm::MemoryLoad(snapshot, address, LoadKind::Int32)) = definition {
                 crate::kernel::equality_graph::EqualityGraph::default()
                     .register_pointer_read_definition(&value, &snapshot, &address);
                 return CValue::Pointer(crate::kernel::CPointerValue::from_read(
@@ -2039,7 +2033,7 @@ impl CellStore {
         fn variable(value: &CValue) -> Option<Variable> {
             match value {
                 crate::kernel::integer_c_value!(term) => match term {
-                    Bitvector32Term::Variable(variable) => Some(*variable),
+                    MachineTerm::Variable(variable) => Some(*variable),
                     _ => None,
                 },
                 _ => None,
@@ -3296,10 +3290,10 @@ mod tests {
             Some(seeded.value(2).byte_width())
         );
         assert_eq!(store.value_width_at(&shifted(28)), None);
-        store.insert(shifted(20), CValue::Int32(Bitvector32Term::constant(7)));
+        store.insert(shifted(20), CValue::Int32(MachineTerm::constant(7)));
         assert_eq!(
             store.get(&shifted(20)),
-            Some(CValue::Int32(Bitvector32Term::constant(7)))
+            Some(CValue::Int32(MachineTerm::constant(7)))
         );
         assert_eq!(store.len(), 3);
         let below = run(shifted(-4), 4, 3, &source(1));
@@ -3378,7 +3372,7 @@ mod tests {
                         let seeded = match stream.next(4) {
                             0 => with_mode(RunValueMode::SymbolicStorage),
                             1 => {
-                                let constant = Bitvector32Term::constant(stream.next(2) as u32);
+                                let constant = MachineTerm::constant(stream.next(2) as u32);
                                 with_mode(RunValueMode::Constant(if width == 1 {
                                     crate::kernel::uint8(constant)
                                 } else {
@@ -3402,7 +3396,7 @@ mod tests {
                             .next();
                         let value = match (stream.next(2), run_value) {
                             (0, Some(value)) => value,
-                            _ => CValue::Int32(Bitvector32Term::constant(stream.next(3) as u32)),
+                            _ => CValue::Int32(MachineTerm::constant(stream.next(3) as u32)),
                         };
                         store.insert(pointer.clone(), value.clone());
                         model.insert(pointer, value);
@@ -3518,8 +3512,8 @@ mod tests {
         let mut forward_stored = forward.clone();
         let mut backward_stored = backward.clone();
         let written = constant(&global, 20);
-        forward_stored.insert(written.clone(), CValue::Int32(Bitvector32Term::constant(7)));
-        backward_stored.insert(written.clone(), CValue::Int32(Bitvector32Term::constant(7)));
+        forward_stored.insert(written.clone(), CValue::Int32(MachineTerm::constant(7)));
+        backward_stored.insert(written.clone(), CValue::Int32(MachineTerm::constant(7)));
         assert!(forward_stored == backward_stored);
         assert!(forward_stored != forward);
         assert_eq!(forward_stored.differing_pointers(&backward), vec![written]);
@@ -3540,7 +3534,7 @@ mod tests {
         for index in 0..3 {
             restored.insert(
                 seeded.slot_pointer(index),
-                CValue::Int32(Bitvector32Term::constant(index)),
+                CValue::Int32(MachineTerm::constant(index)),
             );
         }
         for index in 0..3 {
@@ -3555,7 +3549,7 @@ mod tests {
         let mut other_value = restored.clone();
         other_value.insert(
             seeded.slot_pointer(1),
-            CValue::Int32(Bitvector32Term::constant(41)),
+            CValue::Int32(MachineTerm::constant(41)),
         );
         assert!(!other_value.same_cells_as(&store));
         assert!(!store.same_cells_as(&other_value));
@@ -3568,7 +3562,7 @@ mod tests {
         let mut extra = restored.clone();
         extra.insert(
             constant(&global, 400),
-            CValue::Int32(Bitvector32Term::constant(0)),
+            CValue::Int32(MachineTerm::constant(0)),
         );
         assert!(!extra.same_cells_as(&store));
         assert!(!store.same_cells_as(&extra));
@@ -3593,7 +3587,7 @@ mod tests {
         for index in 0..2 {
             concrete.insert(
                 seeded.slot_pointer(index),
-                CValue::Int32(Bitvector32Term::constant(9)),
+                CValue::Int32(MachineTerm::constant(9)),
             );
         }
         for index in 0..2 {
@@ -3644,7 +3638,7 @@ mod tests {
         for index in 0..3 {
             written.insert(
                 seeded.slot_pointer(index),
-                CValue::Int32(Bitvector32Term::constant(index)),
+                CValue::Int32(MachineTerm::constant(index)),
             );
         }
         assert_eq!(written.run_count(), 0);
@@ -3700,8 +3694,8 @@ mod tests {
         );
         // A store that spans both runs' slots.
         for pointer in [constant(&global, 4), constant(&global, 5)] {
-            left.insert(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1)));
-            left_model.insert(pointer, CValue::Int32(Bitvector32Term::constant(1)));
+            left.insert(pointer.clone(), CValue::Int32(MachineTerm::constant(1)));
+            left_model.insert(pointer, CValue::Int32(MachineTerm::constant(1)));
         }
         assert_eq!(logical_model(&left), left_model);
         assert_eq!(
@@ -3827,7 +3821,7 @@ mod tests {
             let samples = [1usize, 10, 100, 1000].map(|runs| {
                 let (store, pointers) = many_runs(runs, layout.as_ref());
                 let probe = pointers[runs / 2].clone();
-                let value = CValue::Int32(Bitvector32Term::constant(3));
+                let value = CValue::Int32(MachineTerm::constant(3));
                 // Loads of a run slot and of a pointer no run holds.
                 let loads = work(|| {
                     for _ in 0..16 {

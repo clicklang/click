@@ -11,7 +11,7 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
     let pointer = crate::kernel::CPointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: scale_int32_offset(Bitvector32Term::Variable(variable), 4),
+            offset: scale_int32_offset(MachineTerm::Variable(variable), 4),
         },
         CType::Int32Pointer,
     );
@@ -27,7 +27,7 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
             let mut value = pointer.clone();
             value.replace_pointer(Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: scale_int32_offset(Bitvector32Term::Variable(other), 4),
+                offset: scale_int32_offset(MachineTerm::Variable(other), 4),
             });
             INPUT_POINTER_PLACES.with(|places| {
                 places.borrow_mut().insert(other, (scope, 0, value));
@@ -51,13 +51,13 @@ fn input_pointer_places_are_exact_and_do_not_scan_unrelated_functions() {
     let mut wrong_stride = pointer.clone();
     wrong_stride.replace_pointer(Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: scale_int32_offset(Bitvector32Term::Variable(variable), 1),
+        offset: scale_int32_offset(MachineTerm::Variable(variable), 1),
     });
     assert_eq!(input_pointer_parameter(selected, &wrong_stride), None);
     let mut unknown = pointer;
     unknown.replace_pointer(Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: scale_int32_offset(Bitvector32Term::Variable(Variable(999_999)), 4),
+        offset: scale_int32_offset(MachineTerm::Variable(Variable(999_999)), 4),
     });
     assert_eq!(input_pointer_parameter(selected, &unknown), None);
 }

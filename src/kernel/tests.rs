@@ -14,12 +14,12 @@ fn checked_memory_load_equality(
     assumptions: &PureFactContext,
 ) -> bool {
     checked_atomic_load_equality(
-        &Bitvector32Term::MemoryLoad(
+        &MachineTerm::MemoryLoad(
             intern_c_memory_ref(left),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         ),
-        &Bitvector32Term::MemoryLoad(
+        &MachineTerm::MemoryLoad(
             intern_c_memory_ref(right),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -32,8 +32,8 @@ fn checked_memory_load_equality(
 pub(in crate::kernel) fn explicit_signed_elements(
     base: Pointer,
     ty: CType,
-    i: Bitvector32Term,
-    j: Bitvector32Term,
+    i: MachineTerm,
+    j: MachineTerm,
     facts: PureFactContext,
 ) -> PureFactContext {
     let law = crate::kernel::prove_separation_elements(
@@ -337,40 +337,40 @@ fn kernel_source_reads_no_environment_variable() {
 
 fn memory_range(
     base: Pointer,
-    start: impl Into<Bitvector32Term>,
-    end: impl Into<Bitvector32Term>,
+    start: impl Into<MachineTerm>,
+    end: impl Into<MachineTerm>,
 ) -> CMemoryRange {
     CMemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_fact(
     base: Pointer,
-    start: impl Into<Bitvector32Term>,
-    end: impl Into<Bitvector32Term>,
+    start: impl Into<MachineTerm>,
+    end: impl Into<MachineTerm>,
 ) -> CResourceFact {
     CResourceFact::view_memory(memory_range(base, start, end))
 }
 
 fn own_memory_fact(
     base: Pointer,
-    start: impl Into<Bitvector32Term>,
-    end: impl Into<Bitvector32Term>,
+    start: impl Into<MachineTerm>,
+    end: impl Into<MachineTerm>,
 ) -> CResourceFact {
     CResourceFact::own_memory(memory_range(base, start, end))
 }
 
 fn view_memory_context(
     base: Pointer,
-    start: impl Into<Bitvector32Term>,
-    end: impl Into<Bitvector32Term>,
+    start: impl Into<MachineTerm>,
+    end: impl Into<MachineTerm>,
 ) -> ResourceContext {
     ResourceContext::new().unchecked_with_fact(view_memory_fact(base, start, end))
 }
 
 fn own_memory_context(
     base: Pointer,
-    start: impl Into<Bitvector32Term>,
-    end: impl Into<Bitvector32Term>,
+    start: impl Into<MachineTerm>,
+    end: impl Into<MachineTerm>,
 ) -> ResourceContext {
     ResourceContext::new().unchecked_with_fact(own_memory_fact(base, start, end))
 }

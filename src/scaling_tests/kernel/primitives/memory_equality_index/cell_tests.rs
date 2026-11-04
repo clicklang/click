@@ -19,8 +19,8 @@ fn checked_attachment_is_flat_beside_unrelated_equality_history() {
             for i in 0..size {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(868_000 + i)),
-                        Bitvector32Term::Variable(Variable(868_001 + i)),
+                        MachineTerm::Variable(Variable(868_000 + i)),
+                        MachineTerm::Variable(Variable(868_001 + i)),
                     ),
                     true,
                 );
@@ -224,7 +224,7 @@ fn normalization_keeps_fork_pairing_without_deferred_input_scans() {
                 4u32.into(),
                 1,
             )),
-            Box::new(Bitvector32Term::constant(0)),
+            Box::new(MachineTerm::constant(0)),
         ));
         for i in (0..size).rev() {
             resources = resources.unchecked_with_fact(CResourceFact::own_memory(
@@ -303,8 +303,8 @@ fn first_memory_occurrence_on_a_sibling_uses_closed_equality_state() {
             for (context, prefix) in [(&mut parent, 865_000), (&mut sibling, 866_000)] {
                 *context = context.clone().assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(prefix + i)),
-                        Bitvector32Term::Variable(Variable(prefix + i + 1)),
+                        MachineTerm::Variable(Variable(prefix + i)),
+                        MachineTerm::Variable(Variable(prefix + i + 1)),
                     ),
                     true,
                 );
@@ -601,8 +601,8 @@ fn interval_selection_is_indexed_beside_same_class_non_suppliers() {
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(895_032)),
-                Bitvector32Term::Variable(Variable(895_033)),
+                MachineTerm::Variable(Variable(895_032)),
+                MachineTerm::Variable(Variable(895_033)),
             ),
             true,
         )
@@ -714,8 +714,8 @@ fn write_permission_does_not_enumerate_covering_views() {
 fn symbolic_write_permission_does_not_search_views() {
     let base = Pointer::symbolic(Variable(961_000));
     let alias = Pointer::symbolic(Variable(961_001));
-    let i = Bitvector32Term::Variable(Variable(961_002));
-    let n = Bitvector32Term::Variable(Variable(961_003));
+    let i = MachineTerm::Variable(Variable(961_002));
+    let n = MachineTerm::Variable(Variable(961_003));
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::pointer_equal(base.clone(), alias.clone()),
@@ -766,9 +766,9 @@ fn symbolic_write_permission_does_not_search_views() {
 #[ignore = "nightly: 0.8s in the parallel gate"]
 fn symbolic_partition_read_start_is_indexed_without_searching_other_ranges() {
     let base = Pointer::symbolic(Variable(899_000));
-    let i = Bitvector32Term::Variable(Variable(899_001));
-    let split = Bitvector32Term::Variable(Variable(899_002));
-    let end = Bitvector32Term::Variable(Variable(899_003));
+    let i = MachineTerm::Variable(Variable(899_001));
+    let split = MachineTerm::Variable(Variable(899_002));
+    let end = MachineTerm::Variable(Variable(899_003));
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
@@ -988,10 +988,10 @@ fn direct_memory_support_does_not_enumerate_overlapping_views() {
 #[ignore = "nightly: 1.5s in the parallel gate"]
 fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
     let p = Pointer::symbolic(Variable(977_000));
-    let i = Bitvector32Term::Variable(Variable(977_001));
-    let n = Bitvector32Term::Variable(Variable(977_002));
-    let middle = Bitvector32Term::Variable(Variable(977_003));
-    let next = Bitvector32Term::add(i.clone(), 1u32.into());
+    let i = MachineTerm::Variable(Variable(977_001));
+    let n = MachineTerm::Variable(Variable(977_002));
+    let middle = MachineTerm::Variable(Variable(977_003));
+    let next = MachineTerm::add(i.clone(), 1u32.into());
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::Compare {
@@ -1069,11 +1069,11 @@ fn symbolic_fragment_support_follows_indexed_endpoint_successors() {
 #[ignore = "nightly: 0.9s in the parallel gate"]
 fn ordered_symbolic_subrange_selects_its_retained_residual_without_scanning() {
     let p = Pointer::symbolic(Variable(978_000));
-    let i = Bitvector32Term::Variable(Variable(978_001));
-    let j = Bitvector32Term::Variable(Variable(978_002));
-    let n = Bitvector32Term::Variable(Variable(978_003));
-    let next_i = Bitvector32Term::add(i.clone(), 1u32.into());
-    let next_j = Bitvector32Term::add(j.clone(), 1u32.into());
+    let i = MachineTerm::Variable(Variable(978_001));
+    let j = MachineTerm::Variable(Variable(978_002));
+    let n = MachineTerm::Variable(Variable(978_003));
+    let next_i = MachineTerm::add(i.clone(), 1u32.into());
+    let next_j = MachineTerm::add(j.clone(), 1u32.into());
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_greater_equal(i.clone(), 0u32.into()),
@@ -1150,7 +1150,7 @@ fn constant_memory_miss_ignores_unrelated_zero_bound_neighbors() {
         for k in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::signed_greater_equal(
-                    Bitvector32Term::Variable(Variable(980_001 + u64::from(k))),
+                    MachineTerm::Variable(Variable(980_001 + u64::from(k))),
                     0u32.into(),
                 ),
                 true,
@@ -1322,8 +1322,8 @@ fn captured_interior_pointer_reads_keep_owned_bounds_and_opaque_base_identity() 
     let base = read(972_100);
     let unrelated = read(972_101);
     let captured = Pointer::symbolic(Variable(972_102));
-    let i = Bitvector32Term::Variable(Variable(972_103));
-    let n = Bitvector32Term::Variable(Variable(972_104));
+    let i = MachineTerm::Variable(Variable(972_103));
+    let n = MachineTerm::Variable(Variable(972_104));
     let bounds = empty
         .clone()
         .assume_condition(
@@ -1415,8 +1415,8 @@ fn captured_interior_address_selects_its_base_beside_same_block_owners() {
         offset: PointerOffsetTerm::Variable(Variable(973_100)),
     };
     let captured = Pointer::symbolic(Variable(973_101));
-    let i = Bitvector32Term::Variable(Variable(973_102));
-    let n = Bitvector32Term::Variable(Variable(973_103));
+    let i = MachineTerm::Variable(Variable(973_102));
+    let n = MachineTerm::Variable(Variable(973_103));
     let empty = PureFactContext::new();
     let facts = empty
         .clone()
@@ -1513,7 +1513,7 @@ fn framed_pointer_fragments_rejoin_through_their_checked_read_endpoint() {
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
-            let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
+            let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
             CPointerValue::from_read(pointer, CType::Int32Pointer, &snapshot, &field)
         };
@@ -1638,7 +1638,7 @@ fn framed_pointer_read_selects_interior_writes_under_live_authority() {
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
-            let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
+            let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, &field);
             pointer
         };
@@ -1778,7 +1778,7 @@ fn an_indexed_read_supplier_does_not_resolve_its_pointer_history() {
             C_POINTER_BYTE_WIDTH,
             &snapshot,
         );
-        let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
+        let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
         let context = PureFactContext::new();
         context.register_pointer_read(&pointer, &snapshot, &field);
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(

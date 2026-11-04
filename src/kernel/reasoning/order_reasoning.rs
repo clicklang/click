@@ -6,7 +6,7 @@ use crate::kernel::{bits32_constant, constant_u32};
 pub(in crate::kernel) fn condition_as_order_fact(
     condition: &ConditionTerm,
     value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term, bool)> {
+) -> Option<(MachineTerm, MachineTerm, bool)> {
     if let Some(view) =
         crate::kernel::machine_integer::comparison::native_comparison_view(condition, value)
     {
@@ -111,10 +111,10 @@ pub(in crate::kernel) fn condition_as_order_fact(
 /// agree on it. Only the true direction follows; a refuted `a < b` says
 /// nothing about the wrapped `a + 1`.
 pub(in crate::kernel) fn successor_bound_as_strict_order(
-    lower: &Bitvector32Term,
-    upper: &Bitvector32Term,
+    lower: &MachineTerm,
+    upper: &MachineTerm,
     strict: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term)> {
+) -> Option<(MachineTerm, MachineTerm)> {
     if strict {
         return None;
     }
@@ -123,8 +123,8 @@ pub(in crate::kernel) fn successor_bound_as_strict_order(
 
 /// The signed condition `lower < upper` (strict) or `lower <= upper`.
 pub(in crate::kernel) fn order_condition(
-    lower: Bitvector32Term,
-    upper: Bitvector32Term,
+    lower: MachineTerm,
+    upper: MachineTerm,
     strict: bool,
 ) -> ConditionTerm {
     if strict {
@@ -144,21 +144,17 @@ pub(in crate::kernel) fn order_condition(
 /// INT32_MAX` each prover asks with its own strict question. Shared by both
 /// signed-order provers, as [`successor_bound_as_strict_order`] is.
 pub(in crate::kernel) fn constant_below_successor_as_order(
-    lower: &Bitvector32Term,
-    upper: &Bitvector32Term,
+    lower: &MachineTerm,
+    upper: &MachineTerm,
     strict: bool,
-) -> Option<((Bitvector32Term, Bitvector32Term, bool), Bitvector32Term)> {
+) -> Option<((MachineTerm, MachineTerm, bool), MachineTerm)> {
     let constant = lower.as_const()? as i32;
     let base = upper.add_const_base(1)?;
     let reduced = if strict {
-        (
-            Bitvector32Term::constant(constant as u32),
-            base.clone(),
-            false,
-        )
+        (MachineTerm::constant(constant as u32), base.clone(), false)
     } else {
         let below = constant.checked_sub(1)?;
-        (Bitvector32Term::constant(below as u32), base.clone(), false)
+        (MachineTerm::constant(below as u32), base.clone(), false)
     };
     Some((reduced, base))
 }
@@ -167,13 +163,13 @@ pub(in crate::kernel) fn constant_below_successor_as_order(
 /// extreme: every int32 value is at most `INT32_MAX` and at least
 /// `INT32_MIN`. Shared by both signed-order provers.
 pub(in crate::kernel) fn order_holds_at_int32_extreme(
-    lower: &Bitvector32Term,
-    upper: &Bitvector32Term,
+    lower: &MachineTerm,
+    upper: &MachineTerm,
     strict: bool,
 ) -> bool {
     !strict
-        && (upper == &Bitvector32Term::constant(i32::MAX as u32)
-            || lower == &Bitvector32Term::constant(i32::MIN as u32))
+        && (upper == &MachineTerm::constant(i32::MAX as u32)
+            || lower == &MachineTerm::constant(i32::MIN as u32))
 }
 
 #[derive(Clone, Debug, Default)]
@@ -187,9 +183,9 @@ pub(crate) struct FiniteForAllRange {
 
 impl FiniteForAllRange {
     /// One value of the range as the constant its variable takes.
-    pub(crate) fn constant(&self, value: i64) -> Bitvector32Term {
+    pub(crate) fn constant(&self, value: i64) -> MachineTerm {
         if self.unsigned64 {
-            Bitvector32Term::uint64_constant(value as u64)
+            MachineTerm::uint64_constant(value as u64)
         } else {
             signed_i64_bitvector_constant(value)
         }
@@ -528,9 +524,9 @@ fn antecedent_ranges(
 /// premise context. Constant-versus-constant comparisons are not evaluated
 /// here; two distinct constants are two distinct nodes.
 pub(in crate::kernel) fn order_facts_form_strict_cycle(
-    facts: &[(Bitvector32Term, Bitvector32Term, bool)],
+    facts: &[(MachineTerm, MachineTerm, bool)],
 ) -> bool {
-    let mut nodes: BTreeMap<&Bitvector32Term, usize> = BTreeMap::new();
+    let mut nodes: BTreeMap<&MachineTerm, usize> = BTreeMap::new();
     let mut edges = Vec::with_capacity(facts.len());
     for (left, right, strict) in facts {
         let next = nodes.len();
@@ -584,7 +580,7 @@ pub(in crate::kernel) fn order_facts_form_strict_cycle(
 
 pub(in crate::kernel) fn collect_order_facts_from_assumed_proposition(
     proposition: &Proposition,
-    facts: &mut Vec<(Bitvector32Term, Bitvector32Term, bool)>,
+    facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
 ) {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
@@ -660,18 +656,18 @@ pub(in crate::kernel) fn propagate_variable_order_bounds(
     Some(())
 }
 
-pub(crate) fn signed_i64_bitvector_constant(value: i64) -> Bitvector32Term {
+pub(crate) fn signed_i64_bitvector_constant(value: i64) -> MachineTerm {
     debug_assert!((i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(&value));
-    Bitvector32Term::constant(value as i32 as u32)
+    MachineTerm::constant(value as i32 as u32)
 }
 
 pub(in crate::kernel) fn instantiate_range_fold_step(
-    body: &Bitvector32Term,
+    body: &MachineTerm,
     accumulator: Variable,
-    accumulator_value: &Bitvector32Term,
+    accumulator_value: &MachineTerm,
     item: Variable,
-    item_value: &Bitvector32Term,
-) -> Bitvector32Term {
+    item_value: &MachineTerm,
+) -> MachineTerm {
     let body = substitute_bitvector_variable(body, accumulator, accumulator_value);
     substitute_bitvector_variable(&body, item, item_value)
 }
@@ -686,9 +682,9 @@ pub(in crate::kernel) struct IntegerRangeFacts {
 
 #[cfg(test)]
 pub(in crate::kernel) fn finite_integer_range_exhausted(
-    order_facts: &[(Bitvector32Term, Bitvector32Term, bool)],
-    equal_facts: &[(Bitvector32Term, Bitvector32Term)],
-    disequal_facts: &[(Bitvector32Term, Bitvector32Term)],
+    order_facts: &[(MachineTerm, MachineTerm, bool)],
+    equal_facts: &[(MachineTerm, MachineTerm)],
+    disequal_facts: &[(MachineTerm, MachineTerm)],
 ) -> bool {
     integer_range_facts(order_facts, equal_facts, disequal_facts)
         .values()
@@ -699,9 +695,9 @@ pub(in crate::kernel) fn finite_integer_range_exhausted(
 /// Each variable's constant bounds and excluded values, as the order,
 /// equality and disequality facts state them.
 pub(in crate::kernel) fn integer_range_facts(
-    order_facts: &[(Bitvector32Term, Bitvector32Term, bool)],
-    equal_facts: &[(Bitvector32Term, Bitvector32Term)],
-    disequal_facts: &[(Bitvector32Term, Bitvector32Term)],
+    order_facts: &[(MachineTerm, MachineTerm, bool)],
+    equal_facts: &[(MachineTerm, MachineTerm)],
+    disequal_facts: &[(MachineTerm, MachineTerm)],
 ) -> BTreeMap<Variable, IntegerRangeFacts> {
     let mut ranges: BTreeMap<Variable, IntegerRangeFacts> = BTreeMap::new();
 
@@ -751,16 +747,16 @@ pub(in crate::kernel) fn integer_range_exhausted(range: &IntegerRangeFacts) -> b
     upper - lower <= 256 && (lower..=upper).all(|value| range.excluded.contains(&value))
 }
 
-pub(in crate::kernel) fn bitvector_variable(term: &Bitvector32Term) -> Option<Variable> {
+pub(in crate::kernel) fn bitvector_variable(term: &MachineTerm) -> Option<Variable> {
     match term {
-        Bitvector32Term::Variable(variable) => Some(*variable),
+        MachineTerm::Variable(variable) => Some(*variable),
         _ => None,
     }
 }
 
 /// **The** reader for the signed value of a constant `int32` term.
 ///
-/// `Bitvector32Term::as_const` answers `u32`, and every `int32` quantity the
+/// `MachineTerm::as_const` answers `u32`, and every `int32` quantity the
 /// kernel orders — an element index, a range endpoint, a block extent, an
 /// owned quantity — is a signed number held in those bits. Reading one
 /// through `as_const` and then comparing it makes `-1` the largest number
@@ -774,7 +770,7 @@ pub(in crate::kernel) fn bitvector_variable(term: &Bitvector32Term) -> Option<Va
 /// `as_const` itself remains right for the questions that really are about
 /// bits: equality, a hash or index key that carries no order, and the
 /// width-scaling arithmetic that is modular by definition.
-pub(in crate::kernel) fn signed_bitvector_constant(term: &Bitvector32Term) -> Option<i64> {
+pub(in crate::kernel) fn signed_bitvector_constant(term: &MachineTerm) -> Option<i64> {
     term.as_const().map(|value| i64::from(value as i32))
 }
 
@@ -788,8 +784,8 @@ pub(in crate::kernel) fn nonnegative_int32_value(word: u32) -> Option<i64> {
 }
 
 pub(in crate::kernel) fn bitvector_variable_and_constant(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
 ) -> Option<(Variable, i64)> {
     bitvector_variable(left)
         .zip(signed_bitvector_constant(right))
@@ -797,18 +793,18 @@ pub(in crate::kernel) fn bitvector_variable_and_constant(
 }
 
 pub(in crate::kernel) fn bitvector_equality_after_additive_cancellation(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-) -> Option<(Bitvector32Term, Bitvector32Term)> {
+    left: &MachineTerm,
+    right: &MachineTerm,
+) -> Option<(MachineTerm, MachineTerm)> {
     // `a + b == a + c` exactly when `b == c` for sums of one 32-bit format,
     // and `a + b == a` exactly when `b == 0`. A sum of each format cancels
     // only against a sum, or an addend, of its own format.
     fn sum(
-        term: &Bitvector32Term,
+        term: &MachineTerm,
     ) -> Option<(
         crate::kernel::MachineIntegerType,
-        &Bitvector32Term,
-        &Bitvector32Term,
+        &MachineTerm,
+        &MachineTerm,
     )> {
         match term {
             binary_term!(Bits32 @ format, Add, base, addend) => {
@@ -817,7 +813,7 @@ pub(in crate::kernel) fn bitvector_equality_after_additive_cancellation(
             _ => None,
         }
     }
-    let zero = |format| Bitvector32Term::constant_at32(format, 0);
+    let zero = |format| MachineTerm::constant_at32(format, 0);
     if let (
         Some((left_format, left_base, left_addend)),
         Some((right_format, right_base, right_addend)),
@@ -856,19 +852,19 @@ pub(in crate::kernel) fn bitvector_equality_after_additive_cancellation(
 
 #[derive(Clone, Debug)]
 pub(in crate::kernel) struct CountFoldParts {
-    pub(in crate::kernel) start: Bitvector32Term,
-    pub(in crate::kernel) end: Bitvector32Term,
+    pub(in crate::kernel) start: MachineTerm,
+    pub(in crate::kernel) end: MachineTerm,
     pub(in crate::kernel) accumulator: Variable,
     pub(in crate::kernel) item: Variable,
-    pub(in crate::kernel) contribution: Bitvector32Term,
+    pub(in crate::kernel) contribution: MachineTerm,
 }
 
 /// The addends of a sum of the 32-bit `format`, and the sum of its
 /// constants; a sum of the other format is an addend of its own.
 pub(in crate::kernel) fn collect_bitvector_add_terms(
     format: crate::kernel::MachineIntegerType,
-    term: &Bitvector32Term,
-    terms: &mut Vec<Bitvector32Term>,
+    term: &MachineTerm,
+    terms: &mut Vec<MachineTerm>,
     constant: &mut u32,
 ) {
     match term {
@@ -883,8 +879,8 @@ pub(in crate::kernel) fn collect_bitvector_add_terms(
     }
 }
 
-pub(in crate::kernel) fn count_fold_parts(term: &Bitvector32Term) -> Option<CountFoldParts> {
-    let Bitvector32Term::RangeFold {
+pub(in crate::kernel) fn count_fold_parts(term: &MachineTerm) -> Option<CountFoldParts> {
+    let MachineTerm::RangeFold {
         start,
         end,
         initial,
@@ -896,18 +892,18 @@ pub(in crate::kernel) fn count_fold_parts(term: &Bitvector32Term) -> Option<Coun
         return None;
     };
 
-    if initial.as_ref() != &Bitvector32Term::constant(0) {
+    if initial.as_ref() != &MachineTerm::constant(0) {
         return None;
     }
 
     let contribution = match body.as_ref() {
         binary_term!(Int32, Add, left, right)
-            if left.as_ref() == &Bitvector32Term::Variable(*accumulator) =>
+            if left.as_ref() == &MachineTerm::Variable(*accumulator) =>
         {
             right.as_ref().clone()
         }
         binary_term!(Int32, Add, left, right)
-            if right.as_ref() == &Bitvector32Term::Variable(*accumulator) =>
+            if right.as_ref() == &MachineTerm::Variable(*accumulator) =>
         {
             left.as_ref().clone()
         }
@@ -924,8 +920,8 @@ pub(in crate::kernel) fn count_fold_parts(term: &Bitvector32Term) -> Option<Coun
 }
 
 pub(in crate::kernel) fn count_fold_split_matches(
-    whole: &Bitvector32Term,
-    split: &Bitvector32Term,
+    whole: &MachineTerm,
+    split: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let Some(whole) = count_fold_parts(whole) else {
@@ -941,8 +937,8 @@ pub(in crate::kernel) fn count_fold_split_matches(
 
 pub(in crate::kernel) fn count_fold_split_parts_match(
     whole: &CountFoldParts,
-    first: &Bitvector32Term,
-    second: &Bitvector32Term,
+    first: &MachineTerm,
+    second: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let (Some(first), Some(second)) = (count_fold_parts(first), count_fold_parts(second)) else {
@@ -1013,12 +1009,12 @@ pub(in crate::kernel) fn count_fold_split_parts_match(
 /// one alpha key per fold, linear in the fold term under that key builder's
 /// own work budget. Nothing scans the ambient facts.
 pub(in crate::kernel) fn range_fold_terms_alpha_equivalent(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let (
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start: left_start,
             end: left_end,
             initial: left_initial,
@@ -1026,7 +1022,7 @@ pub(in crate::kernel) fn range_fold_terms_alpha_equivalent(
             item: left_item,
             body: left_body,
         },
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start: right_start,
             end: right_end,
             initial: right_initial,
@@ -1044,7 +1040,7 @@ pub(in crate::kernel) fn range_fold_terms_alpha_equivalent(
         return false;
     }
 
-    let reindexed = Bitvector32Term::RangeFold {
+    let reindexed = MachineTerm::RangeFold {
         start: right_start.clone(),
         end: right_end.clone(),
         initial: right_initial.clone(),
@@ -1162,7 +1158,7 @@ fn integer_range_fold_indices_proven_equal(
                 end: right_end,
             },
         ) => {
-            let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
+            let equal = |left: &MachineTerm, right: &MachineTerm| {
                 left == right
                     || assumptions.exact_condition_value(&ConditionTerm::uint64_equal(
                         left.clone(),
@@ -1206,15 +1202,15 @@ fn integer_range_fold_indices_proven_equal(
 /// 3. the two terms' affine normal forms, which is what makes `(hi - 1) + 1`
 ///    and `hi` the same endpoint.
 ///
-/// Route 3 needs no definedness fact. `Bitvector32Term`'s `Add` and `Subtract`
+/// Route 3 needs no definedness fact. `MachineTerm`'s `Add` and `Subtract`
 /// denote wrapping 32-bit operations — a C signed overflow is a separate
 /// definedness obligation, not a change of the term's value — so a term's
 /// value is exactly its normal form's constant plus its signed atoms in
 /// Z/2^32, and equal normal forms are equal values whether or not any
 /// intermediate would overflow.
 fn fold_endpoint_terms_proven_equal(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     left == right
@@ -1250,9 +1246,9 @@ fn integer_fold_endpoint_terms_proven_equal(
 /// including the 64-bit constants and arithmetic that share this arena, is an
 /// opaque atom. The walk visits each node of `term` once.
 fn collect_bitvector_affine_atoms(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     positive: bool,
-    atoms: &mut Vec<(bool, Bitvector32Term)>,
+    atoms: &mut Vec<(bool, MachineTerm)>,
     constant: &mut u32,
 ) {
     match term {
@@ -1275,7 +1271,7 @@ fn collect_bitvector_affine_atoms(
     }
 }
 
-fn bitvector_affine_forms_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
+fn bitvector_affine_forms_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     let mut left_atoms = Vec::new();
     let mut left_constant = 0u32;
     collect_bitvector_affine_atoms(left, true, &mut left_atoms, &mut left_constant);

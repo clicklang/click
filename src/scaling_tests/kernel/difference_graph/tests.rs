@@ -46,9 +46,8 @@ fn work_is_independent_of_unrelated_bounded_values() {
 fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
     let (i, n) = (variable(0), variable(1));
     let unbounded_divisor = variable(2);
-    let unsigned_lt = |a: &Bitvector32Term, b: &Bitvector32Term| {
-        ConditionTerm::unsigned_less_than(a.clone(), b.clone())
-    };
+    let unsigned_lt =
+        |a: &MachineTerm, b: &MachineTerm| ConditionTerm::unsigned_less_than(a.clone(), b.clone());
     let mut samples = Vec::new();
     for size in [64, 128, 512] {
         let mut graph = DifferenceGraph::new();
@@ -75,31 +74,31 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         assert_eq!(answer, Some(false));
         let (answer, widened) = graph_work(|| {
             graph.decide(&ConditionTerm::uint64_less_than(
-                Bitvector32Term::uint64_from_32(i.clone()),
-                Bitvector32Term::uint64_constant(1000),
+                MachineTerm::uint64_from_32(i.clone()),
+                MachineTerm::uint64_constant(1000),
             ))
         });
         assert_eq!(answer, Some(true));
         let (answer, masked) = graph_work(|| {
             graph.decide(&ConditionTerm::uint64_less_than(
-                Bitvector32Term::uint64_from_32(Bitvector32Term::Binary {
+                MachineTerm::uint64_from_32(MachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
-                    right: Box::new(Bitvector32Term::uint32_constant(1)),
+                    right: Box::new(MachineTerm::uint32_constant(1)),
                 }),
-                Bitvector32Term::uint64_constant(2),
+                MachineTerm::uint64_constant(2),
             ))
         });
         assert_eq!(answer, Some(true));
         let (answer, selected_slot) = graph_work(|| {
             let mut selected = graph.clone();
             let offset = crate::kernel::PointerOffsetTerm::Int64Scaled {
-                value: Box::new(Bitvector32Term::uint64_from_32(Bitvector32Term::Binary {
+                value: Box::new(MachineTerm::uint64_from_32(MachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
-                    right: Box::new(Bitvector32Term::uint32_constant(1)),
+                    right: Box::new(MachineTerm::uint32_constant(1)),
                 })),
                 byte_width: 8,
                 unsigned: true,
@@ -227,7 +226,7 @@ fn a_bound_on_a_shared_value_costs_the_same_beside_any_number_of_dependents() {
 #[test]
 #[ignore = "nightly: 1.4s multi-domain high-degree bound scaling"]
 fn written_order_queries_are_flat_beside_a_high_degree_bound() {
-    let order = |domain, strict, left: &Bitvector32Term, right: &Bitvector32Term| {
+    let order = |domain, strict, left: &MachineTerm, right: &MachineTerm| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         ConditionTerm::Compare {
             format: match domain {
@@ -294,8 +293,8 @@ fn written_order_queries_are_flat_beside_a_high_degree_bound() {
 #[test]
 fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
     let (i, n) = (variable(0), variable(1));
-    let cast = |source, destination| Bitvector32Term::sign_cast32(source, destination, i.clone());
-    let order = |format, left: Bitvector32Term| ConditionTerm::Compare {
+    let cast = |source, destination| MachineTerm::sign_cast32(source, destination, i.clone());
+    let order = |format, left: MachineTerm| ConditionTerm::Compare {
         format,
         relation: CompareRelation::LessEqual,
         left: Box::new(left),
@@ -346,7 +345,7 @@ fn an_order_of_a_sign_cast_costs_what_the_order_of_its_word_costs() {
 #[test]
 fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
     let i = variable(0);
-    let order = |format, right: Bitvector32Term| ConditionTerm::Compare {
+    let order = |format, right: MachineTerm| ConditionTerm::Compare {
         format,
         relation: CompareRelation::LessThan,
         left: Box::new(i.clone()),
@@ -366,10 +365,9 @@ fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for bits in [8u32, 4_000_000_000] {
                 let (word, word_work) =
-                    graph_work(|| graph.decide(&order(format, Bitvector32Term::constant(bits))));
-                let (formatted, formatted_work) = graph_work(|| {
-                    graph.decide(&order(format, Bitvector32Term::uint32_constant(bits)))
-                });
+                    graph_work(|| graph.decide(&order(format, MachineTerm::constant(bits))));
+                let (formatted, formatted_work) =
+                    graph_work(|| graph.decide(&order(format, MachineTerm::uint32_constant(bits))));
                 assert_eq!(formatted, word, "{format:?} {bits}, {size}");
                 assert_eq!(formatted_work, word_work, "{format:?} {bits}, {size}");
                 work.push(formatted_work);

@@ -5,14 +5,14 @@ const HI: Variable = Variable(72_201);
 const ACCUMULATOR: Variable = Variable(72_202);
 const ITEM: Variable = Variable(72_203);
 
-fn int32(term: Bitvector32Term) -> SpecExpression {
+fn int32(term: MachineTerm) -> SpecExpression {
     SpecExpression::Value(CValue::Int32(term))
 }
 
 fn predecessor_of_hi() -> SpecExpression {
     SpecExpression::Subtract(
-        Box::new(int32(Bitvector32Term::Variable(HI))),
-        Box::new(int32(Bitvector32Term::constant(1))),
+        Box::new(int32(MachineTerm::Variable(HI))),
+        Box::new(int32(MachineTerm::constant(1))),
     )
 }
 
@@ -40,10 +40,7 @@ fn zero() -> SpecIntegerExpression {
 
 fn hi_is_positive() -> PureFactContext {
     PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            Bitvector32Term::constant(1),
-            Bitvector32Term::Variable(HI),
-        ),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(1), MachineTerm::Variable(HI)),
         true,
     ))
 }
@@ -52,15 +49,15 @@ fn subtraction_is_defined() -> Proposition {
     Proposition::signed_arithmetic_domain(
         MachineIntegerType::Int32,
         MachineBinaryOp::Subtract,
-        &Bitvector32Term::Variable(HI),
-        &Bitvector32Term::constant(1),
+        &MachineTerm::Variable(HI),
+        &MachineTerm::constant(1),
     )
 }
 
 #[test]
 fn endpoint_definedness_the_context_decides_is_discharged() {
     let expression = fold(
-        int32(Bitvector32Term::constant(0)),
+        int32(MachineTerm::constant(0)),
         predecessor_of_hi(),
         zero(),
         zero(),
@@ -93,7 +90,7 @@ fn endpoint_definedness_the_context_decides_is_discharged() {
 #[test]
 fn an_exactly_stated_endpoint_condition_is_discharged() {
     let expression = fold(
-        int32(Bitvector32Term::constant(0)),
+        int32(MachineTerm::constant(0)),
         predecessor_of_hi(),
         zero(),
         zero(),
@@ -106,8 +103,8 @@ fn an_exactly_stated_endpoint_condition_is_discharged() {
 #[test]
 fn an_initializer_condition_is_named_as_the_initializer() {
     let expression = fold(
-        int32(Bitvector32Term::constant(0)),
-        int32(Bitvector32Term::constant(0)),
+        int32(MachineTerm::constant(0)),
+        int32(MachineTerm::constant(0)),
         SpecIntegerExpression::FromMachine(Box::new(predecessor_of_hi())),
         zero(),
     );

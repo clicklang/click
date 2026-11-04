@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
-fn var(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn var(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 fn address(id: u64) -> Pointer {
     Pointer {
@@ -10,8 +10,8 @@ fn address(id: u64) -> Pointer {
         offset: PointerOffsetTerm::scale_int32(var(id), 4),
     }
 }
-fn load(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> Bitvector32Term {
-    Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+fn load(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
+    MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
         crate::kernel::LoadKind::Int32,
@@ -53,7 +53,7 @@ fn shallow_scalar_decision_uses_only_registered_loads_in_one_snapshot() {
         before
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(Bitvector32Term::constant(9))),
+            .store(address(1), CValue::Int32(MachineTerm::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let context =
@@ -86,7 +86,7 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
         memory
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(Bitvector32Term::constant(9))),
+            .store(address(1), CValue::Int32(MachineTerm::constant(9))),
     );
     let changed = load(&after, &address(2), 4);
     let mut other_block = address(2);
@@ -102,7 +102,7 @@ fn int32_load_congruence_keeps_snapshots_blocks_and_widths_distinct() {
     for unknown in [changed, other, narrow, wide] {
         assert!(!graph.are_int32_equal(&left, &unknown));
     }
-    assert!(!graph.are_int32_equal(&left, &Bitvector32Term::constant(9)));
+    assert!(!graph.are_int32_equal(&left, &MachineTerm::constant(9)));
 }
 
 #[test]
@@ -137,9 +137,9 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
         before
             .memory()
             .clone()
-            .store(address(1), CValue::Int32(Bitvector32Term::constant(9))),
+            .store(address(1), CValue::Int32(MachineTerm::constant(9))),
     );
-    let left = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+    let left = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
         crate::kernel::LoadKind::Int32,
@@ -148,7 +148,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     ));
     crate::kernel::eval::begin_load_origin_epoch();
     // Change the mutable origin while retaining the exact defining snapshot.
-    let renamed = Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+    let renamed = MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
         &before,
         &address(1),
         crate::kernel::LoadKind::Int32,
@@ -158,7 +158,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     assert_eq!(left, renamed);
     let right = load(&after, &address(2), 4);
     for term in [&left, &right] {
-        let Bitvector32Term::Variable(variable) = term else {
+        let MachineTerm::Variable(variable) = term else {
             panic!("registered load")
         };
         assert_eq!(
@@ -173,7 +173,7 @@ fn int32_load_defining_snapshot_is_independent_of_live_origin() {
     graph.add_int32_equality(&var(1), &var(2));
     assert!(!graph.are_int32_equal(&left, &right));
     let raw = |m: &SharedCMemory| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             m.clone(),
             Box::new(address(1)),
             crate::kernel::LoadKind::Int32,
@@ -204,7 +204,7 @@ fn explicit_cross_snapshot_load_equality_composes_without_merging_snapshots() {
         before
             .memory()
             .clone()
-            .store(address(3), CValue::Int32(Bitvector32Term::constant(9))),
+            .store(address(3), CValue::Int32(MachineTerm::constant(9))),
     );
     let old_i = load(&before, &address(1), 4);
     let new_i = load(&after, &address(1), 4);
@@ -249,12 +249,12 @@ fn reads_at_equal_addresses_are_equal_without_equal_pointers() {
         block: block.into(),
         offset: PointerOffsetTerm::Constant(bytes),
     };
-    let address_of = |pointer: Pointer| Bitvector32Term::pointer_address(pointer);
+    let address_of = |pointer: Pointer| MachineTerm::pointer_address(pointer);
     let after = intern_c_memory(
         memory
             .memory()
             .clone()
-            .store(at("left", 8), CValue::Int32(Bitvector32Term::constant(9))),
+            .store(at("left", 8), CValue::Int32(MachineTerm::constant(9))),
     );
     for field in [0, 8] {
         let left = load(&memory, &at("left", field), 4);
@@ -329,13 +329,13 @@ fn int32_load_congruence_connects_base_reads_to_early_and_late_zero_offsets() {
     for early in [false, true] {
         let mut graph = EqualityGraph::default();
         if early {
-            graph.add_int32_equality(&offset, &Bitvector32Term::constant(0));
+            graph.add_int32_equality(&offset, &MachineTerm::constant(0));
         }
         graph.add_int32_equality(&direct, &var(940_083));
         graph.add_int32_equality(&indexed, &var(940_084));
         if !early {
             assert!(!graph.are_int32_equal(&var(940_083), &var(940_084)));
-            graph.add_int32_equality(&offset, &Bitvector32Term::constant(0));
+            graph.add_int32_equality(&offset, &MachineTerm::constant(0));
         }
         assert!(
             graph.are_int32_equal(&var(940_083), &var(940_084)),
@@ -354,7 +354,7 @@ fn a_late_zero_index_alias_transfers_an_admitted_read_order_and_withdraws() {
     let indexed = load(&memory, &base.offset_by_elements(index.clone(), 4), 4);
     let next = load(
         &memory,
-        &base.offset_by_elements(Bitvector32Term::add(index.clone(), 1u32.into()), 4),
+        &base.offset_by_elements(MachineTerm::add(index.clone(), 1u32.into()), 4),
         4,
     );
     let known = ConditionTerm::signed_less_than(next.clone(), indexed);
@@ -386,7 +386,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let read = |pointer: &Pointer, kind| {
-        Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory, pointer, kind, 4,
         ))
     };
@@ -394,7 +394,7 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
     let unsigned = read(&address(1), crate::kernel::LoadKind::UInt32);
     let other = read(&address(2), crate::kernel::LoadKind::UInt32);
     let sigma = |value| {
-        Bitvector32Term::sign_cast32(
+        MachineTerm::sign_cast32(
             crate::kernel::MachineIntegerType::Int32,
             crate::kernel::MachineIntegerType::UInt32,
             value,
@@ -440,14 +440,14 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = memory();
     let read = |index: u64| {
-        Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &address(10_000 + index),
             crate::kernel::LoadKind::UInt8,
             1,
         ))
     };
-    let widen = |value: Bitvector32Term| Bitvector32Term::Cast {
+    let widen = |value: MachineTerm| MachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value: Box::new(value),
         from: MachineIntegerType::UInt8,
@@ -458,7 +458,7 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     for size in sizes {
         // Keep term-bridge imports cold at every sample size.
         crate::kernel::clear_integer_bridge_memo();
-        let word = |value: Bitvector32Term| Bitvector32Term::Cast {
+        let word = |value: MachineTerm| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(value),
             from: MachineIntegerType::UInt8,
@@ -470,11 +470,8 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
             widened = binary_node!(Int32, Add, Box::new(widened), Box::new(widen(read(index))));
             words = binary_node!(UInt32, Add, Box::new(words), Box::new(word(read(index))));
         }
-        let words = Bitvector32Term::sign_cast32(
-            MachineIntegerType::UInt32,
-            MachineIntegerType::Int32,
-            words,
-        );
+        let words =
+            MachineTerm::sign_cast32(MachineIntegerType::UInt32, MachineIntegerType::Int32, words);
         let mut graph = EqualityGraph::default();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&widened, &var(900_000 + size));

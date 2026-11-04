@@ -18,7 +18,7 @@ enum Node {
         SnapshotBlindBitvectorKey,
         SnapshotBlindBitvectorKey,
     ),
-    Exact(Bitvector32Term),
+    Exact(MachineTerm),
 }
 
 struct Record {
@@ -117,15 +117,15 @@ fn intern(node: Node) -> SnapshotBlindBitvectorKey {
     SnapshotBlindBitvectorKey(record)
 }
 
-pub(super) fn written(term: &Bitvector32Term) -> SnapshotBlindBitvectorKey {
+pub(super) fn written(term: &MachineTerm) -> SnapshotBlindBitvectorKey {
     let node = match term {
-        Bitvector32Term::PointerAddress(pointer, _) => {
+        MachineTerm::PointerAddress(pointer, _) => {
             Node::Address(Box::new(snapshot_blind_pointer_key(pointer)))
         }
-        Bitvector32Term::MemoryLoad(_, pointer, kind) => {
+        MachineTerm::MemoryLoad(_, pointer, kind) => {
             Node::Load(Box::new(snapshot_blind_pointer_key(pointer)), *kind)
         }
-        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+        MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             match (
                 crate::kernel::registered_load_for_variable(variable),
                 crate::kernel::registered_load_kind_for_variable(variable),
@@ -138,7 +138,7 @@ pub(super) fn written(term: &Bitvector32Term) -> SnapshotBlindBitvectorKey {
         }
         // Keep the existing opaque If boundary for Integer and Bool
         // predicates; only top-level machine observations have a key view.
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -224,7 +224,7 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
             get(child).expect("keyed child")
         };
         let key = if let Some(variable) = view.variable() {
-            written(&Bitvector32Term::Variable(*variable))
+            written(&MachineTerm::Variable(*variable))
         } else if let Some(literal) = view.literal() {
             intern(Node::Exact(literal))
         } else if let Some((format, op, [a, b])) = view.binary() {
@@ -280,11 +280,11 @@ mod tests {
                 MachineBinaryOp::ShiftLeft,
                 MachineBinaryOp::ShiftRight,
             ] {
-                let native = Bitvector32Term::Binary {
+                let native = MachineTerm::Binary {
                     format,
                     op,
-                    left: Box::new(Bitvector32Term::Variable(Variable(998201))),
-                    right: Box::new(Bitvector32Term::Variable(Variable(998202))),
+                    left: Box::new(MachineTerm::Variable(Variable(998201))),
+                    right: Box::new(MachineTerm::Variable(Variable(998202))),
                 };
                 let shared = KernelTermImport::default()
                     .machine_arithmetic(format, &native)
@@ -316,16 +316,16 @@ mod tests {
             &memory,
         );
         let format = MachineIntegerType::Int32;
-        let native = Bitvector32Term::Binary {
+        let native = MachineTerm::Binary {
             format,
             op: MachineBinaryOp::Add,
-            left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::constant(1)),
+            left: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(MachineTerm::constant(1)),
         };
         let shared = KernelTermImport::default()
             .machine_arithmetic(format, &native)
             .unwrap();
-        let limit = Bitvector32Term::constant(20);
+        let limit = MachineTerm::constant(20);
         for relation in [
             CompareRelation::Equal,
             CompareRelation::LessThan,
@@ -375,7 +375,7 @@ mod tests {
         assert!(key.requires_checked_match());
         assert_eq!(
             key,
-            written(&Bitvector32Term::MemoryLoad(
+            written(&MachineTerm::MemoryLoad(
                 memory,
                 Box::new(pointer),
                 LoadKind::Int32

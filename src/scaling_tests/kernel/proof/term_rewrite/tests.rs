@@ -113,13 +113,13 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
             let binding = Variable(10_000 + index as u64);
             let accumulator = Variable(11_000 + index as u64);
             let item = Variable(12_000 + index as u64);
-            let fold = Bitvector32Term::RangeFold {
-                start: Box::new(Bitvector32Term::constant(0)),
-                end: Box::new(Bitvector32Term::constant(2)),
-                initial: Box::new(Bitvector32Term::constant(0)),
+            let fold = MachineTerm::RangeFold {
+                start: Box::new(MachineTerm::constant(0)),
+                end: Box::new(MachineTerm::constant(2)),
+                initial: Box::new(MachineTerm::constant(0)),
                 accumulator,
                 item,
-                body: Box::new(Bitvector32Term::Variable(accumulator)),
+                body: Box::new(MachineTerm::Variable(accumulator)),
             };
             let observed = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observe_fold".into(),
@@ -134,7 +134,7 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
                 arms: vec![AlgebraicIntegerMatchArm {
                     binding_names: Default::default(),
                     variant: "Case".into(),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                         binding,
                     )))],
                     body: body.into(),
@@ -142,8 +142,8 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
             };
         }
         let (visits, measured) = crate::instrumentation::measure_deterministic_work(|| {
-            let from = Bitvector32Term::Variable(Variable(90_000));
-            let to = Bitvector32Term::constant(0);
+            let from = MachineTerm::Variable(Variable(90_000));
+            let to = MachineTerm::constant(0);
             let mut rewrite = TermRewrite::for_bits(&from, &to);
             let _ = rewrite.term(&Term::Integer(expression.clone()));
             rewrite.visits
@@ -162,8 +162,8 @@ fn nested_c_folds_and_adt_matches_reserve_actual_nodes_linearly() {
 #[test]
 fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let source = Variable(3_104_000);
-    let source_term = Bitvector32Term::Variable(source);
-    let replacement = Bitvector32Term::constant(9);
+    let source_term = MachineTerm::Variable(source);
+    let replacement = MachineTerm::constant(9);
     let mut work = Vec::new();
     let mut last_load = None;
     for depth in [8usize, 16, 32, 64] {
@@ -190,11 +190,11 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                     block: PointerBlock::Concrete(block.clone()),
                     offset: PointerOffsetTerm::Add(
                         Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(Bitvector32Term::Variable(load)),
+                            value: Box::new(MachineTerm::Variable(load)),
                             byte_width: 4,
                         }),
                         Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(Bitvector32Term::Variable(load)),
+                            value: Box::new(MachineTerm::Variable(load)),
                             byte_width: 4,
                         }),
                     ),
@@ -205,7 +205,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         }
         let body = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            Bitvector32Term::Variable(load),
+            MachineTerm::Variable(load),
         ));
         let (output, measured) = crate::instrumentation::measure_deterministic_work(|| {
             let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
@@ -218,7 +218,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         let Term::Integer(IntegerTerm::Machine(machine)) = output else {
             panic!("registered load carrier changed shape")
         };
-        let Bitvector32Term::Variable(rewritten_load) = machine.value() else {
+        let MachineTerm::Variable(rewritten_load) = machine.value() else {
             panic!("rewritten load expanded into an owned memory tree")
         };
         assert_ne!(*rewritten_load, load);
@@ -233,7 +233,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                 .offset
                 .scaled_values()
                 .iter()
-                .all(|value| matches!(value, Bitvector32Term::Variable(_)))
+                .all(|value| matches!(value, MachineTerm::Variable(_)))
         );
         last_load = Some(load);
         work.push(measured);
@@ -249,7 +249,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
     let mut cycle_rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
     cycle_rewrite.enable_registered_load_resolution();
     cycle_rewrite.registered_load_pointer_active.insert(load);
-    let _ = cycle_rewrite.bits(&Bitvector32Term::Variable(load));
+    let _ = cycle_rewrite.bits(&MachineTerm::Variable(load));
     assert_eq!(
         cycle_rewrite.refusal(),
         Some(RewriteRefusal::UnsupportedScope)
@@ -416,12 +416,8 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
     fn int32_index_fold(body: IntegerTerm, accumulator: Variable, item: Variable) -> IntegerTerm {
         IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             accumulator,
@@ -485,7 +481,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
                 integer_to_c_replacement,
                 IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                     crate::kernel::MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(c_item),
+                    MachineTerm::Variable(c_item),
                 )),
             );
         }
@@ -534,7 +530,7 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
     for depth in depths {
         let mut nested = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
-            Bitvector32Term::Variable(c_source),
+            MachineTerm::Variable(c_source),
         ));
         for _ in 0..depth {
             nested = integer_index_fold(
@@ -547,12 +543,12 @@ fn integer_fold_nested_capture_and_nocapture_work_scales_linearly() {
         for _ in 0..depth {
             replacement_value = IntegerTerm::add(replacement_value, IntegerTerm::constant_i64(1));
         }
-        let c_to_integer_replacement = Bitvector32Term::IntegerToMachine {
+        let c_to_integer_replacement = MachineTerm::IntegerToMachine {
             value: SharedIntegerTerm::from(replacement_value),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let source_term = Bitvector32Term::Variable(c_source);
+            let source_term = MachineTerm::Variable(c_source);
             let mut rewrite = TermRewrite::for_bits(&source_term, &c_to_integer_replacement);
             let result = rewrite.term(&Term::Integer(nested));
             (
@@ -607,12 +603,8 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
     fn int32_index_fold(body: IntegerTerm, accumulator: Variable, item: Variable) -> IntegerTerm {
         IntegerTerm::range_fold(
             crate::kernel::IntegerRangeFoldIndex::Int32 {
-                start: crate::kernel::SharedIntegerRangeEndpoint::intern(
-                    Bitvector32Term::constant(0),
-                ),
-                end: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    1,
-                )),
+                start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                end: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
             },
             IntegerTerm::constant_i64(0),
             accumulator,
@@ -630,7 +622,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
                     block: block.clone(),
                     offset: PointerOffsetTerm::Constant(offset as i64),
                 },
-                CValue::Int32(Bitvector32Term::constant(offset as u32)),
+                CValue::Int32(MachineTerm::constant(offset as u32)),
             );
         }
         crate::kernel::intern_c_memory(memory)
@@ -658,7 +650,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let replacement_payload =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
+            MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         let replacement = IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
             crate::kernel::MachineIntegerType::Int32,
             replacement_payload,
@@ -711,7 +703,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         }
         let integer_capture = *integer_accumulators.last().unwrap();
         let c_capture = *c_items.last().unwrap();
-        let mut mixed_c_payload = Bitvector32Term::MemoryLoad(
+        let mut mixed_c_payload = MachineTerm::MemoryLoad(
             memory.clone(),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -721,7 +713,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
                 Int32,
                 Add,
                 Box::new(mixed_c_payload),
-                Box::new(Bitvector32Term::IntegerToMachine {
+                Box::new(MachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(integer_capture)),
                     destination: crate::kernel::MachineIntegerType::Int32,
                 }),
@@ -730,7 +722,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
                 Int32,
                 Add,
                 Box::new(mixed_c_payload),
-                Box::new(Bitvector32Term::Variable(c_capture)),
+                Box::new(MachineTerm::Variable(c_capture)),
             );
         }
         let integer_to_c_replacement =
@@ -796,7 +788,7 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         let mut c_to_integer_body =
             IntegerTerm::Machine(crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                Bitvector32Term::Variable(c_source),
+                MachineTerm::Variable(c_source),
             ));
         let mut math_accumulators = Vec::new();
         let mut mixed_c_items = Vec::new();
@@ -816,13 +808,13 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
         let math_capture = *math_accumulators.last().unwrap();
         let c_item_capture = *mixed_c_items.last().unwrap();
         let mut c_replacement =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
+            MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         for _ in 0..depth {
             c_replacement = binary_node!(
                 Int32,
                 Add,
                 Box::new(c_replacement),
-                Box::new(Bitvector32Term::IntegerToMachine {
+                Box::new(MachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::var(math_capture)),
                     destination: crate::kernel::MachineIntegerType::Int32,
                 }),
@@ -831,12 +823,12 @@ fn checked_fold_collectors_bound_mixed_carrier_payloads_and_opaque_snapshots() {
                 Int32,
                 Add,
                 Box::new(c_replacement),
-                Box::new(Bitvector32Term::Variable(c_item_capture)),
+                Box::new(MachineTerm::Variable(c_item_capture)),
             );
         }
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             with_checked_simple_budget(1_000_000, || {
-                let source = Bitvector32Term::Variable(c_source);
+                let source = MachineTerm::Variable(c_source);
                 let mut rewrite = TermRewrite::for_bits_checked(&source, &c_replacement);
                 let output = rewrite.term(&Term::Integer(c_to_integer_body.clone()));
                 (
@@ -874,7 +866,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         let leaf_pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::IntegerToMachine {
+                value: Box::new(MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(source).into(),
                     destination: MachineIntegerType::Int32,
                 }),
@@ -904,7 +896,7 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
                 block: PointerBlock::Concrete("array".into()),
                 offset: PointerOffsetTerm::Variable(load),
             },
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         };
         let mut proposition = atom.clone();
@@ -939,19 +931,19 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
 
 #[test]
 fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
-    let index = Bitvector32Term::Variable(Variable(989_100));
+    let index = MachineTerm::Variable(Variable(989_100));
     let native = PointerOffsetTerm::Int64Scaled {
         value: Box::new(index.clone()),
         byte_width: 4,
         unsigned: true,
     };
     let narrow = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::uint32_from_64(index.clone())),
+        value: Box::new(MachineTerm::uint32_from_64(index.clone())),
         byte_width: 4,
     };
     let bound = ConditionTerm::uint64_less_equal(
         index.clone(),
-        Bitvector32Term::uint64_constant(1_073_741_823),
+        MachineTerm::uint64_constant(1_073_741_823),
     );
     let projection = |condition, truth| {
         let conditions = HashMap::from([(condition, truth)]);
@@ -965,13 +957,13 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         (
             ConditionTerm::uint64_less_than(
                 index.clone(),
-                Bitvector32Term::uint64_constant(1_073_741_824),
+                MachineTerm::uint64_constant(1_073_741_824),
             ),
             true,
         ),
         (
             ConditionTerm::uint64_greater_equal(
-                Bitvector32Term::uint64_constant(1_073_741_823),
+                MachineTerm::uint64_constant(1_073_741_823),
                 index.clone(),
             ),
             true,
@@ -979,14 +971,14 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         (
             ConditionTerm::uint64_greater_than(
                 index.clone(),
-                Bitvector32Term::uint64_constant(1_073_741_823),
+                MachineTerm::uint64_constant(1_073_741_823),
             ),
             false,
         ),
         (
             ConditionTerm::uint64_greater_equal(
                 index.clone(),
-                Bitvector32Term::uint64_constant(1_073_741_824),
+                MachineTerm::uint64_constant(1_073_741_824),
             ),
             false,
         ),
@@ -997,34 +989,31 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         (bound.clone(), false),
         (
             ConditionTerm::signed_less_equal(
-                Bitvector32Term::uint32_from_64(index.clone()),
-                Bitvector32Term::constant(1_073_741_823),
+                MachineTerm::uint32_from_64(index.clone()),
+                MachineTerm::constant(1_073_741_823),
             ),
             true,
         ),
         (
             ConditionTerm::int64_signed_less_equal(
                 index.clone(),
-                Bitvector32Term::int64_constant(1_073_741_823),
+                MachineTerm::int64_constant(1_073_741_823),
             ),
             true,
         ),
         (
             ConditionTerm::uint64_less_equal(
                 index.clone(),
-                Bitvector32Term::uint64_constant(1u64 << 32),
+                MachineTerm::uint64_constant(1u64 << 32),
             ),
             true,
         ),
         (
-            ConditionTerm::uint64_less_than(index.clone(), Bitvector32Term::uint64_constant(0)),
+            ConditionTerm::uint64_less_than(index.clone(), MachineTerm::uint64_constant(0)),
             true,
         ),
         (
-            ConditionTerm::uint64_equal(
-                index.clone(),
-                Bitvector32Term::uint64_constant(1u64 << 32),
-            ),
+            ConditionTerm::uint64_equal(index.clone(), MachineTerm::uint64_constant(1u64 << 32)),
             true,
         ),
     ] {
@@ -1078,8 +1067,8 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         for offset in 0..size {
             explicit.insert(
                 ConditionTerm::uint64_less_equal(
-                    Bitvector32Term::Variable(Variable(990_000 + offset)),
-                    Bitvector32Term::uint64_constant(123),
+                    MachineTerm::Variable(Variable(990_000 + offset)),
+                    MachineTerm::uint64_constant(123),
                 ),
                 true,
             );
@@ -1258,8 +1247,8 @@ fn numeric_pointer_read_rewrite_work(
     separate: bool,
 ) -> usize {
     let _session = crate::kernel::VerificationSession::enter();
-    let from = Bitvector32Term::Variable(Variable(997_020));
-    let to = Bitvector32Term::Variable(Variable(997_021));
+    let from = MachineTerm::Variable(Variable(997_020));
+    let to = MachineTerm::Variable(Variable(997_021));
     let address = |index| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::scale_int32(index, 8),
@@ -1350,14 +1339,14 @@ fn numeric_pointer_read_rewrites_ignore_separate_storage() {
 fn arithmetic_comparison_memos_are_bounded_and_session_local() {
     let mut cold_work = Vec::new();
     for size in [4usize, 16, 64] {
-        let variable = Bitvector32Term::Variable(Variable(978_445));
+        let variable = MachineTerm::Variable(Variable(978_445));
         let mut expression = variable.clone();
         for _ in 0..size {
-            expression = Bitvector32Term::logical_machine_binary(
+            expression = MachineTerm::logical_machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 expression,
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             );
         }
         let goal = Proposition::ConditionIs(ConditionTerm::equal(expression, variable), true);

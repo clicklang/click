@@ -11,8 +11,8 @@ fn a_loop_frame_normalizes_its_retained_views_once() {
             .map(|index| {
                 CResourceFact::view_memory(CMemoryRange::new(
                     Pointer::symbolic(Variable(9_360_000 + index)),
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::constant(1),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
                 ))
             })
             .collect::<Vec<_>>();

@@ -20,15 +20,15 @@ fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
         (&unknown, LoadKind::UInt8, None),
         (&before, LoadKind::UInt8, Some(3)),
     ] {
-        let load = Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        let load = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &intern_c_memory_ref(memory),
             &pointer,
             kind,
             kind.byte_width(),
         ));
-        let result = Bitvector32Term::Variable(Variable(930_401));
+        let result = MachineTerm::Variable(Variable(930_401));
         // A byte read is an 8-bit value, compared at its own format.
-        let equal = |left: Bitvector32Term, right: Bitvector32Term| match kind {
+        let equal = |left: MachineTerm, right: MachineTerm| match kind {
             LoadKind::UInt8 => ConditionTerm::narrow_compare(
                 crate::kernel::MachineIntegerType::UInt8,
                 crate::kernel::CompareRelation::Equal,
@@ -50,10 +50,7 @@ fn verified_read_ensure_normalization_preserves_snapshot_and_load_type() {
             let expected = Proposition::ConditionIs(
                 equal(
                     result,
-                    Bitvector32Term::narrow_constant(
-                        crate::kernel::MachineIntegerType::UInt8,
-                        value,
-                    ),
+                    MachineTerm::narrow_constant(crate::kernel::MachineIntegerType::UInt8, value),
                 ),
                 true,
             );

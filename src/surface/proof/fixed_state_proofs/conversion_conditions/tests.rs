@@ -15,7 +15,7 @@ fn indexed_pointer_site() -> (BTreeMap<String, CValue>, CState) {
         Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                value: Box::new(MachineTerm::Variable(Variable(100_000))),
                 byte_width: 4,
             },
         },
@@ -25,7 +25,7 @@ fn indexed_pointer_site() -> (BTreeMap<String, CValue>, CState) {
         ("p".to_string(), pointer),
         (
             "index".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(1))),
+            CValue::Int32(MachineTerm::Variable(Variable(1))),
         ),
     ]);
     (values, CState::new())
@@ -45,11 +45,11 @@ fn indexed_cell(values: &BTreeMap<String, CValue>) -> Pointer {
         block: pointer_base(values).block,
         offset: PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                value: Box::new(MachineTerm::Variable(Variable(100_000))),
                 byte_width: 4,
             }),
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(1))),
+                value: Box::new(MachineTerm::Variable(Variable(1))),
                 byte_width: 4,
             }),
         ),
@@ -86,7 +86,7 @@ fn an_expression_form_names_itself_its_cell_and_its_repair() {
         &unproved(Proposition::CMemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         }),
         &PureFactContext::new(),
@@ -123,8 +123,8 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::constant(0)),
-                right: Box::new(Bitvector32Term::Variable(Variable(1))),
+                left: Box::new(MachineTerm::constant(0)),
+                right: Box::new(MachineTerm::Variable(Variable(1))),
             },
             true,
         ))
@@ -134,8 +134,8 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
             bytes: binary_node!(
                 Int32,
                 Multiply,
-                Box::new(Bitvector32Term::Variable(Variable(1))),
-                Box::new(Bitvector32Term::constant(4)),
+                Box::new(MachineTerm::Variable(Variable(1))),
+                Box::new(MachineTerm::constant(4)),
             ),
             wide: false,
         });
@@ -143,7 +143,7 @@ fn a_c_fragment_form_lists_the_premises_it_consulted() {
         &unproved(Proposition::CMemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         }),
         &assumptions,
@@ -173,8 +173,8 @@ fn an_overflow_guard_names_its_operation_without_wrapping_parentheses() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: Box::new(Bitvector32Term::Variable(Variable(1))),
-                right: Box::new(Bitvector32Term::constant(1)),
+                left: Box::new(MachineTerm::Variable(Variable(1))),
+                right: Box::new(MachineTerm::constant(1)),
             },
             false,
         )),
@@ -200,15 +200,15 @@ fn established_conditions_are_named_beside_the_missing_one() {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Subtract,
-            left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::constant(1)),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::constant(1)),
         },
         false,
     );
     let loadable = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: indexed_cell(&values),
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let message = refuse_unproved_conversion_bounds(
@@ -269,7 +269,7 @@ fn an_assumable_obligation_is_not_refused() {
         Proposition::CMemoryLoadable {
             memory: state.memory().clone(),
             base: indexed_cell(&values),
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         },
     )];
@@ -381,8 +381,8 @@ fn a_conditional_fold_body_quotes_the_condition_it_carried_out() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Variable(Variable(1 << 41))),
-                    right: Box::new(Bitvector32Term::Variable(Variable(1))),
+                    left: Box::new(MachineTerm::Variable(Variable(1 << 41))),
+                    right: Box::new(MachineTerm::Variable(Variable(1))),
                 },
                 true,
             )),
@@ -439,8 +439,8 @@ fn quantified_reflexive_domain_guard_needs_no_search_or_ambient_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(760_000))),
-            right: Box::new(Bitvector32Term::constant(10)),
+            left: Box::new(MachineTerm::Variable(Variable(760_000))),
+            right: Box::new(MachineTerm::constant(10)),
         },
         true,
     );

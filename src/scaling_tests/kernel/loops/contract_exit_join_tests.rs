@@ -106,8 +106,8 @@ fn exit_cache_reconciliation_reuses_the_joins_exit_contexts() {
             .map(|k| {
                 ExecutionPureFact::new(Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
-                        Bitvector32Term::Variable(Variable(926_000 + k as u64)),
-                        Bitvector32Term::constant(k as u32),
+                        MachineTerm::Variable(Variable(926_000 + k as u64)),
+                        MachineTerm::constant(k as u32),
                     ),
                     true,
                 ))

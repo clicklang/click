@@ -7,12 +7,12 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn pending_status_resolution_scales_with_explicit_intervening_work() {
-    let status = Bitvector32Term::Variable(Variable(890_000));
+    let status = MachineTerm::Variable(Variable(890_000));
     let zero = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: Box::new(status.clone()),
-        right: Box::new(Bitvector32Term::constant(0)),
+        right: Box::new(MachineTerm::constant(0)),
     };
     let success_assumptions =
         PureFactContext::new().assume_proposition(Proposition::ConditionIs(zero.clone(), true));
@@ -24,7 +24,7 @@ fn pending_status_resolution_scales_with_explicit_intervening_work() {
         let mut pending = PendingThreadCreate::new(
             status.clone(),
             Pointer::null(),
-            CValue::UInt64(Bitvector32Term::uint64_constant(0)),
+            CValue::UInt64(MachineTerm::uint64_constant(0)),
             &base,
             &base,
         );

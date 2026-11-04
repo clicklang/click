@@ -230,14 +230,14 @@ pub(in crate::surface) fn c_value_matches_allocation_pointer(value: &CValue) -> 
 #[cfg(test)]
 pub(in crate::surface) fn offset_pointer_by_int32_elements(
     pointer: Pointer,
-    elements: Bitvector32Term,
+    elements: MachineTerm,
 ) -> Pointer {
     offset_pointer_by_elements(pointer, elements, 4)
 }
 
 pub(in crate::surface) fn offset_pointer_by_elements(
     pointer: Pointer,
-    elements: Bitvector32Term,
+    elements: MachineTerm,
     element_width: u32,
 ) -> Pointer {
     // A loaded index never enters a pointer offset as a `MemoryLoad` term:
@@ -271,7 +271,7 @@ pub(in crate::surface) fn add_pointer_offset(
 }
 
 pub(in crate::surface) fn scale_int32_offset(
-    value: Bitvector32Term,
+    value: MachineTerm,
     byte_width: i64,
 ) -> PointerOffsetTerm {
     match value {

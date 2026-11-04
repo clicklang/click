@@ -801,15 +801,15 @@ fn overlapping_memory_view_clustering_handles_chains_and_equal_starts() {
             };
             let owner = CResourceFact::own_memory(CMemoryRange::new(
                 base.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(6),
+                MachineTerm::constant(0),
+                MachineTerm::constant(6),
             ));
             caller_resources = caller_resources.unchecked_with_fact(owner);
             let view = |start, end| {
                 checked(CResourceFact::view_memory(CMemoryRange::new(
                     base.clone(),
-                    Bitvector32Term::constant(start),
-                    Bitvector32Term::constant(end),
+                    MachineTerm::constant(start),
+                    MachineTerm::constant(end),
                 )))
             };
             // Three clauses form a transitive overlap chain. Keeping the
@@ -980,12 +980,12 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
     };
     let q = Pointer {
         block: p.block.clone(),
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(600)), 1),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(600)), 1),
     };
     let protected = CMemoryRange::new_with_element_width(
         p.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
         4,
     );
     let mut samples = Vec::new();
@@ -995,8 +995,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
         for index in 0..size {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(1000 + index)),
-                    Bitvector32Term::constant(0),
+                    MachineTerm::Variable(Variable(1000 + index)),
+                    MachineTerm::constant(0),
                 ),
                 true,
             );
@@ -1014,8 +1014,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
             let context = assumptions.clone().assume_condition(equality.clone(), true);
             let query = CMemoryRange::new_with_element_width(
                 q.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
                 width,
             );
             let (actual, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -1051,8 +1051,8 @@ fn offset_alias_overlap_uses_exact_bytes_and_ignores_unrelated_facts() {
 fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalities() {
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(944_023)),
-            Bitvector32Term::constant(7),
+            MachineTerm::Variable(Variable(944_023)),
+            MachineTerm::constant(7),
         ),
         true,
     );
@@ -1136,8 +1136,8 @@ fn mixed_width_view_backing_joins_only_its_own_pieces() {
                 block: "buffer".into(),
                 offset: crate::kernel::PointerOffsetTerm::Constant(0),
             },
-            crate::kernel::Bitvector32Term::constant(start),
-            crate::kernel::Bitvector32Term::constant(end),
+            crate::kernel::MachineTerm::constant(start),
+            crate::kernel::MachineTerm::constant(end),
             width,
         ))
     };

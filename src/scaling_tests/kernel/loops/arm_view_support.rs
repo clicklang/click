@@ -7,8 +7,8 @@ fn republished_arm_view_keeps_support_at_growing_context_sizes() {
         let _session = crate::kernel::VerificationSession::enter();
         let range = CMemoryRange::new(
             Pointer::symbolic(Variable(8_390_080)),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         );
         let owner = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range);

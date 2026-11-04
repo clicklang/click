@@ -33,7 +33,7 @@ fn prepare_unsigned(
         Binary(MachineBinaryOp),
     }
     enum Prepared<'a> {
-        Value(MachineIntegerType, &'a Bitvector32Term),
+        Value(MachineIntegerType, &'a MachineTerm),
         Binary(MachineIntegerType, MachineBinaryOp),
     }
     // Select the fragment once before importing any legacy payload. A rejected
@@ -92,7 +92,7 @@ fn prepare_unsigned(
                 // Match the existing 32-bit word convention at the input
                 // boundary; subsequent operations retain shared children.
                 let value = if format == MachineIntegerType::UInt32 {
-                    CValue::UInt32(Bitvector32Term::operand32(format, value.clone()))
+                    CValue::UInt32(MachineTerm::operand32(format, value.clone()))
                 } else {
                     CValue::UInt64(value.clone())
                 };
@@ -115,7 +115,7 @@ fn prepare_unsigned(
                     };
                     let a = bits(export.argument(&left).map_err(|_| ExecutionLimit::Paths)?);
                     let b = bits(export.argument(&right).map_err(|_| ExecutionLimit::Paths)?);
-                    let value = Bitvector32Term::logical_machine_binary(format, op, a, b);
+                    let value = MachineTerm::logical_machine_binary(format, op, a, b);
                     let value = if format == MachineIntegerType::UInt32 {
                         CValue::UInt32(value)
                     } else {
@@ -170,9 +170,9 @@ mod tests {
             };
             let constant = |n: i64| {
                 if format == MachineIntegerType::Int32 {
-                    Bitvector32Term::constant(n as u32)
+                    MachineTerm::constant(n as u32)
                 } else {
-                    Bitvector32Term::int64_constant(n)
+                    MachineTerm::int64_constant(n)
                 }
             };
             let maximum = if format == MachineIntegerType::Int32 {
@@ -181,7 +181,7 @@ mod tests {
                 i64::MAX
             };
             let minimum = -maximum - 1;
-            let variable = Bitvector32Term::Variable(Variable(990004));
+            let variable = MachineTerm::Variable(Variable(990004));
             for (left, right) in [
                 (variable.clone(), variable.clone()),
                 (variable.clone(), constant(0)),
@@ -230,9 +230,9 @@ mod tests {
     #[test]
     fn shared_signed_domains_retain_held_resource_metadata() {
         let operand = || {
-            Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(Variable(990005)),
-            )))
+            Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
+                Variable(990005),
+            ))))
         };
         let expression = SpecExpression::Add(operand(), operand());
         for held in [false, true] {
@@ -264,16 +264,16 @@ mod tests {
                 }
             };
             let one = if format == MachineIntegerType::UInt32 {
-                Bitvector32Term::constant(1)
+                MachineTerm::constant(1)
             } else {
-                Bitvector32Term::uint64_constant(1)
+                MachineTerm::uint64_constant(1)
             };
             let maximum = if format == MachineIntegerType::UInt32 {
-                Bitvector32Term::constant(u32::MAX)
+                MachineTerm::constant(u32::MAX)
             } else {
-                Bitvector32Term::uint64_constant(u64::MAX)
+                MachineTerm::uint64_constant(u64::MAX)
             };
-            for left in [Bitvector32Term::Variable(Variable(990001)), maximum] {
+            for left in [MachineTerm::Variable(Variable(990001)), maximum] {
                 for operator in [
                     MachineBinaryOp::Add,
                     MachineBinaryOp::Subtract,
@@ -296,13 +296,13 @@ mod tests {
     #[test]
     fn partial_and_deferred_arithmetic_keeps_its_obligations() {
         let signed = || {
-            Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(Variable(990002)),
-            )))
+            Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
+                Variable(990002),
+            ))))
         };
         let unsigned = || {
             Box::new(SpecExpression::Value(CValue::UInt64(
-                Bitvector32Term::Variable(Variable(990003)),
+                MachineTerm::Variable(Variable(990003)),
             )))
         };
         for expression in [
@@ -318,7 +318,7 @@ mod tests {
         assert!(!evaluate(&signed_sum, false)[0].obligations.is_empty());
         let zero = || {
             Box::new(SpecExpression::Value(CValue::UInt64(
-                Bitvector32Term::uint64_constant(0),
+                MachineTerm::uint64_constant(0),
             )))
         };
         let nested =

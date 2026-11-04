@@ -1125,7 +1125,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                 else {
                     return Ok(Err(error));
                 };
-                (description.clone(), Box::new(Bitvector32Term::constant(1)))
+                (description.clone(), Box::new(MachineTerm::constant(1)))
             }
         };
         // A declared consumption under an authority this proof holds is a
@@ -1151,7 +1151,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
         {
             continue;
         }
-        let zero = |term: &Bitvector32Term| {
+        let zero = |term: &MachineTerm| {
             term.as_const() == Some(0)
                 || crate::kernel::quantity_condition_holds(
                     assumptions,
@@ -1159,7 +1159,7 @@ pub(in crate::kernel) fn check_wildcard_consumption_at_return(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term.clone()),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                 )
         };
@@ -1282,7 +1282,7 @@ pub(super) fn check_quantity_exchange_at_return(
                         binary_node!(
                             Int32,
                             Subtract,
-                            Box::new(Bitvector32Term::constant(0)),
+                            Box::new(MachineTerm::constant(0)),
                             Box::new(actual),
                         )
                     };

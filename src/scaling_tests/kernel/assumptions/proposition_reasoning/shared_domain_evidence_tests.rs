@@ -31,8 +31,8 @@ fn domain_source_selection_ignores_unrelated_prefix_and_preserves_branches() {
         for i in 0..size {
             base = base.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(980000 + i)),
-                    Bitvector32Term::constant(i as u32),
+                    MachineTerm::Variable(Variable(980000 + i)),
+                    MachineTerm::constant(i as u32),
                 ),
                 true,
             );

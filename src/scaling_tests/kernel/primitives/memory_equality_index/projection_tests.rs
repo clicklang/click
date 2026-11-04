@@ -12,8 +12,8 @@ fn projection_context_attachment_does_not_scan_unrelated_facts() {
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(890_000 + i * 2)),
-                    Bitvector32Term::Variable(Variable(890_001 + i * 2)),
+                    MachineTerm::Variable(Variable(890_000 + i * 2)),
+                    MachineTerm::Variable(Variable(890_001 + i * 2)),
                 ),
                 true,
             );
@@ -55,15 +55,15 @@ fn owned_frontier_attachment_ignores_unrelated_facts_and_caller_resources() {
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(891_000 + i * 2)),
-                    Bitvector32Term::Variable(Variable(891_001 + i * 2)),
+                    MachineTerm::Variable(Variable(891_000 + i * 2)),
+                    MachineTerm::Variable(Variable(891_001 + i * 2)),
                 ),
                 true,
             );
             ambient = ambient.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
                 Pointer::symbolic(Variable(895_000 + i)),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )));
         }
         let state = CState::new()
@@ -113,8 +113,8 @@ fn frontier_coverage_does_not_scan_unrelated_equality_facts() {
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(899_000 + i * 2)),
-                    Bitvector32Term::Variable(Variable(899_001 + i * 2)),
+                    MachineTerm::Variable(Variable(899_000 + i * 2)),
+                    MachineTerm::Variable(Variable(899_001 + i * 2)),
                 ),
                 true,
             );
@@ -156,8 +156,8 @@ fn resource_satisfaction_does_not_scan_unrelated_resources_or_equalities() {
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(899_000 + i * 2)),
-                    Bitvector32Term::Variable(Variable(899_001 + i * 2)),
+                    MachineTerm::Variable(Variable(899_000 + i * 2)),
+                    MachineTerm::Variable(Variable(899_001 + i * 2)),
                 ),
                 true,
             );
@@ -195,8 +195,8 @@ fn fresh_and_framing_publication_do_not_scan_ambient_inputs() {
         for i in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(899_000 + i * 2)),
-                    Bitvector32Term::Variable(Variable(899_001 + i * 2)),
+                    MachineTerm::Variable(Variable(899_000 + i * 2)),
+                    MachineTerm::Variable(Variable(899_001 + i * 2)),
                 ),
                 true,
             );

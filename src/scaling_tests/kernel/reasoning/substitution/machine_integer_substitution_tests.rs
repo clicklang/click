@@ -9,18 +9,14 @@ fn machine_backed_integer_substitution_scales_with_shared_dag() {
     for depth in [8, 16, 32, 64] {
         let source = SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(Variable(7)),
+            MachineTerm::Variable(Variable(7)),
         );
         let mut term = IntegerTerm::Machine(source);
         for _ in 0..depth {
             term = IntegerTerm::add(term.clone(), term.clone());
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            substitute_bitvector_variable_in_integer(
-                &term,
-                Variable(7),
-                &Bitvector32Term::constant(7),
-            )
+            substitute_bitvector_variable_in_integer(&term, Variable(7), &MachineTerm::constant(7))
         });
         assert!(
             work <= (depth + 1) * 32,
@@ -32,7 +28,7 @@ fn machine_backed_integer_substitution_scales_with_shared_dag() {
 /// A chain of `size` machine operations at `format`, each a `Binary` node
 /// (`design/machine-integers.md`, Stage 3): the operators cycle through
 /// `+`, `/`, `%`, `>>` and `^`, read signed or unsigned by the format.
-fn machine_operation_chain(format: MachineIntegerType, size: u32) -> Bitvector32Term {
+fn machine_operation_chain(format: MachineIntegerType, size: u32) -> MachineTerm {
     use crate::kernel::MachineBinaryOp as Op;
     let ops = [
         Op::Add,
@@ -41,11 +37,10 @@ fn machine_operation_chain(format: MachineIntegerType, size: u32) -> Bitvector32
         Op::ShiftRight,
         Op::BitwiseXor,
     ];
-    let mut term = Bitvector32Term::Variable(Variable(151_000));
+    let mut term = MachineTerm::Variable(Variable(151_000));
     for index in 0..size {
-        let operand = Bitvector32Term::Variable(Variable(151_001 + u64::from(index)));
-        term =
-            Bitvector32Term::machine_binary(format, ops[index as usize % ops.len()], term, operand);
+        let operand = MachineTerm::Variable(Variable(151_001 + u64::from(index)));
+        term = MachineTerm::machine_binary(format, ops[index as usize % ops.len()], term, operand);
     }
     term
 }
@@ -61,7 +56,7 @@ fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
         // imports retained by the preceding format in the same session.
         let _session = crate::kernel::VerificationSession::enter();
         let chain = machine_operation_chain(format, size);
-        let target = Bitvector32Term::Variable(Variable(152_000));
+        let target = MachineTerm::Variable(Variable(152_000));
         let equality = ConditionTerm::machine_compare(
             format,
             crate::kernel::CompareRelation::Equal,
@@ -71,7 +66,7 @@ fn machine_operator_chains_cost_the_same_per_node_at_every_format() {
         let substituted = substitute_bitvector_variable_in_condition(
             &equality,
             Variable(151_000),
-            &Bitvector32Term::constant(1),
+            &MachineTerm::constant(1),
         );
         assert_ne!(substituted, equality);
         crate::instrumentation::measure_deterministic_work(|| {

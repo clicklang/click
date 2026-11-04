@@ -22,7 +22,7 @@
 //! premise and no name a term carries depends on it.
 
 use crate::kernel::primitives::{
-    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, Bitvector32Term, IntegerTerm, Variable,
+    AlgebraicTerm, AlgebraicTermNode, AlgebraicValue, IntegerTerm, MachineTerm, Variable,
 };
 use std::sync::Arc;
 
@@ -37,7 +37,7 @@ pub(crate) fn algebraic_value_variable(value: &AlgebraicValue) -> Option<Variabl
             ..
         }) => Some(*variable),
         AlgebraicValue::C(value) => match crate::kernel::spec::c_value_bitvector_term(value) {
-            Some(Bitvector32Term::Variable(variable)) => Some(variable),
+            Some(MachineTerm::Variable(variable)) => Some(variable),
             _ => None,
         },
         _ => None,

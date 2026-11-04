@@ -9,29 +9,29 @@ use super::*;
 #[test]
 fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
-    let x = Bitvector32Term::Variable(Variable(170_004));
+    let x = MachineTerm::Variable(Variable(170_004));
     // The narrowing's widening is its word.
-    let byte = Bitvector32Term::machine_integer_cast(
+    let byte = MachineTerm::machine_integer_cast(
         Ty::UInt8,
         Ty::Int32,
-        Bitvector32Term::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
+        MachineTerm::machine_integer_cast(Ty::Int32, Ty::UInt8, x.clone()),
     );
     let mut work = Vec::new();
     for unrelated in [4u32, 64, 1024] {
         let mut context = PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::constant(0)),
+                ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(255)),
+                ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(255)),
                 true,
             );
         for index in 0..unrelated {
             context = context.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(171_000 + u64::from(index))),
-                    Bitvector32Term::constant(index),
+                    MachineTerm::Variable(Variable(171_000 + u64::from(index))),
+                    MachineTerm::constant(index),
                 ),
                 true,
             );
@@ -42,7 +42,7 @@ fn narrowed_cast_identity_work_is_independent_of_unrelated_facts() {
         assert_eq!(carrier, Some(x.clone()));
         // Filing an equality that names the conversion relates it to
         // its operand with the same bounded decisions.
-        let name = Bitvector32Term::Variable(Variable(170_005));
+        let name = MachineTerm::Variable(Variable(170_005));
         let (related, filing) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .clone()

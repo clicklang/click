@@ -6,14 +6,14 @@ fn division_domain_checks_do_not_scan_unrelated_assumptions() {
         let mut costs = Vec::new();
         for size in [0, 128, 512] {
             let _session = crate::kernel::VerificationSession::enter();
-            let left = Bitvector32Term::Variable(Variable(970_001 + size * 4));
-            let right = Bitvector32Term::Variable(Variable(970_002 + size * 4));
+            let left = MachineTerm::Variable(Variable(970_001 + size * 4));
+            let right = MachineTerm::Variable(Variable(970_002 + size * 4));
             let mut facts = PureFactContext::new();
             for index in 0..size {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(971_000 + index)),
-                        Bitvector32Term::constant(index as u32),
+                        MachineTerm::Variable(Variable(971_000 + index)),
+                        MachineTerm::constant(index as u32),
                     ),
                     true,
                 );

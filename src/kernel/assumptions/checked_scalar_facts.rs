@@ -11,7 +11,7 @@ use crate::persistent::{PersistentMap, PersistentSet};
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(in crate::kernel) enum ScalarOperandKey {
     Shared(MachineAtom),
-    Written(Bitvector32Term),
+    Written(MachineTerm),
 }
 
 impl ScalarOperandKey {
@@ -113,7 +113,7 @@ impl Exclusions {
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct CheckedScalarFacts {
     literals: PersistentMap<ScalarOperandKey, PersistentSet<(ConditionTerm, bool)>>,
-    equalities: PersistentMap<Bitvector32Term, PersistentSet<ConditionTerm>>,
+    equalities: PersistentMap<MachineTerm, PersistentSet<ConditionTerm>>,
     exclusions: PersistentMap<ScalarOperandKey, Exclusions>,
 }
 
@@ -213,7 +213,7 @@ impl CheckedScalarFacts {
         self.literals.get(&key)?.iter().next()
     }
 
-    pub(super) fn singleton_equality(&self, term: &Bitvector32Term) -> Option<&ConditionTerm> {
+    pub(super) fn singleton_equality(&self, term: &MachineTerm) -> Option<&ConditionTerm> {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select anchored equality", 1);
         crate::instrumentation::record_deterministic_work(1);

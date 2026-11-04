@@ -11,7 +11,7 @@ fn separation_class_lookup_visits_only_the_selected_payload() {
             let program = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::Variable(Variable(9_884_003)),
+                    MachineTerm::Variable(Variable(9_884_003)),
                     4,
                 ),
             };

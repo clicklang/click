@@ -108,7 +108,7 @@ pub(in crate::kernel) use terms::constants::fold_arithmetic;
 pub(in crate::kernel) struct MachineAtom(crate::kernel::SharedMachineIntegerTerm);
 
 impl MachineAtom {
-    fn new(ty: crate::kernel::MachineIntegerType, value: Bitvector32Term) -> Self {
+    fn new(ty: crate::kernel::MachineIntegerType, value: MachineTerm) -> Self {
         Self(crate::kernel::SharedMachineIntegerTerm::intern(ty, value))
     }
     pub(in crate::kernel) fn from_operand(
@@ -117,12 +117,12 @@ impl MachineAtom {
     ) -> Self {
         Self(value.retain(ty))
     }
-    pub(in crate::kernel) fn uint64(value: Bitvector32Term) -> Self {
+    pub(in crate::kernel) fn uint64(value: MachineTerm) -> Self {
         Self::new(crate::kernel::MachineIntegerType::UInt64, value)
     }
     /// A 32-bit atom, interned by its word: a `uint32` constant is its
     /// word's `Constant` (rule K1), so the two are one class.
-    pub(in crate::kernel) fn int32(value: Bitvector32Term) -> Self {
+    pub(in crate::kernel) fn int32(value: MachineTerm) -> Self {
         Self::new(
             crate::kernel::MachineIntegerType::Int32,
             value.constant_word32(),
@@ -131,10 +131,10 @@ impl MachineAtom {
     pub(in crate::kernel) fn operand_view(&self) -> crate::kernel::MachineOperandView<'_> {
         self.0.operand_view()
     }
-    pub(in crate::kernel) fn retains_written(&self, term: &Bitvector32Term) -> bool {
+    pub(in crate::kernel) fn retains_written(&self, term: &MachineTerm) -> bool {
         self.0.retained_written_operand() == Some(term)
     }
-    pub(in crate::kernel) fn value(&self) -> &Bitvector32Term {
+    pub(in crate::kernel) fn value(&self) -> &MachineTerm {
         self.0.value()
     }
 }
@@ -463,10 +463,10 @@ pub(in crate::kernel) fn clear_logical_pointer_reads() {
 
 /// The defining load of a producer-retained typed pointer value. The
 /// definition is term metadata, not a hypothesis about the loaded address.
-pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Term> {
+pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<MachineTerm> {
     if let Some(read) = value.as_loaded_value() {
         return (read.displacement == PointerOffsetTerm::Constant(0)).then(|| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 read.defining_memory,
                 Box::new(read.defining_address),
                 LoadKind::Int32,
@@ -494,7 +494,7 @@ pub(crate) fn logical_pointer_read_term(value: &Pointer) -> Option<Bitvector32Te
         };
     };
     let load = application.as_loaded_value()?;
-    Some(Bitvector32Term::MemoryLoad(
+    Some(MachineTerm::MemoryLoad(
         load.defining_memory,
         Box::new(load.defining_address),
         LoadKind::Int32,
@@ -1564,8 +1564,8 @@ impl EqualityGraph {
     /// A false answer is unknown. Integer operators use typed operand classes.
     pub(in crate::kernel) fn are_int32_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         if left == right {
             return true;
@@ -1588,8 +1588,8 @@ impl EqualityGraph {
     fn register_int32_operands(
         &self,
         state: &mut EqualityGraphState,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) {
         if terms::has_machine_operands(left) || terms::has_machine_operands(right) {
             self.register_machine_operands(state, left, right);
@@ -1602,14 +1602,14 @@ impl EqualityGraph {
     fn register_machine_operands(
         &self,
         state: &mut EqualityGraphState,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) {
         self.register_expression_operands(state, [left, right], [], []);
     }
 
     fn expression_pointer_operands<'a>(
-        machine: impl IntoIterator<Item = &'a Bitvector32Term>,
+        machine: impl IntoIterator<Item = &'a MachineTerm>,
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
         pointer_calls: impl IntoIterator<Item = &'a SharedPureApplication>,
@@ -1617,7 +1617,7 @@ impl EqualityGraph {
     ) -> Vec<Pointer> {
         enum Work<'a> {
             SharedMachine(&'a crate::kernel::KernelTerm),
-            Machine(&'a Bitvector32Term),
+            Machine(&'a MachineTerm),
             Algebraic(&'a AlgebraicTerm),
             Integer(&'a crate::kernel::IntegerTerm),
             Value(&'a CValue),
@@ -1722,7 +1722,7 @@ impl EqualityGraph {
                             pending.push(Work::SharedMachine(operand))
                         }
                         N::Variable(variable) => {
-                            let leaf = Bitvector32Term::Variable(*variable);
+                            let leaf = MachineTerm::Variable(*variable);
                             if let Some((_, pointer)) =
                                 terms::uint64_read(&leaf).or_else(|| terms::int32_read(&leaf))
                             {
@@ -1734,7 +1734,7 @@ impl EqualityGraph {
                     }
                 }
                 Work::Machine(term) => {
-                    if let Bitvector32Term::ClickFunctionApplication { arguments, .. } = term {
+                    if let MachineTerm::ClickFunctionApplication { arguments, .. } = term {
                         pending.extend(arguments.iter().map(Work::Argument));
                     } else if let Some((op, a, b)) = term.as_binary()
                         && !op.is_float()
@@ -1748,7 +1748,7 @@ impl EqualityGraph {
                         )
                     {
                         pending.push(Work::Machine(value));
-                    } else if let Bitvector32Term::IntegerToMachine { value, .. } = term {
+                    } else if let MachineTerm::IntegerToMachine { value, .. } = term {
                         pending.push(Work::Integer(value));
                     } else if let Some((_, pointer)) =
                         terms::uint64_read(term).or_else(|| terms::int32_read(term))
@@ -1766,7 +1766,7 @@ impl EqualityGraph {
     fn register_expression_operands<'a>(
         &self,
         state: &mut EqualityGraphState,
-        machine: impl IntoIterator<Item = &'a Bitvector32Term>,
+        machine: impl IntoIterator<Item = &'a MachineTerm>,
         algebraic: impl IntoIterator<Item = &'a AlgebraicTerm>,
         integer: impl IntoIterator<Item = &'a crate::kernel::IntegerTerm>,
     ) {
@@ -1790,8 +1790,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn are_uint64_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         if left == right {
             return true;
@@ -1805,7 +1805,7 @@ impl EqualityGraph {
 
     /// Files `term` as an endpoint of a recorded true 64-bit equality, so
     /// `wide_equation_endpoints_equal_to` finds it from any equal word.
-    pub(in crate::kernel) fn record_wide_equation_endpoint(&self, term: &Bitvector32Term) {
+    pub(in crate::kernel) fn record_wide_equation_endpoint(&self, term: &MachineTerm) {
         let term = crate::kernel::canonical_term(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -1816,8 +1816,8 @@ impl EqualityGraph {
     /// `term`: one class lookup, no scan of the recorded facts.
     pub(in crate::kernel) fn wide_equation_endpoints_equal_to(
         &self,
-        term: &Bitvector32Term,
-    ) -> Vec<Bitvector32Term> {
+        term: &MachineTerm,
+    ) -> Vec<MachineTerm> {
         let term = crate::kernel::canonical_term(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -1829,7 +1829,7 @@ impl EqualityGraph {
             .collect()
     }
 
-    pub(in crate::kernel) fn uint64_constant(&self, term: &Bitvector32Term) -> Option<u64> {
+    pub(in crate::kernel) fn uint64_constant(&self, term: &MachineTerm) -> Option<u64> {
         let term = crate::kernel::canonical_term(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
@@ -1859,8 +1859,8 @@ impl EqualityGraph {
         left: &Pointer,
         right: &Pointer,
     ) -> (Pointer, Pointer) {
-        let a = Bitvector32Term::pointer_address(left.clone());
-        let b = Bitvector32Term::pointer_address(right.clone());
+        let a = MachineTerm::pointer_address(left.clone());
+        let b = MachineTerm::pointer_address(right.clone());
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &a, &b);
         // Register both before selecting: the second registration can close
@@ -1875,8 +1875,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn add_uint64_equality(
         &mut self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         let left = crate::kernel::canonical_term(left);
         let right = crate::kernel::canonical_term(right);
@@ -1894,7 +1894,7 @@ impl EqualityGraph {
     /// visits only this term's dependencies; lookup never enumerates a class.
     pub(in crate::kernel) fn signed_int32_interval(
         &self,
-        term: &Bitvector32Term,
+        term: &MachineTerm,
     ) -> Option<(i64, i64)> {
         // See `are_int32_equal`: canonicalize outside the lock.
         let term = crate::kernel::canonical_term(term);
@@ -1930,8 +1930,8 @@ impl EqualityGraph {
     /// Admit an already established int32 equality in this proof context.
     pub(in crate::kernel) fn add_int32_equality(
         &mut self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         // See `are_int32_equal`: canonicalize outside the lock.
         let left = &crate::kernel::canonical_term(left);
@@ -2868,7 +2868,7 @@ impl EqualityGraphState {
 impl EqualityGraph {
     pub(in crate::kernel) fn scalar_constant_class(
         &self,
-        term: &Bitvector32Term,
+        term: &MachineTerm,
     ) -> Option<(u64, crate::kernel::assumptions::SignedConstantResolution)> {
         if !self.state.lock().expect("equality graph").has_scalar_inputs {
             return None;
@@ -3023,7 +3023,7 @@ impl EqualityGraph {
     /// filed about it, and a compound term is not looked up. One lookup and
     /// no change to the graph, so a run's work does not depend on what an
     /// earlier query interned.
-    pub(in crate::kernel) fn known_atom_constant(&self, term: &Bitvector32Term) -> Option<i64> {
+    pub(in crate::kernel) fn known_atom_constant(&self, term: &MachineTerm) -> Option<i64> {
         let term = crate::kernel::canonical_term(term);
         let state = self.state.lock().expect("equality graph");
         if !state.has_scalar_inputs {
@@ -3036,7 +3036,7 @@ impl EqualityGraph {
         }
     }
 
-    pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<Bitvector32Term> {
+    pub(in crate::kernel) fn scalar_conditional_members(&self, id: u64) -> Vec<MachineTerm> {
         self.state
             .lock()
             .expect("equality graph")
@@ -3065,8 +3065,8 @@ mod tests {
                     domain
                         .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
                             at(symbolic(985_100), 0),
-                            Bitvector32Term::constant(0),
-                            Bitvector32Term::constant(end),
+                            MachineTerm::constant(0),
+                            MachineTerm::constant(end),
                         ))
                         .expect("coverage names the opaque domain"),
                 ))
@@ -3114,8 +3114,8 @@ mod tests {
         }
     }
 
-    fn index(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    fn index(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
     // Retained zero-displacement spellings may share their base's class.
@@ -3124,7 +3124,7 @@ mod tests {
     fn additive_spelling_alignment_is_bounded_when_its_base_is_equal() {
         let mut graph = EqualityGraph::default();
         let base = Pointer::symbolic(Variable(999_101));
-        let index = Bitvector32Term::Variable(Variable(999_102));
+        let index = MachineTerm::Variable(Variable(999_102));
         let address = base.offset_by_elements(index, 4);
         assert!(graph.add_equality(&base, &address));
         let unrelated = Pointer::symbolic(Variable(999_103));
@@ -3198,7 +3198,7 @@ mod tests {
     #[test]
     fn a_constant_index_folds_with_its_sign() {
         let minus_one = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::constant(u32::MAX)),
+            value: Box::new(MachineTerm::constant(u32::MAX)),
             byte_width: 8,
         };
         assert_eq!(
@@ -3513,11 +3513,11 @@ mod tests {
     #[test]
     fn same_block_pointer_query_does_not_turn_wrapping_index_into_exact_offset() {
         let base = symbolic(11_014);
-        let max = Bitvector32Term::constant(i32::MAX as u32);
+        let max = MachineTerm::constant(i32::MAX as u32);
         let wrapped = at_offset(
             base.clone(),
             PointerOffsetTerm::scale_int32(
-                Bitvector32Term::add(max.clone(), Bitvector32Term::constant(1)),
+                MachineTerm::add(max.clone(), MachineTerm::constant(1)),
                 4,
             ),
         );
@@ -3623,7 +3623,7 @@ mod tests {
             memory
                 .memory()
                 .clone()
-                .store(p.clone(), CValue::Int32(Bitvector32Term::constant(7))),
+                .store(p.clone(), CValue::Int32(MachineTerm::constant(7))),
         );
         let from_p = Pointer::loaded_value(&memory, &p);
         let from_p_again = Pointer::loaded_value(&memory, &p);
@@ -3648,7 +3648,7 @@ mod tests {
             PointerOffsetTerm::Constant(8)
         );
         assert!(from_p.has_symbolic_block());
-        let cell_bits = Bitvector32Term::MemoryLoad(
+        let cell_bits = MachineTerm::MemoryLoad(
             memory.clone(),
             Box::new(p.clone()),
             crate::kernel::LoadKind::Int32,
@@ -3758,7 +3758,7 @@ mod tests {
                 memory
                     .memory()
                     .clone()
-                    .store(p.clone(), CValue::Int32(Bitvector32Term::constant(7))),
+                    .store(p.clone(), CValue::Int32(MachineTerm::constant(7))),
             );
             assert!(!graph.are_equal(&left, &Pointer::loaded_value(&changed, &q)));
         }
@@ -3770,10 +3770,12 @@ mod tests {
             crate::kernel::CMemory::new().with_block(symbolic(51), 16),
         );
         // A later snapshot where the cell `p` addresses was written.
-        let other_memory = crate::kernel::intern_c_memory(memory.memory().clone().store(
-            at(symbolic(41), 0),
-            CValue::Int32(Bitvector32Term::constant(7)),
-        ));
+        let other_memory = crate::kernel::intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(at(symbolic(41), 0), CValue::Int32(MachineTerm::constant(7))),
+        );
         let name = |memory: &crate::kernel::SharedCMemory, address: Pointer| {
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
@@ -3846,7 +3848,7 @@ mod tests {
         let before = crate::kernel::CMemory::new().with_block(PointerBlock::Heap(95_001), 16);
         let after = before
             .clone()
-            .store(other.clone(), CValue::Int32(Bitvector32Term::constant(3)));
+            .store(other.clone(), CValue::Int32(MachineTerm::constant(3)));
         let name = |memory: &crate::kernel::CMemory| {
             let memory = crate::kernel::intern_c_memory(memory.clone());
             PointerBlock::Symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -3873,7 +3875,7 @@ mod tests {
             };
             let (memory, address) =
                 crate::kernel::registered_load_origin_for_variable(variable).unwrap();
-            Bitvector32Term::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32)
+            MachineTerm::MemoryLoad(memory, Box::new(address), crate::kernel::LoadKind::Int32)
         };
         assert!(!crate::kernel::reasoning::memory_resolution::bitvector_terms_proven_equal_for_memory_resolution(
             &load(&left), &load(&right), &separated,
@@ -4092,7 +4094,7 @@ mod tests {
             &raw.pointer().offset_by_bytes(24),
             &model.offset_by_bytes(24)
         ));
-        let cell_bits = Bitvector32Term::MemoryLoad(
+        let cell_bits = MachineTerm::MemoryLoad(
             memory.clone(),
             Box::new(address.clone()),
             crate::kernel::LoadKind::Int32,
@@ -4113,7 +4115,7 @@ mod tests {
         ));
         let later = crate::kernel::intern_c_memory(memory.memory().clone().store(
             address.clone(),
-            CValue::UInt64(Bitvector32Term::int64_constant(9)),
+            CValue::UInt64(MachineTerm::int64_constant(9)),
         ));
         let CValue::Pointer(changed) = later
             .memory()
@@ -4141,7 +4143,7 @@ mod tests {
         let model = Pointer::symbolic(Variable(51_412));
         let read = |pointer: &Pointer| {
             crate::kernel::eval::declare_load_access_width(pointer, 4);
-            crate::kernel::canonical_term(&Bitvector32Term::MemoryLoad(
+            crate::kernel::canonical_term(&MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -4149,9 +4151,9 @@ mod tests {
         };
         let source = read(&raw.pointer().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = Bitvector32Term::constant(7);
+        let expected = MachineTerm::constant(7);
         for read in [&source, &target] {
-            let Bitvector32Term::Variable(variable) = read else {
+            let MachineTerm::Variable(variable) = read else {
                 panic!("named scalar read");
             };
             assert_eq!(

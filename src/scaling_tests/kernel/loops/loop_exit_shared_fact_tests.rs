@@ -8,15 +8,12 @@ use super::*;
 fn merged_exit_equations_have_output_sized_work() {
     let mut work = Vec::new();
     for count in [4usize, 8, 16, 32] {
-        let fresh = CValue::Int32(Bitvector32Term::Variable(Variable(100)));
+        let fresh = CValue::Int32(MachineTerm::Variable(Variable(100)));
         let (facts, measured) = crate::instrumentation::measure_deterministic_work(|| {
             let exits = (0..count)
                 .map(|value| {
                     let mut restatement = LoopExitRestatement::default();
-                    restatement.pin(
-                        &fresh,
-                        &CValue::Int32(Bitvector32Term::constant(value as u32)),
-                    );
+                    restatement.pin(&fresh, &CValue::Int32(MachineTerm::constant(value as u32)));
                     restatement.restate(
                         vec![ExecutionPureFact::new(fact(1, value as i64))].into(),
                         Vec::new(),

@@ -35,7 +35,7 @@ fn wide_storage_exact_typed_store_and_load_preserve_all_bits() {
         literal(c_int128_literal(i128::MAX)),
         literal(c_uint128_literal(u128::MAX)),
         literal(c_uint128_literal((1u128 << 127) | (1u128 << 65) | 1)),
-        CValue::Int128(Bitvector32Term::Variable(Variable(152_001))),
+        CValue::Int128(MachineTerm::Variable(Variable(152_001))),
     ] {
         let ty = value.c_type();
         let state = CState::new().with_memory(
@@ -90,12 +90,12 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
         };
         assert_eq!(value.c_type(), ty);
         let term = c_value_bitvector_term(value).unwrap();
-        let Bitvector32Term::Variable(variable) = term else {
+        let MachineTerm::Variable(variable) = term else {
             panic!("load variable")
         };
         let raw = crate::kernel::eval::registered_load_term_for_variable(&variable).unwrap();
         assert!(
-            matches!(&raw, Bitvector32Term::MemoryLoad(_, pointer, actual) if **pointer == address(0) && *actual == kind)
+            matches!(&raw, MachineTerm::MemoryLoad(_, pointer, actual) if **pointer == address(0) && *actual == kind)
         );
         assert_eq!(kind.byte_width(), 16);
         assert!(machine.accepts_wide_term(&raw));
@@ -130,11 +130,8 @@ fn wide_storage_refuses_wrong_load_kind_and_typed_reinterpretation() {
         (MachineIntegerType::UInt128, LoadKind::Int128),
         (MachineIntegerType::Int128, LoadKind::Bits64),
     ] {
-        let raw = Bitvector32Term::MemoryLoad(
-            intern_c_memory(memory.clone()),
-            Box::new(address(0)),
-            wrong,
-        );
+        let raw =
+            MachineTerm::MemoryLoad(intern_c_memory(memory.clone()), Box::new(address(0)), wrong);
         assert!(!machine.accepts_wide_term(&raw));
         assert!(IntegerTerm::from_machine(machine, raw.clone()).is_none());
         let wrapped = if machine == MachineIntegerType::Int128 {
@@ -184,12 +181,12 @@ fn wide_storage_frame_transport_uses_all_sixteen_bytes() {
     let before = CMemory::new().with_block("local:wide-storage", 48);
     let condition = |memory: &CMemory| {
         ConditionTerm::equal(
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 intern_c_memory(memory.clone()),
                 Box::new(address(0)),
                 LoadKind::Int128,
             ),
-            Bitvector32Term::Variable(Variable(152_003)),
+            MachineTerm::Variable(Variable(152_003)),
         )
     };
     let assumptions = PureFactContext::new();
@@ -225,12 +222,12 @@ fn wide_order_frame_transport_matches_across_a_disjoint_store() {
         .store(address(8), literal(c_uint8_literal(3)));
     let condition = |memory: &CMemory| {
         ConditionTerm::uint64_less_than(
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 intern_c_memory(memory.clone()),
                 Box::new(address(0)),
                 LoadKind::Bits64,
             ),
-            Bitvector32Term::Variable(Variable(152_004)),
+            MachineTerm::Variable(Variable(152_004)),
         )
     };
     assert!(

@@ -193,7 +193,7 @@ values, and no byte write can leave an old scalar value provable.
 ## Character reads of one-byte cells
 
 C11 6.5p7 lets any character type read an object's bytes. A byte has one
-name, its unsigned read (`Bitvector32Term::memory_read`): an `unsigned char`
+name, its unsigned read (`MachineTerm::memory_read`): an `unsigned char`
 load of a `signed char` cell holding `t` reads `t mod 256`, a `signed char`
 load of an `unsigned char` cell holding `u` reads the two's-complement value
 of `u`'s eight bits, and a symbolic `signed char` read is the conversion of

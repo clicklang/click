@@ -26,11 +26,11 @@ fn work_grows_linearly_with_independent_unused_premises() {
 
 #[test]
 fn type_range_rows_grow_linearly_with_machine_observations() {
-    use crate::kernel::{Bitvector32Term, MachineIntegerType};
+    use crate::kernel::{MachineIntegerType, MachineTerm};
     let observe = |id: u64| {
         IntegerTerm::from_machine(
             MachineIntegerType::UInt32,
-            Bitvector32Term::Variable(Variable(id)),
+            MachineTerm::Variable(Variable(id)),
         )
         .unwrap()
     };

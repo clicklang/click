@@ -682,7 +682,7 @@ fn c0_sequential_profile_rejects_concurrency_builtins() {
 
 #[test]
 fn c0_wide_static_initializers_use_checked_wide_values() {
-    use crate::kernel::{Bitvector32Term, CValue};
+    use crate::kernel::{CValue, MachineTerm};
     let unit = syntax::parse_translation_unit_for_source(
         r#"
         static long low = -9223372036854775807L - 1;
@@ -700,36 +700,33 @@ fn c0_wide_static_initializers_use_checked_wide_values() {
     )
     .unwrap();
     for (name, expected) in [
-        (
-            "low",
-            CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
-        ),
+        ("low", CValue::Int64(MachineTerm::int64_constant(i64::MIN))),
         (
             "high",
-            CValue::UInt64(Bitvector32Term::uint64_constant(u64::MAX)),
+            CValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "wrapped",
-            CValue::UInt64(Bitvector32Term::uint64_constant(u64::MAX)),
+            CValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
         ),
-        ("mixed", CValue::UInt32(Bitvector32Term::uint32_constant(0))),
+        ("mixed", CValue::UInt32(MachineTerm::uint32_constant(0))),
         (
             "conditional",
-            CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX)),
+            CValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             "shifted",
-            CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX - 1)),
+            CValue::UInt32(MachineTerm::uint32_constant(u32::MAX - 1)),
         ),
-        ("zero", CValue::UInt64(Bitvector32Term::uint64_constant(0))),
+        ("zero", CValue::UInt64(MachineTerm::uint64_constant(0))),
         (
             "promoted",
-            CValue::Int64(Bitvector32Term::int64_constant(i64::from(u32::MAX))),
+            CValue::Int64(MachineTerm::int64_constant(i64::from(u32::MAX))),
         ),
         // GCC converts an out-of-range constant modulo 2^64.
         (
             "converted",
-            CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
+            CValue::Int64(MachineTerm::int64_constant(i64::MIN)),
         ),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
@@ -3500,16 +3497,16 @@ fn c0_static_array_parity_rejects_invalid_initializers() {
 
 fn memory_range(
     base: crate::kernel::Pointer,
-    start: impl Into<crate::kernel::Bitvector32Term>,
-    end: impl Into<crate::kernel::Bitvector32Term>,
+    start: impl Into<crate::kernel::MachineTerm>,
+    end: impl Into<crate::kernel::MachineTerm>,
 ) -> crate::kernel::CMemoryRange {
     crate::kernel::CMemoryRange::new(base, start.into(), end.into())
 }
 
 fn view_memory_context(
     base: crate::kernel::Pointer,
-    start: impl Into<crate::kernel::Bitvector32Term>,
-    end: impl Into<crate::kernel::Bitvector32Term>,
+    start: impl Into<crate::kernel::MachineTerm>,
+    end: impl Into<crate::kernel::MachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
         crate::kernel::CResourceFact::view_memory(memory_range(base, start, end)),
@@ -3518,8 +3515,8 @@ fn view_memory_context(
 
 fn own_memory_context(
     base: crate::kernel::Pointer,
-    start: impl Into<crate::kernel::Bitvector32Term>,
-    end: impl Into<crate::kernel::Bitvector32Term>,
+    start: impl Into<crate::kernel::MachineTerm>,
+    end: impl Into<crate::kernel::MachineTerm>,
 ) -> crate::kernel::ResourceContext {
     crate::kernel::ResourceContext::new().unchecked_with_fact(
         crate::kernel::CResourceFact::own_memory(memory_range(base, start, end)),
@@ -5408,7 +5405,7 @@ fn c0_unary_minus_preserves_signed_overflow_semantics() {
     .expect("unary minus function should parse");
     let state = crate::kernel::CState::new().with_local(
         "value",
-        crate::kernel::int32(crate::kernel::Bitvector32Term::constant(0x8000_0000)),
+        crate::kernel::int32(crate::kernel::MachineTerm::constant(0x8000_0000)),
     );
     let theorem = crate::kernel::prove_symbolic_c_execution(
         state.clone(),
@@ -6731,8 +6728,8 @@ fn c0_syntax_targets_kernel_max_body() {
 
     let a = crate::kernel::Variable(30);
     let b = crate::kernel::Variable(31);
-    let a_bits = crate::kernel::Bitvector32Term::Variable(a);
-    let b_bits = crate::kernel::Bitvector32Term::Variable(b);
+    let a_bits = crate::kernel::MachineTerm::Variable(a);
+    let b_bits = crate::kernel::MachineTerm::Variable(b);
     let condition = crate::kernel::c_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state =
         crate::kernel::c_max_state(crate::kernel::int32(a_bits), crate::kernel::int32(b_bits));
@@ -6750,7 +6747,7 @@ fn c0_syntax_targets_kernel_max_body() {
                 state: Box::new(state.clone()),
                 statement: Box::new(statement),
                 outcome: crate::kernel::CStatementOutcome::Return {
-                    value: crate::kernel::int32(crate::kernel::Bitvector32Term::Variable(b)),
+                    value: crate::kernel::int32(crate::kernel::MachineTerm::Variable(b)),
                     state: Box::new(state),
                 },
             }),
@@ -6995,7 +6992,7 @@ fn c0_syntax_targets_kernel_float64_struct_field_load() {
         block: "object".into(),
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
-    let value = crate::kernel::float64(crate::kernel::Bitvector32Term::uint64_constant(
+    let value = crate::kernel::float64(crate::kernel::MachineTerm::uint64_constant(
         1.25f64.to_bits(),
     ));
     let statement = function.body_kernel_statement();
@@ -8545,14 +8542,14 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
                         block: "packet".into(),
                         offset: crate::kernel::PointerOffsetTerm::Constant(8),
                     },
-                    crate::kernel::int64(crate::kernel::Bitvector32Term::int64_constant(-9)),
+                    crate::kernel::int64(crate::kernel::MachineTerm::int64_constant(-9)),
                 )
                 .store(
                     crate::kernel::Pointer {
                         block: "packet".into(),
                         offset: crate::kernel::PointerOffsetTerm::Constant(16),
                     },
-                    crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_constant(11)),
+                    crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11)),
                 ),
         )
         .with_resource_context(resources);
@@ -8581,7 +8578,7 @@ fn c0_wide_scalar_struct_fields_execute_at_declared_widths() {
             function: Box::new(function),
             arguments,
             outcome: crate::kernel::CFunctionOutcome::Return {
-                value: crate::kernel::uint64(crate::kernel::Bitvector32Term::uint64_constant(11)),
+                value: crate::kernel::uint64(crate::kernel::MachineTerm::uint64_constant(11)),
                 state: Box::new(final_state),
             },
         }
@@ -10486,9 +10483,9 @@ fn c0_clamp_demo_proves_symbolic_branch_specifications() {
     let x = crate::kernel::Variable(40);
     let lo = crate::kernel::Variable(41);
     let hi = crate::kernel::Variable(42);
-    let x_bits = crate::kernel::Bitvector32Term::Variable(x);
-    let lo_bits = crate::kernel::Bitvector32Term::Variable(lo);
-    let hi_bits = crate::kernel::Bitvector32Term::Variable(hi);
+    let x_bits = crate::kernel::MachineTerm::Variable(x);
+    let lo_bits = crate::kernel::MachineTerm::Variable(lo);
+    let hi_bits = crate::kernel::MachineTerm::Variable(hi);
     let arguments = vec![
         crate::kernel::CExpression::Value(crate::kernel::int32(x_bits.clone())),
         crate::kernel::CExpression::Value(crate::kernel::int32(lo_bits.clone())),
@@ -10843,7 +10840,7 @@ fn c0_syntax_targets_kernel_float_argument_conversion() {
     };
     assert_eq!(
         value,
-        &crate::kernel::Bitvector32Term::uint64_constant(1.0f64.to_bits())
+        &crate::kernel::MachineTerm::uint64_constant(1.0f64.to_bits())
     );
 }
 
@@ -12401,9 +12398,7 @@ fn c0_floating_point_storage_initializers_cover_static_local_arrays_and_calloc()
     );
     assert_eq!(
         load.to_kernel_function().static_variables()[0].initial_value(),
-        &crate::kernel::CValue::Float32(
-            crate::kernel::Bitvector32Term::constant(2.5f32.to_bits(),)
-        )
+        &crate::kernel::CValue::Float32(crate::kernel::MachineTerm::constant(2.5f32.to_bits(),))
     );
 
     let allocate = functions
@@ -13061,7 +13056,7 @@ fn signed_byte_storage_and_pointer_identity() {
 /// automatic initializer, an assignment, a cast, a return, and an argument.
 #[test]
 fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
-    use crate::kernel::{Bitvector32Term, CValue};
+    use crate::kernel::{CValue, MachineTerm};
     let unit = syntax::parse_translation_unit_for_source(
         "signed char high = 128; signed char low = -129; unsigned char negative = -56;\n\
          unsigned char wide = 300; short big = 40000; int value = (unsigned char) 256;",
@@ -13075,7 +13070,7 @@ fn c0_out_of_range_integer_constants_convert_modulo_the_destination_width() {
         ("negative", crate::kernel::uint8(200)),
         ("wide", crate::kernel::uint8(44)),
         ("big", crate::kernel::int16(-25536i32 as u32)),
-        ("value", CValue::Int32(Bitvector32Term::constant(0))),
+        ("value", CValue::Int32(MachineTerm::constant(0))),
     ] {
         let global = unit.globals[name].to_kernel_global().unwrap();
         assert_eq!(global.initial_value(), &expected, "{name}");
@@ -14202,7 +14197,7 @@ fn c0_long_double_prototypes_are_unusable_and_keep_type_positions() {
 // updates as statements, including full-width unsigned wrap.
 #[test]
 fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
-    use crate::kernel::{Bitvector32Term, CFunctionOutcome, CState, Proposition};
+    use crate::kernel::{CFunctionOutcome, CState, MachineTerm, Proposition};
     for (source, expected) in [
         (
             "int32 run() { int32 n = 5; return n++; }",
@@ -14218,11 +14213,11 @@ fn c0_scalar_updates_preserve_old_new_values_and_loop_exit_updates() {
         ),
         (
             "uint64 run() { uint64 n = 0; uint64 before = n--; return n; }",
-            crate::kernel::uint64(Bitvector32Term::uint64_constant(u64::MAX)),
+            crate::kernel::uint64(MachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "uint64 run() { uint64 n = 0; while (n--) { } return n; }",
-            crate::kernel::uint64(Bitvector32Term::uint64_constant(u64::MAX)),
+            crate::kernel::uint64(MachineTerm::uint64_constant(u64::MAX)),
         ),
         (
             "int32 run() { uint64 n = 2; int32 count = 0; while (n--) { count++; } return count; }",

@@ -13,7 +13,7 @@ fn exact_materialization_work_scales_near_linearly_with_chain_length() {
             let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
                 exact_materialized_load_fixed_point(&chain)
             });
-            assert_eq!(result, Bitvector32Term::constant(23));
+            assert_eq!(result, MachineTerm::constant(23));
             assert!(work > 0);
             (length, work)
         })

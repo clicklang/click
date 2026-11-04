@@ -13,9 +13,9 @@ pub(super) enum Input {
     PointerReadValue(Pointer, Pointer),
     Pointer(Pointer, Pointer),
     Offset(PointerOffsetTerm, PointerOffsetTerm),
-    Int32(Bitvector32Term, Bitvector32Term),
+    Int32(MachineTerm, MachineTerm),
     Algebraic(AlgebraicTerm, AlgebraicTerm),
-    UInt64(Bitvector32Term, Bitvector32Term),
+    UInt64(MachineTerm, MachineTerm),
     Integer(
         crate::kernel::SharedIntegerTerm,
         crate::kernel::SharedIntegerTerm,
@@ -216,10 +216,10 @@ pub(crate) struct ReadEqualityDelta {
     pub(crate) equalities: Vec<crate::kernel::Proposition>,
 }
 
-fn is_scalar_read(term: &Bitvector32Term) -> bool {
+fn is_scalar_read(term: &MachineTerm) -> bool {
     match term {
-        Bitvector32Term::MemoryLoad(..) => true,
-        Bitvector32Term::Variable(variable) => {
+        MachineTerm::MemoryLoad(..) => true,
+        MachineTerm::Variable(variable) => {
             crate::kernel::registered_load_term_for_variable(variable).is_some()
         }
         _ => false,
@@ -423,10 +423,10 @@ mod read_trace_tests {
     fn admitted_read_trace_includes_read_values_carried_as_offsets() {
         let mut graph = EqualityGraph::default();
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer(304_000)), LoadKind::Int32);
+        let load = MachineTerm::MemoryLoad(memory, Box::new(pointer(304_000)), LoadKind::Int32);
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
         let read = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(variable)),
+            value: Box::new(MachineTerm::Variable(variable)),
             byte_width: 4,
         };
         let target = PointerOffsetTerm::Constant(8);

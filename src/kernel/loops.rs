@@ -1160,7 +1160,7 @@ fn execute_modeled_pthread_mutex_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(Bitvector32Term::constant(0)),
+                            CValue::Int32(MachineTerm::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1177,7 +1177,7 @@ fn execute_modeled_pthread_mutex_paths(
         paths.push(CStatementExecutionPath {
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, CStatementOutcome::Normal(_))
-                .then(|| CValue::Int32(Bitvector32Term::constant(0))),
+                .then(|| CValue::Int32(MachineTerm::constant(0))),
             outcome,
             facts: path.facts,
             obligations: path.obligations,
@@ -1229,8 +1229,8 @@ fn modeled_pthread_indeterminate_handle(
 ) -> ExecutionResult<CState> {
     let range = CMemoryRange::new_with_element_width(
         slot.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
         8,
     );
     let marker = budget.allocate_kernel_variable()?;
@@ -1371,7 +1371,7 @@ fn execute_modeled_pthread_create_paths(
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
-                                CValue::UInt64(Bitvector32Term::uint64_constant(0));
+                                CValue::UInt64(MachineTerm::uint64_constant(0));
                             let slot = &path.values[0];
                             let checked_success = modeled_pthread_handle_store(
                                 success.parent(),
@@ -1407,7 +1407,7 @@ fn execute_modeled_pthread_create_paths(
                                     budget,
                                 )?;
                                 let status =
-                                    Bitvector32Term::Variable(budget.allocate_kernel_variable()?);
+                                    MachineTerm::Variable(budget.allocate_kernel_variable()?);
                                 let result = CValue::Int32(status.clone());
                                 call_result = Some(result.clone());
                                 let target = target.expect("checked assigned call");
@@ -1541,7 +1541,7 @@ fn execute_modeled_pthread_join_paths(
                         assign_call_result(
                             &mut next,
                             target,
-                            CValue::Int32(Bitvector32Term::constant(0)),
+                            CValue::Int32(MachineTerm::constant(0)),
                             &mut path.obligations,
                             &current,
                         )
@@ -1559,7 +1559,7 @@ fn execute_modeled_pthread_join_paths(
         };
         paths.push(
             CStatementExecutionPath::new(outcome, path.facts, path.obligations)
-                .with_call_result(Some(CValue::Int32(Bitvector32Term::constant(0)))),
+                .with_call_result(Some(CValue::Int32(MachineTerm::constant(0)))),
         );
     }
     budget.check_path_width(paths.len())?;
@@ -3100,7 +3100,7 @@ fn indexed_loop_exit_load_equality(
             if context.int32_values_known_equal(left, right) {
                 return Some(true);
             }
-            let constant = |term: &Bitvector32Term| {
+            let constant = |term: &MachineTerm| {
                 term.as_const().or_else(|| {
                     context
                         .equality_graph
@@ -3157,7 +3157,7 @@ mod contract_exit_join_tests;
 #[derive(Clone, Debug, Default)]
 struct LoopExitRestatement {
     equations: Vec<Proposition>,
-    renamings: Vec<(Variable, Bitvector32Term)>,
+    renamings: Vec<(Variable, MachineTerm)>,
     /// For each binder argument or field of algebraic sort that the join
     /// renamed: the term this exit held there, and the successor's name.
     /// The held value is a term, not only a symbol: one exit may hold the
@@ -3177,7 +3177,7 @@ impl LoopExitRestatement {
                 || Proposition::Equal(Term::CValue(fresh.clone()), Term::CValue(held.clone())),
             ),
         );
-        if let (Some(Bitvector32Term::Variable(from)), Some(to)) =
+        if let (Some(MachineTerm::Variable(from)), Some(to)) =
             (scalar_bitvector(held), scalar_bitvector(fresh))
         {
             self.renamings.push((*from, to.clone()));
@@ -3302,7 +3302,7 @@ fn equation_states_nothing(equation: &Proposition) -> bool {
 }
 
 /// The scalar term a C value carries, for the one-variable renaming above.
-fn scalar_bitvector(value: &CValue) -> Option<&Bitvector32Term> {
+fn scalar_bitvector(value: &CValue) -> Option<&MachineTerm> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int8(term) => Some(term),
@@ -3463,7 +3463,7 @@ fn loop_exit_local_arguments(
                     let CValue::Pointer(pointer) = value else {
                         return None;
                     };
-                    Some(CValue::UInt64(Bitvector32Term::pointer_address(
+                    Some(CValue::UInt64(MachineTerm::pointer_address(
                         pointer.pointer().clone(),
                     )))
                 } else {
@@ -3940,8 +3940,8 @@ fn abstract_loop_exit_memory(
             }
             let range = CMemoryRange::new_with_element_width(
                 pointer.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(byte_width),
+                MachineTerm::constant(0),
+                MachineTerm::constant(byte_width),
                 1,
             );
             if ledger
@@ -4035,19 +4035,19 @@ fn fresh_loop_local_value(
     }
     let variable = variables.next_in(budget)?;
     Ok(Some(match c_type {
-        CType::Bool => CValue::Bool(Bitvector32Term::Variable(variable)),
-        CType::Int8 => int8(Bitvector32Term::Variable(variable)),
-        CType::Int16 => int16(Bitvector32Term::Variable(variable)),
-        CType::Int32 => int32(Bitvector32Term::Variable(variable)),
-        CType::UInt8 => uint8(Bitvector32Term::Variable(variable)),
-        CType::UInt16 => uint16(Bitvector32Term::Variable(variable)),
-        CType::UInt32 => uint32(Bitvector32Term::Variable(variable)),
-        CType::Int64 => CValue::Int64(Bitvector32Term::Variable(variable))
+        CType::Bool => CValue::Bool(MachineTerm::Variable(variable)),
+        CType::Int8 => int8(MachineTerm::Variable(variable)),
+        CType::Int16 => int16(MachineTerm::Variable(variable)),
+        CType::Int32 => int32(MachineTerm::Variable(variable)),
+        CType::UInt8 => uint8(MachineTerm::Variable(variable)),
+        CType::UInt16 => uint16(MachineTerm::Variable(variable)),
+        CType::UInt32 => uint32(MachineTerm::Variable(variable)),
+        CType::Int64 => CValue::Int64(MachineTerm::Variable(variable))
             .complete_word(Pointer::symbolic(variable)),
-        CType::UInt64 => CValue::UInt64(Bitvector32Term::Variable(variable))
+        CType::UInt64 => CValue::UInt64(MachineTerm::Variable(variable))
             .complete_word(Pointer::symbolic(variable)),
-        CType::Float32 => CValue::Float32(Bitvector32Term::Variable(variable)),
-        CType::Float64 => CValue::Float64(Bitvector32Term::Variable(variable)),
+        CType::Float32 => CValue::Float32(MachineTerm::Variable(variable)),
+        CType::Float64 => CValue::Float64(MachineTerm::Variable(variable)),
         CType::FunctionPointer(_) => {
             CValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
         }
@@ -5753,8 +5753,8 @@ pub(super) struct EvaluatedMemorySegment {
     pub(super) designation: std::sync::Arc<Pointer>,
     pub(super) opaque_extent: Option<std::sync::Arc<Pointer>>,
     pub(super) extent_known: bool,
-    pub(super) start: Bitvector32Term,
-    pub(super) end: Bitvector32Term,
+    pub(super) start: MachineTerm,
+    pub(super) end: MachineTerm,
     pub(super) element_width: u32,
     pub(super) kind: RangeIndexKind,
     pub(super) formation_coverage: std::sync::Arc<[Proposition]>,
@@ -7657,12 +7657,12 @@ pub(super) fn collect_loop_effect_check_obligations(
             };
             !has_disjoint_effect_summary
                 || !explicit_atomic_equality_from_memory_derivations(
-                    &Bitvector32Term::memory_read(
+                    &MachineTerm::memory_read(
                         before_state.memory().clone().into(),
                         pointer.clone(),
                         kind,
                     ),
-                    &Bitvector32Term::memory_read(
+                    &MachineTerm::memory_read(
                         after_state.memory().clone().into(),
                         pointer.clone(),
                         kind,
@@ -8206,8 +8206,8 @@ pub(super) fn loop_effect_segment_contains_range(
     else {
         return false;
     };
-    let range_start = Bitvector32Term::add(base_index.clone(), range.start().clone());
-    let range_end = Bitvector32Term::add(base_index, range.end().clone());
+    let range_start = MachineTerm::add(base_index.clone(), range.start().clone());
+    let range_end = MachineTerm::add(base_index, range.end().clone());
     condition_is_decided_true(
         assumptions,
         &ConditionTerm::signed_less_equal(segment.start.clone(), range_start),
@@ -8226,8 +8226,8 @@ pub(super) fn is_loop_effect_relevant_pointer(pointer: &Pointer) -> bool {
 /// `Debug` of the pointer or of symbolic bounds is lowering state rather than
 /// anything the reader wrote. Constant bounds are the one part worth printing.
 fn describe_loop_footprint_range(
-    start: &Bitvector32Term,
-    end: &Bitvector32Term,
+    start: &MachineTerm,
+    end: &MachineTerm,
     element_width: u32,
 ) -> String {
     match (start.as_const(), end.as_const()) {
@@ -9396,8 +9396,8 @@ pub(crate) fn memory_range_extent_refusal(
 
 fn range_extent_refusal(
     base: &CPointerValue,
-    start: &Bitvector32Term,
-    end: &Bitvector32Term,
+    start: &MachineTerm,
+    end: &MachineTerm,
     element_width: u32,
     kind: RangeIndexKind,
     assumptions: &PureFactContext,
@@ -9440,32 +9440,29 @@ fn range_extent_refusal(
     };
     let element_width = i64::from(element_width);
     let proves = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
-    let offset = Bitvector32Term::int64_from_32(offset);
+    let offset = MachineTerm::int64_from_32(offset);
     match kind {
         RangeIndexKind::Int32 => {
-            let start = Bitvector32Term::int64_from_32(start.clone());
-            let end = Bitvector32Term::int64_from_32(end.clone());
+            let start = MachineTerm::int64_from_32(start.clone());
+            let end = MachineTerm::int64_from_32(end.clone());
             if proves(ConditionTerm::int64_signed_less_equal(
                 end.clone(),
                 start.clone(),
             )) {
                 return None;
             }
-            let byte = |index: Bitvector32Term| {
-                Bitvector32Term::int64_add(
+            let byte = |index: MachineTerm| {
+                MachineTerm::int64_add(
                     offset.clone(),
-                    Bitvector32Term::int64_multiply(
-                        index,
-                        Bitvector32Term::int64_constant(element_width),
-                    ),
+                    MachineTerm::int64_multiply(index, MachineTerm::int64_constant(element_width)),
                 )
             };
             let inside = proves(ConditionTerm::int64_signed_less_equal(
-                Bitvector32Term::int64_constant(0),
+                MachineTerm::int64_constant(0),
                 byte(start),
             )) && proves(ConditionTerm::int64_signed_less_equal(
                 byte(end),
-                Bitvector32Term::int64_constant(width),
+                MachineTerm::int64_constant(width),
             ));
             (!inside).then(refusal).flatten()
         }
@@ -9476,7 +9473,7 @@ fn range_extent_refusal(
             let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
             let inside = proves(ConditionTerm::uint64_less_equal(
                 end.clone(),
-                Bitvector32Term::uint64_constant(room),
+                MachineTerm::uint64_constant(room),
             ));
             (!inside).then(refusal).flatten()
         }

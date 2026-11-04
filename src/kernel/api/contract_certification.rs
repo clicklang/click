@@ -179,11 +179,11 @@ fn proposition_conjuncts(proposition: &Proposition, into: &mut Vec<Proposition>)
 fn pointer_offset_bytes(
     assumptions: &PureFactContext,
     offset: &PointerOffsetTerm,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     if let Some(bytes) = offset.as_const() {
-        return u32::try_from(bytes).ok().map(Bitvector32Term::constant);
+        return u32::try_from(bytes).ok().map(MachineTerm::constant);
     }
-    let zero = Bitvector32Term::constant(0);
+    let zero = MachineTerm::constant(0);
     let max = i32::MAX as u32;
     match offset {
         PointerOffsetTerm::Constant(_) => None,
@@ -191,7 +191,7 @@ fn pointer_offset_bytes(
         PointerOffsetTerm::Add(left, right) => {
             let left = pointer_offset_bytes(assumptions, left)?;
             let right = pointer_offset_bytes(assumptions, right)?;
-            let sum = assumptions.simplify_bitvector_under_assumptions(&Bitvector32Term::add(
+            let sum = assumptions.simplify_bitvector_under_assumptions(&MachineTerm::add(
                 left.clone(),
                 right.clone(),
             ));
@@ -204,17 +204,14 @@ fn pointer_offset_bytes(
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
-            let limit = Bitvector32Term::constant(max / width);
+            let limit = MachineTerm::constant(max / width);
             (certification_proves_signed_le(assumptions, &zero, value)
                 && (width == 1 || certification_proves_signed_le(assumptions, value, &limit)))
             .then(|| {
                 if width == 1 {
                     value.as_ref().clone()
                 } else {
-                    Bitvector32Term::multiply(
-                        value.as_ref().clone(),
-                        Bitvector32Term::constant(width),
-                    )
+                    MachineTerm::multiply(value.as_ref().clone(), MachineTerm::constant(width))
                 }
             })
         }
@@ -227,9 +224,9 @@ fn pointer_offset_byte_delta(
     assumptions: &PureFactContext,
     goal_offset: &PointerOffsetTerm,
     fact_offset: &PointerOffsetTerm,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     if goal_offset == fact_offset {
-        return Some(Bitvector32Term::constant(0));
+        return Some(MachineTerm::constant(0));
     }
     if let PointerOffsetTerm::Add(left, right) = goal_offset {
         if left.as_ref() == fact_offset {
@@ -243,7 +240,7 @@ fn pointer_offset_byte_delta(
 }
 
 /// Splits `term + c` into its base term and additive constant (0 when none).
-fn split_additive_constant(term: &Bitvector32Term) -> (Bitvector32Term, u32) {
+fn split_additive_constant(term: &MachineTerm) -> (MachineTerm, u32) {
     match term {
         binary_term!(Int32, Add, left, right) => {
             if let bits32_constant!(value) = right.as_ref() {
@@ -292,7 +289,7 @@ pub fn c_state_justifies_loadability_obligation(
             let loadable = Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer.clone(),
-                bytes: Bitvector32Term::constant(value_type.byte_width()),
+                bytes: MachineTerm::constant(value_type.byte_width()),
                 wide: false,
             };
             c_state_justifies_loadability_obligation(state, &loadable, assumptions)
@@ -472,8 +469,8 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                     return u64::from(delta) + u64::from(width) <= u64::from(span);
                 }
 
-                let start = Bitvector32Term::constant(0);
-                let end = assumptions.simplify_bitvector_under_assumptions(&Bitvector32Term::add(
+                let start = MachineTerm::constant(0);
+                let end = assumptions.simplify_bitvector_under_assumptions(&MachineTerm::add(
                     delta.clone(),
                     width.clone(),
                 ));
@@ -524,8 +521,8 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
 /// an exact assumed fact, or the bounded order prover.
 fn certification_proves_signed_le(
     assumptions: &PureFactContext,
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
 ) -> bool {
     if let (Some(left), Some(right)) = (
         signed_bitvector_constant(left),
@@ -574,15 +571,15 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     if crate::kernel::assumptions::reasoning_interrupted() {
         return false;
     }
-    fn collect_shallow_term_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
+    fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
         match term {
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 ..
             }
-            | Bitvector32Term::BoolCast { .. } => {}
+            | MachineTerm::BoolCast { .. } => {}
 
-            Bitvector32Term::Constant { .. }
+            MachineTerm::Constant { .. }
             | cast_term!(Int64From32, _)
             | cast_term!(Int64FromUInt32, _)
             | cast_term!(UInt64From32, _)
@@ -591,24 +588,24 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             | cast_term!(UInt64FromInt64, _)
             | crate::kernel::binary_wide_term!(..)
             | crate::kernel::unary_wide_term!(..) => {}
-            Bitvector32Term::Variable(variable) => {
+            MachineTerm::Variable(variable) => {
                 variables.insert(*variable);
             }
             crate::kernel::binary_bitvector32_term!(left, right) => {
                 collect_shallow_term_variables(left, variables);
                 collect_shallow_term_variables(right, variables);
             }
-            Bitvector32Term::Float32Binary { left, right, .. }
-            | Bitvector32Term::Float64Binary { left, right, .. } => {
+            MachineTerm::Float32Binary { left, right, .. }
+            | MachineTerm::Float64Binary { left, right, .. } => {
                 collect_shallow_term_variables(left, variables);
                 collect_shallow_term_variables(right, variables);
             }
             unary_term!(Bits32, BitwiseNot, inner)
-            | Bitvector32Term::Float32Negate(inner)
-            | Bitvector32Term::Float64Negate(inner) => {
+            | MachineTerm::Float32Negate(inner)
+            | MachineTerm::Float64Negate(inner) => {
                 collect_shallow_term_variables(inner, variables);
             }
-            Bitvector32Term::If {
+            MachineTerm::If {
                 then_term,
                 else_term,
                 ..
@@ -616,7 +613,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                 collect_shallow_term_variables(then_term, variables);
                 collect_shallow_term_variables(else_term, variables);
             }
-            Bitvector32Term::RangeFold {
+            MachineTerm::RangeFold {
                 start,
                 end,
                 initial,
@@ -628,20 +625,19 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
                 collect_shallow_term_variables(initial, variables);
                 collect_shallow_term_variables(body, variables);
             }
-            Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+            MachineTerm::PureFunctionApplication { arguments, .. } => {
                 for argument in arguments {
                     collect_shallow_term_variables(argument, variables);
                 }
             }
-            Bitvector32Term::ClickFunctionApplication { .. }
-            | Bitvector32Term::AlgebraicMatch { .. } => {}
+            MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {}
             // The memory snapshot may contain a large symbolic state. Only
             // variables outside nested loads can be the surrounding
             // quantified index. Variables in the loaded address belong to
             // the base expression (for example the owner parameter), not to
             // that index.
-            Bitvector32Term::MemoryLoad(_, _, _) => {}
-            Bitvector32Term::PointerAddress(_, _) | Bitvector32Term::IntegerToMachine { .. } => {}
+            MachineTerm::MemoryLoad(_, _, _) => {}
+            MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
         }
     }
 
@@ -1269,8 +1265,8 @@ fn c_function_contract_entry_facts(
                 };
                 if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
                     pointer.pointer().clone(),
-                    Bitvector32Term::uint64_constant(0),
-                    Bitvector32Term::uint64_constant(u64::from(bytes)),
+                    MachineTerm::uint64_constant(0),
+                    MachineTerm::uint64_constant(u64::from(bytes)),
                     1,
                 )) {
                     assumptions =
@@ -1302,14 +1298,14 @@ fn c_function_contract_entry_facts(
                 Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(
                         length.clone(),
-                        Bitvector32Term::uint64_constant(i64::MAX as u64 / u64::from(width)),
+                        MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
                     ),
                     true,
                 ),
             );
             if let Some(coverage) = pointer.opaque_coverage_fact(&CMemoryRange::new_wide(
                 pointer.pointer().clone(),
-                Bitvector32Term::uint64_constant(0),
+                MachineTerm::uint64_constant(0),
                 length.clone(),
                 width,
             )) {
@@ -1552,9 +1548,9 @@ fn c_function_contract_entry_facts(
                 base: range
                     .base()
                     .offset_by_elements(range.start().clone(), width),
-                bytes: Bitvector32Term::multiply(
-                    Bitvector32Term::subtract(range.end().clone(), range.start().clone()),
-                    Bitvector32Term::constant(width),
+                bytes: MachineTerm::multiply(
+                    MachineTerm::subtract(range.end().clone(), range.start().clone()),
+                    MachineTerm::constant(width),
                 ),
                 wide: false,
             },
@@ -2585,12 +2581,12 @@ fn freshen_proposition_bodies(
             substitute_bitvector_variable_in_proposition(
                 left_body,
                 left_binder,
-                &Bitvector32Term::Variable(fresh),
+                &MachineTerm::Variable(fresh),
             ),
             substitute_bitvector_variable_in_proposition(
                 right_body,
                 right_binder,
-                &Bitvector32Term::Variable(fresh),
+                &MachineTerm::Variable(fresh),
             ),
         )
     }
@@ -2632,7 +2628,7 @@ pub(crate) fn substitute_quantified_body_capture_free(
             substitute_bitvector_variable_in_proposition(
                 body,
                 binder,
-                &Bitvector32Term::Variable(target),
+                &MachineTerm::Variable(target),
             )
         },
     )
@@ -2758,7 +2754,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
     }
     // Scaled values compare through snapshot-bridged load equality: two
     // forms of one loaded field.
-    let scaled_values_bridged = |left: &Bitvector32Term, right: &Bitvector32Term| {
+    let scaled_values_bridged = |left: &MachineTerm, right: &MachineTerm| {
         left == right
             || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
             || assumptions.memory_loads_proven_equal(left, right)
@@ -2936,11 +2932,11 @@ pub(crate) fn condition_holds_by_memory_resolution(
 /// bounded, memoized unchanged-load check over recorded derivations and
 /// effect facts, consulting no resolution fuel.
 fn names_of_one_cell_framed(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let (Bitvector32Term::Variable(left_variable), Bitvector32Term::Variable(right_variable)) =
+    let (MachineTerm::Variable(left_variable), MachineTerm::Variable(right_variable)) =
         (left, right)
     else {
         return false;
@@ -2952,8 +2948,8 @@ fn names_of_one_cell_framed(
         return false;
     };
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
+        MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
+        MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left, &right)
     else {
         return false;
@@ -2974,20 +2970,20 @@ fn names_of_one_cell_framed(
     pointers_proven_equal_for_memory_resolution(left_pointer, right_pointer, assumptions)
         && [left_pointer, right_pointer].into_iter().any(|pointer| {
             crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                &Bitvector32Term::MemoryLoad(left_memory.clone(), pointer.clone(), *left_kind),
-                &Bitvector32Term::MemoryLoad(right_memory.clone(), pointer.clone(), *right_kind),
+                &MachineTerm::MemoryLoad(left_memory.clone(), pointer.clone(), *left_kind),
+                &MachineTerm::MemoryLoad(right_memory.clone(), pointer.clone(), *right_kind),
                 assumptions,
             )
         })
 }
 
 fn match_quantified_int32_term(
-    pattern: &Bitvector32Term,
-    target: &Bitvector32Term,
+    pattern: &MachineTerm,
+    target: &MachineTerm,
     binders: &BTreeSet<Variable>,
-    substitutions: &mut BTreeMap<Variable, Bitvector32Term>,
+    substitutions: &mut BTreeMap<Variable, MachineTerm>,
 ) -> bool {
-    if let Bitvector32Term::Variable(variable) = pattern
+    if let MachineTerm::Variable(variable) = pattern
         && binders.contains(variable)
     {
         return match substitutions.get(variable) {
@@ -3010,7 +3006,7 @@ fn match_quantified_int32_term(
         (bits32_constant!(left), bits32_constant!(right)) => {
             constant_u32(*left) == constant_u32(*right)
         }
-        (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) => left == right,
+        (MachineTerm::Variable(left), MachineTerm::Variable(right)) => left == right,
         (
             unary_term!(Bits32 @ pattern_format, BitwiseNot, pattern),
             unary_term!(Bits32 @ target_format, BitwiseNot, target),

@@ -1,7 +1,7 @@
 fn equality() -> ConditionTerm {
     ConditionTerm::equal(
-        Bitvector32Term::Variable(Variable(680_000)),
-        Bitvector32Term::Variable(Variable(680_001)),
+        MachineTerm::Variable(Variable(680_000)),
+        MachineTerm::Variable(Variable(680_001)),
     )
 }
 
@@ -72,8 +72,8 @@ fn contradictory_branch_creation_does_not_rebuild_ambient_indexes() {
         for index in 0..size {
             parent = parent.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(681_000 + index)),
-                    Bitvector32Term::constant(1000),
+                    MachineTerm::Variable(Variable(681_000 + index)),
+                    MachineTerm::constant(1000),
                 ),
                 true,
             );

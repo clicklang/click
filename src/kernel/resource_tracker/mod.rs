@@ -1510,11 +1510,11 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
     }
 }
 
-fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>) {
+fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
     match term {
         // A raw load term reads at least its own kind; the read covers the
         // widest scalar, which every kind fits.
-        Bitvector32Term::MemoryLoad(memory, pointer, _) => push_read(
+        MachineTerm::MemoryLoad(memory, pointer, _) => push_read(
             reads,
             OwnedResource::Cell {
                 pointer: pointer.as_ref().clone(),
@@ -1524,7 +1524,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
         ),
         // A load variable reads the cell it was minted for, at the point its
         // name embeds.
-        Bitvector32Term::Variable(variable) => {
+        MachineTerm::Variable(variable) => {
             if let Some((memory, pointer)) =
                 crate::kernel::registered_load_origin_for_variable(variable)
             {
@@ -1545,7 +1545,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
         }
         unary_term!(Bits32, BitwiseNot, inner)
         | cast_term!(Int64From32, inner)
-        | Bitvector32Term::Cast {
+        | MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: inner,
             ..
@@ -1555,7 +1555,7 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
         | cast_term!(Int64FromUInt32, inner)
         | cast_term!(UInt64FromInt32, inner)
         | cast_term!(UInt64FromInt64, inner) => collect_bitvector_reads(inner, reads),
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,

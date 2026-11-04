@@ -2627,7 +2627,7 @@ fn recorded_snapshots_find_the_point_reading_a_memory() {
     let memory = |index: u32| {
         let pointer = Pointer::symbolic(Variable(97_400 + u64::from(index)));
         crate::kernel::intern_c_memory(
-            CMemory::new().store(pointer, CValue::Int32(Bitvector32Term::constant(index))),
+            CMemory::new().store(pointer, CValue::Int32(MachineTerm::constant(index))),
         )
     };
     let state =

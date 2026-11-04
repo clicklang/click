@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 /// A narrow value's 32-bit widening is identified with the value in work
 /// independent of the ambient premises, when the certificate cites bounds on
@@ -12,12 +12,12 @@ use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 /// refused.
 #[test]
 fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
-    let word = Bitvector32Term::Variable(Variable(168_010));
+    let word = MachineTerm::Variable(Variable(168_010));
     let observation = |ty, value| IntegerTerm::from_machine(ty, value).unwrap();
     let equal =
         |left, right| Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true);
     for source in [Ty::UInt8, Ty::UInt16, Ty::Int8, Ty::Int16] {
-        let narrow = Bitvector32Term::machine_integer_cast(Ty::Int32, source, word.clone());
+        let narrow = MachineTerm::machine_integer_cast(Ty::Int32, source, word.clone());
         let original = observation(source, narrow.clone());
         let bounds = |lo: num_bigint::BigInt, hi: num_bigint::BigInt| {
             vec![
@@ -31,8 +31,7 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             if !destination.format().contains(source.format()) {
                 continue;
             }
-            let widened =
-                Bitvector32Term::machine_integer_cast(source, destination, narrow.clone());
+            let widened = MachineTerm::machine_integer_cast(source, destination, narrow.clone());
             let goal = equal(observation(destination, widened), original.clone());
             let mut premises = bounds(lo.clone(), hi.clone());
             let mut costs = Vec::new();
@@ -66,12 +65,12 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
             // value, whatever bounds are cited.
             for carrier in [
                 word.clone(),
-                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::constant(mask)),
-                Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::constant(mask + 1)),
-                Bitvector32Term::add(word.clone(), Bitvector32Term::constant(1)),
-                Bitvector32Term::add(
-                    Bitvector32Term::bitwise_and(word.clone(), Bitvector32Term::constant(mask)),
-                    Bitvector32Term::constant(1),
+                MachineTerm::bitwise_and(word.clone(), MachineTerm::constant(mask)),
+                MachineTerm::bitwise_and(word.clone(), MachineTerm::constant(mask + 1)),
+                MachineTerm::add(word.clone(), MachineTerm::constant(1)),
+                MachineTerm::add(
+                    MachineTerm::bitwise_and(word.clone(), MachineTerm::constant(mask)),
+                    MachineTerm::constant(1),
                 ),
             ] {
                 let goal = equal(observation(destination, carrier), original.clone());
@@ -88,11 +87,11 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
 
 #[test]
 fn legacy_integer_cast_identity_work_depends_on_nodes_and_explicit_bounds() {
-    let value = Bitvector32Term::Variable(Variable(168_001));
+    let value = MachineTerm::Variable(Variable(168_001));
     let original = IntegerTerm::from_machine(Ty::Int64, value.clone()).unwrap();
     let observed = IntegerTerm::from_machine(
         Ty::UInt64,
-        Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt64, value.into()),
+        MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, value.into()),
     )
     .unwrap();
     let goal = Proposition::ConditionIs(

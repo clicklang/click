@@ -609,11 +609,11 @@ mod tests {
     #[test]
     fn observation_storage_shares_casts_but_keeps_opaque_compatibility_boundaries() {
         let format = MachineIntegerType::Int32;
-        let cast = Bitvector32Term::Cast {
+        let cast = MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int8,
             to: format,
-            value: Box::new(Bitvector32Term::Variable(Variable(87654326))),
+            value: Box::new(MachineTerm::Variable(Variable(87654326))),
         };
         let term = KernelTermImport::default().machine(format, &cast);
         let shared = SharedMachineIntegerTerm::from_shared(format, term).unwrap();
@@ -626,7 +626,7 @@ mod tests {
         assert_eq!(observation.value(), &cast);
         assert!(observation.value_reading().is_some());
         let opaque = KernelTerm::legacy(PureFunctionArgument::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(87654327)),
+            MachineTerm::Variable(Variable(87654327)),
         )));
         let parent =
             KernelTerm::arithmetic_binary(format, MachineBinaryOp::Add, [opaque.clone(), opaque])
@@ -637,7 +637,7 @@ mod tests {
 
     #[test]
     fn machine_observation_retains_its_format_and_reconstructs_after_source_drop() {
-        let word = Bitvector32Term::Variable(Variable(87654322));
+        let word = MachineTerm::Variable(Variable(87654322));
         let mut observations = Vec::new();
         for format in [
             MachineIntegerType::Int32,
@@ -667,7 +667,7 @@ mod tests {
     #[test]
     fn checker_bridge_preserves_calls_and_machine_types() {
         let input =
-            PureFunctionArgument::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(70))));
+            PureFunctionArgument::Value(CValue::UInt32(MachineTerm::Variable(Variable(70))));
         let call = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "foo".into(),
             vec![input],

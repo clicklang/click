@@ -42,12 +42,12 @@ pub(in crate::kernel) struct InputData {
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.
     pub(in crate::kernel) bitvector64_equality_facts: crate::persistent::PersistentMap<
-        Bitvector32Term,
-        crate::persistent::PersistentMap<Bitvector32Term, ConditionTerm>,
+        MachineTerm,
+        crate::persistent::PersistentMap<MachineTerm, ConditionTerm>,
     >,
     /// Exact literal-pinning source premises, in deterministic source order.
     pub(in crate::kernel) exact_constant_equalities: crate::persistent::PersistentMap<
-        Bitvector32Term,
+        MachineTerm,
         crate::persistent::PersistentMap<ConditionTerm, i64>,
     >,
     /// Exact alignment premises, including their numeric address annotations.
@@ -82,10 +82,8 @@ pub(in crate::kernel) struct InputData {
         crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<Pointer>>,
     /// Pointer-address endpoints of full-width equalities, by object.
     /// Lets store framing follow address copies without scanning size facts.
-    pub(in crate::kernel) wide_pointer_alias_endpoints_by_object: crate::persistent::PersistentMap<
-        Pointer,
-        crate::persistent::PersistentSet<Bitvector32Term>,
-    >,
+    pub(in crate::kernel) wide_pointer_alias_endpoints_by_object:
+        crate::persistent::PersistentMap<Pointer, crate::persistent::PersistentSet<MachineTerm>>,
     pub(in crate::kernel) algebraic_graph_equalities: crate::persistent::PersistentMap<
         (
             crate::kernel::SharedPureApplication,
@@ -132,13 +130,13 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Admission-time keys, so later producer metadata cannot change withdrawal.
     pub(in crate::kernel) scalar_evidence_keys:
-        crate::persistent::PersistentMap<ConditionTerm, (Bitvector32Term, Bitvector32Term)>,
+        crate::persistent::PersistentMap<ConditionTerm, (MachineTerm, MachineTerm)>,
     /// Canonical source endpoints and their exact admitted premises. Used only
     /// for evidence enumeration and paths, never as a second equality decision.
     pub(in crate::kernel) scalar_evidence_inputs: crate::persistent::PersistentMap<
-        Bitvector32Term,
+        MachineTerm,
         crate::persistent::PersistentMap<
-            Bitvector32Term,
+            MachineTerm,
             crate::persistent::PersistentMap<ConditionTerm, Proposition>,
         >,
     >,

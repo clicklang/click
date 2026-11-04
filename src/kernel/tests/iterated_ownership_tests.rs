@@ -29,14 +29,14 @@ fn heap_base(identity: u64) -> Pointer {
 }
 
 fn cell(base: u64, index: u32) -> Pointer {
-    heap_base(base).offset_by_elements(Bitvector32Term::constant(index), 4)
+    heap_base(base).offset_by_elements(MachineTerm::constant(index), 4)
 }
 
 fn range(base: u64, start: u32, end: u32) -> CMemoryRange {
     CMemoryRange::new(
         heap_base(base),
-        Bitvector32Term::constant(start),
-        Bitvector32Term::constant(end),
+        MachineTerm::constant(start),
+        MachineTerm::constant(end),
     )
 }
 
@@ -49,14 +49,14 @@ fn cells_fact(capacity: u32) -> CIteratedMemory {
         1,
         0,
         1,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(capacity),
+        MachineTerm::constant(0),
+        MachineTerm::constant(capacity),
         CIteratedGuard::new(
             heap_base(OCCUPIED),
             CType::Int32,
             4,
             true,
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
         ),
     )
     .expect("a one-cell element with stride one is a valid shape")
@@ -277,7 +277,7 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
     let read = |memory: &CMemory, address: &Pointer| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::MemoryLoad(
+            value: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(address.clone()),
                 LoadKind::of_type(CType::Int32Pointer).unwrap(),

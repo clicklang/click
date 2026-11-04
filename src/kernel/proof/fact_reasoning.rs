@@ -113,17 +113,17 @@ fn machine_affine_equality(condition: &ConditionTerm) -> Option<bool> {
 }
 
 fn collect_machine_affine_atoms(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     coefficient: u64,
     wide: bool,
-    atoms: &mut std::collections::BTreeMap<Bitvector32Term, u64>,
+    atoms: &mut std::collections::BTreeMap<MachineTerm, u64>,
     constant: &mut u64,
 ) {
     crate::instrumentation::record_deterministic_work(1);
     match (term, wide) {
         (binary_term!(Int32, Add, left, right), false)
         | (
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left,
@@ -132,7 +132,7 @@ fn collect_machine_affine_atoms(
             true,
         )
         | (
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left,
@@ -145,7 +145,7 @@ fn collect_machine_affine_atoms(
         }
         (binary_term!(Int32, Subtract, left, right), false)
         | (
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Subtract,
                 left,
@@ -154,7 +154,7 @@ fn collect_machine_affine_atoms(
             true,
         )
         | (
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Subtract,
                 left,
@@ -833,7 +833,7 @@ fn offsets_equal_by_cited_index_sum(
 /// same term, so it never combines different terms the way `arithmetic`
 /// does.
 fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComparisonSubject> {
-    let machine_constant = |term: &Bitvector32Term| {
+    let machine_constant = |term: &MachineTerm| {
         matches!(
             term,
             bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
@@ -843,10 +843,9 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
     // comparison of σ(x) and the reverse, decided in the selected context,
     // which relates the two (the difference graph's σ link, R0). The
     // subject is a key; the terms keep their σ. One match on the root.
-    let subject = |term: &Bitvector32Term| {
-        ConstantComparisonSubject::Machine(term.sign_cast32_bits().clone())
-    };
-    let machine = |left: &Bitvector32Term, right: &Bitvector32Term| match (
+    let subject =
+        |term: &MachineTerm| ConstantComparisonSubject::Machine(term.sign_cast32_bits().clone());
+    let machine = |left: &MachineTerm, right: &MachineTerm| match (
         machine_constant(left),
         machine_constant(right),
     ) {
@@ -887,7 +886,7 @@ fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComp
 
 #[derive(PartialEq)]
 enum ConstantComparisonSubject {
-    Machine(Bitvector32Term),
+    Machine(MachineTerm),
     Integer(u64),
 }
 
@@ -913,7 +912,7 @@ pub(crate) enum ForallInstantiationError {
 /// with its subobject designation.
 #[derive(Clone, Debug)]
 pub(crate) enum InstanceArgument {
-    Machine(Bitvector32Term),
+    Machine(MachineTerm),
     Integer(IntegerTerm),
     Pointer(CPointerValue),
 }
@@ -1188,9 +1187,9 @@ pub(crate) fn propositions_equal_modulo_proven_snapshots(
 /// condition terms and pointer offsets, never descending into embedded
 /// memory snapshots. The full resolver walks whole snapshots and is far too
 /// expensive for per-candidate comparison paths.
-fn expand_load_variables_shallow(bits: &Bitvector32Term) -> Bitvector32Term {
+fn expand_load_variables_shallow(bits: &MachineTerm) -> MachineTerm {
     match bits {
-        Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable) => {
+        MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
             crate::kernel::registered_load_term_for_variable(variable)
                 .unwrap_or_else(|| bits.clone())
         }
@@ -1370,11 +1369,7 @@ enum OrderOperator {
 /// one claim.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum OrderOperands {
-    Machine(
-        MachineIntegerType,
-        Box<Bitvector32Term>,
-        Box<Bitvector32Term>,
-    ),
+    Machine(MachineIntegerType, Box<MachineTerm>, Box<MachineTerm>),
     Integer(SharedIntegerTerm, SharedIntegerTerm),
 }
 
@@ -1599,7 +1594,7 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
                 && substitute_int32_variable_in_proposition(
                     left_body,
                     *left_var,
-                    Bitvector32Term::Variable(*right_var),
+                    MachineTerm::Variable(*right_var),
                 ) == **right_body
         }
         (
@@ -1620,7 +1615,7 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
                 && substitute_int32_variable_in_proposition(
                     left_body,
                     *left_var,
-                    Bitvector32Term::Variable(*right_var),
+                    MachineTerm::Variable(*right_var),
                 ) == **right_body
         }
         _ => false,
@@ -1815,8 +1810,8 @@ mod tests {
         let equality = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::uint64_constant(1)),
-            right: Box::new(Bitvector32Term::uint64_constant(0)),
+            left: Box::new(MachineTerm::uint64_constant(1)),
+            right: Box::new(MachineTerm::uint64_constant(0)),
         };
         assert!(normalizes_context_free_leaf(&Proposition::ConditionIs(
             equality.clone(),
@@ -1829,8 +1824,8 @@ mod tests {
         let same_bits = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::uint64_constant(u64::MAX)),
-            right: Box::new(Bitvector32Term::int64_constant(-1)),
+            left: Box::new(MachineTerm::uint64_constant(u64::MAX)),
+            right: Box::new(MachineTerm::int64_constant(-1)),
         };
         assert!(normalizes_context_free_leaf(&Proposition::ConditionIs(
             same_bits, true,
@@ -1839,8 +1834,8 @@ mod tests {
         let symbolic = ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(90_000))),
-            right: Box::new(Bitvector32Term::uint64_constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(90_000))),
+            right: Box::new(MachineTerm::uint64_constant(0)),
         };
         assert!(!normalizes_context_free_leaf(&Proposition::ConditionIs(
             symbolic, false,
@@ -1852,8 +1847,8 @@ mod tests {
         let eq = |a, b| {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(a)),
-                    Bitvector32Term::Variable(Variable(b)),
+                    MachineTerm::Variable(Variable(a)),
+                    MachineTerm::Variable(Variable(b)),
                 ),
                 true,
             )
@@ -1927,11 +1922,11 @@ mod tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(9))),
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(9))),
         );
         let quantified = |memory: SharedCMemory, named: bool| {
             let load = if named {
-                Bitvector32Term::Variable(load_variable_for_cell_with_origin(
+                MachineTerm::Variable(load_variable_for_cell_with_origin(
                     &memory,
                     &pointer,
                     crate::kernel::LoadKind::Int32,
@@ -1939,7 +1934,7 @@ mod tests {
                     &memory,
                 ))
             } else {
-                Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(
                     memory,
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
@@ -1950,7 +1945,7 @@ mod tests {
                 var: Variable(1),
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
-                    ConditionTerm::equal(load, Bitvector32Term::Variable(Variable(1))),
+                    ConditionTerm::equal(load, MachineTerm::Variable(Variable(1))),
                     true,
                 )),
             }
@@ -1974,7 +1969,7 @@ mod tests {
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Add(
                     Box::new(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                        value: Box::new(MachineTerm::Variable(Variable(100_000))),
                         byte_width: 4,
                     }),
                     Box::new(PointerOffsetTerm::Constant(8)),
@@ -1982,15 +1977,14 @@ mod tests {
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
         };
-        let memory = intern_c_memory(CMemory::new().store(
-            nested_cell.clone(),
-            CValue::Int32(Bitvector32Term::constant(7)),
-        ));
+        let memory = intern_c_memory(
+            CMemory::new().store(nested_cell.clone(), CValue::Int32(MachineTerm::constant(7))),
+        );
         let quantified = |snapshot: &crate::kernel::SharedCMemory, binder: Variable| {
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(binder)),
+                    value: Box::new(MachineTerm::Variable(binder)),
                     byte_width: 4,
                 },
             };
@@ -2006,10 +2000,7 @@ mod tests {
                 var: binder,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
-                    ConditionTerm::equal(
-                        Bitvector32Term::Variable(load),
-                        Bitvector32Term::constant(7),
-                    ),
+                    ConditionTerm::equal(MachineTerm::Variable(load), MachineTerm::constant(7)),
                     true,
                 )),
             }
@@ -2025,7 +2016,7 @@ mod tests {
             memory
                 .as_ref()
                 .clone()
-                .store(nested_cell, CValue::Int32(Bitvector32Term::constant(9))),
+                .store(nested_cell, CValue::Int32(MachineTerm::constant(9))),
         );
         assert!(!quantified_binder_equivalent(
             &requested,
@@ -2041,7 +2032,7 @@ mod tests {
         };
         let memory = CMemory::new().with_block("cell", 4).store(
             pointer.clone(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(11))),
+            CValue::Int32(MachineTerm::Variable(Variable(11))),
         );
         let proposition = |binder| Proposition::ForAll {
             name: Default::default(),
@@ -2051,12 +2042,12 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(Bitvector32Term::MemoryLoad(
+                    left: Box::new(MachineTerm::MemoryLoad(
                         memory.clone().into(),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
                     )),
-                    right: Box::new(Bitvector32Term::Variable(Variable(binder))),
+                    right: Box::new(MachineTerm::Variable(Variable(binder))),
                 },
                 true,
             )),
@@ -2083,7 +2074,7 @@ mod tests {
         let before = CMemory::new();
         let after = before
             .clone()
-            .store(written.clone(), CValue::Int32(Bitvector32Term::constant(1)));
+            .store(written.clone(), CValue::Int32(MachineTerm::constant(1)));
         let assumptions =
             PureFactContext::new().assume_proposition(Proposition::CMemoryMutatesOnly {
                 before: before.clone(),
@@ -2122,10 +2113,10 @@ mod tests {
         // the global snapshot-comparison planner.
         let loaded = preserved;
         let changed_before =
-            CMemory::new().store(loaded.clone(), CValue::Int32(Bitvector32Term::constant(1)));
+            CMemory::new().store(loaded.clone(), CValue::Int32(MachineTerm::constant(1)));
         let changed_after = changed_before
             .clone()
-            .store(loaded.clone(), CValue::Int32(Bitvector32Term::constant(2)));
+            .store(loaded.clone(), CValue::Int32(MachineTerm::constant(2)));
         let changed_left = load_variable_for_cell_with_origin(
             &intern_c_memory(changed_before.clone()),
             &loaded,
@@ -2173,8 +2164,8 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::Equal,
-                            left: Box::new(Bitvector32Term::Variable(outer)),
-                            right: Box::new(Bitvector32Term::Variable(free)),
+                            left: Box::new(MachineTerm::Variable(outer)),
+                            right: Box::new(MachineTerm::Variable(free)),
                         },
                         true,
                     )),
@@ -2186,8 +2177,8 @@ mod tests {
                             ConditionTerm::Compare {
                                 format: MachineIntegerType::Int32,
                                 relation: CompareRelation::Equal,
-                                left: Box::new(Bitvector32Term::Variable(inner)),
-                                right: Box::new(Bitvector32Term::Variable(outer)),
+                                left: Box::new(MachineTerm::Variable(inner)),
+                                right: Box::new(MachineTerm::Variable(outer)),
                             },
                             true,
                         )),
@@ -2233,8 +2224,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Variable(Variable(1))),
-                    right: Box::new(Bitvector32Term::constant(value)),
+                    left: Box::new(MachineTerm::Variable(Variable(1))),
+                    right: Box::new(MachineTerm::constant(value)),
                 },
                 true,
             )
@@ -2250,8 +2241,8 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
-                            left: Box::new(Bitvector32Term::Variable(binder)),
-                            right: Box::new(Bitvector32Term::Variable(bound)),
+                            left: Box::new(MachineTerm::Variable(binder)),
+                            right: Box::new(MachineTerm::Variable(bound)),
                         },
                         true,
                     )),
@@ -2290,19 +2281,19 @@ mod tests {
         // and with the same universal written in load terms.
         let memory = intern_c_memory(CMemory::new().with_block("p", 12));
         let cell = |index: Variable| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: "p".into(),
                     offset: PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(Bitvector32Term::Variable(index)),
+                        value: Box::new(MachineTerm::Variable(index)),
                         byte_width: 4,
                     },
                 }),
                 crate::kernel::LoadKind::Int32,
             )
         };
-        let universal = |index: Variable, term: Bitvector32Term| Proposition::ForAll {
+        let universal = |index: Variable, term: MachineTerm| Proposition::ForAll {
             name: Default::default(),
             var: index,
             sort: Sort::CInt32,
@@ -2311,7 +2302,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(term),
-                    right: Box::new(Bitvector32Term::Variable(index)),
+                    right: Box::new(MachineTerm::Variable(index)),
                 },
                 true,
             )),
@@ -2319,7 +2310,7 @@ mod tests {
         let named = |index: Variable| crate::kernel::canonical_term(&cell(index));
         assert!(matches!(
             named(Variable(3_000_000)),
-            Bitvector32Term::Variable(_)
+            MachineTerm::Variable(_)
         ));
         let left = universal(Variable(3_000_000), named(Variable(3_000_000)));
         let renamed = universal(Variable(2_000_000), named(Variable(2_000_000)));
@@ -2338,18 +2329,15 @@ mod tests {
     #[test]
     fn quantified_check_key_canonicalizes_range_fold_binders() {
         let universal = |index: Variable, accumulator: Variable, item: Variable| {
-            let fold = Bitvector32Term::range_fold(
-                Bitvector32Term::Variable(index),
-                Bitvector32Term::add(
-                    Bitvector32Term::Variable(index),
-                    Bitvector32Term::constant(4),
-                ),
-                Bitvector32Term::constant(0),
+            let fold = MachineTerm::range_fold(
+                MachineTerm::Variable(index),
+                MachineTerm::add(MachineTerm::Variable(index), MachineTerm::constant(4)),
+                MachineTerm::constant(0),
                 accumulator,
                 item,
-                Bitvector32Term::add(
-                    Bitvector32Term::Variable(accumulator),
-                    Bitvector32Term::Variable(item),
+                MachineTerm::add(
+                    MachineTerm::Variable(accumulator),
+                    MachineTerm::Variable(item),
                 ),
             );
             Proposition::ForAll {
@@ -2357,7 +2345,7 @@ mod tests {
                 var: index,
                 sort: Sort::CInt32,
                 body: Box::new(Proposition::ConditionIs(
-                    ConditionTerm::equal(fold, Bitvector32Term::constant(0)),
+                    ConditionTerm::equal(fold, MachineTerm::constant(0)),
                     true,
                 )),
             }
@@ -2392,7 +2380,7 @@ mod tests {
         let owner_base = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                value: Box::new(MachineTerm::Variable(Variable(100_000))),
                 byte_width: 4,
             },
         };
@@ -2406,7 +2394,7 @@ mod tests {
         let phase_field = owner_field(4);
         let cell_field = owner_field(8);
         let load = |memory: &CMemory, pointer: &Pointer| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 intern_c_memory(memory.clone()),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -2444,16 +2432,16 @@ mod tests {
             Proposition::CResourceSeparate {
                 left: Box::new(CResource::Memory(CMemoryRange::new(
                     owner_base.clone(),
-                    Bitvector32Term::constant(left_start),
-                    Bitvector32Term::constant(left_end),
+                    MachineTerm::constant(left_start),
+                    MachineTerm::constant(left_end),
                 ))),
                 right: Box::new(CResource::Memory(CMemoryRange::new(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: cell_element_offset(cell_memory),
                     },
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::constant(1),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
                 ))),
             }
         };
@@ -2536,15 +2524,15 @@ impl LoadVariableBridgeSide for PointerOffsetTerm {
     }
 }
 
-impl LoadVariableBridgeSide for Bitvector32Term {
+impl LoadVariableBridgeSide for MachineTerm {
     /// A side represents a load either with its load variable or with the
     /// load term itself; both forms denote one atom, so both answer here.
     fn load_variable(&self) -> Option<Variable> {
         match self {
-            Bitvector32Term::Variable(variable) => {
+            MachineTerm::Variable(variable) => {
                 crate::kernel::is_load_variable(variable).then_some(*variable)
             }
-            Bitvector32Term::MemoryLoad(_, _, _) => {
+            MachineTerm::MemoryLoad(_, _, _) => {
                 crate::kernel::load_variable_for_term(self).map(|(variable, _)| variable)
             }
             _ => None,
@@ -2659,8 +2647,8 @@ impl<'a> OriginsUnchanged<'a> {
             return false;
         };
         let (
-            Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-            Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+            MachineTerm::MemoryLoad(_, left_pointer, left_kind),
+            MachineTerm::MemoryLoad(_, right_pointer, right_kind),
         ) = (&left_load, &right_load)
         else {
             return false;
@@ -2670,8 +2658,8 @@ impl<'a> OriginsUnchanged<'a> {
         left_kind == right_kind
             && ((left_pointer.block != right_pointer.block
                 && crate::kernel::memory_provenance::checked_origin_load_equality(
-                    &Bitvector32Term::Variable(left),
-                    &Bitvector32Term::Variable(right),
+                    &MachineTerm::Variable(left),
+                    &MachineTerm::Variable(right),
                     self.assumptions,
                 ))
                 || left_pointer == right_pointer
@@ -2762,7 +2750,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain(
                 right: _,
             },
             true,
-        ) => bridged_by_load_variable_edges::<Bitvector32Term>(premise, facts),
+        ) => bridged_by_load_variable_edges::<MachineTerm>(premise, facts),
         _ => false,
     }
 }
@@ -2794,7 +2782,7 @@ pub(crate) fn premise_bridged_by_load_variable_chain_with_origins(
                 right: _,
             },
             true,
-        ) => bridged_with_origins::<Bitvector32Term>(premise, facts, assumptions),
+        ) => bridged_with_origins::<MachineTerm>(premise, facts, assumptions),
         _ => false,
     }
 }
@@ -2939,13 +2927,13 @@ fn separations_equal_modulo_proven_snapshots(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(left.start())),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(right.start())),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                 )
                 && assumptions.conditions_equal_modulo_proven_snapshots(
@@ -2953,13 +2941,13 @@ fn separations_equal_modulo_proven_snapshots(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(left.end())),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     &ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(expand_load_variables_shallow(right.end())),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                 ))
     };
@@ -2972,7 +2960,7 @@ mod integer_reflexivity_tests {
     use super::*;
     use crate::kernel::proof::ProofFacts;
     use crate::kernel::{
-        Bitvector32Term, CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+        CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm,
         Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedMachineIntegerTerm, Variable,
     };
 
@@ -2982,7 +2970,7 @@ mod integer_reflexivity_tests {
             IntegerTerm::Variable(Variable(920)),
             IntegerTerm::from_machine(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(920)),
+                MachineTerm::Variable(Variable(920)),
             )
             .unwrap(),
         ] {
@@ -3028,8 +3016,8 @@ mod integer_reflexivity_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
         }
     }
 
@@ -3082,7 +3070,7 @@ mod integer_reflexivity_tests {
                 IntegerTerm::var(left_accumulator),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(left_item),
+                    MachineTerm::Variable(left_item),
                 )),
             ),
         );
@@ -3094,7 +3082,7 @@ mod integer_reflexivity_tests {
                 IntegerTerm::var(right_accumulator),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(right_item),
+                    MachineTerm::Variable(right_item),
                 )),
             ),
         );
@@ -3170,11 +3158,11 @@ mod integer_reflexivity_tests {
     fn ordinary_domain_still_supplies_a_legacy_normalization_query() {
         let _session = crate::kernel::VerificationSession::enter();
         let condition = ConditionTerm::signed_add_overflows(
-            Bitvector32Term::add(
-                Bitvector32Term::Variable(Variable(975011)),
-                Bitvector32Term::Variable(Variable(975012)),
+            MachineTerm::add(
+                MachineTerm::Variable(Variable(975011)),
+                MachineTerm::Variable(Variable(975012)),
             ),
-            Bitvector32Term::Variable(Variable(975013)),
+            MachineTerm::Variable(Variable(975013)),
         );
         let goal = Proposition::ConditionIs(condition, false);
         let bounds =
@@ -3228,7 +3216,7 @@ mod integer_reflexivity_tests {
             before
                 .memory()
                 .clone()
-                .store(a.clone(), CValue::Int32(Bitvector32Term::constant(7))),
+                .store(a.clone(), CValue::Int32(MachineTerm::constant(7))),
         );
         let load = |memory: &crate::kernel::SharedCMemory, address: &Pointer| {
             Pointer::symbolic(crate::kernel::load_variable_for_cell_with_origin(
@@ -3314,7 +3302,7 @@ mod integer_reflexivity_tests {
             before
                 .as_ref()
                 .clone()
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1))),
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
         );
         let load_fold = |memory: &crate::kernel::SharedCMemory, accumulator, item| {
             integer_fold(
@@ -3323,7 +3311,7 @@ mod integer_reflexivity_tests {
                 item,
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::MemoryLoad(
+                    MachineTerm::MemoryLoad(
                         memory.clone(),
                         Box::new(pointer.clone()),
                         crate::kernel::LoadKind::Int32,
@@ -3399,8 +3387,8 @@ mod integer_reflexivity_tests {
 
     #[test]
     fn normalize_using_reverses_int32_equality_and_disequality() {
-        let left = Bitvector32Term::Variable(Variable(95_302));
-        let right = Bitvector32Term::Variable(Variable(95_303));
+        let left = MachineTerm::Variable(Variable(95_302));
+        let right = MachineTerm::Variable(Variable(95_303));
         for value in [true, false] {
             let premise = Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -3456,7 +3444,7 @@ mod integer_reflexivity_tests {
         let integer_item = Variable(99_000);
         let machine_item = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(integer_item),
+            MachineTerm::Variable(integer_item),
         ));
         let integer_bound = integer_fold(
             integer_index(),
@@ -3489,12 +3477,12 @@ mod integer_reflexivity_tests {
 #[cfg(test)]
 mod uint64_loop_tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition, Variable};
+    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
 
     #[test]
     fn uint64_equality_certificate_requires_both_order_premises() {
-        let a = Bitvector32Term::Variable(Variable(981001));
-        let b = Bitvector32Term::Variable(Variable(981002));
+        let a = MachineTerm::Variable(Variable(981001));
+        let b = MachineTerm::Variable(Variable(981002));
         let goal = Proposition::ConditionIs(ConditionTerm::int64_equal(a.clone(), b.clone()), true);
         let le =
             Proposition::ConditionIs(ConditionTerm::uint64_less_equal(a.clone(), b.clone()), true);
@@ -3509,10 +3497,10 @@ mod uint64_loop_tests {
 
     #[test]
     fn uint64_subtraction_upper_bound_requires_no_wrap_and_the_upper_bound() {
-        let length = Bitvector32Term::Variable(Variable(981_011));
-        let removed = Bitvector32Term::Variable(Variable(981_012));
-        let upper = Bitvector32Term::Variable(Variable(981_013));
-        let difference = Bitvector32Term::Binary {
+        let length = MachineTerm::Variable(Variable(981_011));
+        let removed = MachineTerm::Variable(Variable(981_012));
+        let upper = MachineTerm::Variable(Variable(981_013));
+        let difference = MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Subtract,
             left: Box::new(length.clone()),
@@ -3547,14 +3535,14 @@ mod uint64_loop_tests {
             });
         assert_eq!(context.decide(&condition), Some(true));
         // A full-width subtrahend must not be truncated into an apparent zero.
-        let wrapped = Bitvector32Term::uint64_subtract(
-            Bitvector32Term::uint64_constant(1),
-            Bitvector32Term::uint64_constant(1u64 << 32),
+        let wrapped = MachineTerm::uint64_subtract(
+            MachineTerm::uint64_constant(1),
+            MachineTerm::uint64_constant(1u64 << 32),
         );
         assert_eq!(
             context.decide(&ConditionTerm::uint64_less_equal(
                 wrapped,
-                Bitvector32Term::uint64_constant(1),
+                MachineTerm::uint64_constant(1),
             )),
             Some(false)
         );
@@ -3562,11 +3550,11 @@ mod uint64_loop_tests {
 
     #[test]
     fn uint64_partial_restoration_requires_both_subtraction_and_addition_bounds() {
-        let whole = Bitvector32Term::Variable(Variable(981_021));
-        let removed = Bitvector32Term::Variable(Variable(981_022));
-        let restored = Bitvector32Term::Variable(Variable(981_023));
-        let upper = Bitvector32Term::Variable(Variable(981_024));
-        let difference = Bitvector32Term::uint64_subtract(whole.clone(), removed.clone());
+        let whole = MachineTerm::Variable(Variable(981_021));
+        let removed = MachineTerm::Variable(Variable(981_022));
+        let restored = MachineTerm::Variable(Variable(981_023));
+        let upper = MachineTerm::Variable(Variable(981_024));
+        let difference = MachineTerm::uint64_subtract(whole.clone(), removed.clone());
         let premises = [
             Proposition::ConditionIs(
                 ConditionTerm::uint64_less_equal(removed.clone(), whole.clone()),
@@ -3580,8 +3568,8 @@ mod uint64_loop_tests {
         ];
         let facts = crate::kernel::proof::ProofFacts::from_ordered(&premises);
         for sum in [
-            Bitvector32Term::uint64_add(difference.clone(), restored.clone()),
-            Bitvector32Term::uint64_add(restored, difference),
+            MachineTerm::uint64_add(difference.clone(), restored.clone()),
+            MachineTerm::uint64_add(restored, difference),
         ] {
             let condition = ConditionTerm::uint64_less_equal(sum, upper.clone());
             let goal = Proposition::ConditionIs(condition.clone(), true);
@@ -3626,14 +3614,14 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(984_800));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             4,
         );
         let other = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(2 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(2 << 33),
             4,
         );
         let separation = |range| Proposition::CResourceSeparate {
@@ -3689,7 +3677,7 @@ mod annotated_address_condition_tests {
     fn comparison(annotated: bool) -> ConditionTerm {
         use crate::kernel::effective_type::{CAccessClass, CScalarClass};
         let address = |id| {
-            Bitvector32Term::object_pointer_address(
+            MachineTerm::object_pointer_address(
                 Pointer::symbolic(Variable(id)),
                 annotated.then_some(CAccessClass::Scalar(CScalarClass::Int)),
             )
@@ -3700,12 +3688,12 @@ mod annotated_address_condition_tests {
     fn choice(condition: ConditionTerm, value: bool) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::If {
+                MachineTerm::If {
                     condition: Box::new(condition),
-                    then_term: Box::new(Bitvector32Term::constant(1)),
-                    else_term: Box::new(Bitvector32Term::constant(0)),
+                    then_term: Box::new(MachineTerm::constant(1)),
+                    else_term: Box::new(MachineTerm::constant(0)),
                 },
-                Bitvector32Term::constant(u32::from(value)),
+                MachineTerm::constant(u32::from(value)),
             ),
             true,
         )
@@ -3794,20 +3782,20 @@ mod annotated_address_condition_tests {
         let before = intern_c_memory(
             CMemory::new()
                 .with_block("annotated-address-index", 4)
-                .store(cell.clone(), CValue::Int32(Bitvector32Term::constant(0))),
+                .store(cell.clone(), CValue::Int32(MachineTerm::constant(0))),
         );
         let after = intern_c_memory(
             before
                 .memory()
                 .clone()
-                .store(cell.clone(), CValue::Int32(Bitvector32Term::constant(1))),
+                .store(cell.clone(), CValue::Int32(MachineTerm::constant(1))),
         );
         let fact = |memory: SharedCMemory, annotated: bool| {
             use crate::kernel::effective_type::{CAccessClass, CScalarClass};
             let pointer = Pointer {
                 block: "annotated-address-target".into(),
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::MemoryLoad(memory, Box::new(cell.clone()), LoadKind::Int32),
+                    MachineTerm::MemoryLoad(memory, Box::new(cell.clone()), LoadKind::Int32),
                     1,
                 ),
             };
@@ -3818,11 +3806,11 @@ mod annotated_address_condition_tests {
                 )),
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::uint64_equal(
-                        Bitvector32Term::object_pointer_address(
+                        MachineTerm::object_pointer_address(
                             pointer,
                             annotated.then_some(CAccessClass::Scalar(CScalarClass::Int)),
                         ),
-                        Bitvector32Term::pointer_address(Pointer {
+                        MachineTerm::pointer_address(Pointer {
                             block: "annotated-address-target".into(),
                             offset: PointerOffsetTerm::Constant(0),
                         }),
@@ -3884,8 +3872,8 @@ mod index_sum_offset_tests {
     use super::*;
     use crate::kernel::proof::ProofFacts;
 
-    pub(super) fn index(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    pub(super) fn index(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
     pub(super) fn scaled(id: u64, byte_width: i64) -> PointerOffsetTerm {
@@ -3946,7 +3934,7 @@ mod index_sum_offset_tests {
         // Cited premises only: the same fact, held but not cited, decides nothing.
         assert!(normalize_using_conditions(&address_goal(0, 4), &[], &facts).is_err());
         let native = Proposition::ConditionIs(
-            ConditionTerm::uint64_equal(index(3), Bitvector32Term::uint64_add(index(1), index(2))),
+            ConditionTerm::uint64_equal(index(3), MachineTerm::uint64_add(index(1), index(2))),
             true,
         );
         let facts = ProofFacts::from_ordered(std::slice::from_ref(&native));

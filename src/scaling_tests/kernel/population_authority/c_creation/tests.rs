@@ -53,7 +53,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
     let facts = PureFactContext::new().assume_condition(
         crate::kernel::ConditionTerm::equal(
             entry.observe_symbolic(&description).unwrap().entry_count,
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
         ),
         true,
     );
@@ -64,7 +64,7 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
                     &PointerBlock::ExternalArgument,
                     &description,
                     true,
-                    &Bitvector32Term::constant(amount),
+                    &MachineTerm::constant(amount),
                     &facts,
                 )
                 .unwrap()
@@ -87,14 +87,14 @@ fn opaque_numeric_batch_work_does_not_grow_with_quantity() {
 fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
     let block = PointerBlock::ExternalArgument;
     let description = member_description(block.clone());
-    let quantity = Bitvector32Term::Variable(Variable(940_150));
+    let quantity = MachineTerm::Variable(Variable(940_150));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::constant(0)),
+            ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_add_overflows(quantity.clone(), Bitvector32Term::constant(3)),
+            ConditionTerm::signed_add_overflows(quantity.clone(), MachineTerm::constant(3)),
             false,
         );
     let work = [16, 64, 256].map(|size| {
@@ -109,7 +109,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(Bitvector32Term::constant(0)),
+                    Some(MachineTerm::constant(0)),
                     None,
                     None,
                 )
@@ -119,7 +119,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(Bitvector32Term::constant(0)),
+                Some(MachineTerm::constant(0)),
                 None,
                 None,
             )
@@ -133,7 +133,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 &block,
                 &description,
                 true,
-                &Bitvector32Term::constant(3),
+                &MachineTerm::constant(3),
                 &PureFactContext::new()
             ),
             Err(CreationRefusal::InvalidQuantity)
@@ -144,7 +144,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     true,
-                    &Bitvector32Term::constant(3),
+                    &MachineTerm::constant(3),
                     &assumptions,
                 )
                 .unwrap()
@@ -155,7 +155,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                 observed.combined_delta(),
                 Some((
                     true,
-                    Bitvector32Term::add(quantity.clone(), Bitvector32Term::constant(3))
+                    MachineTerm::add(quantity.clone(), MachineTerm::constant(3))
                 ))
             );
             assert_eq!(
@@ -197,7 +197,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &Bitvector32Term::constant(1),
+                    &MachineTerm::constant(1),
                     &assumptions,
                 )
                 .unwrap()
@@ -213,7 +213,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &Bitvector32Term::constant(2),
+                    &MachineTerm::constant(2),
                     &assumptions,
                 )
                 .unwrap()
@@ -231,12 +231,12 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     false,
-                    &Bitvector32Term::constant(1),
+                    &MachineTerm::constant(1),
                     &assumptions
                 ),
                 Err(CreationRefusal::MissingMembers)
             ));
-            let wrong = Bitvector32Term::add(quantity.clone(), Bitvector32Term::constant(1));
+            let wrong = MachineTerm::add(quantity.clone(), MachineTerm::constant(1));
             assert!(
                 restored
                     .transfer_call_fact_quantity(
@@ -257,7 +257,7 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
                     &block,
                     &description,
                     true,
-                    &Bitvector32Term::constant(1),
+                    &MachineTerm::constant(1),
                     &assumptions
                 ),
                 Err(CreationRefusal::MissingAuthority)
@@ -274,10 +274,10 @@ fn opaque_symbolic_birth_composes_numeric_custody_and_scales() {
 
 #[test]
 fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
-    let quantity = Bitvector32Term::Variable(Variable(940_131));
+    let quantity = MachineTerm::Variable(Variable(940_131));
     let description = member_description(PointerBlock::ExternalArgument);
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
         true,
     );
     for born_batch in [false, true] {
@@ -294,7 +294,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                     .import_opaque_contract_population_inner(
                         &unrelated,
                         0,
-                        Some(Bitvector32Term::constant(0)),
+                        Some(MachineTerm::constant(0)),
                         None,
                         None,
                     )
@@ -305,7 +305,7 @@ fn opaque_symbolic_batch_transfer_work_ignores_unrelated_populations() {
                     &description,
                     0,
                     Some(if born_batch {
-                        Bitvector32Term::constant(0)
+                        MachineTerm::constant(0)
                     } else {
                         quantity.clone()
                     }),
@@ -386,7 +386,7 @@ fn opaque_population_lookup_and_exchange_ignore_unrelated_imports() {
                 .import_opaque_contract_population_inner(
                     &description_at(id),
                     1,
-                    Some(Bitvector32Term::constant(3)),
+                    Some(MachineTerm::constant(3)),
                     None,
                     None,
                 )
@@ -506,7 +506,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
             .import_opaque_contract_population_inner(
                 &description,
                 2,
-                Some(Bitvector32Term::constant(7)),
+                Some(MachineTerm::constant(7)),
                 None,
                 None,
             )
@@ -534,7 +534,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
             )
             .unwrap()
         });
-        assert_eq!(paths[0].value, CValue::Int32(Bitvector32Term::constant(7)));
+        assert_eq!(paths[0].value, CValue::Int32(MachineTerm::constant(7)));
         work
     });
     assert!(samples[0] > 0, "lookup must charge its work: {samples:?}");
@@ -548,7 +548,7 @@ fn count_lookup_does_not_scan_unrelated_authority_heads() {
 fn exact_symbolic_births_use_numeric_custody_and_scale() {
     let block = PointerBlock::ExternalArgument;
     let description = member_description(block.clone());
-    let quantity = Bitvector32Term::Variable(Variable(990_001));
+    let quantity = MachineTerm::Variable(Variable(990_001));
     let samples = [16, 64, 256].map(|size| {
         let mut entry = CreationEvents::new();
         let mut facts = PureFactContext::new();
@@ -562,15 +562,15 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(Bitvector32Term::constant(0)),
+                    Some(MachineTerm::constant(0)),
                     None,
                     None,
                 )
                 .unwrap();
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(991_000 + index)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(991_000 + index)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -579,13 +579,13 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(Bitvector32Term::constant(0)),
+                Some(MachineTerm::constant(0)),
                 None,
                 None,
             )
             .unwrap();
         facts = facts.assume_condition(
-            ConditionTerm::equal(quantity.clone(), Bitvector32Term::constant(1_000_000_000)),
+            ConditionTerm::equal(quantity.clone(), MachineTerm::constant(1_000_000_000)),
             true,
         );
         PureFactContext::reset_exact_constant_fact_visits();
@@ -650,9 +650,9 @@ fn exact_symbolic_births_use_numeric_custody_and_scale() {
 fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated_state() {
     let block = PointerBlock::ExternalArgument;
     let description = member_description(block.clone());
-    let first_quantity = Bitvector32Term::Variable(Variable(992_001));
-    let second_quantity = Bitvector32Term::Variable(Variable(992_002));
-    let total = Bitvector32Term::add(first_quantity.clone(), second_quantity.clone());
+    let first_quantity = MachineTerm::Variable(Variable(992_001));
+    let second_quantity = MachineTerm::Variable(Variable(992_002));
+    let total = MachineTerm::add(first_quantity.clone(), second_quantity.clone());
     let samples = [16, 64, 256].map(|size| {
         // Keep term-bridge imports and canonical forms cold at every sample
         // size: a sign-bit equivalent names σ, whose canonical form is
@@ -672,15 +672,15 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                 .import_opaque_contract_population_inner(
                     &unrelated,
                     0,
-                    Some(Bitvector32Term::constant(0)),
+                    Some(MachineTerm::constant(0)),
                     None,
                     None,
                 )
                 .unwrap();
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(993_000 + index)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(993_000 + index)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -689,14 +689,14 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             .import_opaque_contract_population_inner(
                 &description,
                 0,
-                Some(Bitvector32Term::constant(0)),
+                Some(MachineTerm::constant(0)),
                 None,
                 None,
             )
             .unwrap();
         for quantity in [&first_quantity, &second_quantity] {
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(quantity.clone(), Bitvector32Term::constant(0)),
+                ConditionTerm::signed_greater_equal(quantity.clone(), MachineTerm::constant(0)),
                 true,
             );
         }
@@ -721,7 +721,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
             CreationRefusal::InvalidQuantity,
             "nonnegative quantities alone do not establish a non-wrapping total"
         );
-        let current = Bitvector32Term::add(Bitvector32Term::constant(0), first_quantity.clone());
+        let current = MachineTerm::add(MachineTerm::constant(0), first_quantity.clone());
         facts = facts.assume_condition(
             ConditionTerm::signed_add_overflows(current, second_quantity.clone()),
             false,
@@ -800,7 +800,7 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
                 Some((true, total.clone()))
             );
             facts = facts.assume_condition(
-                ConditionTerm::signed_greater_equal(total.clone(), Bitvector32Term::constant(0)),
+                ConditionTerm::signed_greater_equal(total.clone(), MachineTerm::constant(0)),
                 true,
             );
             assert!(
@@ -925,7 +925,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
             );
             assert_eq!(
                 one.observe_symbolic(&description).unwrap().symbolic_delta,
-                Some((false, Bitvector32Term::constant(1)))
+                Some((false, MachineTerm::constant(1)))
             );
             assert_eq!(
                 one.checked_imported_instance_consumption(&left)
@@ -947,7 +947,7 @@ fn imported_named_consumption_counts_identities_and_ignores_unrelated_state() {
             );
             assert_eq!(
                 observed.symbolic_delta,
-                Some((false, Bitvector32Term::constant(2)))
+                Some((false, MachineTerm::constant(2)))
             );
             assert!(
                 !two.owns_population_member(&description),
@@ -1015,7 +1015,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
             let entry = entry.import_observable_named_authority(&scope).unwrap();
             let count = entry.observe_symbolic(&scope).unwrap().entry_count;
             let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::signed_add_overflows(count.clone(), Bitvector32Term::constant(1)),
+                ConditionTerm::signed_add_overflows(count.clone(), MachineTerm::constant(1)),
                 false,
             ));
             let (_, work) = crate::persistent::measure_persistent_work(|| {
@@ -1069,7 +1069,7 @@ fn imported_named_lifecycle_keeps_entry_bounds_and_scales_with_unrelated_imports
                 assert_eq!(observed.entry_owned_members, 2);
                 assert_eq!(
                     observed.combined_delta(),
-                    Some((false, Bitvector32Term::constant(2)))
+                    Some((false, MachineTerm::constant(2)))
                 );
                 if wildcard {
                     let exact_count = spent.observe_exact_member(&exact).unwrap();

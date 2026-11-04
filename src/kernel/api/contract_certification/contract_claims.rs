@@ -622,14 +622,14 @@ pub(crate) fn matching_recomputed_call_havoc_views(
         pointer: &Pointer,
         value: &CValue,
     ) -> bool {
-        let (CValue::Int8(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::Int16(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::Int32(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt8(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt16(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt32(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::Int64(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))
-        | CValue::UInt64(Bitvector32Term::MemoryLoad(load_memory, load_pointer, kind))) = value
+        let (CValue::Int8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::Int16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::Int32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt8(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt16(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt32(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::Int64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))
+        | CValue::UInt64(MachineTerm::MemoryLoad(load_memory, load_pointer, kind))) = value
         else {
             return false;
         };
@@ -806,8 +806,8 @@ fn memory_range_lists_definitionally_equal(
 mod range_list_equality_graph_tests {
     use super::*;
 
-    fn var(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    fn var(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
     #[test]
@@ -819,7 +819,7 @@ mod range_list_equality_graph_tests {
             offset: PointerOffsetTerm::scale_int32(index, 4),
         };
         let load = |memory: &SharedCMemory, index| {
-            Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+            MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &pointer(index),
                 crate::kernel::LoadKind::Int32,
@@ -828,13 +828,15 @@ mod range_list_equality_graph_tests {
             ))
         };
         let (a, b) = (var(91), var(92));
-        let after = crate::kernel::intern_c_memory(before.memory().clone().store(
-            pointer(b.clone()),
-            CValue::Int32(Bitvector32Term::constant(9)),
-        ));
+        let after = crate::kernel::intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(pointer(b.clone()), CValue::Int32(MachineTerm::constant(9))),
+        );
         let base = Pointer::symbolic(Variable(9100));
-        let sum = |value| Bitvector32Term::add(value, Bitvector32Term::constant(1));
-        let range = |start| CMemoryRange::new(base.clone(), start, Bitvector32Term::constant(16));
+        let sum = |value| MachineTerm::add(value, MachineTerm::constant(1));
+        let range = |start| CMemoryRange::new(base.clone(), start, MachineTerm::constant(16));
         let left = range(sum(load(&before, a.clone())));
         let right = range(sum(load(&before, b.clone())));
         let later = range(sum(load(&after, b.clone())));
@@ -991,9 +993,9 @@ fn materialized_load_is_unchanged(
 ) -> bool {
     // With terms canonical at creation a materialized cell holds the load
     // variable for its load; the registry records the load it stands for.
-    let load_of = |bits: &Bitvector32Term| match bits {
-        Bitvector32Term::MemoryLoad(_, _, _) => Some(bits.clone()),
-        Bitvector32Term::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+    let load_of = |bits: &MachineTerm| match bits {
+        MachineTerm::MemoryLoad(_, _, _) => Some(bits.clone()),
+        MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
             crate::kernel::eval::registered_load_term_for_variable(variable)
         }
         _ => None,
@@ -1008,7 +1010,7 @@ fn materialized_load_is_unchanged(
                 block: PointerBlock::FunctionSymbolic(variable),
                 offset: PointerOffsetTerm::Constant(0),
             } if matches!(pointer_value.c_type(), CType::FunctionPointer(_)) => {
-                load_of(&Bitvector32Term::Variable(*variable))
+                load_of(&MachineTerm::Variable(*variable))
             }
             Pointer {
                 offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
@@ -1024,14 +1026,14 @@ fn materialized_load_is_unchanged(
     let Some(left) = load else {
         return false;
     };
-    let Bitvector32Term::MemoryLoad(_, load_pointer, kind) = &left else {
+    let MachineTerm::MemoryLoad(_, load_pointer, kind) = &left else {
         return false;
     };
     let kind = *kind;
     if !kind.reads_value(value) {
         return false;
     }
-    let right = Bitvector32Term::MemoryLoad(
+    let right = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(symbolic_memory.clone()),
         Box::new(pointer.clone()),
         kind,
@@ -2245,7 +2247,7 @@ fn heap_free_effect_is_valid(
     before: &CMemory,
     after: &CMemory,
     allocation_base: &Pointer,
-    bytes: &Bitvector32Term,
+    bytes: &MachineTerm,
 ) -> bool {
     let Some(live) = (if before.live_heap_block_size(allocation_base).is_some() {
         Some(before.clone())
@@ -2793,7 +2795,7 @@ fn literal_completion_key(outcome: &CFunctionOutcome) -> Option<(bool, CValue)> 
         CValue::Pointer(_) | CValue::Parameter(_) => return None,
     };
     match term {
-        Bitvector32Term::Constant { .. } => Some((exceptional, value.clone())),
+        MachineTerm::Constant { .. } => Some((exceptional, value.clone())),
         _ => None,
     }
 }
@@ -3367,8 +3369,8 @@ mod checked_proposition_index_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-                right: Box::new(Bitvector32Term::constant(1)),
+                left: Box::new(MachineTerm::Variable(Variable(variable))),
+                right: Box::new(MachineTerm::constant(1)),
             },
             value,
         )
@@ -3521,8 +3523,8 @@ mod checked_proposition_index_tests {
         // certification setup.
         let body_fact = Proposition::ConditionIs(
             ConditionTerm::signed_less_than(
-                Bitvector32Term::Variable(Variable(93_001)),
-                Bitvector32Term::constant(8),
+                MachineTerm::Variable(Variable(93_001)),
+                MachineTerm::constant(8),
             ),
             true,
         );
@@ -3532,7 +3534,7 @@ mod checked_proposition_index_tests {
             function: Box::new(function.clone()),
             arguments: Vec::new(),
             outcome: CFunctionOutcome::Return {
-                value: CValue::Int32(Bitvector32Term::constant(0)),
+                value: CValue::Int32(MachineTerm::constant(0)),
                 state: Box::new(state),
             },
         };
@@ -3576,7 +3578,7 @@ mod heap_status_equality_tests {
         let mut base = CMemory::new().with_block(block.block.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
-            .insert(block.clone(), Bitvector32Term::constant(4));
+            .insert(block.clone(), MachineTerm::constant(4));
         std::sync::Arc::make_mut(&mut base.heap)
             .zeroed_allocations
             .insert(block.clone());
@@ -3601,11 +3603,11 @@ mod heap_status_equality_tests {
         ));
 
         let left = CFunctionOutcome::Return {
-            value: CValue::Int32(Bitvector32Term::constant(0)),
+            value: CValue::Int32(MachineTerm::constant(0)),
             state: Box::new(CState::new().with_memory(base)),
         };
         let right = CFunctionOutcome::Return {
-            value: CValue::Int32(Bitvector32Term::constant(0)),
+            value: CValue::Int32(MachineTerm::constant(0)),
             state: Box::new(CState::new().with_memory(other)),
         };
         assert!(!c_function_outcomes_program_state_definitionally_equal(
@@ -3628,8 +3630,8 @@ mod unproved_path_obligation_message_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::constant(3)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant(3)),
             },
             true,
         );
@@ -3655,8 +3657,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(984_400));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             1,
         );
         let narrow = CMemoryRange::new_with_element_width(base, 0u32.into(), 1u32.into(), 1);
@@ -3679,7 +3681,7 @@ mod materialized_function_load_tests {
     use super::*;
 
     fn callback_load(memory: &CMemory, address: &Pointer, kind: LoadKind) -> CValue {
-        let load = Bitvector32Term::MemoryLoad(
+        let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(address.clone()),
             kind,
@@ -3804,8 +3806,8 @@ mod claim_requirement_tests {
     fn claim_identity_requires_its_evaluation_obligations_in_this_context() {
         let domain = Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(991_001)),
-                Bitvector32Term::constant(1),
+                MachineTerm::Variable(Variable(991_001)),
+                MachineTerm::constant(1),
             ),
             true,
         );

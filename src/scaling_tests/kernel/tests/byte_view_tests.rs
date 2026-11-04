@@ -13,7 +13,7 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
         for byte in 0..3 {
             memory = memory.store(
                 word(byte),
-                CValue::UInt8(Bitvector32Term::Variable(Variable(8000 + byte as u64))),
+                CValue::UInt8(MachineTerm::Variable(Variable(8000 + byte as u64))),
             );
         }
         for index in 0..size {
@@ -25,20 +25,20 @@ fn byte_assembly_masks_symbolic_bytes_and_ignores_unrelated_memory() {
                 CValue::UInt32(index.into()),
             );
         }
-        let incoming = CValue::UInt8(Bitvector32Term::Variable(Variable(8003)));
+        let incoming = CValue::UInt8(MachineTerm::Variable(Variable(8003)));
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             assemble(&memory, &word(3), &incoming, Some(ByteOrder::Little))
         });
-        let mut expected = Bitvector32Term::constant(0);
+        let mut expected = MachineTerm::constant(0);
         for byte in 0u32..4 {
-            expected = Bitvector32Term::bitwise_or(
+            expected = MachineTerm::bitwise_or(
                 expected,
                 // Each byte's word is its zero extension.
-                Bitvector32Term::unsigned_shift_left(
-                    Bitvector32Term::machine_integer_cast(
+                MachineTerm::unsigned_shift_left(
+                    MachineTerm::machine_integer_cast(
                         crate::kernel::MachineIntegerType::UInt8,
                         crate::kernel::MachineIntegerType::Int32,
-                        Bitvector32Term::Variable(Variable(8000 + u64::from(byte))),
+                        MachineTerm::Variable(Variable(8000 + u64::from(byte))),
                     ),
                     (8 * byte).into(),
                 ),
@@ -59,7 +59,7 @@ fn containing_cell_lookup_work_is_independent_of_unrelated_cells() {
     for unrelated in [8_u32, 32, 128, 512] {
         let mut memory = CMemory::new().store(
             word(0),
-            CValue::UInt64(Bitvector32Term::uint64_constant(0x0102_0304_0506_0708)),
+            CValue::UInt64(MachineTerm::uint64_constant(0x0102_0304_0506_0708)),
         );
         for index in 0..unrelated {
             memory = memory.store(

@@ -47,7 +47,7 @@ fn growing_arithmetic_guards(truth: Option<bool>) {
         let mut root = variable(985001);
         let other = variable(985002);
         let zero =
-            crate::kernel::KernelTermImport::default().machine(ty, &Bitvector32Term::constant(0));
+            crate::kernel::KernelTermImport::default().machine(ty, &MachineTerm::constant(0));
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
         let mut context = PureFactContext::new().defer_non_exact_condition_reasoning();

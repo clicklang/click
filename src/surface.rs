@@ -11,7 +11,7 @@ use std::fmt;
 use crate::instrumentation::{self, TacticEvent, VerificationEvent};
 use crate::kernel::proof::PropositionSource;
 use crate::kernel::{
-    AlgebraicValue, Bitvector32Term, BitvectorEqualityDerivationStep, CCheckedFunctionExecution,
+    AlgebraicValue, BitvectorEqualityDerivationStep, CCheckedFunctionExecution,
     CCheckedFunctionProposition, CComparisonOperator, CCompositeResourceDefinition,
     CConditionOutcome, CExecutionEnvironment, CExecutionSemantics, CExpression, CExpressionOutcome,
     CFunction, CFunctionContract, CFunctionContractClaim, CFunctionContractClaimKey,
@@ -22,17 +22,18 @@ use crate::kernel::{
     CResourceSpec, CResourceTransferRole, CState, CStatement, CStatementOutcome,
     CTerminationRefusal, CTerminationVerdicts, CType, CUnsuitableCallback, CValue,
     CVerifiedLoopRule, CVerifiedPureTheorem, ConditionTerm, ExecutionBudget, ExecutionPureFact,
-    Pointer, PointerBlock, PointerOffsetTerm, ProofObligation, Proposition, PropositionDerivation,
-    PureFactContext, ResourceContext, ResourceContextValidityError, ResourceFamily, Sort,
-    SpecAlgebraicExpression, SpecExpression, SpecMemory, SpecPredicateArgument, SpecProposition,
-    SpecResource, SymbolicCExecution, Term, Theorem, Variable, abstract_c_state_for_join,
-    assume_universally_quantified_pure_implication, c_assign, c_condition_fact_memories,
-    c_contract_refinement_context, c_declare, c_do_while_preservation_contexts,
-    c_do_while_with_invariant_and_effect_checks, c_function, c_function_contract_entry_state,
-    c_function_contract_refinement_arguments, c_function_contract_refinement_context,
-    c_function_entry_state, c_function_termination_plan, c_if, c_loop_invariants_hold_at_entry,
-    c_loop_preservation_contexts, c_pointer_offsets_proven_equal_for_effect,
-    c_resources_directly_match, c_seq, c_termination_height_plan, c_typed_pointer_value,
+    MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, ProofObligation, Proposition,
+    PropositionDerivation, PureFactContext, ResourceContext, ResourceContextValidityError,
+    ResourceFamily, Sort, SpecAlgebraicExpression, SpecExpression, SpecMemory,
+    SpecPredicateArgument, SpecProposition, SpecResource, SymbolicCExecution, Term, Theorem,
+    Variable, abstract_c_state_for_join, assume_universally_quantified_pure_implication, c_assign,
+    c_condition_fact_memories, c_contract_refinement_context, c_declare,
+    c_do_while_preservation_contexts, c_do_while_with_invariant_and_effect_checks, c_function,
+    c_function_contract_entry_state, c_function_contract_refinement_arguments,
+    c_function_contract_refinement_context, c_function_entry_state, c_function_termination_plan,
+    c_if, c_loop_invariants_hold_at_entry, c_loop_preservation_contexts,
+    c_pointer_offsets_proven_equal_for_effect, c_resources_directly_match, c_seq,
+    c_termination_height_plan, c_typed_pointer_value,
     c_unverified_function_contract_claims_diagnostic,
     c_verified_function_contract_claims_with_checked_propositions, c_verified_function_rule,
     c_verified_function_termination_rules, c_while_with_invariant_and_effect_checks, int32,
@@ -3280,7 +3281,7 @@ const MEMORY_POINTS_NEAR: usize = 4;
 
 /// The identity of a symbolic model-field value, independent of its carrier.
 fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::kernel::Variable> {
-    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, Bitvector32Term};
+    use crate::kernel::{AlgebraicTermNode, AlgebraicValue, MachineTerm};
     match value {
         AlgebraicValue::Algebraic(term) => match term.node {
             AlgebraicTermNode::Variable(variable) => Some(variable),
@@ -3290,7 +3291,7 @@ fn model_field_variable(value: &crate::kernel::AlgebraicValue) -> Option<crate::
             AlgebraicTermNode::Variable(variable) => Some(variable),
             _ => None,
         },
-        AlgebraicValue::C(crate::kernel::integer_c_value!(Bitvector32Term::Variable(variable))) => {
+        AlgebraicValue::C(crate::kernel::integer_c_value!(MachineTerm::Variable(variable))) => {
             Some(*variable)
         }
         _ => None,
@@ -3889,7 +3890,7 @@ impl RecordedSnapshots {
 
     fn call_result_naming_integer(
         &self,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> Option<CodeRegionRef> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);
@@ -4048,7 +4049,7 @@ impl RecordedSnapshots {
     /// locals that held a term of this fingerprint, each checked there.
     fn point_naming_integer(
         &self,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> Option<(&SnapshotSelector, &str, &CState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, String::new());
@@ -4258,7 +4259,7 @@ impl RecordedSnapshots {
     /// [`CELL_POINTS_OFFERED`]. The caller spells the term in each state.
     fn points_holding_cell_integer(
         &self,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> impl Iterator<Item = (&SnapshotSelector, &CState)> {
         let fingerprint = crate::kernel::held_term_fingerprint(term);
         let mut key = (fingerprint, 0);

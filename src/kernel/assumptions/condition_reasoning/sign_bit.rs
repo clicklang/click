@@ -29,9 +29,9 @@
 //! original comparison, so the rule is not applied again inside it.
 
 use super::*;
-use crate::kernel::Bitvector32Term;
 use crate::kernel::CompareRelation as R;
 use crate::kernel::MachineIntegerType as Ty;
+use crate::kernel::MachineTerm;
 use crate::kernel::machine_integer::{
     Relation,
     comparison::{
@@ -97,7 +97,7 @@ fn constant(term: View<'_>) -> Option<i64> {
 /// The rule reads one inverse sign pair; it does not rewrite stored terms.
 fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
     if let Some(bits32_constant!(bits)) = operand.literal() {
-        return ComparisonOperand::Constant(Bitvector32Term::constant_at32(
+        return ComparisonOperand::Constant(MachineTerm::constant_at32(
             destination,
             constant_u32(bits),
         ));
@@ -109,7 +109,7 @@ fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
         return retain(destination, value);
     }
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::Cast {
+        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(value.clone()),
             from: source,
@@ -123,7 +123,7 @@ fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
 
 fn converted(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperand<'static> {
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::machine_integer_cast(
+        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::machine_integer_cast(
             source,
             destination,
             value.clone(),
@@ -136,7 +136,7 @@ fn converted(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
 
 fn unsigned64_wrapper(operand: View<'_>) -> ComparisonOperand<'static> {
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::legacy_cast(
+        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::legacy_cast(
             MachineCastSpelling::UInt64FromInt64,
             Box::new(value.clone()),
         )),
@@ -180,9 +180,9 @@ fn constant_on_the_right<'a>(view: &'a NativeComparisonView<'_>) -> Option<(R, V
 
 fn bound(format: Ty, relation: R, operand: View<'_>, value: i64) -> ConditionTerm {
     let value = match format {
-        Ty::Int64 => Bitvector32Term::int64_constant(value),
-        Ty::UInt64 => Bitvector32Term::uint64_constant(value as u64),
-        _ => Bitvector32Term::constant(value as u32),
+        Ty::Int64 => MachineTerm::int64_constant(value),
+        Ty::UInt64 => MachineTerm::uint64_constant(value as u64),
+        _ => MachineTerm::constant(value as u32),
     };
     condition_for_operand_views(format, relation, [operand, View::Legacy(&value)])
 }
@@ -192,9 +192,9 @@ fn sign_condition(format: Ty, operand: View<'_>, negative: bool) -> ConditionTer
         return bound(format, R::LessThan, operand, 0);
     }
     let zero = if format == Ty::Int64 {
-        Bitvector32Term::int64_constant(0)
+        MachineTerm::int64_constant(0)
     } else {
-        Bitvector32Term::constant(0)
+        MachineTerm::constant(0)
     };
     condition_for_operand_views(format, R::LessEqual, [View::Legacy(&zero), operand])
 }
@@ -273,7 +273,7 @@ impl PureFactContext {
         let (relation, operand, value) = constant_on_the_right(view)?;
         let format = view.format;
         let in_range = |term: View<'_>, lower: i64, upper: i64| {
-            let lower = Bitvector32Term::constant(lower as u32);
+            let lower = MachineTerm::constant(lower as u32);
             self.decide(&condition_for_operand_views(
                 Ty::Int32,
                 R::LessEqual,
@@ -439,18 +439,18 @@ mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp as Op, Variable};
 
-    fn variable(n: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(n))
+    fn variable(n: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(n))
     }
-    fn sum(format: Ty) -> Bitvector32Term {
-        Bitvector32Term::Binary {
+    fn sum(format: Ty) -> MachineTerm {
+        MachineTerm::Binary {
             format,
             op: Op::Add,
             left: Box::new(variable(189201)),
             right: Box::new(variable(189202)),
         }
     }
-    fn shape(condition: ConditionTerm) -> (Ty, Relation, [Bitvector32Term; 2]) {
+    fn shape(condition: ConditionTerm) -> (Ty, Relation, [MachineTerm; 2]) {
         let view = comparison(&condition).unwrap();
         (
             view.format,
@@ -518,14 +518,14 @@ mod tests {
                 } else {
                     Ty::Int32
                 };
-                operands.push(Bitvector32Term::sign_cast32(other, format, sum(other)));
-                operands.push(Bitvector32Term::sign_cast32(
+                operands.push(MachineTerm::sign_cast32(other, format, sum(other)));
+                operands.push(MachineTerm::sign_cast32(
                     other,
                     format,
-                    Bitvector32Term::sign_cast32(format, other, sum(format)),
+                    MachineTerm::sign_cast32(format, other, sum(format)),
                 ));
             } else if format == Ty::UInt64 {
-                operands.push(Bitvector32Term::legacy_cast(
+                operands.push(MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64FromInt64,
                     Box::new(sum(Ty::Int64)),
                 ));
@@ -571,12 +571,12 @@ mod tests {
         let prefix =
             KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [variable.clone(), variable]);
         let mask = KernelTermImport::default()
-            .machine_arithmetic(Ty::UInt32, &Bitvector32Term::uint32_constant(255))
+            .machine_arithmetic(Ty::UInt32, &MachineTerm::uint32_constant(255))
             .unwrap();
         let masked = KernelTerm::machine_binary_shared(Ty::UInt32, Op::BitwiseAnd, [prefix, mask]);
         let cast =
             KernelTerm::machine_cast_shared(Encoding::Generic, Ty::UInt32, Ty::Int32, masked);
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let context = PureFactContext::new();
         for (relation, expected) in [(R::LessThan, false), (R::GreaterEqual, true)] {
             let query = condition_for_operand_views(
@@ -603,22 +603,20 @@ mod tests {
             (Ty::Int16, Ty::UInt16, 32767i32),
         ] {
             let operand = sum(Ty::Int32);
-            let cast = Bitvector32Term::Cast {
+            let cast = MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: source,
                 to: destination,
                 value: Box::new(operand.clone()),
             };
             let query =
-                ConditionTerm::signed_greater_than(cast, Bitvector32Term::constant(maximum as u32));
+                ConditionTerm::signed_greater_than(cast, MachineTerm::constant(maximum as u32));
             let lower = ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant((-maximum - 1) as u32),
+                MachineTerm::constant((-maximum - 1) as u32),
                 operand.clone(),
             );
-            let upper = ConditionTerm::signed_less_equal(
-                operand,
-                Bitvector32Term::constant(maximum as u32),
-            );
+            let upper =
+                ConditionTerm::signed_less_equal(operand, MachineTerm::constant(maximum as u32));
             for (has_lower, has_upper) in
                 [(false, false), (true, false), (false, true), (true, true)]
             {
@@ -644,16 +642,16 @@ mod tests {
             [(Ty::UInt8, Ty::Int8, 255), (Ty::UInt16, Ty::Int16, 65535)]
         {
             let operand = sum(Ty::Int32);
-            let converted = Bitvector32Term::Cast {
+            let converted = MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: source,
                 to: destination,
                 value: Box::new(operand.clone()),
             };
-            let query = ConditionTerm::signed_less_than(converted, Bitvector32Term::constant(0));
+            let query = ConditionTerm::signed_less_than(converted, MachineTerm::constant(0));
             assert!(shared_equivalents(&PureFactContext::new(), &query).is_none());
             let source = Proposition::ConditionIs(
-                ConditionTerm::unsigned_less_equal(operand, Bitvector32Term::constant(max)),
+                ConditionTerm::unsigned_less_equal(operand, MachineTerm::constant(max)),
                 true,
             );
             let facts = PureFactContext::new().assume_proposition(source.clone());
@@ -662,10 +660,7 @@ mod tests {
             // withdrawing just that source does not remove its consequences.
             // Use an independently weaker context for the missing-bound control.
             let weak = PureFactContext::new().assume_condition(
-                ConditionTerm::unsigned_less_equal(
-                    sum(Ty::Int32),
-                    Bitvector32Term::constant(max + 1),
-                ),
+                ConditionTerm::unsigned_less_equal(sum(Ty::Int32), MachineTerm::constant(max + 1)),
                 true,
             );
             assert!(shared_equivalents(&weak, &query).is_none());

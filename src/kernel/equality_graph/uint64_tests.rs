@@ -1,31 +1,31 @@
 use super::*;
 use crate::kernel::VerificationSession;
 
-fn word(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> Bitvector32Term {
-    Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+fn word(memory: &SharedCMemory, pointer: &Pointer, bytes: u32) -> MachineTerm {
+    MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         memory,
         pointer,
         LoadKind::Bits64,
         bytes,
     ))
 }
-fn packed(value: &Bitvector32Term, parent: &Pointer) -> Bitvector32Term {
-    Bitvector32Term::Binary {
+fn packed(value: &MachineTerm, parent: &Pointer) -> MachineTerm {
+    MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
-        left: Box::new(Bitvector32Term::PointerAddress(
+        left: Box::new(MachineTerm::PointerAddress(
             Box::new(parent.clone()),
             crate::kernel::AddressObjectClass::NONE,
         )),
-        right: Box::new(Bitvector32Term::Binary {
+        right: Box::new(MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::BitwiseAnd,
             left: Box::new(value.clone()),
-            right: Box::new(Bitvector32Term::uint64_constant(1)),
+            right: Box::new(MachineTerm::uint64_constant(1)),
         }),
     }
 }
-fn fact(a: Bitvector32Term, b: Bitvector32Term) -> Proposition {
+fn fact(a: MachineTerm, b: MachineTerm) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::uint64_equal(a, b), true)
 }
 fn alias(a: &Pointer, b: &Pointer) -> Proposition {
@@ -35,15 +35,15 @@ fn proved(context: &PureFactContext, goal: &Proposition) -> bool {
     crate::kernel::reasoning::required_obligation_is_exactly_discharged(context, goal)
 }
 
-fn raw_address(pointer: &Pointer) -> Bitvector32Term {
+fn raw_address(pointer: &Pointer) -> MachineTerm {
     // Deliberately bypass the surface constructor's address cancellation.
-    Bitvector32Term::PointerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
+    MachineTerm::PointerAddress(Box::new(pointer.clone()), AddressObjectClass::NONE)
 }
 
 #[test]
 fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() {
     let _session = VerificationSession::enter();
-    let bits = Bitvector32Term::Variable(Variable(960_001));
+    let bits = MachineTerm::Variable(Variable(960_001));
     let pointer = Pointer::symbolic(Variable(960_002));
     let decoded = Pointer::integer_address(bits.clone());
     let equation = fact(bits.clone(), raw_address(&pointer));
@@ -98,13 +98,13 @@ fn integer_address_coordinates_join_word_classes_and_follow_scoped_equalities() 
 #[test]
 fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() {
     let _session = VerificationSession::enter();
-    let bits = Bitvector32Term::Variable(Variable(960_003));
+    let bits = MachineTerm::Variable(Variable(960_003));
     let decoded = Pointer::integer_address(bits.clone());
     let shifted = Pointer {
         block: decoded.block.clone(),
         offset: PointerOffsetTerm::Constant(8),
     };
-    let sum = Bitvector32Term::uint64_add(bits.clone(), Bitvector32Term::uint64_constant(8));
+    let sum = MachineTerm::uint64_add(bits.clone(), MachineTerm::uint64_constant(8));
     let graph = EqualityGraph::default();
     assert!(graph.are_uint64_equal(&raw_address(&shifted), &sum));
     assert!(!graph.are_uint64_equal(&raw_address(&shifted), &bits));
@@ -116,7 +116,7 @@ fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() 
     };
     let after = intern_c_memory(memory.memory().clone().store(
         pointer.clone(),
-        CValue::UInt64(Bitvector32Term::uint64_constant(19)),
+        CValue::UInt64(MachineTerm::uint64_constant(19)),
     ));
     let mut graph = graph;
     assert!(!graph.are_uint64_equal(&word(&memory, &decoded, 8), &word(&memory, &pointer, 8)));
@@ -128,8 +128,8 @@ fn integer_address_definition_preserves_byte_displacements_and_load_snapshots() 
 #[test]
 fn equal_integer_address_words_do_not_merge_pointer_names_or_domains() {
     let _session = VerificationSession::enter();
-    let a = Bitvector32Term::Variable(Variable(960_005));
-    let b = Bitvector32Term::Variable(Variable(960_006));
+    let a = MachineTerm::Variable(Variable(960_005));
+    let b = MachineTerm::Variable(Variable(960_006));
     let p = Pointer::integer_address(a.clone());
     let q = Pointer::integer_address(b.clone());
     let mut context = PureFactContext::new();
@@ -203,10 +203,12 @@ fn wide_reads_preserve_snapshot_width_and_value_sort() {
     let before = intern_c_memory(CMemory::new().with_block("wide", 128));
     let p = Pointer::symbolic(Variable(920_001));
     let q = Pointer::symbolic(Variable(920_002));
-    let after = intern_c_memory(before.memory().clone().store(
-        p.clone(),
-        CValue::UInt64(Bitvector32Term::uint64_constant(9)),
-    ));
+    let after = intern_c_memory(
+        before
+            .memory()
+            .clone()
+            .store(p.clone(), CValue::UInt64(MachineTerm::uint64_constant(9))),
+    );
     let a = word(&before, &p, 8);
     let b = word(&before, &q, 8);
     let mut graph = EqualityGraph::default();
@@ -215,15 +217,15 @@ fn wide_reads_preserve_snapshot_width_and_value_sort() {
     assert!(graph.are_uint64_equal(&a, &b));
     assert!(!sibling.are_uint64_equal(&a, &b));
     assert!(!graph.are_uint64_equal(&a, &word(&after, &q, 8)));
-    let narrow = Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+    let narrow = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
         &before,
         &q,
         LoadKind::Int32,
         4,
     ));
     assert!(!graph.are_uint64_equal(&a, &narrow));
-    let x = Bitvector32Term::Variable(Variable(920_010));
-    let y = Bitvector32Term::Variable(Variable(920_011));
+    let x = MachineTerm::Variable(Variable(920_010));
+    let y = MachineTerm::Variable(Variable(920_011));
     graph.add_int32_equality(&x, &y);
     assert!(!graph.are_uint64_equal(&x, &y));
     let mut wide_only = EqualityGraph::default();
@@ -240,8 +242,8 @@ fn wide_equality_inputs_reconstruct_in_derived_graphs() {
     let _session = VerificationSession::enter();
     let p = Pointer::symbolic(Variable(930_001));
     let q = Pointer::symbolic(Variable(930_002));
-    let a = Bitvector32Term::Variable(Variable(930_003));
-    let b = Bitvector32Term::Variable(Variable(930_004));
+    let a = MachineTerm::Variable(Variable(930_003));
+    let b = MachineTerm::Variable(Variable(930_004));
     let mut graph = EqualityGraph::default();
     let mut derived = graph.input_root();
     graph.add_uint64_equality(&a, &packed(&b, &p));
@@ -266,11 +268,11 @@ fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
     };
     let after = intern_c_memory(memory.memory().clone().store(
         stored_at.clone(),
-        CValue::UInt64(Bitvector32Term::uint64_constant(5)),
+        CValue::UInt64(MachineTerm::uint64_constant(5)),
     ));
     let alias_of = Pointer::symbolic(Variable(960_101));
     let read = word(&after, &alias_of, 8);
-    let five = Bitvector32Term::uint64_constant(5);
+    let five = MachineTerm::uint64_constant(5);
     let base = PureFactContext::new();
     assert!(!base.equality_graph.are_uint64_equal(&read, &five));
     // The read keeps its own term; the alias equates it with the cell.

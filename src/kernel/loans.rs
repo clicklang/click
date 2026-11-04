@@ -22,9 +22,8 @@ use super::primitives::{
     memory_ranges_proven_overlapping,
 };
 use super::{
-    Bitvector32Term, CMemoryRange, CResource, CResourceFact, CResourceSnapshot,
-    CResourceTransferRole, PureFactContext, ResourceContext, ResourceDescription,
-    ResourceOccurrenceId, Variable,
+    CMemoryRange, CResource, CResourceFact, CResourceSnapshot, CResourceTransferRole, MachineTerm,
+    PureFactContext, ResourceContext, ResourceDescription, ResourceOccurrenceId, Variable,
 };
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::cmp::Ordering;
@@ -556,7 +555,7 @@ fn without_unindexed_memory(
 ///
 /// A backwards range is how a range says it is empty, and both endpoints are
 /// read as the signed `int32` values they are. Read through
-/// `Bitvector32Term::as_const`, a start of `-1` arrives as `4294967295` and
+/// `MachineTerm::as_const`, a start of `-1` arrives as `4294967295` and
 /// every range beginning below its base — `r[-1..3]` under a callee's
 /// `mutable r[s..e]` called at `-1, 3` — claimed to be empty and took the
 /// barrier's exit: no interval lookup, no symbolic comparison, no refusal,
@@ -655,7 +654,7 @@ fn protected_range_proven_overlapping_with_separation(
     }
     let byte_range = |range: &CMemoryRange| {
         let (base, bytes) = range.byte_footprint();
-        CMemoryRange::new_with_element_width(base, Bitvector32Term::constant(0), bytes, 1)
+        CMemoryRange::new_with_element_width(base, MachineTerm::constant(0), bytes, 1)
     };
     queries.iter().any(|query| {
         protected_ranges.iter().any(|protected| {
@@ -2790,7 +2789,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
             {
                 StableViewPlanError::MissingResource(CResourceFact::Own(
                     fact.resource().clone(),
-                    Box::new(Bitvector32Term::constant(demanded)),
+                    Box::new(MachineTerm::constant(demanded)),
                 ))
             }
             _ => StableViewPlanError::MissingResource(fact.clone()),
@@ -2994,7 +2993,7 @@ pub(crate) fn plan_stable_view_transfer_with_protocol_effect(
                     // Two wide ranges have one extent when their widths and
                     // 64-bit bounds agree.
                     (Some((required_start, required_end)), Some((caller_start, caller_end))) => {
-                        let same = |left: &Bitvector32Term, right: &Bitvector32Term| {
+                        let same = |left: &MachineTerm, right: &MachineTerm| {
                             left == right
                                 || assumptions.decide(&crate::kernel::ConditionTerm::uint64_equal(
                                     left.clone(),

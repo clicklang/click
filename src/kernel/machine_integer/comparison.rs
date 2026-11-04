@@ -8,8 +8,8 @@ pub(crate) use fact_identity::{FactOperand, fact_operand_identity};
 
 use super::{Relation, identity, range, representation};
 use crate::kernel::{
-    Bitvector32Term, ConditionTerm, IntegerTerm, MachineIntegerType, Proposition,
-    SharedIntegerTerm, SharedMachineIntegerTerm,
+    ConditionTerm, IntegerTerm, MachineIntegerType, MachineTerm, Proposition, SharedIntegerTerm,
+    SharedMachineIntegerTerm,
 };
 
 /// A written comparison for structural matching. Unlike checking views, this
@@ -115,7 +115,7 @@ pub(crate) fn condition_for_operand_views(
     let atoms = operands.map(|operand| match operand {
         V::Shared(_) => operand
             .literal()
-            .or_else(|| operand.variable().copied().map(Bitvector32Term::Variable)),
+            .or_else(|| operand.variable().copied().map(MachineTerm::Variable)),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {
@@ -155,8 +155,8 @@ pub(crate) struct NativeComparisonView<'a> {
 #[derive(Clone)]
 pub(crate) enum ComparisonOperand<'a> {
     Observation(SharedMachineIntegerTerm),
-    Constant(Bitvector32Term),
-    Written(&'a Bitvector32Term),
+    Constant(MachineTerm),
+    Written(&'a MachineTerm),
 }
 
 impl ComparisonOperand<'_> {
@@ -168,7 +168,7 @@ impl ComparisonOperand<'_> {
         }
     }
 
-    pub(super) fn boxed_value(&self) -> &Bitvector32Term {
+    pub(super) fn boxed_value(&self) -> &MachineTerm {
         match self {
             Self::Observation(machine) => machine.value(),
             Self::Constant(value) => value,
@@ -234,7 +234,7 @@ impl NativeComparisonView<'_> {
                 for (kept, other) in [(a, b), (b, a)] {
                     if same(format, kept, partner) {
                         let zero =
-                            ComparisonOperand::Constant(Bitvector32Term::constant_at32(format, 0));
+                            ComparisonOperand::Constant(MachineTerm::constant_at32(format, 0));
                         return Some(if reverse {
                             result(zero, owned(other))
                         } else {
@@ -640,7 +640,7 @@ pub(crate) fn narrow_comparison_as_int32(condition: &ConditionTerm) -> Option<Co
     if format.format().bits() >= 32 {
         return None;
     }
-    let widen = |term: &Bitvector32Term| {
+    let widen = |term: &MachineTerm| {
         super::conversion::convert_term(*format, MachineIntegerType::Int32, term.clone())
     };
     Some(ConditionTerm::machine_compare(
@@ -713,11 +713,11 @@ fn integer_comparisons_of_widenings(condition: &ConditionTerm, value: bool) -> V
     else {
         return Vec::new();
     };
-    let widening = |side: &Bitvector32Term| side.narrow_widening32_operand().is_some();
+    let widening = |side: &MachineTerm| side.narrow_widening32_operand().is_some();
     if !widening(left) && !widening(right) {
         return Vec::new();
     }
-    let side = |term: &Bitvector32Term| -> Option<SharedIntegerTerm> {
+    let side = |term: &MachineTerm| -> Option<SharedIntegerTerm> {
         if !widening(term) && term.constant32().is_none() {
             return None;
         }
@@ -823,8 +823,8 @@ mod borrowed_comparison_tests {
                 let condition = ConditionTerm::Compare {
                     format,
                     relation,
-                    left: Box::new(Bitvector32Term::Variable(Variable(982412))),
-                    right: Box::new(Bitvector32Term::Variable(Variable(982413))),
+                    left: Box::new(MachineTerm::Variable(Variable(982412))),
+                    right: Box::new(MachineTerm::Variable(Variable(982413))),
                 };
                 let ConditionTerm::Compare { left, right, .. } = &condition else {
                     unreachable!()

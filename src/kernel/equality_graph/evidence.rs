@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(in crate::kernel) fn scalar_evidence_pair(
     condition: &ConditionTerm,
     value: bool,
-) -> Option<(Bitvector32Term, Bitvector32Term)> {
+) -> Option<(MachineTerm, MachineTerm)> {
     if !value {
         return None;
     }
@@ -171,10 +171,7 @@ impl EqualityGraph {
             })
     }
 
-    pub(in crate::kernel) fn scalar_evidence_class(
-        &self,
-        term: &Bitvector32Term,
-    ) -> Vec<Bitvector32Term> {
+    pub(in crate::kernel) fn scalar_evidence_class(&self, term: &MachineTerm) -> Vec<MachineTerm> {
         if self.admitted.scalar_evidence_inputs.is_empty() {
             return Vec::new();
         }
@@ -230,8 +227,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_scalar_evidence_path(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> Option<Vec<BitvectorEqualityDerivationStep>> {
         if left == right
             || equality_graph_term_key(left) != *left
@@ -240,7 +237,7 @@ impl EqualityGraph {
             return None;
         }
         let mut visited = BTreeSet::new();
-        let mut parents = BTreeMap::<Bitvector32Term, (Bitvector32Term, Proposition)>::new();
+        let mut parents = BTreeMap::<MachineTerm, (MachineTerm, Proposition)>::new();
         let mut pending = vec![left.clone()];
         while let Some(current) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
@@ -300,7 +297,7 @@ impl EqualityGraph {
     /// The existing class summary nominates the constant, but does not supply
     /// the written premise. State that equality explicitly when a chain or
     /// arithmetic folding is needed to derive it. Ambiguous classes decline.
-    pub(in crate::kernel) fn direct_scalar_constant(&self, term: &Bitvector32Term) -> Option<u32> {
+    pub(in crate::kernel) fn direct_scalar_constant(&self, term: &MachineTerm) -> Option<u32> {
         if let Some(value) = term.as_const() {
             return Some(value);
         }
@@ -308,7 +305,7 @@ impl EqualityGraph {
         let (_, R::Known(value)) = self.scalar_constant_class(term)? else {
             return None;
         };
-        let literal = Bitvector32Term::constant(value as u32);
+        let literal = MachineTerm::constant(value as u32);
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             for (left, right) in [(term, &literal), (&literal, term)] {
                 crate::instrumentation::record_deterministic_work(1);

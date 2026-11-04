@@ -83,8 +83,8 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_uint64_equalities(
         &self,
-        term: &Bitvector32Term,
-    ) -> impl Iterator<Item = (&Bitvector32Term, &ConditionTerm)> {
+        term: &MachineTerm,
+    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
         self.admitted
             .bitvector64_equality_facts
             .get(term)
@@ -168,8 +168,8 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn recorded_uint64_equals(
         &self,
-        term: &Bitvector32Term,
-    ) -> Vec<(Bitvector32Term, ConditionTerm)> {
+        term: &MachineTerm,
+    ) -> Vec<(MachineTerm, ConditionTerm)> {
         let exact = self
             .admitted
             .bitvector64_equality_facts
@@ -224,7 +224,7 @@ impl EqualityGraph {
 impl EqualityGraph {
     pub(in crate::kernel) fn exact_literal_sources(
         &self,
-        term: &Bitvector32Term,
+        term: &MachineTerm,
     ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
         self.admitted.exact_constant_equalities.get(term)
     }
@@ -249,7 +249,7 @@ impl EqualityGraph {
                 if self
                     .admitted
                     .bitvector64_equality_facts
-                    .contains_key(&Bitvector32Term::Variable(*variable))
+                    .contains_key(&MachineTerm::Variable(*variable))
                 {
                     return None;
                 }

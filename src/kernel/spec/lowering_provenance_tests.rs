@@ -4,7 +4,7 @@ use super::*;
 /// resolves every bound occurrence to the binder's variable; the kernel
 /// never binds a quantifier by its source spelling.
 fn bound(variable: Variable) -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)))
+    SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
 }
 
 fn positive(expression: SpecExpression) -> SpecProposition {
@@ -157,8 +157,8 @@ fn a_definedness_guard_under_an_existential_stays_under_its_binder() {
     let overflows = Proposition::signed_arithmetic_domain(
         crate::kernel::MachineIntegerType::Int32,
         crate::kernel::MachineBinaryOp::Add,
-        &Bitvector32Term::Variable(Variable(41)),
-        &Bitvector32Term::constant(1),
+        &MachineTerm::Variable(Variable(41)),
+        &MachineTerm::constant(1),
     );
     let Proposition::Exists { var, body, .. } = &goal else {
         panic!("the lowered goal is an existential, got {goal:?}");

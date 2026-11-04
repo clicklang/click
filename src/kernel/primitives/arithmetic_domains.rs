@@ -7,17 +7,17 @@ impl ConditionTerm {
     /// or remainder pair. C promotes narrow operands before reaching this helper.
     pub(crate) fn signed_division_exception_tests(
         format: MachineIntegerType,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> [Self; 2] {
         let (minimum, minus_one) = match format {
             MachineIntegerType::Int32 => (
-                Bitvector32Term::constant(i32::MIN as u32),
-                Bitvector32Term::constant(u32::MAX),
+                MachineTerm::constant(i32::MIN as u32),
+                MachineTerm::constant(u32::MAX),
             ),
             MachineIntegerType::Int64 => (
-                Bitvector32Term::int64_constant(i64::MIN),
-                Bitvector32Term::int64_constant(-1),
+                MachineTerm::int64_constant(i64::MIN),
+                MachineTerm::int64_constant(-1),
             ),
             _ => unreachable!("native signed division uses int32 or int64"),
         };
@@ -36,7 +36,7 @@ mod construction_tests {
     fn domain_construction_retains_symbolic_truths_for_obligation_discharge() {
         let value = IntegerTerm::from_machine(
             MachineIntegerType::Int64,
-            Bitvector32Term::Variable(Variable(987000)),
+            MachineTerm::Variable(Variable(987000)),
         )
         .unwrap();
         // An already written symbolic bound stays a proposition. The domain
@@ -89,8 +89,7 @@ mod construction_tests {
             (Ty::Int32, Ty::UInt32, false),
         ] {
             let value =
-                IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(987001)))
-                    .unwrap();
+                IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(987001))).unwrap();
             let range = Proposition::arithmetic_result_range(destination, value);
             assert_eq!(
                 matches!(
@@ -106,8 +105,8 @@ mod construction_tests {
 impl Proposition {
     pub(crate) fn signed_division_exclusion(
         format: MachineIntegerType,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> Self {
         let [minimum, minus_one] =
             ConditionTerm::signed_division_exception_tests(format, left, right);
@@ -119,12 +118,12 @@ impl Proposition {
 
     pub(crate) fn signed_division_defined(
         format: MachineIntegerType,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> Self {
         let zero = match format {
-            MachineIntegerType::Int32 => Bitvector32Term::constant(0),
-            MachineIntegerType::Int64 => Bitvector32Term::int64_constant(0),
+            MachineIntegerType::Int32 => MachineTerm::constant(0),
+            MachineIntegerType::Int64 => MachineTerm::int64_constant(0),
             _ => unreachable!("native signed division uses int32 or int64"),
         };
         Self::And(
@@ -167,8 +166,8 @@ impl Proposition {
     pub(crate) fn signed_arithmetic_domain(
         format: MachineIntegerType,
         op: MachineBinaryOp,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> Self {
         let a = IntegerTerm::from_machine(format, left.clone()).expect("arithmetic operand");
         let b = IntegerTerm::from_machine(format, right.clone()).expect("arithmetic operand");
@@ -222,21 +221,21 @@ impl ConditionTerm {
     /// even when that original count is invalid.
     pub(crate) fn signed_shift_result_fits(
         format: MachineIntegerType,
-        left: Bitvector32Term,
-        count: Bitvector32Term,
+        left: MachineTerm,
+        count: MachineTerm,
     ) -> Self {
         let constant = |n: u64| {
             crate::kernel::machine_integer::range::constant_word(format, &n.into())
                 .expect("shift bound fits")
         };
         let bits = format.format().bits();
-        let masked = Bitvector32Term::machine_binary(
+        let masked = MachineTerm::machine_binary(
             format,
             MachineBinaryOp::BitwiseAnd,
             count,
             constant((bits - 1).into()),
         );
-        let bound = Bitvector32Term::machine_binary(
+        let bound = MachineTerm::machine_binary(
             format,
             MachineBinaryOp::ShiftRight,
             constant(if bits == 32 {

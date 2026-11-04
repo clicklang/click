@@ -24,8 +24,8 @@ fn indexed_fact(index: u32) -> Proposition {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(0))),
-            right: Box::new(Bitvector32Term::constant(index)),
+            left: Box::new(MachineTerm::Variable(Variable(0))),
+            right: Box::new(MachineTerm::constant(index)),
         },
         true,
     )
@@ -126,7 +126,7 @@ fn is_one_arithmetic_certificate_over(steps: &[ProofStep], expected: &[ClickProp
 /// kernel value prints as no source name. The typed-rule fixtures therefore
 /// state their int32 premises over named parameters `x0`, `x1`, ..., bound
 /// to the kernel `terms` in order; any other term stays a literal value.
-fn named_int32(terms: &[Bitvector32Term], term: &Bitvector32Term) -> ContractExpression {
+fn named_int32(terms: &[MachineTerm], term: &MachineTerm) -> ContractExpression {
     match terms.iter().position(|named| named == term) {
         Some(index) => ContractExpression::CFragment(CExpression::Variable(format!("x{index}"))),
         None => ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone()))),
@@ -135,7 +135,7 @@ fn named_int32(terms: &[Bitvector32Term], term: &Bitvector32Term) -> ContractExp
 
 /// A C function whose int32 parameters are [`named_int32`]'s names, and the
 /// arguments that bind them to `terms`.
-fn named_int32_function(terms: &[Bitvector32Term]) -> (syntax::C0Function, Vec<CExpression>) {
+fn named_int32_function(terms: &[MachineTerm]) -> (syntax::C0Function, Vec<CExpression>) {
     let parameters = (0..terms.len())
         .map(|index| format!("int32 x{index}"))
         .collect::<Vec<_>>()
@@ -150,7 +150,7 @@ fn named_int32_function(terms: &[Bitvector32Term]) -> (syntax::C0Function, Vec<C
 }
 
 /// [`named_int32`]'s names as a pure theorem's values.
-fn named_int32_values(terms: &[Bitvector32Term]) -> BTreeMap<String, CValue> {
+fn named_int32_values(terms: &[MachineTerm]) -> BTreeMap<String, CValue> {
     terms
         .iter()
         .enumerate()
@@ -163,19 +163,19 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
     // Loop-closure subproofs have a fixed-state context, not an execution
     // branch. Their failed goals use the source local holding a copied value,
     // even when a generated temporary with the same value sorts before it.
-    let len = Bitvector32Term::Variable(Variable(70));
-    let size = Bitvector32Term::Variable(Variable(94));
+    let len = MachineTerm::Variable(Variable(70));
+    let size = MachineTerm::Variable(Variable(94));
     let state = CState::new()
         .with_local("len", CValue::UInt64(len.clone()))
         .with_local("chunk_size", CValue::UInt64(size.clone()))
         .with_local("__rust_checked_94", CValue::UInt64(size.clone()));
-    let remainder = Bitvector32Term::uint64_remainder(len, size.clone());
+    let remainder = MachineTerm::uint64_remainder(len, size.clone());
     let goal = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(remainder.clone()),
-            right: Box::new(Bitvector32Term::uint64_constant(0)),
+            right: Box::new(MachineTerm::uint64_constant(0)),
         },
         true,
     );
@@ -184,7 +184,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(size),
-            right: Box::new(Bitvector32Term::uint64_constant(22208)),
+            right: Box::new(MachineTerm::uint64_constant(22208)),
         },
         true,
     )];
@@ -192,7 +192,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         left: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(remainder))),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(CValue::UInt64(
-            Bitvector32Term::uint64_constant(0),
+            MachineTerm::uint64_constant(0),
         ))),
     };
     let snapshots = RecordedSnapshots::new();
@@ -229,8 +229,8 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
 
 #[test]
 fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
-    let before = Bitvector32Term::Variable(Variable(70));
-    let after = Bitvector32Term::Variable(Variable(71));
+    let before = MachineTerm::Variable(Variable(70));
+    let after = MachineTerm::Variable(Variable(71));
     let entry = CState::new().with_local("remaining", CValue::UInt64(before.clone()));
     let state = CState::new().with_local("remaining", CValue::UInt64(after.clone()));
     let side = Proposition::ConditionIs(
@@ -384,8 +384,8 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(Bitvector32Term::constant(0)),
-                        right: Box::new(Bitvector32Term::Variable(Variable(30))),
+                        left: Box::new(MachineTerm::constant(0)),
+                        right: Box::new(MachineTerm::Variable(Variable(30))),
                     },
                     true,
                 )),
@@ -393,8 +393,8 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(Bitvector32Term::Variable(Variable(30))),
-                        right: Box::new(Bitvector32Term::constant(16)),
+                        left: Box::new(MachineTerm::Variable(Variable(30))),
+                        right: Box::new(MachineTerm::constant(16)),
                     },
                     true,
                 )),
@@ -402,7 +402,7 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
             Box::new(Proposition::CMemoryLoadable {
                 memory: CMemory::new().with_block("sum", 16),
                 base: pointer,
-                bytes: Bitvector32Term::Variable(Variable(30)),
+                bytes: MachineTerm::Variable(Variable(30)),
                 wide: false,
             }),
         )),
@@ -432,10 +432,10 @@ fn invariant_bundle_leaf_fixture() -> (Proposition, Proposition) {
 
 #[test]
 fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
-    let x = Bitvector32Term::Variable(Variable(101));
-    let y = Bitvector32Term::Variable(Variable(102));
-    let two = Bitvector32Term::constant(2);
-    let comparison = |left: Bitvector32Term, right: Bitvector32Term| {
+    let x = MachineTerm::Variable(Variable(101));
+    let y = MachineTerm::Variable(Variable(102));
+    let two = MachineTerm::constant(2);
+    let comparison = |left: MachineTerm, right: MachineTerm| {
         (
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -517,11 +517,11 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
             };
             let old_memory = CMemory::new().with_block("atomic-extract-cell", 4).store(
                 pointer.clone(),
-                CValue::Int32(Bitvector32Term::Variable(Variable(8_000_100))),
+                CValue::Int32(MachineTerm::Variable(Variable(8_000_100))),
             );
             let current_memory = old_memory.clone().store(
                 pointer.clone(),
-                CValue::Int32(Bitvector32Term::Variable(Variable(8_000_101))),
+                CValue::Int32(MachineTerm::Variable(Variable(8_000_101))),
             );
             let old_state = CState::new().with_memory(old_memory);
             let current_state = CState::new().with_memory(current_memory);
@@ -907,7 +907,7 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
     };
     let memory = CMemory::new().with_block("cell", 4).store(
         pointer.clone(),
-        CValue::Int32(Bitvector32Term::Variable(Variable(11))),
+        CValue::Int32(MachineTerm::Variable(Variable(11))),
     );
     let conjunct = |binder| Proposition::ForAll {
         name: Default::default(),
@@ -917,12 +917,12 @@ fn both_and_preserves_exact_binders_and_saved_snapshots() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     memory.clone().into(),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(Bitvector32Term::Variable(Variable(binder))),
+                right: Box::new(MachineTerm::Variable(Variable(binder))),
             },
             true,
         )),
@@ -1803,8 +1803,8 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::constant(0)),
-            right: Box::new(Bitvector32Term::constant(1)),
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -1879,8 +1879,8 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(8_765_432))),
-                right: Box::new(Bitvector32Term::constant(7)),
+                left: Box::new(MachineTerm::Variable(Variable(8_765_432))),
+                right: Box::new(MachineTerm::constant(7)),
             },
             true,
         )),
@@ -2340,8 +2340,8 @@ fn statement_fact_prefix_preserves_successor_order_without_copying_ambient_histo
 
 #[test]
 fn check_availability_probes_equivalent_condition_polarities_by_exact_index() {
-    let left = Bitvector32Term::Variable(Variable(80_000));
-    let right = Bitvector32Term::Variable(Variable(80_001));
+    let left = MachineTerm::Variable(Variable(80_000));
+    let right = MachineTerm::Variable(Variable(80_001));
     let available = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -2420,8 +2420,8 @@ fn outcome_fact_deltas_share_ambient_facts_and_preserve_unfold_provenance() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(index))),
-                right: Box::new(Bitvector32Term::Variable(Variable(index))),
+                left: Box::new(MachineTerm::Variable(Variable(index))),
+                right: Box::new(MachineTerm::Variable(Variable(index))),
             },
             true,
         )),
@@ -3128,8 +3128,8 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::constant(7)),
+            left: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -3337,8 +3337,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(source_variable)),
-                right: Box::new(Bitvector32Term::constant(7)),
+                left: Box::new(MachineTerm::Variable(source_variable)),
+                right: Box::new(MachineTerm::constant(7)),
             },
             true,
         )),
@@ -3352,8 +3352,8 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(goal_variable)),
-                right: Box::new(Bitvector32Term::constant(7)),
+                left: Box::new(MachineTerm::Variable(goal_variable)),
+                right: Box::new(MachineTerm::constant(7)),
             },
             true,
         )),
@@ -3547,12 +3547,12 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
     let values = BTreeMap::from([
         (
             "x".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(9_100_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(9_100_000))),
         ),
         ("y".to_string(), int32(1)),
         (
             "z".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(9_100_001))),
+            CValue::Int32(MachineTerm::Variable(Variable(9_100_001))),
         ),
         ("w".to_string(), int32(3)),
     ]);
@@ -3700,15 +3700,15 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
     let values = BTreeMap::from([
         (
             "x".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(9_101_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(9_101_000))),
         ),
         (
             "y".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(9_101_001))),
+            CValue::Int32(MachineTerm::Variable(Variable(9_101_001))),
         ),
         (
             "z".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(9_101_002))),
+            CValue::Int32(MachineTerm::Variable(Variable(9_101_002))),
         ),
     ]);
     let base_context = PureTheoremContext {
@@ -3911,7 +3911,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         memory: CMemory::new(),
         values: BTreeMap::from([(
             "x".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(8_000_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(8_000_000))),
         )]),
         array_refs: BTreeMap::new(),
         requires: Vec::new(),
@@ -3933,8 +3933,8 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::Variable(variable)),
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::Variable(variable)),
             },
             true,
         )),
@@ -4030,7 +4030,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
     let theorem_environment = TheoremEnvironment::new(&[]);
-    let x_value = CValue::Int32(Bitvector32Term::Variable(Variable(8_700_000)));
+    let x_value = CValue::Int32(MachineTerm::Variable(Variable(8_700_000)));
     let arguments = vec![CExpression::Value(x_value)];
     let value = |constant| ContractExpression::CFragment(CExpression::Value(int32(constant)));
     let variable =
@@ -4233,8 +4233,8 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = CState::new();
-    let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_000_000)));
-    let right = CValue::Int32(Bitvector32Term::Variable(Variable(8_000_001)));
+    let left = CValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
+    let right = CValue::Int32(MachineTerm::Variable(Variable(8_000_001)));
     let arguments = vec![CExpression::Value(left.clone())];
     let premise = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(left.clone())),
@@ -4402,9 +4402,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     let function = parsed_function.to_kernel_function();
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(CValue::Int32(
-        Bitvector32Term::constant(7),
-    ))];
+    let arguments = [CExpression::Value(CValue::Int32(MachineTerm::constant(7)))];
     let state = CState::new();
     let true_fact = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
     let requirement = Proposition::Or(Box::new(true_fact.clone()), Box::new(true_fact.clone()));
@@ -4793,9 +4791,7 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
     let function = parsed_function.to_kernel_function();
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(CValue::Int32(
-        Bitvector32Term::constant(7),
-    ))];
+    let arguments = [CExpression::Value(CValue::Int32(MachineTerm::constant(7)))];
     let root = Proof::for_execution_frontier(
         "smart branch refusal",
         0,
@@ -4885,9 +4881,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let function = parsed_function.to_kernel_function();
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(&[]);
-    let arguments = [CExpression::Value(CValue::Int32(
-        Bitvector32Term::constant(7),
-    ))];
+    let arguments = [CExpression::Value(CValue::Int32(MachineTerm::constant(7)))];
     let state = CState::new().with_memory(CMemory::new().with_block(
         block,
         4 * u32::try_from(cells).expect("test array size should fit in a block"),
@@ -4916,7 +4910,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
             ),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(5),
+                MachineTerm::constant(5),
             ))),
         };
         let source_lowered = lower_fixed_state_proposition_with_assumptions(
@@ -5066,8 +5060,8 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = CState::new();
-    let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_000_000)));
-    let right = CValue::Int32(Bitvector32Term::Variable(Variable(8_000_001)));
+    let left = CValue::Int32(MachineTerm::Variable(Variable(8_000_000)));
+    let right = CValue::Int32(MachineTerm::Variable(Variable(8_000_001)));
     let arguments = vec![CExpression::Value(left.clone())];
     let premise = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(left.clone())),
@@ -5207,9 +5201,9 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let state = CState::new();
-    let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_050_000)));
-    let right = CValue::Int32(Bitvector32Term::Variable(Variable(8_050_001)));
-    let choose_left = CValue::Int32(Bitvector32Term::Variable(Variable(8_050_002)));
+    let left = CValue::Int32(MachineTerm::Variable(Variable(8_050_000)));
+    let right = CValue::Int32(MachineTerm::Variable(Variable(8_050_001)));
+    let choose_left = CValue::Int32(MachineTerm::Variable(Variable(8_050_002)));
     let arguments = vec![
         CExpression::Value(left.clone()),
         CExpression::Value(right.clone()),
@@ -5513,8 +5507,8 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let state = CState::new();
-    let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_100_000)));
-    let right = CValue::Int32(Bitvector32Term::Variable(Variable(8_100_001)));
+    let left = CValue::Int32(MachineTerm::Variable(Variable(8_100_000)));
+    let right = CValue::Int32(MachineTerm::Variable(Variable(8_100_001)));
     let arguments = vec![CExpression::Value(left.clone())];
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments);
     let premise = ClickProposition::Comparison {
@@ -5686,10 +5680,10 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
     let theorem_environment = TheoremEnvironment::new(click_file.theorem_definitions());
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(8_150_000)),
-    ))];
-    let result = CValue::Int32(Bitvector32Term::Variable(Variable(8_150_001)));
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(8_150_000),
+    )))];
+    let result = CValue::Int32(MachineTerm::Variable(Variable(8_150_001)));
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let surface_propositions = SurfacePropositionMap::default();
@@ -5783,10 +5777,10 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 bounded(int32 upper) { return upper; }")
         .expect("test C function should parse");
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(8_155_001)),
-    ))];
-    let result = CValue::Int32(Bitvector32Term::Variable(Variable(8_155_000)));
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(8_155_001),
+    )))];
+    let result = CValue::Int32(MachineTerm::Variable(Variable(8_155_000)));
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let kernel_premise = lower_fixed_state_proposition_with_assumptions(
@@ -5879,29 +5873,29 @@ fn fixed_state_transport_can_follow_another_checked_step() {
     let state = CState::new();
     let source = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(8_160_000)),
+            MachineTerm::Variable(Variable(8_160_000)),
         ))),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(8_160_001)),
+            MachineTerm::Variable(Variable(8_160_001)),
         ))),
     };
     let extracted = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(8_160_002)),
+            MachineTerm::Variable(Variable(8_160_002)),
         ))),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(8_160_003)),
+            MachineTerm::Variable(Variable(8_160_003)),
         ))),
     };
     let missing = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(8_160_006)),
+            MachineTerm::Variable(Variable(8_160_006)),
         ))),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(8_160_007)),
+            MachineTerm::Variable(Variable(8_160_007)),
         ))),
     };
     let recorded_snapshots = RecordedSnapshots::new();
@@ -6008,14 +6002,14 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
     let terms = [
-        Bitvector32Term::Variable(Variable(8_150_000)),
-        Bitvector32Term::Variable(Variable(8_150_001)),
-        Bitvector32Term::Variable(Variable(8_150_002)),
-        Bitvector32Term::Variable(Variable(8_150_003)),
+        MachineTerm::Variable(Variable(8_150_000)),
+        MachineTerm::Variable(Variable(8_150_001)),
+        MachineTerm::Variable(Variable(8_150_002)),
+        MachineTerm::Variable(Variable(8_150_003)),
     ];
     let named = terms.clone();
     let named_values = named_int32_values(&named);
-    let expression = |term: &Bitvector32Term| named_int32(&named, term);
+    let expression = |term: &MachineTerm| named_int32(&named, term);
     let comparison = |left: usize, operator, right: usize| ClickProposition::Comparison {
         left: expression(&terms[left]),
         operator,
@@ -6155,23 +6149,23 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
-    let value = Bitvector32Term::Variable(Variable(8_174_000));
+    let value = MachineTerm::Variable(Variable(8_174_000));
     let named = [value.clone()];
     let named_values = named_int32_values(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let equality = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::constant(2)),
+        right: expression(MachineTerm::constant(2)),
     };
     let goal_surface = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(binary_node!(
             Int32,
             Subtract,
             Box::new(value),
-            Box::new(Bitvector32Term::constant(2)),
+            Box::new(MachineTerm::constant(2)),
         )),
     };
     let lower = |surface: &ClickProposition| {
@@ -6246,7 +6240,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
-    let selected_term = Bitvector32Term::Variable(Variable(8_174_050));
+    let selected_term = MachineTerm::Variable(Variable(8_174_050));
     let named = [selected_term.clone()];
     let named_values = named_int32_values(&named);
     let equality_fact = Proposition::ConditionIs(
@@ -6254,7 +6248,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(selected_term.clone()),
-            right: Box::new(Bitvector32Term::constant(2)),
+            right: Box::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -6266,9 +6260,9 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
                 Int32,
                 Subtract,
                 Box::new(selected_term.clone()),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::constant(1)),
             )),
-            right: Box::new(Bitvector32Term::constant(1)),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -6293,10 +6287,10 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(
+                        left: Box::new(MachineTerm::Variable(Variable(
                             9_000_000 + u64::from(index),
                         ))),
-                        right: Box::new(Bitvector32Term::constant(10_000 + index)),
+                        right: Box::new(MachineTerm::constant(10_000 + index)),
                     },
                     true,
                 )
@@ -6358,12 +6352,12 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
-    let left = Bitvector32Term::Variable(Variable(8_174_060));
-    let right = Bitvector32Term::Variable(Variable(8_174_061));
+    let left = MachineTerm::Variable(Variable(8_174_060));
+    let right = MachineTerm::Variable(Variable(8_174_061));
     let named = [left.clone(), right.clone()];
     let named_values = named_int32_values(&named);
-    let zero = Bitvector32Term::constant(0);
-    let equality = |term: &Bitvector32Term| {
+    let zero = MachineTerm::constant(0);
+    let equality = |term: &MachineTerm| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -6374,7 +6368,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
             true,
         )
     };
-    let surface_equality = |term: &Bitvector32Term| ClickProposition::Comparison {
+    let surface_equality = |term: &MachineTerm| ClickProposition::Comparison {
         left: named_int32(&named, term),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
@@ -6411,10 +6405,10 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(
+                        left: Box::new(MachineTerm::Variable(Variable(
                             9_100_000 + u64::from(index),
                         ))),
-                        right: Box::new(Bitvector32Term::constant(20_000 + index)),
+                        right: Box::new(MachineTerm::constant(20_000 + index)),
                     },
                     true,
                 )
@@ -6498,15 +6492,15 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let value = Bitvector32Term::Variable(Variable(8_174_100));
-    let upper = Bitvector32Term::Variable(Variable(8_174_101));
+    let value = MachineTerm::Variable(Variable(8_174_100));
+    let upper = MachineTerm::Variable(Variable(8_174_101));
     let named = [value.clone(), upper.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let equality = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::constant(1)),
+        right: expression(MachineTerm::constant(1)),
     };
     let upper_bound = ClickProposition::Comparison {
         left: expression(value.clone()),
@@ -6515,7 +6509,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
     };
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
         ))),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
@@ -6525,7 +6519,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
             Int32,
             Subtract,
             Box::new(value),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::constant(1)),
         )),
         operator: ComparisonOperator::LessEqual,
         right: expression(upper),
@@ -6620,12 +6614,12 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
     let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let terms = [
-        Bitvector32Term::Variable(Variable(8_175_000)),
-        Bitvector32Term::Variable(Variable(8_175_001)),
-        Bitvector32Term::Variable(Variable(8_175_002)),
-        Bitvector32Term::Variable(Variable(8_175_003)),
+        MachineTerm::Variable(Variable(8_175_000)),
+        MachineTerm::Variable(Variable(8_175_001)),
+        MachineTerm::Variable(Variable(8_175_002)),
+        MachineTerm::Variable(Variable(8_175_003)),
     ];
-    let expression = |term: &Bitvector32Term| {
+    let expression = |term: &MachineTerm| {
         ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
     };
     let equal = |left: usize, right: usize| ClickProposition::Comparison {
@@ -6711,13 +6705,13 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
     let state = CState::new();
     let arguments = Vec::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let left = Bitvector32Term::Variable(Variable(8_176_000));
-    let right = Bitvector32Term::Variable(Variable(8_176_001));
-    let one = Bitvector32Term::constant(1);
-    let expression = |term: &Bitvector32Term| {
+    let left = MachineTerm::Variable(Variable(8_176_000));
+    let right = MachineTerm::Variable(Variable(8_176_001));
+    let one = MachineTerm::constant(1);
+    let expression = |term: &MachineTerm| {
         ContractExpression::CFragment(CExpression::Value(CValue::Int32(term.clone())))
     };
-    let equality = |left: &Bitvector32Term, right: &Bitvector32Term| ClickProposition::Comparison {
+    let equality = |left: &MachineTerm, right: &MachineTerm| ClickProposition::Comparison {
         left: expression(left),
         operator: ComparisonOperator::Equal,
         right: expression(right),
@@ -6739,7 +6733,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(binary_node!(Int32, Add, Box::new(left), Box::new(right))),
-            right: Box::new(Bitvector32Term::constant(2)),
+            right: Box::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -6805,14 +6799,14 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
     let terms = [
-        Bitvector32Term::Variable(Variable(8_176_000)),
-        Bitvector32Term::Variable(Variable(8_176_001)),
-        Bitvector32Term::Variable(Variable(8_176_002)),
-        Bitvector32Term::Variable(Variable(8_176_003)),
+        MachineTerm::Variable(Variable(8_176_000)),
+        MachineTerm::Variable(Variable(8_176_001)),
+        MachineTerm::Variable(Variable(8_176_002)),
+        MachineTerm::Variable(Variable(8_176_003)),
     ];
     let named = terms.clone();
     let (parsed_function, arguments) = named_int32_function(&named);
-    let expression = |term: &Bitvector32Term| named_int32(&named, term);
+    let expression = |term: &MachineTerm| named_int32(&named, term);
     let comparison = |left: usize, operator, right: usize| ClickProposition::Comparison {
         left: expression(&terms[left]),
         operator,
@@ -6925,12 +6919,12 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let value = Bitvector32Term::Variable(Variable(8_177_000));
-    let upper = Bitvector32Term::Variable(Variable(8_177_001));
+    let value = MachineTerm::Variable(Variable(8_177_000));
+    let upper = MachineTerm::Variable(Variable(8_177_001));
     let named = [value.clone(), upper.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
     let named_values = named_int32_values(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let premise = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
@@ -6939,32 +6933,32 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
     let definedness_premise = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::constant(i32::MAX as u32)),
+        right: expression(MachineTerm::constant(i32::MAX as u32)),
     };
     let positive_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
     };
     let successor_lower_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(2)),
+        left: expression(MachineTerm::constant(2)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let strong_constant_lower_premise = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(3)),
+        left: expression(MachineTerm::constant(3)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let negated_successor_premise = ClickProposition::Not(Box::new(ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::constant(2)),
+        right: expression(MachineTerm::constant(2)),
     }));
     let increment_constant_upper_premise = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::LessEqual,
-        right: expression(Bitvector32Term::constant(3)),
+        right: expression(MachineTerm::constant(3)),
     };
     let surface_bound_goal = ClickProposition::Comparison {
         left: ContractExpression::Add(
@@ -7003,17 +6997,17 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
         ),
     };
     let surface_nonnegative_goal = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let surface_successor_lower_goal = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::GreaterEqual,
-        right: expression(Bitvector32Term::constant(1)),
+        right: expression(MachineTerm::constant(1)),
     };
     let surface_adjacent_strict_goal = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(1)),
+        left: expression(MachineTerm::constant(1)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
     };
@@ -7023,7 +7017,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
         ),
         operator: ComparisonOperator::LessEqual,
-        right: expression(Bitvector32Term::constant(5)),
+        right: expression(MachineTerm::constant(5)),
     };
     let lower = |surface: &ClickProposition| {
         crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -7260,7 +7254,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let parsed_function = syntax::parse_function("int32 noop(int32 x) { return x; }")
         .expect("test C function should parse");
-    let value = Bitvector32Term::Variable(Variable(8_177_900));
+    let value = MachineTerm::Variable(Variable(8_177_900));
     let arguments = vec![CExpression::Value(CValue::Int32(value))];
     let state = CState::new();
     let point = ProgramPointRef {
@@ -7363,14 +7357,14 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let lower = Bitvector32Term::Variable(Variable(8_178_000));
-    let value = Bitvector32Term::Variable(Variable(8_178_001));
-    let upper = Bitvector32Term::Variable(Variable(8_178_002));
+    let lower = MachineTerm::Variable(Variable(8_178_000));
+    let value = MachineTerm::Variable(Variable(8_178_001));
+    let upper = MachineTerm::Variable(Variable(8_178_002));
     let named = [lower.clone(), value.clone(), upper.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), &arguments);
     let named_values = named_int32_values(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let lower_premise = ClickProposition::Comparison {
         left: expression(lower.clone()),
         operator: ComparisonOperator::LessEqual,
@@ -7381,7 +7375,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         operator: ComparisonOperator::LessThan,
         right: expression(upper.clone()),
     };
-    let increment = |term: Bitvector32Term| {
+    let increment = |term: MachineTerm| {
         ContractExpression::Add(
             Box::new(expression(term)),
             Box::new(ContractExpression::CFragment(CExpression::Value(int32(1)))),
@@ -7675,12 +7669,12 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let left = Bitvector32Term::Variable(Variable(8_178_100));
-    let right = Bitvector32Term::Variable(Variable(8_178_101));
+    let left = MachineTerm::Variable(Variable(8_178_100));
+    let right = MachineTerm::Variable(Variable(8_178_101));
     let named = [left.clone(), right.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
     let named_values = named_int32_values(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let less_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
         operator: ComparisonOperator::LessEqual,
@@ -7859,11 +7853,11 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let left = Bitvector32Term::Variable(Variable(8_178_102));
-    let right = Bitvector32Term::Variable(Variable(8_178_103));
+    let left = MachineTerm::Variable(Variable(8_178_102));
+    let right = MachineTerm::Variable(Variable(8_178_103));
     let named = [left.clone(), right.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let greater_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
         operator: ComparisonOperator::GreaterEqual,
@@ -7958,11 +7952,11 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let left = Bitvector32Term::Variable(Variable(8_178_104));
-    let right = Bitvector32Term::Variable(Variable(8_178_105));
+    let left = MachineTerm::Variable(Variable(8_178_104));
+    let right = MachineTerm::Variable(Variable(8_178_105));
     let named = [left.clone(), right.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let less_equal = ClickProposition::Comparison {
         left: expression(left.clone()),
         operator: ComparisonOperator::LessEqual,
@@ -8054,19 +8048,19 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let value = Bitvector32Term::Variable(Variable(8_178_100));
-    let amount = Bitvector32Term::Variable(Variable(8_178_101));
+    let value = MachineTerm::Variable(Variable(8_178_100));
+    let amount = MachineTerm::Variable(Variable(8_178_101));
     let named = [value.clone(), amount.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
     let named_values = named_int32_values(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let amount_nonnegative = ClickProposition::Comparison {
         left: expression(amount.clone()),
         operator: ComparisonOperator::GreaterEqual,
-        right: expression(Bitvector32Term::constant(0)),
+        right: expression(MachineTerm::constant(0)),
     };
     let headroom = ContractExpression::Subtract(
-        Box::new(expression(Bitvector32Term::constant(i32::MAX as u32))),
+        Box::new(expression(MachineTerm::constant(i32::MAX as u32))),
         Box::new(expression(amount.clone())),
     );
     let within_headroom = ClickProposition::Comparison {
@@ -8234,24 +8228,24 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let value = Bitvector32Term::Variable(Variable(8_178_900));
+    let value = MachineTerm::Variable(Variable(8_178_900));
     let named = [value.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let equal_zero = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::constant(0)),
+        right: expression(MachineTerm::constant(0)),
     };
     let equal_one = ClickProposition::Comparison {
         left: expression(value.clone()),
         operator: ComparisonOperator::Equal,
-        right: expression(Bitvector32Term::constant(1)),
+        right: expression(MachineTerm::constant(1)),
     };
     let disjunction =
         ClickProposition::Or(Box::new(equal_zero.clone()), Box::new(equal_one.clone()));
     let surface_goal = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value),
     };
@@ -8344,28 +8338,28 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let left_value = Bitvector32Term::Variable(Variable(8_178_910));
-    let right_value = Bitvector32Term::Variable(Variable(8_178_911));
+    let left_value = MachineTerm::Variable(Variable(8_178_910));
+    let right_value = MachineTerm::Variable(Variable(8_178_911));
     let named = [left_value.clone(), right_value.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let left_positive = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(1)),
+        left: expression(MachineTerm::constant(1)),
         operator: ComparisonOperator::LessEqual,
         right: expression(left_value.clone()),
     };
     let right_positive = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(1)),
+        left: expression(MachineTerm::constant(1)),
         operator: ComparisonOperator::LessEqual,
         right: expression(right_value.clone()),
     };
     let left_nonnegative = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(left_value.clone()),
     };
     let right_nonnegative = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(right_value.clone()),
     };
@@ -8377,7 +8371,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
     let negative = ClickProposition::Comparison {
         left: expression(left_value.clone()),
         operator: ComparisonOperator::LessThan,
-        right: expression(Bitvector32Term::constant(0)),
+        right: expression(MachineTerm::constant(0)),
     };
     let reflexive = ClickProposition::Comparison {
         left: expression(left_value.clone()),
@@ -8537,12 +8531,12 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let state = CState::new();
     let recorded_snapshots = RecordedSnapshots::new();
-    let value = Bitvector32Term::Variable(Variable(8_179_000));
-    let bound = Bitvector32Term::Variable(Variable(8_179_001));
+    let value = MachineTerm::Variable(Variable(8_179_000));
+    let bound = MachineTerm::Variable(Variable(8_179_001));
     let named = [value.clone(), bound.clone()];
     let (parsed_function, arguments) = named_int32_function(&named);
     let named_values = named_int32_values(&named);
-    let expression = |term: Bitvector32Term| named_int32(&named, &term);
+    let expression = |term: MachineTerm| named_int32(&named, &term);
     let predecessor = || {
         ContractExpression::Subtract(
             Box::new(expression(value.clone())),
@@ -8550,12 +8544,12 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         )
     };
     let positive = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessThan,
         right: expression(value.clone()),
     };
     let nonnegative = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(0)),
+        left: expression(MachineTerm::constant(0)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
@@ -8565,14 +8559,14 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         right: expression(bound.clone()),
     };
     let one_le = ClickProposition::Comparison {
-        left: expression(Bitvector32Term::constant(1)),
+        left: expression(MachineTerm::constant(1)),
         operator: ComparisonOperator::LessEqual,
         right: expression(value.clone()),
     };
     let surface_goals = [
         (
             ClickProposition::Comparison {
-                left: expression(Bitvector32Term::constant(0)),
+                left: expression(MachineTerm::constant(0)),
                 operator: ComparisonOperator::LessEqual,
                 right: predecessor(),
             },
@@ -8602,7 +8596,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
         ),
         (
             ClickProposition::Comparison {
-                left: expression(Bitvector32Term::constant(0)),
+                left: expression(MachineTerm::constant(0)),
                 operator: ComparisonOperator::LessEqual,
                 right: predecessor(),
             },
@@ -8763,8 +8757,8 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
-    let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_200_000)));
-    let right = CValue::Int32(Bitvector32Term::Variable(Variable(8_200_001)));
+    let left = CValue::Int32(MachineTerm::Variable(Variable(8_200_000)));
+    let right = CValue::Int32(MachineTerm::Variable(Variable(8_200_001)));
     let premise = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
@@ -8891,8 +8885,8 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         proof_theorem_definitions(&click_file).expect("standard theorem prelude should load");
     let theorem_environment = TheoremEnvironment::new(&theorem_definitions);
     let memory = CMemory::new();
-    let left = CValue::Int32(Bitvector32Term::Variable(Variable(8_210_000)));
-    let right = CValue::Int32(Bitvector32Term::Variable(Variable(8_210_001)));
+    let left = CValue::Int32(MachineTerm::Variable(Variable(8_210_000)));
+    let right = CValue::Int32(MachineTerm::Variable(Variable(8_210_001)));
     let premise = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(left.clone())),
         operator: ComparisonOperator::LessThan,
@@ -9033,7 +9027,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
     let function = parsed_function.to_kernel_function();
     let function_environment = CExecutionEnvironment::new();
     let state = CState::new();
-    let argument = CExpression::Value(CValue::Int32(Bitvector32Term::constant(7)));
+    let argument = CExpression::Value(CValue::Int32(MachineTerm::constant(7)));
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let arguments = vec![argument.clone()];
     let surface = ClickProposition::PredicateCall {
@@ -9044,7 +9038,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         name: "selected".to_string(),
         arguments: vec![
             Term::CState(Box::new(state.clone())),
-            Term::CValue(CValue::Int32(Bitvector32Term::constant(7))),
+            Term::CValue(CValue::Int32(MachineTerm::constant(7))),
         ],
     };
 
@@ -9154,7 +9148,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         name: "selected".to_string(),
         arguments: vec![
             Term::CState(Box::new(state.clone())),
-            Term::CValue(CValue::Int32(Bitvector32Term::constant(7))),
+            Term::CValue(CValue::Int32(MachineTerm::constant(7))),
         ],
     };
     let owner = CallerSourceOwnerId::ordinary("test.c", "identity");
@@ -9981,9 +9975,9 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
     let state = CState::new();
     let arguments = vec![CExpression::Value(int32(3)), CExpression::Value(int32(5))];
     let term = |variable| {
-        ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(variable)),
-        )))
+        ContractExpression::CFragment(CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            Variable(variable),
+        ))))
     };
     let source = ClickProposition::Comparison {
         left: term(8_170_000),
@@ -10576,7 +10570,7 @@ fn close_invariants_is_a_transactional_constant_local_proof_step() {
 #[ignore = "nightly: 1.4s in the parallel gate"]
 fn proof_condition_split_filters_conflicts_without_rebuilding_facts() {
     let symbolic = Variable(50_000);
-    let state = CState::new().with_local("x", int32(Bitvector32Term::Variable(symbolic)));
+    let state = CState::new().with_local("x", int32(MachineTerm::Variable(symbolic)));
     let condition = CExpression::LessThan(
         Box::new(CExpression::Variable("x".to_string())),
         Box::new(CExpression::Value(int32(0))),
@@ -10701,9 +10695,9 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
     )
     .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(71_000)),
-    ))];
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(71_000),
+    )))];
     let function_environment = CExecutionEnvironment::new();
     let condition = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
@@ -10913,9 +10907,9 @@ fn execution_proof_cases_split_is_logarithmic_in_unrelated_facts() {
     let parsed_function = syntax::parse_function("int32 identity(int32 x) { return x; }")
         .expect("test C function should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(72_000)),
-    ))];
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(72_000),
+    )))];
     let function_environment = CExecutionEnvironment::new();
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
@@ -11020,7 +11014,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
         syntax::parse_function("int32 identity(int32 x) { if (x < 0) {} else {} return x; }")
             .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let argument = CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(60_000))));
+    let argument = CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(60_000))));
     let arguments = vec![argument];
     let function_environment = CExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
@@ -11151,12 +11145,12 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     let state = CState::new().with_resource_context(ResourceContext::new().unchecked_with_fact(
         CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         )),
     ));
     let arguments = vec![
-        CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(60_001)))),
+        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(60_001)))),
         CExpression::Value(CValue::pointer(pointer.clone())),
     ];
     let function_environment = CExecutionEnvironment::new();
@@ -11222,7 +11216,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         else {
             panic!("fresh producer observation should be exact");
         };
-        let crate::kernel::Bitvector32Term::MemoryLoad(memory, _, _) = load else {
+        let crate::kernel::MachineTerm::MemoryLoad(memory, _, _) = load else {
             panic!("fresh producer observation should carry a memory load");
         };
         let conflicting_pointer = Pointer {
@@ -11232,7 +11226,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         let mut producer_facts = crate::kernel::ExecutionFacts::new();
         crate::kernel::record_load_variable_defining_fact(
             *variable,
-            crate::kernel::Bitvector32Term::MemoryLoad(
+            crate::kernel::MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(conflicting_pointer),
                 crate::kernel::LoadKind::Int32,
@@ -11313,8 +11307,8 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(60_001))),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(60_001))),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -11397,7 +11391,7 @@ fn generated_load_source_event_fixture(
             variable: Variable(variable.into()),
             snapshot: crate::kernel::CMemorySnapshotIdentity::of(&CMemory::new()),
             pointer: pointer.clone(),
-            load: Bitvector32Term::MemoryLoad(
+            load: MachineTerm::MemoryLoad(
                 CMemory::new().into(),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -11611,9 +11605,9 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
     )
     .expect("test C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(70_000)),
-    ))];
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(70_000),
+    )))];
     let application = TheoremApplication {
         name: "int32_reflexive".to_string(),
         arguments: vec![ContractExpression::CFragment(arguments[0].clone())],
@@ -11916,9 +11910,9 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             )
             .expect("the ready resource definition should lower"),
         );
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(72_000)),
-    ))];
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(72_000),
+    )))];
     let function_environment = CExecutionEnvironment::new();
     let variable =
         |name: &str| ContractExpression::CFragment(CExpression::Variable(name.to_string()));
@@ -12370,7 +12364,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             name: "marker".to_string(),
             arguments: Vec::new().into(),
         },
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(2),
     );
     let mut normalized_quantity_samples = Vec::new();
     for size in [16_u32, 64, 256, 1024, 4096] {
@@ -12479,8 +12473,8 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
     .expect("test nested interface branch should parse");
     let function = parsed_function.to_kernel_function();
     let arguments = vec![
-        CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(73_000)))),
-        CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(73_001)))),
+        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(73_000)))),
+        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(73_001)))),
     ];
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
@@ -12645,7 +12639,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         vec![CFunctionContractClaim::body_safety()],
         true,
     );
-    let helper_arguments = vec![CExpression::Value(bool_value(Bitvector32Term::Variable(
+    let helper_arguments = vec![CExpression::Value(bool_value(MachineTerm::Variable(
         Variable(80_010),
     )))];
     let artifacts = prove_checked_c_function_execution_with_environment(
@@ -12705,8 +12699,8 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     )
     .with_prelowered_kernel_function(function.clone());
     let arguments = vec![
-        CExpression::Value(bool_value(Bitvector32Term::Variable(Variable(80_011)))),
-        CExpression::Value(bool_value(Bitvector32Term::Variable(Variable(80_012)))),
+        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_011)))),
+        CExpression::Value(bool_value(MachineTerm::Variable(Variable(80_012)))),
     ];
     let predicate_environment = PredicateEnvironment::new(&[]);
     let click_function_environment = ClickFunctionEnvironment::new(&[]);
@@ -12828,9 +12822,9 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
     )
     .expect("test decided C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(75_000)),
-    ))];
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(75_000),
+    )))];
     let function_environment = CExecutionEnvironment::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
     let make_root = |facts: Vec<Proposition>| {
@@ -13100,9 +13094,9 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
     )
     .expect("test terminal C branch should parse");
     let function = parsed_function.to_kernel_function();
-    let arguments = vec![CExpression::Value(CValue::Int32(
-        Bitvector32Term::Variable(Variable(80_000)),
-    ))];
+    let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+        Variable(80_000),
+    )))];
     let function_environment = CExecutionEnvironment::new();
     let mut allocation_samples = Vec::new();
     let resource_environment = ResourceEnvironment::new(click_file.resource_definitions());
@@ -13248,11 +13242,11 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         // and cache authority rather than rebuilding unrelated records.
         let unknown = ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(Variable(80_001)),
+                MachineTerm::Variable(Variable(80_001)),
             ))),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             ))),
         };
         let forked = joined
@@ -13439,11 +13433,11 @@ fn completed_application_retention_does_not_rerun_and_scales() {
     let theorems = TheoremEnvironment::new(&[]);
     let surface = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
         ))),
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
         ))),
     };
     let state = CState::new();
@@ -13542,7 +13536,7 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
     let goal = indexed_fact(10);
     let surface = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(0)),
+            MachineTerm::Variable(Variable(0)),
         ))),
         operator: ComparisonOperator::LessThan,
         right: ContractExpression::CFragment(CExpression::Value(int32(10))),
@@ -13858,7 +13852,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let argument = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(210_520))),
+            value: Box::new(MachineTerm::Variable(Variable(210_520))),
             byte_width: 4,
         },
     };
@@ -13874,8 +13868,8 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_with_element_width(
                 argument.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
                 8,
             ),
         )),
@@ -13965,8 +13959,8 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
     let state = CState::new();
     let snapshots = RecordedSnapshots::new();
     let names = SurfacePropositionMap::default();
-    let left = Bitvector32Term::Variable(Variable(9_104_000));
-    let right = Bitvector32Term::Variable(Variable(9_104_001));
+    let left = MachineTerm::Variable(Variable(9_104_000));
+    let right = MachineTerm::Variable(Variable(9_104_001));
     let equality = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -13981,7 +13975,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -14092,8 +14086,8 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
     let snapshots = RecordedSnapshots::new();
     let names = SurfacePropositionMap::default();
     let parsed = syntax::parse_function("void noop(int32 left, int32 right) {}").unwrap();
-    let left = Bitvector32Term::Variable(Variable(9_104_100));
-    let right = Bitvector32Term::Variable(Variable(9_104_101));
+    let left = MachineTerm::Variable(Variable(9_104_100));
+    let right = MachineTerm::Variable(Variable(9_104_101));
     let arguments = vec![
         CExpression::Value(CValue::Int32(left.clone())),
         CExpression::Value(CValue::Int32(right.clone())),
@@ -14126,7 +14120,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -14194,7 +14188,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         changed_locals.values = changed_locals.values.with_inserted(
             "chosen".into(),
             ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::Variable(Variable(9_104_102)),
+                MachineTerm::Variable(Variable(9_104_102)),
             ))),
         );
         let shadowed =
@@ -14221,8 +14215,8 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
     let snapshots = RecordedSnapshots::new();
     let names = SurfacePropositionMap::default();
     let parsed = syntax::parse_function("void noop(int32 left, int32 right) {}").unwrap();
-    let left = Bitvector32Term::Variable(Variable(9_104_200));
-    let right = Bitvector32Term::Variable(Variable(9_104_201));
+    let left = MachineTerm::Variable(Variable(9_104_200));
+    let right = MachineTerm::Variable(Variable(9_104_201));
     let arguments = vec![
         CExpression::Value(CValue::Int32(left.clone())),
         CExpression::Value(CValue::Int32(right.clone())),
@@ -14241,7 +14235,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(left),
-            right: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -14291,9 +14285,9 @@ fn signed_certificate_premise_keeps_native_addition_when_printed() {
     use crate::kernel::proof::signed_arithmetic::{
         SignedArithmeticCertificate, SignedArithmeticNode, signed_arithmetic_claim,
     };
-    let x = Bitvector32Term::Variable(Variable(985_600));
-    let y = Bitvector32Term::Variable(Variable(985_601));
-    let z = Bitvector32Term::Variable(Variable(985_602));
+    let x = MachineTerm::Variable(Variable(985_600));
+    let y = MachineTerm::Variable(Variable(985_601));
+    let z = MachineTerm::Variable(Variable(985_602));
     let compare = |relation, left, right| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -14305,19 +14299,19 @@ fn signed_certificate_premise_keeps_native_addition_when_printed() {
             true,
         )
     };
-    let sum = Bitvector32Term::add_at(MachineIntegerType::Int32, y.clone(), z.clone());
+    let sum = MachineTerm::add_at(MachineIntegerType::Int32, y.clone(), z.clone());
     let premise = compare(CompareRelation::Equal, x.clone(), sum);
     let mut facts = vec![premise.clone()];
     for term in [y.clone(), z.clone()] {
         facts.push(compare(
             CompareRelation::LessEqual,
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             term.clone(),
         ));
         facts.push(compare(
             CompareRelation::LessEqual,
             term,
-            Bitvector32Term::constant(100),
+            MachineTerm::constant(100),
         ));
     }
     let mut context = pure_identity_fixture();

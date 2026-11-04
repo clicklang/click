@@ -230,7 +230,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// form keeps ordinary store edges out of the symbolic bound producer.
     Shallow,
     Indexed {
-        index: Bitvector32Term,
+        index: MachineTerm,
         lower: RangeBoundEvidence,
         upper: RangeBoundEvidence,
     },
@@ -240,7 +240,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
     /// below it), and `upper` — an exact fact of the context — keeps the
     /// index below the range's constant end ([`unsigned_index_in_range`]).
     UnsignedIndexed {
-        index: Bitvector32Term,
+        index: MachineTerm,
         upper: ConditionTerm,
     },
 }
@@ -258,7 +258,7 @@ pub(in crate::kernel) enum PointerInRangeEvidence {
 pub(in crate::kernel) fn unsigned_index_in_range(
     pointer: &Pointer,
     range: &CMemoryRange,
-) -> Option<(Bitvector32Term, Vec<ConditionTerm>)> {
+) -> Option<(MachineTerm, Vec<ConditionTerm>)> {
     crate::instrumentation::record_deterministic_work(1);
     let (start, end) = range.int32_bounds()?;
     let start = i64::from(start.as_const()? as i32);
@@ -283,8 +283,8 @@ pub(in crate::kernel) fn unsigned_index_in_range(
         return None;
     }
     let index = *value;
-    let end_term = Bitvector32Term::uint64_constant(end as u64);
-    let last = Bitvector32Term::uint64_constant((end - 1) as u64);
+    let end_term = MachineTerm::uint64_constant(end as u64);
+    let last = MachineTerm::uint64_constant((end - 1) as u64);
     let guards = vec![
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
@@ -401,7 +401,7 @@ pub(in crate::kernel) enum RangeDisjointFromPointerEvidence {
         end: i64,
     },
     ForwardOffset {
-        offset: Bitvector32Term,
+        offset: MachineTerm,
         positive: PositiveTermEvidence,
     },
 }
@@ -751,10 +751,8 @@ impl MemoryDagHopJustification {
                     && kept.contains_range(range)
                     && first.checks(pointer, range, assumptions)
                     && last.checks(
-                        &pointer.offset_by_elements(
-                            Bitvector32Term::constant(bytes / width - 1),
-                            width,
-                        ),
+                        &pointer
+                            .offset_by_elements(MachineTerm::constant(bytes / width - 1), width),
                         range,
                         assumptions,
                     )
@@ -830,33 +828,32 @@ impl MemoryDagHopJustification {
 
 impl PositiveTermEvidence {
     pub(in crate::kernel) fn for_term(
-        term: &Bitvector32Term,
+        term: &MachineTerm,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
         if signed_bitvector_constant(term).is_some_and(|value| value > 0) {
             return Some(Self::Constant);
         }
-        let exact = ConditionTerm::signed_less_than(Bitvector32Term::constant(0), term.clone());
+        let exact = ConditionTerm::signed_less_than(MachineTerm::constant(0), term.clone());
         if assumptions.exact_condition_value(&exact) == Some(true) {
             return Some(Self::ExactCondition(exact));
         }
-        let lower_bound =
-            ConditionTerm::signed_less_equal(Bitvector32Term::constant(1), term.clone());
+        let lower_bound = ConditionTerm::signed_less_equal(MachineTerm::constant(1), term.clone());
         (assumptions.exact_condition_value(&lower_bound) == Some(true))
             .then_some(Self::OneLowerBound(lower_bound))
     }
 
-    fn checks(&self, term: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
+    fn checks(&self, term: &MachineTerm, assumptions: &PureFactContext) -> bool {
         match self {
             Self::Constant => signed_bitvector_constant(term).is_some_and(|value| value > 0),
             Self::ExactCondition(condition) => {
                 condition
-                    == &ConditionTerm::signed_less_than(Bitvector32Term::constant(0), term.clone())
+                    == &ConditionTerm::signed_less_than(MachineTerm::constant(0), term.clone())
                     && assumptions.exact_condition_value(condition) == Some(true)
             }
             Self::OneLowerBound(condition) => {
                 condition
-                    == &ConditionTerm::signed_less_equal(Bitvector32Term::constant(1), term.clone())
+                    == &ConditionTerm::signed_less_equal(MachineTerm::constant(1), term.clone())
                     && assumptions.exact_condition_value(condition) == Some(true)
             }
         }
@@ -911,7 +908,7 @@ impl RangeDisjointFromPointerEvidence {
                     && bytes <= range.element_width()
                     && forward_range_offset_from_pointer(range, pointer) == Some(offset.clone())
                     && positive.checks(
-                        &Bitvector32Term::add(offset.clone(), range.start().clone()),
+                        &MachineTerm::add(offset.clone(), range.start().clone()),
                         assumptions,
                     )
             }
@@ -1430,7 +1427,7 @@ pub(in crate::kernel) fn retirement_inside_its_call_havoc(step: &CMemoryDerivati
 pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
     base: &SharedCMemory,
     allocation_base: &Pointer,
-    bytes: &Bitvector32Term,
+    bytes: &MachineTerm,
 ) -> bool {
     retired_allocation_inside_call_havoc(base, allocation_base, bytes)
 }
@@ -1438,7 +1435,7 @@ pub(in crate::kernel) fn retirement_keeps_its_call_havocs_forget_mark(
 fn retired_allocation_inside_call_havoc(
     base: &SharedCMemory,
     allocation_base: &Pointer,
-    bytes: &Bitvector32Term,
+    bytes: &MachineTerm,
 ) -> bool {
     let mut current = base.clone();
     loop {
@@ -1461,13 +1458,13 @@ fn retired_allocation_inside_call_havoc(
 fn range_structurally_covers_allocation(
     range: &CMemoryRange,
     allocation_base: &Pointer,
-    bytes: &Bitvector32Term,
+    bytes: &MachineTerm,
 ) -> bool {
     // This arithmetic rule uses signed 32-bit indices; wide ranges are undecided.
     if range.wide_bounds().is_some() {
         return false;
     }
-    if range.base() != allocation_base || range.start() != &Bitvector32Term::constant(0) {
+    if range.base() != allocation_base || range.start() != &MachineTerm::constant(0) {
         return false;
     }
     let covered = memory_range_byte_count(
@@ -1832,23 +1829,23 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(984_300));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             4,
         );
         let facts = PureFactContext::new();
         let signed_index = binary_node!(
             Int32,
             Add,
-            Box::new(Bitvector32Term::Variable(Variable(984_301))),
-            Box::new(Bitvector32Term::Variable(Variable(984_302))),
+            Box::new(MachineTerm::Variable(Variable(984_301))),
+            Box::new(MachineTerm::Variable(Variable(984_302))),
         );
         let signed_access = base.offset_by_elements(signed_index, 4);
         assert!(PointerInRangeEvidence::for_pointer(&signed_access, &wide, &facts).is_none());
         assert!(!range_structurally_covers_allocation(
             &wide,
             &base,
-            &Bitvector32Term::constant(4)
+            &MachineTerm::constant(4)
         ));
         let indexed = PointerInRangeEvidence::Indexed {
             index: 0u32.into(),
@@ -1891,7 +1888,7 @@ mod separated_range_frame_tests {
         PureFactContext,
         Vec<Proposition>,
     ) {
-        let word = |id| Bitvector32Term::Variable(Variable(id));
+        let word = |id| MachineTerm::Variable(Variable(id));
         let start = word(9_941_001);
         let loaded_start = word(9_941_002);
         let end = word(9_941_003);
@@ -2029,7 +2026,7 @@ mod unsigned_index_membership_tests {
         Pointer {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(Bitvector32Term::Variable(index)),
+                value: Box::new(MachineTerm::Variable(index)),
                 byte_width: 1,
                 unsigned: true,
             },
@@ -2040,8 +2037,8 @@ mod unsigned_index_membership_tests {
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(index)),
-            right: Box::new(Bitvector32Term::uint64_constant(end)),
+            left: Box::new(MachineTerm::Variable(index)),
+            right: Box::new(MachineTerm::uint64_constant(end)),
         }
     }
 
@@ -2070,8 +2067,8 @@ mod unsigned_index_membership_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::UInt64,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::Variable(k)),
-                right: Box::new(Bitvector32Term::uint64_constant(3)),
+                left: Box::new(MachineTerm::Variable(k)),
+                right: Box::new(MachineTerm::uint64_constant(3)),
             },
             true,
         );
@@ -2088,7 +2085,7 @@ mod unsigned_index_membership_tests {
         let context = PureFactContext::new().assume_condition(below(k, 5), true);
         assert!(PointerInRangeEvidence::for_pointer(&read, &range, &context).is_none());
         let retained = PointerInRangeEvidence::UnsignedIndexed {
-            index: Bitvector32Term::Variable(k),
+            index: MachineTerm::Variable(k),
             upper: below(k, 5),
         };
         assert!(!retained.checks(&read, &range, &context));
@@ -2128,7 +2125,7 @@ mod unsigned_index_membership_tests {
         let signed = Pointer {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(Bitvector32Term::Variable(k)),
+                value: Box::new(MachineTerm::Variable(k)),
                 byte_width: 1,
                 unsigned: false,
             },
@@ -2139,7 +2136,7 @@ mod unsigned_index_membership_tests {
         let wide = Pointer {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(Bitvector32Term::Variable(k)),
+                value: Box::new(MachineTerm::Variable(k)),
                 byte_width: 4,
                 unsigned: true,
             },
@@ -2163,7 +2160,7 @@ mod empty_range_frame_tests {
     fn empty_frames_cover_every_access_width_but_not_nonempty_ranges() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer::symbolic(Variable(9_951_000));
-        let bound = Bitvector32Term::Variable(Variable(9_951_001));
+        let bound = MachineTerm::Variable(Variable(9_951_001));
         let context = PureFactContext::new();
         let ranges = [
             CMemoryRange::new(base.clone(), bound.clone(), bound.clone()),
@@ -2173,8 +2170,8 @@ mod empty_range_frame_tests {
             CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into()),
             CMemoryRange::new_wide(
                 base.clone(),
-                Bitvector32Term::uint64_constant(0),
-                Bitvector32Term::uint64_constant(1),
+                MachineTerm::uint64_constant(0),
+                MachineTerm::uint64_constant(1),
                 4,
             ),
         ];

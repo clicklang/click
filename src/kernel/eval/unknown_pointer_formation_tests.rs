@@ -161,10 +161,7 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
     let p = pointer(930_450);
     let state = CState::new()
         .with_local("data", CValue::Pointer(p.clone()))
-        .with_local(
-            "length",
-            CValue::UInt64(Bitvector32Term::uint64_constant(2)),
-        );
+        .with_local("length", CValue::UInt64(MachineTerm::uint64_constant(2)));
     let function = c_function(
         CType::Void,
         "slice_metadata",
@@ -180,7 +177,7 @@ fn slice_entry_bounds_allow_formation_without_read_authority() {
         &[
             CExpression::Value(CValue::Pointer(p.clone())),
             CExpression::Value(
-                CValue::UInt64(Bitvector32Term::uint64_constant(2))
+                CValue::UInt64(MachineTerm::uint64_constant(2))
                     .complete_word(Pointer::symbolic(Variable(930_451))),
             ),
         ],
@@ -255,15 +252,15 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     let start = 1u64 << 32;
     let range = CMemoryRange::from_pointer_value_wide(
         &p,
-        Bitvector32Term::uint64_constant(start),
-        Bitvector32Term::uint64_constant(start + 2),
+        MachineTerm::uint64_constant(start),
+        MachineTerm::uint64_constant(start + 2),
         4,
     );
     let coverage = p.opaque_coverage_fact(&range).unwrap();
     let context = PureFactContext::new().assume_proposition(coverage.clone());
     let position = |index| {
         p.pointer()
-            .offset_by_typed_elements(Bitvector32Term::uint64_constant(index), 4, true, true)
+            .offset_by_typed_elements(MachineTerm::uint64_constant(index), 4, true, true)
     };
     assert!(context.opaque_pointer_covers(&p, &position(start + 1), 4));
     assert!(context.opaque_pointer_covers(&p, &position(start + 2), 0));
@@ -280,8 +277,8 @@ fn native_coverage_keeps_high_bits_and_interior_bytes() {
     );
     let record = CMemoryRange::from_pointer_value_wide(
         &p,
-        Bitvector32Term::uint64_constant(0),
-        Bitvector32Term::uint64_constant(2),
+        MachineTerm::uint64_constant(0),
+        MachineTerm::uint64_constant(2),
         16,
     );
     let context =
@@ -300,13 +297,13 @@ fn split_formation_fixture() -> (
     let p = CPointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(930_999)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(930_999)), 4),
         },
         CType::Int32Pointer,
     );
-    let from = Bitvector32Term::Variable(Variable(930_601));
-    let to = Bitvector32Term::Variable(Variable(930_602));
-    let i = Bitvector32Term::Variable(Variable(930_603));
+    let from = MachineTerm::Variable(Variable(930_601));
+    let to = MachineTerm::Variable(Variable(930_602));
+    let i = MachineTerm::Variable(Variable(930_603));
     let facts = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_than(0u32.into(), from.clone()),
@@ -365,12 +362,12 @@ fn formation_selects_the_containing_symbolic_piece_beside_prefix_and_suffix_view
 fn null_pointer_zero_offsets_use_scalar_evidence_and_preserve_refusals() {
     for (wide, unsigned) in [(false, false), (true, false), (true, true)] {
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = Bitvector32Term::Variable(Variable(933_000));
-        let alias = Bitvector32Term::Variable(Variable(933_001));
+        let offset = MachineTerm::Variable(Variable(933_000));
+        let alias = MachineTerm::Variable(Variable(933_001));
         let constant = |n| match (wide, unsigned) {
-            (true, true) => Bitvector32Term::uint64_constant(n),
-            (true, false) => Bitvector32Term::int64_constant(n as i64),
-            (false, _) => Bitvector32Term::constant(n as u32),
+            (true, true) => MachineTerm::uint64_constant(n),
+            (true, false) => MachineTerm::int64_constant(n as i64),
+            (false, _) => MachineTerm::constant(n as u32),
         };
         let equal = |a, b| {
             Proposition::ConditionIs(
@@ -437,13 +434,13 @@ fn a_registered_zero_index_permits_null_pointer_formation() {
     let load =
         crate::kernel::eval::load_variable_for_exact_cell(&memory, &address, LoadKind::Int32, 4);
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(Bitvector32Term::Variable(load), 0u32.into()),
+        ConditionTerm::equal(MachineTerm::Variable(load), 0u32.into()),
         true,
     );
     let result = pointer_offset_by_elements_paths(
         &CState::new(),
         CPointerValue::new(Pointer::null(), CType::Int32Pointer),
-        Bitvector32Term::MemoryLoad(memory, Box::new(address), LoadKind::Int32),
+        MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32),
         4,
         false,
         false,

@@ -75,7 +75,7 @@ fn unaddressable_scalar_owners_do_not_restate_observable_memory_frames() {
 fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
     for size in [16u64, 64, 256, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = |id| Bitvector32Term::Variable(Variable(42_000 + id));
+        let variable = |id| MachineTerm::Variable(Variable(42_000 + id));
         let mut assumptions = PureFactContext::new();
         for index in 0..size {
             assumptions = assumptions.assume_condition(
@@ -86,8 +86,8 @@ fn memory_range_endpoint_graph_matching_scales_without_fact_index() {
         let resource = |index| {
             CResource::Memory(CMemoryRange::new(
                 Pointer::symbolic(Variable(43_000)),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::add(variable(index), Bitvector32Term::constant(1)),
+                MachineTerm::constant(0),
+                MachineTerm::add(variable(index), MachineTerm::constant(1)),
             ))
         };
         let left = resource(0);
@@ -125,13 +125,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
     let view = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: storage.clone(),
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let goal = Proposition::CMemoryLoadable {
         memory: memory.clone(),
         base: result.clone(),
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     assert!(
@@ -155,7 +155,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                     block: format!("unrelated-view-{index}").into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                bytes: Bitvector32Term::constant(4),
+                bytes: MachineTerm::constant(4),
                 wide: false,
             });
         }
@@ -165,7 +165,7 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         assert!(!context.proves(&Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: result.offset_by_bytes(4),
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         }));
         work
@@ -186,13 +186,13 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         .assume_proposition(Proposition::CMemoryLoadable {
             memory: before,
             base: local,
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         });
     assert!(!context.proves(&Proposition::CMemoryLoadable {
         memory: after,
         base: result,
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     }));
 }
@@ -211,7 +211,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: Bitvector32Term::constant(8),
+                    bytes: MachineTerm::constant(8),
                     wide: false,
                 });
             for index in 0..size {
@@ -221,7 +221,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                         block: target.block.clone(),
                         offset: PointerOffsetTerm::Constant(index as i64),
                     },
-                    bytes: Bitvector32Term::constant(4),
+                    bytes: MachineTerm::constant(4),
                     wide: false,
                 });
             }
@@ -229,7 +229,7 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 assumptions.proves(&Proposition::CMemoryLoadable {
                     memory: memory.clone(),
                     base: target.clone(),
-                    bytes: Bitvector32Term::constant(4),
+                    bytes: MachineTerm::constant(4),
                     wide: false,
                 })
             });
@@ -250,7 +250,7 @@ fn composition_store_separation_uses_checked_aliases_without_scanning_other_owne
 
     let parameter = |id| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     };
     let write_base = parameter(95_001);
     let read = parameter(95_002);
@@ -328,20 +328,20 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         block: "chain".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let cell = |index: usize| base.offset_by_elements(Bitvector32Term::constant(index as u32), 4);
+    let cell = |index: usize| base.offset_by_elements(MachineTerm::constant(index as u32), 4);
     let mut samples = Vec::new();
     for length in [32usize, 64, 96, 128] {
         let mut memory =
-            CMemory::new().store(cell(length), CValue::Int32(Bitvector32Term::constant(42)));
+            CMemory::new().store(cell(length), CValue::Int32(MachineTerm::constant(42)));
         for index in (0..length).rev() {
-            let next = Bitvector32Term::MemoryLoad(
+            let next = MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory),
                 Box::new(cell(index + 1)),
                 crate::kernel::LoadKind::Int32,
             );
             memory = CMemory::new().store(cell(index), CValue::Int32(next));
         }
-        let load = Bitvector32Term::MemoryLoad(
+        let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(cell(0)),
             crate::kernel::LoadKind::Int32,
@@ -349,7 +349,7 @@ fn load_equality_resolves_through_stored_cell_chains_of_any_length() {
         let (proven, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::reasoning::bitvector_terms_proven_equal_for_memory_resolution(
                 &load,
-                &Bitvector32Term::constant(42),
+                &MachineTerm::constant(42),
                 &PureFactContext::new(),
             )
         });
@@ -373,7 +373,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
     let _session = crate::kernel::VerificationSession::enter();
     let memory = CMemory::new();
     let base = Pointer::symbolic(Variable(9_319_000));
-    let index = Bitvector32Term::Variable(Variable(9_319_001));
+    let index = MachineTerm::Variable(Variable(9_319_001));
     let count = |length| {
         binary_node!(
             Int32,
@@ -382,7 +382,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
                 Int32,
                 Add,
                 Box::new(index.clone()),
-                Box::new(Bitvector32Term::constant(length)),
+                Box::new(MachineTerm::constant(length)),
             )),
             Box::new(index.clone()),
         )
@@ -401,7 +401,7 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
                 Int32,
                 Multiply,
                 Box::new(count(4)),
-                Box::new(Bitvector32Term::constant(width)),
+                Box::new(MachineTerm::constant(width)),
             )
         };
         let mut costs = Vec::new();
@@ -410,18 +410,14 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
             for offset in 0..size {
                 context = context.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(9_319_100 + offset)),
-                        Bitvector32Term::constant(offset as u32),
+                        MachineTerm::Variable(Variable(9_319_100 + offset)),
+                        MachineTerm::constant(offset as u32),
                     ),
                     true,
                 );
             }
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.proves_memory_loadable(
-                    &memory,
-                    &base,
-                    &Bitvector32Term::constant(4 * width),
-                )
+                context.proves_memory_loadable(&memory, &base, &MachineTerm::constant(4 * width))
             });
             assert!(proved);
             costs.push(work);
@@ -431,47 +427,47 @@ fn shifted_constant_view_extents_match_without_ambient_search() {
         assert!(!context.proves_memory_loadable(
             &memory,
             &base,
-            &Bitvector32Term::constant(4 * width + 1),
+            &MachineTerm::constant(4 * width + 1),
         ));
         assert!(!context.proves_memory_loadable(
             &memory,
             &Pointer::symbolic(Variable(9_319_002)),
-            &Bitvector32Term::constant(4 * width),
+            &MachineTerm::constant(4 * width),
         ));
     }
     assert!(!PureFactContext::new().proves_memory_loadable(
         &memory,
         &base,
-        &Bitvector32Term::constant(4),
+        &MachineTerm::constant(4),
     ));
     let wrapped = binary_node!(
         Int32,
         Multiply,
         Box::new(count(0x4000_0000)),
-        Box::new(Bitvector32Term::constant(4)),
+        Box::new(MachineTerm::constant(4)),
     );
     assert!(
         !PureFactContext::new()
             .assume_proposition(source(wrapped))
-            .proves_memory_loadable(&memory, &base, &Bitvector32Term::constant(4))
+            .proves_memory_loadable(&memory, &base, &MachineTerm::constant(4))
     );
 }
 
 #[test]
 fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
-    let native = Bitvector32Term::Variable(Variable(983_110));
-    let alias = Bitvector32Term::Variable(Variable(983_111));
-    let last = |n| Bitvector32Term::uint64_subtract(n, Bitvector32Term::uint64_constant(1));
+    let native = MachineTerm::Variable(Variable(983_110));
+    let alias = MachineTerm::Variable(Variable(983_111));
+    let last = |n| MachineTerm::uint64_subtract(n, MachineTerm::uint64_constant(1));
     let wide = |n| PointerOffsetTerm::Int64Scaled {
         value: Box::new(n),
         byte_width: 4,
         unsigned: true,
     };
-    let projected = Bitvector32Term::uint32_from_64(last(native.clone()));
+    let projected = MachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
     let bound = ConditionTerm::uint64_less_equal(
         last(native.clone()),
-        Bitvector32Term::uint64_constant(1_073_741_822),
+        MachineTerm::uint64_constant(1_073_741_822),
     );
     let equality = ConditionTerm::uint64_equal(alias.clone(), native.clone());
     let project = |facts: &PureFactContext| {
@@ -482,17 +478,15 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     assert_eq!(project(&bounded), None);
     let equal_only = PureFactContext::new().assume_condition(equality.clone(), true);
     assert_eq!(project(&equal_only), None);
-    let low_bound = ConditionTerm::signed_less_equal(
-        projected.clone(),
-        Bitvector32Term::constant(1_073_741_822),
-    );
+    let low_bound =
+        ConditionTerm::signed_less_equal(projected.clone(), MachineTerm::constant(1_073_741_822));
     assert_eq!(
         project(&equal_only.clone().assume_condition(low_bound, true)),
         None
     );
     let signed_bound = ConditionTerm::int64_signed_less_equal(
         last(native.clone()),
-        Bitvector32Term::int64_constant(1_073_741_822),
+        MachineTerm::int64_constant(1_073_741_822),
     );
     assert_eq!(
         project(&equal_only.clone().assume_condition(signed_bound, true)),
@@ -504,8 +498,8 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
         for i in 0..count {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
-                    Bitvector32Term::Variable(Variable(984_000 + i)),
-                    Bitvector32Term::uint64_constant(7),
+                    MachineTerm::Variable(Variable(984_000 + i)),
+                    MachineTerm::uint64_constant(7),
                 ),
                 true,
             );
@@ -524,7 +518,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     );
     for value in [0, 1_073_741_823, 1u64 << 32, u64::MAX] {
         let actual = value.wrapping_sub(1);
-        let offset = wide(last(Bitvector32Term::uint64_constant(value)));
+        let offset = wide(last(MachineTerm::uint64_constant(value)));
         let answer = crate::kernel::reasoning::element_index_from_offset_with_facts(
             &offset,
             4,
@@ -534,7 +528,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
             answer,
             i32::try_from(actual)
                 .ok()
-                .map(|x| Bitvector32Term::constant(x as u32))
+                .map(|x| MachineTerm::constant(x as u32))
         );
     }
 }
@@ -928,9 +922,9 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
 
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(99_700)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(99_700)), 4),
     };
-    let index = Bitvector32Term::Variable(Variable(99_701));
+    let index = MachineTerm::Variable(Variable(99_701));
     let write = base.offset_by_bytes(12);
     let read = base.offset_by_int32_elements(index.clone());
     let mut samples = Vec::new();
@@ -962,7 +956,7 @@ fn one_owned_member_does_not_trigger_store_alias_reasoning() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(Variable(100_000 + unrelated))),
+                    left: Box::new(MachineTerm::Variable(Variable(100_000 + unrelated))),
                     right: Box::new(1000.into()),
                 },
                 true,
@@ -997,10 +991,7 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(
-                Bitvector32Term::Variable(Variable(9_893_000)),
-                4,
-            ),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_893_000)), 4),
         };
         let outer = CMemoryRange::new(base.clone(), 0u32.into(), 6u32.into());
         let inner = CMemoryRange::new(base, 2u32.into(), 4u32.into());
@@ -1009,14 +1000,14 @@ fn fixed_overlapping_ranges_ignore_unrelated_separation_facts() {
             let a = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::Variable(Variable(9_894_000 + index * 2)),
+                    MachineTerm::Variable(Variable(9_894_000 + index * 2)),
                     4,
                 ),
             };
             let b = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::Variable(Variable(9_894_001 + index * 2)),
+                    MachineTerm::Variable(Variable(9_894_001 + index * 2)),
                     4,
                 ),
             };

@@ -2,9 +2,9 @@
 use super::*;
 #[cfg(test)]
 use crate::kernel::binary_node;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{binary_term, unary_term};
 
 impl Renderer<'_> {
@@ -57,8 +57,8 @@ impl Renderer<'_> {
 
     /// Spell the operator as well as its numeric interpretation. A shared
     /// term arena does not make signed/unsigned or 32/64-bit operations equal.
-    pub(super) fn machine_operation(&mut self, value: &Bitvector32Term) -> bool {
-        use Bitvector32Term::*;
+    pub(super) fn machine_operation(&mut self, value: &MachineTerm) -> bool {
+        use MachineTerm::*;
         let binary = match value {
             binary_term!(Int32, Divide, a, b) => Some((a, b, "bits32", "sdiv")),
             binary_term!(UInt32, Divide, a, b) => Some((a, b, "bits32", "udiv")),
@@ -145,21 +145,21 @@ mod tests {
     fn inventory_fact_kinds_show_operands_instead_of_opaque_counts() {
         let p = Pointer::symbolic(Variable(986_700));
         let memory = CMemory::new();
-        let word = Bitvector32Term::MemoryLoad(
+        let word = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(&memory),
             Box::new(p.clone()),
             LoadKind::Bits64,
         );
         let field = CResource::Memory(CMemoryRange::new_with_element_width(
             p.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
             8,
         ));
         let composite = CResource::Composite {
             name: "rb_child_links".into(),
             arguments: std::sync::Arc::from([AlgebraicValue::C(CValue::Int32(
-                Bitvector32Term::constant(7),
+                MachineTerm::constant(7),
             ))]),
         };
         let model = AlgebraicTerm {
@@ -168,7 +168,7 @@ mod tests {
         };
         let context = ResourceContext::new().unchecked_with_fact(CResourceFact::Own(
             field.clone(),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::constant(1)),
         ));
         let facts = [
             (
@@ -176,13 +176,13 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int64,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Binary {
+                        left: Box::new(MachineTerm::Binary {
                             format: MachineIntegerType::UInt64,
                             op: MachineBinaryOp::BitwiseAnd,
                             left: Box::new(word),
-                            right: Box::new(Bitvector32Term::uint64_constant(1)),
+                            right: Box::new(MachineTerm::uint64_constant(1)),
                         }),
-                        right: Box::new(Bitvector32Term::uint64_constant(0)),
+                        right: Box::new(MachineTerm::uint64_constant(0)),
                     },
                     true,
                 ),
@@ -193,11 +193,11 @@ mod tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::ClickFunctionApplication {
+                        left: Box::new(MachineTerm::ClickFunctionApplication {
                             name: "rb_root_black".into(),
                             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
                         }),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     true,
                 ),
@@ -228,7 +228,7 @@ mod tests {
                 Proposition::CMemoryLoadable {
                     memory,
                     base: p,
-                    bytes: Bitvector32Term::constant(8),
+                    bytes: MachineTerm::constant(8),
                     wide: false,
                 },
                 "bytes:uint32=8",
@@ -244,9 +244,9 @@ mod tests {
             (
                 Proposition::Predicate {
                     name: "__click_volatile_write_123".into(),
-                    arguments: vec![Term::CValue(CValue::UInt64(
-                        Bitvector32Term::uint64_constant(1),
-                    ))],
+                    arguments: vec![Term::CValue(CValue::UInt64(MachineTerm::uint64_constant(
+                        1,
+                    )))],
                 },
                 "volatile-write-event#123(uint64(1u64))",
             ),
@@ -269,7 +269,7 @@ mod tests {
         let first = crate::kernel::intern_c_memory(CMemory::new());
         let second = crate::kernel::intern_c_memory(CMemory::new().with_block("trace_changed", 4));
         let load = |memory, kind| {
-            Term::Bitvector32(Bitvector32Term::MemoryLoad(
+            Term::Bitvector32(MachineTerm::MemoryLoad(
                 memory,
                 Box::new(address.clone()),
                 kind,
@@ -309,11 +309,11 @@ mod tests {
 
     #[test]
     fn machine_operations_keep_width_signedness_and_casts() {
-        let a = Box::new(Bitvector32Term::Variable(Variable(986_703)));
-        let b = Box::new(Bitvector32Term::constant(2));
+        let a = Box::new(MachineTerm::Variable(Variable(986_703)));
+        let b = Box::new(MachineTerm::constant(2));
         for (value, expected) in [
             (
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::Int64,
                     op: MachineBinaryOp::Divide,
                     left: a.clone(),
@@ -322,7 +322,7 @@ mod tests {
                 "int64(",
             ),
             (
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Divide,
                     left: a.clone(),
@@ -336,13 +336,13 @@ mod tests {
             ),
             (binary_node!(Int32, ShiftRight, a.clone(), b), "ashr"),
             (
-                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, a),
+                MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, a),
                 "UInt64FromInt32(",
             ),
         ] {
             let text = render(&Proposition::Equal(
                 Term::Bitvector32(value),
-                Term::Bitvector32(Bitvector32Term::constant(0)),
+                Term::Bitvector32(MachineTerm::constant(0)),
             ));
             assert!(text.contains(expected), "{text}");
         }

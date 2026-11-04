@@ -128,14 +128,14 @@ fn exact_return_closers_share_preparation_beside_unrelated_resources() {
 
 #[test]
 fn joint_resource_receipts_ignore_unrelated_holdings() {
-    use crate::kernel::{Bitvector32Term, CResource, CResourceFact, ResourceContext};
+    use crate::kernel::{CResource, CResourceFact, MachineTerm, ResourceContext};
     fn unit(name: String) -> CResourceFact {
         CResourceFact::Own(
             CResource::Token {
                 name,
                 arguments: vec![].into(),
             },
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::constant(1)),
         )
     }
     for size in [64, 256, 1024] {

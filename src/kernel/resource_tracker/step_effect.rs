@@ -522,7 +522,7 @@ fn cell_effect(
                     assumptions,
                 )?;
                 let last_pointer =
-                    pointer.offset_by_elements(Bitvector32Term::constant(bytes / width - 1), width);
+                    pointer.offset_by_elements(MachineTerm::constant(bytes / width - 1), width);
                 let last = super::cell_source::PointerInRangeEvidence::for_pointer(
                     &last_pointer,
                     range,
@@ -574,7 +574,7 @@ fn cell_effect(
                     assumptions,
                 )?;
                 let last_pointer =
-                    pointer.offset_by_elements(Bitvector32Term::constant(bytes / width - 1), width);
+                    pointer.offset_by_elements(MachineTerm::constant(bytes / width - 1), width);
                 let last = super::cell_source::PointerInRangeEvidence::for_pointer(
                     &last_pointer,
                     &range,

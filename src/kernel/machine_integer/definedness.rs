@@ -7,7 +7,7 @@
 
 use super::{FORMATS, Operation, comparison::ComparisonOperand, range, representation};
 #[cfg(test)]
-use crate::kernel::Bitvector32Term;
+use crate::kernel::MachineTerm;
 use crate::kernel::{ConditionTerm, IntegerTerm, MachineIntegerType, Proposition};
 
 /// The formats whose definedness facts the kernel files, narrowest first:
@@ -292,11 +292,11 @@ mod shared_query_tests {
         // (`IntegerTerm::from_machine`), so an operand's word is the one, as
         // written or widened, whose observation in the format gives the
         // operand back.
-        let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<Bitvector32Term> {
+        let carrier = |ty: MachineIntegerType, side: &IntegerTerm| -> Option<MachineTerm> {
             match side {
                 IntegerTerm::Machine(machine) => {
                     let word = machine.value().clone();
-                    let widened = Bitvector32Term::Cast {
+                    let widened = MachineTerm::Cast {
                         spelling: crate::kernel::MachineCastSpelling::Generic,
                         value: Box::new(word.clone()),
                         from: machine.ty(),
@@ -340,16 +340,16 @@ mod shared_query_tests {
         use crate::kernel::{MachineBinaryOp, Variable};
         let _session = crate::kernel::VerificationSession::enter();
         for format in FORMATS {
-            let variable = Bitvector32Term::Variable(Variable(982201));
+            let variable = MachineTerm::Variable(Variable(982201));
             let words = [
                 variable.clone(),
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
                     left: Box::new(variable.clone()),
                     right: Box::new(variable.clone()),
                 },
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: crate::kernel::MachineCastSpelling::Generic,
                     from: MachineIntegerType::Int32,
                     to: format,

@@ -8,18 +8,18 @@ fn adjacent_supply_wakes_wide_memory_waiter() {
     };
     let wide = CResourceFact::view_memory(CMemoryRange::new(
         base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(0),
+        MachineTerm::constant(2),
     ));
     let left = CResourceFact::view_memory(CMemoryRange::new(
         base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let right = CResourceFact::view_memory(CMemoryRange::new(
         base,
-        Bitvector32Term::constant(1),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(1),
+        MachineTerm::constant(2),
     ));
     let assumptions = PureFactContext::new();
     let mut dependencies = vec![Vec::new()];
@@ -77,8 +77,8 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
                     let start = (index * 2) as u32;
                     let dependency = CResourceFact::view_memory(CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::constant(start),
-                        Bitvector32Term::constant(start + 1),
+                        MachineTerm::constant(start),
+                        MachineTerm::constant(start + 1),
                     ));
                     resource_clause_register_waiters(
                         index,
@@ -92,8 +92,8 @@ fn same_block_disjoint_waiters_use_interval_candidates() {
                     let start = (index * 2) as u32;
                     let supplied = CResourceFact::view_memory(CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::constant(start),
-                        Bitvector32Term::constant(start + 1),
+                        MachineTerm::constant(start),
+                        MachineTerm::constant(start + 1),
                     ));
                     let candidates = waiters.candidates_for_supplied(&supplied);
                     candidate_visits += candidates.len();
@@ -126,13 +126,13 @@ fn comparable_constant_bases_share_interval_space() {
     };
     let dependency = CResourceFact::view_memory(CMemoryRange::new(
         dependency_base,
-        Bitvector32Term::constant(2),
-        Bitvector32Term::constant(3),
+        MachineTerm::constant(2),
+        MachineTerm::constant(3),
     ));
     let supplied = CResourceFact::view_memory(CMemoryRange::new(
         supplied_base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let mut dependencies = vec![Vec::new()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -151,14 +151,14 @@ fn concrete_memory_waiters_share_physical_byte_space_across_widths() {
     };
     let dependency = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
         base.clone(),
-        Bitvector32Term::constant(8),
-        Bitvector32Term::constant(12),
+        MachineTerm::constant(8),
+        MachineTerm::constant(12),
         1,
     ));
     let supplied = CResourceFact::view_memory(CMemoryRange::new_with_element_width(
         base,
-        Bitvector32Term::constant(2),
-        Bitvector32Term::constant(3),
+        MachineTerm::constant(2),
+        MachineTerm::constant(3),
         4,
     ));
     let mut dependencies = vec![Vec::new()];
@@ -178,13 +178,13 @@ fn symbolic_memory_waiters_keep_conservative_block_fallback() {
     };
     let dependency = CResourceFact::view_memory(CMemoryRange::new(
         base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::Variable(Variable(9_901)),
+        MachineTerm::constant(0),
+        MachineTerm::Variable(Variable(9_901)),
     ));
     let supplied = CResourceFact::view_memory(CMemoryRange::new(
         base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let mut dependencies = vec![Vec::new()];
     let mut waiters = ResourceClauseWaiterIndex::default();
@@ -203,13 +203,13 @@ fn concrete_waiter_block_fallback_registers_and_unregisters_symmetrically() {
     };
     let dependency = CResourceFact::view_memory(CMemoryRange::new(
         base.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let symbolic_supplied = CResourceFact::view_memory(CMemoryRange::new(
         base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::Variable(Variable(9_902)),
+        MachineTerm::constant(0),
+        MachineTerm::Variable(Variable(9_902)),
     ));
     let mut dependencies = vec![Vec::new()];
     let mut waiters = ResourceClauseWaiterIndex::default();

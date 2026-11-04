@@ -4,21 +4,21 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
     let mut ambient_samples = Vec::new();
     for size in [32u64, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = Bitvector32Term::Variable(Variable(992_000));
+        let variable = MachineTerm::Variable(Variable(992_000));
         let required = Proposition::ConditionIs(
-            ConditionTerm::equal(variable.clone(), Bitvector32Term::constant(7)),
+            ConditionTerm::equal(variable.clone(), MachineTerm::constant(7)),
             true,
         );
         let mut facts = ProofFacts::from_ordered(std::slice::from_ref(&required));
         for index in 0..size {
             for left in [
                 variable.clone(),
-                Bitvector32Term::Variable(Variable(993_000 + index)),
+                MachineTerm::Variable(Variable(993_000 + index)),
             ] {
                 facts = facts.with_kernel_checked_fact(Proposition::ConditionIs(
                     ConditionTerm::signed_less_than(
                         left,
-                        Bitvector32Term::constant(1000 + index as u32),
+                        MachineTerm::constant(1000 + index as u32),
                     ),
                     true,
                 ));
@@ -67,8 +67,8 @@ fn claim_requirements_use_indexed_facts_and_scale_with_their_output() {
                 .map(|index| {
                     ProofObligation::verification_condition(Proposition::ConditionIs(
                         ConditionTerm::equal(
-                            Bitvector32Term::Variable(Variable(994_000 + index)),
-                            Bitvector32Term::constant(7),
+                            MachineTerm::Variable(Variable(994_000 + index)),
+                            MachineTerm::constant(7),
                         ),
                         true,
                     ))

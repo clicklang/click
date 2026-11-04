@@ -6,13 +6,13 @@ fn loadability_explanation_ignores_unrelated_objects() {
     let missing = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let covering = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: pointer_base(&values),
-        bytes: Bitvector32Term::constant(8),
+        bytes: MachineTerm::constant(8),
         wide: false,
     };
     let mut samples = Vec::new();
@@ -28,7 +28,7 @@ fn loadability_explanation_ignores_unrelated_objects() {
                     block: PointerBlock::Heap(index),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                bytes: Bitvector32Term::constant(8),
+                bytes: MachineTerm::constant(8),
                 wide: false,
             });
         }
@@ -69,7 +69,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(Variable(780_000 + i))),
+                    left: Box::new(MachineTerm::Variable(Variable(780_000 + i))),
                     right: Box::new(1000u32.into()),
                 },
                 true,
@@ -81,8 +81,8 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(Bitvector32Term::Variable(Variable(785_000 + i))),
-                        right: Box::new(Bitvector32Term::constant(i as u32)),
+                        left: Box::new(MachineTerm::Variable(Variable(785_000 + i))),
+                        right: Box::new(MachineTerm::constant(i as u32)),
                     },
                     true,
                 );
@@ -116,7 +116,7 @@ fn scoped_obligation_probing_scales_with_requirements_not_ambient_facts() {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessThan,
-                            left: Box::new(Bitvector32Term::Variable(Variable(790_000 + i))),
+                            left: Box::new(MachineTerm::Variable(Variable(790_000 + i))),
                             right: Box::new(255u32.into()),
                         },
                         true,

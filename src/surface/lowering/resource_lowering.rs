@@ -197,7 +197,7 @@ fn input_pointer_identity(pointer: &crate::kernel::CPointerValue) -> Option<Vari
     }
     match &pointer.pointer().offset {
         PointerOffsetTerm::Int32Scaled { value, .. } => match value.as_ref() {
-            Bitvector32Term::Variable(variable) => Some(*variable),
+            MachineTerm::Variable(variable) => Some(*variable),
             _ => None,
         },
         _ => None,
@@ -244,7 +244,7 @@ fn input_arguments(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: scale_int32_offset(
-                        Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
+                        MachineTerm::Variable(input_pointer_variable(scope, index)?),
                         1,
                     ),
                 },
@@ -262,14 +262,14 @@ fn input_arguments(
                 )));
             }
             C0Type::Int128 => {
-                arguments.push(CExpression::Value(CValue::Int128(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::Int128(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::UInt128 => {
-                arguments.push(CExpression::Value(CValue::UInt128(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::UInt128(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
 
             C0Type::Void => {
@@ -289,7 +289,7 @@ fn input_arguments(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
+                            MachineTerm::Variable(input_pointer_variable(scope, index)?),
                             1,
                         ),
                     },
@@ -327,7 +327,7 @@ fn input_arguments(
                     Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: scale_int32_offset(
-                            Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
+                            MachineTerm::Variable(input_pointer_variable(scope, index)?),
                             i64::from(element_width),
                         ),
                     },
@@ -380,68 +380,68 @@ fn input_arguments(
                 let pointer = Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: scale_int32_offset(
-                        Bitvector32Term::Variable(input_pointer_variable(scope, index)?),
+                        MachineTerm::Variable(input_pointer_variable(scope, index)?),
                         i64::from(element_width),
                     ),
                 };
                 arguments.push(initial_pointer_argument(pointer, parameter, index, scope));
             }
             C0Type::Int8 => {
-                arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(
+                arguments.push(CExpression::Value(CValue::Int8(MachineTerm::Variable(
                     Variable(arguments.len() as u64),
                 ))));
             }
             C0Type::Int16 => {
-                arguments.push(CExpression::Value(CValue::Int16(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::Int16(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::Int32 => {
-                arguments.push(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::Int32(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::Char(crate::languages::c::syntax::PlainChar::Signed) => {
-                arguments.push(CExpression::Value(CValue::Int8(Bitvector32Term::Variable(
+                arguments.push(CExpression::Value(CValue::Int8(MachineTerm::Variable(
                     Variable(arguments.len() as u64),
                 ))));
             }
             C0Type::Char(crate::languages::c::syntax::PlainChar::Unsigned) | C0Type::UInt8 => {
-                arguments.push(CExpression::Value(CValue::UInt8(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::UInt8(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::UInt16 => {
-                arguments.push(CExpression::Value(CValue::UInt16(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::UInt16(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::UInt32 => {
-                arguments.push(CExpression::Value(CValue::UInt32(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::UInt32(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::Int64(_) => {
                 arguments.push(CExpression::Value(
-                    CValue::Int64(Bitvector32Term::Variable(Variable(arguments.len() as u64)))
+                    CValue::Int64(MachineTerm::Variable(Variable(arguments.len() as u64)))
                         .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             C0Type::UInt64(_) => {
                 arguments.push(CExpression::Value(
-                    CValue::UInt64(Bitvector32Term::Variable(Variable(arguments.len() as u64)))
+                    CValue::UInt64(MachineTerm::Variable(Variable(arguments.len() as u64)))
                         .complete_word(Pointer::symbolic(input_pointer_variable(scope, index)?)),
                 ));
             }
             C0Type::Float32 => {
-                arguments.push(CExpression::Value(CValue::Float32(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::Float32(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::Float64 => {
-                arguments.push(CExpression::Value(CValue::Float64(
-                    Bitvector32Term::Variable(Variable(arguments.len() as u64)),
-                )));
+                arguments.push(CExpression::Value(CValue::Float64(MachineTerm::Variable(
+                    Variable(arguments.len() as u64),
+                ))));
             }
             C0Type::Int8Array(_) => {
                 return Err(ClickError::new(format!(
@@ -807,7 +807,7 @@ pub(in crate::surface) fn memory_with_symbolic_loadable_cells(
             {
                 let element_pointer = offset_pointer_by_elements(
                     range.base.clone(),
-                    Bitvector32Term::constant(offset / range.element_width),
+                    MachineTerm::constant(offset / range.element_width),
                     range.element_width,
                 );
                 for field in layout.fields().values() {
@@ -1168,7 +1168,7 @@ fn check_segment_base_loadability(
     let obligation = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base: cell.into_pointer(),
-        bytes: Bitvector32Term::constant(value_type.byte_width()),
+        bytes: MachineTerm::constant(value_type.byte_width()),
         wide: false,
     };
     if crate::kernel::c_state_justifies_loadability_obligation(state, &obligation, assumptions) {
@@ -1325,7 +1325,7 @@ fn materialize_access_segment_cells(
         for index in constant_u32(*start)..constant_u32(*end) {
             let element_pointer = offset_pointer_by_elements(
                 segment.base.clone(),
-                Bitvector32Term::constant(index),
+                MachineTerm::constant(index),
                 layout.size_bytes(),
             );
             for field in layout.fields().values() {
@@ -2761,11 +2761,11 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
                 ClickError::new("an arbitrary Integer literal requires Integer context")
             })?;
             let value = if value <= i32::MAX as u64 {
-                CValue::Int32(Bitvector32Term::constant(value as u32))
+                CValue::Int32(MachineTerm::constant(value as u32))
             } else if value <= i64::MAX as u64 {
-                CValue::Int64(Bitvector32Term::int64_constant(value as i64))
+                CValue::Int64(MachineTerm::int64_constant(value as i64))
             } else {
-                CValue::UInt64(Bitvector32Term::uint64_constant(value))
+                CValue::UInt64(MachineTerm::uint64_constant(value))
             };
             Ok(CExpression::Value(value))
         }
@@ -2774,14 +2774,12 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
                 && let Ok(value) = text.parse::<u64>()
                 && value <= (i32::MAX as u64) + 1
             {
-                return Ok(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::constant(0u32.wrapping_sub(value as u32)),
-                )));
+                return Ok(CExpression::Value(CValue::Int32(MachineTerm::constant(
+                    0u32.wrapping_sub(value as u32),
+                ))));
             }
             Ok(CExpression::Subtract(
-                Box::new(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::constant(0),
-                ))),
+                Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(0)))),
                 Box::new(resource_argument_to_c_expression(expression)?),
             ))
         }
@@ -3248,7 +3246,7 @@ pub(in crate::surface) fn concrete_loadable_block(
                 return Ok(None);
             };
             if segment.base.offset != PointerOffsetTerm::Constant(0)
-                || segment.start != Bitvector32Term::constant(0)
+                || segment.start != MachineTerm::constant(0)
             {
                 return Ok(None);
             }
@@ -3376,7 +3374,7 @@ pub(in crate::surface) fn concrete_access_resource_blocks(
 pub(in crate::surface) fn loadable_base_and_bytes(
     requirement: &Requirement,
     parameter_binding: ParameterBinding<'_>,
-) -> Result<(Pointer, Bitvector32Term, Vec<Proposition>), ClickError> {
+) -> Result<(Pointer, MachineTerm, Vec<Proposition>), ClickError> {
     match requirement {
         Requirement::LoadableSegment { segment } => {
             let state = CState::new();

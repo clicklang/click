@@ -1333,7 +1333,7 @@ mod condition_transition_tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load = |pointer: Pointer| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(pointer),
                 crate::kernel::LoadKind::Int32,
@@ -1394,8 +1394,8 @@ mod condition_transition_tests {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 CResourceFact::own_memory(CMemoryRange::new(
                     pointer.clone(),
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::constant(1),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
                 )),
             ));
         let mut next_opaque_call = 0;
@@ -1509,8 +1509,8 @@ mod condition_transition_tests {
             .with_resource_context(ResourceContext::new().unchecked_with_fact(
                 CResourceFact::own_memory(CMemoryRange::new(
                     pointer.clone(),
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::constant(1),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
                 )),
             ));
         let mut next_opaque_call = 0;
@@ -1554,9 +1554,7 @@ mod condition_transition_tests {
     #[test]
     fn failed_typed_load_publishes_no_source_event() {
         let statement = CStatement::Return(CExpression::TypedLoad {
-            pointer: Box::new(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(7),
-            ))),
+            pointer: Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(7)))),
             value_type: CType::Int32,
             volatile: false,
             pointee_constant: false,

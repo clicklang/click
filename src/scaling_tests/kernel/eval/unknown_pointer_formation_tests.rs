@@ -11,7 +11,7 @@ fn split_formation_selects_the_owned_piece_beside_unrelated_owners() {
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(
-                        Bitvector32Term::Variable(Variable(932_000 + i)),
+                        MachineTerm::Variable(Variable(932_000 + i)),
                         4,
                     ),
                 },
@@ -79,8 +79,8 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(934_000)),
-                    Bitvector32Term::constant(10_000 + index as u32),
+                    MachineTerm::Variable(Variable(934_000)),
+                    MachineTerm::constant(10_000 + index as u32),
                 ),
                 true,
             );
@@ -89,7 +89,7 @@ fn symbolic_offset_zero_query_does_not_build_unrelated_stated_keys() {
         let result = pointer_offset_by_elements_paths(
             &CState::new(),
             CPointerValue::new(Pointer::null(), CType::Int32Pointer),
-            Bitvector32Term::Variable(Variable(934_001)),
+            MachineTerm::Variable(Variable(934_001)),
             4,
             false,
             false,

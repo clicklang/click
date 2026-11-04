@@ -134,7 +134,7 @@ impl PropositionDerivation {
     /// prover: the quantified fact, concrete argument, and guard premises.
     pub fn forall_int32_instantiation(
         &self,
-    ) -> Option<(&Proposition, &Bitvector32Term, &[Proposition])> {
+    ) -> Option<(&Proposition, &MachineTerm, &[Proposition])> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::ForallInt32Instantiation(evidence),
@@ -946,7 +946,7 @@ impl PointerOffsetCongruenceEvidence {
 
 impl SignedConstantEvidence {
     pub(in crate::kernel) fn exact_equality_value(
-        term: &Bitvector32Term,
+        term: &MachineTerm,
         source: &Proposition,
     ) -> Option<i64> {
         Self::exact_equality_value_view(crate::kernel::MachineOperandView::Legacy(term), source)
@@ -988,8 +988,8 @@ impl SignedConstantEvidence {
 impl DirectBitvectorEqualityEvidence {
     pub(in crate::kernel) fn checks(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
         assumptions: &PureFactContext,
     ) -> bool {
         match self {
@@ -1008,90 +1008,86 @@ impl DirectBitvectorEqualityEvidence {
                 left: left_evidence,
                 right: right_evidence,
             } => {
-                let checks =
-                    |term: &Bitvector32Term, evidence: &SignedConstantEvidence| match evidence {
-                        SignedConstantEvidence::Constant => {
-                            signed_bitvector_constant(term) == Some(*value)
-                        }
-                        SignedConstantEvidence::ExactEquality(source) => {
-                            assumptions.contains_assumed_exact(source)
-                                && SignedConstantEvidence::exact_equality_value(term, source)
-                                    == Some(*value)
-                        }
-                        SignedConstantEvidence::SingletonBounds {
-                            variable,
-                            lower,
-                            upper,
-                        } => {
-                            let bound =
-                                |evidence: &IndexedSignedOrderBoundEvidence, lower_bound: bool| {
-                                    let normalized = if evidence.forward {
-                                        (
+                let checks = |term: &MachineTerm, evidence: &SignedConstantEvidence| match evidence
+                {
+                    SignedConstantEvidence::Constant => {
+                        signed_bitvector_constant(term) == Some(*value)
+                    }
+                    SignedConstantEvidence::ExactEquality(source) => {
+                        assumptions.contains_assumed_exact(source)
+                            && SignedConstantEvidence::exact_equality_value(term, source)
+                                == Some(*value)
+                    }
+                    SignedConstantEvidence::SingletonBounds {
+                        variable,
+                        lower,
+                        upper,
+                    } => {
+                        let bound = |evidence: &IndexedSignedOrderBoundEvidence,
+                                     lower_bound: bool| {
+                            let normalized = if evidence.forward {
+                                (
+                                    evidence.endpoint.clone(),
+                                    evidence.other.clone(),
+                                    evidence.strict,
+                                )
+                            } else {
+                                (
+                                    evidence.other.clone(),
+                                    evidence.endpoint.clone(),
+                                    evidence.strict,
+                                )
+                            };
+                            let source_matches = match evidence.source.as_ref() {
+                                Proposition::ConditionIs(condition, value) => {
+                                    crate::kernel::reasoning::condition_as_order_fact(
+                                        condition, *value,
+                                    ) == Some(normalized)
+                                        && assumptions.contains_assumed_exact(&evidence.source)
+                                }
+                                _ => false,
+                            };
+                            let recorded =
+                                assumptions.signed_order_bound_entries(term).any(|entry| {
+                                    entry
+                                        == (
                                             evidence.endpoint.clone(),
                                             evidence.other.clone(),
                                             evidence.strict,
+                                            evidence.forward,
                                         )
-                                    } else {
-                                        (
-                                            evidence.other.clone(),
-                                            evidence.endpoint.clone(),
-                                            evidence.strict,
-                                        )
-                                    };
-                                    let source_matches = match evidence.source.as_ref() {
-                                        Proposition::ConditionIs(condition, value) => {
-                                            crate::kernel::reasoning::condition_as_order_fact(
-                                                condition, *value,
-                                            ) == Some(normalized)
-                                                && assumptions
-                                                    .contains_assumed_exact(&evidence.source)
-                                        }
-                                        _ => false,
-                                    };
-                                    let recorded =
-                                        assumptions.signed_order_bound_entries(term).any(|entry| {
-                                            entry
-                                                == (
-                                                    evidence.endpoint.clone(),
-                                                    evidence.other.clone(),
-                                                    evidence.strict,
-                                                    evidence.forward,
-                                                )
-                                        });
-                                    if !source_matches
-                                        || !recorded
-                                        || lower_bound == evidence.forward
-                                    {
-                                        return None;
-                                    }
-                                    let bound = if let Some(source) = &evidence.other_equality {
-                                        if !assumptions.contains_assumed_exact(source) {
-                                            return None;
-                                        }
-                                        SignedConstantEvidence::exact_equality_value(
-                                            &evidence.other,
-                                            source,
-                                        )?
-                                    } else {
-                                        signed_bitvector_constant(&evidence.other)?
-                                    };
-                                    if lower_bound {
-                                        if evidence.strict {
-                                            bound.checked_add(1)
-                                        } else {
-                                            Some(bound)
-                                        }
-                                    } else if evidence.strict {
-                                        bound.checked_sub(1)
-                                    } else {
-                                        Some(bound)
-                                    }
-                                };
-                            bitvector_variable(term) == Some(*variable)
-                                && bound(lower, true) == Some(*value)
-                                && bound(upper, false) == Some(*value)
-                        }
-                    };
+                                });
+                            if !source_matches || !recorded || lower_bound == evidence.forward {
+                                return None;
+                            }
+                            let bound = if let Some(source) = &evidence.other_equality {
+                                if !assumptions.contains_assumed_exact(source) {
+                                    return None;
+                                }
+                                SignedConstantEvidence::exact_equality_value(
+                                    &evidence.other,
+                                    source,
+                                )?
+                            } else {
+                                signed_bitvector_constant(&evidence.other)?
+                            };
+                            if lower_bound {
+                                if evidence.strict {
+                                    bound.checked_add(1)
+                                } else {
+                                    Some(bound)
+                                }
+                            } else if evidence.strict {
+                                bound.checked_sub(1)
+                            } else {
+                                Some(bound)
+                            }
+                        };
+                        bitvector_variable(term) == Some(*variable)
+                            && bound(lower, true) == Some(*value)
+                            && bound(upper, false) == Some(*value)
+                    }
+                };
                 checks(left, left_evidence) && checks(right, right_evidence)
             }
             Self::LeAndNotLt(evidence) => {
@@ -1181,7 +1177,7 @@ impl LoadAddressCongruenceEvidence {
         else {
             return false;
         };
-        let (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) =
+        let (MachineTerm::Variable(left), MachineTerm::Variable(right)) =
             (left.as_ref(), right.as_ref())
         else {
             return false;
@@ -1215,11 +1211,11 @@ impl OrderDerivationStep {
 }
 
 impl SignedOrderDerivationStep {
-    pub fn lower(&self) -> &Bitvector32Term {
+    pub fn lower(&self) -> &MachineTerm {
         &self.lower
     }
 
-    pub fn upper(&self) -> &Bitvector32Term {
+    pub fn upper(&self) -> &MachineTerm {
         &self.upper
     }
 
@@ -1237,11 +1233,11 @@ impl SignedOrderDerivationStep {
 }
 
 impl BitvectorEqualityDerivationStep {
-    pub fn source(&self) -> &Bitvector32Term {
+    pub fn source(&self) -> &MachineTerm {
         &self.source
     }
 
-    pub fn target(&self) -> &Bitvector32Term {
+    pub fn target(&self) -> &MachineTerm {
         &self.target
     }
 

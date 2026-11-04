@@ -28,7 +28,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                 context.adjacent_loadable_region_facts(
                     &memory,
                     &base,
-                    &Bitvector32Term::constant(size + 1),
+                    &MachineTerm::constant(size + 1),
                 )
             });
             assert_eq!(facts.is_some(), missing.is_none());
@@ -36,7 +36,7 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                 let goal = Proposition::CMemoryLoadable {
                     memory,
                     base: base.clone(),
-                    bytes: Bitvector32Term::constant(size + 1),
+                    bytes: MachineTerm::constant(size + 1),
                     wide: false,
                 };
                 let derivation = context.derive_atomic_proposition(&goal).unwrap();

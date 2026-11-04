@@ -4,7 +4,7 @@ use crate::kernel::equality_graph::EqualityGraph;
 
 fn offset(id: u64) -> PointerOffsetTerm {
     PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(id))),
+        value: Box::new(MachineTerm::Variable(Variable(id))),
         byte_width: 4,
     }
 }
@@ -13,11 +13,11 @@ fn guard() -> ConditionTerm {
     ConditionTerm::pointer_offset_equal(offset(51), offset(52))
 }
 
-fn choice() -> Bitvector32Term {
-    Bitvector32Term::If {
+fn choice() -> MachineTerm {
+    MachineTerm::If {
         condition: Box::new(guard()),
-        then_term: Box::new(Bitvector32Term::constant(7)),
-        else_term: Box::new(Bitvector32Term::constant(0)),
+        then_term: Box::new(MachineTerm::constant(7)),
+        else_term: Box::new(MachineTerm::constant(0)),
     }
 }
 
@@ -35,7 +35,7 @@ fn graph_condition_reduction_keeps_unknown_equalities_and_branches_isolated() {
     branch.add_offset_equality(&offset(51), &offset(52));
     assert_eq!(
         TermRewrite::for_conditions_with_graph(&empty, &branch).bits(&choice()),
-        Bitvector32Term::constant(7)
+        MachineTerm::constant(7)
     );
     assert_eq!(
         TermRewrite::for_conditions_with_graph(&empty, &parent).bits(&choice()),
@@ -58,29 +58,29 @@ fn check_binder_bodies(scalar: bool) {
     let guard = || {
         if scalar {
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(51)),
-                Bitvector32Term::Variable(Variable(52)),
+                MachineTerm::Variable(Variable(51)),
+                MachineTerm::Variable(Variable(52)),
             )
         } else {
             guard()
         }
     };
-    let choice = || Bitvector32Term::If {
+    let choice = || MachineTerm::If {
         condition: Box::new(guard()),
-        then_term: Box::new(Bitvector32Term::constant(7)),
-        else_term: Box::new(Bitvector32Term::constant(0)),
+        then_term: Box::new(MachineTerm::constant(7)),
+        else_term: Box::new(MachineTerm::constant(0)),
     };
     let mut graph = graph();
     graph.add_int32_equality(
-        &Bitvector32Term::Variable(Variable(51)),
-        &Bitvector32Term::Variable(Variable(52)),
+        &MachineTerm::Variable(Variable(51)),
+        &MachineTerm::Variable(Variable(52)),
     );
     let cited = HashMap::from([(guard(), true)]);
     let empty = HashMap::new();
-    let machine_fold = Bitvector32Term::RangeFold {
-        start: Box::new(Bitvector32Term::constant(0)),
-        end: Box::new(Bitvector32Term::constant(2)),
-        initial: Box::new(Bitvector32Term::constant(0)),
+    let machine_fold = MachineTerm::RangeFold {
+        start: Box::new(MachineTerm::constant(0)),
+        end: Box::new(MachineTerm::constant(2)),
+        initial: Box::new(MachineTerm::constant(0)),
         accumulator: Variable(60),
         item: Variable(51),
         body: Box::new(choice()),
@@ -88,8 +88,8 @@ fn check_binder_bodies(scalar: bool) {
     let integer_body = IntegerTerm::from_machine(MachineIntegerType::Int32, choice()).unwrap();
     let integer_fold = IntegerTerm::RangeFold {
         index: IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
         },
         initial: IntegerTerm::constant_i64(0).into(),
         accumulator: Variable(60),
@@ -118,8 +118,8 @@ fn check_binder_bodies(scalar: bool) {
         algebraic_type,
         node: AlgebraicTermNode::Variable(Variable(70)),
     };
-    let binding = AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(Variable(51))));
-    let machine_match = Bitvector32Term::AlgebraicMatch {
+    let binding = AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(51))));
+    let machine_match = MachineTerm::AlgebraicMatch {
         scrutinee: Box::new(scrutinee.clone()),
         arms: vec![AlgebraicBitvectorMatchArm {
             binding_names: Default::default(),
@@ -160,9 +160,9 @@ fn check_binder_bodies(scalar: bool) {
 
 #[test]
 fn int32_graph_conditions_do_not_cross_sorts_or_admit_disequality() {
-    let a = Bitvector32Term::Variable(Variable(81));
-    let b = Bitvector32Term::Variable(Variable(82));
-    let c = Bitvector32Term::Variable(Variable(83));
+    let a = MachineTerm::Variable(Variable(81));
+    let b = MachineTerm::Variable(Variable(82));
+    let c = MachineTerm::Variable(Variable(83));
     let context = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(a.clone(), b.clone()), true)
         .assume_condition(ConditionTerm::equal(b.clone(), c.clone()), false);

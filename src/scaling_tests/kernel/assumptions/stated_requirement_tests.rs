@@ -15,8 +15,8 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(300))),
-                right: Box::new(Bitvector32Term::constant(5)),
+                left: Box::new(MachineTerm::Variable(Variable(300))),
+                right: Box::new(MachineTerm::constant(5)),
             },
             true,
         )),
@@ -29,8 +29,8 @@ fn stated_query_work_is_independent_of_unrelated_facts() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(20_000 + index))),
-                right: Box::new(Bitvector32Term::constant(index as u32)),
+                left: Box::new(MachineTerm::Variable(Variable(20_000 + index))),
+                right: Box::new(MachineTerm::constant(index as u32)),
             },
             true,
         ));
@@ -114,12 +114,12 @@ fn stated_index_keys_each_fact_once_and_only_when_asked() {
 /// equalities the context holds; nothing is filed twice.
 #[test]
 fn a_32_bit_equality_is_one_fact_at_either_signedness() {
-    let x = Bitvector32Term::Variable(Variable(31_000));
+    let x = MachineTerm::Variable(Variable(31_000));
     let equality = |format, right: u32| ConditionTerm::Compare {
         format,
         relation: CompareRelation::Equal,
         left: Box::new(x.clone()),
-        right: Box::new(Bitvector32Term::constant(right)),
+        right: Box::new(MachineTerm::constant(right)),
     };
     let mut samples = Vec::new();
     for size in [16u32, 64, 256, 1024] {
@@ -133,10 +133,8 @@ fn a_32_bit_equality_is_one_fact_at_either_signedness() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::UInt32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(
-                            32_000 + u64::from(index),
-                        ))),
-                        right: Box::new(Bitvector32Term::constant(index)),
+                        left: Box::new(MachineTerm::Variable(Variable(32_000 + u64::from(index)))),
+                        right: Box::new(MachineTerm::constant(index)),
                     },
                     true,
                 );

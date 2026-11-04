@@ -351,7 +351,7 @@ fn member_exchange_requires_both_external_body_ownership_and_checked_extent() {
     let extent = |bytes| Proposition::CMemoryLoadable {
         memory: owned.memory().clone(),
         base: external.clone(),
-        bytes: Bitvector32Term::constant(bytes),
+        bytes: MachineTerm::constant(bytes),
         wide: false,
     };
     let small = ProofFacts::default().with_fact(extent(1));
@@ -636,8 +636,8 @@ fn checked_member_events_exchange_private_memory_and_reject_duplicate_birth() {
     };
     let memory = CResourceFact::own_memory(CMemoryRange::new(
         pointer.pointer().clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     ));
     let definition = CCompositeResourceDefinition::new(
         "reference",

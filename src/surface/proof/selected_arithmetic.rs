@@ -2535,9 +2535,9 @@ theorem black_color_is_black(color: Color) {
 
     #[test]
     fn native_rewrite_operands_survive_integer_source_expansion() {
-        let used = Bitvector32Term::Variable(Variable(920_001));
-        let capacity = Bitvector32Term::Variable(Variable(920_002));
-        let slots = Bitvector32Term::Variable(Variable(920_003));
+        let used = MachineTerm::Variable(Variable(920_001));
+        let capacity = MachineTerm::Variable(Variable(920_002));
+        let slots = MachineTerm::Variable(Variable(920_003));
         let kernel = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,

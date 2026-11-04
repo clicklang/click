@@ -24,7 +24,7 @@
 use super::representation;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
-use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType};
+use crate::kernel::{CValue, IntegerTerm, MachineIntegerType, MachineTerm};
 use crate::kernel::{bits32_constant, constant_u32};
 
 /// What a language conversion asks of its operand.
@@ -208,23 +208,23 @@ pub(crate) fn reads_as_operand(
 pub(crate) fn convert_term(
     source: MachineIntegerType,
     destination: MachineIntegerType,
-    value: Bitvector32Term,
-) -> Bitvector32Term {
+    value: MachineTerm,
+) -> MachineTerm {
     use ConversionLowering as L;
     let (from, to) = (source.format(), destination.format());
     match lower(source, destination, ConversionPolicy::Modular).lowering {
         L::Identity => value,
-        L::SignCast => Bitvector32Term::sign_cast32(source, destination, value),
-        L::Cast => Bitvector32Term::machine_integer_cast(source, destination, value),
+        L::SignCast => MachineTerm::sign_cast32(source, destination, value),
+        L::Cast => MachineTerm::machine_integer_cast(source, destination, value),
         // A folded low word is a constant of the destination's format.
-        L::LowWord => Bitvector32Term::uint32_from_64(value).in_format32(destination),
-        L::Reinterpret64 if to.is_signed() => Bitvector32Term::int64_from_uint64_bits(value),
-        L::Reinterpret64 => Bitvector32Term::uint64_from_int64(value),
+        L::LowWord => MachineTerm::uint32_from_64(value).in_format32(destination),
+        L::Reinterpret64 if to.is_signed() => MachineTerm::int64_from_uint64_bits(value),
+        L::Reinterpret64 => MachineTerm::uint64_from_int64(value),
         L::Extend64 => match (to.is_signed(), from.is_signed()) {
-            (true, true) => Bitvector32Term::int64_from_32(value),
-            (true, false) => Bitvector32Term::int64_from_uint32(value),
-            (false, true) => Bitvector32Term::uint64_from_int32(value),
-            (false, false) => Bitvector32Term::uint64_from_32(value),
+            (true, true) => MachineTerm::int64_from_32(value),
+            (true, false) => MachineTerm::int64_from_uint32(value),
+            (false, true) => MachineTerm::uint64_from_int32(value),
+            (false, false) => MachineTerm::uint64_from_32(value),
         },
     }
 }
@@ -245,7 +245,7 @@ pub(crate) fn convert_value(value: CValue, destination: MachineIntegerType) -> O
     if let CValue::Bool(word) = &value {
         return CValue::from_bitvector_term(
             destination.c_type(),
-            crate::kernel::Bitvector32Term::bool_word_as(destination, word),
+            crate::kernel::MachineTerm::bool_word_as(destination, word),
         );
     }
     let source = MachineIntegerType::from_c_type(value.c_type())?;
@@ -470,7 +470,7 @@ fn cast_through_readings(
     // certificate. The canonical cast still has exactly its modulo semantics;
     // the bounds below establish that this conversion preserves the value.
     let converted =
-        Bitvector32Term::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
+        MachineTerm::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
     // An `int32` or `uint32` observation reads σ(x) as `x` (rule K2), so
     // the canonical conversion is compared by its word. Only σ: a narrow
     // widening's word (rule K8) is its operand only for a canonical
@@ -549,7 +549,7 @@ fn cast_through_readings(
     None
 }
 
-fn matches_word(machine: &crate::kernel::SharedMachineIntegerTerm, word: &Bitvector32Term) -> bool {
+fn matches_word(machine: &crate::kernel::SharedMachineIntegerTerm, word: &MachineTerm) -> bool {
     match machine.operand_view() {
         crate::kernel::MachineOperandView::Legacy(actual) => actual == word,
         crate::kernel::MachineOperandView::Shared(actual) => {
@@ -717,7 +717,7 @@ mod shared_operand_tests {
         // inner carrier is shown below to be the source's value inside the
         // destination range, the conversion leaves that word unchanged.
         // The same bounds are still required.
-        if let Bitvector32Term::Cast {
+        if let MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: inner,
             from: through,
@@ -739,11 +739,8 @@ mod shared_operand_tests {
         // node, so inspecting only the outer node loses the source named by the
         // certificate. The canonical cast still has exactly its modulo semantics;
         // the bounds below establish that this conversion preserves the value.
-        let converted = Bitvector32Term::machine_integer_cast(
-            operand.ty(),
-            machine.ty(),
-            operand.value().clone(),
-        );
+        let converted =
+            MachineTerm::machine_integer_cast(operand.ty(), machine.ty(), operand.value().clone());
         // An `int32` or `uint32` observation reads σ(x) as `x` (rule K2), so
         // the canonical conversion is compared by its word. Only σ: a narrow
         // widening's word (rule K8) is its operand only for a canonical
@@ -816,7 +813,7 @@ mod shared_operand_tests {
             && let binary_term!(Bits32, BitwiseAnd, left, right) = machine.value()
         {
             let mask = (1u32 << machine.ty().format().bits()) - 1;
-            let matches = |value: &Bitvector32Term, bits: &Bitvector32Term| {
+            let matches = |value: &MachineTerm, bits: &MachineTerm| {
                 value == operand.value() && bits.constant32() == Some(mask)
             };
             if matches(left, right) || matches(right, left) {
@@ -831,14 +828,14 @@ mod shared_operand_tests {
         use crate::kernel::{MachineBinaryOp, MachineIntegerConstant, Variable};
         let _session = crate::kernel::VerificationSession::enter();
         for source in super::super::FORMATS {
-            let mut words = vec![Bitvector32Term::Variable(Variable(982105))];
+            let mut words = vec![MachineTerm::Variable(Variable(982105))];
             if source.format().bits() < 128 {
                 for op in [
                     MachineBinaryOp::Add,
                     MachineBinaryOp::Subtract,
                     MachineBinaryOp::BitwiseAnd,
                 ] {
-                    words.push(Bitvector32Term::Binary {
+                    words.push(MachineTerm::Binary {
                         format: source,
                         op,
                         left: Box::new(words[0].clone()),
@@ -857,15 +854,15 @@ mod shared_operand_tests {
                 }
             }
             if matches!(source.format().bits(), 32 | 64) {
-                words.push(Bitvector32Term::PureFunctionApplication {
+                words.push(MachineTerm::PureFunctionApplication {
                     name: "cast_opaque_word".to_string(),
-                    arguments: vec![Bitvector32Term::Variable(Variable(982105))],
+                    arguments: vec![MachineTerm::Variable(Variable(982105))],
                 });
-                words.push(Bitvector32Term::Cast {
+                words.push(MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: source,
                     to: source,
-                    value: Box::new(Bitvector32Term::Variable(Variable(982105))),
+                    value: Box::new(MachineTerm::Variable(Variable(982105))),
                 });
             }
             for destination in super::super::FORMATS {
@@ -873,8 +870,8 @@ mod shared_operand_tests {
                     let original = IntegerTerm::from_machine(source, word.clone()).unwrap();
                     let mut candidates = vec![
                         word.clone(),
-                        Bitvector32Term::Variable(Variable(982106)),
-                        Bitvector32Term::machine_integer_cast(source, destination, word.clone()),
+                        MachineTerm::Variable(Variable(982106)),
+                        MachineTerm::machine_integer_cast(source, destination, word.clone()),
                         convert_term(source, destination, word.clone()),
                     ];
                     if let Some(low) = representation::low_word(source, word) {
@@ -904,7 +901,7 @@ mod shared_operand_tests {
         };
         let _session = crate::kernel::VerificationSession::enter();
         for source in super::super::FORMATS {
-            let mut words = vec![Bitvector32Term::Variable(Variable(982104))];
+            let mut words = vec![MachineTerm::Variable(Variable(982104))];
             let (min, max) = source.format().bounds();
             for n in [0.into(), 1.into(), min, max] {
                 words.push(
@@ -922,10 +919,10 @@ mod shared_operand_tests {
                     MachineBinaryOp::Multiply,
                 ] {
                     for n in [0, 1, 7] {
-                        words.push(Bitvector32Term::Binary {
+                        words.push(MachineTerm::Binary {
                             format: source,
                             op,
-                            left: Box::new(Bitvector32Term::Variable(Variable(982104))),
+                            left: Box::new(MachineTerm::Variable(Variable(982104))),
                             right: Box::new(
                                 source
                                     .constant_term(
@@ -943,18 +940,18 @@ mod shared_operand_tests {
             }
             if source == MachineIntegerType::UInt64 {
                 for op in [MachineBinaryOp::Add, MachineBinaryOp::Subtract] {
-                    words.push(Bitvector32Term::Binary {
+                    words.push(MachineTerm::Binary {
                         format: source,
                         op,
-                        left: Box::new(Bitvector32Term::uint64_constant(u64::MAX)),
-                        right: Box::new(Bitvector32Term::uint64_constant(1)),
+                        left: Box::new(MachineTerm::uint64_constant(u64::MAX)),
+                        right: Box::new(MachineTerm::uint64_constant(1)),
                     });
                 }
-                words.push(Bitvector32Term::Binary {
+                words.push(MachineTerm::Binary {
                     format: source,
                     op: MachineBinaryOp::Add,
-                    left: Box::new(Bitvector32Term::uint64_constant(7)),
-                    right: Box::new(Bitvector32Term::Variable(Variable(982104))),
+                    left: Box::new(MachineTerm::uint64_constant(7)),
+                    right: Box::new(MachineTerm::Variable(Variable(982104))),
                 });
             }
             for destination in super::super::FORMATS {
@@ -963,7 +960,7 @@ mod shared_operand_tests {
                     let cast = shared.checking_machine_cast(source, destination);
                     assert_eq!(
                         KernelTermExport::machine(&cast).unwrap(),
-                        Bitvector32Term::machine_integer_cast(source, destination, word.clone()),
+                        MachineTerm::machine_integer_cast(source, destination, word.clone()),
                         "generic {source:?} -> {destination:?}"
                     );
                     let cast = shared.checking_legacy_machine_conversion(source, destination);
@@ -988,11 +985,11 @@ mod shared_operand_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let source = MachineIntegerType::Int8;
         let destination = MachineIntegerType::Int32;
-        let word = Bitvector32Term::Variable(Variable(982102));
+        let word = MachineTerm::Variable(Variable(982102));
         let original = IntegerTerm::from_machine(source, word.clone()).unwrap();
         let other =
-            IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(982103))).unwrap();
-        let widened = Bitvector32Term::Cast {
+            IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(982103))).unwrap();
+        let widened = MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: source,
             to: destination,

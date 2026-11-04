@@ -115,7 +115,7 @@ fn unsigned_aggregate_array_copies_preserve_values_and_scale() {
         // An unplaced store invalidates the compact source run and its
         // concrete last-lane override. The immutable copy is disjoint,
         // and every forgotten source byte remains initialized.
-        let unplaced = source.offset_by_elements(Bitvector32Term::Variable(Variable(925_002)), 4);
+        let unplaced = source.offset_by_elements(MachineTerm::Variable(Variable(925_002)), 4);
         let (forgotten, work) = crate::instrumentation::measure_deterministic_work(|| {
             changed.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new())
         });

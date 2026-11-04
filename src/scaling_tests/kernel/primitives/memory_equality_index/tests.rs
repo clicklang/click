@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 /// The selection charges the same work beside 2, 4, 8 and 16 unrelated
 /// framed ranges as beside 1,024 (1,118 units at 16 to 1,024 on
@@ -29,7 +29,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
                 C_POINTER_BYTE_WIDTH,
                 &snapshot,
             );
-            let pointer = Pointer::loaded(&Bitvector32Term::Variable(variable)).unwrap();
+            let pointer = Pointer::loaded(&MachineTerm::Variable(variable)).unwrap();
             context.register_pointer_read(&pointer, &snapshot, address);
             pointer
         };
@@ -40,7 +40,7 @@ fn checked_read_endpoint_selects_framed_ranges_without_ambient_scan() {
             field.clone(),
             CValue::Pointer(CPointerValue::new(source.clone(), CType::Int32Pointer)),
         );
-        let count = Bitvector32Term::Variable(Variable(999_321));
+        let count = MachineTerm::Variable(Variable(999_321));
         let range =
             |base| CMemoryRange::new_with_element_width(base, 0u32.into(), count.clone(), 4);
         let field_range =
@@ -140,11 +140,11 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         let _session = crate::kernel::VerificationSession::enter();
         let base = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(989_200)), 1),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(989_200)), 1),
         };
-        let prefix = Bitvector32Term::Variable(Variable(989_201));
-        let local = Bitvector32Term::Variable(Variable(989_202));
-        let full = Bitvector32Term::Variable(Variable(989_203));
+        let prefix = MachineTerm::Variable(Variable(989_201));
+        let local = MachineTerm::Variable(Variable(989_202));
+        let full = MachineTerm::Variable(Variable(989_203));
         let batch = Pointer::symbolic(Variable(989_204));
         let query = Pointer::symbolic(Variable(989_205));
         let global = base.offset_by_typed_elements(full.clone(), 1, true, true);
@@ -159,7 +159,7 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             .assume_condition(
                 ConditionTerm::pointer_equal(
                     query.clone(),
-                    batch.offset_by_elements(Bitvector32Term::Variable(Variable(989_206)), 1),
+                    batch.offset_by_elements(MachineTerm::Variable(Variable(989_206)), 1),
                 ),
                 true,
             )
@@ -175,20 +175,20 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
             aliases = aliases.assume_condition(
                 ConditionTerm::pointer_equal(
                     query.clone(),
-                    batch.offset_by_elements(Bitvector32Term::Variable(Variable(990_000 + i)), 1),
+                    batch.offset_by_elements(MachineTerm::Variable(Variable(990_000 + i)), 1),
                 ),
                 true,
             );
         }
         let facts = aliases.clone().assume_condition(
-            ConditionTerm::uint64_less_than(full.clone(), Bitvector32Term::uint64_constant(22208)),
+            ConditionTerm::uint64_less_than(full.clone(), MachineTerm::uint64_constant(22208)),
             true,
         );
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_wide(
                 base.clone(),
-                Bitvector32Term::uint64_constant(0),
-                Bitvector32Term::uint64_constant(22208),
+                MachineTerm::uint64_constant(0),
+                MachineTerm::uint64_constant(22208),
                 1,
             ),
         ));
@@ -209,7 +209,7 @@ fn wide_read_keeps_full_buffer_index_beside_a_batch_cursor() {
         assert!(!resources.permits_memory_read(&query, 2, &facts));
         assert!(!resources.permits_memory_read(&query, 1, &aliases));
         let boundary = aliases.assume_condition(
-            ConditionTerm::uint64_equal(full, Bitvector32Term::uint64_constant(22208)),
+            ConditionTerm::uint64_equal(full, MachineTerm::uint64_constant(22208)),
             true,
         );
         assert!(!resources.permits_memory_read(&query, 1, &boundary));
@@ -242,8 +242,8 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
         let _session = crate::kernel::VerificationSession::enter();
         let bytes = Pointer::symbolic(Variable(986_000));
         let alternate = Pointer::symbolic(Variable(986_001));
-        let native_index = Bitvector32Term::Variable(Variable(986_002));
-        let narrow = alternate.offset_by_elements(Bitvector32Term::Variable(Variable(986_003)), 1);
+        let native_index = MachineTerm::Variable(Variable(986_002));
+        let narrow = alternate.offset_by_elements(MachineTerm::Variable(Variable(986_003)), 1);
         let wide = bytes.offset_by_typed_elements(native_index.clone(), 1, true, true);
         let query = Pointer::symbolic(Variable(986_004));
         let mut facts = PureFactContext::new()
@@ -252,15 +252,15 @@ fn wide_read_keeps_native_index_beside_a_narrow_alias() {
             .assume_condition(
                 ConditionTerm::uint64_less_than(
                     native_index.clone(),
-                    Bitvector32Term::uint64_constant(15),
+                    MachineTerm::uint64_constant(15),
                 ),
                 true,
             );
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_wide(
                 bytes,
-                Bitvector32Term::uint64_constant(0),
-                Bitvector32Term::uint64_constant(15),
+                MachineTerm::uint64_constant(0),
+                MachineTerm::uint64_constant(15),
                 1,
             ),
         ));
@@ -298,20 +298,20 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let _session = crate::kernel::VerificationSession::enter();
         let bytes = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(988_400)), 1),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(988_400)), 1),
         };
         let cursor = Pointer::symbolic(Variable(988_402));
-        let remaining = Bitvector32Term::Variable(Variable(988_403));
-        let advance = Bitvector32Term::Variable(Variable(988_404));
-        let length = Bitvector32Term::Variable(Variable(988_410));
-        let prefix = Bitvector32Term::Variable(Variable(988_411));
+        let remaining = MachineTerm::Variable(Variable(988_403));
+        let advance = MachineTerm::Variable(Variable(988_404));
+        let length = MachineTerm::Variable(Variable(988_410));
+        let prefix = MachineTerm::Variable(Variable(988_411));
         let narrow = bytes.offset_by_elements(
-            Bitvector32Term::subtract(
-                Bitvector32Term::legacy_cast(
+            MachineTerm::subtract(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
                     Box::new(prefix.clone()),
                 ),
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
                     Box::new(remaining.clone()),
                 ),
@@ -319,7 +319,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             1,
         );
         let wide = bytes.offset_by_typed_elements(
-            Bitvector32Term::uint64_subtract(prefix.clone(), remaining.clone()),
+            MachineTerm::uint64_subtract(prefix.clone(), remaining.clone()),
             1,
             true,
             true,
@@ -354,10 +354,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
                 true,
             )
             .assume_condition(
-                ConditionTerm::uint64_equal(
-                    advance.clone(),
-                    Bitvector32Term::uint64_constant(22208),
-                ),
+                ConditionTerm::uint64_equal(advance.clone(), MachineTerm::uint64_constant(22208)),
                 true,
             )
             .assume_condition(
@@ -368,7 +365,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_less_equal(
                     value.clone(),
-                    Bitvector32Term::uint64_constant(i32::MAX as u64),
+                    MachineTerm::uint64_constant(i32::MAX as u64),
                 ),
                 true,
             );
@@ -383,13 +380,8 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
             );
         }
         let resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
-            CMemoryRange::new_wide(
-                bytes.clone(),
-                Bitvector32Term::uint64_constant(0),
-                length,
-                1,
-            )
-            .with_pointer_carrier(&bytes_value),
+            CMemoryRange::new_wide(bytes.clone(), MachineTerm::uint64_constant(0), length, 1)
+                .with_pointer_carrier(&bytes_value),
         ));
         resources.synchronize_memory_equalities(&facts);
         let query = cursor.offset_by_typed_elements(advance.clone(), 1, true, true);
@@ -432,7 +424,7 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         assert!(!permits(
             &resources,
             &cursor.offset_by_typed_elements(
-                Bitvector32Term::uint64_constant(1u64 << 32),
+                MachineTerm::uint64_constant(1u64 << 32),
                 1,
                 true,
                 true
@@ -464,15 +456,15 @@ fn constant_base_interior_lookup_scales_with_selected_range() {
         let model = Pointer::symbolic(Variable(950_001));
         let parameter = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(950_002)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(950_002)), 4),
         };
         let old_read = Pointer {
             block: parent.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(950_003)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(950_003)), 4),
         };
         let cursor = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(950_004)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(950_004)), 4),
         };
         let prefix = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
@@ -537,15 +529,15 @@ fn modeled_pointer_alias_field_lookup_scales_with_selected_addresses() {
         let model = Pointer::symbolic(Variable(940_001));
         let parameter = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(940_002)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(940_002)), 4),
         };
         let old_read = Pointer {
             block: parent.block.clone(),
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(940_003)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(940_003)), 4),
         };
         let cursor = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(940_004)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(940_004)), 4),
         };
         let prefix = PureFactContext::new()
             .assume_condition(ConditionTerm::pointer_equal(parameter, parent), true)
@@ -664,7 +656,7 @@ fn logical_field_coordinates_keep_symbolic_offsets_without_scanning_aliases() {
     for size in [4u64, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
         let owner = Pointer::symbolic(Variable(955_930))
-            .offset_by_elements(Bitvector32Term::Variable(Variable(955_931)), 4);
+            .offset_by_elements(MachineTerm::Variable(Variable(955_931)), 4);
         let alias = Pointer::symbolic(Variable(955_932));
         let mut resources = ResourceContext::new().unchecked_with_fact(CResourceFact::view_memory(
             CMemoryRange::new_with_element_width(owner.clone(), 2u32.into(), 4u32.into(), 4),

@@ -10,7 +10,7 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
     let mut samples = Vec::new();
     for depth in [8, 16, 32, 64] {
         let mut term: SharedIntegerTerm =
-            IntegerTerm::from_machine(MachineIntegerType::Int32, Bitvector32Term::Variable(from))
+            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(from))
                 .unwrap()
                 .into();
         for _ in 0..depth {
@@ -27,7 +27,7 @@ fn shared_integer_application_substitution_scales_with_dag_size() {
             substitute_bitvector_variable_in_integer(
                 &term,
                 from,
-                &Bitvector32Term::Variable(Variable(832)),
+                &MachineTerm::Variable(Variable(832)),
             )
         });
         assert_ne!(&changed, term.as_ref());

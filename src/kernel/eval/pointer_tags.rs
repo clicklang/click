@@ -18,12 +18,12 @@
 
 use super::operators::CBitwiseOperation;
 use super::*;
-use crate::kernel::{Bitvector32Term, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MachineTerm, cast_term};
 
 pub(in crate::kernel) struct TaggedAddress {
     pub(in crate::kernel) pointer: Pointer,
-    pub(in crate::kernel) tag: Bitvector32Term,
+    pub(in crate::kernel) tag: MachineTerm,
     pub(in crate::kernel) object_class: Option<crate::kernel::effective_type::CAccessClass>,
 }
 
@@ -88,14 +88,14 @@ pub(in crate::kernel) struct Refuted(pub(in crate::kernel) String);
 
 /// A tag sum with a zero side is the other side, so a tag read from a fact
 /// such as `word == address(next) + color` is exactly `color`.
-fn add_tag(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+fn add_tag(left: MachineTerm, right: MachineTerm) -> MachineTerm {
     if left.uint64_as_const() == Some(0) {
         return right;
     }
     if right.uint64_as_const() == Some(0) {
         return left;
     }
-    Bitvector32Term::uint64_add(left, right)
+    MachineTerm::uint64_add(left, right)
 }
 
 /// The alignment a tag-clearing mask presumes: `!mask + 1` when the mask
@@ -178,7 +178,7 @@ impl PureFactContext {
 /// A mask covering every possible tag bit. Symbolic tags use only exact
 /// scalar bounds, so lookup work is independent of unrelated assumptions.
 pub(in crate::kernel) fn tag_bound_citing(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     assumptions: &PureFactContext,
     used: &mut UsedFacts,
 ) -> Option<u64> {
@@ -201,12 +201,12 @@ pub(in crate::kernel) fn tag_bound_citing(
             value.as_ref().clone(),
         )),
         cast_term!(UInt64FromInt64, value) => Some(ConditionTerm::int64_signed_less_equal(
-            Bitvector32Term::int64_constant(0),
+            MachineTerm::int64_constant(0),
             value.as_ref().clone(),
         )),
-        cast_term!(UInt64From32, _)
-        | Bitvector32Term::Variable(_)
-        | Bitvector32Term::MemoryLoad(..) => None,
+        cast_term!(UInt64From32, _) | MachineTerm::Variable(_) | MachineTerm::MemoryLoad(..) => {
+            None
+        }
         _ => return None,
     };
     if lower.is_some_and(|condition| !exact(condition, used)) {
@@ -219,14 +219,14 @@ pub(in crate::kernel) fn tag_bound_citing(
             }
             cast_term!(UInt64FromInt64, value) => ConditionTerm::int64_signed_less_equal(
                 value.as_ref().clone(),
-                Bitvector32Term::int64_constant(i64::from(mask)),
+                MachineTerm::int64_constant(i64::from(mask)),
             ),
             cast_term!(UInt64From32, value) => {
                 ConditionTerm::unsigned_less_equal(value.as_ref().clone(), mask.into())
             }
             _ => ConditionTerm::uint64_less_equal(
                 term.clone(),
-                Bitvector32Term::uint64_constant(u64::from(mask)),
+                MachineTerm::uint64_constant(u64::from(mask)),
             ),
         };
         if exact(upper, used) {
@@ -252,7 +252,7 @@ fn require(
         (
             ConditionTerm::uint64_less_than(
                 form.tag.clone(),
-                Bitvector32Term::uint64_constant(alignment),
+                MachineTerm::uint64_constant(alignment),
             ),
             format!("the tag below {alignment}"),
         ),
@@ -292,7 +292,7 @@ fn require(
 }
 
 fn form_of(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     assumptions: &PureFactContext,
     undecided: &mut Undecided<'_>,
     used: &mut UsedFacts,
@@ -337,19 +337,19 @@ fn form_of(
 }
 
 fn structural_form_of(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     assumptions: &PureFactContext,
     undecided: &mut Undecided<'_>,
     used: &mut UsedFacts,
     through_facts: bool,
 ) -> Result<Option<TaggedAddress>, Refuted> {
     let direct = match term {
-        Bitvector32Term::PointerAddress(pointer, class) => Some(TaggedAddress {
+        MachineTerm::PointerAddress(pointer, class) => Some(TaggedAddress {
             pointer: pointer.as_ref().clone(),
             object_class: class.class(),
-            tag: Bitvector32Term::uint64_constant(0),
+            tag: MachineTerm::uint64_constant(0),
         }),
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Add,
             left,
@@ -371,7 +371,7 @@ fn structural_form_of(
                 })
             }
         }
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Subtract,
             left,
@@ -380,10 +380,10 @@ fn structural_form_of(
             form_of(left, assumptions, undecided, used, through_facts)?.map(|form| TaggedAddress {
                 pointer: form.pointer,
                 object_class: form.object_class,
-                tag: Bitvector32Term::uint64_subtract(form.tag, right.as_ref().clone()),
+                tag: MachineTerm::uint64_subtract(form.tag, right.as_ref().clone()),
             })
         }
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: op @ (MachineBinaryOp::BitwiseAnd | MachineBinaryOp::BitwiseOr),
             left,
@@ -397,7 +397,7 @@ fn structural_form_of(
             // The tag side is a constant, or for `|` a masked term `x & m`
             // (rbtree's `rb_color(rb) | (unsigned long)p`), whose bound the
             // mask constant gives.
-            let masked_bound = |term: &Bitvector32Term, used: &mut UsedFacts| {
+            let masked_bound = |term: &MachineTerm, used: &mut UsedFacts| {
                 tag_bound_citing(term, assumptions, used)
             };
             let (inner, tag, constant) = match (left.uint64_as_const(), right.uint64_as_const()) {
@@ -436,11 +436,11 @@ fn structural_form_of(
                         tag: if tag_bound_citing(&form.tag, assumptions, used)
                             .is_some_and(|mask| mask & constant == 0)
                         {
-                            Bitvector32Term::uint64_constant(0)
+                            MachineTerm::uint64_constant(0)
                         } else {
-                            Bitvector32Term::uint64_bitwise_and(
+                            MachineTerm::uint64_bitwise_and(
                                 form.tag,
-                                Bitvector32Term::uint64_constant(constant),
+                                MachineTerm::uint64_constant(constant),
                             )
                         },
                     })
@@ -467,9 +467,9 @@ fn structural_form_of(
                     Some(TaggedAddress {
                         pointer: form.pointer,
                         object_class: form.object_class,
-                        tag: Bitvector32Term::uint64_bitwise_or(
+                        tag: MachineTerm::uint64_bitwise_or(
                             form.tag,
-                            tag.unwrap_or(Bitvector32Term::uint64_constant(constant)),
+                            tag.unwrap_or(MachineTerm::uint64_constant(constant)),
                         ),
                     })
                 }
@@ -483,7 +483,7 @@ fn structural_form_of(
 
 /// `term` as `address(pointer) + tag` using only decided conditions.
 pub(in crate::kernel) fn tagged_address_form(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     assumptions: &PureFactContext,
     used: &mut UsedFacts,
 ) -> Option<TaggedAddress> {
@@ -496,18 +496,18 @@ pub(in crate::kernel) fn tagged_address_form(
 /// only decided conditions.
 /// An upper bound on a tag term: a constant is its own bound, `x & m` is
 /// bounded by `m`, and `a | b` by the all-ones value covering both bounds.
-pub(in crate::kernel) fn tag_bound(term: &Bitvector32Term) -> Option<u64> {
+pub(in crate::kernel) fn tag_bound(term: &MachineTerm) -> Option<u64> {
     if let Some(constant) = term.uint64_as_const() {
         return Some(constant);
     }
     match term {
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::BitwiseAnd,
             left,
             right,
         } => left.uint64_as_const().or_else(|| right.uint64_as_const()),
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::BitwiseOr,
             left,
@@ -521,11 +521,11 @@ pub(in crate::kernel) fn tag_bound(term: &Bitvector32Term) -> Option<u64> {
 }
 
 pub(in crate::kernel) fn masked_tag_value(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     assumptions: &PureFactContext,
     used: &mut UsedFacts,
-) -> Option<Bitvector32Term> {
-    let Bitvector32Term::Binary {
+) -> Option<MachineTerm> {
+    let MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
         left,
@@ -551,8 +551,7 @@ pub(in crate::kernel) fn masked_tag_value(
     )
     .ok()
     .filter(|decided| *decided)?;
-    let value =
-        Bitvector32Term::uint64_bitwise_and(form.tag, Bitvector32Term::uint64_constant(mask));
+    let value = MachineTerm::uint64_bitwise_and(form.tag, MachineTerm::uint64_constant(mask));
     // A tag read that rewrites to itself makes no progress; deciding it
     // again would only recurse.
     (&value != term).then_some(value)
@@ -563,7 +562,7 @@ pub(in crate::kernel) fn masked_tag_value(
 /// become obligations; a refuted one is an error. `Ok(None)` means the word
 /// has no recorded pointer origin.
 pub(in crate::kernel) fn cast_tagged_address_to_pointer(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     assumptions: &PureFactContext,
     obligations: &mut Vec<ProofObligation>,
     target_type: CType,
@@ -581,7 +580,7 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
         Err(Refuted(message)) => return Err(message),
     };
     let tag_is_zero =
-        ConditionTerm::uint64_equal(form.tag.clone(), Bitvector32Term::uint64_constant(0));
+        ConditionTerm::uint64_equal(form.tag.clone(), MachineTerm::uint64_constant(0));
     match assumptions.decide(&tag_is_zero) {
         Some(true) => Ok(Some(
             CPointerValue::new(form.pointer, target_type)
@@ -628,9 +627,9 @@ mod exact_word_address_tests {
             .assume_condition(ConditionTerm::pointer_aligned(p.clone(), 8), true)
             .assume_condition(ConditionTerm::pointer_aligned(q.clone(), 8), true);
         let word = |pointer: Pointer, tag| {
-            Bitvector32Term::uint64_add(
-                Bitvector32Term::pointer_address(pointer),
-                Bitvector32Term::uint64_constant(tag),
+            MachineTerm::uint64_add(
+                MachineTerm::pointer_address(pointer),
+                MachineTerm::uint64_constant(tag),
             )
         };
         let mut used = UsedFacts::new();
@@ -671,11 +670,11 @@ mod exact_word_address_tests {
         let pointer = Pointer::symbolic(Variable(980120));
         let other = Pointer::symbolic(Variable(980121));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
-        let classed = Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone()));
-        let bare = Bitvector32Term::pointer_address(pointer.clone());
+        let classed = MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone()));
+        let bare = MachineTerm::pointer_address(pointer.clone());
         assert_eq!(classed, bare);
         assert_eq!(classed.cmp(&bare), std::cmp::Ordering::Equal);
-        let hash = |term: &Bitvector32Term| {
+        let hash = |term: &MachineTerm| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             term.hash(&mut hasher);
             hasher.finish()
@@ -685,10 +684,9 @@ mod exact_word_address_tests {
         // query over the bare spelling asks for, in either polarity.
         let stated = ConditionTerm::uint64_equal(
             classed.clone(),
-            Bitvector32Term::pointer_address(other.clone()),
+            MachineTerm::pointer_address(other.clone()),
         );
-        let asked =
-            ConditionTerm::uint64_equal(bare.clone(), Bitvector32Term::pointer_address(other));
+        let asked = ConditionTerm::uint64_equal(bare.clone(), MachineTerm::pointer_address(other));
         let assumptions = PureFactContext::new().assume_condition(stated, false);
         assert!(
             crate::kernel::reasoning::path_facts::required_obligation_is_exactly_discharged(
@@ -697,7 +695,7 @@ mod exact_word_address_tests {
             )
         );
         // The class is evidence for decoding, and identity never erases it.
-        let Bitvector32Term::PointerAddress(_, retained) = &classed else {
+        let MachineTerm::PointerAddress(_, retained) = &classed else {
             panic!("an address term");
         };
         assert_eq!(retained.class(), Some(class));
@@ -710,11 +708,11 @@ mod exact_word_address_tests {
         let pointer = Pointer::symbolic(Variable(980110));
         let class = CAccessClass::Struct(CStructClass::opaque("node"));
         let premise = ConditionTerm::uint64_equal(
-            Bitvector32Term::uint64_bitwise_and(
-                Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
-                Bitvector32Term::uint64_constant(7),
+            MachineTerm::uint64_bitwise_and(
+                MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
+                MachineTerm::uint64_constant(7),
             ),
-            Bitvector32Term::uint64_constant(0),
+            MachineTerm::uint64_constant(0),
         );
         let assumptions = PureFactContext::new().assume_condition(premise.clone(), true);
         let (aligned, cited) = assumptions
@@ -723,15 +721,12 @@ mod exact_word_address_tests {
         assert!(aligned);
         assert_eq!(cited, Some(Proposition::ConditionIs(premise, true)));
         for address in [
-            Bitvector32Term::pointer_address(pointer.clone()),
-            Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+            MachineTerm::pointer_address(pointer.clone()),
+            MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
         ] {
             let tagged = ConditionTerm::uint64_equal(
-                Bitvector32Term::uint64_bitwise_or(
-                    address.clone(),
-                    Bitvector32Term::uint64_constant(1),
-                ),
-                Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(1)),
+                MachineTerm::uint64_bitwise_or(address.clone(), MachineTerm::uint64_constant(1)),
+                MachineTerm::uint64_add(address, MachineTerm::uint64_constant(1)),
             );
             assert_eq!(assumptions.decide(&tagged), Some(true));
         }
@@ -772,17 +767,13 @@ mod exact_word_address_tests {
             panic!("encoded address")
         };
         let address = address.clone();
-        let tagged = Bitvector32Term::uint64_bitwise_or(
-            address.clone(),
-            Bitvector32Term::uint64_constant(1),
-        );
-        let cleared = Bitvector32Term::uint64_bitwise_and(
-            tagged.clone(),
-            Bitvector32Term::uint64_constant(!3),
-        );
-        let subtracted = Bitvector32Term::uint64_subtract(
-            Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
-            Bitvector32Term::uint64_constant(1),
+        let tagged =
+            MachineTerm::uint64_bitwise_or(address.clone(), MachineTerm::uint64_constant(1));
+        let cleared =
+            MachineTerm::uint64_bitwise_and(tagged.clone(), MachineTerm::uint64_constant(!3));
+        let subtracted = MachineTerm::uint64_subtract(
+            MachineTerm::uint64_add(address.clone(), MachineTerm::uint64_constant(1)),
+            MachineTerm::uint64_constant(1),
         );
         for word in [address.clone(), cleared, subtracted] {
             // The numeric decoder recovers only coordinates and object class.
@@ -812,7 +803,7 @@ mod exact_word_address_tests {
         assert_eq!(
             assumptions.decide(&ConditionTerm::uint64_equal(
                 address,
-                Bitvector32Term::pointer_address(pointer)
+                MachineTerm::pointer_address(pointer)
             )),
             Some(true)
         );
@@ -824,11 +815,11 @@ mod exact_word_address_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(980020));
         let class = CAccessClass::Scalar(CScalarClass::Int);
-        let word = Bitvector32Term::Variable(Variable(980021));
+        let word = MachineTerm::Variable(Variable(980021));
         let premise = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 word.clone(),
-                Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+                MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
             ),
             true,
         );
@@ -858,7 +849,7 @@ mod exact_word_address_tests {
             );
         }
         let bare = cast_tagged_address_to_pointer(
-            &Bitvector32Term::pointer_address(pointer),
+            &MachineTerm::pointer_address(pointer),
             &PureFactContext::new(),
             &mut obligations,
             CType::Float64Pointer,
@@ -876,11 +867,11 @@ mod exact_word_address_tests {
     #[test]
     fn compound_word_address_requires_origin_and_stops_at_cyclic_equations() {
         let _session = crate::kernel::VerificationSession::enter();
-        let expression = Bitvector32Term::uint64_bitwise_and(
-            Bitvector32Term::Variable(Variable(980001)),
-            Bitvector32Term::uint64_constant(!3),
+        let expression = MachineTerm::uint64_bitwise_and(
+            MachineTerm::Variable(Variable(980001)),
+            MachineTerm::uint64_constant(!3),
         );
-        let alias = Bitvector32Term::Variable(Variable(980002));
+        let alias = MachineTerm::Variable(Variable(980002));
         for assumptions in [
             PureFactContext::new(),
             PureFactContext::new()
@@ -904,11 +895,9 @@ mod exact_word_address_tests {
     #[test]
     fn symbolic_tag_bounds_require_nonnegative_and_upper_premises() {
         let _session = crate::kernel::VerificationSession::enter();
-        let tag = Bitvector32Term::Variable(Variable(980_011));
-        let converted = Bitvector32Term::legacy_cast(
-            MachineCastSpelling::UInt64FromInt32,
-            Box::new(tag.clone()),
-        );
+        let tag = MachineTerm::Variable(Variable(980_011));
+        let converted =
+            MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag.clone()));
         let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
         let upper = ConditionTerm::signed_less_equal(tag, 1u32.into());
         for context in [
@@ -926,12 +915,11 @@ mod exact_word_address_tests {
             .assume_condition(lower.clone(), true)
             .assume_condition(upper.clone(), true)
             .assume_condition(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
-        let tagged = Bitvector32Term::uint64_bitwise_or(
-            Bitvector32Term::pointer_address(pointer.clone()),
+        let tagged = MachineTerm::uint64_bitwise_or(
+            MachineTerm::pointer_address(pointer.clone()),
             converted,
         );
-        let cleared =
-            Bitvector32Term::uint64_bitwise_and(tagged, Bitvector32Term::uint64_constant(!3));
+        let cleared = MachineTerm::uint64_bitwise_and(tagged, MachineTerm::uint64_constant(!3));
         let mut used = UsedFacts::new();
         let form = tagged_address_form(&cleared, &context, &mut used).unwrap();
         assert_eq!(form.pointer, pointer);

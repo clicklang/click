@@ -8,12 +8,12 @@ use super::*;
 use crate::kernel::MachineIntegerType as Ty;
 use crate::kernel::VerificationSession;
 
-fn var(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn var(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 
-fn cast(source: Ty, destination: Ty, value: Bitvector32Term) -> Bitvector32Term {
-    Bitvector32Term::machine_integer_cast(source, destination, value)
+fn cast(source: Ty, destination: Ty, value: MachineTerm) -> MachineTerm {
+    MachineTerm::machine_integer_cast(source, destination, value)
 }
 
 /// R-dist at the low word: the low word of a 64-bit sum, difference,
@@ -33,13 +33,13 @@ fn the_low_word_distributes_over_the_sign_free_64_bit_operators() {
             Op::BitwiseXor,
         ] {
             let (a, b) = (var(181_001), var(181_002));
-            let wide = Bitvector32Term::machine_binary(format, op, a.clone(), b.clone());
-            let low = Bitvector32Term::uint32_from_64(wide);
-            let narrow = Bitvector32Term::machine_binary(
+            let wide = MachineTerm::machine_binary(format, op, a.clone(), b.clone());
+            let low = MachineTerm::uint32_from_64(wide);
+            let narrow = MachineTerm::machine_binary(
                 Ty::Int32,
                 op,
-                Bitvector32Term::uint32_from_64(a),
-                Bitvector32Term::uint32_from_64(b),
+                MachineTerm::uint32_from_64(a),
+                MachineTerm::uint32_from_64(b),
             );
             let graph = EqualityGraph::default();
             assert!(graph.are_int32_equal(&low, &narrow), "{format:?} {op:?}");
@@ -55,17 +55,17 @@ fn the_low_word_does_not_distribute_over_division_or_the_right_shift() {
     use crate::kernel::MachineBinaryOp as Op;
     for op in [Op::Divide, Op::Remainder, Op::ShiftRight] {
         let (a, b) = (var(181_011), var(181_012));
-        let low = Bitvector32Term::uint32_from_64(Bitvector32Term::machine_binary(
+        let low = MachineTerm::uint32_from_64(MachineTerm::machine_binary(
             Ty::UInt64,
             op,
             a.clone(),
             b.clone(),
         ));
-        let narrow = Bitvector32Term::machine_binary(
+        let narrow = MachineTerm::machine_binary(
             Ty::UInt32,
             op,
-            Bitvector32Term::uint32_from_64(a),
-            Bitvector32Term::uint32_from_64(b),
+            MachineTerm::uint32_from_64(a),
+            MachineTerm::uint32_from_64(b),
         );
         let graph = EqualityGraph::default();
         assert!(!graph.are_int32_equal(&low, &narrow), "{op:?}");
@@ -79,10 +79,10 @@ fn the_64_bit_reinterpretation_distributes_over_a_sum() {
     let _session = VerificationSession::enter();
     let (a, b) = (var(181_021), var(181_022));
     let reinterpreted =
-        Bitvector32Term::uint64_from_int64(Bitvector32Term::int64_add(a.clone(), b.clone()));
-    let unsigned = Bitvector32Term::uint64_add(
-        Bitvector32Term::uint64_from_int64(a),
-        Bitvector32Term::uint64_from_int64(b),
+        MachineTerm::uint64_from_int64(MachineTerm::int64_add(a.clone(), b.clone()));
+    let unsigned = MachineTerm::uint64_add(
+        MachineTerm::uint64_from_int64(a),
+        MachineTerm::uint64_from_int64(b),
     );
     let graph = EqualityGraph::default();
     assert!(graph.are_uint64_equal(&reinterpreted, &unsigned));
@@ -96,11 +96,11 @@ fn the_low_word_of_a_value_learned_equal_to_a_sum_distributes() {
     let _session = VerificationSession::enter();
     for intern_first in [false, true] {
         let (a, b, y) = (var(181_031), var(181_032), var(181_033));
-        let sum = Bitvector32Term::uint64_add(a.clone(), b.clone());
-        let low_y = Bitvector32Term::uint32_from_64(y.clone());
-        let low_sum = Bitvector32Term::add(
-            Bitvector32Term::uint32_from_64(a),
-            Bitvector32Term::uint32_from_64(b),
+        let sum = MachineTerm::uint64_add(a.clone(), b.clone());
+        let low_y = MachineTerm::uint32_from_64(y.clone());
+        let low_sum = MachineTerm::add(
+            MachineTerm::uint32_from_64(a),
+            MachineTerm::uint32_from_64(b),
         );
         let mut graph = EqualityGraph::default();
         if intern_first {
@@ -122,12 +122,12 @@ fn a_narrow_truncation_of_a_sum_depends_only_on_the_operands_truncations() {
         let left = cast(
             Ty::UInt32,
             destination,
-            Bitvector32Term::add(a.clone(), b.clone()),
+            MachineTerm::add(a.clone(), b.clone()),
         );
         let right = cast(
             Ty::UInt32,
             destination,
-            Bitvector32Term::add(c.clone(), b.clone()),
+            MachineTerm::add(c.clone(), b.clone()),
         );
         let mut graph = EqualityGraph::default();
         assert!(!graph.are_int32_equal(&left, &right), "{destination:?}");
@@ -146,11 +146,11 @@ fn a_narrow_truncation_distributes_over_a_short_left_shift_only() {
     let _session = VerificationSession::enter();
     for (count, distributes) in [(3u32, true), (9, false)] {
         let (a, c) = (var(181_051), var(181_052));
-        let shifted = |value: Bitvector32Term| {
+        let shifted = |value: MachineTerm| {
             cast(
                 Ty::UInt32,
                 Ty::UInt8,
-                Bitvector32Term::shift_left(value, Bitvector32Term::constant(count)),
+                MachineTerm::shift_left(value, MachineTerm::constant(count)),
             )
         };
         let mut graph = EqualityGraph::default();
@@ -175,14 +175,14 @@ fn conversions_compose_through_a_class() {
     let _session = VerificationSession::enter();
     let x = var(181_061);
     for extended in [
-        Bitvector32Term::int64_from_32(x.clone()),
-        Bitvector32Term::uint64_from_32(x.clone()),
+        MachineTerm::int64_from_32(x.clone()),
+        MachineTerm::uint64_from_32(x.clone()),
     ] {
         let y = var(181_062);
         let mut graph = EqualityGraph::default();
-        assert!(!graph.are_int32_equal(&Bitvector32Term::uint32_from_64(y.clone()), &x));
+        assert!(!graph.are_int32_equal(&MachineTerm::uint32_from_64(y.clone()), &x));
         graph.add_uint64_equality(&y, &extended);
-        assert!(graph.are_int32_equal(&Bitvector32Term::uint32_from_64(y), &x));
+        assert!(graph.are_int32_equal(&MachineTerm::uint32_from_64(y), &x));
     }
     // `y` is a 16-bit value, equated at its width; the two byte casts are
     // 8-bit values compared at theirs.
@@ -243,13 +243,13 @@ fn a_narrow_same_width_conversion_is_not_inverted() {
 fn the_32_bit_sign_cast_is_a_node_related_by_r0_and_r_dist() {
     use crate::kernel::MachineBinaryOp as Op;
     let _session = VerificationSession::enter();
-    let sigma = |source: Ty, value: Bitvector32Term| {
+    let sigma = |source: Ty, value: MachineTerm| {
         let destination = if source == Ty::Int32 {
             Ty::UInt32
         } else {
             Ty::Int32
         };
-        Bitvector32Term::sign_cast32(source, destination, value)
+        MachineTerm::sign_cast32(source, destination, value)
     };
     let (x, y, u) = (var(181_081), var(181_082), var(181_083));
     let graph = EqualityGraph::default();
@@ -271,8 +271,8 @@ fn the_32_bit_sign_cast_is_a_node_related_by_r0_and_r_dist() {
         Op::BitwiseAnd,
         Op::BitwiseXor,
     ] {
-        let signed = Bitvector32Term::machine_binary(Ty::Int32, op, x.clone(), y.clone());
-        let unsigned = Bitvector32Term::machine_binary(
+        let signed = MachineTerm::machine_binary(Ty::Int32, op, x.clone(), y.clone());
+        let unsigned = MachineTerm::machine_binary(
             Ty::UInt32,
             op,
             sigma(Ty::Int32, x.clone()),
@@ -289,10 +289,10 @@ fn the_32_bit_sign_cast_is_a_node_related_by_r0_and_r_dist() {
     }
     // σ of a class learned to hold a constant is that constant.
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&x, &Bitvector32Term::constant(u32::MAX));
+    graph.add_int32_equality(&x, &MachineTerm::constant(u32::MAX));
     assert!(graph.are_int32_equal(
         &sigma(Ty::Int32, x.clone()),
-        &Bitvector32Term::uint32_constant(u32::MAX)
+        &MachineTerm::uint32_constant(u32::MAX)
     ));
 }
 
@@ -332,7 +332,7 @@ fn a_native_narrow_operator_meets_its_promoted_spelling() {
                 } else {
                     b.clone()
                 };
-                let native = Bitvector32Term::machine_binary(format, op, a.clone(), right);
+                let native = MachineTerm::machine_binary(format, op, a.clone(), right);
                 let promoted_right = if op == Op::ShiftLeft {
                     count
                 } else {
@@ -341,12 +341,7 @@ fn a_native_narrow_operator_meets_its_promoted_spelling() {
                 let promoted = cast(
                     word,
                     format,
-                    Bitvector32Term::machine_binary(
-                        word,
-                        op,
-                        cast(format, word, a),
-                        promoted_right,
-                    ),
+                    MachineTerm::machine_binary(word, op, cast(format, word, a), promoted_right),
                 );
                 for native_first in [true, false] {
                     let graph = EqualityGraph::default();
@@ -367,7 +362,7 @@ fn a_native_narrow_operator_meets_its_promoted_spelling() {
         }
         // The complement too.
         let a = var(181_084);
-        let native = Bitvector32Term::machine_unary(
+        let native = MachineTerm::machine_unary(
             format,
             crate::kernel::MachineUnaryOp::BitwiseNot,
             a.clone(),
@@ -375,7 +370,7 @@ fn a_native_narrow_operator_meets_its_promoted_spelling() {
         let promoted = cast(
             Ty::Int32,
             format,
-            Bitvector32Term::bitwise_not_at(Ty::Int32, cast(format, Ty::Int32, a)),
+            MachineTerm::bitwise_not_at(Ty::Int32, cast(format, Ty::Int32, a)),
         );
         let graph = EqualityGraph::default();
         let mut state = graph.state.lock().expect("equality graph");
@@ -395,11 +390,11 @@ fn a_native_narrow_operator_is_not_another_operators_promotion() {
     let _session = VerificationSession::enter();
     use crate::kernel::MachineBinaryOp as Op;
     let (a, b) = (var(181_091), var(181_092));
-    let native = Bitvector32Term::machine_binary(Ty::UInt8, Op::Add, a.clone(), b.clone());
+    let native = MachineTerm::machine_binary(Ty::UInt8, Op::Add, a.clone(), b.clone());
     let promoted = cast(
         Ty::Int32,
         Ty::UInt8,
-        Bitvector32Term::machine_binary(
+        MachineTerm::machine_binary(
             Ty::Int32,
             Op::Subtract,
             cast(Ty::UInt8, Ty::Int32, a),
@@ -459,11 +454,9 @@ fn explicit_wide_add_sub_nodes_cancel_in_the_comparison_graph() {
             )
             .unwrap()
         };
-        let sum =
-            Bitvector32Term::logical_machine_binary(format, Op::Add, base.clone(), literal(1));
-        let difference = |n| {
-            Bitvector32Term::logical_machine_binary(format, Op::Subtract, sum.clone(), literal(n))
-        };
+        let sum = MachineTerm::logical_machine_binary(format, Op::Add, base.clone(), literal(1));
+        let difference =
+            |n| MachineTerm::logical_machine_binary(format, Op::Subtract, sum.clone(), literal(n));
         let graph = EqualityGraph::default();
         for (op, left, right, expected) in [
             (Op::Add, literal(0), base.clone(), base.clone()),
@@ -473,19 +466,19 @@ fn explicit_wide_add_sub_nodes_cancel_in_the_comparison_graph() {
             (Op::Multiply, base.clone(), literal(0), literal(0)),
             (Op::Multiply, base.clone(), literal(1), base.clone()),
         ] {
-            let term = Bitvector32Term::logical_machine_binary(format, op, left, right);
+            let term = MachineTerm::logical_machine_binary(format, op, left, right);
             assert!(
                 graph.are_uint64_equal(&term, &expected),
                 "{format:?} {op:?}: {term:?} != {expected:?}"
             );
-            assert!(matches!(term, Bitvector32Term::Binary { .. }));
+            assert!(matches!(term, MachineTerm::Binary { .. }));
         }
         assert!(graph.are_uint64_equal(&difference(1), &base));
         assert!(!graph.are_uint64_equal(&difference(2), &base));
         assert!(
             matches!(
                 difference(1),
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     op: Op::Subtract,
                     ..
                 }

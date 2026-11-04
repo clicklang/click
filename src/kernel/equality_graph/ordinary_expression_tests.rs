@@ -6,8 +6,8 @@ use crate::kernel::{
     MachineIntegerType as M,
 };
 
-fn word(v: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(v))
+fn word(v: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(v))
 }
 fn binary_operations() -> Vec<B> {
     vec![
@@ -153,13 +153,13 @@ fn unary_operations() -> Vec<(U, bool, bool)> {
 }
 /// The width of two sides when either is an 8- or 16-bit value, which is
 /// equated at its own width.
-fn narrow_width(a: &Bitvector32Term, b: &Bitvector32Term) -> Option<W> {
+fn narrow_width(a: &MachineTerm, b: &MachineTerm) -> Option<W> {
     match crate::kernel::root_width(a).or_else(|| crate::kernel::root_width(b)) {
         Some(width @ (W::Bits8 | W::Bits16)) => Some(width),
         _ => None,
     }
 }
-fn equal(graph: &EqualityGraph, a: &Bitvector32Term, b: &Bitvector32Term, wide: bool) -> bool {
+fn equal(graph: &EqualityGraph, a: &MachineTerm, b: &MachineTerm, wide: bool) -> bool {
     if let Some(width) = narrow_width(a, b) {
         let mut state = graph.state.lock().expect("equality graph");
         return state.terms.are_typed_equal(width, a, b);
@@ -170,7 +170,7 @@ fn equal(graph: &EqualityGraph, a: &Bitvector32Term, b: &Bitvector32Term, wide: 
         graph.are_int32_equal(a, b)
     }
 }
-fn merge(graph: &mut EqualityGraph, a: &Bitvector32Term, b: &Bitvector32Term, wide: bool) {
+fn merge(graph: &mut EqualityGraph, a: &MachineTerm, b: &MachineTerm, wide: bool) {
     if let Some(width) = narrow_width(a, b) {
         let mut state = graph.state.lock().expect("equality graph");
         state.terms.add_typed_equality(width, a, b);
@@ -214,7 +214,7 @@ fn every_integer_operator_propagates_early_and_late_aliases() {
             }
             // An 8- or 16-bit operand is a value of its width, equated at it.
             match &a {
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: source,
                     ..
@@ -243,12 +243,12 @@ fn all_integer_argument_types_follow_model_aliases_without_losing_tags() {
     let x = super::algebraic_tests::variable(&ty, 940_021);
     let y = super::algebraic_tests::variable(&ty, 940_022);
     let arg = |ty: M, model: &AlgebraicTerm| {
-        ty.value_from_term(Bitvector32Term::ClickFunctionApplication {
+        ty.value_from_term(MachineTerm::ClickFunctionApplication {
             name: "inner".into(),
             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
         })
     };
-    let call = |arg| Bitvector32Term::ClickFunctionApplication {
+    let call = |arg| MachineTerm::ClickFunctionApplication {
         name: "outer".into(),
         arguments: vec![PureFunctionArgument::Value(arg)],
     };
@@ -286,7 +286,7 @@ fn casts_from_integer_share_aliases_and_preserve_conversion_identity() {
     let _session = crate::kernel::VerificationSession::enter();
     let x: crate::kernel::SharedIntegerTerm = I::Variable(Variable(940_031)).into();
     let y: crate::kernel::SharedIntegerTerm = I::Variable(Variable(940_032)).into();
-    let cast = |value, destination| Bitvector32Term::IntegerToMachine { value, destination };
+    let cast = |value, destination| MachineTerm::IntegerToMachine { value, destination };
     let mut graph = EqualityGraph::default();
     assert!(!graph.are_int32_equal(&cast(x.clone(), M::Int32), &cast(y.clone(), M::Int32)));
     graph.add_integer_equality(&x, &y);
@@ -352,7 +352,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = Pointer::symbolic(Variable(940_051));
     let q = Pointer::symbolic(Variable(940_052));
-    let call = |pointer| Bitvector32Term::ClickFunctionApplication {
+    let call = |pointer| MachineTerm::ClickFunctionApplication {
         name: "pointer_getter".into(),
         arguments: vec![PureFunctionArgument::Value(CValue::Pointer(
             crate::kernel::CPointerValue::new(pointer, CType::Int32Pointer),
@@ -370,7 +370,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
                     crate::kernel::MachineBinaryOp::Multiply,
                 )
                 .build_raw(call(pointer), word(940_053)),
-                Bitvector32Term::constant(7),
+                MachineTerm::constant(7),
             ),
         )
     };
@@ -401,10 +401,10 @@ fn a_uint32_constant_is_one_class_with_its_word() {
     let _session = crate::kernel::VerificationSession::enter();
     let graph = EqualityGraph::default();
     for bits in [0u32, 7, 0x7FFF_FFFF, 0x8000_0000, u32::MAX] {
-        let word = Bitvector32Term::constant(bits);
-        let formatted = Bitvector32Term::uint32_constant(bits);
+        let word = MachineTerm::constant(bits);
+        let formatted = MachineTerm::uint32_constant(bits);
         assert!(graph.are_int32_equal(&word, &formatted), "{bits}");
-        let x = Bitvector32Term::Variable(Variable(961_001));
+        let x = MachineTerm::Variable(Variable(961_001));
         assert!(
             graph.are_int32_equal(
                 &binary_node!(
@@ -418,7 +418,7 @@ fn a_uint32_constant_is_one_class_with_its_word() {
             "{bits} as an operand"
         );
         assert!(
-            !graph.are_int32_equal(&formatted, &Bitvector32Term::constant(bits.wrapping_add(1))),
+            !graph.are_int32_equal(&formatted, &MachineTerm::constant(bits.wrapping_add(1))),
             "{bits}"
         );
     }

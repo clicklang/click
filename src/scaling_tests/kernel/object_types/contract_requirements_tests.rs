@@ -44,9 +44,9 @@ fn conditional_origins_form_a_shared_graph_instead_of_expanded_prefix_sets() {
         for index in 1..count {
             expression = SpecExpression::If {
                 condition: Box::new(SpecProposition::Comparison {
-                    left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                    left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                     operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                    right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                 }),
                 then_branch: Box::new(expression),
                 else_branch: Box::new(variable(&format!("p{index}"))),

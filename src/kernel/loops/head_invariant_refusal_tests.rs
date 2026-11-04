@@ -2,7 +2,7 @@ use super::*;
 
 fn nonnegative_i() -> SpecProposition {
     SpecProposition::Comparison {
-        left: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+        left: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
         operator: CComparisonOperator::LessEqual,
         right: SpecExpression::CExpression(c_variable("i")),
     }
@@ -16,8 +16,7 @@ fn check(proposition: SpecProposition) -> CLoopInvariantCheck {
 /// that left it no context, by position, rather than only `false == true`.
 #[test]
 fn head_refusal_names_the_invariant_that_contradicts_the_ones_before_it() {
-    let state =
-        CState::new().with_local("i", CValue::Int32(Bitvector32Term::Variable(Variable(7))));
+    let state = CState::new().with_local("i", CValue::Int32(MachineTerm::Variable(Variable(7))));
     let checks = [
         check(nonnegative_i()),
         check(SpecProposition::Not(Box::new(nonnegative_i()))),

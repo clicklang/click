@@ -35,8 +35,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::kernel::functions::CCheckedResourceFact;
 use crate::kernel::loans::{LoanLedger, LoanRefusal, LoanViewBinding, plan_stable_view_transfer};
 use crate::kernel::{
-    Bitvector32Term, CMemoryRange, CResourceFact, CResourceSnapshot, CResourceTransferRole,
-    Pointer, PointerOffsetTerm, PureFactContext, ResourceContext, ResourceOccurrenceId,
+    CMemoryRange, CResourceFact, CResourceSnapshot, CResourceTransferRole, MachineTerm, Pointer,
+    PointerOffsetTerm, PureFactContext, ResourceContext, ResourceOccurrenceId,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
@@ -1232,8 +1232,8 @@ fn production_memory_fact(start: u32, end: u32, own: bool) -> CResourceFact {
             block: "v14-buffer".into(),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::constant(start),
-        Bitvector32Term::constant(end),
+        MachineTerm::constant(start),
+        MachineTerm::constant(end),
     );
     if own {
         CResourceFact::own_memory(range)

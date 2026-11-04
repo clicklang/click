@@ -43,17 +43,17 @@ fn none() -> AlgebraicTerm {
 pub(super) fn some(variable: u64) -> AlgebraicTerm {
     term(AlgebraicTermNode::Constructor {
         variant: "Some".into(),
-        fields: vec![AlgebraicValue::C(CValue::UInt32(
-            Bitvector32Term::Variable(Variable(variable)),
-        ))],
+        fields: vec![AlgebraicValue::C(CValue::UInt32(MachineTerm::Variable(
+            Variable(variable),
+        )))],
     })
 }
 pub(super) fn tag(variable: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(Bitvector32Term::Variable(Variable(variable))),
-        right: Box::new(Bitvector32Term::constant(0)),
+        left: Box::new(MachineTerm::Variable(Variable(variable))),
+        right: Box::new(MachineTerm::constant(0)),
     }
 }
 /// `if tag == 0 { None } else { Some(payload) }`, a Rust option's view.
@@ -71,8 +71,8 @@ fn values_equal(left: u64, right: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(Bitvector32Term::Variable(Variable(left))),
-        right: Box::new(Bitvector32Term::Variable(Variable(right))),
+        left: Box::new(MachineTerm::Variable(Variable(left))),
+        right: Box::new(MachineTerm::Variable(Variable(right))),
     }
 }
 

@@ -1413,7 +1413,7 @@ impl Proof<'_> {
                     crate::kernel::AlgebraicTermNode::Variable(variable) => Some(variable),
                     _ => None,
                 },
-                crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
                     Some(*variable)
                 }
                 CValue::Pointer(pointer) => {
@@ -1481,9 +1481,9 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
             _ => None,
         },
         crate::kernel::arithmetic_c_value!(term) => match term {
-            Bitvector32Term::Variable(variable) => Some(*variable),
+            MachineTerm::Variable(variable) => Some(*variable),
             // A `Bool` binder (Stage 5), carried as its cast.
-            Bitvector32Term::BoolCast { value, .. } => match value.as_ref() {
+            MachineTerm::BoolCast { value, .. } => match value.as_ref() {
                 crate::kernel::ConditionTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
@@ -1496,7 +1496,7 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
             // not identify the pointer local itself.
             PointerOffsetTerm::Int32Scaled { value, .. }
             | PointerOffsetTerm::Int64Scaled { value, .. } => match value.as_ref() {
-                Bitvector32Term::Variable(variable) => Some(*variable),
+                MachineTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,
@@ -1584,7 +1584,7 @@ fn register_snapshot_names(
             // `<region>.result`, at any point that holds it.
             if let Some(spelling) = crate::surface::diagnostics::call_result_spelling(name) {
                 match value.numeric_value() {
-                    crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                    crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
                         labels.fallback_source_name(*variable, spelling, value.c_type());
                     }
                     CValue::Pointer(pointer) => {
@@ -1610,7 +1610,7 @@ fn register_snapshot_names(
             // A `usize` or `uintptr_t` local is a pointer integer; its
             // numeric value is the scalar the local held.
             match value.numeric_value() {
-                crate::kernel::arithmetic_c_value!(Bitvector32Term::Variable(variable)) => {
+                crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
                     // A read of a memory a recorded point names is spelled as
                     // that read, `old(g[0])`, which says where the value came
                     // from.

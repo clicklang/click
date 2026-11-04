@@ -1,7 +1,7 @@
 //! Constant discovery uses shared class annotations. Contextual arithmetic
 //! retains selected exact source premises when implicit provenance is requested.
 use super::*;
-use crate::kernel::Bitvector32Term;
+use crate::kernel::MachineTerm;
 use crate::kernel::assumptions::record_implicit_reasoning_provenance;
 use crate::kernel::{
     MachineCastSpelling as Cast, MachineOperandView as V, Proposition, PureFactContext,
@@ -13,7 +13,7 @@ impl EqualityGraph {
     pub(in crate::kernel) fn wide_constant(
         &self,
         context: &PureFactContext,
-        term: &Bitvector32Term,
+        term: &MachineTerm,
     ) -> Option<u64> {
         self.wide_constant_view(context, V::Legacy(term))
     }
@@ -35,7 +35,7 @@ impl EqualityGraph {
                 return Some(value);
             }
             let identity = match term {
-                V::Legacy(term) => (false, term as *const Bitvector32Term as usize as u64),
+                V::Legacy(term) => (false, term as *const MachineTerm as usize as u64),
                 V::Shared(term) => (true, term.id()),
             };
             if let Some(value) = memo.get(&identity) {
@@ -239,11 +239,11 @@ mod tests {
     fn wide_source_index_keeps_a_written_endpoint_when_canonicalization_changes_it() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let written = Bitvector32Term::Cast {
+        let written = MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: format,
             to: format,
-            value: Box::new(Bitvector32Term::Variable(Variable(995879))),
+            value: Box::new(MachineTerm::Variable(Variable(995879))),
         };
         assert_ne!(crate::kernel::canonical_term(&written), written);
         let operand = SharedMachineIntegerTerm::from_shared(
@@ -258,7 +258,7 @@ mod tests {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(written),
-                right: Box::new(Bitvector32Term::uint64_constant(7)),
+                right: Box::new(MachineTerm::uint64_constant(7)),
             },
             true,
         );
@@ -280,49 +280,49 @@ mod tests {
         for (ty, written, expected) in [
             (
                 Ty::Int64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::Int64From32,
-                    Box::new(Bitvector32Term::constant(u32::MAX)),
+                    Box::new(MachineTerm::constant(u32::MAX)),
                 ),
                 u64::MAX,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64FromInt32,
-                    Box::new(Bitvector32Term::constant(u32::MAX)),
+                    Box::new(MachineTerm::constant(u32::MAX)),
                 ),
                 u64::MAX,
             ),
             (
                 Ty::Int64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::Int64FromUInt32,
-                    Box::new(Bitvector32Term::uint32_constant(u32::MAX)),
+                    Box::new(MachineTerm::uint32_constant(u32::MAX)),
                 ),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64From32,
-                    Box::new(Bitvector32Term::uint32_constant(u32::MAX)),
+                    Box::new(MachineTerm::uint32_constant(u32::MAX)),
                 ),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64FromInt64,
-                    Box::new(Bitvector32Term::int64_constant(-3)),
+                    Box::new(MachineTerm::int64_constant(-3)),
                 ),
                 (-3i64) as u64,
             ),
             (
                 Ty::UInt32,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(Bitvector32Term::uint64_constant(0x1234567887654321)),
+                    Box::new(MachineTerm::uint64_constant(0x1234567887654321)),
                 ),
                 0x87654321,
             ),
@@ -369,12 +369,12 @@ mod tests {
         ] {
             let literal = |value| {
                 if ty == Ty::Int64 {
-                    Bitvector32Term::int64_constant(value as i64)
+                    MachineTerm::int64_constant(value as i64)
                 } else {
-                    Bitvector32Term::uint64_constant(value)
+                    MachineTerm::uint64_constant(value)
                 }
             };
-            let written = Bitvector32Term::Binary {
+            let written = MachineTerm::Binary {
                 format: ty,
                 op,
                 left: Box::new(literal(a)),

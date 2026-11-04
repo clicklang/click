@@ -1334,7 +1334,7 @@ mod tests {
             CResourceFact::View(owner().resource().clone()),
             CResourceFact::Own(
                 owner().resource().clone(),
-                Box::new(Bitvector32Term::constant(2)),
+                Box::new(MachineTerm::constant(2)),
             ),
             token("unrelated"),
         ] {

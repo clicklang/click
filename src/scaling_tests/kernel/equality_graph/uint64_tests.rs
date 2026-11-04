@@ -12,11 +12,11 @@ fn integer_address_queries_ignore_unrelated_equations_and_reuse_definitions() {
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_uint64_equality(
-                &Bitvector32Term::Variable(Variable(i)),
-                &Bitvector32Term::Variable(Variable(i + 10_000)),
+                &MachineTerm::Variable(Variable(i)),
+                &MachineTerm::Variable(Variable(i + 10_000)),
             );
         }
-        let bits = Bitvector32Term::Variable(Variable(960_004));
+        let bits = MachineTerm::Variable(Variable(960_004));
         let decoded = Pointer::integer_address(bits.clone());
         assert!(graph.are_uint64_equal(&raw_address(&decoded), &bits));
         let (((), work), maps) = crate::persistent::measure_persistent_work(|| {
@@ -43,13 +43,13 @@ fn wide_congruence_queries_do_not_scan_unrelated_equalities() {
         let _session = VerificationSession::enter();
         let p = Pointer::symbolic(Variable(940_001));
         let q = Pointer::symbolic(Variable(940_002));
-        let a = Bitvector32Term::Variable(Variable(940_003));
-        let b = Bitvector32Term::Variable(Variable(940_004));
+        let a = MachineTerm::Variable(Variable(940_003));
+        let b = MachineTerm::Variable(Variable(940_004));
         let mut graph = EqualityGraph::default();
         for i in 0..size {
             graph.add_uint64_equality(
-                &Bitvector32Term::Variable(Variable(i)),
-                &Bitvector32Term::Variable(Variable(i + 10_000)),
+                &MachineTerm::Variable(Variable(i)),
+                &MachineTerm::Variable(Variable(i + 10_000)),
             );
         }
         graph.add_uint64_equality(&a, &packed(&b, &p));
@@ -73,7 +73,7 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
     use crate::kernel::{ConditionTerm, PureFactContext};
     for size in [16u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let var = |i| Bitvector32Term::Variable(Variable(950_000 + i));
+        let var = |i| MachineTerm::Variable(Variable(950_000 + i));
         let mut facts = PureFactContext::new();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 0..size {
@@ -82,13 +82,13 @@ fn range_values_and_constants_resolve_long_wide_equality_chains() {
                     .assume_condition(ConditionTerm::uint64_equal(var(i), var(i + 1)), true);
             }
             facts = facts.clone().assume_condition(
-                ConditionTerm::uint64_equal(var(size), Bitvector32Term::uint64_constant(37)),
+                ConditionTerm::uint64_equal(var(size), MachineTerm::uint64_constant(37)),
                 true,
             );
             assert_eq!(facts.wide_constant_from_equalities(&var(0)), Some(37));
             assert!(facts.uint64_values_equal_for_range_resolution(
                 &var(0),
-                &Bitvector32Term::uint64_constant(37)
+                &MachineTerm::uint64_constant(37)
             ));
         });
         assert!(work < 300 * size as usize, "size={size}, work={work}");
@@ -106,7 +106,7 @@ fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_ali
             offset: PointerOffsetTerm::Constant(8 * i as i64),
         };
         for i in 0..=size {
-            memory = memory.store(cell(i), CValue::UInt64(Bitvector32Term::uint64_constant(i)));
+            memory = memory.store(cell(i), CValue::UInt64(MachineTerm::uint64_constant(i)));
         }
         let memory = intern_c_memory(memory);
         let mut context = PureFactContext::new();
@@ -117,7 +117,7 @@ fn an_aliased_read_meets_its_stored_cell_without_scanning_unrelated_cells_or_ali
         let read_at = Pointer::symbolic(Variable(979_999));
         context = context.assume_proposition(alias(&read_at, &cell(size)));
         let read = word(&memory, &read_at, 8);
-        let stored = Bitvector32Term::uint64_constant(size);
+        let stored = MachineTerm::uint64_constant(size);
         let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.equality_graph.are_uint64_equal(&read, &stored)
         });
@@ -143,7 +143,7 @@ fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
         };
         let memory = intern_c_memory(CMemory::new().with_block("cells", 8).store(
             stored_at.clone(),
-            CValue::UInt64(Bitvector32Term::uint64_constant(7)),
+            CValue::UInt64(MachineTerm::uint64_constant(7)),
         ));
         let mut context = PureFactContext::new();
         let link = |i: u64| Pointer::symbolic(Variable(972_000 + i));
@@ -155,7 +155,7 @@ fn an_aliased_read_grows_linearly_with_its_own_alias_class() {
         let (ok, work) = crate::instrumentation::measure_deterministic_work(|| {
             context
                 .equality_graph
-                .are_uint64_equal(&read, &Bitvector32Term::uint64_constant(7))
+                .are_uint64_equal(&read, &MachineTerm::uint64_constant(7))
         });
         assert!(ok);
         samples.push((size, work));
@@ -184,10 +184,10 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
                     block: "other".into(),
                     offset: PointerOffsetTerm::Constant(8 * i as i64),
                 },
-                CValue::UInt64(Bitvector32Term::uint64_constant(i)),
+                CValue::UInt64(MachineTerm::uint64_constant(i)),
             );
             let read = word(&intern_c_memory(memory.clone()), &read_at, 8);
-            assert!(!graph.are_uint64_equal(&read, &Bitvector32Term::uint64_constant(99)));
+            assert!(!graph.are_uint64_equal(&read, &MachineTerm::uint64_constant(99)));
         }
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_equality(
@@ -202,8 +202,8 @@ fn a_late_alias_rechecks_only_the_reads_of_its_own_address_class() {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_equality(&Pointer::symbolic(Variable(974_002)), &read_at);
             graph.are_uint64_equal(
-                &Bitvector32Term::uint64_constant(1),
-                &Bitvector32Term::uint64_constant(1),
+                &MachineTerm::uint64_constant(1),
+                &MachineTerm::uint64_constant(1),
             );
         });
         related.push((size, work));
@@ -221,14 +221,14 @@ fn a_recorded_address_fact_is_found_through_its_word_class_without_scanning() {
     let mut previous = None;
     for size in [16_u64, 64, 256, 1024] {
         let _session = VerificationSession::enter();
-        let word = |i: u64| Bitvector32Term::Variable(Variable(975_000 + i));
+        let word = |i: u64| MachineTerm::Variable(Variable(975_000 + i));
         let mut context = PureFactContext::new();
         for i in 0..size {
             context = context.assume_proposition(fact(word(i), word(i + 2_000)));
         }
         let read = word(9_000);
         let recorded = word(9_001);
-        let address = Bitvector32Term::pointer_address(Pointer::symbolic(Variable(976_000)));
+        let address = MachineTerm::pointer_address(Pointer::symbolic(Variable(976_000)));
         context = context
             .assume_proposition(fact(recorded.clone(), address))
             .assume_proposition(fact(read.clone(), recorded.clone()));

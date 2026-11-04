@@ -100,7 +100,7 @@ fn unknown_read_validity_does_not_resolve_unrelated_cells() {
     let target = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(770))),
+            value: Box::new(MachineTerm::Variable(Variable(770))),
             byte_width: 4,
         },
     };
@@ -156,11 +156,8 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             block: PointerBlock::Symbolic(Variable(9300)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let pending = memory.with_pending_heap_allocation(
-            request.clone(),
-            Bitvector32Term::constant(4),
-            false,
-        );
+        let pending =
+            memory.with_pending_heap_allocation(request.clone(), MachineTerm::constant(4), false);
         // C assigns malloc's result before branching on it. That intervening
         // store prevents failure from merely interning back to the old memory.
         let pending = pending.store(
@@ -187,8 +184,8 @@ fn defined_read_survives_failed_allocation_after_an_unrelated_store() {
             Variable(9301),
             &[CMemoryRange::new(
                 address.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )],
             &assumptions,
             None,
@@ -317,7 +314,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
         for index in 0..count {
             memory = memory.with_pending_typed_heap_allocation(
                 Pointer::symbolic(Variable(950_000 + index)),
-                Bitvector32Term::constant(8),
+                MachineTerm::constant(8),
                 false,
                 Some(class.clone()),
             );
@@ -326,7 +323,7 @@ fn typed_pending_heap_binding_uses_the_allocation_delta() {
             let base = Pointer::symbolic(Variable(960_000));
             let next = memory.clone().with_pending_typed_heap_allocation(
                 base.clone(),
-                Bitvector32Term::constant(8),
+                MachineTerm::constant(8),
                 false,
                 Some(class.clone()),
             );

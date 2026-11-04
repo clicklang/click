@@ -1,12 +1,12 @@
 use super::*;
 use crate::kernel::binary_node;
-fn var(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn var(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
-fn add(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+fn add(left: MachineTerm, right: MachineTerm) -> MachineTerm {
     binary_node!(Int32, Add, Box::new(left), Box::new(right))
 }
-fn eq(left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+fn eq(left: MachineTerm, right: MachineTerm) -> ConditionTerm {
     ConditionTerm::equal(left, right)
 }
 
@@ -47,23 +47,23 @@ fn int32_addition_folds_literal_classes_using_bitvector_semantics() {
         for early in [false, true] {
             let mut graph = EqualityGraph::default();
             if early {
-                graph.add_int32_equality(&var(1), &Bitvector32Term::constant(a));
-                graph.add_int32_equality(&var(2), &Bitvector32Term::constant(b));
+                graph.add_int32_equality(&var(1), &MachineTerm::constant(a));
+                graph.add_int32_equality(&var(2), &MachineTerm::constant(b));
             }
             graph.add_int32_equality(&add(var(1), var(2)), &var(10));
             if !early {
-                graph.add_int32_equality(&Bitvector32Term::constant(a), &var(1));
-                graph.add_int32_equality(&Bitvector32Term::constant(b), &var(2));
+                graph.add_int32_equality(&MachineTerm::constant(a), &var(1));
+                graph.add_int32_equality(&MachineTerm::constant(b), &var(2));
             }
-            let result = Bitvector32Term::constant(a.wrapping_add(b));
+            let result = MachineTerm::constant(a.wrapping_add(b));
             assert!(graph.are_int32_equal(&var(10), &result));
             assert!(graph.are_int32_equal(
-                &add(Bitvector32Term::constant(a), Bitvector32Term::constant(b)),
+                &add(MachineTerm::constant(a), MachineTerm::constant(b)),
                 &result
             ));
             assert!(!graph.are_int32_equal(
                 &var(10),
-                &Bitvector32Term::constant(a.wrapping_add(b).wrapping_add(1))
+                &MachineTerm::constant(a.wrapping_add(b).wrapping_add(1))
             ));
         }
     }
@@ -76,7 +76,7 @@ fn int32_addition_does_not_cancel_commute_or_merge_other_sorts() {
     assert!(!graph.are_int32_equal(&var(1), &var(2)));
     assert!(!graph.are_int32_equal(&add(var(1), var(3)), &add(var(3), var(1))));
     graph.add_int32_equality(&var(1), &var(2));
-    let wide = |v| Bitvector32Term::Binary {
+    let wide = |v| MachineTerm::Binary {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Add,
         left: Box::new(v),

@@ -21,7 +21,7 @@ use super::representation::{self, Division};
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::{
-    Bitvector32Term, ConditionTerm, IntegerTerm, Proposition, SharedMachineIntegerTerm,
+    ConditionTerm, IntegerTerm, MachineTerm, Proposition, SharedMachineIntegerTerm,
 };
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
@@ -31,7 +31,7 @@ use num_traits::{One, Zero};
 
 /// The constant a machine word spells, read as unsigned bits: a shift
 /// amount is a count, whatever word carries it.
-fn unsigned_constant(term: &Bitvector32Term) -> Option<BigInt> {
+fn unsigned_constant(term: &MachineTerm) -> Option<BigInt> {
     match term {
         bits32_constant!(value) => Some(BigInt::from(constant_u32(*value))),
         int64_constant!(value) => Some(BigInt::from(constant_i64(*value))),
@@ -110,7 +110,7 @@ mod tests {
     use crate::kernel::MachineBinaryOp;
     use crate::kernel::{MachineIntegerType, Variable};
 
-    fn machine(ty: MachineIntegerType, value: Bitvector32Term) -> SharedMachineIntegerTerm {
+    fn machine(ty: MachineIntegerType, value: MachineTerm) -> SharedMachineIntegerTerm {
         SharedMachineIntegerTerm::intern(ty, value)
     }
 
@@ -134,13 +134,13 @@ mod tests {
         for (ty, word, divisor) in [
             (
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(173_001)),
-                Bitvector32Term::constant(8),
+                MachineTerm::Variable(Variable(173_001)),
+                MachineTerm::constant(8),
             ),
             (
                 MachineIntegerType::Int64,
-                Bitvector32Term::Variable(Variable(173_001)),
-                Bitvector32Term::int64_constant(8),
+                MachineTerm::Variable(Variable(173_001)),
+                MachineTerm::int64_constant(8),
             ),
         ] {
             let operand = IntegerTerm::from_machine(ty, word.clone()).unwrap();
@@ -168,7 +168,7 @@ mod tests {
                         Box::new(word.clone()),
                         Box::new(divisor.clone()),
                     ),
-                    _ => Bitvector32Term::Binary {
+                    _ => MachineTerm::Binary {
                         format: MachineIntegerType::Int64,
                         op: MachineBinaryOp::Remainder,
                         left: Box::new(word.clone()),
@@ -193,13 +193,13 @@ mod tests {
                         Int32,
                         ShiftRight,
                         Box::new(word.clone()),
-                        Box::new(Bitvector32Term::constant(3)),
+                        Box::new(MachineTerm::constant(3)),
                     ),
-                    _ => Bitvector32Term::Binary {
+                    _ => MachineTerm::Binary {
                         format: MachineIntegerType::Int64,
                         op: MachineBinaryOp::ShiftRight,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::constant(3)),
+                        right: Box::new(MachineTerm::constant(3)),
                     },
                 },
             );
@@ -216,14 +216,14 @@ mod tests {
 
     fn representation_quotient(
         ty: MachineIntegerType,
-        word: Bitvector32Term,
-        divisor: Bitvector32Term,
-    ) -> Bitvector32Term {
+        word: MachineTerm,
+        divisor: MachineTerm,
+    ) -> MachineTerm {
         match ty {
             MachineIntegerType::Int32 => {
                 binary_node!(Int32, Divide, Box::new(word), Box::new(divisor))
             }
-            _ => Bitvector32Term::Binary {
+            _ => MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Divide,
                 left: Box::new(word),
@@ -236,10 +236,10 @@ mod tests {
     fn a_signed_divisor_is_read_at_its_format() {
         // The word `0xfffffff8` is `-8` in `int32`, which bounds nothing,
         // though its unsigned reading is a large positive number.
-        let x = Box::new(Bitvector32Term::Variable(Variable(173_002)));
+        let x = Box::new(MachineTerm::Variable(Variable(173_002)));
         for divisor in [
-            Bitvector32Term::constant(-8i32 as u32),
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(-8i32 as u32),
+            MachineTerm::constant(0),
         ] {
             for word in [
                 binary_node!(Int32, Divide, x.clone(), Box::new(divisor.clone())),
@@ -258,7 +258,7 @@ mod tests {
                     Int32,
                     ShiftRight,
                     x.clone(),
-                    Box::new(Bitvector32Term::constant(amount)),
+                    Box::new(MachineTerm::constant(amount)),
                 ),
             );
             assert_eq!(operation_bound(&value, true), None);

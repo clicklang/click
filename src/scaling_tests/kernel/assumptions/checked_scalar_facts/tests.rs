@@ -75,9 +75,9 @@ fn shared_scalar_sources_keep_identity_and_branch_locality() {
 
 #[test]
 fn scalar_sources_preserve_truth_format_and_removal() {
-    let term = Bitvector32Term::Variable(Variable(991702));
+    let term = MachineTerm::Variable(Variable(991702));
     let view = MachineOperandView::Legacy(&term);
-    let native = ConditionTerm::equal(term.clone(), Bitvector32Term::constant(7));
+    let native = ConditionTerm::equal(term.clone(), MachineTerm::constant(7));
     let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
         term.clone(),
@@ -94,14 +94,14 @@ fn scalar_sources_preserve_truth_format_and_removal() {
     );
     index.adjust(&ordinary, false, false);
     assert!(index.literal_equality(view).is_none());
-    let wide = ConditionTerm::int64_equal(term, Bitvector32Term::int64_constant(7));
+    let wide = ConditionTerm::int64_equal(term, MachineTerm::int64_constant(7));
     index.adjust(&wide, true, true);
     assert!(index.literals.is_empty());
 }
 
 #[test]
 fn shared_scalar_premise_selection_keeps_written_truth() {
-    let x = Bitvector32Term::Variable(Variable(991703));
+    let x = MachineTerm::Variable(Variable(991703));
     let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
         x,

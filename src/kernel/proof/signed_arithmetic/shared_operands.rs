@@ -53,7 +53,7 @@ fn shared_key(
                 .and_then(|literal| match literal {
                     bits32_constant!(bits) => Some(KernelTermImport::default().machine(
                         MachineIntegerType::Int32,
-                        &Bitvector32Term::constant(constant_u32(bits)),
+                        &MachineTerm::constant(constant_u32(bits)),
                     )),
                     _ => None,
                 }),

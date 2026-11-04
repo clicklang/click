@@ -28,7 +28,7 @@ pub struct CIteratedGuard {
     pub(in crate::kernel) cell_width: u32,
     /// `true` for `g[k] == value`, `false` for `g[k] != value`.
     pub(in crate::kernel) holds_when_equal: bool,
-    pub(in crate::kernel) value: Bitvector32Term,
+    pub(in crate::kernel) value: MachineTerm,
 }
 
 /// The name of the resource definition whose clause formed a fact. It is
@@ -78,13 +78,13 @@ pub struct CIteratedMemory {
     pub(in crate::kernel) stride: u32,
     pub(in crate::kernel) start_offset: i32,
     pub(in crate::kernel) end_offset: i32,
-    pub(in crate::kernel) lower: Bitvector32Term,
-    pub(in crate::kernel) upper: Bitvector32Term,
+    pub(in crate::kernel) lower: MachineTerm,
+    pub(in crate::kernel) upper: MachineTerm,
     pub(in crate::kernel) guard: CIteratedGuard,
     /// Indices about which the fact currently makes no claim, in the order
     /// they were opened. Only explicit proof steps and checked C stores add
     /// one, so the list is bounded by the proof's own operations.
-    pub(in crate::kernel) holes: Arc<[Bitvector32Term]>,
+    pub(in crate::kernel) holes: Arc<[MachineTerm]>,
 }
 
 impl CIteratedMemory {
@@ -96,8 +96,8 @@ impl CIteratedMemory {
         stride: u32,
         start_offset: i32,
         end_offset: i32,
-        lower: Bitvector32Term,
-        upper: Bitvector32Term,
+        lower: MachineTerm,
+        upper: MachineTerm,
         guard: CIteratedGuard,
     ) -> Option<Self> {
         if stride == 0
@@ -134,11 +134,11 @@ impl CIteratedMemory {
         self.element_width
     }
 
-    pub fn lower(&self) -> &Bitvector32Term {
+    pub fn lower(&self) -> &MachineTerm {
         &self.lower
     }
 
-    pub fn upper(&self) -> &Bitvector32Term {
+    pub fn upper(&self) -> &MachineTerm {
         &self.upper
     }
 
@@ -146,20 +146,20 @@ impl CIteratedMemory {
         &self.guard
     }
 
-    pub fn holes(&self) -> &[Bitvector32Term] {
+    pub fn holes(&self) -> &[MachineTerm] {
         &self.holes
     }
 
     /// The element index expressed in the clause's range coordinates.
-    fn scaled(&self, index: &Bitvector32Term, offset: i32) -> Bitvector32Term {
-        Bitvector32Term::add(
-            Bitvector32Term::multiply(index.clone(), Bitvector32Term::constant(self.stride)),
-            Bitvector32Term::constant(offset as u32),
+    fn scaled(&self, index: &MachineTerm, offset: i32) -> MachineTerm {
+        MachineTerm::add(
+            MachineTerm::multiply(index.clone(), MachineTerm::constant(self.stride)),
+            MachineTerm::constant(offset as u32),
         )
     }
 
     /// The memory range element `index` covers.
-    pub(crate) fn element_range(&self, index: &Bitvector32Term) -> CMemoryRange {
+    pub(crate) fn element_range(&self, index: &MachineTerm) -> CMemoryRange {
         CMemoryRange::new_with_element_width(
             self.element_base.clone(),
             self.scaled(index, self.start_offset),
@@ -190,7 +190,7 @@ impl CIteratedMemory {
     /// memory the fact can ever hold, whatever its guards and holes say.
     pub(crate) fn spanning_range(&self) -> CMemoryRange {
         self.covering_range().unwrap_or_else(|| {
-            let last = Bitvector32Term::subtract(self.upper.clone(), Bitvector32Term::constant(1));
+            let last = MachineTerm::subtract(self.upper.clone(), MachineTerm::constant(1));
             CMemoryRange::new_with_element_width(
                 self.element_base.clone(),
                 self.scaled(&self.lower, self.start_offset),
@@ -201,7 +201,7 @@ impl CIteratedMemory {
     }
 
     /// The address of the guard cell at `index`.
-    pub(crate) fn guard_cell(&self, index: &Bitvector32Term) -> Pointer {
+    pub(crate) fn guard_cell(&self, index: &MachineTerm) -> Pointer {
         self.guard
             .base
             .offset_by_elements(index.clone(), self.guard.cell_width)
@@ -217,7 +217,7 @@ impl CIteratedMemory {
         )
     }
 
-    pub(crate) fn with_hole(&self, index: Bitvector32Term) -> Self {
+    pub(crate) fn with_hole(&self, index: MachineTerm) -> Self {
         let mut holes = self.holes.to_vec();
         holes.push(index);
         Self {
@@ -240,7 +240,7 @@ impl CIteratedMemory {
     /// this so that every term the fact carries is visited exactly once.
     pub(crate) fn map_terms(
         &self,
-        mut term: impl FnMut(&Bitvector32Term) -> Bitvector32Term,
+        mut term: impl FnMut(&MachineTerm) -> MachineTerm,
         mut pointer: impl FnMut(&Pointer) -> Pointer,
     ) -> Self {
         Self {
@@ -264,7 +264,7 @@ impl CIteratedMemory {
     }
 
     /// Every bitvector term the fact carries, pointers' offsets excluded.
-    pub(crate) fn terms(&self) -> impl Iterator<Item = &Bitvector32Term> {
+    pub(crate) fn terms(&self) -> impl Iterator<Item = &MachineTerm> {
         [&self.lower, &self.upper, &self.guard.value]
             .into_iter()
             .chain(self.holes.iter())
@@ -287,7 +287,7 @@ impl CIteratedGuard {
         cell_type: CType,
         cell_width: u32,
         holds_when_equal: bool,
-        value: Bitvector32Term,
+        value: MachineTerm,
     ) -> Self {
         Self {
             base,
@@ -306,7 +306,7 @@ impl CIteratedGuard {
         self.holds_when_equal
     }
 
-    pub fn value(&self) -> &Bitvector32Term {
+    pub fn value(&self) -> &MachineTerm {
         &self.value
     }
 }

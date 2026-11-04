@@ -9,14 +9,13 @@ use crate::kernel::MachineIntegerType as Ty;
 use crate::kernel::VerificationSession;
 use crate::kernel::machine_integer::representation::narrow_cast_word;
 
-fn var(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn var(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 
 /// The `int32` and `uint32` widenings of the narrow `value` of `format`.
-fn widenings(format: Ty, value: &Bitvector32Term) -> [Bitvector32Term; 2] {
-    [Ty::Int32, Ty::UInt32]
-        .map(|to| Bitvector32Term::machine_integer_cast(format, to, value.clone()))
+fn widenings(format: Ty, value: &MachineTerm) -> [MachineTerm; 2] {
+    [Ty::Int32, Ty::UInt32].map(|to| MachineTerm::machine_integer_cast(format, to, value.clone()))
 }
 
 const NARROW: [Ty; 4] = [Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16];
@@ -40,7 +39,7 @@ fn a_narrow_cast_is_its_word_with_no_fact() {
                 continue;
             }
             let x = var(173_001);
-            let cast = Bitvector32Term::machine_integer_cast(source, destination, x.clone());
+            let cast = MachineTerm::machine_integer_cast(source, destination, x.clone());
             let word = narrow_cast_word(source, destination, x.clone()).unwrap();
             // The word is `int32` for an `int32` or narrow operand, `uint32`
             // for a `uint32` operand or a 64-bit one's low word.
@@ -57,7 +56,7 @@ fn a_narrow_cast_is_its_word_with_no_fact() {
                 let expected = if to == word_format {
                     word.clone()
                 } else {
-                    Bitvector32Term::sign_cast32(word_format, to, word.clone())
+                    MachineTerm::sign_cast32(word_format, to, word.clone())
                 };
                 assert!(
                     graph.are_int32_equal(&widened, &expected),
@@ -80,9 +79,9 @@ fn a_narrow_cast_is_its_word_with_no_fact() {
                     continue;
                 }
                 let operand_word = if source.format().bits() < 32 {
-                    Bitvector32Term::machine_integer_cast(source, Ty::Int32, x.clone())
+                    MachineTerm::machine_integer_cast(source, Ty::Int32, x.clone())
                 } else if source.format().bits() == 64 {
-                    Bitvector32Term::uint32_from_64(x.clone())
+                    MachineTerm::uint32_from_64(x.clone())
                 } else {
                     x.clone()
                 };
@@ -101,9 +100,9 @@ fn a_narrow_cast_is_its_word_with_no_fact() {
 fn a_narrow_cast_meets_the_mask_of_an_equal_operand() {
     let _session = VerificationSession::enter();
     let (x, y) = (var(173_011), var(173_012));
-    let cast = Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, x.clone());
+    let cast = MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, x.clone());
     let [_, widened] = widenings(Ty::UInt8, &cast);
-    let mask = Bitvector32Term::bitwise_and(y.clone(), Bitvector32Term::uint32_constant(255));
+    let mask = MachineTerm::bitwise_and(y.clone(), MachineTerm::uint32_constant(255));
     let mut graph = EqualityGraph::default();
     assert!(!graph.are_int32_equal(&widened, &mask));
     graph.add_int32_equality(&x, &y);
