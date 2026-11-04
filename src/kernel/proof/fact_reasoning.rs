@@ -467,60 +467,71 @@ pub(crate) fn normalize_using_conditions(
         {
             return Err(ConditionalNormalizationError::UnavailablePremise(index));
         }
-        // A cited complete range domain supplies the same bounded arithmetic
-        // normalization query. Availability above checks the ordinary premise;
-        // the private query never becomes an extra proof-state fact.
-        let query = crate::kernel::machine_integer::definedness::interval_query_form(premise);
-        let (condition, value) =
-            crate::kernel::spec::proposition_as_single_condition(query.as_ref().unwrap_or(premise))
-                .ok_or(ConditionalNormalizationError::UnsupportedPremise(index))?;
-        let previous = conditions.insert(condition.clone(), value);
-        if previous.is_some_and(|previous| previous != value) {
-            return Err(ConditionalNormalizationError::UnsupportedPremise(index));
-        }
-        if previous.is_none() {
-            admission_order.push((condition.clone(), value));
-        }
-        // Every spelling of the cited claim states it: an order claim's
-        // complement and mirrored direction, and an equality's mirrored
-        // orientation, in every family (`int32`, the 64-bit and narrower
-        // machine types, `Integer`, pointers). A fixed set per premise.
-        for form in order_claim_forms(premise) {
-            let Some((spelled, spelled_value)) =
-                crate::kernel::spec::proposition_as_single_condition(&form)
-            else {
-                continue;
+        // A complete arithmetic domain supplies its two ordinary bounds.
+        // Keep shared operands intact; no private overflow spelling is needed.
+        let leaves =
+            if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(premise)
+                .is_some()
+            {
+                let Proposition::And(first, second) = premise else {
+                    unreachable!()
+                };
+                vec![first.as_ref(), second.as_ref()]
+            } else {
+                vec![premise]
             };
-            let previous = conditions.insert(spelled.clone(), spelled_value);
-            if previous.is_some_and(|previous| previous != spelled_value) {
+        for premise in leaves {
+            let (condition, value) = crate::kernel::spec::proposition_as_single_condition(premise)
+                .ok_or(ConditionalNormalizationError::UnsupportedPremise(index))?;
+            let previous = conditions.insert(condition.clone(), value);
+            if previous.is_some_and(|previous| previous != value) {
                 return Err(ConditionalNormalizationError::UnsupportedPremise(index));
             }
             if previous.is_none() {
-                admission_order.push((spelled, spelled_value));
+                admission_order.push((condition.clone(), value));
             }
-        }
-        // Exact condition lookup above handles ordinary scalar terms.  Fold
-        // binders can be freshly allocated while lowering the cited premise
-        // and the goal, so retain a checked snapshot-aware alpha index for
-        // the same two orientations.  The fingerprint is charged before it
-        // becomes a map key; collision candidates are checked with the
-        // bounded key comparator below.
-        if value && let ConditionTerm::IntegerEqual(left, right) = &condition {
-            for condition in [
-                ConditionTerm::IntegerEqual(left.clone(), right.clone()),
-                ConditionTerm::IntegerEqual(right.clone(), left.clone()),
-            ] {
-                let proposition = Proposition::ConditionIs(condition, true);
-                let Some(key) = super::fact_keys::integer_equality_alpha_key(&proposition) else {
+            // Every spelling of the cited claim states it: an order claim's
+            // complement and mirrored direction, and an equality's mirrored
+            // orientation, in every family (`int32`, the 64-bit and narrower
+            // machine types, `Integer`, pointers). A fixed set per premise.
+            for form in order_claim_forms(premise) {
+                let Some((spelled, spelled_value)) =
+                    crate::kernel::spec::proposition_as_single_condition(&form)
+                else {
                     continue;
                 };
-                let Some(fingerprint) = key.checked_fingerprint() else {
-                    continue;
-                };
-                integer_alpha_conditions
-                    .entry(fingerprint)
-                    .or_default()
-                    .push((key, value));
+                let previous = conditions.insert(spelled.clone(), spelled_value);
+                if previous.is_some_and(|previous| previous != spelled_value) {
+                    return Err(ConditionalNormalizationError::UnsupportedPremise(index));
+                }
+                if previous.is_none() {
+                    admission_order.push((spelled, spelled_value));
+                }
+            }
+            // Exact condition lookup above handles ordinary scalar terms.  Fold
+            // binders can be freshly allocated while lowering the cited premise
+            // and the goal, so retain a checked snapshot-aware alpha index for
+            // the same two orientations.  The fingerprint is charged before it
+            // becomes a map key; collision candidates are checked with the
+            // bounded key comparator below.
+            if value && let ConditionTerm::IntegerEqual(left, right) = &condition {
+                for condition in [
+                    ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                    ConditionTerm::IntegerEqual(right.clone(), left.clone()),
+                ] {
+                    let proposition = Proposition::ConditionIs(condition, true);
+                    let Some(key) = super::fact_keys::integer_equality_alpha_key(&proposition)
+                    else {
+                        continue;
+                    };
+                    let Some(fingerprint) = key.checked_fingerprint() else {
+                        continue;
+                    };
+                    integer_alpha_conditions
+                        .entry(fingerprint)
+                        .or_default()
+                        .push((key, value));
+                }
             }
         }
     }
@@ -595,6 +606,24 @@ pub(crate) fn normalize_using_conditions(
         } else {
             Err(ConditionalNormalizationError::DoesNotNormalize)
         };
+    }
+    // Legacy callers can still ask the private overflow question. Its
+    // ordinary bounds must both be among the cited conditions; never rebuild
+    // an overflow predicate from shared arithmetic in a premise.
+    if let Some((condition @ ConditionTerm::Overflows { .. }, false)) =
+        crate::kernel::spec::proposition_as_single_condition(goal)
+    {
+        let bounds = crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(
+            &Proposition::ConditionIs(condition, false),
+        );
+        if !bounds.is_empty()
+            && bounds.iter().all(|bound| {
+                crate::kernel::spec::proposition_as_single_condition(bound)
+                    .is_some_and(|(condition, truth)| conditions.get(&condition) == Some(&truth))
+            })
+        {
+            return Ok(());
+        }
     }
     // Build the index for the explicit premise selection once. Ordinary
     // condition rewrites retain their direct indexed lookup and never build
@@ -3088,6 +3117,72 @@ mod integer_reflexivity_tests {
             ConditionTerm::pointer_equal(left.clone(), right.clone()),
             true,
         )
+    }
+
+    #[test]
+    fn normalize_using_shared_domain_reads_ordinary_bounds_without_exports() {
+        use crate::kernel::machine_integer::{Operation, definedness::OverflowQueryView};
+        use crate::kernel::{
+            KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as Op,
+            MachineOperandView as View,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+        let left = KernelTerm::machine_binary_shared(
+            ty,
+            Op::Multiply,
+            [variable(975001), variable(975002)],
+        );
+        let right = variable(975003);
+        let [upper, lower] = OverflowQueryView::from_operands(
+            ty,
+            Operation::Add,
+            [View::Shared(&left), View::Shared(&right)],
+        )
+        .unwrap()
+        .bounds();
+        let domain = Proposition::And(Box::new(upper.clone()), Box::new(lower.clone()));
+        let reversed = Proposition::And(Box::new(lower.clone()), Box::new(upper.clone()));
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&domain));
+        let incomplete = ProofFacts::from_ordered(std::slice::from_ref(&upper));
+        let exports = KernelTermExport::machine_export_count();
+        for goal in [&upper, &lower] {
+            assert!(
+                normalize_using_conditions(goal, std::slice::from_ref(&domain), &facts).is_ok(),
+                "{goal:?}"
+            );
+        }
+        assert!(matches!(
+            normalize_using_conditions(&lower, std::slice::from_ref(&domain), &incomplete),
+            Err(ConditionalNormalizationError::UnavailablePremise(0))
+        ));
+        // The tactic still requires explicit logical construction of an And.
+        for goal in [&domain, &reversed] {
+            assert!(
+                normalize_using_conditions(goal, std::slice::from_ref(&domain), &facts).is_err()
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn ordinary_domain_still_supplies_a_legacy_normalization_query() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let condition = ConditionTerm::signed_add_overflows(
+            Bitvector32Term::add(
+                Bitvector32Term::Variable(Variable(975011)),
+                Bitvector32Term::Variable(Variable(975012)),
+            ),
+            Bitvector32Term::Variable(Variable(975013)),
+        );
+        let goal = Proposition::ConditionIs(condition, false);
+        let bounds =
+            crate::kernel::machine_integer::definedness::integer_bounds_of_definedness(&goal);
+        let domain = Proposition::And(Box::new(bounds[0].clone()), Box::new(bounds[1].clone()));
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&domain));
+        assert!(normalize_using_conditions(&goal, std::slice::from_ref(&domain), &facts).is_ok());
+        assert!(normalize_using_conditions(&goal, &bounds[..1], &facts).is_err());
     }
 
     #[test]

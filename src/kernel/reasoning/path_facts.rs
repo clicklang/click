@@ -1821,18 +1821,32 @@ pub(in crate::kernel) fn decide_with_facts(
             assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), *value))
         })
         .or_else(|| {
-            // Exact Integer observations have the native comparison's truth.
-            // Keep execution's bounded query: this strictly changes an Integer
-            // comparison into a native one, without opening ambient reasoning.
-            let (native, truth) =
-                crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-                    condition, true,
-                )?;
-            decide_with_facts(assumptions, facts, &native).map(|value| value == truth)
+            // Exact observations retain their operands while selecting the
+            // comparison reading. Recurse only when that reading changes the
+            // condition, keeping execution's bounded query and cycle boundary.
+            let view = crate::kernel::machine_integer::comparison::native_comparison_view(
+                condition, true,
+            )?;
+            let (reading, truth) = view.retained_condition();
+            if &reading == condition { return None; }
+            decide_with_facts(assumptions, facts, &reading).map(|value| value == truth)
         })
         .or_else(|| assumptions.decide_signed_byte_equality_from_exact_fact(condition))
         .or_else(|| PureFactContext::decide_intrinsically(condition))
         .or_else(|| assumptions.known_condition_value(condition))
+        .or_else(|| {
+            // Direct path facts use the same retained comparison identity as
+            // the context's exact index. Select an existing source before
+            // constructing a difference graph; no operand is materialized.
+            facts.fact_iter().find_map(|fact| match fact.proposition() {
+                Proposition::ConditionIs(existing, value) if existing == condition => Some(*value),
+                source => [true, false].into_iter().find(|truth| {
+                    crate::kernel::assumptions::observation_comparisons::same_comparison(
+                        condition, *truth, source,
+                    )
+                }),
+            })
+        })
         .or_else(|| {
             let extra = facts
                 .fact_iter()
@@ -1844,17 +1858,12 @@ pub(in crate::kernel) fn decide_with_facts(
             assumptions.difference_decision(condition, &extra)
         })
         .or_else(|| {
-            facts.fact_iter().find_map(|fact| match fact.proposition() {
-                Proposition::ConditionIs(existing_condition, value)
-                    if existing_condition == condition =>
-                {
-                    Some(*value)
-                }
-                _ => None,
-            })
-        })
-        .or_else(|| {
-            let merged = facts.fact_iter().fold(
+            // With no path facts, the preceding context and intrinsic queries
+            // already covered both possible bases. Rebuilding an empty graph
+            // here would discard their prefix work on every unresolved guard.
+            let mut path_facts = facts.fact_iter().peekable();
+            path_facts.peek()?;
+            let merged = path_facts.fold(
                 // Address comparisons need the checked aliases when adding
                 // their two-holder separation projection. Keep the deferred
                 // policy; other comparisons retain their existing cheap path.
@@ -2366,6 +2375,81 @@ mod native_observation_guard_tests {
                 assert_eq!(decide_with_facts(&empty, &path, &observed), Some(truth));
                 assert_eq!(decide_with_facts(&empty, &path, &not_equal), Some(!truth));
             }
+        }
+    }
+
+    fn fresh_arithmetic_guards(ty: MachineIntegerType, require_unexported: bool) {
+        use crate::kernel::{
+            KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
+        };
+        for truth in [None, Some(false), Some(true)] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let product = KernelTerm::machine_binary_shared(
+                ty,
+                MachineBinaryOp::Multiply,
+                [variable(984001), variable(984002)],
+            );
+            let observed = |root| {
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap())
+            };
+            let a = observed(product);
+            let b = observed(variable(984003));
+            let goal = ConditionTerm::integer_equal(a.clone(), b.clone());
+            let opposite = ConditionTerm::integer_not_equal(a, b);
+            let source = ConditionTerm::machine_compare(
+                ty,
+                CompareRelation::Equal,
+                Bitvector32Term::logical_machine_binary(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    Bitvector32Term::Variable(Variable(984001)),
+                    Bitvector32Term::Variable(Variable(984002)),
+                ),
+                Bitvector32Term::Variable(Variable(984003)),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let empty = PureFactContext::new().defer_non_exact_condition_reasoning();
+            let context = truth.map_or_else(
+                || empty.clone(),
+                |truth| empty.clone().assume_condition(source.clone(), truth),
+            );
+            let no_path = ExecutionFacts::new();
+            assert_eq!(
+                decide_with_facts(&context, &no_path, &goal),
+                truth,
+                "{ty:?}"
+            );
+            assert_eq!(
+                decide_with_facts(&context, &no_path, &opposite),
+                truth.map(|x| !x)
+            );
+            if let Some(truth) = truth {
+                let path = ExecutionFacts::from(vec![ExecutionPureFact::new(
+                    Proposition::ConditionIs(source, truth),
+                )]);
+                assert_eq!(decide_with_facts(&empty, &path, &goal), Some(truth));
+                assert_eq!(decide_with_facts(&empty, &path, &opposite), Some(!truth));
+            }
+            if require_unexported {
+                assert_eq!(KernelTermExport::machine_export_count(), exports, "{ty:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn fresh_word_guards_keep_operands_on_success_and_refusal() {
+        for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            fresh_arithmetic_guards(ty, true);
+        }
+    }
+
+    #[test]
+    fn fresh_wide_guards_preserve_native_results() {
+        // The general intrinsic wide-equality dispatcher remains a separate
+        // migration boundary; this pins the execution adapter's verdicts.
+        for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            fresh_arithmetic_guards(ty, false);
         }
     }
 

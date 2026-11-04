@@ -124,7 +124,12 @@ impl Boundary<'_> {
             ));
         }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
-            && self.function == "consume_constant_owned_memory"
+            && matches!(
+                self.function.as_str(),
+                "consume_unit_owned_memory"
+                    | "consume_symbolic_partition"
+                    | "reserve_owned_memory_fragments_impl"
+            )
             && matches!(
                 name,
                 "iter"
@@ -135,7 +140,7 @@ impl Boundary<'_> {
             )
         {
             self.errors.push(format!(
-                "{}: {}: explicit constant consumption must use indexed suppliers ({name})",
+                "{}: {}: unit-owned consumption must use indexed suppliers ({name})",
                 self.path, self.function
             ));
         }

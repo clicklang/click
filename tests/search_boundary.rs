@@ -717,10 +717,17 @@ fn constant_owned_consumption_rejects_candidate_search() {
         "normalized_memory_suppliers",
         "with_coalesced_owned_memory",
     ] {
-        let source = format!("fn consume_constant_owned_memory(c: C) {{ c.{name}(); }}");
-        assert!(
-            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
-        );
+        for function in [
+            "consume_unit_owned_memory",
+            "consume_symbolic_partition",
+            "reserve_owned_memory_fragments_impl",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(
+                boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source)
+                    .is_err()
+            );
+        }
     }
 }
 

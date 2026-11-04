@@ -13100,6 +13100,13 @@ pub struct SignedOrderDerivationStep {
     pub(super) premise: Proposition,
 }
 
+/// One exact wide-order edge, retained in its original orientation and
+/// polarity. Checking reads its endpoints from the premise's operand views.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WideOrderDerivationStep {
+    pub(super) premise: Proposition,
+}
+
 /// The base-alignment fact an atomic pointer-alignment decision rested on.
 /// `None` means the base is a heap allocation, whose alignment is intrinsic
 /// to the LP64 allocator profile and needs no context fact.
@@ -13351,18 +13358,6 @@ pub(crate) enum Int32OneLeEvidence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Int32NonnegativeAddWithinMaxEvidence {
-    pub(super) amount_nonnegative: SignedOrderDerivationStep,
-    pub(super) within_headroom: SignedOrderDerivationStep,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Int32NonnegativeSubtractWithinValueEvidence {
-    pub(super) amount_nonnegative: SignedOrderDerivationStep,
-    pub(super) within_value: SignedOrderDerivationStep,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Int32LeAndNotLtEqualityEvidence {
     pub(super) less_equal: Proposition,
     pub(super) not_less_than: Proposition,
@@ -13401,16 +13396,16 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     /// `uint32`, each step's premise in the context as written.
     WideOrderPath {
         format: MachineIntegerType,
-        path: Vec<SignedOrderDerivationStep>,
+        path: Vec<WideOrderDerivationStep>,
     },
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementConstantUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementStrictlyIncreases(Box<SignedOrderDerivationStep>),
-    Int32IncrementBelowMaxIsDefined(Box<SignedOrderDerivationStep>),
-    Int32OnePlusBelowMaxIsDefined(Box<SignedOrderDerivationStep>),
+    Int32IncrementBelowMaxIsDefined(Box<Proposition>),
+    Int32OnePlusBelowMaxIsDefined(Box<Proposition>),
     Int32OnePlusStrictlyIncreases(Box<SignedOrderDerivationStep>),
-    Int32NonnegativeAddWithinMaxIsDefined(Box<Int32NonnegativeAddWithinMaxEvidence>),
-    Int32NonnegativeSubtractWithinValueIsDefined(Box<Int32NonnegativeSubtractWithinValueEvidence>),
+    Int32NonnegativeAddWithinMaxIsDefined(Box<[Proposition; 2]>),
+    Int32NonnegativeSubtractWithinValueIsDefined(Box<[Proposition; 2]>),
     Int32IncrementLowerBound(Box<Int32IncrementBoundsEvidence>),
     Int32IncrementGreaterEqualLowerBound(Box<Int32IncrementBoundsEvidence>),
     Int32IncrementStrictGreaterLowerBound(Box<Int32IncrementBoundsEvidence>),
@@ -13776,8 +13771,10 @@ pub struct PureFactContext {
     /// Numeric comparison views retain their exact source for withdrawal.
     pub(super) comparison_sources:
         PersistentMap<Proposition, super::assumptions::observation_comparisons::PropositionKey>,
-    pub(super) comparison_counts:
-        PersistentMap<super::assumptions::observation_comparisons::PropositionKey, usize>,
+    pub(super) comparison_views: PersistentMap<
+        super::assumptions::observation_comparisons::PropositionKey,
+        crate::persistent::PersistentSet<Proposition>,
+    >,
     /// Alpha/load identity index for propositions that may be stated as a
     /// call requirement.  The key retains memory versions and canonicalizes
     /// only binders; the persistent buckets keep updates local to one key.

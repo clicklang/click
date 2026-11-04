@@ -133,11 +133,26 @@ tests cover native/shared parity, including unknown answers and transitive
 constant contexts. Growing-prefix tests cover both successful and unresolved
 zero-addend and cancellation queries with unrelated fact additions.
 
-The general comparison bridge remains for equality. Deeper first-use
+The 32-bit equality dispatcher now reads shared operands for additive
+matching/cancellation, opposite signed bounds, exclusions, direct scaled-offset
+sources and refutations. The difference graph's word-equality rule also reads
+views in both signedness domains, retaining non-four-byte offset consequences.
+Checking reductions reuse graph word identities before interval/addend work;
+growing-prefix tests cover successful and unresolved queries across changing
+contexts. Source withdrawal and sibling contexts have no-export regressions.
+The general comparison bridge remains for wide equality. Deeper first-use
 normalization and later equality updates remain explicit audits before enabling
 additional producers. Preserve rule order as well as proof results: unwrapping
 a sign cast before substituting a constant can expose a different range rule,
 and moving endpoint queries earlier can multiply nested bound visits.
+
+Known-comparison lookup now retains shared operands even on a miss. The
+regrouped-add domain check reads its operands and three ordinary domain premises
+through views, including both choices when both children are sums. Conditional
+normalization uses a cited complete domain's two ordinary bounds directly;
+legacy overflow goals still require both bounds. These routes have no-export
+regressions for shared arithmetic and missing-premise controls. Mixed opaque
+legacy operands retain their compatibility construction and still need auditing.
 
 Nested signed production remains disabled until checker consumers are shared
 end to end. A green PR migrating a subset does **not** complete part 1.
@@ -157,18 +172,40 @@ Remaining groups to audit and migrate:
 
 - [ ] Finish comparison dispatch and native premise lookup. Ordinary order
   dispatch reads views; the `native_comparison_of_integer_observation` bridge
-  remains for equality and lookup consumers. Audit deeper first-use and
+  remains for wide equality and lookup consumers. Audit deeper first-use and
   later-equality normalization before enabling additional producers. Remove
   each remaining conversion only after its supported routes read views.
 - [ ] Signed equality dispatch: additive matching/cancellation, equality from
   opposite bounds, memory/equality sources, and negative answers. Ordinary
   signed/unsigned order rules, successor transport and wide order walks already
   read views; their completion does not remove the equality dispatcher.
-- [ ] Atomic domain evidence and certificate premise adapters. Migrate the
-  remaining `interval_query_form` callers in atomic derivation, reassociated-add
-  checking and conditional normalization. Certificate availability must retain
-  its checked across-effect memory bridge. Ring-overflow decisions and bounded
-  certificate conclusion identity already read views.
+  Shared 32-bit arithmetic now has a view-based route, including difference-graph
+  equality and source withdrawal. The native opaque/memory branches and wide
+  equality remain explicit audits; additional growing additive shapes still
+  need checking before enabling new producers.
+  `conditions_equal_with_load_atoms` still obtains boxed fact operands; its
+  replacement must compare shared operand pairs while preserving the checked
+  load-origin/snapshot callback, including mixed opaque operands.
+- [ ] Atomic domain evidence and certificate premise adapters. Atomic derivation
+  now reads ordinary range-domain views and retains the exact premises for
+  increment, one-plus, nonnegative addition and subtraction. Their source
+  lookup selects one existing order-index entry; balanced-unit sums also read
+  operand views. Reassociated-add checking and conditional normalization read
+  ordinary domains. Certificate availability still needs migration while
+  retaining its checked across-effect memory bridge. Ring-overflow decisions
+  and bounded certificate conclusion identity already read views.
+  `interval_query_form` remains in Surface search/output adapters and test
+  references, not kernel atomic derivation.
+  Wide-order evidence now retains the original source propositions. Its
+  builder, indexed path collector and checker read endpoint views directly,
+  including polarity and canonical load/name connections, without exporting
+  shared arithmetic. Signed-order evidence remains a separate boxed consumer;
+  migrate its endpoint comparisons and constant connections together.
+  Integer certificate premise availability (`proof/object.rs`) must retain the
+  checked across-effect bridge when replacing its native/overflow queries.
+  `condition_as_order_fact` also exports in constant-bound evidence,
+  memory-order checking and quantified/derived order collectors; those are live
+  checker routes, not output adapters.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
@@ -176,6 +213,15 @@ Remaining groups to audit and migrate:
   condition-identity adapters, including memory-order checking and observation
   lookup forms. Distinguish live checker consumers from test-only reference
   exports and explicit legacy producer/output boundaries.
+  `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
+  matches direct path facts by shared comparison identity. Its 32-bit guards
+  have no-export coverage; unresolved 64-bit guards still reach the general
+  wide-equality exporter through intrinsic checking.
+  Signed 128-bit division guard lookup now uses shared proposition keys for
+  both native and observed compound premises. The boxed `read_observation_form`
+  adapter is removed; structural `canonical_observation_form` remains an
+  explicit producer boundary. `native_reading_of_integer_observation_fact`
+  remains a Surface planning/output adapter.
 - [ ] Remove redundant checker exports and enforce the boundary with tests.
 
 **Completion criteria:**

@@ -1,9 +1,95 @@
 use super::*;
 use crate::kernel::MachineCastSpelling;
-use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
+
+#[derive(Clone, Copy)]
+enum DomainRule {
+    Increment,
+    OnePlus,
+    NonnegativeAdd,
+    NonnegativeSubtract,
+}
+
+/// The fixed premises of one existing signed-domain rule. Operand views keep
+/// fresh arithmetic shared; evidence retains only the actual source claims.
+fn domain_rule_conditions(
+    query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
+    rule: DomainRule,
+) -> Option<Vec<Proposition>> {
+    use crate::kernel::machine_integer::{Operation, comparison::condition_for_operand_views};
+    use crate::kernel::{
+        KernelTerm, KernelTermImport, MachineBinaryOp, MachineOperandView as V,
+        SharedMachineIntegerTerm,
+    };
+    let ty = MachineIntegerType::Int32;
+    if query.format != ty {
+        return None;
+    }
+    let [value, amount] = query
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view());
+    let zero = Bitvector32Term::constant(0);
+    let max = Bitvector32Term::constant(i32::MAX as u32);
+    let condition = |left, right, strict| {
+        Proposition::ConditionIs(
+            condition_for_operand_views(
+                ty,
+                if strict {
+                    CompareRelation::LessThan
+                } else {
+                    CompareRelation::LessEqual
+                },
+                [left, right],
+            ),
+            true,
+        )
+    };
+    match (rule, query.operation) {
+        (DomainRule::Increment, Operation::Add) if amount.word32_constant() == Some(1) => {
+            Some(vec![condition(value, V::Legacy(&max), true)])
+        }
+        (DomainRule::OnePlus, Operation::Add) if value.word32_constant() == Some(1) => {
+            Some(vec![condition(amount, V::Legacy(&max), true)])
+        }
+        (DomainRule::NonnegativeAdd, Operation::Add) => {
+            let headroom = match amount {
+                V::Legacy(amount) => SharedMachineIntegerTerm::intern(
+                    ty,
+                    Bitvector32Term::logical_machine_binary(
+                        ty,
+                        MachineBinaryOp::Subtract,
+                        max,
+                        amount.clone(),
+                    ),
+                ),
+                V::Shared(amount) => SharedMachineIntegerTerm::from_shared(
+                    ty,
+                    KernelTerm::machine_binary_shared(
+                        ty,
+                        MachineBinaryOp::Subtract,
+                        [
+                            KernelTermImport::default().machine(ty, &max),
+                            amount.clone(),
+                        ],
+                    ),
+                )
+                .expect("shared headroom"),
+            };
+            Some(vec![
+                condition(V::Legacy(&zero), amount, false),
+                condition(value, headroom.operand_view(), false),
+            ])
+        }
+        (DomainRule::NonnegativeSubtract, Operation::Subtract) => Some(vec![
+            condition(V::Legacy(&zero), amount, false),
+            condition(amount, value, false),
+        ]),
+        _ => None,
+    }
+}
 
 /// Discharge one guard left open by a universal instantiation, naming the
 /// premises it consumed, or `None` when the retained exact routes do not
@@ -322,84 +408,62 @@ impl PureFactContext {
 
     // Preserve the original sum and both child domains across a unit transfer.
     fn balanced_unit_sum_domain_proven(&self, goal: &Proposition) -> bool {
-        use crate::kernel::ConditionTerm;
-        let stated = |goal: &Proposition| {
-            matches!(crate::kernel::canonical_condition_fact(goal), Proposition::ConditionIs(condition, truth)
-                if self.exact_condition_value(&condition) == Some(truth))
+        use crate::kernel::machine_integer::{
+            Operation,
+            definedness::{OverflowQueryView, range_domain_query},
         };
-        if stated(goal) {
-            return true;
-        }
-        let Proposition::ConditionIs(
-            ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left,
-                right,
-            },
-            false,
-        ) = goal
-        else {
+        use crate::kernel::{MachineBinaryOp as Op, MachineOperandView as V};
+        let Some(query) = range_domain_query(goal) else {
             return false;
         };
-        let pair = match (left.as_ref(), right.as_ref()) {
-            (
-                binary_term!(Int32, Add, value, increment),
-                binary_term!(Int32, Subtract, other, decrement),
-            )
-            | (
-                binary_term!(Int32, Subtract, other, decrement),
-                binary_term!(Int32, Add, value, increment),
-            ) if increment.as_const() == Some(1) && decrement.as_const() == Some(1) => {
-                (value.as_ref(), other.as_ref())
-            }
-            _ => return false,
+        if self.contains_known_overflow_query(&query, false) {
+            return true;
+        }
+        if query.format != MachineIntegerType::Int32 || query.operation != Operation::Add {
+            return false;
+        }
+        let [left, right] = query
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        fn unit_operand(term: V<'_>, operator: Op) -> Option<V<'_>> {
+            let (MachineIntegerType::Int32, op, [value, one]) = term.binary()? else {
+                return None;
+            };
+            (op == operator && one.word32_constant() == Some(1)).then_some(value)
+        }
+        let pair = unit_operand(left, Op::Add)
+            .zip(unit_operand(right, Op::Subtract))
+            .or_else(|| unit_operand(right, Op::Add).zip(unit_operand(left, Op::Subtract)));
+        let Some((value, other)) = pair else {
+            return false;
         };
         let one = Bitvector32Term::constant(1);
-        let guards = [
-            ConditionTerm::signed_add_overflows(pair.0.clone(), pair.1.clone()),
-            ConditionTerm::signed_add_overflows(pair.0.clone(), one.clone()),
-            ConditionTerm::signed_subtract_overflows(pair.1.clone(), one),
-        ];
-        guards.iter().all(|condition| {
-            if stated(&Proposition::ConditionIs(condition.clone(), false)) {
+        [
+            (Operation::Add, [value, other]),
+            (Operation::Add, [value, V::Legacy(&one)]),
+            (Operation::Subtract, [other, V::Legacy(&one)]),
+        ]
+        .into_iter()
+        .all(|(operation, pair)| {
+            let stated = |pair| {
+                let query =
+                    OverflowQueryView::from_operands(MachineIntegerType::Int32, operation, pair)
+                        .expect("signed domain");
+                self.contains_known_overflow_query(&query, false)
+            };
+            if stated(pair) || operation == Operation::Add && stated([pair[1], pair[0]]) {
                 return true;
             }
-            if let ConditionTerm::Overflows {
-                format: MachineIntegerType::Int32,
-                op: OverflowOperation::Add,
-                left,
-                right,
-            } = condition
-                && stated(&Proposition::ConditionIs(
-                    ConditionTerm::signed_add_overflows(
-                        right.as_ref().clone(),
-                        left.as_ref().clone(),
-                    ),
-                    false,
-                ))
-            {
-                return true;
+            if pair[1].word32_constant() != Some(1) {
+                return false;
             }
-            match condition {
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: value,
-                    right: one,
-                } if one.as_const() == Some(1) => self
-                    .indexed_constant_interval(value)
-                    .is_some_and(|(_, high)| high < i64::from(i32::MAX)),
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Subtract,
-                    left: value,
-                    right: one,
-                } if one.as_const() == Some(1) => self
-                    .indexed_constant_interval(value)
-                    .is_some_and(|(low, _)| low > i64::from(i32::MIN)),
-                _ => false,
-            }
+            self.indexed_constant_interval_view(pair[0], false)
+                .is_some_and(|(low, high)| match operation {
+                    Operation::Add => high < i64::from(i32::MAX),
+                    Operation::Subtract => low > i64::from(i32::MIN),
+                    _ => false,
+                })
         })
     }
 
@@ -418,6 +482,12 @@ impl PureFactContext {
     }
 
     fn proves_atomic_without_search_in(&self, proposition: &Proposition, premises: bool) -> bool {
+        if let Some(query) =
+            crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
+        {
+            return self.decide_overflow_query(&query) == Some(false)
+                || self.balanced_unit_sum_domain_proven(proposition);
+        }
         match proposition {
             Proposition::ConditionIs(condition, value) => {
                 self.decide(condition) == Some(*value)
@@ -1028,9 +1098,8 @@ impl SelectedFacts<'_> {
         proposition: &Proposition,
         extended_rules: bool,
     ) -> (Option<AtomicPropositionDerivationEvidence>, u64) {
-        let interval_query =
-            crate::kernel::machine_integer::definedness::interval_query_form(proposition);
-        let proposition = interval_query.as_ref().unwrap_or(proposition);
+        let domain = crate::kernel::machine_integer::definedness::range_domain_query(proposition)
+            .filter(|query| query.format == MachineIntegerType::Int32);
         let id_scope = PureFactContextIdScope::enter(self);
         let premises_id = id_scope.id;
         if let Some(result) = ATOMIC_DERIVATION_MEMO.with(|memo| {
@@ -1113,13 +1182,17 @@ impl SelectedFacts<'_> {
                 super::condition_reasoning::WIDE_ORDER_FORMATS
                     .into_iter()
                     .find_map(|format| {
-                        let (left, right, strict) =
-                            super::condition_reasoning::wide_order_fact(condition, *value, format)?;
-                        self.exact_wide_order_path_evidence(&left, &right, strict, format)
-                            .map(|path| AtomicPropositionDerivationEvidence::WideOrderPath {
-                                format,
-                                path,
-                            })
+                        let view =
+                            super::condition_reasoning::wide_order_view(condition, *value, format)?;
+                        self.exact_wide_order_path_evidence(
+                            view.operands[0].operand_view(),
+                            view.operands[1].operand_view(),
+                            view.relation == crate::kernel::machine_integer::Relation::Less,
+                            format,
+                        )
+                        .map(|path| {
+                            AtomicPropositionDerivationEvidence::WideOrderPath { format, path }
+                        })
                     })
             }
             _ => None,
@@ -1355,100 +1428,35 @@ impl SelectedFacts<'_> {
             },
             _ => None,
         };
-        let increment_below_max_is_defined_evidence = match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: base,
-                    right: amount,
-                },
-                false,
-            ) if amount.as_ref() == &Bitvector32Term::constant(1) => {
-                let int_max = Bitvector32Term::constant(i32::MAX as u32);
-                self.exact_signed_order_path_evidence(base, &int_max, true)
-                    .and_then(|path| match path.as_slice() {
-                        [step] if step.lower == **base && step.upper == int_max && step.strict => {
-                            Some(step.clone())
-                        }
-                        _ => None,
-                    })
-                    .map(Box::new)
-                    .map(AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined)
-            }
-            _ => None,
+        let domain_rule = |rule| {
+            domain
+                .as_ref()
+                .and_then(|query| self.select_domain_rule_premises(query, rule))
         };
-        let one_plus_below_max_is_defined_evidence = match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: one,
-                    right: value,
-                },
-                false,
-            ) if one.as_ref() == &Bitvector32Term::constant(1) => {
-                let int_max = Bitvector32Term::constant(i32::MAX as u32);
-                self.exact_direct_order_step(value, &int_max, true)
-                    .map(Box::new)
-                    .map(AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined)
-            }
-            _ => None,
-        };
-        let nonnegative_add_within_max_evidence = match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: value,
-                    right: amount,
-                },
-                false,
-            ) => {
-                let zero = Bitvector32Term::constant(0);
-                let headroom = binary_node!(
-                    Int32,
-                    Subtract,
-                    Box::new(Bitvector32Term::constant(i32::MAX as u32)),
-                    Box::new(amount.as_ref().clone()),
-                );
-                self.exact_direct_order_step(&zero, amount, false)
-                    .zip(self.exact_direct_order_step(value, &headroom, false))
-                    .map(|(amount_nonnegative, within_headroom)| {
-                        AtomicPropositionDerivationEvidence::Int32NonnegativeAddWithinMaxIsDefined(
-                            Box::new(Int32NonnegativeAddWithinMaxEvidence {
-                                amount_nonnegative,
-                                within_headroom,
-                            }),
-                        )
-                    })
-            }
-            _ => None,
-        };
-        let nonnegative_subtract_within_value_evidence = match proposition {
-            Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Subtract,
-                    left: value,
-                    right: amount,
-                },
-                false,
-            ) => {
-                let zero = Bitvector32Term::constant(0);
-                self.exact_direct_order_step(&zero, amount, false)
-                    .zip(self.exact_direct_order_step(amount, value, false))
-                    .map(|(amount_nonnegative, within_value)| {
-                        AtomicPropositionDerivationEvidence::Int32NonnegativeSubtractWithinValueIsDefined(
-                            Box::new(Int32NonnegativeSubtractWithinValueEvidence {
-                                amount_nonnegative,
-                                within_value,
-                            }),
-                        )
-                    })
-            }
-            _ => None,
-        };
+        let increment_below_max_is_defined_evidence =
+            domain_rule(DomainRule::Increment).map(|mut sources| {
+                AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined(Box::new(
+                    sources.remove(0),
+                ))
+            });
+        let one_plus_below_max_is_defined_evidence =
+            domain_rule(DomainRule::OnePlus).map(|mut sources| {
+                AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined(Box::new(
+                    sources.remove(0),
+                ))
+            });
+        let nonnegative_add_within_max_evidence =
+            domain_rule(DomainRule::NonnegativeAdd).map(|sources| {
+                AtomicPropositionDerivationEvidence::Int32NonnegativeAddWithinMaxIsDefined(
+                    Box::new(sources.try_into().expect("two addition premises")),
+                )
+            });
+        let nonnegative_subtract_within_value_evidence =
+            domain_rule(DomainRule::NonnegativeSubtract).map(|sources| {
+                AtomicPropositionDerivationEvidence::Int32NonnegativeSubtractWithinValueIsDefined(
+                    Box::new(sources.try_into().expect("two subtraction premises")),
+                )
+            });
         let increment_lower_bound_evidence = match proposition {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -1889,9 +1897,8 @@ impl SelectedFacts<'_> {
         premises_id: u64,
         evidence: &AtomicPropositionDerivationEvidence,
     ) -> bool {
-        let interval_query =
-            crate::kernel::machine_integer::definedness::interval_query_form(proposition);
-        let proposition = interval_query.as_ref().unwrap_or(proposition);
+        let domain = crate::kernel::machine_integer::definedness::range_domain_query(proposition)
+            .filter(|query| query.format == MachineIntegerType::Int32);
         if let AtomicPropositionDerivationEvidence::PointerWord(evidence) = evidence {
             let Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -2061,34 +2068,41 @@ impl SelectedFacts<'_> {
                 && (!require_strict || strict || constant_connection == Some(true));
         }
         if let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = evidence {
+            use crate::kernel::machine_integer::Relation;
             let Proposition::ConditionIs(condition, value) = proposition else {
                 return false;
             };
-            let Some((left, right, require_strict)) =
-                super::condition_reasoning::wide_order_fact(condition, *value, *format)
+            let Some(goal) =
+                super::condition_reasoning::wide_order_view(condition, *value, *format)
             else {
                 return false;
             };
-            let canonical = crate::kernel::eval::canonical_term;
-            let mut current = canonical(&left);
+            let canonical = |term: crate::kernel::MachineOperandView<'_>| {
+                super::checked_scalar_facts::ScalarOperandKey::canonical(*format, term)
+            };
+            let mut current = canonical(goal.operands[0].operand_view());
             let mut strict = false;
             for step in path {
-                if current != canonical(&step.lower)
-                    || !matches!(
-                        &step.premise,
-                        Proposition::ConditionIs(condition, value)
-                            if self.exact_condition_value(condition) == Some(*value)
-                                && super::condition_reasoning::wide_order_fact(
-                                    condition, *value, *format,
-                                ) == Some((step.lower.clone(), step.upper.clone(), step.strict))
-                    )
-                {
+                let Proposition::ConditionIs(condition, value) = &step.premise else {
+                    return false;
+                };
+                if self.exact_condition_value(condition) != Some(*value) {
                     return false;
                 }
-                current = canonical(&step.upper);
-                strict |= step.strict;
+                let Some(edge) =
+                    super::condition_reasoning::wide_order_view(condition, *value, *format)
+                else {
+                    return false;
+                };
+                if current != canonical(edge.operands[0].operand_view()) {
+                    return false;
+                }
+                current = canonical(edge.operands[1].operand_view());
+                strict |= edge.relation == Relation::Less;
             }
-            return !path.is_empty() && current == canonical(&right) && (!require_strict || strict);
+            return !path.is_empty()
+                && current == canonical(goal.operands[1].operand_view())
+                && (goal.relation != Relation::Less || strict);
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementUpperBound(step) = evidence {
             let Proposition::ConditionIs(
@@ -2202,107 +2216,34 @@ impl SelectedFacts<'_> {
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
-        if let AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined(step) = evidence
-        {
-            let Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: base,
-                    right: amount,
-                },
-                false,
-            ) = proposition
+        let domain_evidence = match evidence {
+            AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined(source) => {
+                Some((DomainRule::Increment, std::slice::from_ref(source.as_ref())))
+            }
+            AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined(source) => {
+                Some((DomainRule::OnePlus, std::slice::from_ref(source.as_ref())))
+            }
+            AtomicPropositionDerivationEvidence::Int32NonnegativeAddWithinMaxIsDefined(sources) => {
+                Some((DomainRule::NonnegativeAdd, sources.as_slice()))
+            }
+            AtomicPropositionDerivationEvidence::Int32NonnegativeSubtractWithinValueIsDefined(
+                sources,
+            ) => Some((DomainRule::NonnegativeSubtract, sources.as_slice())),
+            _ => None,
+        };
+        if let Some((rule, sources)) = domain_evidence {
+            let Some(required) = domain
+                .as_ref()
+                .and_then(|query| domain_rule_conditions(query, rule))
             else {
                 return false;
             };
-            let int_max = Bitvector32Term::constant(i32::MAX as u32);
-            return amount.as_ref() == &Bitvector32Term::constant(1)
-                && step.lower == **base
-                && step.upper == int_max
-                && step.strict
-                && matches!(
-                    &step.premise,
-                    Proposition::ConditionIs(condition, value)
-                        if self.exact_condition_value(condition) == Some(*value)
-                            && condition_as_order_fact(condition, *value)
-                                == Some((step.lower.clone(), step.upper.clone(), true))
-                );
-        }
-        if let AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined(step) = evidence {
-            let Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: one,
-                    right: value,
-                },
-                false,
-            ) = proposition
-            else {
-                return false;
-            };
-            let int_max = Bitvector32Term::constant(i32::MAX as u32);
-            return one.as_ref() == &Bitvector32Term::constant(1)
-                && step.lower == **value
-                && step.upper == int_max
-                && step.strict
-                && self.checks_exact_order_step(step);
-        }
-        if let AtomicPropositionDerivationEvidence::Int32NonnegativeAddWithinMaxIsDefined(bounds) =
-            evidence
-        {
-            let Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Add,
-                    left: value,
-                    right: amount,
-                },
-                false,
-            ) = proposition
-            else {
-                return false;
-            };
-            let headroom = binary_node!(
-                Int32,
-                Subtract,
-                Box::new(Bitvector32Term::constant(i32::MAX as u32)),
-                Box::new(amount.as_ref().clone()),
-            );
-            return bounds.amount_nonnegative.lower == Bitvector32Term::constant(0)
-                && bounds.amount_nonnegative.upper == **amount
-                && !bounds.amount_nonnegative.strict
-                && bounds.within_headroom.lower == **value
-                && bounds.within_headroom.upper == headroom
-                && !bounds.within_headroom.strict
-                && self.checks_exact_order_step(&bounds.amount_nonnegative)
-                && self.checks_exact_order_step(&bounds.within_headroom);
-        }
-        if let AtomicPropositionDerivationEvidence::Int32NonnegativeSubtractWithinValueIsDefined(
-            bounds,
-        ) = evidence
-        {
-            let Proposition::ConditionIs(
-                ConditionTerm::Overflows {
-                    format: MachineIntegerType::Int32,
-                    op: OverflowOperation::Subtract,
-                    left: value,
-                    right: amount,
-                },
-                false,
-            ) = proposition
-            else {
-                return false;
-            };
-            return bounds.amount_nonnegative.lower == Bitvector32Term::constant(0)
-                && bounds.amount_nonnegative.upper == **amount
-                && !bounds.amount_nonnegative.strict
-                && bounds.within_value.lower == **amount
-                && bounds.within_value.upper == **value
-                && !bounds.within_value.strict
-                && self.checks_exact_order_step(&bounds.amount_nonnegative)
-                && self.checks_exact_order_step(&bounds.within_value);
+            return sources.len() == required.len()
+                && sources.iter().zip(&required).all(|(source, required)| {
+                    self.contains_assumed_exact(source)
+                        && super::observation_comparisons::PropositionKey::new(source)
+                            == super::observation_comparisons::PropositionKey::new(required)
+                });
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementLowerBound(bounds) = evidence {
             let Proposition::ConditionIs(
@@ -2869,6 +2810,34 @@ impl PureFactContext {
                         && (entry_strict || !strict)
                         && crate::kernel::eval::terms_have_same_canonical_form(&other, lower)
                 })
+    }
+
+    fn select_domain_rule_premises(
+        &self,
+        query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
+        rule: DomainRule,
+    ) -> Option<Vec<Proposition>> {
+        domain_rule_conditions(query, rule)?
+            .iter()
+            .map(|required| {
+                let Proposition::ConditionIs(condition, truth) = required else {
+                    unreachable!()
+                };
+                let view =
+                    crate::kernel::machine_integer::comparison::comparison_view(condition, *truth)?;
+                let [left, right] = view
+                    .operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view());
+                self.signed_order_bounds
+                    .exact_source(
+                        left,
+                        right,
+                        view.relation == crate::kernel::machine_integer::Relation::Less,
+                    )
+                    .cloned()
+            })
+            .collect()
     }
 
     pub(in crate::kernel) fn exact_direct_order_step(
@@ -5211,5 +5180,327 @@ mod order_endpoint_key_format_tests {
             keys.push(key);
         }
         assert_ne!(keys[0], keys[1]);
+    }
+}
+
+#[cfg(test)]
+mod shared_domain_evidence_tests {
+    use super::*;
+    use crate::kernel::machine_integer::{Operation, definedness::ordinary_bounds};
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as Op, SharedMachineIntegerTerm,
+    };
+
+    #[test]
+    fn fresh_domain_rules_retain_sources_and_refuse_missing_premises() {
+        for rule in 0..4 {
+            let _session = crate::kernel::VerificationSession::enter();
+            let ty = MachineIntegerType::Int32;
+            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let root = |a, b| {
+                KernelTerm::machine_binary_shared(ty, Op::Multiply, [variable(a), variable(b)])
+            };
+            let value = SharedMachineIntegerTerm::from_shared(ty, root(978001, 978002)).unwrap();
+            let amount = SharedMachineIntegerTerm::from_shared(ty, root(978003, 978004)).unwrap();
+            let one = IntegerTerm::constant((1).into());
+            let max = IntegerTerm::constant((i32::MAX).into());
+            let observe =
+                |term: &SharedMachineIntegerTerm| term.operand_view().observe(ty).unwrap();
+            let x = observe(&value);
+            let y = observe(&amount);
+            let (operation, left, right, premises) = match rule {
+                0 => (
+                    Operation::Add,
+                    x.clone(),
+                    one.clone(),
+                    vec![Proposition::ConditionIs(
+                        ConditionTerm::integer_greater_than(max.clone(), x.clone()),
+                        true,
+                    )],
+                ),
+                1 => (
+                    Operation::Add,
+                    one.clone(),
+                    x.clone(),
+                    vec![Proposition::ConditionIs(
+                        ConditionTerm::integer_less_equal(max.clone(), x.clone()),
+                        false,
+                    )],
+                ),
+                2 => {
+                    let headroom = KernelTerm::machine_binary_shared(
+                        ty,
+                        Op::Subtract,
+                        [
+                            crate::kernel::KernelTermImport::default()
+                                .machine(ty, &Bitvector32Term::constant(i32::MAX as u32)),
+                            amount.shared_operand().unwrap().clone(),
+                        ],
+                    );
+                    let headroom = SharedMachineIntegerTerm::from_shared(ty, headroom).unwrap();
+                    (
+                        Operation::Add,
+                        x.clone(),
+                        y.clone(),
+                        vec![
+                            Proposition::ConditionIs(
+                                ConditionTerm::integer_greater_equal(
+                                    y.clone(),
+                                    IntegerTerm::constant((0).into()),
+                                ),
+                                true,
+                            ),
+                            Proposition::ConditionIs(
+                                ConditionTerm::integer_less_than(observe(&headroom), x.clone()),
+                                false,
+                            ),
+                        ],
+                    )
+                }
+                _ => (
+                    Operation::Subtract,
+                    x.clone(),
+                    y.clone(),
+                    vec![
+                        Proposition::ConditionIs(
+                            ConditionTerm::integer_greater_equal(
+                                y.clone(),
+                                IntegerTerm::constant((0).into()),
+                            ),
+                            true,
+                        ),
+                        Proposition::ConditionIs(
+                            ConditionTerm::integer_greater_equal(x.clone(), y.clone()),
+                            true,
+                        ),
+                    ],
+                ),
+            };
+            let [upper, lower] = ordinary_bounds(ty, operation.exact(left, right));
+            let goal = Proposition::And(Box::new(upper), Box::new(lower));
+            let exports = KernelTermExport::machine_export_count();
+            let context = SelectedFacts::from_propositions(&premises);
+            let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, false);
+            let evidence = evidence.expect("ordinary domain has named evidence");
+            let sources: &[Proposition] = match &evidence {
+                AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined(p) if rule == 0 => std::slice::from_ref(p),
+                AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined(p) if rule == 1 => std::slice::from_ref(p),
+                AtomicPropositionDerivationEvidence::Int32NonnegativeAddWithinMaxIsDefined(p) if rule == 2 => p.as_slice(),
+                AtomicPropositionDerivationEvidence::Int32NonnegativeSubtractWithinValueIsDefined(p) if rule == 3 => p.as_slice(),
+                _ => panic!("wrong domain evidence"),
+            };
+            assert_eq!(sources, premises);
+            assert!(context.checks_atomic_derivation(&goal, false, id, &evidence));
+            for missing in 0..premises.len() {
+                let rest: Vec<_> = premises
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != missing)
+                    .map(|(_, p)| p.clone())
+                    .collect();
+                let branch = SelectedFacts::from_propositions(&rest);
+                assert!(!branch.checks_atomic_derivation(&goal, false, id, &evidence));
+                let query =
+                    crate::kernel::machine_integer::definedness::range_domain_query(&goal).unwrap();
+                let rule = [
+                    DomainRule::Increment,
+                    DomainRule::OnePlus,
+                    DomainRule::NonnegativeAdd,
+                    DomainRule::NonnegativeSubtract,
+                ][rule];
+                assert!(branch.select_domain_rule_premises(&query, rule).is_none());
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            // General refusal reaches equality reasoning for subtraction;
+            // that dispatcher must retain the same shared operands too.
+            for missing in 0..premises.len() {
+                let rest: Vec<_> = premises
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != missing)
+                    .map(|(_, p)| p.clone())
+                    .collect();
+                assert!(
+                    SelectedFacts::from_propositions(&rest)
+                        .proves_atomic_for_derivation_with_id(&goal, false)
+                        .0
+                        .is_none()
+                );
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/shared_domain_evidence_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod shared_wide_order_evidence_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn wide_order_evidence_keeps_shared_endpoints_and_exact_polarity_sources() {
+        for ty in [
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for mixed in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let native = |id| {
+                    Bitvector32Term::logical_machine_binary(
+                        ty,
+                        MachineBinaryOp::Multiply,
+                        Bitvector32Term::Variable(Variable(id)),
+                        Bitvector32Term::Variable(Variable(987000)),
+                    )
+                };
+                let term = |id| {
+                    SharedMachineIntegerTerm::from_shared(
+                        ty,
+                        KernelTerm::machine_binary_shared(
+                            ty,
+                            MachineBinaryOp::Multiply,
+                            [
+                                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id)),
+                                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(987000)),
+                            ],
+                        ),
+                    )
+                    .unwrap()
+                };
+                let [a, b, c] = [term(987001), term(987002), term(987003)];
+                let observe = |t: &SharedMachineIntegerTerm| IntegerTerm::Machine(t.clone());
+                let first = Proposition::ConditionIs(
+                    if mixed {
+                        ConditionTerm::machine_compare(
+                            ty,
+                            CompareRelation::LessEqual,
+                            native(987001),
+                            native(987002),
+                        )
+                    } else {
+                        ConditionTerm::integer_less_equal(observe(&a), observe(&b))
+                    },
+                    true,
+                );
+                let second = Proposition::ConditionIs(
+                    ConditionTerm::integer_less_equal(observe(&c), observe(&b)),
+                    false,
+                );
+                let goal = Proposition::ConditionIs(
+                    ConditionTerm::integer_less_than(observe(&a), observe(&c)),
+                    true,
+                );
+                let exports = KernelTermExport::machine_export_count();
+                let context = SelectedFacts::from_propositions(&[first.clone(), second.clone()]);
+                let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, false);
+                let evidence = evidence.expect("selected order path");
+                let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = &evidence
+                else {
+                    panic!("expected wide order evidence, got {evidence:?}");
+                };
+                assert_eq!(*format, ty);
+                assert_eq!(
+                    path.iter()
+                        .map(|step| step.premise.clone())
+                        .collect::<Vec<_>>(),
+                    [first.clone(), second.clone()]
+                );
+                assert!(context.checks_atomic_derivation(&goal, false, id, &evidence));
+                let missing = SelectedFacts::from_propositions(&[second]);
+                assert!(!missing.checks_atomic_derivation(&goal, false, id, &evidence));
+                let mut forged = evidence.clone();
+                if let AtomicPropositionDerivationEvidence::WideOrderPath { path, .. } = &mut forged
+                {
+                    path[0].premise = Proposition::ConditionIs(
+                        ConditionTerm::integer_less_than(observe(&a), observe(&b)),
+                        true,
+                    );
+                }
+                assert!(!context.checks_atomic_derivation(&goal, false, id, &forged));
+                assert_eq!(
+                    KernelTermExport::machine_export_count(),
+                    exports,
+                    "{ty:?}, mixed={mixed}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
+        use crate::kernel::{
+            CMemory, LoadKind, MachineOperandView, Pointer, PointerOffsetTerm, intern_c_memory,
+        };
+        for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = intern_c_memory(CMemory::new().with_block("wide-order", 16));
+            let load = |offset| {
+                Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer {
+                        block: "wide-order".into(),
+                        offset: PointerOffsetTerm::Constant(offset),
+                    }),
+                    LoadKind::Bits64,
+                )
+            };
+            let native = Bitvector32Term::logical_machine_binary(
+                ty,
+                MachineBinaryOp::Multiply,
+                load(0),
+                Bitvector32Term::Variable(Variable(987010)),
+            );
+            let named = crate::kernel::eval::canonical_term(&native);
+            let observe = |term: &Bitvector32Term| {
+                IntegerTerm::Machine(MachineOperandView::Legacy(term).retain(ty))
+            };
+            let a = Bitvector32Term::Variable(Variable(987011));
+            let b = Bitvector32Term::Variable(Variable(987012));
+            let first = Proposition::ConditionIs(
+                ConditionTerm::machine_compare(ty, CompareRelation::LessEqual, a.clone(), native),
+                true,
+            );
+            let second = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(observe(&named), observe(&b)),
+                true,
+            );
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(observe(&a), observe(&b)),
+                true,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let context = SelectedFacts::from_propositions(&[first.clone(), second]);
+            let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, false);
+            let evidence = evidence.expect("canonical load bridge");
+            assert!(matches!(
+                evidence,
+                AtomicPropositionDerivationEvidence::WideOrderPath { .. }
+            ));
+            assert!(context.checks_atomic_derivation(&goal, false, id, &evidence));
+            let different = Bitvector32Term::logical_machine_binary(
+                ty,
+                MachineBinaryOp::Multiply,
+                load(8),
+                Bitvector32Term::Variable(Variable(987010)),
+            );
+            let different = crate::kernel::eval::canonical_term(&different);
+            let unrelated = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(observe(&different), observe(&b)),
+                true,
+            );
+            let branch = SelectedFacts::from_propositions(&[first, unrelated]);
+            assert!(!branch.checks_atomic_derivation(&goal, false, id, &evidence));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/shared_wide_order_evidence_tests.rs"
+        );
     }
 }

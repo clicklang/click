@@ -1024,6 +1024,26 @@ impl DifferenceGraph {
         {
             return Some(answer);
         }
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::comparison_view(condition, true)
+            && matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+            && matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Equal
+                    | crate::kernel::machine_integer::Relation::NotEqual
+            )
+        {
+            let value = self.decide_word_equality_views(
+                view.operands[0].operand_view(),
+                view.operands[1].operand_view(),
+            )?;
+            return Some(
+                value == (view.relation == crate::kernel::machine_integer::Relation::Equal),
+            );
+        }
         // The same field of two bases is one cell exactly when the bases
         // are, which a pointer equality (`this == &other`) may say rather
         // than an integer one: the bases' own offset question is asked.
@@ -1189,33 +1209,13 @@ impl DifferenceGraph {
             return (no_pair && (!int64 || nonzero)).then_some(false);
         }
         if let C::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left: a,
-            right: b,
-        }
-        | C::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: a,
             right: b,
         } = condition
         {
-            let domains: &[Domain] = if matches!(
-                condition,
-                C::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    ..
-                }
-            ) {
-                // Equality of a word has the same truth in either reading.
-                // Resolve each operand in that reading's domain; unsigned
-                // order facts may exclude zero without bounding the sign bit.
-                &[Domain::Int32, Domain::UInt32]
-            } else {
-                &[Domain::Int64, Domain::UInt64]
-            };
+            let domains = &[Domain::Int64, Domain::UInt64];
             for domain in domains {
                 if let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b)) {
                     match (a, b) {

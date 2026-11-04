@@ -3558,11 +3558,18 @@ impl ResourceContext {
             return None;
         }
         let range = required.memory_own_range()?;
-        range.int32_bounds()?;
-        let end = range
-            .signed_constant_end()?
-            .checked_sub(range.signed_constant_start()?)?
-            .checked_mul(i64::from(range.element_width()))?;
+        let end = match range.wide_bounds() {
+            Some((start, end)) => i64::try_from(
+                end.uint64_as_const()?
+                    .checked_sub(start.uint64_as_const()?)?
+                    .checked_mul(u64::from(range.element_width()))?,
+            )
+            .ok()?,
+            None => range
+                .signed_constant_end()?
+                .checked_sub(range.signed_constant_start()?)?
+                .checked_mul(i64::from(range.element_width()))?,
+        };
         if end <= 0 {
             return None;
         }
@@ -3588,6 +3595,15 @@ impl ResourceContext {
                 return None;
             }
             let available = candidate.memory_own_range()?;
+            // Native requests previously used whole-range entailment, including
+            // its typed designation check. Keep that check on this new route;
+            // narrow fragment transfer retains its existing carrier semantics.
+            if range.wide_bounds().is_some()
+                && range.typed_carrier
+                && !assumptions.access_designations_match(range.access_designation(), available)
+            {
+                return None;
+            }
             let base = entries.address()?;
             let (bytes, piece) = if let Some((_, available_end)) = available.wide_bounds() {
                 // Keep native suppliers in their original coordinates. Only
@@ -3622,7 +3638,7 @@ impl ResourceContext {
                     )
                     .with_carrier_of(available),
                 );
-                (u32::try_from(bytes).ok()?, piece)
+                (i64::try_from(bytes).ok()?, piece)
             } else {
                 let point =
                     CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
@@ -3640,7 +3656,7 @@ impl ResourceContext {
                     bytes.into(),
                     1,
                 ));
-                (bytes, piece)
+                (i64::from(bytes), piece)
             };
             if !resource_fact_entails(candidate, &piece, assumptions) {
                 return None;
@@ -3649,13 +3665,13 @@ impl ResourceContext {
             if !self.consume_fact_from_candidates_with_origins(
                 &piece,
                 assumptions,
-                std::iter::once(entry),
+                [entry],
                 origins.as_deref_mut(),
             ) {
                 return None;
             }
             supports.push(support);
-            cursor = cursor.checked_add(i64::from(bytes))?;
+            cursor = cursor.checked_add(bytes)?;
         }
         Some((self, supports))
     }
@@ -6360,6 +6376,18 @@ impl ResourceContext {
             {
                 return true;
             }
+            // Decide constant native ownership by constructing its consumption
+            // on a persistent branch. The caller retains every occurrence;
+            // indexed selection stops at a gap instead of normalizing candidates.
+            if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
+                && range.wide_bounds().is_some()
+                && !range.has_symbolic_bounds()
+            {
+                return self
+                    .clone()
+                    .consume_unit_owned_memory(fact, assumptions, None)
+                    .is_some();
+            }
             let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
             if candidates.entries.iter().any(|entry| {
                 candidates.requirement(entry, fact).is_some_and(|aligned| {
@@ -6835,12 +6863,8 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
-            && range.int32_bounds().is_some()
-            && range.signed_constant_start().is_some()
-            && range.signed_constant_end().is_some()
-        {
-            return self.consume_constant_owned_memory(fact, assumptions, origins);
+        if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
+            return self.consume_unit_owned_memory(fact, assumptions, origins);
         }
         let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
         let mut selected = self;
@@ -6890,9 +6914,9 @@ impl ResourceContext {
         Some(selected)
     }
 
-    /// Consume an explicit constant footprint through retained supplier identities.
+    /// Consume an explicit unit-owned footprint through retained supplier identities.
     /// A gap ends the operation; no candidate frontier is collected or retried.
-    fn consume_constant_owned_memory(
+    fn consume_unit_owned_memory(
         mut self,
         required: &CResourceFact,
         assumptions: &PureFactContext,
@@ -6912,8 +6936,110 @@ impl ResourceContext {
         {
             return Some(self);
         }
+        if range.has_symbolic_bounds()
+            || (range.wide_bounds().is_some()
+                && candidates.entries.single_supplier().is_some_and(|entry| {
+                    self.fact(entry)
+                        .memory_own_range()
+                        .is_some_and(CMemoryRange::has_symbolic_bounds)
+                }))
+        {
+            return self.consume_symbolic_partition(required, assumptions, origins);
+        }
         self.reserve_owned_memory_fragments_impl(required, assumptions, origins)
             .map(|(remaining, _)| remaining)
+    }
+
+    /// Compose the selected endpoint chain, without inspecting other starts.
+    /// Requests and their intermediate partition points may be symbolic.
+    fn consume_symbolic_partition(
+        mut self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+        mut origins: Option<&mut MemorySplitOrigins>,
+    ) -> Option<Self> {
+        let range = required.memory_own_range().expect("unit ownership query");
+        let candidates = self.memory_fact_candidates(range, true, assumptions);
+        let Some(first) = candidates.entries.single_supplier() else {
+            return None;
+        };
+        let mut next = first;
+        let mut visited = BTreeSet::new();
+        let mut joined: Option<CResourceFact> = None;
+        loop {
+            if !visited.insert(next) {
+                return None;
+            }
+            let available = self.fact(next).clone();
+            if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
+                return None;
+            }
+            let Some(piece) = candidates.supplier_at_base(next, range.base()) else {
+                return None;
+            };
+            // A selected cell such as (p + i)[0..1] must use the request's
+            // coordinates before containment and adjacency. This restates one
+            // supplied footprint; it never discovers another owner or alias.
+            let piece = match piece.memory_own_range() {
+                Some(selected)
+                    if range.wide_bounds().is_none()
+                        && selected.wide_bounds().is_none()
+                        && selected.base() != range.base()
+                        && constant_range_extent(selected).is_some() =>
+                {
+                    CResourceFact::own_memory(memory_range_rebased(
+                        selected,
+                        range.base(),
+                        assumptions,
+                    )?)
+                }
+                _ => piece,
+            };
+            let Some(piece_range) = piece.memory_own_range() else {
+                return None;
+            };
+            if range.typed_carrier
+                && !assumptions.access_designations_match(range.access_designation(), piece_range)
+            {
+                return None;
+            }
+            let combined = match joined {
+                None => piece,
+                Some(ref prior) => {
+                    let Some(combined) = normalize_resource_fact_pair(prior, &piece, assumptions)
+                    else {
+                        return None;
+                    };
+                    combined
+                }
+            };
+            let Some(combined_range) = combined.memory_own_range() else {
+                return None;
+            };
+            // Do not continue a chain outside the footprint the query names.
+            if !memory_range_covers(range, combined_range, assumptions) {
+                return None;
+            }
+            // Apply each exact selected consumption to this persistent branch.
+            // Combined coverage is restricted to the request, so success leaves
+            // no residual from these pieces and preserves all unrelated entries.
+            if !self.consume_fact_from_candidates_with_origins(
+                &available,
+                assumptions,
+                [next],
+                origins.as_deref_mut(),
+            ) {
+                return None;
+            }
+            if resource_fact_entails(&combined, required, assumptions) {
+                return Some(self);
+            }
+            let Some(successor) = candidates.sole_owned_start(&combined_range.end_pointer()) else {
+                return None;
+            };
+            joined = Some(combined);
+            next = successor;
+        }
     }
 
     /// Join only the suppliers selected for the explicit footprint. Loan-bound

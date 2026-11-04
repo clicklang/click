@@ -260,6 +260,27 @@ impl NativeComparisonView<'_> {
         }
     }
 
+    /// A checking reading that retains arithmetic in the shared arena.
+    /// Only fixed-size leaves and already-written native operands use Compare.
+    pub(crate) fn retained_condition(&self) -> (ConditionTerm, bool) {
+        use crate::kernel::CompareRelation as R;
+        let relation = match self.relation {
+            Relation::Equal | Relation::NotEqual => R::Equal,
+            Relation::Less => R::LessThan,
+            Relation::LessEqual => R::LessEqual,
+        };
+        (
+            condition_for_operand_views(
+                self.format,
+                relation,
+                self.operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view()),
+            ),
+            self.relation != Relation::NotEqual,
+        )
+    }
+
     fn boxed_condition(&self) -> Option<(ConditionTerm, bool)> {
         representation::comparison(
             self.format,

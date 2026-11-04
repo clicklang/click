@@ -505,9 +505,9 @@ including repeated queries and persistent-map work. Build guards prohibit the
 removed frame iteration and normalization APIs in these completion paths.
 Nonconstant insertion candidates remain a separate audit target.
 
-Explicit ownership composition for a constant 32-bit-indexed range with unit
-quantity uses `consume_constant_owned_memory`. It nominates one whole supplier,
-or consumes successive indexed fragments through the existing reservation
+Explicit ownership composition for a narrow- or native-indexed range
+with unit quantity uses `consume_unit_owned_memory`. It nominates one whole
+supplier, or consumes successive indexed fragments through the existing reservation
 operation, stopping at the first gap or unsuitable supplier. It retains split
 origins when requested and edits a persistent branch; it neither collects a
 candidate frontier nor retries alternatives. Selected native-indexed suppliers
@@ -515,17 +515,47 @@ keep their original 64-bit bounds, element width, and carrier; their consumed
 pieces must have exact aligned coordinates and checked lengths. The constant
 neighbor index orders narrow and native ranges by checked byte coordinates,
 so unfolding does not scan unrelated same-base suppliers whose constant byte
-coordinates fit that index. Symbolic and wide-indexed requests remain separate
-audit targets. A build guard forbids candidate enumeration in this
-constant-consumption path.
+coordinates fit that index. Native request lengths use checked unsigned
+subtraction and multiplication, then exact conversion to the indexed byte
+cursor; native pieces are never narrowed to 32 bits. An unrepresentable length
+or coordinate refuses composition without entering the candidate fallback.
+For a native request, each selected supplier must satisfy its typed access
+designation, as the previous whole-range entailment route required.
+A constant native request may have symbolic intermediate partition points.
+When its nominated supplier has symbolic bounds, consumption follows unique
+exact-start entries, applying the existing binary range-composition rule.
+Every selected piece must lie inside the request; a gap, ambiguous successor,
+cycle, wrong designation, or non-unit owner refuses without trying alternatives.
+Consumption and non-consuming queries share this persistent operation. Scaling
+controls grow unrelated same-base fragments beside a fixed symbolic partition.
+Symbolic unit-owned requests use the same singleton supplier and exact-endpoint
+composition, without enumerating incident order bounds or candidate frontiers.
+A selected narrow cell written `(p + i)[0..1]` is restated as `p[i..i+1]`
+before containment and adjacency, retaining its carrier. This uses the existing
+exact coordinate rule on that piece, not an alias or supplier search.
+Complete-fold controls keep the footprint fixed while growing incident order
+facts, including refusal and successful composition; selected-piece controls
+measure larger actual partitions separately. Other quantities remain an audit
+target. A build guard forbids candidate enumeration in this consumption path.
+
+Non-consuming `satisfies_fact` queries for constant native ranges with unit
+ownership use that same indexed consumption operation on a persistent copy.
+Success establishes the requested ownership without changing the caller's
+occurrences; failure stops at a gap or unsuitable supplier. They never enter
+the enumeration/normalization fallback. Scaling controls hold the requested
+range fixed beside growing rejected fragments, then separately grow the
+selected contiguous pieces; both include repeated queries and persistent-map
+work. Symbolic, narrow, viewed, and other-quantity satisfaction routes remain
+separate audit targets.
 
 A proof can combine differently sized owned fields by folding a resource whose
 body owns the complete object, then unfolding it before a call that borrows the
 whole object. This is an explicit ownership construction, not a new separation
 axiom or pure fact. The complete fold/unfold scaling control measures successful
 mixed-width composition and a fixed early gap beside growing rejected fragments,
-including repeated work and persistent-map visits. Loan planning itself does not
-perform that composition automatically.
+including repeated work and persistent-map visits. A native-request fold control
+also measures a whole owner, two-piece composition, and a fixed early gap.
+Loan planning itself does not perform that composition automatically.
 
 Declared-resource lowering selects parameter values from the names in its
 explicit arguments, including quantities and nested resource-type arguments.

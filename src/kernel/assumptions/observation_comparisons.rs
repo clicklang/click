@@ -40,53 +40,57 @@ pub(in crate::kernel) enum PropositionKey {
     Exists(Variable, Sort, Box<Self>),
 }
 impl PropositionKey {
-    pub(in crate::kernel) fn observes_machine(proposition: &Proposition) -> bool {
-        let mut pending = vec![proposition];
-        while let Some(proposition) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            match proposition {
-                Proposition::ConditionIs(condition, truth)
-                    if native_comparison_view(condition, *truth).is_some() =>
-                {
-                    return true;
-                }
-                Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
-                    pending.push(a);
-                    pending.push(b);
-                }
-                Proposition::Not(body)
-                | Proposition::ForAll { body, .. }
-                | Proposition::Exists { body, .. } => pending.push(body),
-                _ => {}
-            }
-        }
-        false
+    /// Build an admitted comparison key in one walk, retaining it only when
+    /// some leaf has a machine comparison reading. Detection must not walk
+    /// the proposition again before constructing the same key.
+    pub(in crate::kernel) fn for_source(proposition: &Proposition) -> Option<Self> {
+        let (key, observes) = Self::with_presence(proposition);
+        observes.then_some(key)
     }
 
     pub(in crate::kernel) fn new(proposition: &Proposition) -> Self {
+        Self::with_presence(proposition).0
+    }
+
+    fn with_presence(proposition: &Proposition) -> (Self, bool) {
         crate::instrumentation::record_deterministic_work(1);
         match proposition {
             Proposition::ConditionIs(condition, truth) => {
                 if let Some(view) = comparison_view(condition, *truth) {
                     let view = view.widened().unwrap_or(view);
-                    Self::Comparison(key(&view))
+                    (Self::Comparison(key(&view)), true)
                 } else {
-                    Self::Exact(proposition.clone())
+                    (Self::Exact(proposition.clone()), false)
                 }
             }
-            Proposition::Not(body) => Self::Not(Box::new(Self::new(body))),
-            Proposition::And(a, b) => Self::And(Box::new(Self::new(a)), Box::new(Self::new(b))),
-            Proposition::Or(a, b) => Self::Or(Box::new(Self::new(a)), Box::new(Self::new(b))),
-            Proposition::Implies(a, b) => {
-                Self::Implies(Box::new(Self::new(a)), Box::new(Self::new(b)))
+            Proposition::Not(body) => {
+                let (key, observes) = Self::with_presence(body);
+                (Self::Not(Box::new(key)), observes)
+            }
+            Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
+                let (a, left) = Self::with_presence(a);
+                let (b, right) = Self::with_presence(b);
+                let (a, b) = (Box::new(a), Box::new(b));
+                let key = match proposition {
+                    Proposition::And(..) => Self::And(a, b),
+                    Proposition::Or(..) => Self::Or(a, b),
+                    _ => Self::Implies(a, b),
+                };
+                (key, left || right)
             }
             Proposition::ForAll {
                 var, sort, body, ..
-            } => Self::ForAll(*var, sort.clone(), Box::new(Self::new(body))),
+            } => {
+                let (key, observes) = Self::with_presence(body);
+                (Self::ForAll(*var, sort.clone(), Box::new(key)), observes)
+            }
             Proposition::Exists {
                 var, sort, body, ..
-            } => Self::Exists(*var, sort.clone(), Box::new(Self::new(body))),
-            _ => Self::Exact(proposition.clone()),
+            } => {
+                let (key, observes) = Self::with_presence(body);
+                (Self::Exists(*var, sort.clone(), Box::new(key)), observes)
+            }
+            _ => (Self::Exact(proposition.clone()), false),
         }
     }
 }
@@ -129,7 +133,7 @@ fn key(view: &NativeComparisonView<'_>) -> Key {
 
 /// Exact comparison identity for an already selected source. This is not a
 /// search and does not decide a stronger or weaker bound.
-pub(super) fn same_comparison(
+pub(in crate::kernel) fn same_comparison(
     condition: &ConditionTerm,
     truth: bool,
     source: &Proposition,
@@ -242,11 +246,54 @@ fn constant_reading(view: &NativeComparisonView<'_>, key: &Key) -> Option<bool> 
 pub(in crate::kernel) struct ObservationComparisons {
     keys_by_source: PersistentMap<Proposition, Vec<Key>>,
     sources: PersistentMap<Key, PersistentSet<Proposition>>,
+    // The existing four-byte offset rule, indexed separately so admission
+    // does not alter unrelated observation/constant-query work.
+    scaled_words: PersistentMap<Key, PersistentSet<Proposition>>,
 }
 
 impl ObservationComparisons {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool, insert: bool) {
         let source = Proposition::ConditionIs(condition.clone(), truth);
+        if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
+            use crate::kernel::machine_integer::comparison::ComparisonOperand;
+            fn operand(offset: &PointerOffsetTerm) -> Option<ComparisonOperand<'_>> {
+                match offset {
+                    PointerOffsetTerm::Int32Scaled {
+                        value,
+                        byte_width: 4,
+                    } => Some(ComparisonOperand::Written(value)),
+                    PointerOffsetTerm::Constant(bytes) if bytes % 4 == 0 => {
+                        i32::try_from(bytes / 4).ok().map(|value| {
+                            ComparisonOperand::Constant(Bitvector32Term::constant(value as u32))
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            if let (Some(left), Some(right)) = (operand(left), operand(right)) {
+                let key = key(&NativeComparisonView {
+                    format: MachineIntegerType::Int32,
+                    relation: if truth {
+                        Relation::Equal
+                    } else {
+                        Relation::NotEqual
+                    },
+                    operands: [left, right],
+                });
+                let sources = self.scaled_words.get(&key).cloned().unwrap_or_default();
+                let sources = if insert {
+                    sources.with_value(source.clone())
+                } else {
+                    sources.without_value(&source)
+                };
+                self.scaled_words = if sources.is_empty() {
+                    self.scaled_words.without_key(&key)
+                } else {
+                    self.scaled_words.with_inserted(key, sources)
+                };
+            }
+            return;
+        }
         let keys = if insert {
             let keys = if let ConditionTerm::Overflows {
                 format,
@@ -340,6 +387,34 @@ impl ObservationComparisons {
             .next()
     }
 
+    pub(super) fn scaled_source(
+        &self,
+        format: MachineIntegerType,
+        operands: [MachineOperandView<'_>; 2],
+        truth: bool,
+    ) -> Option<&Proposition> {
+        use crate::kernel::machine_integer::comparison::ComparisonOperand;
+        crate::instrumentation::record_deterministic_work(1);
+        if self.scaled_words.is_empty() {
+            return None;
+        }
+        let view = NativeComparisonView {
+            format,
+            relation: if truth {
+                Relation::Equal
+            } else {
+                Relation::NotEqual
+            },
+            operands: operands.map(|operand| match operand {
+                MachineOperandView::Legacy(term) => ComparisonOperand::Written(term),
+                MachineOperandView::Shared(_) => {
+                    ComparisonOperand::Observation(operand.retain(format))
+                }
+            }),
+        };
+        self.scaled_words.get(&key(&view))?.iter().next()
+    }
+
     pub(super) fn false_source(&self) -> Option<&Proposition> {
         self.sources.get(&Key::Truth(false))?.iter().next()
     }
@@ -361,5 +436,71 @@ impl ObservationComparisons {
             key(&comparison_view(condition, truth)?)
         };
         self.sources.get(&key)?.iter().next()
+    }
+}
+
+#[cfg(test)]
+mod compound_observation_lookup_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn compound_comparison_lookup_is_bidirectional_and_tracks_source_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let root = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Multiply,
+            [
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989001)),
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(989002)),
+            ],
+        );
+        let retained = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let shared = ConditionTerm::integer_not_equal(
+            IntegerTerm::Machine(retained.clone()),
+            IntegerTerm::constant_i64(-1),
+        );
+        let other = Proposition::ConditionIs(ConditionTerm::Variable(Variable(989003)), true);
+        let guard = |condition, truth| {
+            Proposition::Or(
+                Box::new(Proposition::ConditionIs(condition, truth)),
+                Box::new(other.clone()),
+            )
+        };
+        let shared_guard = guard(shared, true);
+        let exports = KernelTermExport::machine_export_count();
+        assert!(!retained.has_boxed_operand());
+        let shared_context = PureFactContext::new().assume_proposition(shared_guard.clone());
+        assert!(shared_context.proves_exact(&shared_guard));
+        assert!(!retained.has_boxed_operand());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+
+        let native = ConditionTerm::equal(
+            Bitvector32Term::logical_machine_binary(
+                ty,
+                MachineBinaryOp::Multiply,
+                Bitvector32Term::Variable(Variable(989001)),
+                Bitvector32Term::Variable(Variable(989002)),
+            ),
+            Bitvector32Term::constant(u32::MAX),
+        );
+        let native_guard = guard(native.clone(), false);
+        let native_context = PureFactContext::new().assume_proposition(native_guard.clone());
+        let (proved, sources) = collect_reasoning_provenance(|| {
+            capture_implicit_reasoning_provenance(|| native_context.proves_exact(&shared_guard))
+        });
+        assert!(proved);
+        assert_eq!(sources, vec![native_guard.clone()]);
+        assert!(!native_context.contains_assumed_exact(&shared_guard));
+        assert!(shared_context.proves_exact(&native_guard));
+        assert!(!native_context.proves_exact(&guard(native, true)));
+        let both = native_context.assume_proposition(shared_guard.clone());
+        let one = both.without_exact_fact(&native_guard);
+        assert!(one.proves_exact(&native_guard));
+        let none = one.without_exact_fact(&shared_guard);
+        assert!(!none.proves_exact(&native_guard));
+        assert!(!none.proves_exact(&shared_guard));
+        assert!(both.proves_exact(&shared_guard));
     }
 }

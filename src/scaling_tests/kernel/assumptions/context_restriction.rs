@@ -370,7 +370,19 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
     for size in [8i64, 32, 128, 512] {
         let _session = crate::kernel::VerificationSession::enter();
         let mut context = PureFactContext::new();
-        let mut selected = None;
+        let view = Proposition::Or(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(880000)),
+                    Bitvector32Term::constant(i32::MIN as u32),
+                ),
+                false,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::Variable(Variable(880001)),
+                true,
+            )),
+        );
         for index in 0..size {
             let bound: SharedIntegerTerm = I::Subtract(
                 I::constant_i64(index).into(),
@@ -395,10 +407,8 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
                     true,
                 )),
             );
-            selected = Some(observation_comparison_form(&source, true));
             context.insert_proposition_fact(source);
         }
-        let view = selected.unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             assert!(context.contains_proposition_fact(&view));
         });
