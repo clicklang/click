@@ -13451,9 +13451,13 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
         };
         let lines = expanded.lines().collect::<Vec<_>>();
         assert!(
-            lines[retained.clone()]
-                .iter()
-                .any(|line| line.trim_start().starts_with("premise 0: at(region(")),
+            lines[retained.clone()].iter().any(|line| {
+                line.trim_start()
+                    .strip_prefix("premise 0: ")
+                    .is_some_and(|premise| {
+                        premise.trim_start_matches('(').starts_with("at(region(")
+                    })
+            }),
             "the retained step does not cite the anchored branch premises:\n{expanded}"
         );
         verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
