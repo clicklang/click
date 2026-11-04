@@ -4510,6 +4510,9 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 ensures result == 0 implies owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
+                // Declare both pointers, save the old cell, and allocate its replacement.
+                step(); step(); step(); step();
+                branch { step(); } else { }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
