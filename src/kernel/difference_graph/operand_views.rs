@@ -88,7 +88,6 @@ fn sign_flip_view(domain: Domain, term: V<'_>) -> Option<V<'_>> {
 
 struct Query<'a> {
     graph: &'a DifferenceGraph,
-    cache: std::sync::MutexGuard<'a, cache::Cache>,
     frames: Vec<(Vec<Read>, bool)>,
 }
 
@@ -300,7 +299,6 @@ impl<'a> Query<'a> {
     fn new(graph: &'a DifferenceGraph) -> Self {
         Self {
             graph,
-            cache: graph.shared_queries.lock(),
             frames: Vec::new(),
         }
     }
@@ -316,7 +314,10 @@ impl<'a> Query<'a> {
     }
     fn begin(&mut self, key: QueryKey) -> Option<Answer> {
         self.depend(Read::Query(key));
-        let hit = self.cache.get(&key);
+        // A native conditional can re-enter graph decisions while resolving
+        // an operand. Hold the cache lock only for lookup or insertion, never
+        // across that recursive work.
+        let hit = self.graph.shared_queries.lock().get(&key);
         if hit.is_none() {
             self.frames.push((Vec::new(), true));
         }
@@ -325,7 +326,10 @@ impl<'a> Query<'a> {
     fn finish(&mut self, key: QueryKey, root: &crate::kernel::KernelTerm, answer: Answer) {
         let (reads, cacheable) = self.frames.pop().expect("range query frame");
         if cacheable {
-            self.cache.insert(key, root, answer, reads);
+            self.graph
+                .shared_queries
+                .lock()
+                .insert(key, root, answer, reads);
         } else {
             self.uncacheable();
         }
