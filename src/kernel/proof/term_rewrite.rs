@@ -3535,10 +3535,11 @@ impl<'a> TermRewrite<'a> {
                 ))
             }
             IntegerTerm::Machine(value) => {
+                // Unguarded rewrites share the same arithmetic traversal;
+                // leaf rewriting supplies their particular substitution mode.
+                // Conditional reductions still use their established rule path.
                 if (self.comparison_arithmetic
-                    || (matches!(self.bitvector, Some((MachineTerm::Variable(_), _)))
-                        && self.conditions.is_none()
-                        && self.collected_conditions.is_none()))
+                    || (self.conditions.is_none() && self.collected_conditions.is_none()))
                     && let Some(root) = value.shared_operand()
                     && let Some(result) = self.shared_machine_operand(root)
                 {
@@ -3547,9 +3548,13 @@ impl<'a> TermRewrite<'a> {
                     // numeric reading (for example a full-width unsigned
                     // literal in a signed conversion). Preserve that typed
                     // machine observation, as the native path below does.
-                    let result = operand
-                        .observe(value.ty())
-                        .unwrap_or_else(|| IntegerTerm::Machine(operand.retain(value.ty())));
+                    let result = if self.integer_exact.is_some() {
+                        IntegerTerm::Machine(operand.retain(value.ty()))
+                    } else {
+                        operand
+                            .observe(value.ty())
+                            .unwrap_or_else(|| IntegerTerm::Machine(operand.retain(value.ty())))
+                    };
                     self.integer_cache.insert(cache_key, result.clone());
                     return result;
                 }
