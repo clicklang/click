@@ -10415,7 +10415,8 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     verify_c0_sources(&rewritten, &sources)
         .expect("the serialized nested branch-arm scope should independently reverify");
 
-    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(flag + 1))", 1);
+    // This arm has flag != 0, so marker(0) is distinct without risking overflow.
+    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(0))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the nested branch-arm resource selection"
@@ -10426,7 +10427,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`open(marker((flag + 1)))` Requires owns marker((flag + 1))"),
+            .contains("`open(marker(0))` Requires owns marker(0)"),
         "the checked nested branch-arm entry should reject the tamper directly: {error:?}"
     );
 }
