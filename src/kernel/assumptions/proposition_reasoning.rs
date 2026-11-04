@@ -1181,13 +1181,17 @@ impl SelectedFacts<'_> {
                 super::condition_reasoning::WIDE_ORDER_FORMATS
                     .into_iter()
                     .find_map(|format| {
-                        let (left, right, strict) =
-                            super::condition_reasoning::wide_order_fact(condition, *value, format)?;
-                        self.exact_wide_order_path_evidence(&left, &right, strict, format)
-                            .map(|path| AtomicPropositionDerivationEvidence::WideOrderPath {
-                                format,
-                                path,
-                            })
+                        let view =
+                            super::condition_reasoning::wide_order_view(condition, *value, format)?;
+                        self.exact_wide_order_path_evidence(
+                            view.operands[0].operand_view(),
+                            view.operands[1].operand_view(),
+                            view.relation == crate::kernel::machine_integer::Relation::Less,
+                            format,
+                        )
+                        .map(|path| {
+                            AtomicPropositionDerivationEvidence::WideOrderPath { format, path }
+                        })
                     })
             }
             _ => None,
@@ -2063,34 +2067,41 @@ impl SelectedFacts<'_> {
                 && (!require_strict || strict || constant_connection == Some(true));
         }
         if let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = evidence {
+            use crate::kernel::machine_integer::Relation;
             let Proposition::ConditionIs(condition, value) = proposition else {
                 return false;
             };
-            let Some((left, right, require_strict)) =
-                super::condition_reasoning::wide_order_fact(condition, *value, *format)
+            let Some(goal) =
+                super::condition_reasoning::wide_order_view(condition, *value, *format)
             else {
                 return false;
             };
-            let canonical = crate::kernel::eval::canonical_term;
-            let mut current = canonical(&left);
+            let canonical = |term: crate::kernel::MachineOperandView<'_>| {
+                super::checked_scalar_facts::ScalarOperandKey::canonical(*format, term)
+            };
+            let mut current = canonical(goal.operands[0].operand_view());
             let mut strict = false;
             for step in path {
-                if current != canonical(&step.lower)
-                    || !matches!(
-                        &step.premise,
-                        Proposition::ConditionIs(condition, value)
-                            if self.exact_condition_value(condition) == Some(*value)
-                                && super::condition_reasoning::wide_order_fact(
-                                    condition, *value, *format,
-                                ) == Some((step.lower.clone(), step.upper.clone(), step.strict))
-                    )
-                {
+                let Proposition::ConditionIs(condition, value) = &step.premise else {
+                    return false;
+                };
+                if self.exact_condition_value(condition) != Some(*value) {
                     return false;
                 }
-                current = canonical(&step.upper);
-                strict |= step.strict;
+                let Some(edge) =
+                    super::condition_reasoning::wide_order_view(condition, *value, *format)
+                else {
+                    return false;
+                };
+                if current != canonical(edge.operands[0].operand_view()) {
+                    return false;
+                }
+                current = canonical(edge.operands[1].operand_view());
+                strict |= edge.relation == Relation::Less;
             }
-            return !path.is_empty() && current == canonical(&right) && (!require_strict || strict);
+            return !path.is_empty()
+                && current == canonical(goal.operands[1].operand_view())
+                && (goal.relation != Relation::Less || strict);
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementUpperBound(step) = evidence {
             let Proposition::ConditionIs(
@@ -5319,6 +5330,174 @@ mod shared_domain_evidence_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/proposition_reasoning/shared_domain_evidence_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod shared_wide_order_evidence_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn wide_order_evidence_keeps_shared_endpoints_and_exact_polarity_sources() {
+        for ty in [
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for mixed in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let native = |id| {
+                    Bitvector32Term::logical_machine_binary(
+                        ty,
+                        MachineBinaryOp::Multiply,
+                        Bitvector32Term::Variable(Variable(id)),
+                        Bitvector32Term::Variable(Variable(987000)),
+                    )
+                };
+                let term = |id| {
+                    SharedMachineIntegerTerm::from_shared(
+                        ty,
+                        KernelTerm::machine_binary_shared(
+                            ty,
+                            MachineBinaryOp::Multiply,
+                            [
+                                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id)),
+                                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(987000)),
+                            ],
+                        ),
+                    )
+                    .unwrap()
+                };
+                let [a, b, c] = [term(987001), term(987002), term(987003)];
+                let observe = |t: &SharedMachineIntegerTerm| IntegerTerm::Machine(t.clone());
+                let first = Proposition::ConditionIs(
+                    if mixed {
+                        ConditionTerm::machine_compare(
+                            ty,
+                            CompareRelation::LessEqual,
+                            native(987001),
+                            native(987002),
+                        )
+                    } else {
+                        ConditionTerm::integer_less_equal(observe(&a), observe(&b))
+                    },
+                    true,
+                );
+                let second = Proposition::ConditionIs(
+                    ConditionTerm::integer_less_equal(observe(&c), observe(&b)),
+                    false,
+                );
+                let goal = Proposition::ConditionIs(
+                    ConditionTerm::integer_less_than(observe(&a), observe(&c)),
+                    true,
+                );
+                let exports = KernelTermExport::machine_export_count();
+                let context = SelectedFacts::from_propositions(&[first.clone(), second.clone()]);
+                let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, false);
+                let evidence = evidence.expect("selected order path");
+                let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = &evidence
+                else {
+                    panic!("expected wide order evidence, got {evidence:?}");
+                };
+                assert_eq!(*format, ty);
+                assert_eq!(
+                    path.iter()
+                        .map(|step| step.premise.clone())
+                        .collect::<Vec<_>>(),
+                    [first.clone(), second.clone()]
+                );
+                assert!(context.checks_atomic_derivation(&goal, false, id, &evidence));
+                let missing = SelectedFacts::from_propositions(&[second]);
+                assert!(!missing.checks_atomic_derivation(&goal, false, id, &evidence));
+                let mut forged = evidence.clone();
+                if let AtomicPropositionDerivationEvidence::WideOrderPath { path, .. } = &mut forged
+                {
+                    path[0].premise = Proposition::ConditionIs(
+                        ConditionTerm::integer_less_than(observe(&a), observe(&b)),
+                        true,
+                    );
+                }
+                assert!(!context.checks_atomic_derivation(&goal, false, id, &forged));
+                assert_eq!(
+                    KernelTermExport::machine_export_count(),
+                    exports,
+                    "{ty:?}, mixed={mixed}"
+                );
+            }
+        }
+    }
+    #[test]
+    fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
+        use crate::kernel::{
+            CMemory, LoadKind, MachineOperandView, Pointer, PointerOffsetTerm, intern_c_memory,
+        };
+        for ty in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = intern_c_memory(CMemory::new().with_block("wide-order", 16));
+            let load = |offset| {
+                Bitvector32Term::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer {
+                        block: "wide-order".into(),
+                        offset: PointerOffsetTerm::Constant(offset),
+                    }),
+                    LoadKind::Bits64,
+                )
+            };
+            let native = Bitvector32Term::logical_machine_binary(
+                ty,
+                MachineBinaryOp::Multiply,
+                load(0),
+                Bitvector32Term::Variable(Variable(987010)),
+            );
+            let named = crate::kernel::eval::canonical_term(&native);
+            let observe = |term: &Bitvector32Term| {
+                IntegerTerm::Machine(MachineOperandView::Legacy(term).retain(ty))
+            };
+            let a = Bitvector32Term::Variable(Variable(987011));
+            let b = Bitvector32Term::Variable(Variable(987012));
+            let first = Proposition::ConditionIs(
+                ConditionTerm::machine_compare(ty, CompareRelation::LessEqual, a.clone(), native),
+                true,
+            );
+            let second = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(observe(&named), observe(&b)),
+                true,
+            );
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(observe(&a), observe(&b)),
+                true,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let context = SelectedFacts::from_propositions(&[first.clone(), second]);
+            let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, false);
+            let evidence = evidence.expect("canonical load bridge");
+            assert!(matches!(
+                evidence,
+                AtomicPropositionDerivationEvidence::WideOrderPath { .. }
+            ));
+            assert!(context.checks_atomic_derivation(&goal, false, id, &evidence));
+            let different = Bitvector32Term::logical_machine_binary(
+                ty,
+                MachineBinaryOp::Multiply,
+                load(8),
+                Bitvector32Term::Variable(Variable(987010)),
+            );
+            let different = crate::kernel::eval::canonical_term(&different);
+            let unrelated = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(observe(&different), observe(&b)),
+                true,
+            );
+            let branch = SelectedFacts::from_propositions(&[first, unrelated]);
+            assert!(!branch.checks_atomic_derivation(&goal, false, id, &evidence));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/shared_wide_order_evidence_tests.rs"
         );
     }
 }

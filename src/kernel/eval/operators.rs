@@ -1303,24 +1303,15 @@ fn apply_c_int128_division_like(
                     true,
                 )),
             );
-            // A promoted divisor's observation is its operand's by value
-            // (rule W). Written contracts use that native form inside their
-            // disjunction.
-            let native_equality_safe =
-                crate::kernel::assumptions::read_observation_form(&equality_safe);
-            let native_inequality_safe =
-                crate::kernel::assumptions::read_observation_form(&inequality_safe);
-            let guards = [
-                safe,
-                &equality_safe,
-                &inequality_safe,
-                &native_equality_safe,
-                &native_inequality_safe,
-            ];
+            // Exact comparison keys read value-preserving promotions and
+            // retain shared operands inside the complete contract guard.
+            use crate::kernel::assumptions::observation_comparisons::PropositionKey;
+            let guards = [safe, &equality_safe, &inequality_safe];
+            let keys = guards.map(PropositionKey::new);
             if guards.iter().any(|guard| assumptions.proves_exact(guard))
                 || facts
                     .iter()
-                    .any(|fact| guards.contains(&fact.proposition()))
+                    .any(|fact| keys.contains(&PropositionKey::new(fact.proposition())))
             {
                 Some(false)
             } else {
