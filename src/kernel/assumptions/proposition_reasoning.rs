@@ -5297,9 +5297,8 @@ mod shared_domain_evidence_tests {
                 assert!(branch.select_domain_rule_premises(&query, rule).is_none());
             }
             assert_eq!(KernelTermExport::machine_export_count(), exports);
-            // The general refusal route still reaches the equality dispatcher
-            // for subtraction. Check its verdict separately; that dispatcher
-            // is the next migration boundary, not this named rule's selector.
+            // General refusal reaches equality reasoning for subtraction;
+            // that dispatcher must retain the same shared operands too.
             for missing in 0..premises.len() {
                 let rest: Vec<_> = premises
                     .iter()
@@ -5314,6 +5313,7 @@ mod shared_domain_evidence_tests {
                         .is_none()
                 );
             }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
     }
     mod scaling_tests {

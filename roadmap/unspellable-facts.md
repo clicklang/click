@@ -133,7 +133,14 @@ tests cover native/shared parity, including unknown answers and transitive
 constant contexts. Growing-prefix tests cover both successful and unresolved
 zero-addend and cancellation queries with unrelated fact additions.
 
-The general comparison bridge remains for equality. Deeper first-use
+The 32-bit equality dispatcher now reads shared operands for additive
+matching/cancellation, opposite signed bounds, exclusions, direct scaled-offset
+sources and refutations. The difference graph's word-equality rule also reads
+views in both signedness domains, retaining non-four-byte offset consequences.
+Checking reductions reuse graph word identities before interval/addend work;
+growing-prefix tests cover successful and unresolved queries across changing
+contexts. Source withdrawal and sibling contexts have no-export regressions.
+The general comparison bridge remains for wide equality. Deeper first-use
 normalization and later equality updates remain explicit audits before enabling
 additional producers. Preserve rule order as well as proof results: unwrapping
 a sign cast before substituting a constant can expose a different range rule,
@@ -165,16 +172,17 @@ Remaining groups to audit and migrate:
 
 - [ ] Finish comparison dispatch and native premise lookup. Ordinary order
   dispatch reads views; the `native_comparison_of_integer_observation` bridge
-  remains for equality and lookup consumers. Audit deeper first-use and
+  remains for wide equality and lookup consumers. Audit deeper first-use and
   later-equality normalization before enabling additional producers. Remove
   each remaining conversion only after its supported routes read views.
 - [ ] Signed equality dispatch: additive matching/cancellation, equality from
   opposite bounds, memory/equality sources, and negative answers. Ordinary
   signed/unsigned order rules, successor transport and wide order walks already
   read views; their completion does not remove the equality dispatcher.
-  Fresh subtraction-domain refusals still reach this exporter through the
-  general equality check; the named domain selector and evidence checker keep
-  shared operands on both success and refusal.
+  Shared 32-bit arithmetic now has a view-based route, including difference-graph
+  equality and source withdrawal. The native opaque/memory branches and wide
+  equality remain explicit audits; additional growing additive shapes still
+  need checking before enabling new producers.
 - [ ] Atomic domain evidence and certificate premise adapters. Atomic derivation
   now reads ordinary range-domain views and retains the exact premises for
   increment, one-plus, nonnegative addition and subtraction. Their source

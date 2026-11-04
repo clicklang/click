@@ -178,6 +178,191 @@ impl PureFactContext {
             })
     }
 
+    /// The existing word-equality rules over selected operand handles. Opaque
+    /// native operands keep their explicit legacy rules; shared arithmetic is
+    /// inspected through views and never materialized for a query.
+    fn decide_word_equality_views(
+        &self,
+        format: MachineIntegerType,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::Relation;
+        use crate::kernel::machine_integer::comparison::{ComparisonOperand, NativeComparisonView};
+        use MachineOperandView as V;
+        if let (V::Legacy(a), V::Legacy(b)) = (left, right) {
+            return self.decide_from_order_rules(&ConditionTerm::machine_compare(
+                format,
+                CompareRelation::Equal,
+                a.clone(),
+                b.clone(),
+            ));
+        }
+        let written = [left, right];
+        let normalized = [left, right].map(|operand| match operand {
+            V::Shared(root) => Some(self.equality_graph.checking_word32_root(root, |child| {
+                self.indexed_exact_int32_constant_view(V::Shared(child))
+                    .map(|(value, _)| value as u32)
+            })),
+            V::Legacy(_) => None,
+        });
+        let [left, right] = std::array::from_fn(|i| {
+            normalized[i]
+                .as_ref()
+                .map(V::Shared)
+                .unwrap_or([left, right][i])
+        });
+        let same = |a: V<'_>, b: V<'_>| Key::for_format(format, a) == Key::for_format(format, b);
+        if same(left, right) || self.word_addends_equal_views(left, right) {
+            return Some(true);
+        }
+        let view = NativeComparisonView {
+            format,
+            relation: Relation::Equal,
+            operands: [left, right]
+                .map(|operand| ComparisonOperand::Observation(operand.retain(format))),
+        };
+        if let Some(cancelled) = view.cancelled_equality() {
+            let (condition, truth) = cancelled.retained_condition();
+            return self.decide(&condition).map(|value| value == truth);
+        }
+        if let Some(equal) = self.exact_signed_intervals_equal_views(left, right) {
+            return Some(equal);
+        }
+        let held = |relation, a, b, truth| {
+            self.has_written_operand_comparison(MachineIntegerType::Int32, relation, a, b, truth)
+        };
+        if held(CompareRelation::Equal, left, right, true)
+            || held(CompareRelation::Equal, right, left, true)
+            || (held(CompareRelation::LessEqual, left, right, true)
+                && held(CompareRelation::GreaterEqual, left, right, true))
+            || (held(CompareRelation::LessEqual, written[0], written[1], true)
+                && held(CompareRelation::GreaterEqual, written[0], written[1], true))
+            || self.order_facts_force_equal_views(written[0], written[1])
+            || self.range_facts_force_equal_views(written[0], written[1])
+            || self.scaled_word_comparison_known(format, written, true)
+        {
+            return Some(true);
+        }
+        let offset_apart = |a: V<'_>, b: V<'_>| {
+            a.int32_add_const_parts().is_some_and(|(base, offset)| {
+                (same(base, b) && offset != 0)
+                    || b.int32_add_const_parts()
+                        .is_some_and(|(other, other_offset)| {
+                            same(base, other) && offset != other_offset
+                        })
+            })
+        };
+        if held(CompareRelation::Equal, left, right, false)
+            || held(CompareRelation::Equal, right, left, false)
+            || offset_apart(left, right)
+            || offset_apart(right, left)
+            || self.scaled_word_comparison_known(format, written, false)
+        {
+            return Some(false);
+        }
+        if self.decide_written_operand_comparison(
+            MachineIntegerType::Int32,
+            CompareRelation::LessThan,
+            left,
+            right,
+        ) == Some(true)
+            || self.decide_written_operand_comparison(
+                MachineIntegerType::Int32,
+                CompareRelation::GreaterThan,
+                left,
+                right,
+            ) == Some(true)
+        {
+            return Some(false);
+        }
+        self.difference_graph
+            .built()
+            .and_then(|graph| graph.decide_word_equality_views(written[0], written[1]))
+    }
+
+    fn scaled_word_comparison_known(
+        &self,
+        format: MachineIntegerType,
+        operands: [MachineOperandView<'_>; 2],
+        truth: bool,
+    ) -> bool {
+        self.observation_comparisons
+            .scaled_source(format, operands, truth)
+            .is_some_and(|source| {
+                record_implicit_reasoning_provenance(self, source);
+                true
+            })
+    }
+
+    /// Match the selected sums as multisets of word classes. No ambient facts
+    /// are enumerated; registration reuses the graph's retained shared nodes.
+    fn word_addends_equal_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        use crate::kernel::MachineBinaryOp as Op;
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        use MachineOperandView as V;
+        let sum_format = |v: V<'_>| {
+            v.binary()
+                .and_then(|(ty, op, _)| (ty.format().bits() == 32 && op == Op::Add).then_some(ty))
+        };
+        let format = match (sum_format(left), sum_format(right)) {
+            (Some(a), Some(b)) if a != b => return false,
+            (Some(a), _) | (_, Some(a)) => a,
+            _ => return false,
+        };
+        fn parts(view: V<'_>, format: MachineIntegerType) -> (Vec<V<'_>>, u32) {
+            let mut pending = vec![view];
+            let mut terms = Vec::new();
+            let mut constant = 0u32;
+            while let Some(term) = pending.pop() {
+                crate::instrumentation::record_deterministic_work(1);
+                if let Some((ty, Op::Add, [a, b])) = term.binary()
+                    && ty == format
+                {
+                    pending.push(a);
+                    pending.push(b);
+                } else if let Some(value) = term.word32_constant() {
+                    constant = constant.wrapping_add(value);
+                } else {
+                    terms.push(term);
+                }
+            }
+            (terms, constant)
+        }
+        let (a, ac) = parts(left, format);
+        let (b, bc) = parts(right, format);
+        if ac != bc || a.len() != b.len() {
+            return false;
+        }
+        let a: Vec<_> = a.into_iter().map(|v| Key::for_format(format, v)).collect();
+        let b: Vec<_> = b.into_iter().map(|v| Key::for_format(format, v)).collect();
+        // Register both sides before reading roots: registering a later term
+        // can close a root-local identity involving an earlier one.
+        for key in a.iter().chain(&b) {
+            self.equality_graph
+                .scalar_normalization_class_view(key.operand_view());
+        }
+        let signature = |terms: Vec<Key>| {
+            let mut keys: Vec<Result<u64, Key>> = terms
+                .into_iter()
+                .map(|key| {
+                    self.equality_graph
+                        .scalar_normalization_class_view(key.operand_view())
+                        .map(|(root, _)| Ok(root))
+                        .unwrap_or(Err(key))
+                })
+                .collect();
+            keys.sort();
+            keys
+        };
+        signature(a) == signature(b)
+    }
+
     fn decide_from_order_rules(&self, condition: &ConditionTerm) -> Option<bool> {
         match condition {
             ConditionTerm::PointerEqual(left, right) if left == right => Some(true),
@@ -435,6 +620,23 @@ impl PureFactContext {
                     Relation, comparison::native_comparison_view,
                 };
                 let view = native_comparison_view(condition, true)?;
+                if matches!(
+                    view.format,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                ) && matches!(view.relation, Relation::Equal | Relation::NotEqual)
+                {
+                    if view.relation == Relation::NotEqual {
+                        let (positive, _) = view.retained_condition();
+                        return self.decide(&positive).map(|value| !value);
+                    }
+                    let [left, right] = view
+                        .operands
+                        .each_ref()
+                        .map(|operand| operand.operand_view());
+                    return self
+                        .decide_word_equality_views(view.format, left, right)
+                        .map(|value| value == (view.relation == Relation::Equal));
+                }
                 let relation = match view.relation {
                     Relation::Less => CompareRelation::LessThan,
                     Relation::LessEqual => CompareRelation::LessEqual,

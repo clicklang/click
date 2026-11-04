@@ -242,11 +242,54 @@ fn constant_reading(view: &NativeComparisonView<'_>, key: &Key) -> Option<bool> 
 pub(in crate::kernel) struct ObservationComparisons {
     keys_by_source: PersistentMap<Proposition, Vec<Key>>,
     sources: PersistentMap<Key, PersistentSet<Proposition>>,
+    // The existing four-byte offset rule, indexed separately so admission
+    // does not alter unrelated observation/constant-query work.
+    scaled_words: PersistentMap<Key, PersistentSet<Proposition>>,
 }
 
 impl ObservationComparisons {
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool, insert: bool) {
         let source = Proposition::ConditionIs(condition.clone(), truth);
+        if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
+            use crate::kernel::machine_integer::comparison::ComparisonOperand;
+            fn operand(offset: &PointerOffsetTerm) -> Option<ComparisonOperand<'_>> {
+                match offset {
+                    PointerOffsetTerm::Int32Scaled {
+                        value,
+                        byte_width: 4,
+                    } => Some(ComparisonOperand::Written(value)),
+                    PointerOffsetTerm::Constant(bytes) if bytes % 4 == 0 => {
+                        i32::try_from(bytes / 4).ok().map(|value| {
+                            ComparisonOperand::Constant(Bitvector32Term::constant(value as u32))
+                        })
+                    }
+                    _ => None,
+                }
+            }
+            if let (Some(left), Some(right)) = (operand(left), operand(right)) {
+                let key = key(&NativeComparisonView {
+                    format: MachineIntegerType::Int32,
+                    relation: if truth {
+                        Relation::Equal
+                    } else {
+                        Relation::NotEqual
+                    },
+                    operands: [left, right],
+                });
+                let sources = self.scaled_words.get(&key).cloned().unwrap_or_default();
+                let sources = if insert {
+                    sources.with_value(source.clone())
+                } else {
+                    sources.without_value(&source)
+                };
+                self.scaled_words = if sources.is_empty() {
+                    self.scaled_words.without_key(&key)
+                } else {
+                    self.scaled_words.with_inserted(key, sources)
+                };
+            }
+            return;
+        }
         let keys = if insert {
             let keys = if let ConditionTerm::Overflows {
                 format,
@@ -338,6 +381,34 @@ impl ObservationComparisons {
             .get(&Self::overflow_key(format, op, operands, truth))?
             .iter()
             .next()
+    }
+
+    pub(super) fn scaled_source(
+        &self,
+        format: MachineIntegerType,
+        operands: [MachineOperandView<'_>; 2],
+        truth: bool,
+    ) -> Option<&Proposition> {
+        use crate::kernel::machine_integer::comparison::ComparisonOperand;
+        crate::instrumentation::record_deterministic_work(1);
+        if self.scaled_words.is_empty() {
+            return None;
+        }
+        let view = NativeComparisonView {
+            format,
+            relation: if truth {
+                Relation::Equal
+            } else {
+                Relation::NotEqual
+            },
+            operands: operands.map(|operand| match operand {
+                MachineOperandView::Legacy(term) => ComparisonOperand::Written(term),
+                MachineOperandView::Shared(_) => {
+                    ComparisonOperand::Observation(operand.retain(format))
+                }
+            }),
+        };
+        self.scaled_words.get(&key(&view))?.iter().next()
     }
 
     pub(super) fn false_source(&self) -> Option<&Proposition> {
