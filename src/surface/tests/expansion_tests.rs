@@ -10415,7 +10415,8 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     verify_c0_sources(&rewritten, &sources)
         .expect("the serialized nested branch-arm scope should independently reverify");
 
-    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(flag + 1))", 1);
+    // This arm has flag != 0, so marker(0) is distinct without risking overflow.
+    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(0))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the nested branch-arm resource selection"
@@ -10426,7 +10427,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`open(marker((flag + 1)))` Requires owns marker((flag + 1))"),
+            .contains("`open(marker(0))` Requires owns marker(0)"),
         "the checked nested branch-arm entry should reject the tamper directly: {error:?}"
     );
 }
@@ -13451,9 +13452,13 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
         };
         let lines = expanded.lines().collect::<Vec<_>>();
         assert!(
-            lines[retained.clone()]
-                .iter()
-                .any(|line| line.trim_start().starts_with("premise 0: at(region(")),
+            lines[retained.clone()].iter().any(|line| {
+                line.trim_start()
+                    .strip_prefix("premise 0: ")
+                    .is_some_and(|premise| {
+                        premise.trim_start_matches('(').starts_with("at(region(")
+                    })
+            }),
             "the retained step does not cite the anchored branch premises:\n{expanded}"
         );
         verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
