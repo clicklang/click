@@ -171,28 +171,22 @@ the trusted implementation settles that question.
 
 ### Built-in arithmetic theorems
 
-`prove_int32_increment_upper_bound`,
-`prove_int32_increment_strictly_increases`,
-`prove_int32_increment_lower_bound`,
-`prove_int32_positive_is_nonnegative`,
-`prove_int32_increment_below_max_is_defined`,
 `prove_int32_nonnegative_add_within_max_is_defined`,
 `prove_int32_nonnegative_subtract_within_value_is_defined`,
-`prove_int32_add_nonnegative_right_is_at_least_left`,
-`prove_int32_add_nonnegative_left_is_at_least_right`,
-`prove_int32_above_one_predecessor_is_at_least_one`,
-`prove_int32_positive_predecessor_is_nonnegative`,
-`prove_int32_positive_predecessor_strictly_decreases`,
-`prove_int32_le_lt_transitive`, `prove_int32_le_transitive`, and
-`prove_int32_le_and_not_lt_implies_eq` are kernel axioms exposed as named standard
-theorems. They construct only the fixed signed-increment, checked arithmetic,
-predecessor-bound, positive-to-nonnegative, and
-order-transitivity implications documented in the standard library.
-Standard-library verification (`verify_standard_library`, run by the gate)
-checks each parsed declaration against its exact proposition. The prelude and
-the kernel ship in one executable, so ordinary verifications apply these
-declarations as dependencies without re-checking them; expanded user proofs
-use the ordinary simple `apply(...) using { ... }` tactic.
+`prove_int32_add_to_integer`, `prove_int32_subtract_to_integer` and the
+`uint32` order builders such as `prove_uint32_increment_upper_bound` are
+kernel axioms exposed as named standard theorems. They construct only the
+fixed checked-arithmetic, observation and order implications documented in
+the standard library. Standard-library verification
+(`verify_standard_library`, run by the nightly suite) checks each parsed
+declaration against its exact proposition. The `int32` increment,
+predecessor, order and remaining definedness lemmas and the `uint64` order
+transitivities are proved library theorems instead, with pinned
+`arithmetic_certificate` or `assumption()` proofs, and add no kernel
+operation. The prelude and the kernel ship in one executable, so ordinary
+verifications apply these declarations as dependencies without re-checking
+them; expanded user proofs use the ordinary simple `apply(...) using { ... }`
+tactic.
 
 ### Execution and contract evidence
 

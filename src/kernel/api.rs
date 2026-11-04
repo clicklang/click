@@ -7477,56 +7477,6 @@ pub fn prove_c_max_not_lt_returns_left(a: Variable, b: Variable) -> Option<Theor
     )))
 }
 
-/// Signed int32 increment preserves a strict upper bound as a non-strict
-/// bound. The strict premise also rules out signed overflow: if `value` were
-/// `INT_MAX`, no int32 `upper` could be greater than it.
-pub fn prove_int32_increment_upper_bound(value: MachineTerm, upper: MachineTerm) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), upper.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::add(value, MachineTerm::constant(1)), upper),
-        true,
-    );
-    implication([premise], conclusion)
-}
-
-/// A signed int32 increment is strictly greater than its input when a strict
-/// upper bound rules out overflow.
-pub fn prove_int32_increment_strictly_increases(value: MachineTerm, upper: MachineTerm) -> Theorem {
-    let premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            value.clone(),
-            MachineTerm::add(value, MachineTerm::constant(1)),
-        ),
-        true,
-    );
-    implication([premise], conclusion)
-}
-
-/// Signed int32 increment preserves a non-strict lower bound when a strict
-/// upper bound rules out signed overflow.
-pub fn prove_int32_increment_lower_bound(
-    value: MachineTerm,
-    lower: MachineTerm,
-    upper: MachineTerm,
-) -> Theorem {
-    let lower_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(lower.clone(), value.clone()),
-        true,
-    );
-    let upper_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(value.clone(), upper), true);
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(lower, MachineTerm::add(value, MachineTerm::constant(1))),
-        true,
-    );
-    implication([lower_premise, upper_premise], conclusion)
-}
-
 /// Two signed int32 values are equal when the first is no greater than the
 /// second and is not strictly less than it.
 pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Theorem {
@@ -7548,63 +7498,6 @@ pub fn prove_int32_le_antisymmetric(left: MachineTerm, right: MachineTerm) -> Th
         true,
     );
     implication([le_premise, reverse_le_premise], conclusion)
-}
-
-/// A signed int32 value at most another is equal to it when it is not
-/// strictly smaller.
-pub fn prove_int32_le_and_not_lt_implies_eq(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let le_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-        true,
-    );
-    let not_lt_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(left.clone(), right.clone()),
-        false,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(right),
-        },
-        true,
-    );
-    implication([le_premise, not_lt_premise], conclusion)
-}
-
-/// A signed int32 value no greater than another and unequal to it is strictly
-/// smaller. The explicit inequality premise keeps this deterministic rule on
-/// the simple-certificate surface instead of relying on arithmetic search.
-pub fn prove_int32_le_and_neq_implies_lt(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let le_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(left.clone(), right.clone()),
-        true,
-    );
-    let neq_premise = Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
-        },
-        false,
-    );
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), true);
-    implication([le_premise, neq_premise], conclusion)
-}
-
-/// Any positive signed int32 value is nonnegative.
-pub fn prove_int32_positive_is_nonnegative(value: MachineTerm) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), value),
-        true,
-    );
-    implication([premise], conclusion)
 }
 
 /// An empty population has no members. For the exact member `name(arguments)`
@@ -8137,21 +8030,6 @@ pub fn prove_integer_range_fold_over_equal_terms(
             true,
         ),
     ))
-}
-
-/// Incrementing a signed int32 value below `INT_MAX` is defined.
-pub fn prove_int32_increment_below_max_is_defined(value: MachineTerm) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(value.clone(), MachineTerm::constant(i32::MAX as u32)),
-        true,
-    );
-    let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32,
-        MachineBinaryOp::Add,
-        &value,
-        &MachineTerm::constant(1),
-    );
-    implication([premise], conclusion)
 }
 
 /// Universally closes a pure int32 implication that a checked proof already
@@ -8962,17 +8840,6 @@ pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
     implication([amount_is_nonnegative, amount_within_value], conclusion)
 }
 
-/// Mathematical bounds on the exact sum establish signed C addition safety.
-pub fn prove_int32_add_defined_by_integer_bounds(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int32, left, right, false)
-}
-
-/// Mathematical bounds on the exact sum establish signed 64-bit C addition
-/// safety.
-pub fn prove_int64_add_defined_by_integer_bounds(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_signed_operation_defined_by_integer_bounds(MachineIntegerType::Int64, left, right, false)
-}
-
 /// Mathematical bounds on the exact difference establish signed 64-bit C
 /// subtraction safety.
 pub fn prove_int64_subtract_defined_by_integer_bounds(
@@ -9671,78 +9538,6 @@ fn prove_signed_operation_to_integer(
     )
 }
 
-/// Decrementing a positive signed int32 value produces a nonnegative value.
-pub fn prove_int32_positive_predecessor_is_nonnegative(value: MachineTerm) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            MachineTerm::constant(0),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(value),
-                Box::new(MachineTerm::constant(1))
-            ),
-        ),
-        true,
-    );
-    implication([premise], conclusion)
-}
-
-/// Decrementing a nonnegative signed int32 value preserves a non-strict
-/// upper bound: nonnegativity rules out the `INT_MIN` wraparound, so the
-/// predecessor stays strictly below the value and hence at most the bound.
-pub fn prove_int32_nonnegative_predecessor_upper_bound(
-    value: MachineTerm,
-    bound: MachineTerm,
-) -> Theorem {
-    let nonnegative_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), value.clone()),
-        true,
-    );
-    let bound_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(value.clone(), bound.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(value),
-                Box::new(MachineTerm::constant(1))
-            ),
-            bound,
-        ),
-        true,
-    );
-    implication([nonnegative_premise, bound_premise], conclusion)
-}
-
-/// Decrementing a positive signed int32 value strictly decreases it.
-pub fn prove_int32_positive_predecessor_strictly_decreases(value: MachineTerm) -> Theorem {
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(MachineTerm::constant(0), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::ConditionIs(
-        ConditionTerm::signed_less_than(
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(value.clone()),
-                Box::new(MachineTerm::constant(1)),
-            ),
-            value,
-        ),
-        true,
-    );
-    implication([premise], conclusion)
-}
-
 /// The theorem `premises[0] implies (premises[1] implies (... conclusion))`.
 fn implication<const N: usize>(premises: [Proposition; N], conclusion: Proposition) -> Theorem {
     Theorem::new(
@@ -9888,90 +9683,6 @@ pub fn prove_uint32_ge_implies_reversed_le(greater: MachineTerm, lower: MachineT
         ConditionTerm::unsigned_greater_equal(greater.clone(), lower.clone()),
         ConditionTerm::unsigned_less_equal(lower, greater),
     )
-}
-
-/// Whether `name` is one of the `uint64` order transitivity theorems.
-pub fn is_wide_order_transitivity_name(name: &str) -> bool {
-    let Some(name) = name.strip_prefix("click::integer::") else {
-        return false;
-    };
-    matches!(
-        name.split_once('_'),
-        Some((
-            "uint64",
-            "less_than_less_equal_transitive" | "less_equal_transitive"
-        ))
-    )
-}
-
-/// Transitivity of `uint64` order, by the qualified name of its standard
-/// theorem, `click::integer::uint64_{less_than_less_equal,less_equal}_transitive`. The first premise orders
-/// `first` and `middle`, the second `middle` and `last`, and the conclusion
-/// is strict when either premise is.
-pub fn prove_wide_order_transitive(
-    name: &str,
-    first: MachineTerm,
-    middle: MachineTerm,
-    last: MachineTerm,
-) -> Option<Theorem> {
-    let name = name.strip_prefix("click::integer::")?;
-    let ("uint64", shape) = name.split_once('_')? else {
-        return None;
-    };
-    let (first_strict, second_strict) = match shape {
-        "less_than_less_equal_transitive" => (true, false),
-        "less_equal_transitive" => (false, false),
-        _ => return None,
-    };
-    let order = |lower: MachineTerm, upper: MachineTerm, strict: bool| {
-        Proposition::ConditionIs(
-            if strict {
-                ConditionTerm::uint64_less_than(lower, upper)
-            } else {
-                ConditionTerm::uint64_less_equal(lower, upper)
-            },
-            true,
-        )
-    };
-    Some(implication(
-        [
-            order(first.clone(), middle.clone(), first_strict),
-            order(middle, last.clone(), second_strict),
-        ],
-        order(first, last, first_strict || second_strict),
-    ))
-}
-
-/// Signed non-strict order followed by strict order is strict order.
-pub fn prove_int32_le_lt_transitive(
-    first: MachineTerm,
-    middle: MachineTerm,
-    last: MachineTerm,
-) -> Theorem {
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(first.clone(), middle.clone()),
-        true,
-    );
-    let second_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_than(middle, last.clone()), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_than(first, last), true);
-    implication([first_premise, second_premise], conclusion)
-}
-
-/// Signed non-strict order is transitive.
-pub fn prove_int32_le_transitive(
-    first: MachineTerm,
-    middle: MachineTerm,
-    last: MachineTerm,
-) -> Theorem {
-    let first_premise = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(first.clone(), middle.clone()),
-        true,
-    );
-    let second_premise =
-        Proposition::ConditionIs(ConditionTerm::signed_less_equal(middle, last.clone()), true);
-    let conclusion = Proposition::ConditionIs(ConditionTerm::signed_less_equal(first, last), true);
-    implication([first_premise, second_premise], conclusion)
 }
 
 pub fn prove_memory_load(memory: CMemory, pointer: Pointer) -> Theorem {
