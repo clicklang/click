@@ -608,6 +608,15 @@ Progress:
   every `click audit --verbose` verdict and work unit (147 targets) is
   unchanged: session preparation, expansion and claim verification
   totals are equal.
+- The e-graph's 32-bit word operators stay (2026-11-04, maintainer
+  direction). Every term keeps its format, so `Binary { UInt32, .. }` and
+  `Binary { Int32, .. }` are distinct terms; the e-graph interns a 32-bit
+  sign-free operator (`+ - * << & | ^ ~`) as one word operator at either
+  format (`Node::Int32Add`, `Int32Binary`, `Int32Unary::Not`,
+  `terms::word_operator`, `OperatorFormat::Word32` in
+  `machine_relations.rs`). That is an equivalence in reasoning, where the
+  principle that lowering keeps the source's structure puts equivalences,
+  not a construction shortcut, so it is not a Stage 3 item.
 
 
 - Every format its own nodes (planned 2026-10-29, [Decisions](#decisions)).
@@ -730,9 +739,11 @@ Progress:
      32-bit widenings of one narrow value are two nodes, related by σ
      where both exist, a specification comparison reads its operands at
      its own 32-bit format, and K7' joins only the widening at its word's
-     format with the masked word. Known remaining items: the 32-bit
-     sign-free operators are still word operators, one node at either
-     format (`terms::word_operator`). A third follow-up (2026-11-03,
+     format with the masked word. The e-graph keeps one equivalence on
+     purpose: a 32-bit sign-free operator is one word operator at either
+     format (`terms::word_operator`, `OperatorFormat::Word32`), a
+     reasoning-level identity, since the terms keep their formats
+     (maintainer direction, 2026-11-04). A third follow-up (2026-11-03,
      [Decisions](#decisions)) removes the constructor's σ(σ(x)) to `x`
      fold: σ of σ is kept as written, R0 relates it to `x`, and rule W
      reads an observation through every σ of a chain, whose reading

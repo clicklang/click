@@ -155,7 +155,9 @@ pub(super) type PointerFactBucket =
 
 /// The word operator a 32-bit operator computes: a sign-free `uint32`
 /// operator is the `int32` one of the same words; division, remainder and
-/// the right shift keep their format, which reads the words.
+/// the right shift keep their format, which reads the words. A deliberate
+/// equivalence in reasoning, not a construction shortcut: the terms keep
+/// their formats (`design/machine-integers.md`, Stage 3).
 pub(super) fn word_operator(
     op: crate::kernel::BitvectorBinaryOp,
 ) -> crate::kernel::BitvectorBinaryOp {
