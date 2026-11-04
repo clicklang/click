@@ -8778,18 +8778,10 @@ fn bool_word_truth_proposition(word: &CValue, value: bool) -> Option<Proposition
     let CValue::Bool(term) = word else {
         return None;
     };
-    if let Some(condition) = term.bool_cast_operand() {
-        return Some(condition.truth_claim(value));
-    }
-    c_value_comparison_proposition(
-        word,
-        if value {
-            CComparisonOperator::NotEqual
-        } else {
-            CComparisonOperator::Equal
-        },
-        &CValue::bool_constant(false),
-    )
+    // A word that is not a cast (a havocked carrier) holds C's test
+    // `w != 0` at `uint8`: the claim is that test, the very condition the
+    // program's own test of the local decides, so the two are one fact.
+    Some(ConditionTerm::truth_of_bool_word(term).truth_claim(value))
 }
 
 /// A comparison with a `bool` operand (Stage 5). `Bool` has equality and

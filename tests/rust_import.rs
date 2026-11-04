@@ -3291,6 +3291,27 @@ fn charon_held_value_locals_are_spelled_by_name() {
     }
 }
 
+const BOOL_FLAG_SIDECAR: &str = include_str!("../design/charon-trial/bool-flags/flag.click");
+
+// A claim on a `bool` local and the program's own test of it are one fact:
+// `found implies t == 8u32` holds on the pass whose guard says `!found`,
+// with no step of its own. A false claim about the flag is still refused.
+#[test]
+fn charon_bool_flag_claims_meet_their_tests() {
+    let p = Project::from_fixture("design/charon-trial/bool-flags");
+    fs::write(p.root.join("borrow.click"), BOOL_FLAG_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(BOOL_FLAG_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let invalid = BOOL_FLAG_SIDECAR.replacen(
+        "invariant found implies t == 8u32;",
+        "invariant found implies t == 7u32;",
+        1,
+    );
+    assert_ne!(invalid, BOOL_FLAG_SIDECAR);
+    assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+}
+
 const PROGRAM_BINDING_SIDECAR: &str =
     include_str!("../design/charon-trial/program-bindings/bindings.click");
 

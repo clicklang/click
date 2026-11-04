@@ -1,0 +1,15 @@
+{
+  "units": {
+    "bool_flags": {
+      "language": "rust",
+      "sources": { "flag.rs": {} },
+      "crate": {
+        "name": "bool_flags",
+        "edition": "2021",
+        "features": [],
+        "roots": ["bool_flags::scan"],
+        "files": ["flag.rs"]
+      }
+    }
+  }
+}
