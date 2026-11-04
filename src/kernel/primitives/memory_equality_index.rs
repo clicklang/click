@@ -1332,6 +1332,18 @@ impl MemoryFactCandidates {
         })
     }
 
+    /// One owned occurrence starting at this exact address class. Ambiguity
+    /// declines the binary composition rule; no candidate list is inspected.
+    pub(super) fn sole_owned_start(&self, pointer: &Pointer) -> Option<ResourceEntryId> {
+        crate::instrumentation::record_deterministic_work(1);
+        if !self.index.points_initialized {
+            return None;
+        }
+        let class = self.index.graph.address_class(pointer)?;
+        let owners = &self.index.points.classes.get(&class)?.owners;
+        (owners.len() == 1).then(|| *owners.iter().next().expect("one owner"))
+    }
+
     pub(super) fn requirement(
         &self,
         entry: ResourceEntryId,

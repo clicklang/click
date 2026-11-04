@@ -124,7 +124,12 @@ impl Boundary<'_> {
             ));
         }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
-            && self.function == "consume_constant_owned_memory"
+            && matches!(
+                self.function.as_str(),
+                "consume_constant_owned_memory"
+                    | "consume_native_symbolic_partition"
+                    | "reserve_owned_memory_fragments_impl"
+            )
             && matches!(
                 name,
                 "iter"
