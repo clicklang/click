@@ -5876,51 +5876,24 @@ impl ResourceContext {
             let Some(right_range) = right.memory_own_range() else {
                 continue;
             };
-            let same_origin_concrete =
-                constant_memory_coordinates(right_range).and_then(|(origin, start, end)| {
-                    let owned_in_block = self
-                        .storage
-                        .index
-                        .owned_memory_by_block
-                        .get(&right_range.base().block)?
-                        .len();
-                    let represented = *self
-                        .storage
-                        .index
-                        .concrete_memory_by_base
-                        .get(&(origin.clone(), true))?;
-                    (represented == owned_in_block).then_some((origin, start, end))
-                });
-            if let Some((origin, start, end)) = same_origin_concrete {
-                if start >= end {
-                    continue;
-                }
-                let key = (origin, true, start, end);
-                let mut candidates = BTreeSet::new();
-                if let Some(duplicates) = self.storage.index.concrete_memory.get(&key) {
-                    candidates.extend(
-                        duplicates
-                            .iter()
-                            .copied()
-                            .filter(|entry| *entry != right_entry),
-                    );
-                }
-                if let Some((candidate_key, entries)) =
-                    self.storage.index.concrete_memory.get_less_than(&key)
-                    && candidate_key.0 == key.0
-                    && candidate_key.1 == key.1
-                    && let Some(entry) = entries.iter().next_back()
-                {
-                    candidates.insert(*entry);
-                }
-                if let Some((candidate_key, entries)) =
-                    self.storage.index.concrete_memory.get_greater_than(&key)
-                    && candidate_key.0 == key.0
-                    && candidate_key.1 == key.1
-                    && let Some(entry) = entries.iter().next()
-                {
-                    candidates.insert(*entry);
-                }
+            let coordinates = constant_memory_coordinates(right_range);
+            if coordinates
+                .as_ref()
+                .is_some_and(|(_, start, end)| start >= end)
+            {
+                continue;
+            }
+            let same_origin_neighbors = coordinates.and_then(|(origin, start, end)| {
+                let members = self
+                    .storage
+                    .index
+                    .owned_memory_by_block
+                    .get(&right_range.base().block)?
+                    .len();
+                self.constant_owned_neighbors(&origin, start, end, members)
+            });
+            if let Some(mut candidates) = same_origin_neighbors {
+                candidates.remove(&right_entry);
                 // Every owned range of this block has this origin, so the two
                 // neighbours stand for the block; ranges an exact alias
                 // relates from other blocks are still compared.
@@ -5965,6 +5938,56 @@ impl ResourceContext {
         }
         self.advance_prepared_memory_equalities(assumptions);
         Ok((self, inserted))
+    }
+
+    /// Nominate at most four entries when this origin accounts for every
+    /// member of the caller's block or root. Empty intervals have no overlap.
+    /// Duplicate keys need only the first and last occurrences: after the
+    /// caller excludes itself, one representative of the other owners remains.
+    fn constant_owned_neighbors(
+        &self,
+        origin: &Pointer,
+        start: i128,
+        end: i128,
+        members: usize,
+    ) -> Option<BTreeSet<ResourceEntryId>> {
+        let represented = *self
+            .storage
+            .index
+            .concrete_memory_by_base
+            .get(&(origin.clone(), true))?;
+        if represented != members {
+            return None;
+        }
+        let mut selected = BTreeSet::new();
+        if start >= end {
+            return Some(selected);
+        }
+        let key = (origin.clone(), true, start, end);
+        let index = &self.storage.index.concrete_memory;
+        if let Some(duplicates) = index.get(&key) {
+            if let Some(entry) = duplicates.iter().next() {
+                selected.insert(*entry);
+            }
+            if let Some(entry) = duplicates.iter().next_back() {
+                selected.insert(*entry);
+            }
+        }
+        if let Some((neighbor, entries)) = index.get_less_than(&key)
+            && neighbor.0 == key.0
+            && neighbor.1
+            && let Some(entry) = entries.iter().next_back()
+        {
+            selected.insert(*entry);
+        }
+        if let Some((neighbor, entries)) = index.get_greater_than(&key)
+            && neighbor.0 == key.0
+            && neighbor.1
+            && let Some(entry) = entries.iter().next()
+        {
+            selected.insert(*entry);
+        }
+        Some(selected)
     }
 
     /// The owned memory entries whose overlap with `range` the facts could
@@ -6043,12 +6066,23 @@ impl ResourceContext {
             }
             roots.extend(related_memory_base_roots(&alias, assumptions));
         }
+        let query_root = memory_base_root(base);
+        let coordinates = constant_memory_coordinates(range);
         for root in &roots {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(entries) = index.owned_memory_by_root.get(root) {
-                for entry in entries.iter() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    candidates.insert(*entry);
+                let neighbors = coordinates.as_ref().and_then(|(origin, start, end)| {
+                    (root == &query_root)
+                        .then(|| self.constant_owned_neighbors(origin, *start, *end, entries.len()))
+                        .flatten()
+                });
+                if let Some(neighbors) = neighbors {
+                    candidates.extend(neighbors);
+                } else {
+                    for entry in entries.iter() {
+                        crate::instrumentation::record_deterministic_work(1);
+                        candidates.insert(*entry);
+                    }
                 }
             }
             // The other direction: an owned range whose own base has a

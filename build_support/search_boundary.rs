@@ -117,6 +117,27 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "constant_owned_neighbors"
+            && matches!(
+                name,
+                "collect"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "flat_map"
+                    | "for_each"
+                    | "owned_validity_candidates"
+                    | "memory_fact_candidates"
+                    | "normalized_memory_suppliers"
+                    | "facts"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: owner neighbours must use fixed tree/end probes ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/functions.rs" && name == "with_coalesced_owned_memory" {
             self.errors.push(format!(
                 "{}: {}: call preparation must not search fragment coverage",
