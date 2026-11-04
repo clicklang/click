@@ -31,7 +31,11 @@ fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
                     );
                     assert_eq!(facts.decide(&alias), None);
                     facts.assume_condition(&alias, true);
-                    assert_eq!(facts.decide(&alias), Some(true), "{format:?} {size} step {step}");
+                    assert_eq!(
+                        facts.decide(&alias),
+                        Some(true),
+                        "{format:?} {size} step {step}"
+                    );
                 }
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
