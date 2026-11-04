@@ -2611,9 +2611,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
         || is_nat_integer_law_name(name)
         || matches!(
             name,
-            "click::integer::int32_add_to_integer"
-                | "click::integer::int32_remainder_to_integer"
-                | "click::integer::int64_subtract_to_integer"
+            "click::integer::int32_remainder_to_integer"
                 | "click::integer::uint64_pack_uint16_to_integer"
                 | "click::integer::uint64_unpack_uint16_low"
                 | "click::integer::uint64_unpack_uint16_high"
@@ -2621,26 +2619,16 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::integer::uint32_pack_uint16_high_first_to_integer"
                 | "click::integer::uint32_unpack_uint16_low"
                 | "click::integer::uint32_unpack_uint16_high"
-                | "click::integer::uint64_add_to_integer"
                 | "click::integer::uint64_multiply_to_integer"
-                | "click::integer::uint64_subtract_to_integer"
                 | "click::integer::uint64_divide_to_integer"
                 | "click::integer::uint64_remainder_to_integer"
-                | "click::integer::int32_subtract_to_integer"
                 | "int32_le_antisymmetric"
-                | "click::integer::int32_nonnegative_add_within_max_is_defined"
-                | "click::integer::int32_nonnegative_subtract_within_value_is_defined"
-                | "click::integer::uint32_positive_predecessor_strictly_decreases"
-                | "click::integer::uint32_increment_upper_bound"
-                | "click::integer::uint32_add_to_integer"
-                | "click::integer::uint32_subtract_to_integer"
                 | "click::integer::uint32_multiply_to_integer"
                 | "click::integer::uint32_divide_to_integer"
                 | "click::integer::uint32_remainder_to_integer"
                 | "click::integer::uint32_multiply_guard_by_integer_bound"
                 | "click::integer::uint32_remainder_less_than_divisor"
                 | "click::integer::uint32_less_than_divisor_implies_remainder_is_value"
-                | "click::integer::uint32_less_than_implies_positive_difference"
                 | "click::integer::uint32_difference_decreases_after_increment"
         )
 }
@@ -2670,12 +2658,7 @@ fn verify_kernel_standard_theorem_axiom(
             2,
             crate::kernel::integer_truncation_law_requirements(name).unwrap(),
         ),
-        "click::integer::int32_add_to_integer"
-        | "click::integer::int64_subtract_to_integer"
-        | "click::integer::int32_subtract_to_integer"
-        | "click::integer::uint64_add_to_integer"
-        | "click::integer::uint64_multiply_to_integer"
-        | "click::integer::uint64_subtract_to_integer" => (2, 1),
+        "click::integer::uint64_multiply_to_integer" => (2, 1),
         "click::integer::uint64_pack_uint16_to_integer"
         | "click::integer::uint64_unpack_uint16_low"
         | "click::integer::uint64_unpack_uint16_high"
@@ -2688,19 +2671,12 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::integer::uint32_divide_to_integer"
         | "click::integer::uint32_remainder_to_integer" => (2, 2),
         "click::integer::int32_remainder_to_integer" => (2, 2),
-        "click::integer::int32_nonnegative_add_within_max_is_defined"
-        | "click::integer::int32_nonnegative_subtract_within_value_is_defined" => (2, 2),
         "int32_le_antisymmetric" => (2, 2),
-        "click::integer::uint32_add_to_integer"
-        | "click::integer::uint32_subtract_to_integer"
-        | "click::integer::uint32_multiply_to_integer"
+        "click::integer::uint32_multiply_to_integer"
         | "click::integer::uint32_multiply_guard_by_integer_bound"
         | "click::integer::uint32_remainder_less_than_divisor"
         | "click::integer::uint32_less_than_divisor_implies_remainder_is_value" => (2, 1),
-        "click::integer::uint32_positive_predecessor_strictly_decreases" => (1, 1),
-        "click::integer::uint32_increment_upper_bound"
-        | "click::integer::uint32_less_than_implies_positive_difference"
-        | "click::integer::uint32_difference_decreases_after_increment" => (2, 1),
+        "click::integer::uint32_difference_decreases_after_increment" => (2, 1),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2859,28 +2835,6 @@ fn verify_kernel_standard_theorem_axiom(
         .name()
         .rsplit("::")
         .next()
-        .is_some_and(|name| name.starts_with("int64_"))
-    {
-        let parameter = |index: usize| {
-            let parameter = &theorem.parameters()[index];
-            match context.values.get(parameter.name()) {
-                Some(CValue::Int64(value)) => Ok(value.clone()),
-                _ => Err(ClickError::new(format!(
-                    "`{claim_label}` kernel parameter `{}` must be int64",
-                    parameter.name()
-                ))),
-            }
-        };
-        match theorem.name() {
-            "click::integer::int64_subtract_to_integer" => {
-                crate::kernel::prove_int64_subtract_to_integer(parameter(0)?, parameter(1)?)
-            }
-            _ => unreachable!("only registered int64 bridges"),
-        }
-    } else if theorem
-        .name()
-        .rsplit("::")
-        .next()
         .is_some_and(|name| name.starts_with("uint32_"))
     {
         let uint32_parameter = |index: usize| {
@@ -2923,12 +2877,6 @@ fn verify_kernel_standard_theorem_axiom(
             "click::integer::uint32_less_than_divisor_implies_remainder_is_value" => {
                 crate::kernel::prove_uint32_remainder_of_lt(value, uint32_parameter(1)?)
             }
-            "click::integer::uint32_add_to_integer" => {
-                crate::kernel::prove_uint32_add_to_integer(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_subtract_to_integer" => {
-                crate::kernel::prove_uint32_subtract_to_integer(value, uint32_parameter(1)?)
-            }
             "click::integer::uint32_divide_to_integer" => {
                 crate::kernel::prove_uint32_divide_to_integer(value, uint32_parameter(1)?)
             }
@@ -2940,15 +2888,6 @@ fn verify_kernel_standard_theorem_axiom(
             }
             "click::integer::uint32_multiply_guard_by_integer_bound" => {
                 crate::kernel::prove_uint32_mul_guard_by_integer_bound(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_positive_predecessor_strictly_decreases" => {
-                prove_uint32_positive_predecessor_strictly_decreases(value)
-            }
-            "click::integer::uint32_increment_upper_bound" => {
-                prove_uint32_increment_upper_bound(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_less_than_implies_positive_difference" => {
-                prove_uint32_lt_implies_positive_difference(value, uint32_parameter(1)?)
             }
             "click::integer::uint32_difference_decreases_after_increment" => {
                 prove_uint32_difference_decreases_after_increment(value, uint32_parameter(1)?)
@@ -2968,22 +2907,10 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = int32_parameter(0)?;
         match theorem.name() {
-            "click::integer::int32_add_to_integer" => {
-                crate::kernel::prove_int32_add_to_integer(value, int32_parameter(1)?)
-            }
             "click::integer::int32_remainder_to_integer" => {
                 crate::kernel::prove_int32_remainder_to_integer(value, int32_parameter(1)?)
             }
-            "click::integer::int32_subtract_to_integer" => {
-                crate::kernel::prove_int32_subtract_to_integer(value, int32_parameter(1)?)
-            }
             "int32_le_antisymmetric" => prove_int32_le_antisymmetric(value, int32_parameter(1)?),
-            "click::integer::int32_nonnegative_add_within_max_is_defined" => {
-                prove_int32_nonnegative_add_within_max_is_defined(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_nonnegative_subtract_within_value_is_defined" => {
-                prove_int32_nonnegative_subtract_within_value_is_defined(value, int32_parameter(1)?)
-            }
             _ => unreachable!("checked above"),
         }
     };
@@ -4266,23 +4193,6 @@ mod tests {
     }
 
     #[test]
-    fn uint32_subtract_bridge_checks_exact_declaration() {
-        let source = "theorem uint32_subtract_to_integer(left: uint32, right: uint32) { requires right <= left; ensures to_integer(left - right) == to_integer(left) - to_integer(right); }";
-        verify_standard_declaration(source).unwrap();
-        for invalid in [
-            source.replace("requires right <= left;", ""),
-            source.replace("right <= left", "defined(left - right)"),
-            source.replace("right <= left", "left <= right"),
-            source.replace("left - right", "right - left"),
-            source.replace("left: uint32", "left: int32"),
-            source.replace("right: uint32", "right: uint64"),
-            source.replace("to_integer(left) - to_integer(right);", "0;"),
-        ] {
-            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-        }
-    }
-
-    #[test]
     fn uint32_small_remainder_checks_exact_declaration() {
         let source = "theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value; }";
         verify_standard_declaration(source).unwrap();
@@ -4316,30 +4226,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn uint32_add_bridges_check_exact_kernel_declarations() {
-        for (name, conclusion) in [(
-            "click::integer::uint32_add_to_integer",
-            "to_integer(left + right) == to_integer(left) + to_integer(right)",
-        )] {
-            let source = format!(
-                "theorem {name}(left: uint32, right: uint32) {{ requires to_integer(left) + to_integer(right) <= 4294967295; ensures {conclusion}; }}"
-            );
-            verify_standard_declaration(&source).unwrap();
-            for invalid in [
-                source.replace(
-                    "requires to_integer(left) + to_integer(right) <= 4294967295;",
-                    "",
-                ),
-                source.replace("<= 4294967295;", "<= 4294967296;"),
-                source.replace("left: uint32", "left: int32"),
-                source.replace("right: uint32", "right: uint64"),
-                source.replace(conclusion, "true"),
-            ] {
-                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-            }
-        }
-    }
     #[test]
     fn uint32_division_bridge_declarations_reject_forged_domains_types_and_goals() {
         for (name, op, mathematical) in [
@@ -4378,19 +4264,9 @@ mod tests {
     fn uint64_integer_bridge_declarations_reject_forged_guards_types_and_goals() {
         for (name, guard, goal) in [
             (
-                "click::integer::uint64_add_to_integer",
-                "to_integer(left) + to_integer(right) <= 18446744073709551615",
-                "to_integer(left + right) == to_integer(left) + to_integer(right)",
-            ),
-            (
                 "click::integer::uint64_multiply_to_integer",
                 "to_integer(left) * to_integer(right) <= 18446744073709551615",
                 "to_integer(left * right) == to_integer(left) * to_integer(right)",
-            ),
-            (
-                "click::integer::uint64_subtract_to_integer",
-                "to_integer(right) <= to_integer(left)",
-                "to_integer(left - right) == to_integer(left) - to_integer(right)",
             ),
             (
                 "click::integer::uint64_divide_to_integer",
@@ -4422,14 +4298,6 @@ mod tests {
                     )
                     .replace("requires left <= right", "requires left >= right")
                     .replace("requires left < right", "requires left <= right")
-                    .replace(
-                        "requires to_integer(right) <= to_integer(left)",
-                        "requires to_integer(left) <= to_integer(right)",
-                    )
-                    .replace(
-                        "requires to_integer(left) <= to_integer(right)",
-                        "requires to_integer(left) < to_integer(right)",
-                    )
                     .replace("requires left < right", "requires left > right")
                     .replace(
                         "requires to_integer(left) < to_integer(right)",
@@ -4523,28 +4391,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn int64_integer_operation_declarations_reject_wrong_guards_and_widths() {
-        for (name, op, other) in [("click::integer::int64_subtract_to_integer", "-", "+")] {
-            let source = format!(
-                "theorem {name}(left: int64, right: int64) {{ requires defined(left {op} right); ensures to_integer(left {op} right) == to_integer(left) {op} to_integer(right); }}"
-            );
-            verify_standard_declaration(&source).unwrap();
-            for invalid in [
-                source.replace(&format!("requires defined(left {op} right);"), ""),
-                source.replace(
-                    &format!("requires defined(left {op} right);"),
-                    &format!("requires defined(left {other} right);"),
-                ),
-                source.replace(": int64", ": int32"),
-                source.replace(": int64", ": uint64"),
-                source.replace(" == ", " != "),
-                source.replace("; ensures", "; requires left == right; ensures"),
-            ] {
-                assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-            }
-        }
-    }
     #[test]
     fn integer_truncation_declarations_reject_forged_guards_operands_and_types() {
         for (name, requirements, goal) in [

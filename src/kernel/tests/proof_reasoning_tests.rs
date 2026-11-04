@@ -1127,46 +1127,6 @@ fn pure_theorem_rewrite_certificate_rejects_a_completion_of_another_conclusion()
 }
 
 #[test]
-fn int32_nonnegative_add_within_max_is_defined_axiom_has_the_exact_implication() {
-    let value = MachineTerm::Variable(Variable(90_025));
-    let amount = MachineTerm::Variable(Variable(90_026));
-    let theorem = prove_int32_nonnegative_add_within_max_is_defined(value.clone(), amount.clone());
-    let nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), amount.clone()),
-        true,
-    );
-    let within_headroom = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            value.clone(),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(MachineTerm::constant(i32::MAX as u32)),
-                Box::new(amount.clone()),
-            ),
-        ),
-        true,
-    );
-    let defined = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32,
-        MachineBinaryOp::Add,
-        &value,
-        &amount,
-    );
-
-    assert_eq!(
-        theorem.proposition(),
-        &Proposition::Implies(
-            Box::new(nonnegative),
-            Box::new(Proposition::Implies(
-                Box::new(within_headroom),
-                Box::new(defined),
-            )),
-        )
-    );
-}
-
-#[test]
 fn int32_le_antisymmetric_axiom_has_the_exact_implications() {
     let left = MachineTerm::Variable(Variable(90_040));
     let right = MachineTerm::Variable(Variable(90_041));
@@ -5809,98 +5769,6 @@ fn disjunction_cases_of_any_width_derive_a_common_consequence() {
 }
 
 #[test]
-fn integer_machine_operation_axioms_agree_with_boundary_models() {
-    // Evaluate the emitted theorem independently, including modular machine
-    // arithmetic and the signed overflow guard. In particular, the guard must
-    // exclude the concrete assignments that falsify an unguarded equality.
-    fn bits(term: &MachineTerm, a: i32, b: i32) -> u32 {
-        match term {
-            MachineTerm::Variable(variable) if *variable == Variable(910) => a as u32,
-            MachineTerm::Variable(variable) if *variable == Variable(911) => b as u32,
-            int32_constant!(value) => constant_u32(*value),
-            binary_term!(Int32, Add, left, right) => {
-                bits(left, a, b).wrapping_add(bits(right, a, b))
-            }
-            binary_term!(Int32, Subtract, left, right) => {
-                bits(left, a, b).wrapping_sub(bits(right, a, b))
-            }
-            _ => panic!("unexpected machine term: {term:?}"),
-        }
-    }
-    fn integer(term: &IntegerTerm, a: i32, b: i32) -> num_bigint::BigInt {
-        match term {
-            IntegerTerm::Constant(value) => value.clone(),
-            IntegerTerm::Machine(value) => {
-                assert_eq!(value.ty(), MachineIntegerType::Int32);
-                (bits(value.value(), a, b) as i32).into()
-            }
-            IntegerTerm::Add(left, right) => integer(left, a, b) + integer(right, a, b),
-            IntegerTerm::Subtract(left, right) => integer(left, a, b) - integer(right, a, b),
-            _ => panic!("unexpected Integer term: {term:?}"),
-        }
-    }
-
-    for theorem in [
-        prove_int32_add_to_integer(
-            MachineTerm::Variable(Variable(910)),
-            MachineTerm::Variable(Variable(911)),
-        ),
-        prove_int32_subtract_to_integer(
-            MachineTerm::Variable(Variable(910)),
-            MachineTerm::Variable(Variable(911)),
-        ),
-    ] {
-        let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
-            panic!("missing definedness guard")
-        };
-        let Proposition::And(upper, lower) = guard.as_ref() else {
-            panic!("expected ordinary range conjunction")
-        };
-        let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(exact, max), true) =
-            upper.as_ref()
-        else {
-            panic!("expected upper bound")
-        };
-        let Proposition::ConditionIs(ConditionTerm::IntegerGreaterEqual(same_exact, min), true) =
-            lower.as_ref()
-        else {
-            panic!("expected lower bound")
-        };
-        assert_eq!(exact, same_exact);
-        let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) =
-            conclusion.as_ref()
-        else {
-            panic!("wrong conclusion")
-        };
-        let mut defined = 0;
-        let mut excluded = 0;
-        for a in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-            for b in [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX] {
-                let exact = integer(exact, a, b);
-                let in_range = integer(min, a, b) <= exact && exact <= integer(max, a, b);
-                assert_eq!(
-                    in_range,
-                    (num_bigint::BigInt::from(i32::MIN)..=num_bigint::BigInt::from(i32::MAX))
-                        .contains(&exact)
-                );
-                let equality = integer(left, a, b) == integer(right, a, b);
-                if in_range {
-                    defined += 1;
-                    assert!(equality, "unsound bridge at {a}, {b}");
-                } else {
-                    excluded += 1;
-                    assert!(
-                        !equality,
-                        "overflow counterexample should falsify the unguarded law"
-                    );
-                }
-            }
-        }
-        assert!(defined > 0 && excluded > 0);
-    }
-}
-
-#[test]
 fn integer_machine_round_trip_axioms_hold_in_independent_boundary_models() {
     use num_bigint::BigInt;
     use num_traits::One;
@@ -6766,22 +6634,8 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     let constant = MachineTerm::constant;
     let mut premises_true = 0usize;
     for left in BOUNDARIES {
-        assert!(
-            holds(&prove_uint32_positive_predecessor_strictly_decreases(
-                constant(left)
-            )),
-            "predecessor at {left:#x}"
-        );
         for right in BOUNDARIES {
-            let pair: [(&str, Theorem); 5] = [
-                (
-                    "increment upper bound",
-                    prove_uint32_increment_upper_bound(constant(left), constant(right)),
-                ),
-                (
-                    "positive difference",
-                    prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
-                ),
+            let pair: [(&str, Theorem); 3] = [
                 (
                     "lt reversed",
                     prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
@@ -6838,15 +6692,7 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         }
     }
     for (left, right) in sampled {
-        assert!(
-            holds(&prove_uint32_positive_predecessor_strictly_decreases(
-                constant(left)
-            )),
-            "predecessor at {left:#x}"
-        );
         for theorem in [
-            prove_uint32_increment_upper_bound(constant(left), constant(right)),
-            prove_uint32_lt_implies_positive_difference(constant(left), constant(right)),
             prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
             prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
             prove_uint32_difference_decreases_after_increment(constant(left), constant(right)),
@@ -6877,16 +6723,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         PureFactContext::decide_intrinsically(condition)
             .expect("a condition over constants is decided")
     };
-    assert!(!conclusion_holds(
-        &prove_uint32_positive_predecessor_strictly_decreases(constant(0))
-    ));
-    assert!(!conclusion_holds(&prove_uint32_increment_upper_bound(
-        constant(5),
-        constant(5)
-    )));
-    assert!(!conclusion_holds(
-        &prove_uint32_lt_implies_positive_difference(constant(7), constant(7))
-    ));
     assert!(!conclusion_holds(
         &prove_uint32_difference_decreases_after_increment(constant(7), constant(7))
     ));
@@ -6932,238 +6768,6 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
         let restricted = facts.without_exact_fact(&missing);
         assert!(!proof.check(&restricted));
         assert!(restricted.derive_solve_proposition(&goal).is_none());
-    }
-}
-
-#[test]
-fn int64_subtract_bridge_matches_independent_overflow_boundary_model() {
-    use num_bigint::BigInt;
-    let left = MachineTerm::Variable(Variable(186001));
-    let right = MachineTerm::Variable(Variable(186002));
-    let theorem = prove_int64_subtract_to_integer(left.clone(), right.clone());
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("missing native definedness premise");
-    };
-    assert_eq!(
-        premise.as_ref(),
-        &Proposition::signed_arithmetic_domain(
-            MachineIntegerType::Int64,
-            MachineBinaryOp::Subtract,
-            &left,
-            &right,
-        )
-    );
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
-        conclusion.as_ref()
-    else {
-        panic!("wrong observation law");
-    };
-    let IntegerTerm::Machine(machine) = observed.as_ref() else {
-        panic!("missing typed observation");
-    };
-    assert_eq!(machine.ty(), MachineIntegerType::Int64);
-    let operation = MachineTerm::Binary {
-        format: MachineIntegerType::Int64,
-        op: MachineBinaryOp::Subtract,
-        left: Box::new(left.clone()),
-        right: Box::new(right.clone()),
-    };
-    assert_eq!(machine.value(), &operation);
-    let observe = |term| IntegerTerm::from_machine(MachineIntegerType::Int64, term).unwrap();
-    let mathematical =
-        IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into());
-    assert_eq!(exact.as_ref(), &mathematical);
-    for a in [
-        i64::MIN,
-        i64::MIN + 1,
-        -2,
-        -1,
-        0,
-        1,
-        2,
-        i64::MAX - 1,
-        i64::MAX,
-    ] {
-        for b in [
-            i64::MIN,
-            i64::MIN + 1,
-            -2,
-            -1,
-            0,
-            1,
-            2,
-            i64::MAX - 1,
-            i64::MAX,
-        ] {
-            let exact = BigInt::from(a) - BigInt::from(b);
-            let fits = exact >= BigInt::from(i64::MIN) && exact <= BigInt::from(i64::MAX);
-            let checked = a.checked_sub(b);
-            assert_eq!(checked.is_some(), fits);
-            if let Some(value) = checked {
-                assert_eq!(BigInt::from(value), exact);
-            }
-            let theorem = prove_int64_subtract_to_integer(
-                MachineTerm::int64_constant(a),
-                MachineTerm::int64_constant(b),
-            );
-            let Proposition::Implies(guard, _) = theorem.proposition() else {
-                unreachable!()
-            };
-            let Proposition::And(upper, lower) = guard.as_ref() else {
-                panic!("missing range bounds")
-            };
-            let holds = |bound: &Proposition| {
-                matches!(
-                    bound,
-                    Proposition::ConditionIs(ConditionTerm::Constant(true), true)
-                )
-            };
-            assert_eq!(holds(upper) && holds(lower), fits);
-        }
-    }
-}
-
-#[test]
-fn uint32_add_bridge_agrees_with_boundary_model() {
-    fn machine(term: &MachineTerm, a: u32, b: u32) -> u64 {
-        match term {
-            MachineTerm::Variable(variable) if *variable == Variable(910) => u64::from(a),
-            MachineTerm::Variable(variable) if *variable == Variable(911) => u64::from(b),
-            bits32_constant!(value) => u64::from(constant_u32(*value)),
-            binary_term!(Bits32, Add, left, right) => {
-                u64::from((machine(left, a, b) as u32).wrapping_add(machine(right, a, b) as u32))
-            }
-            _ => panic!("unexpected term {term:?}"),
-        }
-    }
-    fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
-        match term {
-            IntegerTerm::Constant(value) => value.clone(),
-            IntegerTerm::Machine(value) => {
-                assert_eq!(value.ty(), MachineIntegerType::UInt32);
-                machine(value.value(), a, b).into()
-            }
-            IntegerTerm::Add(left, right) => integer(left, a, b) + integer(right, a, b),
-            _ => panic!("unexpected Integer term {term:?}"),
-        }
-    }
-    let theorem = prove_uint32_add_to_integer(
-        MachineTerm::Variable(Variable(910)),
-        MachineTerm::Variable(Variable(911)),
-    );
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("missing bound")
-    };
-    let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(sum, max), true) =
-        premise.as_ref()
-    else {
-        panic!("wrong bound")
-    };
-    for a in [
-        0,
-        1,
-        255,
-        65520,
-        1481280,
-        0x80000000,
-        4294690200,
-        u32::MAX - 1,
-        u32::MAX,
-    ] {
-        for b in [0, 1, 255, 65520, 1481280, 0x80000000, u32::MAX] {
-            let safe = u64::from(a) + u64::from(b) <= u64::from(u32::MAX);
-            assert_eq!(integer(sum, a, b) <= integer(max, a, b), safe);
-            let holds = match conclusion.as_ref() {
-                Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
-                    integer(left, a, b) == integer(right, a, b)
-                }
-                _ => panic!("wrong conclusion {conclusion:?}"),
-            };
-            assert_eq!(holds, safe, "{a} + {b}");
-        }
-    }
-}
-
-#[test]
-fn uint32_subtract_bridge_matches_unsigned_underflow_boundary_model() {
-    fn machine(term: &MachineTerm, a: u32, b: u32) -> u32 {
-        match term {
-            MachineTerm::Variable(v) if *v == Variable(910) => a,
-            MachineTerm::Variable(v) if *v == Variable(911) => b,
-            bits32_constant!(value) => constant_u32(*value),
-            binary_term!(Bits32, Subtract, left, right) => {
-                machine(left, a, b).wrapping_sub(machine(right, a, b))
-            }
-            binary_term!(Bits32, BitwiseXor, left, right) => {
-                machine(left, a, b) ^ machine(right, a, b)
-            }
-            _ => panic!("unexpected subtraction term {term:?}"),
-        }
-    }
-    fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
-        match term {
-            IntegerTerm::Machine(value) => {
-                assert_eq!(value.ty(), MachineIntegerType::UInt32);
-                machine(value.value(), a, b).into()
-            }
-            IntegerTerm::Subtract(left, right) => integer(left, a, b) - integer(right, a, b),
-            _ => panic!("unexpected difference observation {term:?}"),
-        }
-    }
-    let theorem = prove_uint32_subtract_to_integer(
-        MachineTerm::Variable(Variable(910)),
-        MachineTerm::Variable(Variable(911)),
-    );
-    let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
-        panic!("missing no-underflow guard");
-    };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        },
-        true,
-    ) = guard.as_ref()
-    else {
-        panic!("wrong unsigned guard");
-    };
-    let Proposition::ConditionIs(ConditionTerm::IntegerEqual(observed, exact), true) =
-        conclusion.as_ref()
-    else {
-        panic!("wrong observation equality");
-    };
-    let samples = [
-        0,
-        1,
-        2,
-        255,
-        65520,
-        65521,
-        0x7fff_ffff,
-        0x8000_0000,
-        u32::MAX - 1,
-        u32::MAX,
-    ];
-    for a in samples {
-        for b in samples {
-            let safe = a.checked_sub(b).is_some();
-            assert_eq!(machine(left, a, b) <= machine(right, a, b), safe);
-            assert_eq!(
-                integer(observed, a, b),
-                num_bigint::BigInt::from(a.wrapping_sub(b))
-            );
-            assert_eq!(
-                integer(exact, a, b),
-                num_bigint::BigInt::from(a) - num_bigint::BigInt::from(b)
-            );
-            assert_eq!(
-                integer(observed, a, b) == integer(exact, a, b),
-                safe,
-                "{a} - {b}"
-            );
-        }
     }
 }
 
@@ -7594,8 +7198,6 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         actual == *expected
     }
     for name in [
-        "click::integer::uint64_add_to_integer",
-        "click::integer::uint64_subtract_to_integer",
         "click::integer::uint64_multiply_to_integer",
         "click::integer::uint64_divide_to_integer",
         "click::integer::uint64_remainder_to_integer",
@@ -7630,8 +7232,6 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     panic!("missing guard");
                 };
                 let allowed = match name {
-                    "click::integer::uint64_add_to_integer" => a.checked_add(b).is_some(),
-                    "click::integer::uint64_subtract_to_integer" => a.checked_sub(b).is_some(),
                     "click::integer::uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
                     "click::integer::uint64_divide_to_integer"
                     | "click::integer::uint64_remainder_to_integer" => b != 0,

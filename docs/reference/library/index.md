@@ -981,7 +981,54 @@ theorem int32_nonnegative_add_within_max_is_defined(value: int32, amount: int32)
     requires 0 <= amount;
     requires to_integer(value) <= to_integer(2147483647 - amount);
 
-    ensures defined(value + amount);
+    ensures defined(value + amount) by {
+        have -2147483648 <= 2147483647 - to_integer(amount) by {
+            arithmetic_certificate {
+                negated_goal => 2147483647 - to_integer(amount) < -2147483648;
+                type_range => to_integer(amount) <= 2147483647;
+                add 0, 1 => 2147483647 - to_integer(amount) + to_integer(amount) < -2147483648 + 2147483647;
+                conclusion 2;
+            }
+        }
+        have 2147483647 - to_integer(amount) <= 2147483647 by {
+            arithmetic_certificate {
+                negated_goal => 2147483647 < 2147483647 - to_integer(amount);
+                premise 0: 0 <= to_integer(amount) => 0 <= to_integer(amount);
+                add 0, 1 => 2147483647 + 0 < 2147483647 - to_integer(amount) + to_integer(amount);
+                conclusion 2;
+            }
+        }
+        have to_integer(2147483647 - amount) == 2147483647 - to_integer(amount) by {
+            arithmetic_certificate rules {
+                premise 0: -2147483648 <= 2147483647 - to_integer(amount) => -2147483648 <= 2147483647 - to_integer(amount);
+                premise 1: 2147483647 - to_integer(amount) <= 2147483647 => 2147483647 - to_integer(amount) <= 2147483647;
+                integer_operation_identity bounds [0, 1] => to_integer(2147483647 - amount) == 2147483647 - to_integer(amount);
+                conclusion 0;
+            }
+        }
+        have -2147483648 <= to_integer(value) + to_integer(amount) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(value) + to_integer(amount) < -2147483648;
+                premise 0: 0 <= to_integer(amount) => 0 <= to_integer(amount);
+                type_range => -2147483648 <= to_integer(value);
+                add 0, 1 => to_integer(value) + to_integer(amount) + 0 < -2147483648 + to_integer(amount);
+                add 3, 2 => to_integer(value) + to_integer(amount) + 0 + -2147483648 < -2147483648 + to_integer(amount) + to_integer(value);
+                conclusion 4;
+            }
+        }
+        have to_integer(value) + to_integer(amount) <= 2147483647 by {
+            arithmetic_certificate {
+                negated_goal => 2147483647 < to_integer(value) + to_integer(amount);
+                premise 0: to_integer(2147483647 - amount) == 2147483647 - to_integer(amount) => to_integer(2147483647 - amount) == 2147483647 - to_integer(amount);
+                less_equal_from_equal 1 => to_integer(2147483647 - amount) <= 2147483647 - to_integer(amount);
+                premise 1: to_integer(value) <= to_integer(2147483647 - amount) => to_integer(value) <= to_integer(2147483647 - amount);
+                add 0, 2 => 2147483647 + to_integer(2147483647 - amount) < to_integer(value) + to_integer(amount) + (2147483647 - to_integer(amount));
+                add 4, 3 => 2147483647 + to_integer(2147483647 - amount) + to_integer(value) < to_integer(value) + to_integer(amount) + (2147483647 - to_integer(amount)) + to_integer(2147483647 - amount);
+                conclusion 5;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -998,7 +1045,31 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
     requires 0 <= amount;
     requires amount <= value;
 
-    ensures defined(value - amount);
+    ensures defined(value - amount) by {
+        have to_integer(value) <= 2147483647 by {
+            arithmetic_certificate {
+                type_range => to_integer(value) <= 2147483647;
+                conclusion 0;
+            }
+        }
+        have -2147483648 <= to_integer(value) - to_integer(amount) by {
+            arithmetic_certificate {
+                premise 0: amount <= value => amount <= value;
+                trivial => -2147483648 <= 0;
+                add 0, 1 => (to_integer(amount as int32) + -2147483648) <= (to_integer(value as int32) + 0);
+                conclusion 2;
+            }
+        }
+        have to_integer(value) - to_integer(amount) <= 2147483647 by {
+            arithmetic_certificate {
+                premise 0: 0 <= amount => 0 <= amount;
+                premise 1: to_integer(value) <= 2147483647 => to_integer(value) <= 2147483647;
+                add 0, 1 => 0 + to_integer(value) <= (to_integer(amount as int32) + 2147483647);
+                conclusion 2;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1030,7 +1101,30 @@ Both bounds are required, including when the final program result is in range.
 ```click
 theorem uint32_add_to_integer(left: uint32, right: uint32) {
     requires to_integer(left) + to_integer(right) <= 4294967295;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
+        have 0 <= to_integer(left) + to_integer(right) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(left) + to_integer(right) < 0;
+                type_range => 0 <= to_integer(left);
+                type_range => 0 <= to_integer(right);
+                add 0, 1 => to_integer(left) + to_integer(right) + 0 < 0 + to_integer(left);
+                add 3, 2 => to_integer(left) + to_integer(right) + 0 + 0 < 0 + to_integer(left) + to_integer(right);
+                conclusion 4;
+            }
+        }
+        have to_integer(left) + to_integer(right) <= 4294967295 by {
+            assumption();
+        }
+        have to_integer(left + right) == to_integer(left) + to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) + to_integer(right) => 0 <= to_integer(left) + to_integer(right);
+                premise 1: to_integer(left) + to_integer(right) <= 4294967295 => to_integer(left) + to_integer(right) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(left + right) == to_integer(left) + to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1043,7 +1137,35 @@ Unsigned machine addition agrees with mathematical addition when the mathematica
 ```click
 theorem uint32_subtract_to_integer(left: uint32, right: uint32) {
     requires right <= left;
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        have 0 <= to_integer(left) - to_integer(right) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(left) - to_integer(right) < 0;
+                premise 0: to_integer(right) <= to_integer(left) => to_integer(right) <= to_integer(left);
+                add 0, 1 => to_integer(left) - to_integer(right) + to_integer(right) < 0 + to_integer(left);
+                conclusion 2;
+            }
+        }
+        have to_integer(left) - to_integer(right) <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(left) - to_integer(right);
+                type_range => to_integer(left) <= 4294967295;
+                type_range => 0 <= to_integer(right);
+                add 0, 1 => 4294967295 + to_integer(left) < to_integer(left) - to_integer(right) + 4294967295;
+                add 3, 2 => 4294967295 + to_integer(left) + 0 < to_integer(left) - to_integer(right) + 4294967295 + to_integer(right);
+                conclusion 4;
+            }
+        }
+        have to_integer(left - right) == to_integer(left) - to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) - to_integer(right) => 0 <= to_integer(left) - to_integer(right);
+                premise 1: to_integer(left) - to_integer(right) <= 4294967295 => to_integer(left) - to_integer(right) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(left - right) == to_integer(left) - to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1110,7 +1232,30 @@ A mathematical product bound establishes the native checked-multiplication guard
 ```click
 theorem uint64_add_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) + to_integer(right) <= 18446744073709551615;
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
+        have 0 <= to_integer(left) + to_integer(right) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(left) + to_integer(right) < 0;
+                type_range => 0 <= to_integer(left);
+                type_range => 0 <= to_integer(right);
+                add 0, 1 => to_integer(left) + to_integer(right) + 0 < 0 + to_integer(left);
+                add 3, 2 => to_integer(left) + to_integer(right) + 0 + 0 < 0 + to_integer(left) + to_integer(right);
+                conclusion 4;
+            }
+        }
+        have to_integer(left) + to_integer(right) <= 18446744073709551615 by {
+            assumption();
+        }
+        have to_integer(left + right) == to_integer(left) + to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) + to_integer(right) => 0 <= to_integer(left) + to_integer(right);
+                premise 1: to_integer(left) + to_integer(right) <= 18446744073709551615 => to_integer(left) + to_integer(right) <= 18446744073709551615;
+                integer_operation_identity bounds [0, 1] => to_integer(left + right) == to_integer(left) + to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1181,7 +1326,35 @@ program exposes a division-based overflow guard.
 ```click
 theorem uint64_subtract_to_integer(left: uint64, right: uint64) {
     requires to_integer(right) <= to_integer(left);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        have 0 <= to_integer(left) - to_integer(right) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(left) - to_integer(right) < 0;
+                premise 0: to_integer(right) <= to_integer(left) => to_integer(right) <= to_integer(left);
+                add 0, 1 => to_integer(left) - to_integer(right) + to_integer(right) < 0 + to_integer(left);
+                conclusion 2;
+            }
+        }
+        have to_integer(left) - to_integer(right) <= 18446744073709551615 by {
+            arithmetic_certificate {
+                negated_goal => 18446744073709551615 < to_integer(left) - to_integer(right);
+                type_range => to_integer(left) <= 18446744073709551615;
+                type_range => 0 <= to_integer(right);
+                add 0, 1 => 18446744073709551615 + to_integer(left) < to_integer(left) - to_integer(right) + 18446744073709551615;
+                add 3, 2 => 18446744073709551615 + to_integer(left) + 0 < to_integer(left) - to_integer(right) + 18446744073709551615 + to_integer(right);
+                conclusion 4;
+            }
+        }
+        have to_integer(left - right) == to_integer(left) - to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) - to_integer(right) => 0 <= to_integer(left) - to_integer(right);
+                premise 1: to_integer(left) - to_integer(right) <= 18446744073709551615 => to_integer(left) - to_integer(right) <= 18446744073709551615;
+                integer_operation_identity bounds [0, 1] => to_integer(left - right) == to_integer(left) - to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1506,7 +1679,23 @@ Proves the full unsigned 64-bit observation range from native order. Arithmetic 
 ```click
 theorem int32_add_to_integer(left: int32, right: int32) {
     requires defined(left + right);
-    ensures to_integer(left + right) == to_integer(left) + to_integer(right);
+    ensures to_integer(left + right) == to_integer(left) + to_integer(right) by {
+        have -2147483648 <= to_integer(left) + to_integer(right) by {
+            assumption();
+        }
+        have to_integer(left) + to_integer(right) <= 2147483647 by {
+            assumption();
+        }
+        have to_integer(left + right) == to_integer(left) + to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: -2147483648 <= to_integer(left) + to_integer(right) => -2147483648 <= to_integer(left) + to_integer(right);
+                premise 1: to_integer(left) + to_integer(right) <= 2147483647 => to_integer(left) + to_integer(right) <= 2147483647;
+                integer_operation_identity bounds [0, 1] => to_integer(left + right) == to_integer(left) + to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1536,7 +1725,23 @@ Bounds on the exact mathematical sum establish that signed 64-bit addition is de
 ```click
 theorem int64_subtract_to_integer(left: int64, right: int64) {
     requires defined(left - right);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        have -9223372036854775808 <= to_integer(left) - to_integer(right) by {
+            assumption();
+        }
+        have to_integer(left) - to_integer(right) <= 9223372036854775807 by {
+            assumption();
+        }
+        have to_integer(left - right) == to_integer(left) - to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: -9223372036854775808 <= to_integer(left) - to_integer(right) => -9223372036854775808 <= to_integer(left) - to_integer(right);
+                premise 1: to_integer(left) - to_integer(right) <= 9223372036854775807 => to_integer(left) - to_integer(right) <= 9223372036854775807;
+                integer_operation_identity bounds [0, 1] => to_integer(left - right) == to_integer(left) - to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1551,7 +1756,23 @@ that premise or infer any operand range.
 ```click
 theorem int32_subtract_to_integer(left: int32, right: int32) {
     requires defined(left - right);
-    ensures to_integer(left - right) == to_integer(left) - to_integer(right);
+    ensures to_integer(left - right) == to_integer(left) - to_integer(right) by {
+        have -2147483648 <= to_integer(left) - to_integer(right) by {
+            assumption();
+        }
+        have to_integer(left) - to_integer(right) <= 2147483647 by {
+            assumption();
+        }
+        have to_integer(left - right) == to_integer(left) - to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: -2147483648 <= to_integer(left) - to_integer(right) => -2147483648 <= to_integer(left) - to_integer(right);
+                premise 1: to_integer(left) - to_integer(right) <= 2147483647 => to_integer(left) - to_integer(right) <= 2147483647;
+                integer_operation_identity bounds [0, 1] => to_integer(left - right) == to_integer(left) - to_integer(right);
+                conclusion 0;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -1710,7 +1931,40 @@ theorem int32_positive_predecessor_strictly_decreases(value: int32) {
 theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
     requires 0u32 < value;
 
-    ensures to_integer(value - 1u32) < to_integer(value);
+    ensures to_integer(value - 1u32) < to_integer(value) by {
+        have 0 < to_integer(value) by {
+            assumption();
+        }
+        have 0 <= to_integer(value) - 1 by {
+            arithmetic_certificate {
+                negated_goal => to_integer(value) - 1 < 0;
+                premise 0: 0 < to_integer(value) => 0 < to_integer(value);
+                add 0, 1 => to_integer(value) - 1 + 1 + (0 + 1) <= 0 + to_integer(value);
+                conclusion 2;
+            }
+        }
+        have to_integer(value) - 1 <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(value) - 1;
+                type_range => to_integer(value) <= 4294967295;
+                add 0, 1 => 4294967295 + to_integer(value) < to_integer(value) - 1 + 4294967295;
+                conclusion 2;
+            }
+        }
+        have to_integer(value - 1u32) == to_integer(value) - 1 by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(value) - 1 => 0 <= to_integer(value) - 1;
+                premise 1: to_integer(value) - 1 <= 4294967295 => to_integer(value) - 1 <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(value - 1u32) == to_integer(value) - 1;
+                conclusion 0;
+            }
+        }
+        arithmetic_certificate {
+            premise 0: to_integer(value - 1u32) == to_integer(value) - 1 => to_integer(value - 1u32) == to_integer(value) - 1;
+            less_equal_from_equal 0 => to_integer(value - 1u32) <= to_integer(value) - 1;
+            conclusion 1;
+        }
+    }
 }
 ```
 
@@ -1726,7 +1980,44 @@ theorem uint32_positive_predecessor_strictly_decreases(value: uint32) {
 theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures to_integer(value + 1u32) <= to_integer(upper);
+    ensures to_integer(value + 1u32) <= to_integer(upper) by {
+        have to_integer(value) < to_integer(upper) by {
+            assumption();
+        }
+        have 0 <= to_integer(value) + 1 by {
+            arithmetic_certificate {
+                negated_goal => to_integer(value) + 1 < 0;
+                type_range => 0 <= to_integer(value);
+                add 0, 1 => to_integer(value) + 1 + 0 < 0 + to_integer(value);
+                conclusion 2;
+            }
+        }
+        have to_integer(value) + 1 <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(value) + 1;
+                premise 0: to_integer(value) < to_integer(upper) => to_integer(value) < to_integer(upper);
+                type_range => to_integer(upper) <= 4294967295;
+                add 0, 1 => 4294967295 + 1 + (to_integer(value) + 1) <= to_integer(value) + 1 + to_integer(upper);
+                add 3, 2 => 4294967295 + 1 + (to_integer(value) + 1) + to_integer(upper) <= to_integer(value) + 1 + to_integer(upper) + 4294967295;
+                conclusion 4;
+            }
+        }
+        have to_integer(value + 1u32) == to_integer(value) + 1 by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(value) + 1 => 0 <= to_integer(value) + 1;
+                premise 1: to_integer(value) + 1 <= 4294967295 => to_integer(value) + 1 <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(value + 1u32) == to_integer(value) + 1;
+                conclusion 0;
+            }
+        }
+        arithmetic_certificate {
+            premise 0: to_integer(value + 1u32) == to_integer(value) + 1 => to_integer(value + 1u32) == to_integer(value) + 1;
+            less_equal_from_equal 0 => to_integer(value + 1u32) <= to_integer(value) + 1;
+            premise 1: to_integer(value) < to_integer(upper) => to_integer(value) < to_integer(upper);
+            add 1, 2 => to_integer(value + 1u32) + to_integer(value) < to_integer(value) + 1 + to_integer(upper);
+            conclusion 3;
+        }
+    }
 }
 ```
 
@@ -1742,7 +2033,43 @@ theorem uint32_increment_upper_bound(value: uint32, upper: uint32) {
 theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint32) {
     requires value < upper;
 
-    ensures 0 < to_integer(upper - value);
+    ensures 0 < to_integer(upper - value) by {
+        have 0 <= to_integer(upper) - to_integer(value) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(upper) - to_integer(value) < 0;
+                premise 0: to_integer(value) < to_integer(upper) => to_integer(value) < to_integer(upper);
+                add 0, 1 => to_integer(upper) - to_integer(value) + 1 + (to_integer(value) + 1) <= 0 + to_integer(upper);
+                conclusion 2;
+            }
+        }
+        have to_integer(upper) - to_integer(value) <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(upper) - to_integer(value);
+                type_range => to_integer(upper) <= 4294967295;
+                type_range => 0 <= to_integer(value);
+                add 0, 1 => 4294967295 + to_integer(upper) < to_integer(upper) - to_integer(value) + 4294967295;
+                add 3, 2 => 4294967295 + to_integer(upper) + 0 < to_integer(upper) - to_integer(value) + 4294967295 + to_integer(value);
+                conclusion 4;
+            }
+        }
+        have to_integer(upper - value) == to_integer(upper) - to_integer(value) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(upper) - to_integer(value) => 0 <= to_integer(upper) - to_integer(value);
+                premise 1: to_integer(upper) - to_integer(value) <= 4294967295 => to_integer(upper) - to_integer(value) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(upper - value) == to_integer(upper) - to_integer(value);
+                conclusion 0;
+            }
+        }
+        arithmetic_certificate {
+            negated_goal => to_integer(upper - value) <= 0;
+            premise 0: to_integer(upper - value) == to_integer(upper) - to_integer(value) => to_integer(upper - value) == to_integer(upper) - to_integer(value);
+            less_equal_from_equal 1 reverse => to_integer(upper) - to_integer(value) <= to_integer(upper - value);
+            premise 1: to_integer(value) < to_integer(upper) => to_integer(value) < to_integer(upper);
+            add 0, 2 => to_integer(upper - value) + (to_integer(upper) - to_integer(value)) <= 0 + to_integer(upper - value);
+            add 4, 3 => to_integer(upper - value) + (to_integer(upper) - to_integer(value)) + to_integer(value) < 0 + to_integer(upper - value) + to_integer(upper);
+            conclusion 5;
+        }
+    }
 }
 ```
 

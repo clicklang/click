@@ -1086,8 +1086,10 @@ native division guards, exact quotient/remainder observations, and
 ## Observing defined signed 64-bit operations
 
 `integer::int64_subtract_to_integer` extends the signed int32 observation laws to the
-full signed 64-bit carrier. Its kernel implementation is shared with the int32
-laws. The exact observation requires the native `defined(left - right)` fact.
+full signed 64-bit carrier. Like the int32 laws, it is a proved library
+theorem: its pinned proof turns `defined(left - right)` into the Integer range
+of the difference and applies the `integer_operation_identity` certificate
+rule. The exact observation requires the native `defined(left - right)` fact.
 Modular machine terms alone do not establish mathematical subtraction, and an
 overflow case cannot discharge the guard. Declaration checks retain the signed
 width, operation, guard polarity and exact conclusion. The in-range addition
@@ -1100,9 +1102,9 @@ values after proving each native sum is defined. Explicit Integer arithmetic the
 before the original short-circuit expression executes. Signed order reflection
 restores native bounds on the actual returned value. This proves output bounds
 for both rounding branches; identifying the result as a mathematical
-floor/ceiling remains separate. Boundary oracles, forged declarations,
-missing/false guards, expansion, reverification and deterministic application
-scaling cover the subtraction law.
+floor/ceiling remains separate. Missing and false guards, expansion,
+reverification and deterministic application scaling cover the subtraction
+law.
 See the checked
 [operation fixture](https://github.com/clicklang/click/blob/master/mdtests/int64_integer_operation_bridges.md).
 
@@ -1124,9 +1126,12 @@ cannot exclude unsigned wrapping.
 | `integer::uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
 
 Here `A = to_integer(a)`, `B = to_integer(b)` and
-`UINT64_MAX = 18446744073709551615`. The five operation laws are kernel
-standard theorems with checked parameter types, declaration shape, exact
-premise and conclusion. The two order laws are proved by `assumption()`: a
+`UINT64_MAX = 18446744073709551615`. The multiply, divide and remainder laws
+are kernel standard theorems with checked parameter types, declaration shape,
+exact premise and conclusion. The add and subtract laws are proved: their
+pinned proofs derive the Integer range of the exact result from the premise
+and the operand ranges and apply the `integer_operation_identity` certificate
+rule. The two order laws are proved by `assumption()`: a
 machine comparison and the Integer comparison of its operands' observations
 lower to one fact, so each conclusion is its premise.
 These laws use the same observation model and theorem application path as the

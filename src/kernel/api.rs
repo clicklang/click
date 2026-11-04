@@ -8786,60 +8786,6 @@ pub(crate) fn prove_universally_quantified_pure_implication_by_int32_rewrites(
     universally_close_pure_implication(requirements, conclusion, variables)
 }
 
-/// Adding a nonnegative signed int32 amount within the remaining positive
-/// headroom is defined.
-pub fn prove_int32_nonnegative_add_within_max_is_defined(
-    value: MachineTerm,
-    amount: MachineTerm,
-) -> Theorem {
-    let amount_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), amount.clone()),
-        true,
-    );
-    let within_headroom = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(
-            value.clone(),
-            binary_node!(
-                Int32,
-                Subtract,
-                Box::new(MachineTerm::constant(i32::MAX as u32)),
-                Box::new(amount.clone()),
-            ),
-        ),
-        true,
-    );
-    let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32,
-        MachineBinaryOp::Add,
-        &value,
-        &amount,
-    );
-    implication([amount_is_nonnegative, within_headroom], conclusion)
-}
-
-/// Subtracting a nonnegative signed int32 amount no larger than the value is
-/// defined.
-pub fn prove_int32_nonnegative_subtract_within_value_is_defined(
-    value: MachineTerm,
-    amount: MachineTerm,
-) -> Theorem {
-    let amount_is_nonnegative = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(MachineTerm::constant(0), amount.clone()),
-        true,
-    );
-    let amount_within_value = Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(amount.clone(), value.clone()),
-        true,
-    );
-    let conclusion = Proposition::signed_arithmetic_domain(
-        MachineIntegerType::Int32,
-        MachineBinaryOp::Subtract,
-        &value,
-        &amount,
-    );
-    implication([amount_is_nonnegative, amount_within_value], conclusion)
-}
-
 /// Mathematical bounds on the exact difference establish signed 64-bit C
 /// subtraction safety.
 pub fn prove_int64_subtract_defined_by_integer_bounds(
@@ -8927,68 +8873,6 @@ pub fn prove_integer_machine_round_trip(
         ],
         Proposition::ConditionIs(
             ConditionTerm::IntegerEqual(observed.into(), value.into()),
-            true,
-        ),
-    )
-}
-
-fn uint32_exact_sum_bound(left: MachineTerm, right: MachineTerm) -> Proposition {
-    let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
-            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
-    };
-    Proposition::ConditionIs(
-        ConditionTerm::IntegerLessEqual(
-            IntegerTerm::Add(observe(left).into(), observe(right).into()).into(),
-            IntegerTerm::constant_i64(i64::from(u32::MAX)).into(),
-        ),
-        true,
-    )
-}
-
-/// Unsigned machine addition agrees with mathematical addition precisely
-/// under the explicit no-wrap bound. Definedness alone permits wrapping.
-pub fn prove_uint32_add_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let premise = uint32_exact_sum_bound(left.clone(), right.clone());
-    let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
-            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
-    };
-    let observed_sum = observe(MachineTerm::add_at(
-        MachineIntegerType::UInt32,
-        left.clone(),
-        right.clone(),
-    ));
-    let exact = IntegerTerm::Add(observe(left).into(), observe(right).into());
-    implication(
-        [premise],
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(observed_sum.into(), exact.into()),
-            true,
-        ),
-    )
-}
-
-/// Exact mathematical observation of unsigned subtraction without underflow.
-/// Native definedness alone permits wrapping, including 0u32 - 1u32.
-pub fn prove_uint32_subtract_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
-            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
-    };
-    let difference = observe(MachineTerm::subtract_at(
-        MachineIntegerType::UInt32,
-        left.clone(),
-        right.clone(),
-    ));
-    let exact = IntegerTerm::Subtract(observe(left.clone()).into(), observe(right.clone()).into());
-    implication(
-        [Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_equal(right, left),
-            true,
-        )],
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(difference.into(), exact.into()),
             true,
         ),
     )
@@ -9139,12 +9023,6 @@ pub fn prove_uint32_remainder_of_lt(value: MachineTerm, divisor: MachineTerm) ->
             true,
         ),
     )
-}
-
-/// Exact mathematical observation of a defined signed 32-bit addition.
-/// The overflow premise is essential: the machine term alone is modular.
-pub fn prove_int32_add_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, false)
 }
 
 /// Exact unsigned 64-bit observations. Addition and multiplication require
@@ -9369,23 +9247,6 @@ pub fn prove_uint64_integer_bridge(
     let b = observe(right.clone());
     let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
     let (machine, exact, guard) = match name {
-        "click::integer::uint64_add_to_integer" => {
-            let exact = IntegerTerm::Add(a.into(), b.into());
-            let guard = Proposition::ConditionIs(
-                ConditionTerm::IntegerLessEqual(exact.clone().into(), maximum.into()),
-                true,
-            );
-            (
-                MachineTerm::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::Add,
-                    left: left.into(),
-                    right: right.into(),
-                },
-                exact,
-                guard,
-            )
-        }
         "click::integer::uint64_multiply_to_integer" => {
             let exact = IntegerTerm::Multiply(a.into(), b.into());
             let guard = Proposition::ConditionIs(
@@ -9400,22 +9261,6 @@ pub fn prove_uint64_integer_bridge(
                     right: right.into(),
                 },
                 exact,
-                guard,
-            )
-        }
-        "click::integer::uint64_subtract_to_integer" => {
-            let guard = Proposition::ConditionIs(
-                ConditionTerm::IntegerLessEqual(b.clone().into(), a.clone().into()),
-                true,
-            );
-            (
-                MachineTerm::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::Subtract,
-                    left: left.into(),
-                    right: right.into(),
-                },
-                IntegerTerm::Subtract(a.into(), b.into()),
                 guard,
             )
         }
@@ -9467,11 +9312,6 @@ pub fn prove_uint64_integer_bridge(
     ))
 }
 
-/// Exact mathematical observation of a defined signed 32-bit subtraction.
-pub fn prove_int32_subtract_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_signed_operation_to_integer(MachineIntegerType::Int32, left, right, true)
-}
-
 /// Exact mathematical remainder of a defined signed 32-bit operation.
 /// Both zero division and MIN / -1 are excluded by the native definedness
 /// premise, even though mathematical remainder itself has no overflow.
@@ -9497,47 +9337,6 @@ pub fn prove_int32_remainder_to_integer(left: MachineTerm, right: MachineTerm) -
     )
 }
 
-/// Exact mathematical observation of a defined signed 64-bit subtraction.
-pub fn prove_int64_subtract_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    prove_signed_operation_to_integer(MachineIntegerType::Int64, left, right, true)
-}
-
-fn prove_signed_operation_to_integer(
-    ty: MachineIntegerType,
-    left: MachineTerm,
-    right: MachineTerm,
-    subtract: bool,
-) -> Theorem {
-    let observe = |value| {
-        IntegerTerm::from_machine(ty, value)
-            .expect("typed operands have exact Integer interpretations")
-    };
-    let op = if subtract {
-        MachineBinaryOp::Subtract
-    } else {
-        MachineBinaryOp::Add
-    };
-    let domain = Proposition::signed_arithmetic_domain(ty, op, &left, &right);
-    let machine = MachineTerm::Binary {
-        format: ty,
-        op,
-        left: Box::new(left.clone()),
-        right: Box::new(right.clone()),
-    };
-    let mathematical = if subtract {
-        IntegerTerm::Subtract(observe(left).into(), observe(right).into())
-    } else {
-        IntegerTerm::Add(observe(left).into(), observe(right).into())
-    };
-    implication(
-        [domain],
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(observe(machine).into(), mathematical.into()),
-            true,
-        ),
-    )
-}
-
 /// The theorem `premises[0] implies (premises[1] implies (... conclusion))`.
 fn implication<const N: usize>(premises: [Proposition; N], conclusion: Proposition) -> Theorem {
     Theorem::new(
@@ -9554,56 +9353,6 @@ fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theo
     implication(
         [Proposition::ConditionIs(premise, true)],
         Proposition::ConditionIs(conclusion, true),
-    )
-}
-
-/// Decrementing a nonzero uint32 value strictly decreases it. A nonzero
-/// value has a predecessor that does not wrap; at zero the predecessor is
-/// `UINT_MAX`, which the premise excludes.
-pub fn prove_uint32_positive_predecessor_strictly_decreases(value: MachineTerm) -> Theorem {
-    uint32_implication(
-        ConditionTerm::unsigned_less_than(MachineTerm::constant(0), value.clone()),
-        ConditionTerm::unsigned_less_than(
-            binary_node!(
-                UInt32,
-                Subtract,
-                Box::new(value.clone()),
-                Box::new(MachineTerm::uint32_constant(1)),
-            ),
-            value,
-        ),
-    )
-}
-
-/// A uint32 increment preserves a strict upper bound as a non-strict bound.
-/// The strict premise rules out wraparound: if `value` were `UINT_MAX`, no
-/// uint32 `upper` could be greater than it.
-pub fn prove_uint32_increment_upper_bound(value: MachineTerm, upper: MachineTerm) -> Theorem {
-    uint32_implication(
-        ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
-        ConditionTerm::unsigned_less_equal(
-            MachineTerm::add_at(
-                MachineIntegerType::UInt32,
-                value,
-                MachineTerm::uint32_constant(1),
-            ),
-            upper,
-        ),
-    )
-}
-
-/// The uint32 difference `upper - value` is nonzero when `value` is strictly
-/// below `upper`. The subtraction does not wrap, because `value <= upper`.
-pub fn prove_uint32_lt_implies_positive_difference(
-    value: MachineTerm,
-    upper: MachineTerm,
-) -> Theorem {
-    uint32_implication(
-        ConditionTerm::unsigned_less_than(value.clone(), upper.clone()),
-        ConditionTerm::unsigned_less_than(
-            MachineTerm::constant(0),
-            binary_node!(UInt32, Subtract, Box::new(upper), Box::new(value)),
-        ),
     )
 }
 

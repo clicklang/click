@@ -322,6 +322,12 @@ fn execution_target_resource_scope_parsing_is_linear_in_selected_declarations() 
 
 #[test]
 fn nested_conjunction_body_parsing_uses_small_frames_and_linear_work() {
+    // `surface::parse` expands a file against the standard library, whose
+    // first use parses every library module into a process-wide `OnceLock`
+    // on the calling thread. Do that here, on the test's ordinary stack, so
+    // the small stack and the work samples measure only the nested bodies.
+    crate::surface::parse("theorem warm() { ensures 0 == 0 by { normalize(); } }")
+        .expect("the standard library parses");
     std::thread::Builder::new()
         .name("small-stack-proof-body-parser".into())
         .stack_size(7 * 256 * 1024)
