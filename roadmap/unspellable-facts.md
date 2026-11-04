@@ -228,9 +228,20 @@ Remaining groups to audit and migrate:
   operands and reads the existing domain/operand-key index without exporting
   arithmetic, including deferred cast, sign-flip and affine links. Native
   queries retain their compatibility index until those consumers migrate;
-  repeated native queries must not re-import their complete expression trees. Equality,
-  exclusion and residue admission still have native adapters to migrate; order
-  admission does not declare those routes complete.
+  repeated native queries must not re-import their complete expression trees.
+  The graph's 32/64-bit equality and exclusion admission now reads operand views;
+  its 64-bit residue index retains shared keys and preserves the existing depth
+  and edge limits. Fresh equality aliases reuse the existing coordinate instead
+  of growing a chain of equivalent nodes. Native admission following a shared
+  bound must reuse that coordinate too, preserving its earlier constraints.
+  Wide graph equality queries read views, with the existing native-only lookup
+  path retained for already-written inputs. Native residue keys are recorded
+  during admission so unrelated query contexts do not pay cold import work.
+  Native imports reuse the opposite signedness observation's DAG when available,
+  changing only the root's numeric interpretation. Explicit native constructors
+  retain a later supplied boxed input; query-only imports leave shared storage
+  untouched. Shared narrow admission and the higher-level wide dispatcher still
+  need auditing; this graph migration does not complete those consumers.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;

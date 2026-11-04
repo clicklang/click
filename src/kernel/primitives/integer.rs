@@ -568,6 +568,15 @@ impl SharedMachineIntegerTerm {
             && (found.shared_operand().is_none()
                 || MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow().contains_key(&found.id())))
         {
+            // A graph lookup may have memoized only the shared identity.
+            // This constructor receives an explicit boxed input, so retain
+            // that input rather than exporting the shared DAG on a later read.
+            if let MachineIntegerOperand::Shared { boxed, .. } = &found.0.operand
+                && boxed.get().is_none()
+                && let MachineIntegerKey::Legacy { value, .. } = &key
+            {
+                let _ = boxed.set(value.clone());
+            }
             return found;
         }
         let MachineIntegerKey::Legacy { value, .. } = &key else {
@@ -592,7 +601,28 @@ impl SharedMachineIntegerTerm {
         if let Some(found) = Self::retained_import(ty, value) {
             return Some(found);
         }
-        let root = KernelTermImport::default().machine_arithmetic(ty, value)?;
+        // Signed and unsigned observations retain the same word syntax.
+        // Admission may already have imported the opposite reading; retag its
+        // root instead of walking the explicitly supplied tree a second time.
+        let alternate = match ty {
+            MachineIntegerType::Int8 => MachineIntegerType::UInt8,
+            MachineIntegerType::UInt8 => MachineIntegerType::Int8,
+            MachineIntegerType::Int16 => MachineIntegerType::UInt16,
+            MachineIntegerType::UInt16 => MachineIntegerType::Int16,
+            MachineIntegerType::Int32 => MachineIntegerType::UInt32,
+            MachineIntegerType::UInt32 => MachineIntegerType::Int32,
+            MachineIntegerType::Int64 => MachineIntegerType::UInt64,
+            MachineIntegerType::UInt64 => MachineIntegerType::Int64,
+            MachineIntegerType::Int128 => MachineIntegerType::UInt128,
+            MachineIntegerType::UInt128 => MachineIntegerType::Int128,
+        };
+        let root = Self::retained_import(alternate, value)
+            .and_then(|retained| {
+                retained
+                    .shared_operand()
+                    .map(|root| root.with_machine_observation_type(ty))
+            })
+            .or_else(|| KernelTermImport::default().machine_arithmetic(ty, value))?;
         let shared = Self::from_shared(ty, root)?;
         shared.remember_explicit_import(MachineIntegerKey::Legacy {
             ty,
@@ -2871,5 +2901,38 @@ mod tests {
     #[cfg(test)]
     mod scaling_tests {
         include!("../../scaling_tests/kernel/primitives/integer/tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod explicit_input_after_lookup_tests {
+    use super::*;
+
+    #[test]
+    fn native_lookup_keeps_shared_storage_until_a_boxed_input_is_supplied() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let native = MachineTerm::Binary {
+            format: ty,
+            op: MachineBinaryOp::Multiply,
+            left: Box::new(MachineTerm::Variable(Variable(993271))),
+            right: Box::new(MachineTerm::Variable(Variable(993272))),
+        };
+        let root = KernelTermImport::default()
+            .machine_arithmetic(ty, &native)
+            .unwrap();
+        let observation = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        let lookup = SharedMachineIntegerTerm::import_arithmetic(ty, &native).unwrap();
+        assert!(lookup == observation);
+        assert!(!observation.has_boxed_operand());
+        let supplied = SharedMachineIntegerTerm::intern(ty, native.clone());
+        assert!(supplied == observation);
+        assert!(supplied.has_boxed_operand());
+        assert_eq!(supplied.value(), &native);
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
     }
 }

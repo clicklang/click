@@ -260,16 +260,6 @@ impl DifferenceGraph {
             }
             return;
         }
-        if value
-            && let ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } = condition
-        {
-            self.residues.assume_equal(a, b);
-        }
         if let ConditionTerm::PointerEqual(a, b) = condition {
             if !self.pointers.assume(a, b, value) {
                 self.contradictory = true;
@@ -278,23 +268,6 @@ impl DifferenceGraph {
         }
         if let Some(equality) = offset_equality(condition) {
             self.assume_condition(&equality, value);
-            return;
-        }
-        if value
-            && let ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } = condition
-            && self.alias_equality(condition, a, b)
-        {
             return;
         }
         if let Some((operation, domain, a, b, commutative)) = overflow_parts(condition) {
@@ -308,21 +281,44 @@ impl DifferenceGraph {
             }
             return;
         }
-        if !value
-            && let ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            }
-            | ConditionTerm::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } = condition
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::comparison_view(condition, value)
+            && matches!(
+                view.format,
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
+            )
+            && matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Equal
+                    | crate::kernel::machine_integer::Relation::NotEqual
+            )
         {
-            self.exclude(condition, a, b);
+            let [a, b] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            if view.relation == crate::kernel::machine_integer::Relation::NotEqual {
+                self.exclude_views(view.format, a, b);
+                return;
+            }
+            if view.format.format().bits() == 64 {
+                self.residues.assume_equal_views(a, b);
+            }
+            if self.alias_equality_views(view.format, a, b) {
+                return;
+            }
+            for &domain in equality_domains(view.format) {
+                if self.contradictory {
+                    return;
+                }
+                let a = self.affine_view(domain, a);
+                let b = self.affine_view(domain, b);
+                self.constrain(a, b, 0);
+                self.constrain(b, a, 0);
+            }
             return;
         }
         if let Some(view) =
@@ -357,22 +353,89 @@ impl DifferenceGraph {
         }
     }
 
+    fn exclude_views(&mut self, format: MachineIntegerType, a: V<'_>, b: V<'_>) {
+        if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
+            return self.exclude(format, a, b);
+        }
+        for &domain in equality_domains(format) {
+            let (term, value) = match (constant_view(domain, a), constant_view(domain, b)) {
+                (None, Some(value)) => (a, value),
+                (Some(value), None) => (b, value),
+                _ => continue,
+            };
+            let (Some(node), offset) = self.affine_view(domain, term) else {
+                continue;
+            };
+            charge();
+            let excluded = self.excluded.get(&node).cloned().unwrap_or_default();
+            self.excluded
+                .insert(node, excluded.with_value(value - offset));
+            self.tighten(node, None, None);
+        }
+    }
+
+    fn alias_equality_views(&mut self, format: MachineIntegerType, a: V<'_>, b: V<'_>) -> bool {
+        if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
+            return self.alias_equality(format, a, b);
+        }
+        let domains = equality_domains(format);
+        let fresh = |graph: &Self, term| {
+            domains.iter().all(|&domain| {
+                constant_view(domain, term).is_none()
+                    && link_parts_view(domain, term).is_none()
+                    && graph.lookup_operand(domain, term).is_none()
+                    && !graph.operand_affines.contains_key(&(
+                        domain,
+                        OperandKey::for_format(operand_views::format(domain), term),
+                    ))
+            })
+        };
+        let (new, existing) = if fresh(self, a) {
+            (a, b)
+        } else if fresh(self, b) {
+            (b, a)
+        } else {
+            return false;
+        };
+        let targets = domains
+            .iter()
+            .map(|&domain| (domain, self.affine_view(domain, existing)))
+            .collect::<Vec<_>>();
+        if targets
+            .iter()
+            .any(|(_, (node, offset))| node.is_none() || *offset != 0)
+        {
+            return false;
+        }
+        for (domain, (node, _)) in targets {
+            charge();
+            let node = node.expect("checked above");
+            if let Some(atom) = new.variable().copied().map(MachineTerm::Variable) {
+                self.nodes.insert((domain, atom.clone()), node);
+                self.index_operand_node(domain, &atom, node);
+            } else if let V::Legacy(term) = new {
+                self.nodes.insert((domain, term.clone()), node);
+                self.index_operand_node(domain, term, node);
+            } else {
+                self.has_shared_admissions = true;
+                self.invalidate_operand(domain, new);
+                self.operand_affines.insert(
+                    (
+                        domain,
+                        OperandKey::for_format(operand_views::format(domain), new),
+                    ),
+                    (Some(node), 0),
+                );
+            }
+        }
+        true
+    }
+
     /// Records `a != b` when one side is a constant and the other a node
     /// plus an offset: the node excludes one value, and its interval steps
     /// off that value if it is an end.
-    fn exclude(&mut self, condition: &ConditionTerm, a: &MachineTerm, b: &MachineTerm) {
-        let domains: &[Domain] = if matches!(
-            condition,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                ..
-            }
-        ) {
-            &[Domain::Int32]
-        } else {
-            &[Domain::Int64, Domain::UInt64]
-        };
+    fn exclude(&mut self, format: MachineIntegerType, a: &MachineTerm, b: &MachineTerm) {
+        let domains = equality_domains(format);
         for domain in domains {
             let (term, value) = match (constant(*domain, a), constant(*domain, b)) {
                 (None, Some(value)) => (a, value),
@@ -406,27 +469,17 @@ impl DifferenceGraph {
     /// sum or conversion whose own link it would lose.
     fn alias_equality(
         &mut self,
-        condition: &ConditionTerm,
+        format: MachineIntegerType,
         a: &MachineTerm,
         b: &MachineTerm,
     ) -> bool {
-        let domains: &[Domain] = if matches!(
-            condition,
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                ..
-            }
-        ) {
-            &[Domain::Int32]
-        } else {
-            &[Domain::Int64, Domain::UInt64]
-        };
+        let domains = equality_domains(format);
         let fresh = |graph: &Self, term: &MachineTerm| {
             domains.iter().all(|domain| {
                 constant(*domain, term).is_none()
                     && link_parts(*domain, term).is_none()
                     && !graph.nodes.contains_key(&(*domain, term.clone()))
+                    && graph.shared_coordinate_for_native(*domain, term).is_none()
             })
         };
         let (new, existing) = if fresh(self, a) {
@@ -891,6 +944,12 @@ impl DifferenceGraph {
     /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
     /// hanging an edge pair off it that every bound on `x` must walk.
     fn affine_view(&mut self, domain: Domain, term: V<'_>) -> Affine {
+        if let V::Legacy(written) = term
+            && !self.nodes.contains_key(&(domain, written.clone()))
+            && let Some(affine) = self.shared_coordinate_for_native(domain, written)
+        {
+            return affine;
+        }
         if matches!(term, V::Shared(_))
             && let Some(atom) = term
                 .literal()
@@ -977,6 +1036,25 @@ impl DifferenceGraph {
         }
     }
 
+    /// Both admission and lookup must reuse an existing shared coordinate.
+    /// Native-only graphs avoid importing a missing native query; mixed
+    /// graphs memoize the explicitly supplied arithmetic syntax once.
+    fn shared_coordinate_for_native(&self, domain: Domain, term: &MachineTerm) -> Option<Affine> {
+        if !self.has_shared_admissions {
+            return None;
+        }
+        let shared = crate::kernel::SharedMachineIntegerTerm::import_arithmetic(
+            operand_views::format(domain),
+            term,
+        )?;
+        self.operand_affines
+            .get(&(
+                domain,
+                OperandKey::for_format(operand_views::format(domain), shared.operand_view()),
+            ))
+            .copied()
+    }
+
     /// `term` as known nodes and constants, without adding to the graph.
     /// A term not in the graph resolves through a link its base's interval
     /// already justifies; otherwise `None`.
@@ -987,21 +1065,8 @@ impl DifferenceGraph {
         if let Some(node) = self.nodes.get(&(domain, term.clone())) {
             return Some((Some(*node), 0));
         }
-        // A shared source has no boxed key in `nodes`. Read its retained
-        // coordinate through the same typed syntax identity; importing this
-        // explicitly native query is memoized, and never exports a shared
-        // source. Keep native-only graphs on their existing lookup path.
-        if self.has_shared_admissions
-            && let Some(shared) = crate::kernel::SharedMachineIntegerTerm::import_arithmetic(
-                operand_views::format(domain),
-                term,
-            )
-            && let Some(affine) = self.operand_affines.get(&(
-                domain,
-                OperandKey::for_format(operand_views::format(domain), shared.operand_view()),
-            ))
-        {
-            return Some(*affine);
+        if let Some(affine) = self.shared_coordinate_for_native(domain, term) {
+            return Some(affine);
         }
         if let Some(base) = sign_flip_base(domain, term) {
             return self.known_flip(domain, self.resolve(domain, base)?);
@@ -1098,6 +1163,41 @@ impl DifferenceGraph {
         by_path.map_or(by_intervals, |path| path.min(by_intervals))
     }
 
+    fn decide_native_wide_equality(&self, a: &MachineTerm, b: &MachineTerm) -> Option<bool> {
+        let domains = &[Domain::Int64, Domain::UInt64];
+        for domain in domains {
+            if let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b)) {
+                match (a, b) {
+                    ((Some(node), offset), (None, value))
+                    | ((None, value), (Some(node), offset))
+                        if self.excludes(node, value - offset) =>
+                    {
+                        return Some(false);
+                    }
+                    _ => {}
+                }
+                let ab = self.difference_bound(a, b);
+                let ba = self.difference_bound(b, a);
+                if ab <= 0 && ba <= 0 {
+                    return Some(true);
+                }
+                if ab < 0 || ba < 0 {
+                    return Some(false);
+                }
+            }
+            // A side the graph has no node for is compared by interval.
+            let (a_low, a_high) = self.term_interval(*domain, a);
+            let (b_low, b_high) = self.term_interval(*domain, b);
+            if a_low == a_high && (a_low, a_high) == (b_low, b_high) {
+                return Some(true);
+            }
+            if a_high < b_low || b_high < a_low {
+                return Some(false);
+            }
+        }
+        self.residues.decide_equal_views(V::Legacy(a), V::Legacy(b))
+    }
+
     /// What the inserted facts decide about `condition`: its truth value,
     /// or `None` when difference logic leaves it open or the facts are
     /// contradictory.
@@ -1128,7 +1228,10 @@ impl DifferenceGraph {
             crate::kernel::machine_integer::comparison::comparison_view(condition, true)
             && matches!(
                 view.format,
-                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
             )
             && matches!(
                 view.relation,
@@ -1136,7 +1239,8 @@ impl DifferenceGraph {
                     | crate::kernel::machine_integer::Relation::NotEqual
             )
         {
-            let value = self.decide_word_equality_views(
+            let value = self.decide_equality_views(
+                view.format,
                 view.operands[0].operand_view(),
                 view.operands[1].operand_view(),
             )?;
@@ -1307,55 +1411,6 @@ impl DifferenceGraph {
             let no_pair = a_low > domain.range().0 || b_low > -1 || b_high < -1 || excludes(-1);
             let nonzero = b_low > 0 || b_high < 0 || excludes(0);
             return (no_pair && (!int64 || nonzero)).then_some(false);
-        }
-        if let C::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left: a,
-            right: b,
-        } = condition
-        {
-            let domains = &[Domain::Int64, Domain::UInt64];
-            for domain in domains {
-                if let (Some(a), Some(b)) = (self.resolve(*domain, a), self.resolve(*domain, b)) {
-                    match (a, b) {
-                        ((Some(node), offset), (None, value))
-                        | ((None, value), (Some(node), offset))
-                            if self.excludes(node, value - offset) =>
-                        {
-                            return Some(false);
-                        }
-                        _ => {}
-                    }
-                    let ab = self.difference_bound(a, b);
-                    let ba = self.difference_bound(b, a);
-                    if ab <= 0 && ba <= 0 {
-                        return Some(true);
-                    }
-                    if ab < 0 || ba < 0 {
-                        return Some(false);
-                    }
-                }
-                // A side the graph has no node for is compared by interval.
-                let (a_low, a_high) = self.term_interval(*domain, a);
-                let (b_low, b_high) = self.term_interval(*domain, b);
-                if a_low == a_high && (a_low, a_high) == (b_low, b_high) {
-                    return Some(true);
-                }
-                if a_high < b_low || b_high < a_low {
-                    return Some(false);
-                }
-            }
-            if let C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::Equal,
-                left: a,
-                right: b,
-            } = condition
-            {
-                return self.residues.decide_equal(a, b);
-            }
-            return None;
         }
         let [(domain, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
             return None;
@@ -1985,6 +2040,14 @@ impl ContextDifferenceGraph {
     }
 }
 
+fn equality_domains(format: MachineIntegerType) -> &'static [Domain] {
+    if format.format().bits() == 32 {
+        &[Domain::Int32]
+    } else {
+        &[Domain::Int64, Domain::UInt64]
+    }
+}
+
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
@@ -1999,6 +2062,8 @@ fn expresses(condition: &ConditionTerm) -> bool {
                     view.relation,
                     crate::kernel::machine_integer::Relation::Less
                         | crate::kernel::machine_integer::Relation::LessEqual
+                        | crate::kernel::machine_integer::Relation::Equal
+                        | crate::kernel::machine_integer::Relation::NotEqual
                 )
         },
     ) {
@@ -2378,9 +2443,11 @@ fn offset_mismatch(
 /// not: an 8-aligned `addr` gives `(addr + 1) & 3 == 1`.
 #[derive(Clone, Debug, Default)]
 struct Residues {
-    known: PersistentMap<MachineTerm, Residue>,
+    known: PersistentMap<OperandKey, Residue>,
+    native_keys: PersistentMap<MachineTerm, OperandKey>,
+    has_shared_sources: bool,
     /// The terms each term was stated equal to, at most `EDGE_LIMIT` each.
-    equal_to: PersistentMap<MachineTerm, crate::persistent::PersistentSet<MachineTerm>>,
+    equal_to: PersistentMap<OperandKey, crate::persistent::PersistentSet<OperandKey>>,
 }
 
 /// `value mod 2^bits`, with `bits == 64` the exact value.
@@ -2423,54 +2490,83 @@ fn low_mask(bits: u32) -> u64 {
     }
 }
 
-/// A 64-bit constant's bits.
-fn constant64(term: &MachineTerm) -> Option<u64> {
-    match term {
-        uint64_constant!(value) => Some(constant_u64(*value)),
-        int64_constant!(value) => Some(constant_i64(*value) as u64),
-        _ => None,
-    }
-}
-
 impl Residues {
     /// How far a residue follows stated equalities and term structure.
     const DEPTH: u32 = 6;
 
-    fn assume_equal(&mut self, a: &MachineTerm, b: &MachineTerm) {
+    fn admission_key(&mut self, term: V<'_>) -> OperandKey {
+        let key = if let V::Legacy(written) = term {
+            if let Some(key) = self.native_keys.get(written) {
+                return key.clone();
+            }
+            let key = crate::kernel::SharedMachineIntegerTerm::import_arithmetic(
+                MachineIntegerType::Int64,
+                written,
+            )
+            .map(|shared| OperandKey::for_format(MachineIntegerType::Int64, shared.operand_view()))
+            .unwrap_or_else(|| OperandKey::Written(written.clone()));
+            self.native_keys.insert(written.clone(), key.clone());
+            key
+        } else {
+            self.has_shared_sources = true;
+            OperandKey::for_format(MachineIntegerType::Int64, term)
+        };
+        key
+    }
+
+    fn query_key(&self, term: V<'_>) -> OperandKey {
+        if let V::Legacy(written) = term {
+            if let Some(key) = self.native_keys.get(written) {
+                return key.clone();
+            }
+            if self.has_shared_sources
+                && let Some(shared) = crate::kernel::SharedMachineIntegerTerm::import_arithmetic(
+                    MachineIntegerType::Int64,
+                    written,
+                )
+            {
+                return OperandKey::for_format(MachineIntegerType::Int64, shared.operand_view());
+            }
+            return OperandKey::Written(written.clone());
+        }
+        OperandKey::for_format(MachineIntegerType::Int64, term)
+    }
+
+    fn constant(term: V<'_>) -> Option<u64> {
+        term.int64_constant()
+            .map(|value| value as u64)
+            .or_else(|| term.uint64_constant())
+    }
+
+    fn assume_equal_views(&mut self, a: V<'_>, b: V<'_>) {
         charge();
         for (side, other) in [(a, b), (b, a)] {
-            // `x & (2^k - 1) == c` gives `x ≡ c (mod 2^k)`.
-            if let MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::BitwiseAnd,
-                left: x,
-                right: mask,
-            }
-            | MachineTerm::Binary {
-                format: MachineIntegerType::Int64,
-                op: MachineBinaryOp::BitwiseAnd,
-                left: x,
-                right: mask,
-            } = side
-                && let (Some(mask), Some(c)) = (constant64(mask), constant64(other))
+            if let Some((
+                MachineIntegerType::Int64 | MachineIntegerType::UInt64,
+                MachineBinaryOp::BitwiseAnd,
+                [x, mask],
+            )) = side.binary()
+                && let (Some(mask), Some(c)) = (Self::constant(mask), Self::constant(other))
                 && mask != 0
                 && mask & mask.wrapping_add(1) == 0
                 && c & !mask == 0
             {
-                let bits = 64 - mask.leading_zeros();
-                self.known.insert(x.as_ref().clone(), Residue::new(bits, c));
+                let key = self.admission_key(x);
+                self.known
+                    .insert(key, Residue::new(64 - mask.leading_zeros(), c));
             }
-            if constant64(side).is_none() {
-                let set = self.equal_to.get(side).cloned().unwrap_or_default();
+            if Self::constant(side).is_none() {
+                let key = self.admission_key(side);
+                let set = self.equal_to.get(&key).cloned().unwrap_or_default();
                 if set.len() < EDGE_LIMIT {
-                    self.equal_to
-                        .insert(side.clone(), set.with_value(other.clone()));
+                    let other = self.admission_key(other);
+                    self.equal_to.insert(key, set.with_value(other));
                 }
             }
         }
     }
 
-    fn decide_equal(&self, a: &MachineTerm, b: &MachineTerm) -> Option<bool> {
+    fn decide_equal_views(&self, a: V<'_>, b: V<'_>) -> Option<bool> {
         let (a, b) = (self.residue(a, Self::DEPTH)?, self.residue(b, Self::DEPTH)?);
         let bits = a.bits.min(b.bits);
         if (a.value ^ b.value) & low_mask(bits) != 0 {
@@ -2479,84 +2575,68 @@ impl Residues {
         (a.bits == 64 && b.bits == 64).then_some(true)
     }
 
-    fn residue(&self, term: &MachineTerm, depth: u32) -> Option<Residue> {
-        use MachineTerm as T;
+    fn residue(&self, term: V<'_>, depth: u32) -> Option<Residue> {
         charge();
-        if let Some(value) = constant64(term) {
+        if let Some(value) = Self::constant(term) {
             return Some(Residue::exact(value));
         }
-        let mut best = self.known.get(term).copied();
+        let key = self.query_key(term);
+        let mut best = self.known.get(&key).copied();
         if depth == 0 {
             return best;
         }
-        if let Some(equal) = self.equal_to.get(term) {
+        if let Some(equal) = self.equal_to.get(&key) {
             for other in equal.iter().take(EDGE_LIMIT) {
-                best = Residue::better(best, self.residue(other, depth - 1));
+                best = Residue::better(best, self.residue(other.operand_view(), depth - 1));
             }
         }
-        let structural = match term {
-            T::Binary {
-                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Add,
-                left: a,
-                right: b,
-            } => self
-                .residue(a, depth - 1)
-                .zip(self.residue(b, depth - 1))
-                .map(|(a, b)| a.combine(b, u64::wrapping_add)),
-            T::Binary {
-                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Subtract,
-                left: a,
-                right: b,
-            } => self
-                .residue(a, depth - 1)
-                .zip(self.residue(b, depth - 1))
-                .map(|(a, b)| a.combine(b, u64::wrapping_sub)),
-            T::Binary {
-                format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                op:
+        let structural =
+            if let Some((MachineIntegerType::Int64 | MachineIntegerType::UInt64, op, [a, b])) =
+                term.binary()
+            {
+                match op {
+                    MachineBinaryOp::Add => self
+                        .residue(a, depth - 1)
+                        .zip(self.residue(b, depth - 1))
+                        .map(|(a, b)| a.combine(b, u64::wrapping_add)),
+                    MachineBinaryOp::Subtract => self
+                        .residue(a, depth - 1)
+                        .zip(self.residue(b, depth - 1))
+                        .map(|(a, b)| a.combine(b, u64::wrapping_sub)),
                     MachineBinaryOp::BitwiseAnd
                     | MachineBinaryOp::BitwiseOr
-                    | MachineBinaryOp::BitwiseXor,
-                left: a,
-                right: b,
-            } => {
-                let (operand, c) = match (constant64(a), constant64(b)) {
-                    (_, Some(c)) => (a.as_ref(), c),
-                    (Some(c), _) => (b.as_ref(), c),
-                    _ => return best,
-                };
-                let x = self.residue(operand, depth - 1);
-                match term {
-                    T::Binary {
-                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                        op: MachineBinaryOp::BitwiseAnd,
-                        ..
-                    } => {
-                        // A mask within the known bits gives the exact
-                        // value; a mask with zero low bits clears them.
-                        let cleared = Residue::new(c.trailing_zeros(), 0);
-                        let known = x.map(|x| {
-                            if c & !low_mask(x.bits) == 0 {
-                                Residue::exact(x.value & c)
-                            } else {
-                                Residue::new(x.bits, x.value & c)
+                    | MachineBinaryOp::BitwiseXor => {
+                        let (operand, c) = match (Self::constant(a), Self::constant(b)) {
+                            (_, Some(c)) => (a, c),
+                            (Some(c), _) => (b, c),
+                            _ => return best,
+                        };
+                        let x = self.residue(operand, depth - 1);
+                        match op {
+                            MachineBinaryOp::BitwiseAnd => {
+                                let cleared = Residue::new(c.trailing_zeros(), 0);
+                                let known = x.map(|x| {
+                                    if c & !low_mask(x.bits) == 0 {
+                                        Residue::exact(x.value & c)
+                                    } else {
+                                        Residue::new(x.bits, x.value & c)
+                                    }
+                                });
+                                Residue::better(known, (cleared.bits > 0).then_some(cleared))
                             }
-                        });
-                        Residue::better(known, (cleared.bits > 0).then_some(cleared))
+                            MachineBinaryOp::BitwiseOr => {
+                                x.map(|x| Residue::new(x.bits, x.value | c))
+                            }
+                            _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
+                        }
                     }
-                    T::Binary {
-                        format: MachineIntegerType::Int64 | MachineIntegerType::UInt64,
-                        op: MachineBinaryOp::BitwiseOr,
-                        ..
-                    } => x.map(|x| Residue::new(x.bits, x.value | c)),
-                    _ => x.map(|x| Residue::new(x.bits, x.value ^ c)),
+                    _ => None,
                 }
-            }
-            T::PointerAddress(pointer, _) => self.address_residue(pointer, depth - 1),
-            _ => None,
-        };
+            } else if let V::Legacy(MachineTerm::PointerAddress(pointer, _)) = term {
+                self.address_residue(pointer, depth - 1)
+            } else {
+                None
+            };
         Residue::better(best, structural)
     }
 
@@ -2577,7 +2657,7 @@ impl Residues {
                 crate::kernel::AddressObjectClass::NONE,
             );
             let found = self
-                .residue(&base, depth)
+                .residue(V::Legacy(&base), depth)
                 .zip(offset_residue(offset))
                 .map(|(a, b)| a.combine(b, u64::wrapping_add));
             best = Residue::better(best, found);
