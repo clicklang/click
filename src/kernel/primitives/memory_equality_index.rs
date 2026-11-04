@@ -1186,19 +1186,25 @@ impl MemoryFactEntries {
             // spellings or a block's holdings. Coverage still checks authority.
             streams.push(Box::new(
                 self.assumptions
-                    .signed_order_bound_entries(bound_start)
+                    .signed_order_bound_views(crate::kernel::MachineOperandView::Legacy(
+                        bound_start,
+                    ))
                     .filter_map(move |(endpoint, lower, strict, forward)| {
                         crate::instrumentation::record_deterministic_work(1);
-                        if forward || !graph.are_int32_equal(&endpoint, bound_start) {
+                        if forward
+                            || !graph.are_int32_equal_views(
+                                endpoint,
+                                crate::kernel::MachineOperandView::Legacy(bound_start),
+                            )
+                        {
                             return None;
                         }
-                        let lower = if strict {
-                            MachineTerm::add(lower, 1u32.into())
-                        } else {
-                            lower
-                        };
-                        let pointer = bound_base.offset_by_elements(lower, range.element_width());
-                        let class = graph.address_class(&pointer)?;
+                        let class = graph.indexed_address_class(
+                            bound_base,
+                            lower,
+                            strict,
+                            range.element_width(),
+                        )?;
                         let bucket = index.points.classes.get(&class)?;
                         let suppliers = if !bucket.owners.is_empty() {
                             &bucket.owners
@@ -2379,6 +2385,81 @@ impl ResourceContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_order_bounds_select_native_memory_suppliers_without_export() {
+        use crate::kernel::{
+            IntegerTerm, KernelTermExport, KernelTermImport, MachineIntegerType,
+            SharedMachineIntegerTerm,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let lower = MachineTerm::add(
+            MachineTerm::Variable(Variable(991421)),
+            MachineTerm::Variable(Variable(991422)),
+        );
+        let cursor = MachineTerm::Variable(Variable(991423));
+        let end = MachineTerm::Variable(Variable(991424));
+        let observe = |value: &MachineTerm| {
+            IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(
+                    ty,
+                    KernelTermImport::default()
+                        .machine_arithmetic(ty, value)
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        for strict in [false, true] {
+            let condition = if strict {
+                ConditionTerm::integer_less_than(observe(&lower), observe(&cursor))
+            } else {
+                ConditionTerm::integer_less_equal(observe(&lower), observe(&cursor))
+            };
+            let facts = PureFactContext::new().assume_condition(condition, true);
+            let base = Pointer::symbolic(Variable(991425));
+            let start = if strict {
+                MachineTerm::add(lower.clone(), 1u32.into())
+            } else {
+                lower.clone()
+            };
+            let owned = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                base.clone(),
+                start,
+                end.clone(),
+                4,
+            ));
+            let resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(owned.clone());
+            resources.synchronize_memory_equalities(&facts);
+            let query = CMemoryRange::new_with_element_width(
+                base,
+                cursor.clone(),
+                MachineTerm::add(cursor.clone(), 1u32.into()),
+                4,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let without_bound =
+                resources.memory_fact_candidates(&query, true, &PureFactContext::new());
+            assert!(
+                !without_bound.entries.iter().any(|entry| without_bound
+                    .index
+                    .resources
+                    .facts
+                    .get(&entry)
+                    == Some(&owned))
+            );
+            let candidates = resources.memory_fact_candidates(&query, true, &facts);
+            assert!(
+                candidates
+                    .entries
+                    .iter()
+                    .any(|entry| candidates.index.resources.facts.get(&entry) == Some(&owned))
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     #[test]
     fn kept_field_uses_checked_constant_coordinates_and_full_width() {

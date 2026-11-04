@@ -12,7 +12,9 @@
 //! projection retains word-constructor folding identities via indexed nodes.
 //! Shallow keys preserve widths, signedness, and machine-term snapshot identity.
 
-use super::{AffineOffset, MachineAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable};
+use super::{
+    AffineOffset, MachineAtom, OffsetAtom, Pointer, PointerBlock, PointerOffsetTerm, Variable,
+};
 use crate::kernel::unary_node;
 use crate::kernel::unary_term;
 use crate::kernel::{MachineBinaryOp, MachineIntegerType};
@@ -1040,6 +1042,89 @@ impl TermClasses {
         self.nodes.len()
     }
 
+    /// A selected bound can name an address without constructing a pointer
+    /// spelling. This query registers definitions only; it supplies no storage
+    /// witness. Each query joins the current block representative, while owned
+    /// native addresses retain the existing late-merge registration machinery.
+    pub(super) fn index_address_query(
+        &mut self,
+        base: &Pointer,
+        index: &crate::kernel::KernelTerm,
+        width: u32,
+        representative: PointerBlock,
+        delta: &AffineOffset,
+    ) -> u64 {
+        use crate::kernel::MachineOperandView as V;
+        let base_address = self.address(base.block.clone(), base.offset.clone()).0;
+        let base_offset = self.intern(&base.offset);
+        let index_class = self.shared_int32_class(index);
+        let displacement = self.intern_node(Node::Int32Scaled(index_class, i64::from(width)));
+        let zero_base = base.offset == PointerOffsetTerm::Constant(0);
+        let raw = if zero_base {
+            displacement
+        } else {
+            self.intern_node(Node::Add(base_offset, displacement))
+        };
+        let affine = AffineOffset::of(&base.offset).and_then(|mut affine| {
+            affine.add_atom(
+                OffsetAtom::Int32(MachineAtom::from_operand(
+                    MachineIntegerType::Int32,
+                    V::Shared(index),
+                )),
+                i128::from(width),
+            )?;
+            Some(affine)
+        });
+        let normalized = affine
+            .as_ref()
+            .and_then(|a| self.intern_affine_offset(a))
+            .unwrap_or(raw);
+        self.register_pending_loads();
+        self.close_with_affine_definition(vec![(raw, normalized)], true);
+        let block = *self
+            .load_blocks
+            .get(&base.block)
+            .expect("registered base block");
+        let address = self.intern_node(Node::Address(block, normalized));
+        if let Some(bytes) = self
+            .scalar_leaf_of_class(index_class)
+            .and_then(|value| value.as_const())
+            .map(|value| i64::from(value as i32) * i64::from(width))
+            && bytes != 0
+        {
+            let shifted = self.intern_node(Node::AddressShift(base_address, bytes));
+            self.close_with_affine_definition(vec![(address, shifted)], true);
+        }
+
+        if !zero_base
+            && self
+                .pointer_value_witnesses
+                .contains_key(&self.root(base_address))
+        {
+            let shifted = self.intern_node(Node::AddressOffset(base_address, displacement));
+            self.close_with_affine_definition(vec![(address, shifted)], true);
+        }
+        if representative != base.block
+            && let Some(delta_node) = self.intern_affine_offset(delta)
+        {
+            self.address(representative.clone(), PointerOffsetTerm::Constant(0));
+            let translated = self.intern_node(Node::Add(raw, delta_node));
+            let normalized = affine
+                .as_ref()
+                .and_then(|a| a.checked_add(delta))
+                .and_then(|a| self.intern_affine_offset(&a))
+                .unwrap_or(translated);
+            self.close_with_affine_definition(vec![(translated, normalized)], true);
+            let block = *self
+                .load_blocks
+                .get(&representative)
+                .expect("registered representative");
+            let canonical = self.intern_node(Node::Address(block, normalized));
+            self.add_address_equality(address, canonical);
+        }
+        self.root(address)
+    }
+
     fn address_without_shift(
         &mut self,
         block: PointerBlock,
@@ -1055,8 +1140,9 @@ impl TermClasses {
             self.register_pending_loads();
             return (id, false, raw);
         }
-        let normalized = AffineOffset::of(&offset).and_then(|value| value.to_offset_term());
-        let operand = normalized.as_ref().map_or(raw, |term| self.intern(term));
+        let operand = AffineOffset::of(&offset)
+            .and_then(|value| self.intern_affine_offset(&value))
+            .unwrap_or(raw);
         self.register_pending_loads();
         self.close_with_affine_definition(vec![(raw, operand)], true);
         let next_block = self.load_blocks.len() as u64;
@@ -1462,6 +1548,49 @@ impl TermClasses {
                 map.insert(kept, kept_set);
             }
         }
+    }
+
+    /// Register the mathematical offset directly. Internal normalization uses
+    /// retained atom identities; structural spelling order belongs to output.
+    /// Keep the same representable coefficient domain as `to_offset_term`.
+    fn intern_affine_offset(&mut self, offset: &AffineOffset) -> Option<u64> {
+        use crate::kernel::MachineOperandView as V;
+        let constant = i64::try_from(offset.constant).ok()?;
+        let mut result = self.intern_node(Node::Constant(constant));
+        let mut empty = constant == 0;
+        for (atom, coefficient) in &offset.terms {
+            crate::instrumentation::record_deterministic_work(1);
+            let coefficient = i64::try_from(*coefficient).ok()?;
+            let node =
+                match atom {
+                    OffsetAtom::Variable(variable) if coefficient == 1 => Node::Variable(*variable),
+                    OffsetAtom::Variable(_) => return None,
+                    OffsetAtom::Int32(value) => {
+                        let value = match value.operand_view() {
+                            V::Legacy(term) => self.intern_int32(term),
+                            V::Shared(root) => self
+                                .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits32),
+                        };
+                        Node::Int32Scaled(value, coefficient)
+                    }
+                    OffsetAtom::Int64 { value, unsigned } => {
+                        let value = match value.operand_view() {
+                            V::Legacy(term) => self.intern_uint64(term),
+                            V::Shared(root) => self
+                                .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits64),
+                        };
+                        Node::Int64Scaled(value, coefficient, *unsigned)
+                    }
+                };
+            let addend = self.intern_node(node);
+            result = if empty {
+                addend
+            } else {
+                self.intern_node(Node::Add(result, addend))
+            };
+            empty = false;
+        }
+        Some(result)
     }
 
     fn intern(&mut self, term: &PointerOffsetTerm) -> u64 {
@@ -3229,6 +3358,37 @@ mod tests {
     fn add(left: PointerOffsetTerm, right: PointerOffsetTerm) -> PointerOffsetTerm {
         // Preserve nested applications rather than folding constants here.
         PointerOffsetTerm::Add(Box::new(left), Box::new(right))
+    }
+
+    #[test]
+    fn affine_registration_retains_shared_machine_atoms() {
+        use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let native = MachineTerm::add(
+            MachineTerm::Variable(Variable(991301)),
+            MachineTerm::Variable(Variable(991302)),
+        );
+        let root = KernelTermImport::default()
+            .machine_arithmetic(format, &native)
+            .unwrap();
+        let mut affine = AffineOffset::constant(12);
+        affine
+            .add_atom(
+                OffsetAtom::Int32(MachineAtom::from_operand(format, V::Shared(&root))),
+                4,
+            )
+            .unwrap();
+        let written = PointerOffsetTerm::add(
+            PointerOffsetTerm::Constant(12),
+            PointerOffsetTerm::scale_int32(native, 4),
+        );
+        let mut terms = TermClasses::default();
+        let exports = KernelTermExport::machine_export_count();
+        let shared = terms.intern_affine_offset(&affine).unwrap();
+        let native = terms.intern(&written);
+        assert_eq!(terms.root(shared), terms.root(native));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     #[test]
