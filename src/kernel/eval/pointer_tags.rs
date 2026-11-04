@@ -163,6 +163,16 @@ impl PureFactContext {
                 return Some(decided);
             }
         }
+        // Shared mask equalities retain the same bound evidence as the
+        // native pointer-word route above.
+        if used.depth < MAX_CITING_DEPTH {
+            used.depth += 1;
+            let decided = self.decide_shared_mask_zero(condition, used);
+            used.depth -= 1;
+            if let Some(value) = decided {
+                return Some(value);
+            }
+        }
         let decided = if used.fast_only {
             self.fast_leaf_decision(condition, &[])
         } else {

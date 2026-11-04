@@ -1787,35 +1787,57 @@ impl PureFactContext {
                     return self
                         .decide_citing(&ConditionTerm::uint64_equal(left.clone(), tag), used);
                 }
-                self.decide_masked_zero(left, right, used)
+                self.decide_masked_zero(
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                    used,
+                )
             }
         }
     }
 
-    /// `(x & m) == 0` holds when `x` is below the lowest set bit of `m`.
-    fn decide_masked_zero(
+    /// The Integer observation of a wide equality, with its original
+    /// polarity. Native pointer-word queries keep their existing rule order.
+    pub(in crate::kernel) fn decide_shared_mask_zero(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        condition: &ConditionTerm,
         used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
     ) -> Option<bool> {
-        let masked = if right.uint64_as_const() == Some(0) {
+        use crate::kernel::machine_integer::{Relation, comparison::native_comparison_view};
+        let view = native_comparison_view(condition, true)?;
+        if view.format.format().bits() != 64
+            || !matches!(view.relation, Relation::Equal | Relation::NotEqual)
+        {
+            return None;
+        }
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        self.decide_masked_zero(left, right, used)
+            .map(|value| value == (view.relation == Relation::Equal))
+    }
+
+    /// `(x & m) == 0` holds when `x` is below the lowest set bit of `m`.
+    pub(in crate::kernel) fn decide_masked_zero(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
+    ) -> Option<bool> {
+        let masked = if right.uint64_constant() == Some(0) {
             left
-        } else if left.uint64_as_const() == Some(0) {
+        } else if left.uint64_constant() == Some(0) {
             right
         } else {
             return None;
         };
-        let MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::BitwiseAnd,
-            left: first,
-            right: second,
-        } = masked
+        let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [first, second]) =
+            masked.binary()?
         else {
             return None;
         };
-        let (value, mask) = match (first.uint64_as_const(), second.uint64_as_const()) {
+        let (value, mask) = match (first.uint64_constant(), second.uint64_constant()) {
             (None, Some(mask)) => (first, mask),
             (Some(mask), None) => (second, mask),
             _ => return None,
@@ -1823,15 +1845,13 @@ impl PureFactContext {
         if mask == 0 {
             return Some(true);
         }
-        let bound = 1u64.checked_shl(mask.trailing_zeros())?;
-        (self.decide_citing(
-            &ConditionTerm::uint64_less_than(
-                value.as_ref().clone(),
-                MachineTerm::uint64_constant(bound),
-            ),
-            used,
-        ) == Some(true))
-        .then_some(true)
+        let bound = MachineTerm::uint64_constant(1u64.checked_shl(mask.trailing_zeros())?);
+        let guard = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessThan,
+            [value, MachineOperandView::Legacy(&bound)],
+        );
+        (self.decide_citing(&guard, used) == Some(true)).then_some(true)
     }
 }
 

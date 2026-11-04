@@ -247,6 +247,11 @@ Remaining groups to audit and migrate:
   equivalent cast nodes must not grow until they exhaust the bounded graph
   walk. The higher-level wide dispatcher still needs migration; these graph
   changes do not complete that consumer.
+  The masked-zero equality rule now reads retained 64-bit operands and keeps
+  its bound as cited evidence. Native and shared inputs use the same rule;
+  absent or refuted bounds remain unknown. Pointer-address/tag forms, their
+  indexed equation lookups, and general wide simplification still need migration
+  before removing the wide-equality compatibility bridge.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;
