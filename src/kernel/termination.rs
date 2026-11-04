@@ -5498,6 +5498,7 @@ mod ranking_member_tests {
         let error = collect_loop_ranking_obligations(
             &state,
             &state,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5521,6 +5522,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5582,6 +5584,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5635,6 +5638,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5696,6 +5700,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5751,6 +5756,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5807,6 +5813,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &back_edge,
             &entry,
+            None,
             &measures,
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5844,6 +5851,7 @@ mod ranking_member_tests {
         collect_loop_ranking_obligations(
             back_edge,
             entry,
+            None,
             &[CRankingComponent::CExpression(measure)],
             &PureFactContext::default(),
             &mut ExecutionBudget::default(),
@@ -5993,6 +6001,7 @@ mod ranking_member_tests {
         let obligations = collect_loop_ranking_obligations(
             &state,
             &state,
+            None,
             &[CRankingComponent::Pure {
                 source: "x".to_string(),
                 expression: SpecExpression::Value(CValue::UInt32(value.clone())),

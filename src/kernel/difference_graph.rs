@@ -89,6 +89,7 @@ struct PendingLink {
 
 #[derive(Clone, Default)]
 pub(crate) struct DifferenceGraph {
+    shared_queries: operand_views::cache::SharedQueryCache,
     nodes: PersistentMap<(Domain, Bitvector32Term), NodeId>,
     operand_nodes: PersistentMap<
         (
@@ -185,6 +186,15 @@ impl DifferenceGraph {
     /// bounds `node >= lo(s) - w`. With no truncated push it is the stored
     /// interval.
     fn read_interval(&self, node: NodeId) -> (i128, i128) {
+        self.read_interval_observed(node, |_| {})
+    }
+
+    fn read_interval_observed(
+        &self,
+        node: NodeId,
+        mut observe: impl FnMut(NodeId),
+    ) -> (i128, i128) {
+        observe(node);
         let (mut low, mut high) = self.interval(node);
         if self.truncated.is_empty() {
             return (low, high);
@@ -192,6 +202,7 @@ impl DifferenceGraph {
         if let Some(edges) = self.in_edges.get(&node) {
             for (previous, weight) in edges.iter().take(EDGE_LIMIT) {
                 charge();
+                observe(*previous);
                 if self.truncated.contains(previous) {
                     high = high.min(self.interval(*previous).1.saturating_add(*weight));
                 }
@@ -200,6 +211,7 @@ impl DifferenceGraph {
         if let Some(edges) = self.out_edges.get(&node) {
             for (next, weight) in edges.iter().take(EDGE_LIMIT) {
                 charge();
+                observe(*next);
                 if self.truncated.contains(next) {
                     low = low.max(self.interval(*next).0.saturating_sub(*weight));
                 }
@@ -449,6 +461,10 @@ impl DifferenceGraph {
             self.contradictory = true;
             return;
         }
+        self.shared_queries
+            .invalidate(operand_views::cache::Read::Node(from));
+        self.shared_queries
+            .invalidate(operand_views::cache::Read::Node(to));
         let out = self.out_edges.get(&from).cloned().unwrap_or_default();
         self.out_edges.insert(from, out.with_inserted(to, weight));
         let incoming = self.in_edges.get(&to).cloned().unwrap_or_default();
@@ -494,10 +510,16 @@ impl DifferenceGraph {
                 return;
             }
             self.bounds.insert(node, (new_low, new_high));
+            self.shared_queries
+                .invalidate(operand_views::cache::Read::Node(node));
             if new_high < old_high
                 && let Some(edges) = self.out_edges.get(&node)
             {
                 if edges.len() > budget {
+                    if self.truncated.is_empty() {
+                        self.shared_queries
+                            .invalidate(operand_views::cache::Read::Truncation);
+                    }
                     self.truncated = self.truncated.with_value(node);
                 }
                 for (next, weight) in edges.iter().take(budget) {
@@ -509,6 +531,10 @@ impl DifferenceGraph {
                 && let Some(edges) = self.in_edges.get(&node)
             {
                 if edges.len() > budget {
+                    if self.truncated.is_empty() {
+                        self.shared_queries
+                            .invalidate(operand_views::cache::Read::Truncation);
+                    }
                     self.truncated = self.truncated.with_value(node);
                 }
                 for (previous, weight) in edges.iter().take(budget) {
@@ -666,12 +692,21 @@ impl DifferenceGraph {
     /// negative cycles it could see, and the limit ends the relaxation in
     /// any case.
     fn shortest_from(&self, source: NodeId) -> std::collections::BTreeMap<NodeId, i128> {
+        self.shortest_from_observed(source, |_| {})
+    }
+
+    fn shortest_from_observed(
+        &self,
+        source: NodeId,
+        mut observe: impl FnMut(NodeId),
+    ) -> std::collections::BTreeMap<NodeId, i128> {
         let mut distance = std::collections::BTreeMap::from([(source, 0i128)]);
         // First in, first out: with negative weights a stack can revisit a
         // node exponentially often; a queue relaxes in rounds.
         let mut work = std::collections::VecDeque::from([source]);
         let mut budget = EDGE_LIMIT;
         while let Some(node) = work.pop_front() {
+            observe(node);
             let Some(edges) = self.out_edges.get(&node) else {
                 continue;
             };
@@ -881,11 +916,19 @@ impl DifferenceGraph {
 
     /// `x ^ MIN` for `x` at `base`, when `x`'s sign is known.
     fn known_flip(&self, domain: Domain, base: Affine) -> Option<Affine> {
+        Self::flip_reading(domain, base, |base| self.affine_interval(base))
+    }
+
+    fn flip_reading(
+        domain: Domain,
+        base: Affine,
+        interval: impl FnOnce(Affine) -> (i128, i128),
+    ) -> Option<Affine> {
         let min = domain.range().0;
         match base {
             (None, value) => Some((None, flip_sign(domain, value))),
             (Some(_), _) => {
-                let (low, high) = self.affine_interval(base);
+                let (low, high) = interval(base);
                 if low >= 0 {
                     Some((base.0, base.1 + min))
                 } else if high < 0 {
@@ -901,10 +944,17 @@ impl DifferenceGraph {
     /// `signed`, when its sign is known: the same value when it is
     /// non-negative, `2^32` more when it is negative.
     fn known_reading(&self, signed: Affine) -> Option<Affine> {
+        Self::unsigned_reading(signed, |signed| self.affine_interval(signed))
+    }
+
+    fn unsigned_reading(
+        signed: Affine,
+        interval: impl FnOnce(Affine) -> (i128, i128),
+    ) -> Option<Affine> {
         match signed {
             (None, value) => Some((None, value.rem_euclid(UNSIGNED32_MODULUS))),
             (Some(_), _) => {
-                let (low, high) = self.affine_interval(signed);
+                let (low, high) = interval(signed);
                 if low >= 0 {
                     Some(signed)
                 } else if high < 0 {

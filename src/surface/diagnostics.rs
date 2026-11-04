@@ -6776,6 +6776,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 field,
             ),
         },
+        ContractExpression::CBinding(name) if rust_spelling() => format!("rust({name})"),
         ContractExpression::CBinding(name) => format!("c({name})"),
         ContractExpression::ResourceWildcard => "_".to_string(),
         ContractExpression::ResourceCount(resource) => {

@@ -8094,6 +8094,7 @@ impl Parser {
             && self.peek_ident() != Some("old")
             && self.peek_ident() != Some("at")
             && self.peek_ident() != Some("c")
+            && self.peek_ident() != Some("rust")
             && !(self.peek_ident() == Some("count")
                 && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
                 && self.tokens.get(self.position + 3) == Some(&Token::LParen))
@@ -9779,21 +9780,15 @@ impl Parser {
             // The loop's pass count, an Integer, is in scope in its clauses
             // and proofs, so a comparison with it reads its other side as an
             // Integer, as one with a population count does.
-            // A C object of that name keeps its C meaning.
-            let iterations_is_c = self
-                .names
-                .is_c_variable(crate::surface::LOOP_ITERATIONS_NAME);
-            let iterations_was_bound = iterations_is_c
-                || self.names.contains(
-                    NameKind::IntegerParameter,
-                    crate::surface::LOOP_ITERATIONS_NAME,
-                );
-            if !iterations_was_bound {
-                self.names.insert(
-                    NameKind::IntegerParameter,
-                    crate::surface::LOOP_ITERATIONS_NAME.to_string(),
-                );
-            }
+            // A program binding of that name is `c(iterations)`.
+            let iterations_was_bound = self.names.contains(
+                NameKind::IntegerParameter,
+                crate::surface::LOOP_ITERATIONS_NAME,
+            );
+            self.names.insert(
+                NameKind::IntegerParameter,
+                crate::surface::LOOP_ITERATIONS_NAME.to_string(),
+            );
             while self.peek() != Some(&Token::RBrace) {
                 self.loop_name_context = Some(format!(
                     "loop {} clause",
@@ -9912,7 +9907,6 @@ impl Parser {
                     label,
                     decreases,
                     diverges,
-                    iterations_is_c,
                     items,
                     resources,
                     initialize_proof,
@@ -14793,14 +14787,29 @@ impl Parser {
             });
         }
 
-        // `c(name)` names a C binding; any other argument is an ordinary
+        // `c(name)` names a C binding, and `rust(name)` a Rust one, where a
+        // Click name has the same spelling; any other argument is an ordinary
         // call, so a declaration that takes the name is refused by name
         // rather than failing to parse at its first use.
-        if self.peek_ident() == Some("c")
+        if matches!(self.peek_ident(), Some("c" | "rust"))
             && self.peek_next() == Some(&Token::LParen)
             && matches!(self.tokens.get(self.position + 2), Some(Token::Ident(_)))
             && self.tokens.get(self.position + 3) == Some(&Token::RParen)
         {
+            let written = self.peek_ident() == Some("rust");
+            if written != self.verifies_rust() {
+                let name = match self.tokens.get(self.position + 2) {
+                    Some(Token::Ident(name)) => name.clone(),
+                    _ => unreachable!("checked above"),
+                };
+                return Err(self.error(if written {
+                    format!(
+                        "`rust({name})` names a Rust binding; a C or C++ source's is `c({name})`"
+                    )
+                } else {
+                    format!("`c({name})` names a C binding; a Rust source's is `rust({name})`")
+                }));
+            }
             self.position += 2;
             let name = self.expect_ident("C binding name")?;
             self.refuse_unknown_loop_value(&name)?;

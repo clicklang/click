@@ -2157,8 +2157,8 @@ fn expand_macro_text(
                     parameters: _,
                     primitive: Some(primitive),
                     ..
-                } if chars.get(index) == Some(&'(') => {
-                    let (arguments, end) = parse_macro_arguments(&chars, index, &name)?;
+                } if let Some(open) = macro_invocation_open(&chars, index) => {
+                    let (arguments, end) = parse_macro_arguments(&chars, open, &name)?;
                     let arguments = arguments
                         .iter()
                         .map(|argument| {
@@ -2183,8 +2183,8 @@ fn expand_macro_text(
                     parameters,
                     replacement,
                     ..
-                } if chars.get(index) == Some(&'(') => {
-                    let (arguments, end) = parse_macro_arguments(&chars, index, &name)?;
+                } if let Some(open) = macro_invocation_open(&chars, index) => {
+                    let (arguments, end) = parse_macro_arguments(&chars, open, &name)?;
                     let replacement = expand_function_macro(
                         &name,
                         &parameters,
@@ -2298,6 +2298,26 @@ fn enter_macro(name: &str, state: &mut MacroExpansionState) -> Result<(), String
     Ok(())
 }
 
+fn macro_invocation_open(chars: &[char], mut index: usize) -> Option<usize> {
+    loop {
+        while chars.get(index).is_some_and(char::is_ascii_whitespace) {
+            index += 1;
+        }
+        if chars.get(index) == Some(&'/') && chars.get(index + 1) == Some(&'*') {
+            index += 2;
+            while index + 1 < chars.len() && !(chars[index] == '*' && chars[index + 1] == '/') {
+                index += 1;
+            }
+            if index + 1 >= chars.len() {
+                return None;
+            }
+            index += 2;
+            continue;
+        }
+        return (chars.get(index) == Some(&'(')).then_some(index);
+    }
+}
+
 fn parse_macro_arguments(
     chars: &[char],
     open: usize,
@@ -2395,10 +2415,20 @@ fn substitute_macro_parameters(
                 index += 1;
             }
             let name = chars[start..index].iter().collect::<String>();
+            if matches!(name.as_str(), "L" | "u" | "u8" | "U")
+                && matches!(chars.get(index), Some('\'' | '"'))
+            {
+                expanded.push_str(&name);
+                continue;
+            }
             if let Some(parameter_index) =
                 parameters.iter().position(|parameter| parameter == &name)
             {
-                expanded.push_str(&arguments[parameter_index]);
+                append_macro_tokens(
+                    &mut expanded,
+                    &arguments[parameter_index],
+                    chars.get(index).copied(),
+                );
             } else {
                 expanded.extend(chars[start..index].iter().copied());
             }
@@ -2931,6 +2961,102 @@ int32 run(int32 value) {
             let error = local_include_paths("main.c", source).unwrap_err();
             assert!(error.to_string().contains(expected));
         }
+    }
+
+    #[test]
+    fn macro_parameters_do_not_replace_literal_encoding_prefixes() {
+        for (prefix, literal) in [
+            ("L", "'a'"),
+            ("u", "'a'"),
+            ("U", "'a'"),
+            ("L", "\"text\""),
+            ("u", "\"text\""),
+            ("U", "\"text\""),
+            ("u8", "\"text\""),
+        ] {
+            let source =
+                format!("#define APPLY({prefix}) ({prefix}{literal} + {prefix})\nAPPLY(7)\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), format!("({prefix}{literal} + 7)"));
+        }
+    }
+
+    #[test]
+    fn macro_literal_prefix_requires_adjacency_to_quote() {
+        let sources = BTreeMap::from([("main.c", "#define VALUE(L) L 'a'\nVALUE(-)\n")]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(expanded.source().trim(), "- 'a'");
+    }
+
+    #[test]
+    fn macro_wide_character_literal_does_not_become_negation() {
+        let sources = BTreeMap::from([(
+            "main.c",
+            "#define VALUE(L) L'a'\nint value(void) { return VALUE(-); }\n",
+        )]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(expanded.source().trim(), "int value(void) { return L'a'; }");
+    }
+
+    #[test]
+    fn function_macro_invocations_allow_whitespace_and_comments() {
+        for separator in [
+            "",
+            " ",
+            "\t",
+            " \t ",
+            "/**/",
+            " /* (ignored) */ ",
+            "/**//**/",
+        ] {
+            let source =
+                format!("#define ID(x) (x)\nint value(void) {{ return ID{separator}(1); }}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), "int value(void) { return (1); }");
+        }
+    }
+
+    #[test]
+    fn function_macro_names_without_an_open_parenthesis_are_preserved() {
+        for usage in ["ID", "ID + 1", "ID /* comment */ + 1", "ID // (1)"] {
+            let source = format!("#define ID(x) (x)\n{usage}\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), usage);
+        }
+    }
+
+    #[test]
+    fn function_macro_arguments_preserve_adjacent_token_boundaries() {
+        for (replacement, argument, expected) in [
+            ("+x", "+n", "+ +n"),
+            ("-x", "-n", "- -n"),
+            ("x+2", "n+", "n+ +2"),
+            ("x-2", "n-", "n- -2"),
+            ("8/x", "*p", "8/ *p"),
+            ("x/2", "n/", "n/ /2"),
+            ("x.0", "1", "1 .0"),
+        ] {
+            let source = format!("#define APPLY(x) {replacement}\nAPPLY({argument})\n");
+            let sources = BTreeMap::from([("main.c", source.as_str())]);
+            let expanded = expand_includes("main.c", &sources).expect(&source);
+            assert_eq!(expanded.source().trim(), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn macro_argument_does_not_turn_unary_plus_into_increment() {
+        let sources = BTreeMap::from([(
+            "main.c",
+            "#define PLUS(x) +x\nint value(void) { int n = 1; return PLUS(+n); }\n",
+        )]);
+        let expanded = expand_includes("main.c", &sources).unwrap();
+        assert_eq!(
+            expanded.source().trim(),
+            "int value(void) { int n = 1; return + +n; }"
+        );
     }
 
     #[test]

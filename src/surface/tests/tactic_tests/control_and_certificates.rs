@@ -1112,7 +1112,6 @@ fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
         label: None,
         decreases: None,
         diverges: false,
-        iterations_is_c: false,
         items: Vec::new(),
         resources: Vec::new(),
         initialize_proof: Some(Box::new(

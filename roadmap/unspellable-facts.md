@@ -114,9 +114,30 @@ variable-edge propagation; arithmetic endpoints outside that rule's fragment
 are refused without exporting their shared trees. The general order-fact and
 certificate bridges remain separate migration work.
 
-The general comparison dispatcher still needs its compatibility bridge. Its
-migration must preserve the existing rule order as well as proof results;
-moving endpoint queries ahead of cheaper rules can multiply nested bound visits.
+The shared difference-graph adapter retains range and affine-query results
+across unrelated fact additions. Each cached result records the operand keys,
+node bounds or edges, and child queries it read. Updates invalidate only those
+readers and their parents; cloned contexts keep separate persistent caches.
+Growing-prefix tests cover unresolved comparisons as well as successful range
+queries. This removes a repeated-prefix walk; it does not finish comparison
+normalization or remove the dispatcher's compatibility bridge.
+
+Ordinary machine-order dispatch now retains operand views instead of exporting
+observations through the general comparison bridge. Sign-bit and half-range
+rules retain their written casts and narrow carrier guards. A bounded checking
+form uses graph word identities and selected written constant equalities; it
+keeps stored terms unchanged. Two-level cancellations inspect the queried
+expression, rather than whichever application first represented a class, and
+record their result so later queried prefixes reuse it. Independent operator
+tests cover native/shared parity, including unknown answers and transitive
+constant contexts. Growing-prefix tests cover both successful and unresolved
+zero-addend and cancellation queries with unrelated fact additions.
+
+The general comparison bridge remains for equality. Deeper first-use
+normalization and later equality updates remain explicit audits before enabling
+additional producers. Preserve rule order as well as proof results: unwrapping
+a sign cast before substituting a constant can expose a different range rule,
+and moving endpoint queries earlier can multiply nested bound visits.
 
 Nested signed production remains disabled until checker consumers are shared
 end to end. A green PR migrating a subset does **not** complete part 1.
@@ -134,10 +155,11 @@ unknown on formerly provable arithmetic is not completion.
 
 Remaining groups to audit and migrate:
 
-- [ ] General comparison dispatch and native premise lookup. Remove the
-  unconditional `native_comparison_of_integer_observation` conversion in
-  `condition_reasoning/decision.rs` and lookup callers only after all of their
-  supported proof routes consume operand views.
+- [ ] Finish comparison dispatch and native premise lookup. Ordinary order
+  dispatch reads views; the `native_comparison_of_integer_observation` bridge
+  remains for equality and lookup consumers. Audit deeper first-use and
+  later-equality normalization before enabling additional producers. Remove
+  each remaining conversion only after its supported routes read views.
 - [ ] Signed equality dispatch: additive matching/cancellation, equality from
   opposite bounds, memory/equality sources, and negative answers. Ordinary
   signed/unsigned order rules, successor transport and wide order walks already
@@ -150,7 +172,7 @@ Remaining groups to audit and migrate:
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
-- [ ] Remaining sign-bit/conversion, inverse-operation, modular and
+- [ ] Remaining conversion, inverse-operation, modular and
   condition-identity adapters, including memory-order checking and observation
   lookup forms. Distinguish live checker consumers from test-only reference
   exports and explicit legacy producer/output boundaries.

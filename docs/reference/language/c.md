@@ -1147,11 +1147,16 @@ Supported C surface includes:
   continuation is processed before comments and directives. `#undef NAME`
   removes a macro from later expansion and conditions.
 - one- to three-parameter function-like macros in C sources and local headers,
-  such as `#define ADD(left, right) ((left) + (right))`; calls use ordinary
-  argument substitution, parse balanced nested arguments, and rescan the
+  such as `#define ADD(left, right) ((left) + (right))`; whitespace and block
+  comments may separate a macro name from the opening `(` on the same logical
+  line. Calls use ordinary argument substitution, parse balanced nested
+  arguments, and rescan the
   replacement for other supported macros. Parameter substitution replaces whole
   identifier tokens; numeric literal prefixes, suffixes, and exponents are not
-  parameter occurrences. Macro recursion, more than three
+  parameter occurrences. Character and string literal encoding prefixes are
+  also preserved. Substituted arguments retain token boundaries, so
+  adjacent operators such as `+` and `+` do not become `++`.
+  Macro recursion, more than three
   parameters, empty arguments, stringification, and token pasting remain
   unsupported. Expansion is limited to depth 64 and one megabyte per expanded
   line or replacement, with a four-megabyte cumulative scan-work limit

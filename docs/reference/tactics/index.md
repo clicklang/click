@@ -744,14 +744,19 @@ Inside the loop's clauses and phases, `iterations` is the mathematical
 `Integer` count of passes completed: `0` when `initialize` checks the
 invariants, a fresh `K` with `0 <= K` at the head, and `K + 1` where a pass's
 back edge, a `continue` included, checks them again. A `break` leaves during a
-pass, which does not count. Past the loop, `loop(i).iterations` names the count
+pass, which does not count. A `decreases` component may read it too: the
+measure is read at `K` where the pass starts and at `K + 1` at its back edge,
+so `decreases n - iterations` ranks a loop whose invariants bound the count
+([`a_loop_is_ranked_by_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_is_ranked_by_its_pass_count.md),
+[`a_measure_that_counts_passes_up_is_refused.md`](https://github.com/clicklang/click/blob/master/mdtests/a_measure_that_counts_passes_up_is_refused.md)). Past the loop, `loop(i).iterations` names the count
 the exit facts state over, on each path that left loop `i`; inside a nested
 loop, `iterations` is that loop's own count, and the enclosing proof reads it
 as `loop(i).iterations` once the inner loop exits. `iterations` outside a loop,
-and `loop(i).iterations` on a path that has not left loop `i`, are refused. A
-function whose C has an object named `iterations` keeps that name's C meaning
-in its loop clauses
-([`a_c_local_named_iterations_keeps_its_c_meaning.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_keeps_its_c_meaning.md)).
+and `loop(i).iterations` on a path that has not left loop `i`, are refused. In a
+loop's clauses and phases bare `iterations` is always the pass count; a
+program variable of that name is [`c(iterations)`](../language/index.md#explicit-c-binding-references),
+or `rust(iterations)` in a Rust sidecar
+([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
 Like any proof `Integer`, it compares with a C value directly, `i == iterations`
 ([`a_loop_states_a_running_total_over_its_pass_count.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_states_a_running_total_over_its_pass_count.md),
 [`a_loop_pass_count_names_the_passes_after_the_loop.md`](https://github.com/clicklang/click/blob/master/mdtests/a_loop_pass_count_names_the_passes_after_the_loop.md),

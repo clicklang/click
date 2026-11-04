@@ -3291,6 +3291,36 @@ fn charon_held_value_locals_are_spelled_by_name() {
     }
 }
 
+const PROGRAM_BINDING_SIDECAR: &str =
+    include_str!("../design/charon-trial/program-bindings/bindings.click");
+
+// A Rust local named like a Click value is `rust(name)`: here the local
+// `iterations` beside the loop's pass count `iterations`. `c(name)` is the
+// C spelling and is refused in a Rust sidecar.
+#[test]
+fn charon_program_bindings_are_written_rust_name() {
+    let p = Project::from_fixture("design/charon-trial/program-bindings");
+    fs::write(p.root.join("borrow.click"), PROGRAM_BINDING_SIDECAR).unwrap();
+    let prepared = p.prepared().unwrap();
+    C0VerificationSession::new_program_prepared(PROGRAM_BINDING_SIDECAR, &prepared)
+        .unwrap_or_else(|error| panic!("{error:?}"));
+    let c_spelling = PROGRAM_BINDING_SIDECAR.replacen(
+        "invariant rust(iterations) <= n;",
+        "invariant c(iterations) <= n;",
+        1,
+    );
+    assert_ne!(c_spelling, PROGRAM_BINDING_SIDECAR);
+    let error = C0VerificationSession::new_program_prepared(&c_spelling, &prepared)
+        .err()
+        .expect("`c(name)` is refused in a Rust sidecar");
+    assert!(
+        error
+            .to_string()
+            .contains("a Rust source's is `rust(iterations)`"),
+        "{error}"
+    );
+}
+
 const VEC_VALUE_SIDECAR: &str = include_str!("../design/charon-trial/vec-values/vecs.click");
 
 // A `Vec<u32>` is the library's `Vec<uint32>`: `Vec::new`, `with_capacity`,

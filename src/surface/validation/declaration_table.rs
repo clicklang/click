@@ -171,6 +171,7 @@ const BUILTIN_CALL_FORMS: &[&str] = &[
     "memory",
     "object",
     "old",
+    "rust",
     "separate",
     "sizeof",
     "viewable",
