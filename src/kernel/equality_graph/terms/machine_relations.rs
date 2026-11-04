@@ -36,7 +36,9 @@
 //!
 //! The 32-bit operators are word operators: an `int32` and a `uint32`
 //! operator of one kind are one e-graph operator over their operands'
-//! classes, so they read either 32-bit format here. σ at 32 bits is a node
+//! classes, so they read either 32-bit format here. This is a deliberate
+//! equivalence in reasoning: the terms keep their formats, and the e-graph
+//! relates them (`design/machine-integers.md`, Stage 3). σ at 32 bits is a node
 //! of its own (step 4b), so R-dist distributes it over them and R0 inverts
 //! it. A narrow widening into 32 bits is a node of its own width, linked to
 //! its operand by value (K8, a relation across widths). The rules act on σ,
