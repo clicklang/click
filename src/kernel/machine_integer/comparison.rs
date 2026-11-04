@@ -12,6 +12,57 @@ use crate::kernel::{
     SharedIntegerTerm, SharedMachineIntegerTerm,
 };
 
+/// A written comparison for structural matching. Unlike checking views, this
+/// preserves direction and performs no arithmetic cancellation or evaluation.
+pub(crate) struct StructuralComparisonView<'a> {
+    pub(crate) format: MachineIntegerType,
+    pub(crate) relation: crate::kernel::CompareRelation,
+    pub(crate) negated: bool,
+    pub(crate) operands: [ComparisonOperand<'a>; 2],
+}
+
+pub(crate) fn structural_comparison_view(
+    condition: &ConditionTerm,
+) -> Option<StructuralComparisonView<'_>> {
+    use crate::kernel::CompareRelation as R;
+    if let ConditionTerm::Compare {
+        format,
+        relation,
+        left,
+        right,
+    } = condition
+    {
+        return Some(StructuralComparisonView {
+            format: *format,
+            relation: *relation,
+            negated: false,
+            operands: [
+                ComparisonOperand::Written(left),
+                ComparisonOperand::Written(right),
+            ],
+        });
+    }
+    let (relation, negated) = match condition {
+        ConditionTerm::IntegerEqual(..) => (R::Equal, false),
+        ConditionTerm::IntegerNotEqual(..) => (R::Equal, true),
+        ConditionTerm::IntegerLessThan(..) => (R::LessThan, false),
+        ConditionTerm::IntegerLessEqual(..) => (R::LessEqual, false),
+        ConditionTerm::IntegerGreaterThan(..) => (R::GreaterThan, false),
+        ConditionTerm::IntegerGreaterEqual(..) => (R::GreaterEqual, false),
+        _ => return None,
+    };
+    let mut view = comparison_view_at_format(condition, true)?;
+    if matches!(relation, R::GreaterThan | R::GreaterEqual) {
+        view.operands.swap(0, 1);
+    }
+    Some(StructuralComparisonView {
+        format: view.format,
+        relation,
+        negated,
+        operands: view.operands,
+    })
+}
+
 /// An Integer comparison as `left REL right` with its truth folded in:
 /// `>`/`>=` swap their operands, and a false comparison is negated.
 fn integer_relation(

@@ -8,6 +8,7 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::{bits32_constant, constant_u32};
 mod machine_view;
+mod operand_correspondence;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 pub(crate) use machine_view::{
@@ -17,6 +18,7 @@ use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
+pub(crate) use operand_correspondence::shared_operand_variable_pairs;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;

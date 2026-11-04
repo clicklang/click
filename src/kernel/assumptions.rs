@@ -175,6 +175,14 @@ fn terms_equal_with_load_atoms(
         (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
             loads_match(left, right)
         }
+        (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(..)) => {
+            crate::kernel::registered_load_origin_term_for_variable(variable)
+                .is_some_and(|origin| loads_match(&origin, load))
+        }
+        (load @ Bitvector32Term::MemoryLoad(..), Bitvector32Term::Variable(variable)) => {
+            crate::kernel::registered_load_origin_term_for_variable(variable)
+                .is_some_and(|origin| loads_match(load, &origin))
+        }
         // A registered load variable is a load atom too: the same cell named
         // at two snapshots has two variables when the edge between them is
         // crossed only in context. Compare through the first-seen origin
@@ -228,6 +236,112 @@ fn terms_equal_with_load_atoms(
     }
 }
 
+/// Compare retained arithmetic without exporting it. Shared/shared syntax
+/// correspondence is cached independently of the load registry; every selected
+/// variable pair is checked against the caller's current load authority.
+fn operands_equal_with_load_atoms(
+    format: MachineIntegerType,
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+    loads_match: LoadAtomsMatch<'_>,
+) -> bool {
+    use crate::kernel::MachineOperandView as V;
+    if let (V::Legacy(left), V::Legacy(right)) = (left, right) {
+        return terms_equal_with_load_atoms(left, right, loads_match);
+    }
+    if let (V::Shared(left), V::Shared(right)) = (left, right) {
+        return crate::kernel::shared_operand_variable_pairs(format, left, right).is_some_and(
+            |pairs| {
+                pairs.iter().all(|(a, b)| {
+                    terms_equal_with_load_atoms(
+                        &Bitvector32Term::Variable(*a),
+                        &Bitvector32Term::Variable(*b),
+                        loads_match,
+                    )
+                })
+            },
+        );
+    }
+    let mut pending = vec![(format, left, right)];
+    while let Some((format, left, right)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if let (V::Legacy(a), V::Legacy(b)) = (left, right) {
+            if !terms_equal_with_load_atoms(a, b, loads_match) {
+                return false;
+            }
+            continue;
+        }
+        if let (Some(a), Some(b)) = (left.variable(), right.variable()) {
+            if !terms_equal_with_load_atoms(
+                &Bitvector32Term::Variable(*a),
+                &Bitvector32Term::Variable(*b),
+                loads_match,
+            ) {
+                return false;
+            }
+            continue;
+        }
+        match (left, right) {
+            (V::Shared(_), V::Legacy(load @ Bitvector32Term::MemoryLoad(..)))
+                if left.variable().is_some() =>
+            {
+                if !terms_equal_with_load_atoms(
+                    &Bitvector32Term::Variable(*left.variable().unwrap()),
+                    load,
+                    loads_match,
+                ) {
+                    return false;
+                }
+                continue;
+            }
+            (V::Legacy(load @ Bitvector32Term::MemoryLoad(..)), V::Shared(_))
+                if right.variable().is_some() =>
+            {
+                if !terms_equal_with_load_atoms(
+                    load,
+                    &Bitvector32Term::Variable(*right.variable().unwrap()),
+                    loads_match,
+                ) {
+                    return false;
+                }
+                continue;
+            }
+            _ => {}
+        }
+        if let (Some(a), Some(b)) = (left.literal(), right.literal()) {
+            if !format
+                .constant_from_term(&a)
+                .zip(format.constant_from_term(&b))
+                .is_some_and(|(a, b)| a.bits() == b.bits())
+            {
+                return false;
+            }
+            continue;
+        }
+        if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
+            (left.binary(), right.binary())
+        {
+            if af != bf || ao != bo {
+                return false;
+            }
+            pending.extend([(af, al, bl), (af, ar, br)]);
+        } else if let (Some((af, ao, a)), Some((bf, bo, b))) = (left.unary(), right.unary()) {
+            if af != bf || ao != bo {
+                return false;
+            }
+            pending.push((af, a, b));
+        } else if let (Some((ae, af, at, a)), Some((be, bf, bt, b))) = (left.cast(), right.cast()) {
+            if ae != be || af != bf || at != bt {
+                return false;
+            }
+            pending.push((af, a, b));
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 /// Exact structural condition equality with load atoms compared by
 /// `loads_match`. Only matching constructors recurse and everything else
 /// falls back to `==`, so two structurally different conditions never match
@@ -239,6 +353,44 @@ pub(in crate::kernel) fn conditions_equal_with_load_atoms(
 ) -> bool {
     if left == right {
         return true;
+    }
+    use crate::kernel::machine_integer::comparison::{
+        FactOperand, fact_operand_identity, structural_comparison_view,
+    };
+    if let (Some(left), Some(right)) = (
+        structural_comparison_view(left),
+        structural_comparison_view(right),
+    ) {
+        if left.relation != right.relation || left.negated != right.negated {
+            return false;
+        }
+        let (lf, [ll, lr]) = fact_operand_identity(
+            left.format,
+            left.relation,
+            left.operands.each_ref().map(|v| v.operand_view()),
+        );
+        let (rf, [rl, rr]) = fact_operand_identity(
+            right.format,
+            right.relation,
+            right.operands.each_ref().map(|v| v.operand_view()),
+        );
+        if lf != rf {
+            return false;
+        }
+        let same = |a, b| match (a, b) {
+            (FactOperand::Term(a), FactOperand::Term(b)) => {
+                operands_equal_with_load_atoms(lf, a, b, loads_match)
+            }
+            (FactOperand::Value(a), FactOperand::Value(b)) => a == b,
+            (FactOperand::Value(value), FactOperand::Term(term))
+            | (FactOperand::Term(term), FactOperand::Value(value)) => {
+                term.literal()
+                    .and_then(|term| lf.constant_from_term(&term))
+                    .and_then(|constant| constant.to_i128())
+                    == Some(value)
+            }
+        };
+        return same(ll, rl) && same(lr, rr);
     }
     let terms = |ll, rl, lr, rr| {
         terms_equal_with_load_atoms(ll, rl, loads_match)
@@ -12954,4 +13106,229 @@ fn mirrored_order32(condition: &ConditionTerm) -> Option<ConditionTerm> {
         left: right.clone(),
         right: left.clone(),
     })
+}
+
+#[cfg(test)]
+mod shared_load_atom_comparison_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    fn load_pair(ty: MachineIntegerType) -> (Bitvector32Term, Bitvector32Term, Variable, Variable) {
+        let kind = match ty {
+            MachineIntegerType::Int32 => LoadKind::Int32,
+            MachineIntegerType::UInt32 => LoadKind::UInt32,
+            MachineIntegerType::Int64 | MachineIntegerType::UInt64 => LoadKind::Bits64,
+            MachineIntegerType::Int128 => LoadKind::Int128,
+            MachineIntegerType::UInt128 => LoadKind::UInt128,
+            _ => unreachable!(),
+        };
+        let load = |block: &str| {
+            let memory = crate::kernel::intern_c_memory(CMemory::new().with_block(block, 16));
+            let pointer = Pointer {
+                block: block.into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let variable = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &pointer,
+                kind,
+                ty.format().bits() as u32 / 8,
+            );
+            (
+                Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind),
+                variable,
+            )
+        };
+        let (left, a) = load("shared-left");
+        let (right, b) = load("shared-right");
+        assert_ne!(a, b);
+        (left, right, a, b)
+    }
+
+    #[test]
+    fn shared_comparisons_require_the_current_load_atom_authority() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int128,
+            MachineIntegerType::UInt128,
+        ] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (left_load, right_load, a, b) = load_pair(ty);
+            let variable = |v| KernelTerm::variable(KernelType::C(ty.c_type()), v);
+            let product = |v, op| {
+                KernelTerm::machine_binary_shared(ty, op, [variable(v), variable(Variable(990001))])
+            };
+            let root = product(a, MachineBinaryOp::Multiply);
+            let observed = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
+            let condition = |term| {
+                ConditionTerm::integer_less_equal(
+                    IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, term).unwrap()),
+                    IntegerTerm::constant_i64(7),
+                )
+            };
+            let left = condition(root);
+            let right = condition(product(b, MachineBinaryOp::Multiply));
+            let wrong = condition(product(b, MachineBinaryOp::Add));
+            let exports = KernelTermExport::machine_export_count();
+            let calls = std::cell::Cell::new(0);
+            let accept = |l: &Bitvector32Term, r: &Bitvector32Term| {
+                calls.set(calls.get() + 1);
+                assert_eq!(l, &left_load);
+                assert_eq!(r, &right_load);
+                true
+            };
+            assert!(conditions_equal_with_load_atoms(&left, &right, &accept));
+            assert_eq!(calls.get(), 1);
+            assert!(!conditions_equal_with_load_atoms(&left, &right, &|_, _| {
+                false
+            }));
+            assert!(!conditions_equal_with_load_atoms(&left, &wrong, &|_, _| {
+                true
+            }));
+            assert!(
+                !PureFactContext::new().conditions_equal_modulo_proven_snapshots(&left, &right)
+            );
+            let mixed = Bitvector32Term::Binary {
+                format: ty,
+                op: MachineBinaryOp::Multiply,
+                left: Box::new(right_load.clone()),
+                right: Box::new(Bitvector32Term::Variable(Variable(990001))),
+            };
+            let mixed = ConditionTerm::Compare {
+                format: ty,
+                relation: CompareRelation::LessEqual,
+                left: Box::new(mixed),
+                right: Box::new(Bitvector32Term::machine_constant(
+                    crate::kernel::MachineIntegerConstant::from_signed(ty.format(), 7).unwrap(),
+                )),
+            };
+            assert!(
+                conditions_equal_with_load_atoms(&left, &mixed, &accept),
+                "{ty:?}: {left:?} / {mixed:?}"
+            );
+            assert!(!conditions_equal_with_load_atoms(&left, &mixed, &|_, _| {
+                false
+            }));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(!observed.has_boxed_operand());
+        }
+    }
+
+    #[test]
+    fn shared_snapshot_premise_requires_the_selected_frame() {
+        use crate::kernel::proof::ProofFacts;
+        let _session = crate::kernel::VerificationSession::enter();
+        let before = CMemory::new()
+            .with_block("shared-frame", 8)
+            .with_block("call-havoc:0", 0);
+        let after = before.clone().with_block("call-havoc:1", 0);
+        let loaded = Pointer {
+            block: "shared-frame".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let elsewhere = Pointer {
+            block: "elsewhere".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let effect = Proposition::CMemoryEffectSummary {
+            before: before.clone(),
+            after: after.clone(),
+            mutable_ranges: vec![CMemoryRange::new(elsewhere, 0u32.into(), 1u32.into())],
+        };
+        let (_, _, equality) = crate::kernel::tests::explicit_frame(
+            &before,
+            &after,
+            &loaded,
+            CType::Int32,
+            &[effect],
+            &PureFactContext::new(),
+        )
+        .expect("disjoint selected footprint");
+        let condition = |memory: &CMemory| {
+            let memory = crate::kernel::intern_c_memory(memory.clone());
+            let variable = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &loaded,
+                LoadKind::Int32,
+                4,
+            );
+            let root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Multiply,
+                [
+                    KernelTerm::variable(KernelType::C(CType::Int32), variable),
+                    KernelTerm::variable(KernelType::C(CType::Int32), Variable(990002)),
+                ],
+            );
+            ConditionTerm::integer_less_equal(
+                IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+                ),
+                IntegerTerm::constant_i64(7),
+            )
+        };
+        let source = Proposition::ConditionIs(condition(&before), true);
+        let target = Proposition::ConditionIs(condition(&after), true);
+        assert_ne!(source, target);
+        let unframed = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let framed = ProofFacts::from_ordered(&[source, equality]);
+        let exports = KernelTermExport::machine_export_count();
+        assert!(!unframed.exact_available_across_effects(&target, &[]));
+        assert!(framed.exact_available_across_effects(&target, &[]));
+        assert!(!unframed.exact_available_across_effects(&target, &[]));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_fact_matching_preserves_native_comparison_identities() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (_, _, a, b) = load_pair(MachineIntegerType::Int32);
+        let forms = |variable| {
+            let mut forms = Vec::new();
+            for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+                for relation in [
+                    CompareRelation::Equal,
+                    CompareRelation::LessThan,
+                    CompareRelation::LessEqual,
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                ] {
+                    for constant in [
+                        Bitvector32Term::constant(u32::MAX),
+                        Bitvector32Term::constant_at32(MachineIntegerType::Int32, u32::MAX),
+                        Bitvector32Term::constant_at32(MachineIntegerType::UInt32, u32::MAX),
+                    ] {
+                        forms.push(ConditionTerm::Compare {
+                            format,
+                            relation,
+                            left: Box::new(Bitvector32Term::Variable(variable)),
+                            right: Box::new(constant),
+                        });
+                    }
+                }
+            }
+            forms
+        };
+        for left in forms(a) {
+            for right in forms(b) {
+                let (lo, ll, lr) = left.as_fact_comparison().unwrap();
+                let (ro, rl, rr) = right.as_fact_comparison().unwrap();
+                let expected = lo == ro
+                    && terms_equal_with_load_atoms(&ll, &rl, &|_, _| true)
+                    && terms_equal_with_load_atoms(&lr, &rr, &|_, _| true);
+                assert_eq!(
+                    conditions_equal_with_load_atoms(&left, &right, &|_, _| true),
+                    expected,
+                    "{left:?} / {right:?}"
+                );
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!("../scaling_tests/kernel/assumptions/shared_load_atom_comparison_tests.rs");
+    }
 }
