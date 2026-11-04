@@ -682,6 +682,7 @@ fn lower_function(
         mir_point: None,
         mir_nodes: BTreeMap::new(),
         next_temporary: 0,
+        loop_iterators: Vec::new(),
         locals,
         return_type,
         layouts,
@@ -693,6 +694,7 @@ fn lower_function(
         Some(_) => return Err("Rust function must select exactly one body representation".into()),
         None => cx.body(&f.body)?,
     };
+    let loop_iterators = std::mem::take(&mut cx.loop_iterators);
     let mut kernel = c_function(
         return_type.to_kernel_type(),
         &f.name,
@@ -719,7 +721,8 @@ fn lower_function(
         .with_local_struct_values(local_records)
         .with_prelowered_kernel_function(kernel)
         .with_closure_captures(f.captures)
-        .with_trait_interface(f.implements.clone());
+        .with_trait_interface(f.implements.clone())
+        .with_loop_iterators(loop_iterators);
     if let Some((name, layout)) = return_layout {
         lowered = lowered.with_struct_return(name.clone(), layout.clone());
     }
@@ -756,6 +759,8 @@ struct Context<'a> {
     mir_point: Option<super::borrow_frontiers::MirPoint>,
     mir_nodes: BTreeMap<usize, usize>,
     next_temporary: u32,
+    /// The iterator each loop advances, by loop index in preorder.
+    loop_iterators: Vec<Option<crate::languages::c::syntax::RustLoopIterator>>,
     locals: BTreeSet<String>,
     return_type: C0Type,
     layouts: &'a BTreeMap<String, C0StructLayout>,

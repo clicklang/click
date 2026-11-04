@@ -38,7 +38,9 @@ use cpp_model::describe_model_accessor;
 pub(in crate::surface) use cpp_model::{CapturedModelAccessors, ModelAccessorScope};
 pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object_fields};
 use rust_spelling::rust_scalar_spelling;
-pub(crate) use rust_spelling::{enter_rust_spelling, rust_spelling, rust_variable_spelling};
+pub(crate) use rust_spelling::{
+    LoopPhaseSpelling, enter_rust_spelling, rust_spelling, rust_variable_spelling,
+};
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
 const TRUNCATION_SUFFIX: &str =

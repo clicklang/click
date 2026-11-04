@@ -8,6 +8,29 @@ thread_local! {
     /// signature is written in Rust syntax; `None` for the C-shaped spelling.
     static RUST_SPELLING: std::cell::RefCell<Option<std::rc::Rc<[String]>>> =
         const { std::cell::RefCell::new(None) };
+    /// The iterator each loop of that function advances.
+    static RUST_LOOP_ITERATORS: std::cell::RefCell<
+        std::sync::Arc<[Option<crate::languages::c::syntax::RustLoopIterator>]>,
+    > = std::cell::RefCell::new(std::sync::Arc::from([]));
+    /// The loop whose phases are being checked, whose iterator a proof
+    /// there names bare `iter`.
+    static CURRENT_LOOP: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+}
+
+/// While it lives, loop `index`'s phases are being checked: its iterator's
+/// state is printed `iter.len()`, every other loop's `loop(i).iter.len()`.
+pub(crate) struct LoopPhaseSpelling(Option<usize>);
+
+impl LoopPhaseSpelling {
+    pub(crate) fn enter(index: usize) -> Self {
+        Self(CURRENT_LOOP.with(|slot| slot.replace(Some(index))))
+    }
+}
+
+impl Drop for LoopPhaseSpelling {
+    fn drop(&mut self) {
+        CURRENT_LOOP.with(|slot| slot.set(self.0));
+    }
 }
 
 /// Prints the places of a function whose signature is written in Rust
@@ -21,6 +44,10 @@ pub(crate) fn enter_rust_spelling(signature: Option<&super::FunctionSignature>) 
         .and_then(super::FunctionSignature::rust_slice_parameters)
         .map(std::rc::Rc::<[String]>::from);
     RUST_SPELLING.with(|slot| *slot.borrow_mut() = spelling);
+    let iterators = signature
+        .map(|signature| signature.rust_loop_iterators().clone())
+        .unwrap_or_else(|| std::sync::Arc::from([]));
+    RUST_LOOP_ITERATORS.with(|slot| *slot.borrow_mut() = iterators);
 }
 
 /// The slice parameters of the function whose places are printed, when its
@@ -53,6 +80,15 @@ pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
         } else {
             format!("c({name})")
         });
+    }
+    if let Some(spelling) = RUST_LOOP_ITERATORS.with(|slot| {
+        crate::surface::rust_iterator_spelling(
+            &slot.borrow(),
+            CURRENT_LOOP.with(std::cell::Cell::get),
+            name,
+        )
+    }) {
+        return Some(spelling);
     }
     let slice = name.strip_suffix("_len")?;
     rust_slice_parameters()?

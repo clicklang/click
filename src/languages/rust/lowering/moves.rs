@@ -1057,6 +1057,40 @@ fn escape_flag(header: usize) -> String {
     format!("__rust_loop_escape_{header}")
 }
 
+/// The iterator the loop headed at `header` advances: the first `next` of a
+/// supported iterator in its header blocks, then in its body.
+fn loop_iterator(
+    mir: &MirBody,
+    header: usize,
+    loop_: &flow::While,
+) -> Option<crate::languages::c::syntax::RustLoopIterator> {
+    use crate::languages::c::syntax::{RustIteratorKind as K, RustLoopIterator};
+    let body = if loop_.body <= header {
+        loop_.body..header
+    } else {
+        loop_.body..loop_.exit.max(loop_.body)
+    };
+    std::iter::once(header)
+        .chain(loop_.headers.iter().copied())
+        .chain(std::iter::once(loop_.test))
+        .chain(body)
+        .filter_map(|block| mir.blocks.get(block))
+        .flat_map(|block| &block.statements)
+        .find_map(|statement| {
+            let (local, kind) = match statement {
+                S::SharedArrayNext { iterator, .. } => (iterator, K::Slice),
+                S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
+                S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
+                S::RangeNext { iterator, .. } => (iterator, K::Range),
+                _ => return None,
+            };
+            Some(RustLoopIterator {
+                local: local.clone(),
+                kind,
+            })
+        })
+}
+
 fn escape_code(index: usize) -> CExpression {
     c_int32_literal(index as u32 + 1)
 }
@@ -1094,6 +1128,12 @@ fn region(
                 escapes: &loop_.escapes,
                 flag: escape_flag(block),
             };
+            // The loop's index is its place in preorder, the order its
+            // `while` takes in the lowered body; its iterator is the one the
+            // first `next` from its header on advances.
+            let ordinal = cx.loop_iterators.len();
+            cx.loop_iterators.push(None);
+            cx.loop_iterators[ordinal] = loop_iterator(mir, block, loop_);
             let body = region(
                 cx,
                 mir,
@@ -1592,6 +1632,7 @@ mod tests {
                 mir_point: None,
                 mir_nodes: BTreeMap::new(),
                 next_temporary: 0,
+                loop_iterators: Vec::new(),
                 locals: BTreeSet::new(),
                 return_type: C0Type::Void,
                 layouts: &layouts,

@@ -1305,10 +1305,10 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
     let sidecar = include_str!("../examples/rust-iter-references/sum.click")
         .replace("sum.rs", "borrow.rs")
         .replace(
-            "                    to_integer(bytes.len() - iter_remaining) < to_integer(18446744073709551615u64);\n",
-            "                    (bytes.len() - iter_remaining) < 18446744073709551615u64;\n",
+            "                    to_integer(bytes.len() - iter.len()) < to_integer(18446744073709551615u64);\n",
+            "                    (bytes.len() - iter.len()) < 18446744073709551615u64;\n",
         );
-    assert!(sidecar.contains("(bytes.len() - iter_remaining) < 18446744073709551615u64;"));
+    assert!(sidecar.contains("(bytes.len() - iter.len()) < 18446744073709551615u64;"));
     let p = Project::new(source);
     fs::write(p.root.join("borrow.click"), &sidecar).unwrap();
     p.refresh().unwrap();
@@ -1321,7 +1321,7 @@ fn peel_refusal_names_a_guard_spelling_integer_arithmetic_reads_as_native() {
     );
     assert!(
         error.contains(
-            "the append-last-cell equation needs `to_integer(bytes.len() - iter_remaining) < 18446744073709551615`"
+            "the append-last-cell equation needs `to_integer(bytes.len() - iter.len()) < 18446744073709551615`"
         ),
         "{error}"
     );
@@ -5127,6 +5127,40 @@ fn rust_empty_slice_iterator_needs_no_read_authority() {
     }
 }
 
+const SLICE_SUM_SIDECAR: &str = include_str!("../examples/rust-iterators/sum.click");
+
+// A loop's iterator is `iter` inside the loop and `loop(i).iter` anywhere,
+// read through Rust's own methods. Inside a loop, bare `iter` is the
+// iterator, so it must be read through one; `loop(i).iter` of a loop that
+// advances no iterator names nothing.
+#[test]
+fn slice_iterator_is_read_as_iter_through_its_methods() {
+    let p = Project::from_fixture("examples/rust-iterators");
+    fs::write(p.root.join("borrow.click"), SLICE_SUM_SIDECAR).unwrap();
+    // The sidecar itself verifies as the examples harness checks; each
+    // spelling below is refused while it is parsed.
+    let prepared = p.prepared().unwrap();
+    for (from, to, refusal) in [
+        (
+            "invariant iter.len() <= bytes.len();",
+            "invariant iter <= bytes.len();",
+            "inside a loop, `iter` is the loop's iterator",
+        ),
+        (
+            "have loop(0).iter.len() == 0u64;",
+            "have loop(1).iter.len() == 0u64;",
+            "loop 1 advances no iterator",
+        ),
+    ] {
+        let invalid = SLICE_SUM_SIDECAR.replacen(from, to, 1);
+        assert_ne!(invalid, SLICE_SUM_SIDECAR, "{from}");
+        let error = C0VerificationSession::new_program_prepared(&invalid, &prepared)
+            .err()
+            .expect("the spelling is refused");
+        assert!(error.to_string().contains(refusal), "{error}");
+    }
+}
+
 #[cfg(not(feature = "fast-gate"))]
 #[test]
 #[ignore = "nightly: 36 s, over the gate's per-test budget (2026-10-06)"]
@@ -5151,16 +5185,16 @@ fn rust_slice_for_sum_verifies_and_expands() {
             "ensures result + 1 == old(prefix",
         ),
         sidecar.replace(
-            "decreases iter_remaining;",
-            "decreases bytes.len() - iter_remaining;",
+            "decreases iter.len();",
+            "decreases bytes.len() - iter.len();",
         ),
         sidecar.replace(
-            "invariant iter_remaining <= bytes.len();",
-            "invariant iter_remaining < bytes.len();",
+            "invariant iter.len() <= bytes.len();",
+            "invariant iter.len() < bytes.len();",
         ),
         sidecar.replace(
-            "invariant iter_cursor == bytes + (bytes.len() - iter_remaining);",
-            "invariant iter_cursor == bytes + ((bytes.len() - iter_remaining) + 1u64);",
+            "invariant iter.as_slice() == bytes + (bytes.len() - iter.len());",
+            "invariant iter.as_slice() == bytes + ((bytes.len() - iter.len()) + 1u64);",
         ),
         sidecar.replace("requires bytes.len() <= 1000u64;", ""),
     ] {
@@ -5252,8 +5286,8 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
             sidecar.replace("requires bytes.len() <= 1000u64;", ""),
             sidecar.replace("views bytes[0..bytes.len()];", ""),
             sidecar.replace(
-                "decreases iter_remaining;",
-                "decreases bytes.len() - iter_remaining;",
+                "decreases iter.len();",
+                "decreases bytes.len() - iter.len();",
             ),
         ] {
             assert_ne!(invalid, sidecar, "negative proof must change the sidecar");

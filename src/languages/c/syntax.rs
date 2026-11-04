@@ -222,6 +222,33 @@ pub struct C0Function {
     /// declared both as a pointer and not is left out.
     local_pointers: BTreeSet<String>,
     string_literals: Vec<C0StringLiteral>,
+    /// For a Rust function, the iterator each loop advances, by loop index
+    /// (the loops in preorder): the state a proof names `iter` in that loop
+    /// and `loop(i).iter` elsewhere.
+    loop_iterators: Vec<Option<RustLoopIterator>>,
+}
+
+/// The iterator a Rust `for` loop advances: the local holding its state and
+/// what it iterates.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct RustLoopIterator {
+    pub local: String,
+    pub kind: RustIteratorKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum RustIteratorKind {
+    /// `core::slice::Iter` or a shared array's iterator: `_cursor` and
+    /// `_remaining` locals.
+    Slice,
+    /// `Enumerate<Iter<T>>`: the slice iterator's state and `_count`.
+    Enumerate,
+    /// `ChunksExact<u8>`: `_cursor`, `_remaining` bytes, `_size`, `_tail`
+    /// and `_tail_len`.
+    Chunks,
+    /// `Range` or `RangeInclusive`: `_start`, `_end`, and an inclusive
+    /// range's `_done`.
+    Range,
 }
 
 /// One string literal occurring in a C function. The hidden name is emitted
@@ -3518,6 +3545,7 @@ impl C0Function {
             local_references: BTreeSet::new(),
             local_pointers: BTreeSet::new(),
             string_literals: Vec::new(),
+            loop_iterators: Vec::new(),
         }
     }
 
@@ -3708,6 +3736,16 @@ impl C0Function {
 
     pub fn local_struct_values(&self) -> &BTreeMap<String, String> {
         &self.local_struct_values
+    }
+
+    pub(crate) fn with_loop_iterators(mut self, iterators: Vec<Option<RustLoopIterator>>) -> Self {
+        self.loop_iterators = iterators;
+        self
+    }
+
+    /// The iterator each loop advances, by loop index, for a Rust function.
+    pub fn loop_iterators(&self) -> &[Option<RustLoopIterator>] {
+        &self.loop_iterators
     }
 
     pub(crate) fn with_local_references(mut self, references: BTreeSet<String>) -> Self {
@@ -10603,6 +10641,7 @@ impl Parser {
             local_references: BTreeSet::new(),
             local_pointers,
             string_literals,
+            loop_iterators: Vec::new(),
         })
     }
 

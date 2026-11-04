@@ -179,6 +179,8 @@ pub(in crate::surface) struct FunctionLocals {
     pub(in crate::surface) references: BTreeSet<String>,
     /// The locals of pointer type, whose arithmetic keeps its C meaning.
     pub(in crate::surface) pointers: BTreeSet<String>,
+    /// For a Rust function, the iterator each loop advances, by loop index.
+    pub(in crate::surface) loop_iterators: Vec<Option<syntax::RustLoopIterator>>,
 }
 
 /// The program facts a sidecar is parsed against: its struct and union
@@ -870,6 +872,12 @@ struct Parser {
     /// `result` when it returns one: each reads `v.len()` and `v[i]`, through
     /// `*v` when the parameter is a reference (`true`).
     rust_vec_params: BTreeMap<String, bool>,
+    /// The iterator each loop of the Rust function being parsed advances,
+    /// by loop index: `loop(i).iter` names its state.
+    rust_loop_iterators: Vec<Option<syntax::RustLoopIterator>>,
+    /// How many `loop` blocks enclose the text being parsed: inside one,
+    /// `iter` is that loop's iterator.
+    loop_block_depth: usize,
     /// The type of the `impl` block being parsed: its methods are the
     /// functions `Type_name`, and `self` is their receiver.
     rust_impl_type: Option<String>,
@@ -1558,6 +1566,8 @@ impl Parser {
             exact_long_rank: false,
             rust_slice_params: BTreeSet::new(),
             rust_vec_params: BTreeMap::new(),
+            rust_loop_iterators: Vec::new(),
+            loop_block_depth: 0,
             rust_impl_type: None,
             rust_impl_method_suffix: None,
             rust_impl_module: None,
@@ -4381,6 +4391,16 @@ impl Parser {
         let first_implicit_proof = self.implicit_proof_spans.len();
         let first_proof_clause = self.proof_clause_spans.len();
         self.expect(Token::LBrace)?;
+        // A Rust function's loops each advance an iterator its proof names
+        // `iter` there and `loop(i).iter` elsewhere.
+        let loop_iterators = self
+            .local_struct_pointers_by_function
+            .get(&table_name)
+            .map(|locals| locals.loop_iterators.clone())
+            .unwrap_or_default();
+        let signature = signature.with_rust_loop_iterators(&loop_iterators);
+        let previous_loop_iterators =
+            std::mem::replace(&mut self.rust_loop_iterators, loop_iterators);
 
         let parameter_names = signature
             .parameters()
@@ -4971,6 +4991,7 @@ impl Parser {
             .replace(NameKind::VoidPointerParameter, previous_void_pointer_params);
         self.names.c_parameter_types = previous_c_parameter_types;
         self.names.c_object_names = previous_c_object_names;
+        self.rust_loop_iterators = previous_loop_iterators;
         let parameter_struct_casts = std::mem::replace(
             &mut self.names.parameter_struct_casts,
             previous_parameter_struct_casts,
@@ -5491,6 +5512,9 @@ impl Parser {
     /// A C variable, or the length a slice parameter's `name.len()` denotes.
     #[inline(never)]
     fn c_variable_expression(&mut self, name: String) -> Result<ContractExpression, ClickError> {
+        if let Some(expression) = self.take_rust_iterator_method(&name, None)? {
+            return Ok(expression);
+        }
         self.refuse_unknown_loop_value(&name)?;
         if let Some(expression) = self.take_rust_vec_method(&name)? {
             return Ok(expression);
@@ -9789,6 +9813,7 @@ impl Parser {
                 NameKind::IntegerParameter,
                 crate::surface::LOOP_ITERATIONS_NAME.to_string(),
             );
+            self.loop_block_depth += 1;
             while self.peek() != Some(&Token::RBrace) {
                 self.loop_name_context = Some(format!(
                     "loop {} clause",
@@ -9893,6 +9918,7 @@ impl Parser {
                     .error("`loop` block must contain at least one item or a `decreases` clause"));
             }
             self.loop_name_context = enclosing_name_context;
+            self.loop_block_depth -= 1;
             if !iterations_was_bound {
                 self.names.remove(
                     NameKind::IntegerParameter,
@@ -14598,6 +14624,19 @@ impl Parser {
         self.position = start;
         // A loop's pass count past the loop, `loop(i).iterations`: a proof
         // Integer the path's recorded exit of that loop binds.
+        if let Ok(CodeRegionRef::Loop(index)) = self.parse_code_region_ref()
+            && self.peek() == Some(&Token::Dot)
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "iter")
+        {
+            self.position += 2;
+            if let Some(expression) = self.take_rust_iterator_method("iter", Some(index))? {
+                return Ok(expression);
+            }
+            return Err(self.error(format!(
+                "`loop({index}).iter` is read through a method: `loop({index}).iter.len()`"
+            )));
+        }
+        self.position = start;
         if let Ok(CodeRegionRef::Loop(index)) = self.parse_code_region_ref()
             && self.peek() == Some(&Token::Dot)
             && matches!(self.peek_next(), Some(Token::Ident(name)) if name == crate::surface::LOOP_ITERATIONS_NAME)
