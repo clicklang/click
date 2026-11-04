@@ -1585,6 +1585,42 @@ impl EqualityGraph {
         equal
     }
 
+    /// Register the selected operands directly, retaining shared syntax and
+    /// the same logical-read dependencies as the native equality query.
+    pub(in crate::kernel) fn are_int32_equal_views(
+        &self,
+        left: crate::kernel::MachineOperandView<'_>,
+        right: crate::kernel::MachineOperandView<'_>,
+    ) -> bool {
+        use crate::kernel::MachineOperandView as V;
+        if let (V::Legacy(a), V::Legacy(b)) = (left, right) {
+            return self.are_int32_equal(a, b);
+        }
+        let written = [left, right].map(|operand| match operand {
+            V::Legacy(term) => Some(crate::kernel::canonical_term(term)),
+            V::Shared(_) => None,
+        });
+        let observations = [left, right].map(|operand| match operand {
+            V::Shared(_) => Some(crate::kernel::IntegerTerm::Machine(
+                operand.retain(crate::kernel::MachineIntegerType::Int32),
+            )),
+            V::Legacy(_) => None,
+        });
+        let mut state = self.state.lock().expect("equality graph");
+        self.register_expression_operands(
+            &mut state,
+            written.iter().flatten(),
+            [],
+            observations.iter().flatten(),
+        );
+        let ids: [u64; 2] = std::array::from_fn(|i| match [left, right][i] {
+            V::Legacy(_) => state.terms.int32_class(written[i].as_ref().unwrap()),
+            V::Shared(root) => state.terms.shared_int32_class(root),
+        });
+        state.close(Vec::new());
+        state.terms.scalar_class_root(ids[0]) == state.terms.scalar_class_root(ids[1])
+    }
+
     fn register_int32_operands(
         &self,
         state: &mut EqualityGraphState,

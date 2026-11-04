@@ -294,12 +294,19 @@ Remaining groups to audit and migrate:
   registration also uses the cached syntax summary to skip pointer discovery
   for plain arithmetic without load names, retaining scoped inspection for
   conversion payloads and load-bearing expressions.
-  `condition_as_order_fact` still exports in the selected-condition path
-  checker and its quantified/derived order collectors (`selected_conditions.rs`
-  and `bounds.rs`). Migrating them also requires preserving selected transport
-  equality, positive-offset connections and constant connections. The
-  occurrences in `order_paths.rs` and the proposition-reasoning regression are
-  test-only reference walkers, not outstanding live consumers.
+  Selected-condition paths and their quantified/derived order collectors
+  retain operand identities. Their transport equality reads shared operands,
+  retaining the existing native leaf rules, logical-load registration, scoped
+  memoization, positive-offset connections and constant connections. Guarded
+  derived bounds remain unavailable without the guard; finite universal
+  instances retain their substituted operands. Variable substitution now rewrites
+  shared machine observations directly, preserving raw arithmetic operators and
+  existing cast rules. Substitution results remain query-local, including when
+  registered-load resolution is enabled. Additive matching counts shared
+  DAG occurrences with exact multiplicities rather than flattening every path
+  into a list; constant accumulation retains its existing wrapping semantics.
+  `condition_as_order_fact` occurrences in `order_paths.rs` and the
+  proposition-reasoning regression are test-only reference walkers.
   `signed_order_bound_entries` still supplies memory-equality candidate
   construction; its proof/facts occurrence is test-only. Kernel uses of
   `interval_query_form` are also test references; its live callers are Surface

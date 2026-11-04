@@ -3535,9 +3535,12 @@ impl<'a> TermRewrite<'a> {
                 ))
             }
             IntegerTerm::Machine(value) => {
-                if self.comparison_arithmetic
+                if (self.comparison_arithmetic
+                    || (matches!(self.bitvector, Some((MachineTerm::Variable(_), _)))
+                        && self.conditions.is_none()
+                        && self.collected_conditions.is_none()))
                     && let Some(root) = value.shared_operand()
-                    && let Some(result) = self.comparison_operand(root)
+                    && let Some(result) = self.shared_machine_operand(root)
                 {
                     return MachineOperandView::Shared(&result)
                         .observe(value.ty())
