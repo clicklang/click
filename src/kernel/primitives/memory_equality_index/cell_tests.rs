@@ -1442,17 +1442,38 @@ fn native_fragment_consumption_checks_each_typed_designation() {
 
 #[test]
 fn symbolic_ownership_queries_preserve_authority_checks_and_branches() {
+    ownership_queries_preserve_authority_checks_and_branches(true);
+}
+
+#[test]
+fn constant_ownership_queries_preserve_authority_checks_and_branches() {
+    ownership_queries_preserve_authority_checks_and_branches(false);
+}
+
+fn ownership_queries_preserve_authority_checks_and_branches(symbolic: bool) {
     for native in [false, true] {
-        for case in ["owned", "gap", "view", "zero", "negative", "designation"] {
+        for case in [
+            "owned",
+            "gap",
+            "overlap",
+            "view",
+            "zero",
+            "negative",
+            "designation",
+        ] {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Pointer::symbolic(Variable(991_010));
-            let end = MachineTerm::Variable(Variable(991_011));
             let c = |n: u32| {
                 if native {
                     MachineTerm::uint64_constant(u64::from(n))
                 } else {
                     n.into()
                 }
+            };
+            let end = if symbolic {
+                MachineTerm::Variable(Variable(991_011))
+            } else {
+                c(8)
             };
             let less = |a, b| {
                 if native {
@@ -1472,7 +1493,14 @@ fn symbolic_ownership_queries_preserve_authority_checks_and_branches() {
                 .assume_condition(less(c(2), end.clone()), true)
                 .assume_condition(less(end.clone(), c(64)), true);
             let first = CResourceFact::own_memory(range(c(0), c(2)));
-            let tail = range(c(if case == "gap" { 3 } else { 2 }), end.clone());
+            let tail = range(
+                c(match case {
+                    "gap" => 3,
+                    "overlap" => 1,
+                    _ => 2,
+                }),
+                end.clone(),
+            );
             let second =
                 match case {
                     "view" => CResourceFact::view_memory(tail),
@@ -1498,6 +1526,16 @@ fn symbolic_ownership_queries_preserve_authority_checks_and_branches() {
                 assert!(context.contains_exact_representation(&first));
                 assert!(context.contains_exact_representation(&second));
             }
+            assert_eq!(
+                context
+                    .clone()
+                    .without_fact_incrementally(&required, &facts)
+                    .is_some(),
+                // Narrow fragment transfer retains the supplied carrier;
+                // unlike entailment, it need not establish the requested one.
+                case == "owned" || (!symbolic && !native && case == "designation"),
+                "consumption {native}/{case}"
+            );
             if case == "owned" {
                 let child = context
                     .clone()
