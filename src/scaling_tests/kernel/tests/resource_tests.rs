@@ -3594,3 +3594,86 @@ fn native_ownership_query_scales_with_selected_pieces() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn native_symbolic_partition_ignores_unrelated_fragments() {
+    for case in ["joined", "gap", "view", "ambiguous", "designation"] {
+        let mut samples = Vec::new();
+        for count in [4u64, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(989_972));
+            let n = Bitvector32Term::Variable(Variable(989_973));
+            let c = Bitvector32Term::uint64_constant;
+            let facts = PureFactContext::new()
+                .assume_condition(ConditionTerm::uint64_less_than(n.clone(), c(32)), true);
+            let range = |lo, hi| CMemoryRange::new_wide(p.clone(), lo, hi, 1);
+            let first = CResourceFact::own_memory(range(c(0), n.clone()));
+            let start = if case == "gap" {
+                Bitvector32Term::uint64_add(n.clone(), c(1))
+            } else {
+                n.clone()
+            };
+            let suffix = range(start, c(32));
+            let second =
+                match case {
+                    "view" => CResourceFact::view_memory(suffix),
+                    "designation" => CResourceFact::own_memory(suffix.with_designation(
+                        std::sync::Arc::new(Pointer::symbolic(Variable(989_974))),
+                    )),
+                    _ => CResourceFact::own_memory(suffix),
+                };
+            let mut context = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts([first.clone(), second.clone()]);
+            if case == "ambiguous" {
+                context =
+                    context.unchecked_with_fact(CResourceFact::own_memory(range(n.clone(), c(31))));
+            }
+            for i in 0..count {
+                context = context.unchecked_with_fact(CResourceFact::own_memory(range(
+                    c(64 + i * 2),
+                    c(65 + i * 2),
+                )));
+            }
+            context.synchronize_memory_equalities(&facts);
+            let required = CResourceFact::own_memory(range(c(0), c(32)).with_typed_carrier());
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let (((answer, consumed), work), maps) =
+                    crate::persistent::measure_persistent_work(|| {
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            (
+                                context.satisfies_fact(&required, &facts),
+                                context
+                                    .clone()
+                                    .without_fact_incrementally(&required, &facts),
+                            )
+                        })
+                    });
+                assert_eq!(answer, case == "joined", "{case}/{count}");
+                assert_eq!(consumed.is_some(), answer, "{case}/{count}");
+                if let Some(rest) = consumed {
+                    assert_eq!(rest.facts().len(), count as usize);
+                    assert!(
+                        rest.contains_exact_representation(&CResourceFact::own_memory(range(
+                            c(64),
+                            c(65)
+                        )))
+                    );
+                }
+                assert!(context.contains_exact_representation(&first));
+                assert!(context.contains_exact_representation(&second));
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("symbolic partition {case}: {samples:?}");
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "{case}: {samples:?}"
+        );
+    }
+}

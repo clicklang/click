@@ -719,6 +719,7 @@ fn constant_owned_consumption_rejects_candidate_search() {
     ] {
         for function in [
             "consume_constant_owned_memory",
+            "consume_native_symbolic_partition",
             "reserve_owned_memory_fragments_impl",
         ] {
             let source = format!("fn {function}(c: C) {{ c.{name}(); }}");

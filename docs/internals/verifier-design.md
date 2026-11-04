@@ -521,6 +521,13 @@ cursor; native pieces are never narrowed to 32 bits. An unrepresentable length
 or coordinate refuses composition without entering the candidate fallback.
 For a native request, each selected supplier must satisfy its typed access
 designation, as the previous whole-range entailment route required.
+A constant native request may have symbolic intermediate partition points.
+When its nominated supplier has symbolic bounds, consumption follows unique
+exact-start entries, applying the existing binary range-composition rule.
+Every selected piece must lie inside the request; a gap, ambiguous successor,
+cycle, wrong designation, or non-unit owner refuses without trying alternatives.
+Consumption and non-consuming queries share this persistent operation. Scaling
+controls grow unrelated same-base fragments beside a fixed symbolic partition.
 Symbolic requests remain a separate audit target. A build guard forbids
 candidate enumeration in this constant-consumption path.
 

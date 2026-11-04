@@ -6937,8 +6937,91 @@ impl ResourceContext {
         {
             return Some(self);
         }
+        if range.wide_bounds().is_some()
+            && candidates.entries.single_supplier().is_some_and(|entry| {
+                self.fact(entry)
+                    .memory_own_range()
+                    .is_some_and(CMemoryRange::has_symbolic_bounds)
+            })
+        {
+            return self.consume_native_symbolic_partition(required, assumptions, origins);
+        }
         self.reserve_owned_memory_fragments_impl(required, assumptions, origins)
             .map(|(remaining, _)| remaining)
+    }
+
+    /// Compose the selected native endpoint chain, without inspecting other
+    /// starts. Constant queries may have symbolic intermediate partition points.
+    fn consume_native_symbolic_partition(
+        mut self,
+        required: &CResourceFact,
+        assumptions: &PureFactContext,
+        mut origins: Option<&mut MemorySplitOrigins>,
+    ) -> Option<Self> {
+        let range = required.memory_own_range().expect("native ownership query");
+        let candidates = self.memory_fact_candidates(range, true, assumptions);
+        let Some(first) = candidates.entries.single_supplier() else {
+            return None;
+        };
+        let mut next = first;
+        let mut visited = BTreeSet::new();
+        let mut joined: Option<CResourceFact> = None;
+        loop {
+            if !visited.insert(next) {
+                return None;
+            }
+            let available = self.fact(next).clone();
+            if available.owned_quantity_term().and_then(|q| q.as_const()) != Some(1) {
+                return None;
+            }
+            let Some(piece) = candidates.supplier_at_base(next, range.base()) else {
+                return None;
+            };
+            let Some(piece_range) = piece.memory_own_range() else {
+                return None;
+            };
+            if range.typed_carrier
+                && !assumptions.access_designations_match(range.access_designation(), piece_range)
+            {
+                return None;
+            }
+            let combined = match joined {
+                None => piece,
+                Some(ref prior) => {
+                    let Some(combined) = normalize_resource_fact_pair(prior, &piece, assumptions)
+                    else {
+                        return None;
+                    };
+                    combined
+                }
+            };
+            let Some(combined_range) = combined.memory_own_range() else {
+                return None;
+            };
+            // Do not continue a chain outside the footprint the query names.
+            if !memory_range_covers(range, combined_range, assumptions) {
+                return None;
+            }
+            // Apply each exact selected consumption to this persistent branch.
+            // Combined coverage is restricted to the request, so success leaves
+            // no residual from these pieces and preserves all unrelated entries.
+            if !self.consume_fact_from_candidates_with_origins(
+                &available,
+                assumptions,
+                [next],
+                origins.as_deref_mut(),
+            ) {
+                return None;
+            }
+            if resource_fact_entails(&combined, required, assumptions) {
+                return Some(self);
+            }
+            let Some(successor) = candidates.sole_owned_start(&combined_range.end_pointer()) else {
+                return None;
+            };
+            joined = Some(combined);
+            next = successor;
+        }
     }
 
     /// Join only the suppliers selected for the explicit footprint. Loan-bound
