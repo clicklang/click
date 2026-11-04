@@ -1379,6 +1379,68 @@ fn inserting_a_disjoint_concrete_range_uses_interval_neighbors() {
 }
 
 #[test]
+fn native_large_coordinate_insertion_uses_interval_neighbors() {
+    for (origin, width) in [(1u64 << 63, 1), (1u64 << 62, 4)] {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer::symbolic(Variable(995_100));
+            let owned = |start, end| {
+                CResourceFact::own_memory(CMemoryRange::new_wide(
+                    base.clone(),
+                    MachineTerm::uint64_constant(start),
+                    MachineTerm::uint64_constant(end),
+                    width,
+                ))
+            };
+            let assumptions = PureFactContext::new();
+            let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts(
+                (0..size).map(|i| owned(origin + 4 + 2 * i as u64, origin + 5 + 2 * i as u64)),
+            );
+            context.synchronize_memory_equalities(&assumptions);
+            let mut work = Vec::new();
+            // A fixed disjoint insertion, then collisions with the first and last owners.
+            for (next, accepted) in [
+                (owned(origin, origin + 1), true),
+                (owned(origin + 4, origin + 5), false),
+                (
+                    owned(
+                        origin + 4 + 2 * (size - 1) as u64,
+                        origin + 5 + 2 * (size - 1) as u64,
+                    ),
+                    false,
+                ),
+            ] {
+                for _ in 0..3 {
+                    let (result, units) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            context
+                                .clone()
+                                .try_compose_into_valid_context_delaying_normalization(
+                                    [next.clone()],
+                                    &assumptions,
+                                )
+                        });
+                    assert_eq!(result.is_ok(), accepted);
+                    assert_eq!(context.facts().len(), size);
+                    work.push(units);
+                }
+            }
+            samples.push((size, work));
+        }
+        eprintln!("native insertion origin={origin}, width={width}: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 48)),
+            "large native coordinates scan ambient owners: {samples:?}"
+        );
+    }
+}
+
+#[test]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
     let base = Pointer {

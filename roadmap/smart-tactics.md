@@ -34,14 +34,16 @@ facts do not establish flat cost as the queried class or bucket grows.
 1. **Remaining fragment-selection routes.**
    `without_fact_incrementally_impl` still enumerates candidates for requests
    outside views and unit-owned memory. `satisfies_fact` still enumerates and
-   normalizes memory suppliers for other ownership quantities. Isolate real
-   checking callers and red scaling curves before changing these remaining routes.
+   normalizes memory suppliers for other ownership quantities. Surface validation
+   rejects quantities directly on memory; first establish a reachable producer
+   and checking caller before treating these branches as checking bottlenecks.
+   Then establish red scaling curves before changing them.
    Distinguish the relevant pieces consumed by explicit composition from
    rejected candidates and speculative searches. Preserve symbolic/wide range
    carriers, split origins, ownership refusals and branch isolation. Incremental
    ownership-validity checking still enumerates related candidates when the
    constant same-base neighbor index cannot represent the block (for example,
-   symbolic bounds or native byte coordinates beyond its signed range).
+   symbolic bounds or owners at different bases in the same block).
 
    Keep complete-operation controls: a flat call query does not establish flat
    folding, and a flat constant-range fold does not establish bounded symbolic
