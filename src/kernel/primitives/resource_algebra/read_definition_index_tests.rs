@@ -98,3 +98,75 @@ fn definitions_registered_after_publication_select_existing_payloads() {
         Some(&held)
     );
 }
+
+#[test]
+fn memory_direct_support_preserves_held_identity_and_authority() {
+    for native in [false, true] {
+        for owned in [false, true] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = PureFactContext::new();
+            let p = Pointer::symbolic(Variable(976_300));
+            let range = |start: u32, end: u32| {
+                if native {
+                    CMemoryRange::new_wide(
+                        p.clone(),
+                        MachineTerm::uint64_constant(start.into()),
+                        MachineTerm::uint64_constant(end.into()),
+                        4,
+                    )
+                } else {
+                    CMemoryRange::new(p.clone(), start.into(), end.into())
+                }
+            };
+            let held = if owned {
+                CResourceFact::own_memory(range(0, 4))
+            } else {
+                CResourceFact::view_memory(range(0, 4))
+            };
+            let context =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(held.clone());
+            context.synchronize_memory_equalities(&facts);
+            let required = CResourceFact::view_memory(range(1, 3).with_typed_carrier());
+            for _ in 0..3 {
+                assert_eq!(
+                    context.directly_supporting_fact(&required, &facts),
+                    Some(&held)
+                );
+                assert_eq!(
+                    context
+                        .directly_supporting_fact(&CResourceFact::own_memory(range(1, 3)), &facts)
+                        .is_some(),
+                    owned
+                );
+                assert!(
+                    context
+                        .directly_supporting_fact(&CResourceFact::view_memory(range(0, 8)), &facts)
+                        .is_none()
+                );
+                let wrong = CResourceFact::view_memory(
+                    range(1, 3)
+                        .with_designation(std::sync::Arc::new(Pointer::symbolic(Variable(976_301))))
+                        .with_typed_carrier(),
+                );
+                assert!(context.directly_supporting_fact(&wrong, &facts).is_none());
+                assert!(context.contains_exact_representation(&held));
+            }
+            let child = context.clone().without_exact_representation(&held).unwrap();
+            assert!(child.directly_supporting_fact(&required, &facts).is_none());
+            assert_eq!(
+                context.directly_supporting_fact(&required, &facts),
+                Some(&held)
+            );
+            for quantity in [0u32, u32::MAX] {
+                let invalid = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
+                    CResourceFact::own_quantity(CResource::Memory(range(0, 4)), quantity.into()),
+                );
+                assert!(
+                    invalid
+                        .directly_supporting_fact(&CResourceFact::own_memory(range(1, 3)), &facts)
+                        .is_none()
+                );
+            }
+        }
+    }
+}

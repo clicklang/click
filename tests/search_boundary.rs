@@ -709,15 +709,17 @@ fn loop_binding_handoff_rejects_view_rediscovery() {
 }
 
 #[test]
-fn constant_owned_consumption_rejects_candidate_search() {
+fn indexed_memory_support_rejects_candidate_search() {
     for name in [
         "iter",
         "collect",
         "find",
+        "find_map",
         "normalized_memory_suppliers",
         "with_coalesced_owned_memory",
     ] {
         for function in [
+            "directly_supporting_memory_fact",
             "consume_unit_owned_memory",
             "consume_symbolic_partition",
             "memory_range_definitely_shorter",

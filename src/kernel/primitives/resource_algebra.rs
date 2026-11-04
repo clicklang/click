@@ -3089,16 +3089,31 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<&CResourceFact> {
         if let Some(range) = required.memory_range() {
-            let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
-            return candidates.entries.iter().find_map(|entry| {
-                let aligned = candidates.requirement(entry, required)?;
-                let available = self.fact(entry);
-                resource_fact_entails(available, &aligned, assumptions).then_some(available)
-            });
+            return self.directly_supporting_memory_fact(required, range, assumptions);
         }
         self.direct_match_candidates_for(required, assumptions)
             .into_iter()
             .find(|available| resource_fact_entails(available, required, assumptions))
+    }
+
+    /// Check one indexed supplier and return its held representation. A failed
+    /// alignment or entailment check does not enumerate alternative suppliers.
+    fn directly_supporting_memory_fact(
+        &self,
+        required: &CResourceFact,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<&CResourceFact> {
+        let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
+        let entry = candidates.entries.single_supplier()?;
+        let aligned = candidates.requirement(entry, required)?;
+        let available = self.fact(entry);
+        // Geometry nominates a supplier; an empty or negative owner supplies
+        // neither owned authority nor its read core.
+        if available.is_own() && !available.has_proven_positive_quantity(assumptions) {
+            return None;
+        }
+        resource_fact_entails(available, &aligned, assumptions).then_some(available)
     }
 
     /// Select token/composite candidates by shape and the first pointer's
