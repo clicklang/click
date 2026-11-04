@@ -434,6 +434,15 @@ its separate iterator. Build boundaries pin both the support caller and
 `MemoryFactEntries::single_supplier`; scaling tests cover exact hits, symbolic
 misses, and a fixed-span refusal beside increasing short owned fragments.
 
+One-fact memory evidence selection (`directly_supporting_fact`) uses the same
+indexed nomination for owned and viewed requirements. It aligns and checks the
+selected supplier once, requires positive quantity from an owner, and returns
+that exact held representation. A refusal does not try other candidates.
+Its dedicated memory helper is covered by
+the candidate-search build boundary. Repeated fixed-span misses beside growing
+short fragments and exact early/late hits have separate scaling coverage;
+selecting one fact does not compose a partition or normalize suppliers.
+
 Call planning retains memory split origins while constructing residual owners.
 Each new residual occurrence maps directly to its original pre-reservation
 owner in a call-local persistent map. Repeated splits propagate that original

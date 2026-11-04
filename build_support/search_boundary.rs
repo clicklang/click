@@ -126,7 +126,8 @@ impl Boundary<'_> {
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && matches!(
                 self.function.as_str(),
-                "consume_unit_owned_memory"
+                "directly_supporting_memory_fact"
+                    | "consume_unit_owned_memory"
                     | "consume_symbolic_partition"
                     | "memory_range_definitely_shorter"
                     | "reserve_owned_memory_fragments_impl"
@@ -136,12 +137,13 @@ impl Boundary<'_> {
                 "iter"
                     | "collect"
                     | "find"
+                    | "find_map"
                     | "normalized_memory_suppliers"
                     | "with_coalesced_owned_memory"
             )
         {
             self.errors.push(format!(
-                "{}: {}: unit-owned consumption must use indexed suppliers ({name})",
+                "{}: {}: memory support must use indexed suppliers ({name})",
                 self.path, self.function
             ));
         }
