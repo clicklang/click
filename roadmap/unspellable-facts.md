@@ -249,9 +249,11 @@ Remaining groups to audit and migrate:
   changes do not complete that consumer.
   The masked-zero equality rule now reads retained 64-bit operands and keeps
   its bound as cited evidence. Native and shared inputs use the same rule;
-  absent or refuted bounds remain unknown. Pointer-address/tag forms, their
-  indexed equation lookups, and general wide simplification still need migration
-  before removing the wide-equality compatibility bridge.
+  absent or refuted bounds remain unknown. Recorded wide-equation endpoint
+  queries also accept shared operands, retaining logical-read dependencies,
+  current equality classes and the original source endpoints. Pointer-address/tag
+  forms and general wide simplification still need migration before removing
+  the wide-equality compatibility bridge.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;

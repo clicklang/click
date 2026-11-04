@@ -2170,9 +2170,15 @@ impl TermClasses {
     ) -> PersistentSet<crate::kernel::MachineTerm> {
         let id = self.intern_uint64(term);
         self.register_pending_loads();
-        let root = self.root(id);
+        self.wide_equation_endpoints_of_class(id)
+    }
+
+    pub(super) fn wide_equation_endpoints_of_class(
+        &self,
+        id: u64,
+    ) -> PersistentSet<crate::kernel::MachineTerm> {
         self.wide_equation_endpoints
-            .get(&root)
+            .get(&self.root(id))
             .cloned()
             .unwrap_or_default()
     }

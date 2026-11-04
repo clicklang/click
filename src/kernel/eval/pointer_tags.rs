@@ -329,7 +329,7 @@ fn form_of(
     // graph's equality is not a named premise, so the record cannot certify.
     for endpoint in assumptions
         .equality_graph
-        .wide_equation_endpoints_equal_to(term)
+        .wide_equation_endpoints_equal_to(crate::kernel::MachineOperandView::Legacy(term))
     {
         crate::instrumentation::record_deterministic_work(1);
         if endpoint == *term {

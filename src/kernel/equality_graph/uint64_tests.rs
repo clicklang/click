@@ -292,3 +292,50 @@ fn a_read_through_an_alias_equals_the_value_stored_at_the_other_spelling() {
             .are_uint64_equal(&word(&memory, &alias_of, 8), &five)
     );
 }
+
+#[test]
+fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
+    let _session = VerificationSession::enter();
+    let ty = MachineIntegerType::UInt64;
+    let a = MachineTerm::Variable(Variable(984001));
+    let b = MachineTerm::Variable(Variable(984002));
+    let source = MachineTerm::Variable(Variable(984003));
+    let query = MachineTerm::uint64_add(a, b);
+    let root = KernelTermImport::default()
+        .machine_arithmetic(ty, &query)
+        .unwrap();
+    let address = MachineTerm::pointer_address(Pointer::symbolic(Variable(984004)));
+    let parent = PureFactContext::new().assume_proposition(fact(source.clone(), address));
+    let exports = KernelTermExport::machine_export_count();
+    assert!(
+        parent
+            .equality_graph
+            .wide_equation_endpoints_equal_to(V::Shared(&root))
+            .is_empty()
+    );
+    let edge = fact(source.clone(), query.clone());
+    let child = parent.clone().assume_proposition(edge.clone());
+    let shared = child
+        .equality_graph
+        .wide_equation_endpoints_equal_to(V::Shared(&root));
+    let native = child
+        .equality_graph
+        .wide_equation_endpoints_equal_to(V::Legacy(&query));
+    assert_eq!(shared, native);
+    assert!(shared.contains(&source));
+    assert!(
+        parent
+            .equality_graph
+            .wide_equation_endpoints_equal_to(V::Shared(&root))
+            .is_empty()
+    );
+    let withdrawn = child.without_exact_fact(&edge);
+    assert!(
+        withdrawn
+            .equality_graph
+            .wide_equation_endpoints_equal_to(V::Shared(&root))
+            .is_empty()
+    );
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}
