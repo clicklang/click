@@ -2611,9 +2611,7 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
         || is_nat_integer_law_name(name)
         || matches!(
             name,
-            "click::integer::int32_add_defined_by_integer_bounds"
-                | "click::integer::int64_add_defined_by_integer_bounds"
-                | "click::integer::int32_add_to_integer"
+            "click::integer::int32_add_to_integer"
                 | "click::integer::int32_remainder_to_integer"
                 | "click::integer::int64_subtract_to_integer"
                 | "click::integer::uint64_pack_uint16_to_integer"
@@ -2629,21 +2627,9 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::integer::uint64_divide_to_integer"
                 | "click::integer::uint64_remainder_to_integer"
                 | "click::integer::int32_subtract_to_integer"
-                | "click::integer::int32_increment_upper_bound"
-                | "click::integer::int32_increment_strictly_increases"
-                | "click::integer::int32_increment_lower_bound"
-                | "click::integer::int32_less_equal_less_than_transitive"
-                | "click::integer::int32_less_equal_transitive"
-                | "click::integer::int32_less_equal_and_not_less_than_implies_equal"
-                | "click::integer::int32_less_equal_and_not_equal_implies_less_than"
                 | "int32_le_antisymmetric"
-                | "click::integer::int32_positive_is_nonnegative"
-                | "click::integer::int32_increment_below_max_is_defined"
                 | "click::integer::int32_nonnegative_add_within_max_is_defined"
                 | "click::integer::int32_nonnegative_subtract_within_value_is_defined"
-                | "click::integer::int32_positive_predecessor_is_nonnegative"
-                | "click::integer::int32_positive_predecessor_strictly_decreases"
-                | "click::integer::int32_nonnegative_predecessor_upper_bound"
                 | "click::integer::uint32_positive_predecessor_strictly_decreases"
                 | "click::integer::uint32_increment_upper_bound"
                 | "click::integer::uint32_add_to_integer"
@@ -2656,8 +2642,6 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::integer::uint32_less_than_divisor_implies_remainder_is_value"
                 | "click::integer::uint32_less_than_implies_positive_difference"
                 | "click::integer::uint32_difference_decreases_after_increment"
-                | "click::integer::uint64_less_than_less_equal_transitive"
-                | "click::integer::uint64_less_equal_transitive"
         )
 }
 
@@ -2686,8 +2670,6 @@ fn verify_kernel_standard_theorem_axiom(
             2,
             crate::kernel::integer_truncation_law_requirements(name).unwrap(),
         ),
-        "click::integer::int32_add_defined_by_integer_bounds"
-        | "click::integer::int64_add_defined_by_integer_bounds" => (2, 2),
         "click::integer::int32_add_to_integer"
         | "click::integer::int64_subtract_to_integer"
         | "click::integer::int32_subtract_to_integer"
@@ -2706,21 +2688,9 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::integer::uint32_divide_to_integer"
         | "click::integer::uint32_remainder_to_integer" => (2, 2),
         "click::integer::int32_remainder_to_integer" => (2, 2),
-        "click::integer::int32_increment_upper_bound"
-        | "click::integer::int32_increment_strictly_increases" => (2, 1),
-        "click::integer::int32_increment_lower_bound" => (3, 2),
-        "click::integer::int32_nonnegative_predecessor_upper_bound"
-        | "click::integer::int32_nonnegative_add_within_max_is_defined"
+        "click::integer::int32_nonnegative_add_within_max_is_defined"
         | "click::integer::int32_nonnegative_subtract_within_value_is_defined" => (2, 2),
         "int32_le_antisymmetric" => (2, 2),
-        "click::integer::int32_less_equal_and_not_less_than_implies_equal"
-        | "click::integer::int32_less_equal_and_not_equal_implies_less_than" => (2, 2),
-        "click::integer::int32_positive_is_nonnegative"
-        | "click::integer::int32_increment_below_max_is_defined"
-        | "click::integer::int32_positive_predecessor_is_nonnegative"
-        | "click::integer::int32_positive_predecessor_strictly_decreases" => (1, 1),
-        "click::integer::int32_less_equal_less_than_transitive"
-        | "click::integer::int32_less_equal_transitive" => (3, 2),
         "click::integer::uint32_add_to_integer"
         | "click::integer::uint32_subtract_to_integer"
         | "click::integer::uint32_multiply_to_integer"
@@ -2731,7 +2701,6 @@ fn verify_kernel_standard_theorem_axiom(
         "click::integer::uint32_increment_upper_bound"
         | "click::integer::uint32_less_than_implies_positive_difference"
         | "click::integer::uint32_difference_decreases_after_increment" => (2, 1),
-        name if crate::kernel::is_wide_order_transitivity_name(name) => (3, 2),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2884,18 +2853,8 @@ fn verify_kernel_standard_theorem_axiom(
                 ))),
             }
         };
-        if crate::kernel::is_wide_order_transitivity_name(theorem.name()) {
-            crate::kernel::prove_wide_order_transitive(
-                theorem.name(),
-                parameter(0)?,
-                parameter(1)?,
-                parameter(2)?,
-            )
-            .expect("registered uint64 transitivity")
-        } else {
-            crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
-                .expect("registered uint64 observation bridge")
-        }
+        crate::kernel::prove_uint64_integer_bridge(theorem.name(), parameter(0)?, parameter(1)?)
+            .expect("registered uint64 observation bridge")
     } else if theorem
         .name()
         .rsplit("::")
@@ -2912,14 +2871,9 @@ fn verify_kernel_standard_theorem_axiom(
                 ))),
             }
         };
-        let left = parameter(0)?;
-        let right = parameter(1)?;
         match theorem.name() {
-            "click::integer::int64_add_defined_by_integer_bounds" => {
-                crate::kernel::prove_int64_add_defined_by_integer_bounds(left, right)
-            }
             "click::integer::int64_subtract_to_integer" => {
-                crate::kernel::prove_int64_subtract_to_integer(left, right)
+                crate::kernel::prove_int64_subtract_to_integer(parameter(0)?, parameter(1)?)
             }
             _ => unreachable!("only registered int64 bridges"),
         }
@@ -3014,9 +2968,6 @@ fn verify_kernel_standard_theorem_axiom(
         };
         let value = int32_parameter(0)?;
         match theorem.name() {
-            "click::integer::int32_add_defined_by_integer_bounds" => {
-                crate::kernel::prove_int32_add_defined_by_integer_bounds(value, int32_parameter(1)?)
-            }
             "click::integer::int32_add_to_integer" => {
                 crate::kernel::prove_int32_add_to_integer(value, int32_parameter(1)?)
             }
@@ -3026,48 +2977,12 @@ fn verify_kernel_standard_theorem_axiom(
             "click::integer::int32_subtract_to_integer" => {
                 crate::kernel::prove_int32_subtract_to_integer(value, int32_parameter(1)?)
             }
-            "click::integer::int32_increment_upper_bound" => {
-                prove_int32_increment_upper_bound(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_increment_strictly_increases" => {
-                prove_int32_increment_strictly_increases(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_increment_lower_bound" => {
-                prove_int32_increment_lower_bound(value, int32_parameter(1)?, int32_parameter(2)?)
-            }
             "int32_le_antisymmetric" => prove_int32_le_antisymmetric(value, int32_parameter(1)?),
-            "click::integer::int32_less_equal_and_not_less_than_implies_equal" => {
-                prove_int32_le_and_not_lt_implies_eq(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_less_equal_and_not_equal_implies_less_than" => {
-                prove_int32_le_and_neq_implies_lt(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_positive_is_nonnegative" => {
-                prove_int32_positive_is_nonnegative(value)
-            }
-            "click::integer::int32_increment_below_max_is_defined" => {
-                prove_int32_increment_below_max_is_defined(value)
-            }
             "click::integer::int32_nonnegative_add_within_max_is_defined" => {
                 prove_int32_nonnegative_add_within_max_is_defined(value, int32_parameter(1)?)
             }
             "click::integer::int32_nonnegative_subtract_within_value_is_defined" => {
                 prove_int32_nonnegative_subtract_within_value_is_defined(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_positive_predecessor_is_nonnegative" => {
-                prove_int32_positive_predecessor_is_nonnegative(value)
-            }
-            "click::integer::int32_positive_predecessor_strictly_decreases" => {
-                prove_int32_positive_predecessor_strictly_decreases(value)
-            }
-            "click::integer::int32_nonnegative_predecessor_upper_bound" => {
-                prove_int32_nonnegative_predecessor_upper_bound(value, int32_parameter(1)?)
-            }
-            "click::integer::int32_less_equal_less_than_transitive" => {
-                prove_int32_le_lt_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
-            }
-            "click::integer::int32_less_equal_transitive" => {
-                prove_int32_le_transitive(value, int32_parameter(1)?, int32_parameter(2)?)
             }
             _ => unreachable!("checked above"),
         }
@@ -4426,56 +4341,6 @@ mod tests {
         }
     }
     #[test]
-    fn wide_order_transitivity_declarations_reject_forged_premises_types_and_goals() {
-        for ty in ["uint64"] {
-            for (shape, first, second, conclusion) in [
-                ("less_than_less_equal", "<", "<=", "<"),
-                ("less_equal", "<=", "<=", "<="),
-            ] {
-                let declaration = |ty: &str, first: &str, second: &str, conclusion: &str| {
-                    format!(
-                        "theorem {ty_name}_{shape}_transitive(first: {ty}, middle: {ty}, last: {ty}) {{ requires first {first} middle; requires middle {second} last; ensures first {conclusion} last; }}",
-                        ty_name = if ty == "uint32" { "uint64" } else { ty },
-                    )
-                };
-                let source = declaration(ty, first, second, conclusion);
-                verify_standard_declaration(&source)
-                    .unwrap_or_else(|error| panic!("{source}: {}", error.message()));
-                let weaker = |operator: &str| if operator == "<" { "<=" } else { "<" };
-                let mut forged = vec![
-                    // A premise the conclusion does not follow from.
-                    source.replace("requires middle", "requires last"),
-                    // The other kind's parameters under this kind's name.
-                    source.replace(
-                        &format!(": {ty}"),
-                        if ty == "uint64" {
-                            ": int64"
-                        } else {
-                            ": uint64"
-                        },
-                    ),
-                    source.replace("ensures first", "ensures last"),
-                ];
-                if conclusion == "<=" {
-                    forged.push(declaration(ty, first, second, "<"));
-                } else {
-                    // Weakening one strict premise changes which theorem
-                    // this is; under this name it is refused.
-                    if first == "<" {
-                        forged.push(declaration(ty, weaker(first), second, conclusion));
-                    }
-                    if second == "<" {
-                        forged.push(declaration(ty, first, weaker(second), conclusion));
-                    }
-                }
-                for invalid in forged {
-                    assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-                }
-            }
-        }
-    }
-
-    #[test]
     fn uint32_division_bridge_declarations_reject_forged_domains_types_and_goals() {
         for (name, op, mathematical) in [
             (
@@ -4658,47 +4523,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn int64_definedness_by_integer_bounds_declarations_reject_weaker_bounds_and_widths() {
-        for (name, op, other) in [(
-            "click::integer::int64_add_defined_by_integer_bounds",
-            "+",
-            "-",
-        )] {
-            let lower = format!("to_integer(left) {op} to_integer(right) >= -9223372036854775808");
-            let upper = format!("to_integer(left) {op} to_integer(right) <= 9223372036854775807");
-            let source = format!(
-                "theorem {name}(left: int64, right: int64) {{ requires {lower}; requires {upper}; ensures defined(left {op} right); }}"
-            );
-            verify_standard_declaration(&source)
-                .unwrap_or_else(|error| panic!("{name}: {}", error.message()));
-            for invalid in [
-                // Either bound alone does not exclude overflow.
-                source.replace(&format!("requires {lower}; "), ""),
-                source.replace(&format!("requires {upper}; "), ""),
-                // A bound one past the range admits the overflowing value.
-                source.replace("9223372036854775807", "9223372036854775808"),
-                source.replace("-9223372036854775808", "-9223372036854775809"),
-                // The other operation's bounds, and the other widths.
-                source.replace(
-                    &format!("to_integer(left) {op} to_integer(right)"),
-                    &format!("to_integer(left) {other} to_integer(right)"),
-                ),
-                source.replace(": int64", ": int32"),
-                source.replace(": int64", ": uint64"),
-                source.replace(
-                    &format!("defined(left {op} right)"),
-                    &format!("defined(left {other} right)"),
-                ),
-            ] {
-                assert_ne!(invalid, source);
-                assert!(
-                    verify_standard_declaration(&invalid).is_err(),
-                    "forged declaration: {invalid}"
-                );
-            }
-        }
-    }
     #[test]
     fn int64_integer_operation_declarations_reject_wrong_guards_and_widths() {
         for (name, op, other) in [("click::integer::int64_subtract_to_integer", "-", "+")] {

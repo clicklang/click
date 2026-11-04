@@ -845,7 +845,18 @@ implicit; a sidecar writes `click::result::unwrap_or(r, d)` with no import.
 theorem int32_increment_upper_bound(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures to_integer(value + 1) <= to_integer(upper);
+    ensures to_integer(value + 1) <= to_integer(upper) by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (value as int32) < (upper as int32) => (value as int32) < (upper as int32);
+            int32_range => to_integer(upper as int32) <= to_integer(2147483647 as int32);
+            add 0, 1 => (to_integer(value as int32) + to_integer(upper as int32)) < (to_integer(upper as int32) + to_integer(2147483647 as int32));
+            interval_from_affine 2 (value) (-2147483648) (2147483646);
+            interval_atom (1) (1) (1);
+            interval_add_bounded 3, 4 (-2147483647) (2147483647);
+            affine_conclusion 0 5 => ((value + 1) as int32) <= (upper as int32);
+            conclusion 6;
+        }
+    }
 }
 ```
 
@@ -861,7 +872,19 @@ theorem int32_increment_upper_bound(value: int32, upper: int32) {
 theorem int32_increment_strictly_increases(value: int32, upper: int32) {
     requires value < upper;
 
-    ensures to_integer(value) < to_integer(value + 1);
+    ensures to_integer(value) < to_integer(value + 1) by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (value as int32) < (upper as int32) => (value as int32) < (upper as int32);
+            int32_range => to_integer(upper as int32) <= to_integer(2147483647 as int32);
+            add 0, 1 => (to_integer(value as int32) + to_integer(upper as int32)) < (to_integer(upper as int32) + to_integer(2147483647 as int32));
+            interval_from_affine 2 (value) (-2147483648) (2147483646);
+            interval_atom (1) (1) (1);
+            interval_add_bounded 3, 4 (-2147483647) (2147483647);
+            trivial => 0 <= 0;
+            affine_conclusion 6 5 => (value as int32) < ((value + 1) as int32);
+            conclusion 7;
+        }
+    }
 }
 ```
 
@@ -878,7 +901,25 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
     requires lower <= value;
     requires value < upper;
 
-    ensures to_integer(lower) <= to_integer(value + 1);
+    ensures to_integer(lower) <= to_integer(value + 1) by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (lower as int32) <= (value as int32) => (lower as int32) <= (value as int32);
+            premise 1: (value as int32) < (upper as int32) => (value as int32) < (upper as int32);
+            int32_range => to_integer(-2147483648 as int32) <= to_integer(lower as int32);
+            add 0, 2 => (to_integer(lower as int32) + to_integer(-2147483648 as int32)) <= (to_integer(value as int32) + to_integer(lower as int32));
+            int32_range => to_integer(upper as int32) <= to_integer(2147483647 as int32);
+            add 1, 4 => (to_integer(value as int32) + to_integer(upper as int32)) < (to_integer(upper as int32) + to_integer(2147483647 as int32));
+            interval_from_affine 3 (value) (-2147483648) (2147483647);
+            interval_from_affine 5 (value) (-2147483648) (2147483646);
+            interval_intersect 6, 7 (-2147483648) (2147483646);
+            interval_atom (1) (1) (1);
+            interval_add_bounded 8, 9 (-2147483647) (2147483647);
+            trivial => -1 <= 0;
+            add 0, 11 => (to_integer(lower as int32) + -1) <= (to_integer(value as int32) + 0);
+            affine_conclusion 12 10 => (lower as int32) <= ((value + 1) as int32);
+            conclusion 13;
+        }
+    }
 }
 ```
 
@@ -894,7 +935,14 @@ theorem int32_increment_lower_bound(value: int32, lower: int32, upper: int32) {
 theorem int32_positive_is_nonnegative(value: int32) {
     requires 0 < value;
 
-    ensures 0 <= value;
+    ensures 0 <= value by {
+        arithmetic_certificate {
+            premise 0: 0 < value => 0 < value;
+            trivial => -1 <= 0;
+            add 0, 1 => 0 + -1 < (to_integer(value as int32) + 0);
+            conclusion 2;
+        }
+    }
 }
 ```
 
@@ -910,7 +958,13 @@ theorem int32_positive_is_nonnegative(value: int32) {
 theorem int32_increment_below_max_is_defined(value: int32) {
     requires value < 2147483647;
 
-    ensures defined(value + 1);
+    ensures defined(value + 1) by {
+        arithmetic_certificate rules {
+            premise 0: value < 2147483647 => value < 2147483647;
+            int32_defined bounds [0] => defined(value + 1);
+            conclusion 0;
+        }
+    }
 }
 ```
 
@@ -960,7 +1014,9 @@ theorem int32_nonnegative_subtract_within_value_is_defined(value: int32, amount:
 theorem int32_add_defined_by_integer_bounds(left: int32, right: int32) {
     requires to_integer(left) + to_integer(right) >= -2147483648;
     requires to_integer(left) + to_integer(right) <= 2147483647;
-    ensures defined(left + right);
+    ensures defined(left + right) by {
+        assumption();
+    }
 }
 ```
 
@@ -1465,7 +1521,9 @@ The definedness premise excludes overflow; the equality is not unconditional.
 theorem int64_add_defined_by_integer_bounds(left: int64, right: int64) {
     requires to_integer(left) + to_integer(right) >= -9223372036854775808;
     requires to_integer(left) + to_integer(right) <= 9223372036854775807;
-    ensures defined(left + right);
+    ensures defined(left + right) by {
+        assumption();
+    }
 }
 ```
 
@@ -1601,7 +1659,16 @@ Equal exact signed observations identify the same native value, including full-w
 theorem int32_positive_predecessor_is_nonnegative(value: int32) {
     requires 0 < value;
 
-    ensures 0 <= to_integer(value - 1);
+    ensures 0 <= to_integer(value - 1) by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (0 as int32) < (value as int32) => (0 as int32) < (value as int32);
+            interval_from_affine 0 (value) (1) (2147483647);
+            interval_atom (1) (1) (1);
+            interval_subtract 1, 2 1 (0) (2147483646);
+            affine_conclusion 0 3 => (0 as int32) <= ((value - 1) as int32);
+            conclusion 4;
+        }
+    }
 }
 ```
 
@@ -1617,7 +1684,17 @@ theorem int32_positive_predecessor_is_nonnegative(value: int32) {
 theorem int32_positive_predecessor_strictly_decreases(value: int32) {
     requires 0 < value;
 
-    ensures to_integer(value - 1) < to_integer(value);
+    ensures to_integer(value - 1) < to_integer(value) by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (0 as int32) < (value as int32) => (0 as int32) < (value as int32);
+            interval_from_affine 0 (value) (1) (2147483647);
+            interval_atom (1) (1) (1);
+            interval_subtract 1, 2 1 (0) (2147483646);
+            trivial => 0 <= 0;
+            affine_conclusion 4 3 => ((value - 1) as int32) < (value as int32);
+            conclusion 5;
+        }
+    }
 }
 ```
 
@@ -1698,7 +1775,14 @@ theorem uint64_less_than_less_equal_transitive(first: uint64, middle: uint64, la
     requires first < middle;
     requires middle <= last;
 
-    ensures first < last;
+    ensures first < last by {
+        arithmetic_certificate {
+            premise 0: first < middle => first < middle;
+            premise 1: middle <= last => middle <= last;
+            add 0, 1 => to_integer(first) + to_integer(middle) < to_integer(middle) + to_integer(last);
+            conclusion 2;
+        }
+    }
 }
 ```
 
@@ -1713,7 +1797,14 @@ theorem uint64_less_equal_transitive(first: uint64, middle: uint64, last: uint64
     requires first <= middle;
     requires middle <= last;
 
-    ensures first <= last;
+    ensures first <= last by {
+        arithmetic_certificate {
+            premise 0: first <= middle => first <= middle;
+            premise 1: middle <= last => middle <= last;
+            add 0, 1 => to_integer(first) + to_integer(middle) <= to_integer(middle) + to_integer(last);
+            conclusion 2;
+        }
+    }
 }
 ```
 
@@ -1728,7 +1819,19 @@ theorem int32_nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
     requires 0 <= value;
     requires value <= bound;
 
-    ensures to_integer(value - 1) <= to_integer(bound);
+    ensures to_integer(value - 1) <= to_integer(bound) by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (0 as int32) <= (value as int32) => (0 as int32) <= (value as int32);
+            premise 1: (value as int32) <= (bound as int32) => (value as int32) <= (bound as int32);
+            interval_from_affine 0 (value) (0) (2147483647);
+            interval_atom (1) (1) (1);
+            interval_subtract 2, 3 2 (-1) (2147483646);
+            trivial => -1 <= 0;
+            add 1, 5 => (to_integer(value as int32) + -1) <= (to_integer(bound as int32) + 0);
+            affine_conclusion 6 4 => ((value - 1) as int32) <= (bound as int32);
+            conclusion 7;
+        }
+    }
 }
 ```
 
@@ -1745,7 +1848,14 @@ theorem int32_less_equal_less_than_transitive(first: int32, middle: int32, last:
     requires first <= middle;
     requires middle < last;
 
-    ensures first < last;
+    ensures first < last by {
+        arithmetic_certificate {
+            premise 0: first <= middle => first <= middle;
+            premise 1: middle < last => middle < last;
+            add 0, 1 => (to_integer(first as int32) + to_integer(middle as int32)) < (to_integer(middle as int32) + to_integer(last as int32));
+            conclusion 2;
+        }
+    }
 }
 ```
 
@@ -1762,7 +1872,14 @@ theorem int32_less_equal_transitive(first: int32, middle: int32, last: int32) {
     requires first <= middle;
     requires middle <= last;
 
-    ensures first <= last;
+    ensures first <= last by {
+        arithmetic_certificate {
+            premise 0: first <= middle => first <= middle;
+            premise 1: middle <= last => middle <= last;
+            add 0, 1 => (to_integer(first as int32) + to_integer(middle as int32)) <= (to_integer(middle as int32) + to_integer(last as int32));
+            conclusion 2;
+        }
+    }
 }
 ```
 
@@ -1779,7 +1896,14 @@ theorem int32_less_equal_and_not_less_than_implies_equal(left: int32, right: int
     requires left <= right;
     requires not (left < right);
 
-    ensures left == right;
+    ensures left == right by {
+        arithmetic_certificate {
+            premise 0: left <= right => left <= right;
+            premise 1: not left < right => not left < right;
+            equal_from_bounds 0, 1 => left == right;
+            conclusion 2;
+        }
+    }
 }
 ```
 
@@ -1796,7 +1920,14 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
     requires left <= right;
     requires left != right;
 
-    ensures left < right;
+    ensures left < right by {
+        arithmetic_certificate signed_int32 {
+            premise 0: (left as int32) <= (right as int32) => (left as int32) <= (right as int32);
+            premise 1: (left as int32) != (right as int32) => (left as int32) != (right as int32);
+            less_than_from_not_equal 0, 1 => to_integer(left as int32) < to_integer(right as int32);
+            conclusion 2;
+        }
+    }
 }
 ```
 
