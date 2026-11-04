@@ -139,6 +139,14 @@ additional producers. Preserve rule order as well as proof results: unwrapping
 a sign cast before substituting a constant can expose a different range rule,
 and moving endpoint queries earlier can multiply nested bound visits.
 
+Known-comparison lookup now retains shared operands even on a miss. The
+regrouped-add domain check reads its operands and three ordinary domain premises
+through views, including both choices when both children are sums. Conditional
+normalization uses a cited complete domain's two ordinary bounds directly;
+legacy overflow goals still require both bounds. These routes have no-export
+regressions for shared arithmetic and missing-premise controls. Mixed opaque
+legacy operands retain their compatibility construction and still need auditing.
+
 Nested signed production remains disabled until checker consumers are shared
 end to end. A green PR migrating a subset does **not** complete part 1.
 The original pointer-read WIP branch and its historical failure list are not
@@ -165,8 +173,8 @@ Remaining groups to audit and migrate:
   signed/unsigned order rules, successor transport and wide order walks already
   read views; their completion does not remove the equality dispatcher.
 - [ ] Atomic domain evidence and certificate premise adapters. Migrate the
-  remaining `interval_query_form` callers in atomic derivation, reassociated-add
-  checking and conditional normalization. Certificate availability must retain
+  remaining `interval_query_form` callers in atomic derivation. Reassociated-add
+  checking and conditional normalization now read ordinary domain views. Certificate availability must retain
   its checked across-effect memory bridge. Ring-overflow decisions and bounded
   certificate conclusion identity already read views.
 - [ ] Remaining difference-graph comparison/admission and interval-query

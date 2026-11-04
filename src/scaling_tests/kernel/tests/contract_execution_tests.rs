@@ -165,6 +165,69 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     ));
 }
 
+#[test]
+fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
+    use crate::kernel::machine_integer::{Operation, definedness::OverflowQueryView};
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as Op, MachineOperandView as View,
+    };
+    let mut work = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+        let add = |a, b| KernelTerm::machine_binary_shared(ty, Op::Add, [a, b]);
+        let a = add(variable(972_000), variable(972_001));
+        let b = variable(972_002);
+        let c = variable(972_003);
+        let ab = add(a.clone(), b.clone());
+        let bc = add(b.clone(), c.clone());
+        let domain = |a: &KernelTerm, b: &KernelTerm| {
+            let [upper, lower] = OverflowQueryView::from_operands(
+                ty,
+                Operation::Add,
+                [View::Shared(a), View::Shared(b)],
+            )
+            .unwrap()
+            .bounds();
+            Proposition::And(Box::new(upper), Box::new(lower))
+        };
+        let guards = [domain(&a, &b), domain(&ab, &c), domain(&b, &c)];
+        let goals = [domain(&a, &bc), domain(&bc, &a)];
+        let mut base = PureFactContext::new();
+        for index in 0..size {
+            base = base.assume_condition(
+                ConditionTerm::equal(
+                    Bitvector32Term::Variable(Variable(973_000 + index)),
+                    Bitvector32Term::constant(index as u32),
+                ),
+                true,
+            );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        let (_, used) = crate::instrumentation::measure_deterministic_work(|| {
+            for missing in 0..=3 {
+                let mut facts = base.clone();
+                for (index, guard) in guards.iter().enumerate() {
+                    if index != missing {
+                        facts = facts.assume_proposition(guard.clone());
+                    }
+                }
+                for goal in &goals {
+                    assert_eq!(
+                        crate::kernel::api::checked_int32_reassociated_add_domain(&facts, goal),
+                        missing == 3,
+                        "missing guard {missing}"
+                    );
+                }
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work.push(used);
+    }
+    assert!(work.iter().all(|used| *used <= work[0] + 256), "{work:?}");
+}
+
 // Scalar allocation and access must not scan unrelated memory or holdings.
 #[test]
 fn automatic_scalar_ownership_work_is_independent_of_unrelated_storage() {

@@ -7198,9 +7198,12 @@ impl PureFactContext {
                     })
                 })
             || (!value && self.addresses_separated_by_class(condition))
-            || native_comparison_of_integer_observation(condition, value).is_some_and(
-                |(native, truth)| self.contains_known(&Proposition::ConditionIs(native, truth)),
-            )
+            || super::machine_integer::comparison::native_comparison_view(condition, value)
+                .is_some_and(|view| {
+                    let (read, truth) = view.retained_condition();
+                    (read != *condition || truth != value)
+                        && self.contains_known(&Proposition::ConditionIs(read, truth))
+                })
     }
 
     pub(in crate::kernel) fn addresses_separated_by_class(
@@ -11046,6 +11049,55 @@ mod integer_observation_tests {
     use crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison;
     use crate::kernel::primitives::IntegerTerm;
     use num_bigint::BigInt;
+
+    #[test]
+    fn fresh_known_observation_lookups_keep_arithmetic_shared() {
+        use crate::kernel::machine_integer::{
+            Relation,
+            comparison::{ComparisonOperand, NativeComparisonView},
+        };
+        use crate::kernel::{
+            KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as Op,
+            SharedMachineIntegerTerm,
+        };
+        for relation in [
+            Relation::Equal,
+            Relation::NotEqual,
+            Relation::Less,
+            Relation::LessEqual,
+        ] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let ty = MachineIntegerType::Int32;
+            let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+            let root = KernelTerm::machine_binary_shared(
+                ty,
+                Op::Multiply,
+                [variable(974001), variable(974002)],
+            );
+            let other = variable(974003);
+            let read = NativeComparisonView {
+                format: ty,
+                relation,
+                operands: [root, other].map(|root| {
+                    ComparisonOperand::Observation(
+                        SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
+                    )
+                }),
+            };
+            let condition = read.integer_condition();
+            let empty = PureFactContext::new();
+            let exports = KernelTermExport::machine_export_count();
+            for value in [false, true] {
+                let fact = Proposition::ConditionIs(condition.clone(), value);
+                assert!(!empty.contains_known(&fact));
+                let held = empty.clone().assume_proposition(fact.clone());
+                assert!(held.contains_known(&fact));
+                assert!(!held.contains_known(&Proposition::ConditionIs(condition.clone(), !value)));
+                assert!(!empty.contains_known(&fact));
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     fn observe(ty: MachineIntegerType, variable: u64) -> SharedIntegerTerm {
         IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(variable)))
