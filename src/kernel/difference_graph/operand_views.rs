@@ -175,11 +175,30 @@ impl DifferenceGraph {
     /// the native rule's exclusions, difference bounds and singleton ranges,
     /// but resolve selected shared operands without exporting their trees.
     pub(crate) fn decide_word_equality_views(&self, a: V<'_>, b: V<'_>) -> Option<bool> {
+        self.decide_equality_views(MachineIntegerType::Int32, a, b)
+    }
+
+    pub(super) fn decide_equality_views(
+        &self,
+        format: MachineIntegerType,
+        a: V<'_>,
+        b: V<'_>,
+    ) -> Option<bool> {
         if self.contradictory {
             return None;
         }
+        if format.format().bits() == 64
+            && let (V::Legacy(a), V::Legacy(b)) = (a, b)
+        {
+            return self.decide_native_wide_equality(a, b);
+        }
         let mut query = Query::new(self);
-        for domain in [Domain::Int32, Domain::UInt32] {
+        let domains = if format.format().bits() == 32 {
+            [Domain::Int32, Domain::UInt32]
+        } else {
+            [Domain::Int64, Domain::UInt64]
+        };
+        for domain in domains {
             if let (Some(a), Some(b)) = (query.resolve(domain, a), query.resolve(domain, b)) {
                 match (a, b) {
                     ((Some(node), offset), (None, value))
@@ -208,7 +227,11 @@ impl DifferenceGraph {
                 return Some(false);
             }
         }
-        None
+        if format.format().bits() == 64 {
+            self.residues.decide_equal_views(a, b)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn decide_shared_order(

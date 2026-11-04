@@ -211,3 +211,39 @@ fn widened_observations_are_one_affine_atom_with_their_operands() {
     }
     assert_linear(&costs);
 }
+
+#[test]
+fn importing_an_opposite_numeric_reading_reuses_the_retained_word_dag() {
+    for (signed, unsigned) in [
+        (MachineIntegerType::Int32, MachineIntegerType::UInt32),
+        (MachineIntegerType::Int64, MachineIntegerType::UInt64),
+    ] {
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut native = MachineTerm::Variable(Variable(993281));
+            for index in 0..size {
+                native = MachineTerm::Binary {
+                    format: signed,
+                    op: MachineBinaryOp::Multiply,
+                    left: Box::new(native),
+                    right: Box::new(MachineTerm::Variable(Variable(993282 + index))),
+                };
+            }
+            let original = SharedMachineIntegerTerm::intern(unsigned, native.clone());
+            let exports = crate::kernel::KernelTermExport::machine_export_count();
+            let (reinterpreted, work) = crate::instrumentation::measure_deterministic_work(|| {
+                SharedMachineIntegerTerm::import_arithmetic(signed, &native).unwrap()
+            });
+            assert!(work <= 3, "{signed:?} depth {size}: {work}");
+            assert_eq!(
+                reinterpreted.shared_operand().unwrap().node(),
+                original.shared_operand().unwrap().node()
+            );
+            assert!(!reinterpreted.has_boxed_operand());
+            assert_eq!(
+                crate::kernel::KernelTermExport::machine_export_count(),
+                exports
+            );
+        }
+    }
+}

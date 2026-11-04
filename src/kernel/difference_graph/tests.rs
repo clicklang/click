@@ -2089,3 +2089,176 @@ fn cached_context_graph_tracks_shared_order_addition_and_withdrawal() {
         }
     }
 }
+
+#[test]
+fn retained_equalities_exclusions_and_aliases_follow_context_updates() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993231));
+        let root =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
+        let seven = if format.format().bits() == 32 {
+            MachineTerm::constant(7)
+        } else if format == MachineIntegerType::Int64 {
+            MachineTerm::int64_constant(7)
+        } else {
+            MachineTerm::uint64_constant(7)
+        };
+        let query = condition_for_operand_views(
+            format,
+            CompareRelation::Equal,
+            [V::Shared(&root), V::Legacy(&seven)],
+        );
+        for truth in [false, true] {
+            let parent = ContextDifferenceGraph::default();
+            assert_eq!(parent.graph(Vec::new).decide(&query), None);
+            let exports = KernelTermExport::machine_export_count();
+            let mut child = parent.clone();
+            child.assume(&query, truth);
+            assert_eq!(
+                child.built().unwrap().decide(&query),
+                Some(truth),
+                "{format:?} {truth}"
+            );
+            assert_eq!(parent.built().unwrap().decide(&query), None);
+            child.withdraw(&query);
+            assert!(child.built().is_none());
+            assert_eq!(child.graph(Vec::new).decide(&query), None);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+        let y = MachineTerm::Variable(Variable(993232));
+        let alias = condition_for_operand_views(
+            format,
+            CompareRelation::Equal,
+            [V::Shared(&root), V::Legacy(&y)],
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let mut facts = DifferenceGraph::new();
+        facts.assume_condition(&alias, true);
+        assert_eq!(facts.decide(&alias), Some(true));
+        assert_eq!(facts.decide(&query), None);
+        facts.assume_condition(
+            &condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [V::Legacy(&y), V::Legacy(&seven)],
+            ),
+            true,
+        );
+        assert_eq!(facts.decide(&query), Some(true));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+#[test]
+fn retained_wide_residues_keep_wrapping_low_bits_and_require_sources() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [MachineIntegerType::Int64, MachineIntegerType::UInt64] {
+        let var = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993241));
+        let root = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Multiply,
+            [var.clone(), var],
+        );
+        let native_literal = |value| {
+            if format == MachineIntegerType::Int64 {
+                MachineTerm::int64_constant(value as i64)
+            } else {
+                MachineTerm::uint64_constant(value)
+            }
+        };
+        let literal = |value| {
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(format, &native_literal(value))
+                .unwrap()
+        };
+        let masked = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::BitwiseAnd,
+            [root.clone(), literal(7)],
+        );
+        let zero = native_literal(0);
+        let source = condition_for_operand_views(
+            format,
+            CompareRelation::Equal,
+            [V::Shared(&masked), V::Legacy(&zero)],
+        );
+        let plus =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [root, literal(1)]);
+        let low = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::BitwiseAnd,
+            [plus, literal(3)],
+        );
+        let exports = KernelTermExport::machine_export_count();
+        for (value, expected) in [(1, true), (2, false)] {
+            let constant = native_literal(value);
+            let query = condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [V::Shared(&low), V::Legacy(&constant)],
+            );
+            assert_eq!(DifferenceGraph::new().decide(&query), None);
+            let mut facts = DifferenceGraph::new();
+            facts.assume_condition(&source, true);
+            assert_eq!(facts.decide(&query), Some(expected), "{format:?}");
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+mod retained_equality_scaling_tests {
+    use super::*;
+    include!("../../scaling_tests/kernel/difference_graph/retained_equalities.rs");
+}
+
+#[test]
+fn native_equality_after_shared_admission_keeps_existing_bounds() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993261));
+        let root =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
+        let five = if format.format().bits() == 32 {
+            MachineTerm::constant(5)
+        } else {
+            MachineTerm::int64_constant(5)
+        };
+        let bound = condition_for_operand_views(
+            format,
+            CompareRelation::LessEqual,
+            [V::Shared(&root), V::Legacy(&five)],
+        );
+        let native_root = MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Multiply,
+            left: Box::new(MachineTerm::Variable(Variable(993261))),
+            right: Box::new(MachineTerm::Variable(Variable(993261))),
+        };
+        let y = variable(993262);
+        let native_alias =
+            ConditionTerm::machine_compare(format, CompareRelation::Equal, native_root, y.clone());
+        let target = ConditionTerm::machine_compare(format, CompareRelation::LessEqual, y, five);
+        let exports = KernelTermExport::machine_export_count();
+        let mut facts = DifferenceGraph::new();
+        facts.assume_condition(&bound, true);
+        assert_eq!(facts.decide(&target), None);
+        facts.assume_condition(&native_alias, true);
+        assert_eq!(facts.decide(&target), Some(true), "{format:?}");
+        let view =
+            crate::kernel::machine_integer::comparison::comparison_view(&bound, true).unwrap();
+        assert_eq!(facts.decide_shared_order(&view), Some(true));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
