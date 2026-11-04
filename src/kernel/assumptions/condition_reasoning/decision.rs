@@ -461,6 +461,14 @@ impl PureFactContext {
         if let Some(value) = self.decide_shared_signed_constant_order(condition) {
             return Some(value);
         }
+        // Equality of the operands settles order before an interval walk.
+        // Other reductions retain the legacy simplifier's later rule position.
+        if let Some(value) = self
+            .shared_order_checking_form(condition)
+            .and_then(|read| read.reflexive_value())
+        {
+            return Some(value);
+        }
         // The compatibility decision consulted an already-built graph here,
         // after the cheap observation rules and before the native order rules.
         if !matches!(condition, ConditionTerm::Compare { .. })
@@ -489,9 +497,18 @@ impl PureFactContext {
         {
             return Some(value);
         }
-        // These wide/index routes now retain their operands too. Keep them
-        // at the compatibility dispatch position, after the cheap rules.
+        // Retained comparison rules keep their compatibility dispatch order:
+        // narrow widening, wide/index bounds, then signedness readings.
         if !matches!(condition, ConditionTerm::Compare { .. }) {
+            if let Some(view) =
+                crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                    condition, true,
+                )
+                && let Some(widened) = view.widened()
+                && let Some(value) = self.decide(&widened.integer_condition())
+            {
+                return Some(value);
+            }
             if let Some(value) = self.decide_uint64_constant_order_bounds(condition) {
                 return Some(value);
             }
@@ -501,9 +518,26 @@ impl PureFactContext {
             if let Some(value) = self.decide_wide_order_chain(condition) {
                 return Some(value);
             }
+            if let Some(value) = self.decide_unsigned_order_of_nonnegative_signed(condition) {
+                return Some(value);
+            }
+            if let Some(value) = self.decide_by_sign_bit(condition) {
+                return Some(value);
+            }
+            if let Some(value) = self.decide_by_sign_cast_division(condition) {
+                return Some(value);
+            }
         }
         // Still required for equality and remaining compatibility rules.
-        if let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
+        if !crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+            .is_some_and(|view| {
+                matches!(
+                    view.relation,
+                    crate::kernel::machine_integer::Relation::Less
+                        | crate::kernel::machine_integer::Relation::LessEqual
+                )
+            })
+            && let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
             && &native != condition
             && let Some(value) = self.decide(&native)
         {
@@ -2008,10 +2042,76 @@ impl PureFactContext {
         })
     }
 
+    fn shared_order_checking_form(&self, condition: &ConditionTerm) -> Option<ConditionTerm> {
+        // Preserve written cast roots here, as the native simplifier does.
+        // Reading sigma away before substituting a child constant would enable
+        // a different subsequent mask-range rule.
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                condition, true,
+            )
+            && matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+            && matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Less
+                    | crate::kernel::machine_integer::Relation::LessEqual
+            )
+        {
+            let operands = view
+                .operands
+                .each_ref()
+                .map(|operand| match operand.operand_view() {
+                    MachineOperandView::Shared(root) => {
+                        Some(self.equality_graph.checking_word32_root(root, |child| {
+                            self.indexed_exact_int32_constant_view(MachineOperandView::Shared(
+                                child,
+                            ))
+                            .map(|(value, _)| value as u32)
+                        }))
+                    }
+                    MachineOperandView::Legacy(_) => None,
+                });
+            let changed = operands
+                .iter()
+                .zip(view.operands.iter())
+                .any(|(read, written)| match written.operand_view() {
+                    MachineOperandView::Shared(root) => {
+                        read.as_ref().is_some_and(|read| read != root)
+                    }
+                    MachineOperandView::Legacy(_) => false,
+                });
+            if changed {
+                let normalized =
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        view.format,
+                        if view.relation == crate::kernel::machine_integer::Relation::Less {
+                            CompareRelation::LessThan
+                        } else {
+                            CompareRelation::LessEqual
+                        },
+                        std::array::from_fn(|i| {
+                            operands[i]
+                                .as_ref()
+                                .map(MachineOperandView::Shared)
+                                .unwrap_or_else(|| view.operands[i].operand_view())
+                        }),
+                    );
+                return Some(normalized);
+            }
+        }
+        None
+    }
+
     pub(in crate::kernel) fn simplify_condition_under_assumptions(
         &self,
         condition: &ConditionTerm,
     ) -> ConditionTerm {
+        if let Some(read) = self.shared_order_checking_form(condition) {
+            return read;
+        }
         match condition {
             ConditionTerm::AlgebraicEqual(left, right) => self
                 .decide_algebraic_equality(left, right)
@@ -2298,7 +2398,7 @@ impl PureFactContext {
                 return Some(value);
             }
         }
-        match self.equality_graph.scalar_constant_class_view(term)?.1 {
+        match self.equality_graph.scalar_normalization_class_view(term)?.1 {
             SignedConstantResolution::Known(value) => Some(value),
             _ => None,
         }
@@ -2743,6 +2843,195 @@ mod exact_word_order_tests {
     mod scaling_tests {
         include!(
             "../../../scaling_tests/kernel/assumptions/condition_reasoning/decision/exact_word_order_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod shared_order_pipeline_tests {
+    use super::*;
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTermImport, MachineBinaryOp as Op};
+
+    // Keep each ordinary regression small while covering the same operation,
+    // literal, equality-context and comparison combinations.
+    fn check_order_terms(format: MachineIntegerType, terms: Vec<Bitvector32Term>) {
+        let mut differences = Vec::new();
+        let x = Bitvector32Term::Variable(Variable(997601));
+        let y = Bitvector32Term::Variable(Variable(997602));
+        for value in [None, Some(0u32), Some(1), Some(7), Some(u32::MAX)] {
+            let facts = match value {
+                None => PureFactContext::new(),
+                Some(value) => PureFactContext::new()
+                    .assume_condition(ConditionTerm::equal(x.clone(), value.into()), true),
+            };
+            for term in &terms {
+                for right in [x.clone(), y.clone(), 0u32.into(), 1u32.into(), 7u32.into()] {
+                    for relation in [CompareRelation::LessThan, CompareRelation::LessEqual] {
+                        let native = ConditionTerm::Compare {
+                            format,
+                            relation,
+                            left: Box::new(term.clone()),
+                            right: Box::new(right.clone()),
+                        };
+                        let roots = [term, &right].map(|t| {
+                            KernelTermImport::default()
+                                .machine_arithmetic(format, t)
+                                .unwrap()
+                        });
+                        let shared = condition_for_operand_views(
+                            format,
+                            relation,
+                            roots.each_ref().map(MachineOperandView::Shared),
+                        );
+                        let actual = facts.decide(&shared);
+                        let expected = facts.decide(&native);
+                        if actual != expected && differences.len() < 100 {
+                            differences.push(format!(
+                                "{format:?} {value:?}: {native:?}: {actual:?} != {expected:?}"
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        assert!(differences.is_empty(), "{}", differences.join("\n"));
+    }
+
+    macro_rules! operation_parity {
+        ($name:ident, $format:ident, $op:ident) => {
+            #[test]
+            fn $name() {
+                let _session = crate::kernel::VerificationSession::enter();
+                let format = MachineIntegerType::$format;
+                let x = Bitvector32Term::Variable(Variable(997601));
+                let y = Bitvector32Term::Variable(Variable(997602));
+                let terms = [x.clone(), y, 0u32.into(), 1u32.into(), 7u32.into()].map(|right| {
+                    Bitvector32Term::logical_machine_binary(format, Op::$op, x.clone(), right)
+                });
+                check_order_terms(format, terms.to_vec());
+            }
+        };
+    }
+    operation_parity!(signed_add_checking_parity, Int32, Add);
+    operation_parity!(signed_subtract_checking_parity, Int32, Subtract);
+    operation_parity!(signed_multiply_checking_parity, Int32, Multiply);
+    operation_parity!(signed_divide_checking_parity, Int32, Divide);
+    operation_parity!(signed_remainder_checking_parity, Int32, Remainder);
+    operation_parity!(signed_bitwiseand_checking_parity, Int32, BitwiseAnd);
+    operation_parity!(signed_bitwiseor_checking_parity, Int32, BitwiseOr);
+    operation_parity!(signed_bitwisexor_checking_parity, Int32, BitwiseXor);
+    operation_parity!(unsigned_add_checking_parity, UInt32, Add);
+    operation_parity!(unsigned_subtract_checking_parity, UInt32, Subtract);
+    operation_parity!(unsigned_multiply_checking_parity, UInt32, Multiply);
+    operation_parity!(unsigned_divide_checking_parity, UInt32, Divide);
+    operation_parity!(unsigned_remainder_checking_parity, UInt32, Remainder);
+    operation_parity!(unsigned_bitwiseand_checking_parity, UInt32, BitwiseAnd);
+    operation_parity!(unsigned_bitwiseor_checking_parity, UInt32, BitwiseOr);
+    operation_parity!(unsigned_bitwisexor_checking_parity, UInt32, BitwiseXor);
+
+    macro_rules! nested_parity {
+        ($name:ident, $format:ident, $outer:ident) => {
+            #[test]
+            fn $name() {
+                let _session = crate::kernel::VerificationSession::enter();
+                let format = MachineIntegerType::$format;
+                let x = Bitvector32Term::Variable(Variable(997601));
+                let y = Bitvector32Term::Variable(Variable(997602));
+                let mut terms = vec![x.clone(), y.clone()];
+                for inner in [Op::Add, Op::Subtract, Op::BitwiseXor] {
+                    let inner = Bitvector32Term::logical_machine_binary(
+                        format,
+                        inner,
+                        x.clone(),
+                        y.clone(),
+                    );
+                    for last in [x.clone(), y.clone()] {
+                        terms.push(Bitvector32Term::logical_machine_binary(
+                            format,
+                            Op::$outer,
+                            inner.clone(),
+                            last,
+                        ));
+                    }
+                }
+                check_order_terms(format, terms);
+            }
+        };
+    }
+    nested_parity!(signed_nested_add_checking_parity, Int32, Add);
+    nested_parity!(signed_nested_subtract_checking_parity, Int32, Subtract);
+    nested_parity!(signed_nested_bitwisexor_checking_parity, Int32, BitwiseXor);
+    nested_parity!(unsigned_nested_add_checking_parity, UInt32, Add);
+    nested_parity!(unsigned_nested_subtract_checking_parity, UInt32, Subtract);
+    nested_parity!(
+        unsigned_nested_bitwisexor_checking_parity,
+        UInt32,
+        BitwiseXor
+    );
+
+    #[test]
+    fn shared_order_preserves_transitive_constant_contexts() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = Bitvector32Term::Variable(Variable(997601));
+        let y = Bitvector32Term::Variable(Variable(997602));
+        let z = Bitvector32Term::Variable(Variable(997603));
+        let facts = PureFactContext::new()
+            .assume_condition(ConditionTerm::equal(x.clone(), z.clone()), true)
+            .assume_condition(ConditionTerm::equal(z, 1u32.into()), true);
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
+            for op in [Op::Add, Op::Multiply, Op::BitwiseAnd] {
+                let term =
+                    Bitvector32Term::logical_machine_binary(format, op, x.clone(), y.clone());
+                let root = KernelTermImport::default()
+                    .machine_arithmetic(format, &term)
+                    .unwrap();
+                for bound in [0, 1, 7] {
+                    let bound = Bitvector32Term::constant(bound);
+                    for relation in [CompareRelation::LessThan, CompareRelation::LessEqual] {
+                        let native = ConditionTerm::machine_compare(
+                            format,
+                            relation,
+                            term.clone(),
+                            bound.clone(),
+                        );
+                        let shared = condition_for_operand_views(
+                            format,
+                            relation,
+                            [
+                                MachineOperandView::Shared(&root),
+                                MachineOperandView::Legacy(&bound),
+                            ],
+                        );
+                        assert_eq!(facts.decide(&shared), facts.decide(&native), "{native:?}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_zero_addend_order_is_reflexive_without_export() {
+        use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(997621));
+        let zero = KernelTermImport::default()
+            .machine_arithmetic(format, &0u32.into())
+            .unwrap();
+        let sum = KernelTerm::machine_binary_shared(format, Op::Add, [x.clone(), zero]);
+        let observed = |root| {
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, root).unwrap())
+        };
+        let query = ConditionTerm::integer_less_than(observed(sum), observed(x));
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(PureFactContext::new().decide(&query), Some(false));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    mod scaling_tests {
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/decision/shared_order_pipeline_tests.rs"
         );
     }
 }

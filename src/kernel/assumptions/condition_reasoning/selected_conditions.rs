@@ -288,7 +288,7 @@ mod memory_condition_match_tests {
     }
 
     #[test]
-    fn unsigned_atom_memory_conditions_require_an_indexed_spelling() {
+    fn unsigned_atom_memory_conditions_use_indexed_word_identities() {
         let _session = crate::kernel::VerificationSession::enter();
         let var = |id| Bitvector32Term::Variable(Variable(id));
         let sum = Bitvector32Term::add(var(996_000), var(996_001));
@@ -300,9 +300,13 @@ mod memory_condition_match_tests {
             let held = base.clone().assume_condition(source.clone(), value);
             assert_eq!(
                 held.indexed_matching_condition_fact_for_memory_resolution(&goal, value),
-                Some(false)
+                Some(true)
             );
-            assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            assert!(held.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            // Without the zero-addend equality, the predicate cannot transfer.
+            let no_zero = PureFactContext::new().assume_condition(source.clone(), value);
+            assert!(!no_zero.has_matching_condition_fact_for_memory_resolution(&goal, value));
+            assert!(!held.has_matching_condition_fact_for_memory_resolution(&goal, !value));
             let named = held.clone().assume_condition(goal.clone(), value);
             assert!(named.has_matching_condition_fact_for_memory_resolution(&goal, value));
             let withdrawn = held.without_exact_fact(&Proposition::ConditionIs(source, value));

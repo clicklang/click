@@ -1274,7 +1274,8 @@ mod tests {
             );
         for (op, expected) in [
             (MachineBinaryOp::Add, (4, 8)),
-            (MachineBinaryOp::Subtract, (-2, 2)),
+            // The word equality graph now retains x - x = 0.
+            (MachineBinaryOp::Subtract, (0, 0)),
             (MachineBinaryOp::Multiply, (4, 16)),
             (MachineBinaryOp::BitwiseAnd, (0, 7)),
         ] {
@@ -1298,7 +1299,21 @@ mod tests {
                 Some(expected)
             );
             assert!(!operand.has_boxed_operand());
-            assert_eq!(facts.signed_interval(&written), Some(expected));
+            // The legacy interval adapter computes operand ranges directly;
+            // the shared query also consults the retained word equality.
+            let legacy_expected = if op == MachineBinaryOp::Subtract {
+                (-2, 2)
+            } else {
+                expected
+            };
+            assert_eq!(facts.signed_interval(&written), Some(legacy_expected));
+            if op == MachineBinaryOp::Subtract {
+                // Operand-only overflow ranges still ignore correlation.
+                assert_eq!(
+                    facts.signed_interval_from_operands_view(operand.operand_view()),
+                    Some((-2, 2))
+                );
+            }
         }
         for (source, destination, expected) in [
             (MachineIntegerType::UInt8, MachineIntegerType::Int8, (2, 4)),
