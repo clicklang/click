@@ -1095,12 +1095,12 @@ impl PureFactContext {
                 return None;
             };
             let (lower, upper, strict) = condition_as_order_fact(condition, *value)?;
-            Some(SignedOrderDerivationStep {
-                lower,
-                upper,
+            Some(SignedOrderDerivationStep::from_views(
+                MachineOperandView::Legacy(&lower),
+                MachineOperandView::Legacy(&upper),
                 strict,
-                premise: step.premise,
-            })
+                step.premise,
+            ))
         })
         .collect()
     }
@@ -3491,12 +3491,12 @@ mod exact_order_path_tests {
             .iter()
             .filter_map(|(condition, value)| {
                 condition_as_order_fact(condition, *value).map(|(lower, upper, strict)| {
-                    SignedOrderDerivationStep {
-                        lower,
-                        upper,
+                    SignedOrderDerivationStep::from_views(
+                        MachineOperandView::Legacy(&lower),
+                        MachineOperandView::Legacy(&upper),
                         strict,
-                        premise: Proposition::ConditionIs(condition.clone(), *value),
-                    }
+                        Proposition::ConditionIs(condition.clone(), *value),
+                    )
                 })
             })
             .collect::<Vec<_>>();
@@ -3517,17 +3517,17 @@ mod exact_order_path_tests {
             }
             for edge in order_facts.iter().rev() {
                 let constant_connection = signed_bitvector_constant(&current)
-                    .zip(signed_bitvector_constant(&edge.lower))
+                    .zip(signed_bitvector_constant(edge.lower()))
                     .and_then(|(current, edge_left)| {
                         (current <= edge_left).then_some(current < edge_left)
                     });
-                if current != edge.lower && constant_connection.is_none() {
+                if &current != edge.lower() && constant_connection.is_none() {
                     continue;
                 }
                 let mut extended = path.clone();
                 extended.push(edge.clone());
                 stack.push((
-                    edge.upper.clone(),
+                    edge.upper().clone(),
                     strict_so_far || edge.strict || constant_connection == Some(true),
                     extended,
                 ));

@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey;
 use crate::kernel::binary_term;
 use crate::kernel::{bits32_constant, constant_u32};
 
@@ -466,9 +467,9 @@ fn antecedent_ranges(
 /// premise context. Constant-versus-constant comparisons are not evaluated
 /// here; two distinct constants are two distinct nodes.
 pub(in crate::kernel) fn order_facts_form_strict_cycle(
-    facts: &[(MachineTerm, MachineTerm, bool)],
+    facts: &[(ScalarOperandKey, ScalarOperandKey, bool)],
 ) -> bool {
-    let mut nodes: BTreeMap<&MachineTerm, usize> = BTreeMap::new();
+    let mut nodes: BTreeMap<&ScalarOperandKey, usize> = BTreeMap::new();
     let mut edges = Vec::with_capacity(facts.len());
     for (left, right, strict) in facts {
         let next = nodes.len();
@@ -480,7 +481,7 @@ pub(in crate::kernel) fn order_facts_form_strict_cycle(
     let symbolic = {
         let mut flags = vec![false; nodes.len()];
         for (term, index) in &nodes {
-            flags[*index] = !matches!(term, bits32_constant!(_));
+            flags[*index] = term.operand_view().word32_constant().is_none();
         }
         flags
     };
@@ -522,13 +523,28 @@ pub(in crate::kernel) fn order_facts_form_strict_cycle(
 
 pub(in crate::kernel) fn collect_order_facts_from_assumed_proposition(
     proposition: &Proposition,
-    facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
+    facts: &mut Vec<(ScalarOperandKey, ScalarOperandKey, bool)>,
 ) {
     match proposition {
         Proposition::ConditionIs(condition, value) => {
-            if let Some(fact) = condition_as_order_fact(condition, *value) {
-                facts.push(fact);
+            let Some(view) =
+                crate::kernel::machine_integer::comparison::comparison_view(condition, *value)
+            else {
+                return;
+            };
+            if view.format != MachineIntegerType::Int32 {
+                return;
             }
+            let strict = match view.relation {
+                crate::kernel::machine_integer::Relation::Less => true,
+                crate::kernel::machine_integer::Relation::LessEqual => false,
+                _ => return,
+            };
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| ScalarOperandKey::for_format(view.format, operand.operand_view()));
+            facts.push((left, right, strict));
         }
         Proposition::And(left, right) => {
             collect_order_facts_from_assumed_proposition(left, facts);
@@ -1364,5 +1380,79 @@ mod shared_antecedent_tests {
 
     mod scaling_tests {
         include!("../../scaling_tests/kernel/reasoning/order_reasoning/shared_antecedent_tests.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_cycle_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
+
+    fn observed(term: KernelTerm) -> IntegerTerm {
+        IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, term).unwrap(),
+        )
+    }
+
+    fn cycle(left: IntegerTerm, right: IntegerTerm, strict: bool, mirrored: bool) -> Proposition {
+        let first = Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(left.clone(), right.clone()),
+            true,
+        );
+        let second = if strict && mirrored {
+            Proposition::ConditionIs(ConditionTerm::integer_less_equal(left, right), false)
+        } else if strict {
+            Proposition::ConditionIs(ConditionTerm::integer_less_than(right, left), true)
+        } else {
+            Proposition::ConditionIs(ConditionTerm::integer_less_equal(right, left), true)
+        };
+        Proposition::And(Box::new(first), Box::new(second))
+    }
+
+    #[test]
+    fn shared_cycles_preserve_strictness_polarity_and_finite_range_boundary() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let variable = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995301));
+        let root = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Multiply,
+            [variable.clone(), variable],
+        );
+        let value = observed(root);
+        let other = IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(995302))).unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        for mirrored in [false, true] {
+            assert!(
+                super::super::path_facts::conjunction_order_facts_are_inconsistent(&cycle(
+                    value.clone(),
+                    other.clone(),
+                    true,
+                    mirrored
+                ))
+            );
+        }
+        assert!(
+            !super::super::path_facts::conjunction_order_facts_are_inconsistent(&cycle(
+                value,
+                other.clone(),
+                false,
+                false
+            ))
+        );
+        assert!(
+            !super::super::path_facts::conjunction_order_facts_are_inconsistent(&cycle(
+                IntegerTerm::constant_i64(0),
+                other,
+                true,
+                false
+            ))
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/reasoning/order_reasoning/retained_cycles.rs");
     }
 }

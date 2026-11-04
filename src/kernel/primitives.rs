@@ -13085,8 +13085,8 @@ pub struct PropositionDerivation {
 /// instead of rediscovering it from an unordered premise set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignedOrderDerivationStep {
-    pub(super) lower: MachineTerm,
-    pub(super) upper: MachineTerm,
+    pub(super) lower: super::assumptions::checked_scalar_facts::ScalarOperandKey,
+    pub(super) upper: super::assumptions::checked_scalar_facts::ScalarOperandKey,
     pub(super) strict: bool,
     pub(super) premise: Proposition,
 }
