@@ -1081,83 +1081,104 @@ impl PureFactContext {
         right: &Bitvector32Term,
         require_strict: bool,
     ) -> Option<Vec<SignedOrderDerivationStep>> {
-        // Keep the exact source proposition alongside the normalized edge.
-        // `condition_as_order_fact` intentionally normalizes polarity (for
-        // example, false `x <= y` becomes `y < x`); check must check the
-        // proposition that was actually present, not merely the normalized
-        // form. This collection is local to derivation construction so
-        // the durable evidence remains self-contained.
-        let step = |condition: &ConditionTerm| {
-            #[cfg(test)]
-            EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(visits.get() + 1));
-            let value = *self.condition_facts.get(condition)?;
-            condition_as_order_fact(condition, value).map(|(lower, upper, strict)| {
-                SignedOrderDerivationStep {
-                    lower,
-                    upper,
-                    strict,
-                    premise: Proposition::ConditionIs(condition.clone(), value),
-                }
+        self.exact_signed_order_source_path(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+            require_strict,
+        )?
+        .into_iter()
+        .map(|step| {
+            // Compatibility boundary for the remaining native domain/range
+            // evidence consumers. Atomic order evidence retains the source.
+            let Proposition::ConditionIs(condition, value) = &step.premise else {
+                return None;
+            };
+            let (lower, upper, strict) = condition_as_order_fact(condition, *value)?;
+            Some(SignedOrderDerivationStep {
+                lower,
+                upper,
+                strict,
+                premise: step.premise,
             })
+        })
+        .collect()
+    }
+
+    pub(in crate::kernel) fn exact_signed_order_source_path(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        require_strict: bool,
+    ) -> Option<Vec<OrderDerivationStep>> {
+        use super::super::checked_scalar_facts::ScalarOperandKey as Key;
+        use crate::kernel::machine_integer::Relation;
+        use MachineOperandView as V;
+        let format = MachineIntegerType::Int32;
+        let key = |v: MachineOperandView<'_>| Key::for_format(format, v);
+        let constant = |v: V<'_>| v.word32_constant().map(|n| i64::from(n as i32));
+        let connection = |a: V<'_>, b: V<'_>| {
+            constant(a)
+                .zip(constant(b))
+                .and_then(|(a, b)| (a <= b).then_some(a < b))
         };
         let bridging = crate::kernel::api::extended_dag_bridging_active();
-        let terms_match = |current: &Bitvector32Term, other: &Bitvector32Term| {
-            current == other
-                || bridging
-                    && crate::kernel::api::atomic_loads_equal_along_memory_derivations(
-                        current, other, self,
-                    )
+        let terms_match = |a: V<'_>, b: V<'_>| {
+            key(a) == key(b)
+                || matches!((a,b), (V::Legacy(a), V::Legacy(b)) if bridging
+                && crate::kernel::api::atomic_loads_equal_along_memory_derivations(a,b,self))
         };
-        // The edges a node can take: those written from it, those from a
-        // constant at least as large when it is a constant, and, under
-        // bridging, those from another snapshot's load of its cell
-        // (`OrderFactsByLower`). They are visited in the reverse of the
-        // facts' own order, as the walk over every order fact visited them,
-        // so the walk finds the same path.
-        let edges_from = |current: &Bitvector32Term| {
+        let edges_from = |current: V<'_>| {
             let index = &self.order_facts_by_lower;
-            let mut conditions = index.written_from(current).collect::<BTreeSet<_>>();
-            if let Some(constant) = signed_bitvector_constant(current) {
-                conditions.extend(index.constant_at_least(constant));
+            let mut conditions = index.written_from_view(current).collect::<BTreeSet<_>>();
+            if let Some(c) = constant(current) {
+                conditions.extend(index.constant_at_least(c));
             }
-            if bridging && let Bitvector32Term::MemoryLoad(_, pointer, kind) = current {
+            if bridging && let V::Legacy(Bitvector32Term::MemoryLoad(_, pointer, kind)) = current {
                 conditions.extend(index.loads_of(pointer, *kind));
             }
             conditions
                 .into_iter()
                 .rev()
-                .filter_map(step)
+                .filter_map(|condition| {
+                    #[cfg(test)]
+                    EXACT_ORDER_EVIDENCE_VISITS.with(|visits| visits.set(visits.get() + 1));
+                    let value = *self.condition_facts.get(condition)?;
+                    let view = order_view_at_format(condition, value, format)?;
+                    Some((
+                        key(view.operands[0].operand_view()),
+                        key(view.operands[1].operand_view()),
+                        view.relation == Relation::Less,
+                        OrderDerivationStep {
+                            premise: Proposition::ConditionIs(condition.clone(), value),
+                        },
+                    ))
+                })
                 .collect::<Vec<_>>()
         };
-        let mut stack = vec![(left.clone(), false, Vec::new())];
+        let mut stack = vec![(key(left), false, Vec::new())];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far, path)) = stack.pop() {
             if !seen.insert((current.clone(), strict_so_far)) {
                 continue;
             }
-            let constant_connection = signed_bitvector_constant(&current)
-                .zip(signed_bitvector_constant(right))
-                .and_then(|(current, right)| (current <= right).then_some(current < right));
-            if (terms_match(&current, right) || constant_connection.is_some())
-                && (!require_strict || strict_so_far || constant_connection == Some(true))
+            let current = current.operand_view();
+            let tail = connection(current, right);
+            if (terms_match(current, right) || tail.is_some())
+                && (!require_strict || strict_so_far || tail == Some(true))
                 && !path.is_empty()
             {
                 return Some(path);
             }
-            for edge in edges_from(&current) {
-                let constant_connection = signed_bitvector_constant(&current)
-                    .zip(signed_bitvector_constant(&edge.lower))
-                    .and_then(|(current, edge_left)| {
-                        (current <= edge_left).then_some(current < edge_left)
-                    });
-                if !terms_match(&current, &edge.lower) && constant_connection.is_none() {
+            for (lower, upper, strict, edge) in edges_from(current) {
+                let link = connection(current, lower.operand_view());
+                if !terms_match(current, lower.operand_view()) && link.is_none() {
                     continue;
                 }
                 let mut extended = path.clone();
-                extended.push(edge.clone());
+                extended.push(edge);
                 stack.push((
-                    edge.upper.clone(),
-                    strict_so_far || edge.strict || constant_connection == Some(true),
+                    upper,
+                    strict_so_far || strict || link == Some(true),
                     extended,
                 ));
             }
@@ -1176,7 +1197,7 @@ impl PureFactContext {
         right: crate::kernel::MachineOperandView<'_>,
         require_strict: bool,
         format: MachineIntegerType,
-    ) -> Option<Vec<WideOrderDerivationStep>> {
+    ) -> Option<Vec<OrderDerivationStep>> {
         use super::super::checked_scalar_facts::ScalarOperandKey as Key;
         use crate::kernel::machine_integer::Relation;
         let canonical = |term: crate::kernel::MachineOperandView<'_>| Key::canonical(format, term);
@@ -1191,12 +1212,12 @@ impl PureFactContext {
                 .rev()
                 .filter_map(|condition| {
                     let value = *self.condition_facts.get(condition)?;
-                    let view = wide_order_view(condition, value, format)?;
+                    let view = order_view_at_format(condition, value, format)?;
                     debug_assert_eq!(canonical(view.operands[0].operand_view()), *current);
                     Some((
                         canonical(view.operands[1].operand_view()),
                         view.relation == Relation::Less,
-                        WideOrderDerivationStep {
+                        OrderDerivationStep {
                             premise: Proposition::ConditionIs(condition.clone(), value),
                         },
                     ))
@@ -2236,7 +2257,7 @@ pub(in crate::kernel) const WIDE_ORDER_FORMATS: [MachineIntegerType; 3] = [
 ];
 
 /// An order fact at `format`, retaining its written operand views.
-pub(in crate::kernel) fn wide_order_view(
+pub(in crate::kernel) fn order_view_at_format(
     condition: &ConditionTerm,
     value: bool,
     format: MachineIntegerType,

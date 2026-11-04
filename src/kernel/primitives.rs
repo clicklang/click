@@ -13021,10 +13021,10 @@ pub struct SignedOrderDerivationStep {
     pub(super) premise: Proposition,
 }
 
-/// One exact wide-order edge, retained in its original orientation and
+/// One exact order edge, retained in its original orientation and
 /// polarity. Checking reads its endpoints from the premise's operand views.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct WideOrderDerivationStep {
+pub struct OrderDerivationStep {
     pub(super) premise: Proposition,
 }
 
@@ -13312,12 +13312,12 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     BitvectorEqualityPath(Vec<BitvectorEqualityDerivationStep>),
     Int32PinnedConstantEquality(Box<DirectBitvectorEqualityEvidence>),
     ForallInt32Instantiation(Box<ForallInt32InstantiationEvidence>),
-    SignedOrderPath(Vec<SignedOrderDerivationStep>),
+    SignedOrderPath(Vec<OrderDerivationStep>),
     /// A chain of exact order facts at `format`, a 64-bit format or
     /// `uint32`, each step's premise in the context as written.
     WideOrderPath {
         format: MachineIntegerType,
-        path: Vec<WideOrderDerivationStep>,
+        path: Vec<OrderDerivationStep>,
     },
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementConstantUpperBound(Box<SignedOrderDerivationStep>),

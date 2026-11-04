@@ -1604,14 +1604,20 @@ fn signed_order_derivation_retains_its_exact_edge_path() {
     let path = derivation
         .signed_order_path()
         .expect("the atomic decision should retain its selected order path");
+    let edge = |step: &OrderDerivationStep| {
+        let Proposition::ConditionIs(condition, value) = step.premise() else {
+            panic!("order source")
+        };
+        condition_as_order_fact(condition, *value).unwrap()
+    };
     assert_eq!(path.len(), 2);
-    assert_eq!(path[0].lower(), &left);
-    assert_eq!(path[0].upper(), &middle);
-    assert!(!path[0].is_strict());
+    assert_eq!(edge(&path[0]).0, left);
+    assert_eq!(edge(&path[0]).1, middle);
+    assert!(!edge(&path[0]).2);
     assert_eq!(path[0].premise(), &first);
-    assert_eq!(path[1].lower(), &middle);
-    assert_eq!(path[1].upper(), &right);
-    assert!(path[1].is_strict());
+    assert_eq!(edge(&path[1]).0, middle);
+    assert_eq!(edge(&path[1]).1, right);
+    assert!(edge(&path[1]).2);
     assert_eq!(path[1].premise(), &second);
     assert!(derivation.check(&assumptions));
 }
@@ -1636,10 +1642,16 @@ fn signed_order_derivation_retains_the_exact_negative_polarity_premise() {
     let path = derivation
         .signed_order_path()
         .expect("the atomic decision should retain its normalized order edge");
+    let edge = |step: &OrderDerivationStep| {
+        let Proposition::ConditionIs(condition, value) = step.premise() else {
+            panic!("order source")
+        };
+        condition_as_order_fact(condition, *value).unwrap()
+    };
     assert_eq!(path.len(), 1);
-    assert_eq!(path[0].lower(), &right);
-    assert_eq!(path[0].upper(), &left);
-    assert!(path[0].is_strict());
+    assert_eq!(edge(&path[0]).0, right);
+    assert_eq!(edge(&path[0]).1, left);
+    assert!(edge(&path[0]).2);
     assert_eq!(path[0].premise(), &premise);
     assert!(derivation.check(&assumptions));
 }

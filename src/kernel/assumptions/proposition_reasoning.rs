@@ -1168,11 +1168,19 @@ impl SelectedFacts<'_> {
         };
         let signed_order_evidence = match proposition {
             Proposition::ConditionIs(condition, value) => {
-                condition_as_order_fact(condition, *value)
-                    .and_then(|(left, right, strict)| {
-                        self.exact_signed_order_path_evidence(&left, &right, strict)
-                    })
-                    .map(AtomicPropositionDerivationEvidence::SignedOrderPath)
+                super::condition_reasoning::order_view_at_format(
+                    condition,
+                    *value,
+                    MachineIntegerType::Int32,
+                )
+                .and_then(|view| {
+                    self.exact_signed_order_source_path(
+                        view.operands[0].operand_view(),
+                        view.operands[1].operand_view(),
+                        view.relation == crate::kernel::machine_integer::Relation::Less,
+                    )
+                })
+                .map(AtomicPropositionDerivationEvidence::SignedOrderPath)
             }
             _ => None,
         };
@@ -1181,8 +1189,9 @@ impl SelectedFacts<'_> {
                 super::condition_reasoning::WIDE_ORDER_FORMATS
                     .into_iter()
                     .find_map(|format| {
-                        let view =
-                            super::condition_reasoning::wide_order_view(condition, *value, format)?;
+                        let view = super::condition_reasoning::order_view_at_format(
+                            condition, *value, format,
+                        )?;
                         self.exact_wide_order_path_evidence(
                             view.operands[0].operand_view(),
                             view.operands[1].operand_view(),
@@ -2039,32 +2048,43 @@ impl SelectedFacts<'_> {
             let Proposition::ConditionIs(condition, value) = proposition else {
                 return false;
             };
-            let Some((left, right, require_strict)) = condition_as_order_fact(condition, *value)
+            use super::checked_scalar_facts::ScalarOperandKey as Key;
+            use crate::kernel::machine_integer::Relation;
+            let format = MachineIntegerType::Int32;
+            let Some(goal) =
+                super::condition_reasoning::order_view_at_format(condition, *value, format)
             else {
                 return false;
             };
-            let mut current = &left;
+            let key = |v: MachineOperandView<'_>| Key::for_format(format, v);
+            let mut current = key(goal.operands[0].operand_view());
             let mut strict = false;
             for step in path {
-                if current != &step.lower
-                    || !matches!(
-                        &step.premise,
-                        Proposition::ConditionIs(condition, value)
-                            if self.exact_condition_value(condition) == Some(*value)
-                                && condition_as_order_fact(condition, *value)
-                                    == Some((step.lower.clone(), step.upper.clone(), step.strict))
-                    )
-                {
+                let Proposition::ConditionIs(condition, value) = &step.premise else {
+                    return false;
+                };
+                if self.exact_condition_value(condition) != Some(*value) {
                     return false;
                 }
-                current = &step.upper;
-                strict |= step.strict;
+                let Some(edge) =
+                    super::condition_reasoning::order_view_at_format(condition, *value, format)
+                else {
+                    return false;
+                };
+                if current != key(edge.operands[0].operand_view()) {
+                    return false;
+                }
+                current = key(edge.operands[1].operand_view());
+                strict |= edge.relation == Relation::Less;
             }
-            let constant_connection = signed_bitvector_constant(current)
-                .zip(signed_bitvector_constant(&right))
-                .and_then(|(current, right)| (current <= right).then_some(current < right));
-            return (current == &right || constant_connection.is_some())
-                && (!require_strict || strict || constant_connection == Some(true));
+            let right = goal.operands[1].operand_view();
+            let tail = current
+                .operand_view()
+                .word32_constant()
+                .zip(right.word32_constant())
+                .and_then(|(a, b)| ((a as i32) <= b as i32).then_some((a as i32) < b as i32));
+            return (current == key(right) || tail.is_some())
+                && (goal.relation != Relation::Less || strict || tail == Some(true));
         }
         if let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = evidence {
             use crate::kernel::machine_integer::Relation;
@@ -2072,7 +2092,7 @@ impl SelectedFacts<'_> {
                 return false;
             };
             let Some(goal) =
-                super::condition_reasoning::wide_order_view(condition, *value, *format)
+                super::condition_reasoning::order_view_at_format(condition, *value, *format)
             else {
                 return false;
             };
@@ -2089,7 +2109,7 @@ impl SelectedFacts<'_> {
                     return false;
                 }
                 let Some(edge) =
-                    super::condition_reasoning::wide_order_view(condition, *value, *format)
+                    super::condition_reasoning::order_view_at_format(condition, *value, *format)
                 else {
                     return false;
                 };
@@ -2715,31 +2735,37 @@ impl PureFactContext {
         &self,
         term: &Bitvector32Term,
     ) -> impl Iterator<Item = (Bitvector32Term, Bitvector32Term, bool, bool)> + '_ {
-        let direct = self.signed_order_bounds.get(term);
-        let alias = {
-            let canonical = crate::kernel::eval::canonical_term(term);
-            if &canonical == term {
-                None
-            } else {
-                self.signed_order_bounds.get(&canonical)
-            }
-        };
-        direct
-            .into_iter()
-            .chain(alias)
-            .flat_map(|bounds| bounds.operand_keys())
-            .map(|(fact_endpoint, other, strict, forward)| {
-                // This derivation API returns written endpoints for proof construction.
+        self.signed_order_bound_views(MachineOperandView::Legacy(term))
+            .map(|(endpoint, other, strict, forward)| {
                 (
-                    fact_endpoint
-                        .retain(MachineIntegerType::Int32)
-                        .value()
-                        .clone(),
+                    endpoint.retain(MachineIntegerType::Int32).value().clone(),
                     other.retain(MachineIntegerType::Int32).value().clone(),
                     strict,
                     forward,
                 )
             })
+    }
+
+    pub(in crate::kernel) fn signed_order_bound_views<'a>(
+        &'a self,
+        term: MachineOperandView<'_>,
+    ) -> impl Iterator<Item = (MachineOperandView<'a>, MachineOperandView<'a>, bool, bool)> + use<'a>
+    {
+        use super::checked_scalar_facts::ScalarOperandKey as Key;
+        let direct = self.signed_order_bounds.get_operand(term);
+        let format = MachineIntegerType::Int32;
+        let key = Key::for_format(format, term);
+        let canonical = Key::canonical(format, term);
+        let alias = (canonical != key)
+            .then(|| {
+                self.signed_order_bounds
+                    .get_operand(canonical.operand_view())
+            })
+            .flatten();
+        direct
+            .into_iter()
+            .chain(alias)
+            .flat_map(|bounds| bounds.operand_keys())
     }
 
     /// The `uint32` counterpart of [`Self::signed_order_bound_entries`],
@@ -2796,18 +2822,29 @@ impl PureFactContext {
         upper: &Bitvector32Term,
         strict: bool,
     ) -> bool {
-        self.signed_order_bound_entries(lower)
+        self.canonical_bound_holds_views(
+            MachineOperandView::Legacy(lower),
+            MachineOperandView::Legacy(upper),
+            strict,
+        )
+    }
+
+    pub(in crate::kernel) fn canonical_bound_holds_views(
+        &self,
+        lower: MachineOperandView<'_>,
+        upper: MachineOperandView<'_>,
+        strict: bool,
+    ) -> bool {
+        use super::checked_scalar_facts::ScalarOperandKey as Key;
+        let canonical = |v: MachineOperandView<'_>| Key::canonical(MachineIntegerType::Int32, v);
+        self.signed_order_bound_views(lower)
             .any(|(_, other, entry_strict, forward)| {
-                forward
-                    && (entry_strict || !strict)
-                    && crate::kernel::eval::terms_have_same_canonical_form(&other, upper)
+                forward && (entry_strict || !strict) && canonical(other) == canonical(upper)
             })
             || self
-                .signed_order_bound_entries(upper)
+                .signed_order_bound_views(upper)
                 .any(|(_, other, entry_strict, forward)| {
-                    !forward
-                        && (entry_strict || !strict)
-                        && crate::kernel::eval::terms_have_same_canonical_form(&other, lower)
+                    !forward && (entry_strict || !strict) && canonical(other) == canonical(lower)
                 })
     }
 
@@ -5340,8 +5377,9 @@ mod shared_wide_order_evidence_tests {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
 
     #[test]
-    fn wide_order_evidence_keeps_shared_endpoints_and_exact_polarity_sources() {
+    fn order_evidence_keeps_shared_endpoints_and_exact_polarity_sources() {
         for ty in [
+            MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
@@ -5395,13 +5433,33 @@ mod shared_wide_order_evidence_tests {
                 );
                 let exports = KernelTermExport::machine_export_count();
                 let context = SelectedFacts::from_propositions(&[first.clone(), second.clone()]);
+                if ty == MachineIntegerType::Int32 {
+                    assert!(context.canonical_bound_holds_views(
+                        a.operand_view(),
+                        b.operand_view(),
+                        false
+                    ));
+                    assert!(!context.canonical_bound_holds_views(
+                        a.operand_view(),
+                        b.operand_view(),
+                        true
+                    ));
+                }
                 let (evidence, id) = context.proves_atomic_for_derivation_with_id(&goal, false);
                 let evidence = evidence.expect("selected order path");
-                let AtomicPropositionDerivationEvidence::WideOrderPath { format, path } = &evidence
-                else {
-                    panic!("expected wide order evidence, got {evidence:?}");
+                let path = match &evidence {
+                    AtomicPropositionDerivationEvidence::SignedOrderPath(path)
+                        if ty == MachineIntegerType::Int32 =>
+                    {
+                        path
+                    }
+                    AtomicPropositionDerivationEvidence::WideOrderPath { format, path }
+                        if *format == ty =>
+                    {
+                        path
+                    }
+                    _ => panic!("expected order evidence, got {evidence:?}"),
                 };
-                assert_eq!(*format, ty);
                 assert_eq!(
                     path.iter()
                         .map(|step| step.premise.clone())
@@ -5412,7 +5470,8 @@ mod shared_wide_order_evidence_tests {
                 let missing = SelectedFacts::from_propositions(&[second]);
                 assert!(!missing.checks_atomic_derivation(&goal, false, id, &evidence));
                 let mut forged = evidence.clone();
-                if let AtomicPropositionDerivationEvidence::WideOrderPath { path, .. } = &mut forged
+                if let AtomicPropositionDerivationEvidence::WideOrderPath { path, .. }
+                | AtomicPropositionDerivationEvidence::SignedOrderPath(path) = &mut forged
                 {
                     path[0].premise = Proposition::ConditionIs(
                         ConditionTerm::integer_less_than(observe(&a), observe(&b)),
@@ -5428,6 +5487,83 @@ mod shared_wide_order_evidence_tests {
             }
         }
     }
+    #[test]
+    fn induction_bound_queries_refuse_shared_nonliteral_bounds_without_export() {
+        use crate::kernel::proof::ProofFacts;
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let variable = |id| KernelTerm::variable(KernelType::C(CType::Int32), Variable(id));
+        let observe =
+            |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
+        let measure = Bitvector32Term::Variable(Variable(987120));
+        let bound = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Multiply,
+            [variable(987121), variable(987122)],
+        );
+        let source = Proposition::ConditionIs(
+            ConditionTerm::integer_greater_equal(observe(variable(987120)), observe(bound)),
+            true,
+        );
+        let facts = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        let exports = KernelTermExport::machine_export_count();
+        assert!(!facts.has_nonnegative_induction_domain(&measure));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        let facts = ProofFacts::from_ordered(&[
+            source,
+            Proposition::ConditionIs(
+                ConditionTerm::signed_greater_equal(measure.clone(), 0u32.into()),
+                true,
+            ),
+        ]);
+        assert!(facts.has_nonnegative_induction_domain(&measure));
+    }
+
+    #[test]
+    fn shared_signed_order_path_keeps_constant_tail_and_strictness() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let variable = |id| KernelTerm::variable(KernelType::C(CType::Int32), Variable(id));
+        let root = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Multiply,
+            [variable(987110), variable(987111)],
+        );
+        let observed =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap());
+        let source = Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(observed.clone(), IntegerTerm::constant_i64(5)),
+            true,
+        );
+        let context = SelectedFacts::from_propositions(std::slice::from_ref(&source));
+        let exports = KernelTermExport::machine_export_count();
+        for (limit, expected) in [(7, true), (5, false), (4, false)] {
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(
+                    observed.clone(),
+                    IntegerTerm::constant_i64(limit),
+                ),
+                true,
+            );
+            let tail = Bitvector32Term::constant(limit as u32);
+            let path = context.exact_signed_order_source_path(
+                MachineOperandView::Shared(&root),
+                MachineOperandView::Legacy(&tail),
+                true,
+            );
+            assert_eq!(path.is_some(), expected);
+            if let Some(path) = path {
+                assert_eq!(path.len(), 1);
+                assert_eq!(path[0].premise(), &source);
+                let evidence = AtomicPropositionDerivationEvidence::SignedOrderPath(path);
+                assert!(context.checks_atomic_derivation(&goal, false, 0, &evidence));
+                let missing = SelectedFacts::from_propositions(&[]);
+                assert!(!missing.checks_atomic_derivation(&goal, false, 0, &evidence));
+            }
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
     #[test]
     fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{

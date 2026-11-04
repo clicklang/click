@@ -1310,18 +1310,21 @@ impl ProofFacts {
     /// exact signed bounds on this measure, without searching other facts
     /// or deriving a replacement proof state.
     pub(crate) fn has_nonnegative_induction_domain(&self, measure: &Bitvector32Term) -> bool {
-        self.assumptions.signed_order_bound_entries(measure).any(
-            |(endpoint, bound, strict, forward)| {
-                if forward || endpoint != *measure {
+        use crate::kernel::MachineOperandView as V;
+        use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        let measure = Key::new(V::Legacy(measure));
+        self.assumptions
+            .signed_order_bound_views(measure.operand_view())
+            .any(|(endpoint, bound, strict, forward)| {
+                if forward || Key::new(endpoint) != measure {
                     return false;
                 }
-                let bits32_constant!(bits) = bound else {
+                let Some(bits) = bound.word32_constant() else {
                     return false;
                 };
-                let lower = constant_u32(bits) as i32;
+                let lower = bits as i32;
                 lower >= 0 || (strict && lower == -1)
-            },
-        )
+            })
     }
 
     /// Whether the positive half of `contradiction(fact)` is held, so a
