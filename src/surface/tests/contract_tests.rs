@@ -1698,6 +1698,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
                 ensures result == 0 or result == 1;
             } by {
                 open(owned_cell(cell)) {
+                    branch { step(); } else { }
                     step_until(function.exit);
                 }
                 solve();
