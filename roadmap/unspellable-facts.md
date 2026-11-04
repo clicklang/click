@@ -243,10 +243,19 @@ Remaining groups to audit and migrate:
   discarding their names in favor of raw origins.
   The common arithmetic-comparison rewrite now reconstructs the shared machine
   fragment directly, with memoized syntax work and the existing checking-only
-  simplifications. Scope-dependent rewrites keep local memos. Explicit native
-  rewrites and a registered-read rewrite that exposes an opaque native value
-  remain compatibility boundaries to audit; the latter must not silently export
-  its surrounding shared arithmetic before part 1 is declared complete.
+  simplifications. Scope-dependent rewrites keep local memos. A registered-read
+  rewrite exposing an Integer-to-machine conversion is being migrated: that
+  existing typed conversion node can remain inside the shared machine DAG when
+  its payload has a structural identity, retaining its scoped Integer payload
+  and ordinary stored-value reasoning. Payloads containing producer-local
+  legacy identities remain outside this fragment.
+  The reproduction expands five DAG nodes into 31 boxed nodes on master.
+  Keeping only the canonical read name was tried and rejected: it lost premise
+  matching between a read of stored `7` at `p[i + 0]` and the corresponding
+  claim about `7`. Preserve that positive matching control alongside no-export
+  and growing-prefix checks. Other opaque read values and explicit native
+  rewrites remain compatibility boundaries to audit; they must not silently
+  export surrounding shared arithmetic before part 1 is declared complete.
   `condition_as_order_fact` also exports in constant-bound evidence,
   memory-order checking and quantified/derived order collectors; those are live
   checker routes, not output adapters.

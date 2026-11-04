@@ -223,7 +223,9 @@ pub(super) fn operand(view: crate::kernel::MachineOperandView<'_>) -> SnapshotBl
             };
             get(child).expect("keyed child")
         };
-        let key = if let Some(variable) = view.variable() {
+        let key = if let Some(value) = root.machine_conversion_leaf() {
+            written(value)
+        } else if let Some(variable) = view.variable() {
             written(&MachineTerm::Variable(*variable))
         } else if let Some(literal) = view.literal() {
             intern(Node::Exact(literal))

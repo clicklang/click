@@ -35,3 +35,54 @@ fn shared_comparison_growing_prefixes_scale_linearly() {
         "prefix reconstruction grew from {small} to {large}"
     );
 }
+
+#[test]
+fn comparison_read_prefixes_retain_conversions_without_exports() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let value = MachineTerm::IntegerToMachine {
+            value: IntegerTerm::Variable(Variable(992202)).into(),
+            destination: format,
+        };
+        let (load, _) = comparison_read_fixture(value.clone());
+        let mut root = imported(format, MachineTerm::Variable(load));
+        let mut expected = imported(format, value);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                expected = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [expected.clone(), expected.clone()],
+                );
+                let proposition = |value| {
+                    Proposition::ConditionIs(
+                        ConditionTerm::integer_less_than(
+                            IntegerTerm::Machine(
+                                SharedMachineIntegerTerm::from_shared(format, value).unwrap(),
+                            ),
+                            IntegerTerm::constant_i64(0),
+                        ),
+                        true,
+                    )
+                };
+                assert_eq!(
+                    TermRewrite::arithmetic_comparison(&proposition(root.clone())),
+                    Some(proposition(expected.clone()))
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 5, "{samples:?}");
+    }
+}

@@ -1730,6 +1730,9 @@ impl EqualityGraph {
                             }
                         }
                         N::MachineLiteral(_) => {}
+                        N::IntegerToMachine { .. } => pending.push(Work::Machine(
+                            term.machine_conversion_leaf().expect("conversion leaf"),
+                        )),
                         _ => unreachable!("shared machine operand fragment"),
                     }
                 }

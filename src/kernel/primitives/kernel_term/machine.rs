@@ -8,6 +8,26 @@ use crate::kernel::{
 };
 
 impl KernelTerm {
+    /// The fixed-size compatibility reading of a mathematical integer conversion.
+    /// Its Integer payload stays shared; the surrounding machine DAG is never exported.
+    pub(crate) fn machine_conversion_leaf(&self) -> Option<&MachineTerm> {
+        let KernelTermNode::IntegerToMachine {
+            destination,
+            operand,
+        } = self.node()
+        else {
+            return None;
+        };
+        Some(self.0.machine_leaf.get_or_init(|| {
+            MachineTerm::IntegerToMachine {
+                destination: *destination,
+                value: KernelTermExport::default()
+                    .integer(operand)
+                    .expect("Integer conversion operand"),
+            }
+        }))
+    }
+
     /// Retain a legacy machine operator over shared children without folding.
     /// Child interpretation is supplied by the caller, as in the legacy node.
     pub(crate) fn machine_binary_shared(
@@ -246,8 +266,8 @@ pub(super) fn wrap_exact(format: MachineIntegerType, term: MachineTerm) -> CValu
 }
 
 impl KernelTermImport {
-    /// Import only the arithmetic storage fragment. Do not traverse a Bool,
-    /// Integer conversion, pointer, or other opaque payload to reject it.
+    /// Import arithmetic and typed Integer conversion leaves. Bool, pointer,
+    /// and other opaque payloads retain their existing compatibility boundary.
     pub(crate) fn machine_arithmetic(
         &mut self,
         result: MachineIntegerType,
@@ -256,6 +276,16 @@ impl KernelTermImport {
         use KernelMachineLiteral as Literal;
         use MachineTerm as Old;
         let node = match term {
+            Old::IntegerToMachine { value, destination } => {
+                let operand = self.integer(value);
+                if operand.has_producer_local_identity() {
+                    return None;
+                }
+                KernelTermNode::IntegerToMachine {
+                    destination: *destination,
+                    operand,
+                }
+            }
             Old::Binary {
                 op,
                 format,
