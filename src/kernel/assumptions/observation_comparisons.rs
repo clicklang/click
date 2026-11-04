@@ -40,53 +40,57 @@ pub(in crate::kernel) enum PropositionKey {
     Exists(Variable, Sort, Box<Self>),
 }
 impl PropositionKey {
-    pub(in crate::kernel) fn observes_machine(proposition: &Proposition) -> bool {
-        let mut pending = vec![proposition];
-        while let Some(proposition) = pending.pop() {
-            crate::instrumentation::record_deterministic_work(1);
-            match proposition {
-                Proposition::ConditionIs(condition, truth)
-                    if comparison_view(condition, *truth).is_some() =>
-                {
-                    return true;
-                }
-                Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
-                    pending.push(a);
-                    pending.push(b);
-                }
-                Proposition::Not(body)
-                | Proposition::ForAll { body, .. }
-                | Proposition::Exists { body, .. } => pending.push(body),
-                _ => {}
-            }
-        }
-        false
+    /// Build an admitted comparison key in one walk, retaining it only when
+    /// some leaf has a machine comparison reading. Detection must not walk
+    /// the proposition again before constructing the same key.
+    pub(in crate::kernel) fn for_source(proposition: &Proposition) -> Option<Self> {
+        let (key, observes) = Self::with_presence(proposition);
+        observes.then_some(key)
     }
 
     pub(in crate::kernel) fn new(proposition: &Proposition) -> Self {
+        Self::with_presence(proposition).0
+    }
+
+    fn with_presence(proposition: &Proposition) -> (Self, bool) {
         crate::instrumentation::record_deterministic_work(1);
         match proposition {
             Proposition::ConditionIs(condition, truth) => {
                 if let Some(view) = comparison_view(condition, *truth) {
                     let view = view.widened().unwrap_or(view);
-                    Self::Comparison(key(&view))
+                    (Self::Comparison(key(&view)), true)
                 } else {
-                    Self::Exact(proposition.clone())
+                    (Self::Exact(proposition.clone()), false)
                 }
             }
-            Proposition::Not(body) => Self::Not(Box::new(Self::new(body))),
-            Proposition::And(a, b) => Self::And(Box::new(Self::new(a)), Box::new(Self::new(b))),
-            Proposition::Or(a, b) => Self::Or(Box::new(Self::new(a)), Box::new(Self::new(b))),
-            Proposition::Implies(a, b) => {
-                Self::Implies(Box::new(Self::new(a)), Box::new(Self::new(b)))
+            Proposition::Not(body) => {
+                let (key, observes) = Self::with_presence(body);
+                (Self::Not(Box::new(key)), observes)
+            }
+            Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
+                let (a, left) = Self::with_presence(a);
+                let (b, right) = Self::with_presence(b);
+                let (a, b) = (Box::new(a), Box::new(b));
+                let key = match proposition {
+                    Proposition::And(..) => Self::And(a, b),
+                    Proposition::Or(..) => Self::Or(a, b),
+                    _ => Self::Implies(a, b),
+                };
+                (key, left || right)
             }
             Proposition::ForAll {
                 var, sort, body, ..
-            } => Self::ForAll(*var, sort.clone(), Box::new(Self::new(body))),
+            } => {
+                let (key, observes) = Self::with_presence(body);
+                (Self::ForAll(*var, sort.clone(), Box::new(key)), observes)
+            }
             Proposition::Exists {
                 var, sort, body, ..
-            } => Self::Exists(*var, sort.clone(), Box::new(Self::new(body))),
-            _ => Self::Exact(proposition.clone()),
+            } => {
+                let (key, observes) = Self::with_presence(body);
+                (Self::Exists(*var, sort.clone(), Box::new(key)), observes)
+            }
+            _ => (Self::Exact(proposition.clone()), false),
         }
     }
 }

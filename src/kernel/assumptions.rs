@@ -6498,10 +6498,9 @@ impl PureFactContext {
         }
         if insert {
             // Only the newly admitted proposition is visited, never the context.
-            if !observation_comparisons::PropositionKey::observes_machine(source) {
+            let Some(view) = observation_comparisons::PropositionKey::for_source(source) else {
                 return;
-            }
-            let view = observation_comparisons::PropositionKey::new(source);
+            };
             let sources = self
                 .comparison_views
                 .get(&view)

@@ -5429,7 +5429,7 @@ mod shared_wide_order_evidence_tests {
         }
     }
     #[test]
-    fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_canonical_name() {
+    fn wide_order_evidence_connects_mixed_load_syntax_only_at_its_registered_variable() {
         use crate::kernel::{
             CMemory, LoadKind, MachineOperandView, Pointer, PointerOffsetTerm, intern_c_memory,
         };
