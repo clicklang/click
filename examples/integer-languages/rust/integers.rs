@@ -1,6 +1,5 @@
 // The cross-language integer fixture's programs (tests/examples/integer_languages.rs);
-// integers.c, integers.cpp and integers.rs are the same functions. The
-// wrapping ones Charon does not import are in gaps.rs.
+// integers.c, integers.cpp and integers.rs are the same functions.
 
 pub fn add_i32(a: i32, b: i32) -> i32 {
     a + b
@@ -107,4 +106,20 @@ pub fn bool_sum(a: bool, b: bool) -> i32 {
 
 pub fn select_i32(b: bool, x: i32, y: i32) -> i32 {
     if b { x } else { y }
+}
+
+pub fn wrapping_add_u32(a: u32, b: u32) -> u32 {
+    a.wrapping_add(b)
+}
+
+pub fn wrapping_sub_u32(a: u32, b: u32) -> u32 {
+    a.wrapping_sub(b)
+}
+
+pub fn wrapping_mul_u32(a: u32, b: u32) -> u32 {
+    a.wrapping_mul(b)
+}
+
+pub fn wrapping_add_u64(a: u64, b: u64) -> u64 {
+    a.wrapping_add(b)
 }

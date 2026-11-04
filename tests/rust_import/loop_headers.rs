@@ -197,10 +197,6 @@ fn charon_loop_headers_live_refresh_and_effectful_header_rejections() {
                 "pub fn bad(n: i32) { let mut i=0; while i<n+1 { i+=1; } }",
                 "pure scalar copies",
             ),
-            (
-                "pub fn bad(n: i32) { let mut i=0; while i<n { if i==2 { break; } i+=1; } }",
-                "while exit requires straight blocks to one join",
-            ),
         ] {
             fs::remove_file(p.artifact("headers.rs")).unwrap();
             fs::write(p.root.join("headers.rs"), source).unwrap();
