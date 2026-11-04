@@ -43,8 +43,10 @@ facts do not establish flat cost as the queried class or bucket grows.
    carriers, split origins, ownership refusals and branch isolation. Incremental
    ownership-validity checking still enumerates related candidates when the
    constant same-base neighbor index cannot represent the block (for example,
-   symbolic bounds, multiple symbolic origins in one block, or bases related
-   only by facts). Literal constant translations of one base share the index.
+   symbolic bounds, multiple coordinate origins within one root, or bases
+   related only by facts). Literal constant translations share the index even
+   beside unrelated roots. Alias/root discovery itself still needs a measured
+   checking caller before choosing its next removal.
 
    Keep complete-operation controls: a flat call query does not establish flat
    folding, and a flat constant-range fold does not establish bounded symbolic

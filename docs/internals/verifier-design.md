@@ -540,8 +540,16 @@ translations of one symbolic base share neighbour checks and the full-context
 sweep; the overlap predicate uses that same geometry, including native bounds
 and mixed element widths. Refusal and removal controls retain distinct symbolic
 origins, negative displacements, empty ranges, aliases and branch isolation.
-Symbolic bounds, multiple symbolic origins in one block, and bases related
-only by facts retain their separate checking routes.
+An unrelated origin in the same block does not disable this check: the existing
+root membership count is compared with the selected origin's coordinate count.
+When those counts match, the queried root contributes only its adjacent keys
+and first/last duplicate occurrences (at most four nominees). Root discovery
+still includes aliases, and roots reached through facts keep their checks.
+Symbolic bounds or multiple coordinate origins within the queried root fail
+the coverage guard and retain the existing route. No root members are scanned
+to establish coverage, and no new index or fact is created. Scaling controls
+grow the queried root beside an unrelated owner; semantic controls retain
+alias collisions, duplicate insertions, unindexed members and branch isolation.
 
 Call completion inserts returned outputs and recovered escrows into the valid
 persistent frame using incremental conflict checks. It never normalizes a whole

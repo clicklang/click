@@ -1511,6 +1511,71 @@ fn translated_owner_insertion_uses_interval_neighbors() {
 }
 
 #[test]
+fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
+    for native in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let assumptions = PureFactContext::new();
+            let owned = |variable, displacement| {
+                let base = Pointer {
+                    block: PointerBlock::ExternalArgument,
+                    offset: PointerOffsetTerm::add(
+                        PointerOffsetTerm::scale_int32(MachineTerm::var(Variable(variable)), 1),
+                        PointerOffsetTerm::Constant(displacement),
+                    ),
+                };
+                CResourceFact::own_memory(if native {
+                    CMemoryRange::new_wide(
+                        base,
+                        MachineTerm::uint64_constant(0),
+                        MachineTerm::uint64_constant(1),
+                        4,
+                    )
+                } else {
+                    CMemoryRange::new_with_element_width(base, 0u32.into(), 1u32.into(), 4)
+                })
+            };
+            let context = ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_facts((0..size).map(|i| owned(995_500, 8 * i as i64)))
+                .unchecked_with_fact(owned(995_501, 0));
+            context.synchronize_memory_equalities(&assumptions);
+            let mut work = Vec::new();
+            for (required, accepted) in [
+                (owned(995_500, -8), true),
+                (owned(995_500, 0), false),
+                (owned(995_500, 8 * (size - 1) as i64), false),
+            ] {
+                for _ in 0..3 {
+                    let (result, units) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            context
+                                .clone()
+                                .try_compose_into_valid_context_delaying_normalization(
+                                    [required.clone()],
+                                    &assumptions,
+                                )
+                        });
+                    assert_eq!(result.is_ok(), accepted);
+                    assert_eq!(context.facts().len(), size + 1);
+                    work.push(units);
+                }
+            }
+            samples.push((size, work));
+        }
+        eprintln!("owner insertion with an unrelated origin, native={native}: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 48)),
+            "an unrelated origin disables indexed owner checks: {samples:?}"
+        );
+    }
+}
+
+#[test]
 #[ignore = "nightly: 2.1s in the parallel gate"]
 fn installing_a_certified_resource_group_does_not_recheck_internal_pairs() {
     let base = Pointer {

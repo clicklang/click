@@ -7048,3 +7048,149 @@ fn translated_owner_coordinates_keep_native_extent_and_symbolic_origin() {
             .is_ok()
     );
 }
+
+#[test]
+fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::var(Variable(id)), 1),
+    };
+    let p = pointer(995_600);
+    let q = pointer(995_601);
+    let owned = |base, start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            start.into(),
+            end.into(),
+            4,
+        ))
+    };
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+        owned(p.clone(), 0, 1),
+        owned(p.clone(), 2, 3),
+        owned(q.clone(), 5, 6),
+    ]);
+    let required = owned(p.clone(), 5, 6);
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([required.clone()], &assumptions)
+            .is_ok()
+    );
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization(
+                [required.clone(), required.clone()],
+                &assumptions
+            )
+            .is_err()
+    );
+    let aliases = assumptions
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(p, q), true);
+    assert!(context.is_valid(&aliases));
+    assert!(
+        !context
+            .clone()
+            .unchecked_with_fact(required.clone())
+            .is_valid(&aliases)
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization([required], &aliases)
+            .is_err()
+    );
+}
+
+#[test]
+fn owned_root_neighbors_require_complete_coordinate_coverage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let index = MachineTerm::var(Variable(995_620));
+    let assumptions =
+        PureFactContext::new().assume_proposition(equality(index.clone(), 5u32.into()));
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::var(Variable(id)), 4),
+    };
+    let p = pointer(995_621);
+    let q = pointer(995_622);
+    let range = |base, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
+    let shifted = Pointer {
+        block: p.block.clone(),
+        offset: PointerOffsetTerm::add(
+            p.offset.clone(),
+            PointerOffsetTerm::scale_int32(index.clone(), 4),
+        ),
+    };
+    for held in [
+        CResourceFact::own_memory(range(
+            p.clone(),
+            index.clone(),
+            MachineTerm::add(index.clone(), 1u32.into()),
+        )),
+        CResourceFact::own_memory(range(shifted, 0u32.into(), 1u32.into())),
+    ] {
+        let required = CResourceFact::own_memory(range(p.clone(), 5u32.into(), 6u32.into()));
+        // Supply the two overlap inequalities explicitly: this regression
+        // tests candidate retention, independently of arithmetic search.
+        let available = held.memory_own_range().unwrap();
+        let requested = required.memory_own_range().unwrap();
+        let delta = requested
+            .base()
+            .element_index_from_base_with_width(available.base(), available.element_width())
+            .expect("explicit relative index");
+        let assumptions = assumptions
+            .clone()
+            .assume_condition(
+                ConditionTerm::signed_less_than(
+                    available.start().clone(),
+                    MachineTerm::add(delta.clone(), requested.end().clone()),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(
+                    MachineTerm::add(delta, requested.start().clone()),
+                    available.end().clone(),
+                ),
+                true,
+            );
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            held.clone(),
+            CResourceFact::own_memory(range(q.clone(), 0u32.into(), 1u32.into())),
+        ]);
+        assert!(context.is_valid(&assumptions));
+        assert!(
+            !context
+                .clone()
+                .unchecked_with_fact(required.clone())
+                .is_valid(&assumptions)
+        );
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [required.clone()],
+                    &assumptions
+                )
+                .is_err()
+        );
+        let child = context.clone().without_exact_representation(&held).unwrap();
+        assert!(
+            child
+                .try_compose_into_valid_context_delaying_normalization(
+                    [required.clone()],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        assert!(
+            context
+                .try_compose_into_valid_context_delaying_normalization([required], &assumptions)
+                .is_err()
+        );
+    }
+}
