@@ -89,6 +89,7 @@ pub use integer::{
 pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWidth};
 pub(crate) use integer::{
     MachineOperandView, clear_shared_machine_variable_cache, shared_machine_syntax_variables,
+    shared_operand_variable_pairs,
 };
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};

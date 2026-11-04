@@ -79,5 +79,18 @@ pub(crate) fn fact_operand_identity<'a>(
             return (source, [left, right]);
         }
     }
-    (format, [FactOperand::Term(left), FactOperand::Term(right)])
+    let side = |term: View<'a>| {
+        // K6: either 32-bit literal spelling denotes the same word in an
+        // equality. Match ComparisonSide's signed identity value without
+        // converting or exporting the surrounding operand.
+        if relation == CompareRelation::Equal
+            && format.format().bits() == 32
+            && let Some(bits) = term.word32_constant()
+        {
+            FactOperand::Value(i128::from(bits as i32))
+        } else {
+            FactOperand::Term(term)
+        }
+    };
+    (format, [side(left), side(right)])
 }

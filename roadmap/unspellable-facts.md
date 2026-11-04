@@ -105,8 +105,10 @@ Snapshot-blind candidate keys now read shared arithmetic and reuse interned chil
 identities across growing prefixes. Native and shared machine observations select
 the same load candidates; key equality still requires the existing checked memory
 bridge and is never proof authority. The load-registry lifetime invalidates the
-shared key memo. Migrating the checked matcher and certificate availability is
-still necessary before removing their native comparison adapters.
+shared key memo. The checked matcher now compares shared operand structure and
+rechecks each changed load through the current frame authority. Its syntax cache
+contains no proof answers or registry lookups. Certificate availability adapters
+remain open.
 
 Finite-quantifier guard ranges read signed 32-bit and unsigned 64-bit operand
 views directly. They retain direction, truth, endpoint handling and signed
@@ -183,9 +185,11 @@ Remaining groups to audit and migrate:
   equality and source withdrawal. The native opaque/memory branches and wide
   equality remain explicit audits; additional growing additive shapes still
   need checking before enabling new producers.
-  `conditions_equal_with_load_atoms` still obtains boxed fact operands; its
-  replacement must compare shared operand pairs while preserving the checked
-  load-origin/snapshot callback, including mixed opaque operands.
+  `conditions_equal_with_load_atoms` now compares shared operand pairs without
+  exports, preserving the checked load-origin/snapshot callback and mixed native
+  loads. Growing shared prefixes reuse syntax correspondence; authority is checked
+  anew for each selected load pair. Native opaque operands retain their existing
+  structural matcher.
 - [ ] Atomic domain evidence and certificate premise adapters. Atomic derivation
   now reads ordinary range-domain views and retains the exact premises for
   increment, one-plus, nonnegative addition and subtraction. Their source

@@ -12,6 +12,7 @@ thread_local! {
 }
 
 pub(crate) fn clear_shared_machine_variable_cache() {
+    super::operand_correspondence::clear();
     clear_shared_value_readings();
     KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
