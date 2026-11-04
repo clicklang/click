@@ -980,35 +980,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
             .focused_proposition()
             .ok_or(PropositionCloseError::NotProposition)?;
         for (index, premise) in premises.iter().enumerate() {
-            // An Integer comparison of exact observations of one machine
-            // type holds exactly when its native comparison does, so that
-            // listed native fact also supplies it.
-            let native = || match premise {
-                Proposition::ConditionIs(condition, value) => {
-                    crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
-                        condition, *value,
-                    )
-                    .is_some_and(|(native, truth)| {
-                        // The native fact may state the same order claim
-                        // from the other side, `i > 0` for `0 < i`.
-                        let native = Proposition::ConditionIs(native, truth);
-                        std::iter::once(native.clone())
-                            .chain(crate::kernel::proof::fact_reasoning::order_claim_forms(
-                                &native,
-                            ))
-                            .any(|form| facts.listed_premise_available(&form, &[], false))
-                    })
-                }
-                _ => false,
-            };
-            // A signed definedness fact holds exactly when both Integer
-            // bounds of its exact result do, so that listed fact also
-            // supplies each bound.
-            let definedness = || {
-                crate::kernel::machine_integer::definedness::definedness_of_integer_bound(premise)
-                    .is_some_and(|fact| facts.listed_premise_available(&fact, &[], false))
-            };
-            if !facts.listed_premise_available(premise, &[], false) && !native() && !definedness() {
+            if !facts.listed_premise_available(premise, &[], false) {
                 return Err(PropositionCloseError::IntegerArithmeticPremiseUnavailable(
                     index,
                 ));

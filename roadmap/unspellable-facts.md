@@ -195,8 +195,9 @@ Remaining groups to audit and migrate:
   increment, one-plus, nonnegative addition and subtraction. Their source
   lookup selects one existing order-index entry; balanced-unit sums also read
   operand views. Reassociated-add checking and conditional normalization read
-  ordinary domains. Certificate availability still needs migration while
-  retaining its checked across-effect memory bridge. Ring-overflow decisions
+  ordinary domains. Certificate availability uses the common premise store,
+  including ordinary bounds supplied by a retained legacy nonoverflow source
+  and its checked across-effect memory bridge. Ring-overflow decisions
   and bounded certificate conclusion identity already read views.
   `interval_query_form` remains in Surface search/output adapters and test
   references, not kernel atomic derivation.
@@ -210,8 +211,19 @@ Remaining groups to audit and migrate:
   nonnegative induction-domain admission read indexed endpoint views directly;
   the native bound-entry exporter remains for the other evidence and output
   callers.
-  Integer certificate premise availability (`proof/object.rs`) must retain the
-  checked across-effect bridge when replacing its native/overflow queries.
+  Integer certificate native premise availability now uses ordinary shared
+  lookup, including mirrored native sources across a checked memory frame.
+  Both certificate-local boxed retries are removed. Nonoverflow source lookup
+  reads shared operands and selects the existing snapshot-blind source bucket;
+  matching still requires the checked load authority. That common authority also
+  recognizes an explicitly held equality between named word loads before
+  discarding their names in favor of raw origins.
+  The common arithmetic-comparison rewrite now reconstructs the shared machine
+  fragment directly, with memoized syntax work and the existing checking-only
+  simplifications. Scope-dependent rewrites keep local memos. Explicit native
+  rewrites and a registered-read rewrite that exposes an opaque native value
+  remain compatibility boundaries to audit; the latter must not silently export
+  its surrounding shared arithmetic before part 1 is declared complete.
   `condition_as_order_fact` also exports in constant-bound evidence,
   memory-order checking and quantified/derived order collectors; those are live
   checker routes, not output adapters.

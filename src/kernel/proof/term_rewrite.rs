@@ -24,6 +24,7 @@ mod graph_condition_tests;
 mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
+mod shared_comparison;
 mod spec_rewrite;
 
 thread_local! {
@@ -35,6 +36,7 @@ thread_local! {
 
 pub(crate) fn clear_arithmetic_comparison_cache() {
     ARITHMETIC_COMPARISONS.with(|cache| cache.borrow_mut().clear());
+    shared_comparison::clear();
 }
 
 fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut CarrierVariables) {
@@ -3529,6 +3531,17 @@ impl<'a> TermRewrite<'a> {
                 ))
             }
             IntegerTerm::Machine(value) => {
+                if self.comparison_arithmetic
+                    && let Some(root) = value.shared_operand()
+                    && let Some(result) = self.comparison_operand(root)
+                {
+                    return MachineOperandView::Shared(&result)
+                        .observe(value.ty())
+                        .expect("typed comparison operand");
+                }
+                if self.refusal().is_some() {
+                    return exhausted_integer(shared.as_ref());
+                }
                 let bits = self.bits(value.value());
                 if self.checked_work_exhausted() {
                     return exhausted_integer(shared.as_ref());

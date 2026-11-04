@@ -2066,23 +2066,72 @@ impl ProofFacts {
         // succeeds if any one indexed fact supplies it. This keeps the loop
         // lookup output-sized and avoids an uncharged deep Proposition Eq.
         let key = snapshot_blind_proposition_key(required);
-        let Some(bucket) = self.by_snapshot_blind.get(&key) else {
+        self.by_snapshot_blind.get(&key).is_some_and(|bucket| {
+            bucket.iter().any(|candidate| {
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    return false;
+                }
+                separation_bridged_fact_is_available(
+                    required,
+                    std::slice::from_ref(candidate),
+                    &self.assumptions,
+                    framing,
+                ) || condition_bridged_fact_is_available(
+                    required,
+                    std::slice::from_ref(candidate),
+                    &self.assumptions,
+                )
+            })
+        }) || self.available_definedness_bound(required)
+    }
+
+    /// One ordinary exact-result bound supplied by a held nonoverflow fact.
+    /// This selects the same source as the former boxed-query adapter, then
+    /// checks its operands through the common across-effect load authority.
+    fn available_definedness_bound(&self, required: &Proposition) -> bool {
+        use crate::kernel::machine_integer::definedness::{
+            defined_formats, overflow_query_of_integer_bound,
+        };
+        let Some(query) = overflow_query_of_integer_bound(required, defined_formats()) else {
             return false;
         };
-        bucket.iter().any(|candidate| {
-            if crate::instrumentation::deadline_exceeded_with_work(1) {
-                return false;
-            }
-            separation_bridged_fact_is_available(
-                required,
-                std::slice::from_ref(candidate),
-                &self.assumptions,
-                framing,
-            ) || condition_bridged_fact_is_available(
-                required,
-                std::slice::from_ref(candidate),
-                &self.assumptions,
-            )
+        if self
+            .assumptions
+            .contains_known_overflow_query(&query, false)
+        {
+            return true;
+        }
+        let key = super::fact_keys::snapshot_blind_nonoverflow_key(&query);
+        self.by_snapshot_blind.get(&key).is_some_and(|bucket| {
+            bucket.iter().any(|candidate| {
+                if crate::instrumentation::deadline_exceeded_with_work(1) {
+                    return false;
+                }
+                let Proposition::ConditionIs(
+                    ConditionTerm::Overflows {
+                        format,
+                        op,
+                        left,
+                        right,
+                    },
+                    false,
+                ) = candidate.as_ref()
+                else {
+                    return false;
+                };
+                *format == query.format
+                    && *op == query.operation_kind()
+                    && [left.as_ref(), right.as_ref()]
+                        .into_iter()
+                        .zip(&query.operands)
+                        .all(|(source, operand)| {
+                            self.assumptions.operands_equal_modulo_origin_unchanged(
+                                query.format,
+                                MachineOperandView::Legacy(source),
+                                operand.operand_view(),
+                            )
+                        })
+            })
         })
     }
 
