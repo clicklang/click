@@ -3348,7 +3348,7 @@ impl SelectedFacts<'_> {
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
         condition: &ConditionTerm,
-        order_facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
+        order_facts: &mut Vec<condition_reasoning::OrderFact>,
     ) {
         // Only `solve` reaches this.
         for proposition in self
@@ -4226,7 +4226,13 @@ impl PureFactContext {
             return true;
         }
         let memo_id = ambient_assumptions_memo_id(self);
-        let memo_key = memo_id.map(|memo_id| (memo_id, left.clone(), right.clone()));
+        let memo_key = memo_id.map(|memo_id| {
+            (
+                memo_id,
+                checked_scalar_facts::ScalarOperandKey::Written(left.clone()),
+                checked_scalar_facts::ScalarOperandKey::Written(right.clone()),
+            )
+        });
         if let Some(memo_key) = &memo_key
             && let Some(hit) =
                 TRANSPORT_EQUAL_MEMO.with(|memo| memo.borrow().get(memo_key).copied())
@@ -4247,6 +4253,166 @@ impl PureFactContext {
             });
         }
         result
+    }
+
+    /// The existing transport rules over retained operands. Explicit native
+    /// inputs keep their compatibility rules; shared arithmetic is inspected
+    /// through its children and fixed-size leaves, never exported.
+    pub(in crate::kernel) fn bitvector_terms_equal_for_transport_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        self.transport_views_inner(left, right, &mut std::collections::HashMap::new())
+    }
+
+    fn transport_views_inner(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        local: &mut std::collections::HashMap<
+            (
+                checked_scalar_facts::ScalarOperandKey,
+                checked_scalar_facts::ScalarOperandKey,
+            ),
+            bool,
+        >,
+    ) -> bool {
+        use MachineOperandView as V;
+        if let (V::Legacy(a), V::Legacy(b)) = (left, right) {
+            return self.bitvector_terms_equal_for_transport(a, b);
+        }
+        let keys = (
+            condition_reasoning::retain_order_operand(left),
+            condition_reasoning::retain_order_operand(right),
+        );
+        if keys.0 == keys.1 {
+            return true;
+        }
+        if let Some(answer) = local.get(&keys) {
+            return *answer;
+        }
+        let scoped =
+            ambient_assumptions_memo_id(self).map(|scope| (scope, keys.0.clone(), keys.1.clone()));
+        if let Some(answer) = scoped
+            .as_ref()
+            .and_then(|key| TRANSPORT_EQUAL_MEMO.with(|memo| memo.borrow().get(key).copied()))
+        {
+            return answer;
+        }
+        let epoch = INCOMPLETE_REASONING_EPOCH.with(Cell::get);
+        let answer = self.transport_views_uncached(left, right, local);
+        if answer || INCOMPLETE_REASONING_EPOCH.with(Cell::get) == epoch {
+            local.insert(keys, answer);
+            if let Some(key) = scoped {
+                TRANSPORT_EQUAL_MEMO.with(|memo| {
+                    let mut memo = memo.borrow_mut();
+                    if memo.len() >= DECIDE_MEMO_LIMIT {
+                        memo.clear();
+                    }
+                    memo.insert(key, answer);
+                });
+            }
+        }
+        answer
+    }
+
+    fn transport_views_uncached(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        local: &mut std::collections::HashMap<
+            (
+                checked_scalar_facts::ScalarOperandKey,
+                checked_scalar_facts::ScalarOperandKey,
+            ),
+            bool,
+        >,
+    ) -> bool {
+        use crate::kernel::MachineBinaryOp as Op;
+        use MachineOperandView as V;
+        fn leaf(view: V<'_>) -> Option<std::borrow::Cow<'_, MachineTerm>> {
+            match view {
+                V::Legacy(term) => Some(std::borrow::Cow::Borrowed(term)),
+                V::Shared(root) => root
+                    .machine_conversion_leaf()
+                    .map(std::borrow::Cow::Borrowed)
+                    .or_else(|| {
+                        view.literal()
+                            .or_else(|| view.variable().copied().map(MachineTerm::Variable))
+                            .map(std::borrow::Cow::Owned)
+                    }),
+            }
+        }
+        if let (Some(a), Some(b)) = (leaf(left), leaf(right)) {
+            return self.bitvector_terms_equal_for_transport(&a, &b);
+        }
+        if self.equality_graph.are_int32_equal_views(left, right) {
+            return true;
+        }
+        let sum_format = |v: V<'_>| {
+            v.binary()
+                .and_then(|(ty, op, _)| (ty.format().bits() == 32 && op == Op::Add).then_some(ty))
+        };
+        let sum = match (sum_format(left), sum_format(right)) {
+            (Some(a), Some(b)) if a != b => None,
+            (Some(a), _) | (_, Some(a)) => Some(a),
+            _ => None,
+        };
+        if let Some(format) = sum {
+            let (a, ac) = condition_reasoning::retained_additive_parts(left, format);
+            let (mut b, bc) = condition_reasoning::retained_additive_parts(right, format);
+            let total = |parts: &Vec<(V<'_>, num_bigint::BigUint)>| {
+                parts
+                    .iter()
+                    .map(|(_, count)| count)
+                    .sum::<num_bigint::BigUint>()
+            };
+            if ac == bc
+                && total(&a) == total(&b)
+                && a.into_iter().all(|(a, mut count)| {
+                    for (b, remaining) in &mut b {
+                        if *remaining == num_bigint::BigUint::default() {
+                            continue;
+                        }
+                        let equal = if let (Some(a), Some(b)) = (leaf(a), leaf(*b)) {
+                            self.bitvector_addend_terms_proven_equal(&a, &b)
+                        } else {
+                            self.equality_graph.are_int32_equal_views(a, *b)
+                        };
+                        if equal {
+                            let taken = count.clone().min(remaining.clone());
+                            count -= &taken;
+                            *remaining -= taken;
+                            if count == num_bigint::BigUint::default() {
+                                return true;
+                            }
+                        }
+                    }
+                    false
+                })
+            {
+                return true;
+            }
+        }
+        if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
+            (left.binary(), right.binary())
+        {
+            return af == bf
+                && ao == bo
+                && af.format().bits() == 32
+                && !(af == MachineIntegerType::UInt32 && matches!(ao, Op::Divide | Op::Remainder))
+                && self.transport_views_inner(al, bl, local)
+                && self.transport_views_inner(ar, br, local);
+        }
+        if let (Some((af, ao, a)), Some((bf, bo, b))) = (left.unary(), right.unary()) {
+            return af == bf
+                && ao == bo
+                && af.format().bits() == 32
+                && ao == crate::kernel::MachineUnaryOp::BitwiseNot
+                && self.transport_views_inner(a, b, local);
+        }
+        false
     }
 
     fn bitvector_terms_equal_for_transport_uncached(

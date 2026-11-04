@@ -3535,13 +3535,23 @@ impl<'a> TermRewrite<'a> {
                 ))
             }
             IntegerTerm::Machine(value) => {
-                if self.comparison_arithmetic
+                if (self.comparison_arithmetic
+                    || (matches!(self.bitvector, Some((MachineTerm::Variable(_), _)))
+                        && self.conditions.is_none()
+                        && self.collected_conditions.is_none()))
                     && let Some(root) = value.shared_operand()
-                    && let Some(result) = self.comparison_operand(root)
+                    && let Some(result) = self.shared_machine_operand(root)
                 {
-                    return MachineOperandView::Shared(&result)
+                    let operand = MachineOperandView::Shared(&result);
+                    // A substituted carrier need not admit the observation's
+                    // numeric reading (for example a full-width unsigned
+                    // literal in a signed conversion). Preserve that typed
+                    // machine observation, as the native path below does.
+                    let result = operand
                         .observe(value.ty())
-                        .expect("typed comparison operand");
+                        .unwrap_or_else(|| IntegerTerm::Machine(operand.retain(value.ty())));
+                    self.integer_cache.insert(cache_key, result.clone());
+                    return result;
                 }
                 if self.refusal().is_some() {
                     return exhausted_integer(shared.as_ref());

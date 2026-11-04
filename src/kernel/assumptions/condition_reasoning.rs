@@ -1,6 +1,9 @@
 use super::*;
 
+mod additive_parts;
+pub(super) use additive_parts::parts as retained_additive_parts;
 mod bounds;
+pub(super) use bounds::{OrderFact, retain_order_operand, retained_order_fact};
 mod decision;
 mod memory_conditions;
 mod narrowed_casts;

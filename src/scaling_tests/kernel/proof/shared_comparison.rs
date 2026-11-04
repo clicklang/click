@@ -86,3 +86,42 @@ fn comparison_read_prefixes_retain_conversions_without_exports() {
         assert!(pair[1].1 <= pair[0].1 * 5, "{samples:?}");
     }
 }
+
+#[test]
+fn quantified_variable_substitution_visits_shared_nodes_once() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let source = MachineTerm::Variable(Variable(993101));
+        let replacement = MachineTerm::Variable(Variable(993102));
+        let mut root = imported(format, source.clone());
+        let mut expected = imported(format, replacement.clone());
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+            expected = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [expected.clone(), expected.clone()],
+            );
+        }
+        let observed = |root| {
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, root).unwrap())
+        };
+        let input = observed(root);
+        let exports = KernelTermExport::machine_export_count();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_bits_checked(&source, &replacement).integer(&input)
+        });
+        assert_eq!(result, observed(expected));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 5, "{samples:?}");
+    }
+}

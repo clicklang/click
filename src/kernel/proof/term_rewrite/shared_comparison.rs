@@ -1,4 +1,4 @@
-//! Checking-only arithmetic reconstruction over shared machine operands.
+//! Shared machine reconstruction for checking and variable substitution.
 //! This is not lowering: stored operands keep their exact syntax.
 use super::*;
 
@@ -14,11 +14,14 @@ pub(super) fn clear() {
 
 impl TermRewrite<'_> {
     /// Reconstruct shared arithmetic, including Integer conversion leaves.
+    /// Comparison mode simplifies arithmetic; variable substitution preserves
+    /// raw operators just like `bits`. Only comparison results cross queries.
     /// Other opaque read values retain the compatibility boundary.
-    pub(super) fn comparison_operand(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
+    pub(super) fn shared_machine_operand(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         // Only the ordinary comparison scope may share work between queries.
         // A nested binder's renamed/opaque reads use this traversal's own memo.
-        let cacheable = self.resolve_registered_loads
+        let cacheable = self.comparison_arithmetic
+            && self.resolve_registered_loads
             && self.scope.c.iter().all(|(a, b)| a == b)
             && self.scope.integer.iter().all(|(a, b)| a == b)
             && self.scope.algebraic.iter().all(|(a, b)| a == b);
@@ -74,7 +77,11 @@ impl TermRewrite<'_> {
                     let [left, right] = arguments
                         .each_ref()
                         .map(|arg| get(arg).expect("visited operand"));
-                    comparison_binary(*format, *operator, left, right)
+                    if self.comparison_arithmetic {
+                        comparison_binary(*format, *operator, left, right)
+                    } else {
+                        KernelTerm::machine_binary_shared(*format, *operator, [left, right])
+                    }
                 }
                 KernelTermNode::MachineUnary {
                     format,
@@ -82,10 +89,12 @@ impl TermRewrite<'_> {
                     operand,
                 } => {
                     let operand = get(operand).expect("visited operand");
-                    let operand = if matches!(
-                        format,
-                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
-                    ) && let Some(value) = literal(&operand)
+                    let operand = if self.comparison_arithmetic
+                        && matches!(
+                            format,
+                            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                        )
+                        && let Some(value) = literal(&operand)
                     {
                         imported(*format, value.constant_word32())
                     } else {
@@ -380,6 +389,122 @@ mod tests {
     use super::*;
 
     #[test]
+    fn variable_substitution_preserves_shared_arithmetic_and_is_query_local() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(992301));
+        let formats = [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ];
+        for format in formats {
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::Divide,
+                MachineBinaryOp::Remainder,
+                MachineBinaryOp::ShiftLeft,
+                MachineBinaryOp::ShiftRight,
+                MachineBinaryOp::BitwiseAnd,
+            ] {
+                let native = MachineTerm::Binary {
+                    format,
+                    op,
+                    left: Box::new(variable.clone()),
+                    right: Box::new(variable.clone()),
+                };
+                let root = imported(format, native.clone());
+                for number in [0, 1, 7] {
+                    let replacement = crate::kernel::machine_integer::range::constant_word(
+                        format,
+                        &number.into(),
+                    )
+                    .unwrap();
+                    let expected =
+                        TermRewrite::for_bits_checked(&variable, &replacement).bits(&native);
+                    let exports = KernelTermExport::machine_export_count();
+                    let mut rewrite = TermRewrite::for_bits_checked(&variable, &replacement);
+                    // Registered-read mode must not share replacement-dependent results.
+                    rewrite.enable_registered_load_resolution();
+                    let result = rewrite.shared_machine_operand(&root).unwrap();
+                    assert_eq!(result, imported(format, expected));
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn signed_observation_retains_a_substituted_unsigned_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int64;
+        let source = MachineTerm::Variable(Variable(992303));
+        let replacement = MachineTerm::uint64_constant(u64::MAX);
+        let input = IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(format, imported(format, source.clone()))
+                .unwrap(),
+        );
+        let expected =
+            IntegerTerm::from_machine(format, replacement.clone()).unwrap_or_else(|| {
+                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                    format,
+                    replacement.clone(),
+                ))
+            });
+        let exports = KernelTermExport::machine_export_count();
+        let actual = TermRewrite::for_bits_checked(&source, &replacement).integer(&input);
+        assert_eq!(actual, expected);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn variable_substitution_preserves_shared_cast_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = MachineTerm::Variable(Variable(992302));
+        let formats = [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ];
+        for source in formats {
+            for destination in formats {
+                let native = MachineTerm::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
+                    value: Box::new(variable.clone()),
+                };
+                let root = imported(destination, native.clone());
+                for replacement in [
+                    variable.clone(),
+                    crate::kernel::machine_integer::range::constant_word(source, &1.into())
+                        .unwrap(),
+                ] {
+                    let expected =
+                        TermRewrite::for_bits_checked(&variable, &replacement).bits(&native);
+                    let exports = KernelTermExport::machine_export_count();
+                    let result = TermRewrite::for_bits_checked(&variable, &replacement)
+                        .shared_machine_operand(&root)
+                        .unwrap();
+                    assert_eq!(
+                        result,
+                        imported(destination, expected),
+                        "{source:?} to {destination:?}"
+                    );
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+
+    #[test]
     fn comparison_keeps_arithmetic_shared_when_a_read_exposes_an_integer_conversion() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
@@ -564,7 +689,7 @@ mod tests {
                         let root = imported(destination, native.clone());
                         let exports = KernelTermExport::machine_export_count();
                         let actual = TermRewrite::for_arithmetic_comparison()
-                            .comparison_operand(&root)
+                            .shared_machine_operand(&root)
                             .unwrap();
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
                         assert_eq!(actual, imported(destination, expected), "{native:?}");
@@ -616,7 +741,7 @@ mod tests {
                         let root = imported(format, native);
                         let exports = KernelTermExport::machine_export_count();
                         let result = TermRewrite::for_arithmetic_comparison()
-                            .comparison_operand(&root)
+                            .shared_machine_operand(&root)
                             .unwrap();
                         assert_eq!(KernelTermExport::machine_export_count(), exports);
                         assert_eq!(

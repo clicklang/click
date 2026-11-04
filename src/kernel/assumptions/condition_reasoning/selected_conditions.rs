@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineOperandView as V;
 use crate::kernel::binary_node;
 use crate::kernel::cast_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
@@ -597,7 +598,11 @@ impl SelectedFacts<'_> {
                 relation: CompareRelation::LessThan,
                 left,
                 right,
-            } if self.selected_positive_offset_is_proven_above(left, right) => Some(true),
+            } if self
+                .selected_positive_offset_is_proven_above(V::Legacy(left), V::Legacy(right)) =>
+            {
+                Some(true)
+            }
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
@@ -653,13 +658,21 @@ impl SelectedFacts<'_> {
                 // This stronger normalization is tactic-local. Keep its atomic
                 // checks structural: calling the general condition solver here
                 // can recurse through fact transport and memory alias solving.
-                if let Some((left, right, strict)) = condition_as_order_fact(condition, true)
-                    && self.has_selected_order_path(&left, &right, strict)
+                if let Some((left, right, strict)) = retained_order_fact(condition, true)
+                    && self.has_selected_order_path(
+                        left.operand_view(),
+                        right.operand_view(),
+                        strict,
+                    )
                 {
                     return Some(true);
                 }
-                if let Some((left, right, strict)) = condition_as_order_fact(condition, false)
-                    && self.has_selected_order_path(&left, &right, strict)
+                if let Some((left, right, strict)) = retained_order_fact(condition, false)
+                    && self.has_selected_order_path(
+                        left.operand_view(),
+                        right.operand_view(),
+                        strict,
+                    )
                 {
                     return Some(false);
                 }
@@ -680,8 +693,8 @@ impl SelectedFacts<'_> {
         let order_facts = self.condition_order_facts();
         order_facts.iter().any(|(lower, value, strict)| {
             if *strict
-                || MachineTerm::add(lower.clone(), MachineTerm::constant(1)) != *incremented_lower
-                || MachineTerm::add(value.clone(), MachineTerm::constant(1)) != *incremented_value
+                || !self.selected_successor_matches(lower.operand_view(), incremented_lower)
+                || !self.selected_successor_matches(value.operand_view(), incremented_value)
             {
                 return false;
             }
@@ -689,6 +702,26 @@ impl SelectedFacts<'_> {
                 .iter()
                 .any(|(strict_value, _, strict)| *strict && strict_value == value)
         })
+    }
+
+    fn selected_successor_matches(&self, lower: V<'_>, incremented: &MachineTerm) -> bool {
+        if let V::Legacy(lower) = lower {
+            return MachineTerm::add(lower.clone(), MachineTerm::constant(1)) == *incremented;
+        }
+        let V::Shared(lower) = lower else {
+            unreachable!()
+        };
+        let one = crate::kernel::KernelTermImport::default()
+            .machine(MachineIntegerType::Int32, &MachineTerm::constant(1));
+        let sum = crate::kernel::KernelTerm::machine_binary_shared(
+            MachineIntegerType::Int32,
+            crate::kernel::MachineBinaryOp::Add,
+            [lower.clone(), one],
+        );
+        let sum = self.equality_graph.checking_word32_root(&sum, |_| None);
+        use super::super::checked_scalar_facts::ScalarOperandKey as Key;
+        Key::for_format(MachineIntegerType::Int32, V::Shared(&sum))
+            == Key::for_format(MachineIntegerType::Int32, V::Legacy(incremented))
     }
 
     fn has_exact_bitvector_inequality_after_cancellation(
@@ -764,13 +797,13 @@ impl SelectedFacts<'_> {
         {
             return Some(true);
         }
-        if let Some((left, right, strict)) = condition_as_order_fact(condition, true)
-            && self.has_selected_order_path(&left, &right, strict)
+        if let Some((left, right, strict)) = retained_order_fact(condition, true)
+            && self.has_selected_order_path(left.operand_view(), right.operand_view(), strict)
         {
             return Some(true);
         }
-        if let Some((left, right, strict)) = condition_as_order_fact(condition, false)
-            && self.has_selected_order_path(&left, &right, strict)
+        if let Some((left, right, strict)) = retained_order_fact(condition, false)
+            && self.has_selected_order_path(left.operand_view(), right.operand_view(), strict)
         {
             return Some(false);
         }
@@ -850,32 +883,33 @@ impl SelectedFacts<'_> {
         }
     }
 
-    fn has_selected_order_path(
-        &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
-        require_strict: bool,
-    ) -> bool {
+    fn has_selected_order_path(&self, left: V<'_>, right: V<'_>, require_strict: bool) -> bool {
         let mut order_facts = self.condition_order_facts().as_ref().clone();
         self.collect_quantified_order_facts_for_condition(
-            &ConditionTerm::signed_less_than(left.clone(), right.clone()),
+            &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::LessThan,
+                [left, right],
+            ),
             &mut order_facts,
         );
-        let mut stack = vec![(left.clone(), false)];
+        let mut stack = vec![(retain_order_operand(left), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {
             if !seen.insert((current.clone(), strict_so_far)) {
                 continue;
             }
-            if let Some(connection_strict) = self.selected_order_path_connection(&current, right)
+            if let Some(connection_strict) =
+                self.selected_order_path_connection(current.operand_view(), right)
                 && (!require_strict || strict_so_far || connection_strict)
             {
                 return true;
             }
             for (edge_left, edge_right, edge_strict) in order_facts.iter() {
-                if let Some(connection_strict) =
-                    self.selected_order_path_connection(&current, edge_left)
-                {
+                if let Some(connection_strict) = self.selected_order_path_connection(
+                    current.operand_view(),
+                    edge_left.operand_view(),
+                ) {
                     stack.push((
                         edge_right.clone(),
                         strict_so_far || connection_strict || *edge_strict,
@@ -886,81 +920,73 @@ impl SelectedFacts<'_> {
         false
     }
 
-    fn selected_positive_offset_is_proven_above(
-        &self,
-        base: &MachineTerm,
-        term: &MachineTerm,
-    ) -> bool {
-        let Some((term_base, addend)) = term.add_const_parts() else {
+    fn selected_positive_offset_is_proven_above(&self, base: V<'_>, term: V<'_>) -> bool {
+        let Some((term_base, addend)) = term.int32_add_const_parts() else {
             return false;
         };
-        if !self.selected_bitvector_terms_equal(&term_base, base)
+        if !self.selected_bitvector_terms_equal(term_base, base)
             || nonnegative_int32_value(addend).is_none_or(|value| value <= 0)
         {
             return false;
         }
-        // A strict upper bound by any int32 value proves that `base` is below
-        // INT_MAX. Therefore adding one cannot wrap. Keep this solve rule
-        // syntactic so certificate selection cannot recurse into memory or
-        // alias resolution.
+        // A selected strict upper bound makes the existing +1 rule safe.
         addend == 1
-            && self.condition_facts.scan_explicit_input().any(|(condition, value)| {
-                matches!(
-                    (condition, value),
-                    (
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left, right: _ },
-                        true
-                    ) if self.selected_bitvector_terms_equal(left, base)
-                ) || matches!(
-                    (condition, value),
-                    (
-                        ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::GreaterThan, left: _, right },
-                        true
-                    ) if self.selected_bitvector_terms_equal(right, base)
-                )
-            })
+            && self
+                .condition_facts
+                .scan_explicit_input()
+                .any(|(condition, value)| {
+                    *value
+                        && order_view_at_format(condition, true, MachineIntegerType::Int32)
+                            .is_some_and(|view| {
+                                view.relation == crate::kernel::machine_integer::Relation::Less
+                                    && self.selected_bitvector_terms_equal(
+                                        view.operands[0].operand_view(),
+                                        base,
+                                    )
+                            })
+                })
     }
 
-    fn selected_order_path_connection(
-        &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
-    ) -> Option<bool> {
+    fn selected_order_path_connection(&self, left: V<'_>, right: V<'_>) -> Option<bool> {
         if self.selected_bitvector_terms_equal(left, right) {
             return Some(false);
         }
         if self.selected_positive_offset_is_proven_above(left, right) {
             return Some(true);
         }
-        let left = self.signed_constant_after_equality_normalization(left)?;
-        let right = self.signed_constant_after_equality_normalization(right)?;
+        let left = self.known_signed_constant_after_normalization_view(left)?;
+        let right = self.known_signed_constant_after_normalization_view(right)?;
         (left <= right).then_some(left < right)
     }
 
-    fn selected_bitvector_terms_equal(&self, left: &MachineTerm, right: &MachineTerm) -> bool {
-        if self.bitvector_terms_equal_for_transport(left, right) {
+    fn selected_bitvector_terms_equal(&self, left: V<'_>, right: V<'_>) -> bool {
+        if self.bitvector_terms_equal_for_transport_views(left, right) {
             return true;
         }
-
         self.condition_facts
             .scan_explicit_input()
             .any(|(condition, value)| {
-                let (
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                        relation: CompareRelation::Equal,
-                        left: fact_left,
-                        right: fact_right,
-                    },
-                    true,
-                ) = (condition, value)
+                if !*value {
+                    return false;
+                }
+                let Some(view) =
+                    crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                        condition, true,
+                    )
+                    .filter(|view| {
+                        matches!(
+                            view.format,
+                            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                        ) && view.relation == crate::kernel::machine_integer::Relation::Equal
+                    })
                 else {
                     return false;
                 };
-                self.bitvector_terms_equal_for_transport(left, fact_left)
-                    && self.bitvector_terms_equal_for_transport(right, fact_right)
-                    || self.bitvector_terms_equal_for_transport(left, fact_right)
-                        && self.bitvector_terms_equal_for_transport(right, fact_left)
+                let [a, b] = view.operands.each_ref().map(|p| p.operand_view());
+                self.bitvector_terms_equal_for_transport_views(left, a)
+                    && self.bitvector_terms_equal_for_transport_views(right, b)
+                    || self.bitvector_terms_equal_for_transport_views(left, b)
+                        && self.bitvector_terms_equal_for_transport_views(right, a)
             })
     }
 }
@@ -1028,5 +1054,151 @@ mod checking_attribution_tests {
                 },
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod retained_order_tests {
+    use super::*;
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    fn root(id: u64) -> KernelTerm {
+        let x = KernelTerm::variable(
+            KernelType::C(MachineIntegerType::Int32.c_type()),
+            Variable(id),
+        );
+        KernelTerm::machine_binary_shared(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Multiply,
+            [x.clone(), x],
+        )
+    }
+    fn bound(a: &KernelTerm, b: &KernelTerm, strict: bool) -> ConditionTerm {
+        condition_for_operand_views(
+            MachineIntegerType::Int32,
+            if strict {
+                CompareRelation::LessThan
+            } else {
+                CompareRelation::LessEqual
+            },
+            [V::Shared(a), V::Shared(b)],
+        )
+    }
+    #[test]
+    fn selected_shared_paths_preserve_strictness_and_branch_scope_without_export() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let [a, b, c] = [root(993501), root(993502), root(993503)];
+        let exports = KernelTermExport::machine_export_count();
+        let parent = PureFactContext::new().assume_condition(bound(&a, &b, true), true);
+        let child = parent.clone().assume_condition(bound(&b, &c, false), true);
+        assert!(child.selected_for_test().has_selected_order_path(
+            V::Shared(&a),
+            V::Shared(&c),
+            true
+        ));
+        assert!(!child.selected_for_test().has_selected_order_path(
+            V::Shared(&c),
+            V::Shared(&a),
+            false
+        ));
+        assert!(!parent.selected_for_test().has_selected_order_path(
+            V::Shared(&a),
+            V::Shared(&c),
+            false
+        ));
+        let weak = PureFactContext::new()
+            .assume_condition(bound(&a, &b, false), true)
+            .assume_condition(bound(&b, &c, false), true);
+        assert!(weak.selected_for_test().has_selected_order_path(
+            V::Shared(&a),
+            V::Shared(&c),
+            false
+        ));
+        assert!(!weak.selected_for_test().has_selected_order_path(
+            V::Shared(&a),
+            V::Shared(&c),
+            true
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn derived_shared_bounds_require_the_selected_guard() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let [a, b] = [root(993511), root(993512)];
+        let guard = ConditionTerm::equal(
+            MachineTerm::Variable(Variable(993513)),
+            MachineTerm::constant(7),
+        );
+        let source = Proposition::Implies(
+            Box::new(Proposition::ConditionIs(guard.clone(), true)),
+            Box::new(Proposition::ConditionIs(bound(&a, &b, true), true)),
+        );
+        let empty = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let mut facts = Vec::new();
+        empty.collect_derived_order_facts_from_proposition(&source, &mut facts);
+        assert!(facts.is_empty());
+        let allowed = empty.clone().assume_condition(guard, true);
+        allowed.collect_derived_order_facts_from_proposition(&source, &mut facts);
+        assert_eq!(facts.len(), 1);
+        assert_eq!(
+            facts[0],
+            retained_order_fact(&bound(&a, &b, true), true).unwrap()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+    #[test]
+    fn finite_quantified_shared_bounds_keep_the_instantiated_operands() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let [a, b] = [root(993541), root(993542)];
+        let k = Variable(993543);
+        let binder = KernelTerm::variable(KernelType::C(ty.c_type()), k);
+        let body = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [a.clone(), binder]);
+        let guard = Proposition::And(
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_equal(
+                    MachineTerm::constant(0),
+                    MachineTerm::Variable(k),
+                ),
+                true,
+            )),
+            Box::new(Proposition::ConditionIs(
+                ConditionTerm::signed_less_than(MachineTerm::Variable(k), MachineTerm::constant(2)),
+                true,
+            )),
+        );
+        let source = Proposition::ForAll {
+            name: Default::default(),
+            var: k,
+            sort: Sort::CInt32,
+            body: Box::new(Proposition::Implies(
+                Box::new(guard),
+                Box::new(Proposition::ConditionIs(bound(&body, &b, false), true)),
+            )),
+        };
+        let context = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let mut facts = Vec::new();
+        context.collect_finite_forall_order_facts(&source, &mut facts);
+        assert_eq!(facts.len(), 2);
+        for (index, (left, right, strict)) in facts.iter().enumerate() {
+            let value = crate::kernel::KernelTermImport::default()
+                .machine(ty, &MachineTerm::constant(index as u32));
+            let expected =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [a.clone(), value]);
+            assert!(!strict);
+            assert!(context.bitvector_terms_equal_for_transport_views(
+                left.operand_view(),
+                V::Shared(&expected)
+            ));
+            assert!(
+                context
+                    .bitvector_terms_equal_for_transport_views(right.operand_view(), V::Shared(&b))
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
