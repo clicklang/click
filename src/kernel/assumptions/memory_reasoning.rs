@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_term;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
@@ -4003,7 +4004,10 @@ impl PureFactContext {
                 int64_constant!(constant) => {
                     Bitvector32Term::uint64_constant(constant_i64(constant) as u64)
                 }
-                value => Bitvector32Term::UInt64FromInt64(Box::new(value)),
+                value => Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt64FromInt64,
+                    Box::new(value),
+                ),
             });
         }
         // An index advanced by whole elements, `base[i]` then `+ k`: the
@@ -4074,8 +4078,9 @@ impl PureFactContext {
         // extension, the spelling a range bound of that type is given
         // ([`crate::kernel::wide_range_bounds`]). A negative index becomes at
         // least 2^63, beyond every wide range's end, so no caller places it.
-        crate::kernel::primitives::checked_native_range_endpoint(&value, self)
-            .or(Some(Bitvector32Term::UInt64FromInt32(value)))
+        crate::kernel::primitives::checked_native_range_endpoint(&value, self).or(Some(
+            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, value),
+        ))
     }
 
     /// A complete aligned access lies outside a native range. Both byte

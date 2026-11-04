@@ -3,6 +3,7 @@ use crate::kernel::CompareRelation;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::unary_term;
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 use num_traits::ToPrimitive;
 
@@ -3236,13 +3237,17 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
             collect_integer_bound_variables(value, variables);
         }
         int64_constant!(_) | uint64_constant!(_) | native_constant!(_, _) => {}
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
+        cast_term!(Int64From32, value)
+        | Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value,
+            ..
+        }
+        | cast_term!(UInt64From32, value)
+        | cast_term!(UInt32From64, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value)
         | Bitvector32Term::Unary { operand: value, .. } => {
             collect_bitvector_bound_variables(value, variables)
         }

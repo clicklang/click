@@ -16,7 +16,7 @@
 //! equivalents. At 64 bits a conversion reuses the word (a 64-bit
 //! unsigned reading of a signed value wraps it in `UInt64FromInt64`). At 32
 //! and 64 bits the rule holds for every word. At 8
-//! and 16 bits the conversion is a `MachineIntegerCast` of a canonical
+//! and 16 bits the conversion is a generic `Cast` of a canonical
 //! carrier, read in an `int32` comparison; the rule holds when the operand
 //! lies in its own format's range, which the context must decide.
 //!
@@ -29,6 +29,7 @@
 //! original comparison, so the rule is not applied again inside it.
 
 use super::*;
+use crate::kernel::Bitvector32Term;
 use crate::kernel::CompareRelation as R;
 use crate::kernel::MachineIntegerType as Ty;
 use crate::kernel::machine_integer::{
@@ -38,7 +39,7 @@ use crate::kernel::machine_integer::{
         structural_native_comparison_view,
     },
 };
-use crate::kernel::{KernelMachineCastEncoding as Encoding, MachineOperandView as View};
+use crate::kernel::{MachineCastSpelling as Encoding, MachineOperandView as View};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
 };
@@ -108,10 +109,11 @@ fn sign_cast(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
         return retain(destination, value);
     }
     match operand {
-        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::MachineIntegerCast {
+        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(value.clone()),
-            source,
-            destination,
+            from: source,
+            to: destination,
         }),
         View::Shared(_) => {
             ComparisonOperand::Observation(operand.retain(source).cast_operand(destination))
@@ -134,9 +136,10 @@ fn converted(source: Ty, destination: Ty, operand: View<'_>) -> ComparisonOperan
 
 fn unsigned64_wrapper(operand: View<'_>) -> ComparisonOperand<'static> {
     match operand {
-        View::Legacy(value) => {
-            ComparisonOperand::Constant(Bitvector32Term::UInt64FromInt64(Box::new(value.clone())))
-        }
+        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt64FromInt64,
+            Box::new(value.clone()),
+        )),
         View::Shared(root) => ComparisonOperand::Observation(
             crate::kernel::SharedMachineIntegerTerm::from_shared(
                 Ty::UInt64,
@@ -522,7 +525,10 @@ mod tests {
                     Bitvector32Term::sign_cast32(format, other, sum(format)),
                 ));
             } else if format == Ty::UInt64 {
-                operands.push(Bitvector32Term::UInt64FromInt64(Box::new(sum(Ty::Int64))));
+                operands.push(Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt64FromInt64,
+                    Box::new(sum(Ty::Int64)),
+                ));
             }
             let (relations, threshold) = if format.format().is_signed() {
                 ([R::LessThan, R::GreaterEqual], 0)
@@ -597,9 +603,10 @@ mod tests {
             (Ty::Int16, Ty::UInt16, 32767i32),
         ] {
             let operand = sum(Ty::Int32);
-            let cast = Bitvector32Term::MachineIntegerCast {
-                source,
-                destination,
+            let cast = Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: source,
+                to: destination,
                 value: Box::new(operand.clone()),
             };
             let query =
@@ -637,9 +644,10 @@ mod tests {
             [(Ty::UInt8, Ty::Int8, 255), (Ty::UInt16, Ty::Int16, 65535)]
         {
             let operand = sum(Ty::Int32);
-            let converted = Bitvector32Term::MachineIntegerCast {
-                source,
-                destination,
+            let converted = Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: source,
+                to: destination,
                 value: Box::new(operand.clone()),
             };
             let query = ConditionTerm::signed_less_than(converted, Bitvector32Term::constant(0));

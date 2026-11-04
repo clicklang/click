@@ -2,7 +2,7 @@
 //! operand representation. The payload bound counts occurrences, as before;
 //! sharing is not permission to admit a previously refused certificate shape.
 use super::*;
-use crate::kernel::{KernelMachineCastEncoding as Encoding, MachineOperandView as View};
+use crate::kernel::{MachineCastSpelling as Encoding, MachineOperandView as View};
 
 fn binary_supported(format: MachineIntegerType, op: MachineBinaryOp) -> bool {
     use MachineBinaryOp::*;
@@ -391,27 +391,37 @@ mod condition_tests {
         let casts = [
             (
                 MachineIntegerType::Int32,
-                Bitvector32Term::MachineIntegerCast {
-                    source: MachineIntegerType::UInt8,
-                    destination: MachineIntegerType::Int32,
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: MachineIntegerType::UInt8,
+                    to: MachineIntegerType::Int32,
                     value: Box::new(variable.clone()),
                 },
             ),
             (
                 MachineIntegerType::Int64,
-                Bitvector32Term::Int64FromUInt32(Box::new(variable.clone())),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::Int64FromUInt32,
+                    Box::new(variable.clone()),
+                ),
             ),
             (
                 MachineIntegerType::Int64,
-                Bitvector32Term::Int64From32(Box::new(variable.clone())),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::Int64From32,
+                    Box::new(variable.clone()),
+                ),
             ),
             (
                 MachineIntegerType::UInt64,
-                Bitvector32Term::UInt64From32(Box::new(variable.clone())),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt64From32,
+                    Box::new(variable.clone()),
+                ),
             ),
             (
                 MachineIntegerType::UInt32,
-                Bitvector32Term::UInt32From64(Box::new(variable)),
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(variable)),
             ),
         ];
         for (format, native) in casts {

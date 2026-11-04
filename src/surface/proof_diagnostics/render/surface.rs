@@ -20,6 +20,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::OverflowOperation;
 #[cfg(test)]
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_op, cast_term};
 use crate::kernel::{MachineBinaryOp, MachineIntegerType, MachineUnaryOp};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
@@ -1104,7 +1105,7 @@ impl Printer<'_> {
         signed: Option<bool>,
         depth: usize,
     ) -> Option<String> {
-        if signed == Some(true) && matches!(value, Bitvector32Term::UInt32From64(_)) {
+        if signed == Some(true) && matches!(value, cast_term!(UInt32From64, _)) {
             let value = self.bitvector(value, None, depth)?;
             return Some(cast("int32", value).text);
         }
@@ -1190,14 +1191,17 @@ impl Printer<'_> {
                         .and_then(Hint::of_load)
                 }),
             B::MemoryLoad(_, _, kind) => Hint::of_load(*kind),
-            B::Int64From32(_) | B::Int64FromUInt32(_) => Some(Hint::Int64),
-            B::UInt64From32(_) | B::UInt64FromInt32(_) | B::UInt64FromInt64(_) => {
-                Some(Hint::UInt64)
+            cast_term!(Int64From32, _) | cast_term!(Int64FromUInt32, _) => Some(Hint::Int64),
+            cast_term!(UInt64From32, _)
+            | cast_term!(UInt64FromInt32, _)
+            | cast_term!(UInt64FromInt64, _) => Some(Hint::UInt64),
+            cast_term!(UInt32From64, _) => Some(Hint::Unsigned32),
+            B::Cast {
+                spelling: MachineCastSpelling::Generic,
+                to: destination,
+                ..
             }
-            B::UInt32From64(_) => Some(Hint::Unsigned32),
-            B::MachineIntegerCast { destination, .. } | B::IntegerToMachine { destination, .. } => {
-                Hint::of_machine(*destination)
-            }
+            | B::IntegerToMachine { destination, .. } => Hint::of_machine(*destination),
             B::If {
                 then_term,
                 else_term,
@@ -1438,7 +1442,7 @@ impl Printer<'_> {
             B::MemoryLoad(memory, pointer, kind) => {
                 return self.load(memory.as_ref(), pointer, *kind, depth);
             }
-            B::UInt32From64(inner) if !self.source_mode() => {
+            cast_term!(UInt32From64, inner) if !self.source_mode() => {
                 let inner = self.bitvector(inner, None, depth)?;
                 return Some(cast("uint32", inner));
             }
@@ -1516,12 +1520,16 @@ impl Printer<'_> {
                 )
                 | U::Machine(_, MachineUnaryOp::BitwiseNot) => (Some("~"), None),
                 U::Float32Negate | U::Float64Negate => (Some("-"), None),
-                U::Int64From32 | U::Int64FromUInt32 => (None, Some("int64")),
-                U::UInt64From32 | U::UInt64FromInt32 | U::UInt64FromInt64 => (None, Some("uint64")),
-                U::UInt32From64 => (None, Some("uint32")),
-                U::MachineIntegerCast { destination, .. } => {
-                    (None, Some(machine_type_spelling(destination)))
+                cast_op!(Int64From32) | cast_op!(Int64FromUInt32) => (None, Some("int64")),
+                cast_op!(UInt64From32) | cast_op!(UInt64FromInt32) | cast_op!(UInt64FromInt64) => {
+                    (None, Some("uint64"))
                 }
+                cast_op!(UInt32From64) => (None, Some("uint32")),
+                U::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    to: destination,
+                    ..
+                } => (None, Some(machine_type_spelling(destination))),
             };
             let inner_hint = match operator {
                 U::Machine(
@@ -1529,10 +1537,14 @@ impl Printer<'_> {
                     crate::kernel::MachineUnaryOp::BitwiseNot,
                 )
                 | U::Machine(_, MachineUnaryOp::BitwiseNot) => hint,
-                U::Int64FromUInt32 | U::UInt64From32 => Some(Hint::Unsigned32),
-                U::Int64From32 | U::UInt64FromInt32 => Some(Hint::Signed32),
-                U::UInt64FromInt64 => Some(Hint::Int64),
-                U::MachineIntegerCast { source, .. } => Hint::of_machine(source),
+                cast_op!(Int64FromUInt32) | cast_op!(UInt64From32) => Some(Hint::Unsigned32),
+                cast_op!(Int64From32) | cast_op!(UInt64FromInt32) => Some(Hint::Signed32),
+                cast_op!(UInt64FromInt64) => Some(Hint::Int64),
+                U::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    ..
+                } => Hint::of_machine(source),
                 _ => None,
             };
             let inner = match operator {
@@ -2884,8 +2896,10 @@ mod tests {
             CValue::UInt64(Bitvector32Term::Variable(Variable(94))),
         );
         let mut labels = SnapshotLabels::with_state(ParameterBinding::default(), &state);
-        let value =
-            Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(94))));
+        let value = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(Bitvector32Term::Variable(Variable(94))),
+        );
         let fact = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,

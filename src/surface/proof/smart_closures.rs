@@ -1,5 +1,6 @@
 //! Smart closure search and linear script interpretation.
 use crate::kernel::binary_term;
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     uint64_constant,
@@ -360,22 +361,23 @@ fn signed_surface_terms_equal(
                 crate::kernel::Bitvector32Term::Variable(left),
                 crate::kernel::Bitvector32Term::Variable(right),
             ) if left == right => {}
-            (
-                crate::kernel::Bitvector32Term::UInt32From64(left),
-                crate::kernel::Bitvector32Term::UInt32From64(right),
-            ) => pending.push((left, right)),
+            (cast_term!(UInt32From64, left), cast_term!(UInt32From64, right)) => {
+                pending.push((left, right))
+            }
             // A conversion, such as an 8- or 16-bit value's `int32`
             // widening, is the same term when its formats and operand are.
             (
-                crate::kernel::Bitvector32Term::MachineIntegerCast {
+                crate::kernel::Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: left,
-                    source: left_source,
-                    destination: left_destination,
+                    from: left_source,
+                    to: left_destination,
                 },
-                crate::kernel::Bitvector32Term::MachineIntegerCast {
+                crate::kernel::Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: right,
-                    source: right_source,
-                    destination: right_destination,
+                    from: right_source,
+                    to: right_destination,
                 },
             ) if left_source == right_source && left_destination == right_destination => {
                 pending.push((left, right))
@@ -432,9 +434,9 @@ fn int32_widening_spelling(
 ) -> ContractExpression {
     let widening = matches!(
         term,
-        crate::kernel::Bitvector32Term::MachineIntegerCast {
-            source,
-            destination: crate::kernel::MachineIntegerType::Int32,
+        crate::kernel::Bitvector32Term::Cast { spelling: MachineCastSpelling::Generic,
+            from: source,
+            to: crate::kernel::MachineIntegerType::Int32,
             ..
         } if source.format().bits() < 32
     );

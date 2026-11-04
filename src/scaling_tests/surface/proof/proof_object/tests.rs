@@ -5,6 +5,7 @@
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 #[test]
 fn a_missing_premise_spelling_walks_recorded_history_only_once() {
@@ -107,7 +108,10 @@ fn same_block_offset_rewrite_work(
     let k = Bitvector32Term::sign_cast32(
         MachineIntegerType::UInt32,
         MachineIntegerType::Int32,
-        Bitvector32Term::UInt32From64(Box::new(remaining.clone())),
+        Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(remaining.clone()),
+        ),
     );
     let shifted = Pointer {
         block: base.block.clone(),
@@ -131,9 +135,10 @@ fn same_block_offset_rewrite_work(
         .with_local("k", CValue::UInt64(remaining));
     let mut facts = (0..pointer_history)
         .flat_map(|i| {
-            let old = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(
-                8_180_000 + i as u64,
-            ))));
+            let old = Bitvector32Term::legacy_cast(
+                MachineCastSpelling::UInt32From64,
+                Box::new(Bitvector32Term::Variable(Variable(8_180_000 + i as u64))),
+            );
             [
                 Proposition::ConditionIs(
                     ConditionTerm::pointer_equal(

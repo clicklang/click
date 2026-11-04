@@ -18,6 +18,7 @@
 
 use super::operators::CBitwiseOperation;
 use super::*;
+use crate::kernel::{Bitvector32Term, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 pub(in crate::kernel) struct TaggedAddress {
@@ -195,15 +196,15 @@ pub(in crate::kernel) fn tag_bound_citing(
         false
     };
     let lower = match term {
-        Bitvector32Term::UInt64FromInt32(value) => Some(ConditionTerm::signed_less_equal(
+        cast_term!(UInt64FromInt32, value) => Some(ConditionTerm::signed_less_equal(
             0u32.into(),
             value.as_ref().clone(),
         )),
-        Bitvector32Term::UInt64FromInt64(value) => Some(ConditionTerm::int64_signed_less_equal(
+        cast_term!(UInt64FromInt64, value) => Some(ConditionTerm::int64_signed_less_equal(
             Bitvector32Term::int64_constant(0),
             value.as_ref().clone(),
         )),
-        Bitvector32Term::UInt64From32(_)
+        cast_term!(UInt64From32, _)
         | Bitvector32Term::Variable(_)
         | Bitvector32Term::MemoryLoad(..) => None,
         _ => return None,
@@ -213,14 +214,14 @@ pub(in crate::kernel) fn tag_bound_citing(
     }
     for mask in [1u32, 3, 7] {
         let upper = match term {
-            Bitvector32Term::UInt64FromInt32(value) => {
+            cast_term!(UInt64FromInt32, value) => {
                 ConditionTerm::signed_less_equal(value.as_ref().clone(), mask.into())
             }
-            Bitvector32Term::UInt64FromInt64(value) => ConditionTerm::int64_signed_less_equal(
+            cast_term!(UInt64FromInt64, value) => ConditionTerm::int64_signed_less_equal(
                 value.as_ref().clone(),
                 Bitvector32Term::int64_constant(i64::from(mask)),
             ),
-            Bitvector32Term::UInt64From32(value) => {
+            cast_term!(UInt64From32, value) => {
                 ConditionTerm::unsigned_less_equal(value.as_ref().clone(), mask.into())
             }
             _ => ConditionTerm::uint64_less_equal(
@@ -904,7 +905,10 @@ mod exact_word_address_tests {
     fn symbolic_tag_bounds_require_nonnegative_and_upper_premises() {
         let _session = crate::kernel::VerificationSession::enter();
         let tag = Bitvector32Term::Variable(Variable(980_011));
-        let converted = Bitvector32Term::UInt64FromInt32(Box::new(tag.clone()));
+        let converted = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt64FromInt32,
+            Box::new(tag.clone()),
+        );
         let lower = ConditionTerm::signed_less_equal(0u32.into(), tag.clone());
         let upper = ConditionTerm::signed_less_equal(tag, 1u32.into());
         for context in [

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 #[test]
 fn shared_term_bridges_visit_nodes_once_beside_unrelated_terms() {
@@ -70,9 +71,13 @@ fn specialized_cast_bridge_is_linear_beside_unrelated_terms() {
         for size in [16, 64, 256] {
             let mut bits = Bitvector32Term::Variable(Variable(931_000));
             for _ in 0..size {
-                bits = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::UInt64From32(
-                    Box::new(bits),
-                )));
+                bits = Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(Bitvector32Term::legacy_cast(
+                        MachineCastSpelling::UInt64From32,
+                        Box::new(bits),
+                    )),
+                );
             }
             let source = PureFunctionArgument::Value(CValue::UInt32(bits));
             let (restored, work) = crate::instrumentation::measure_deterministic_work(|| {

@@ -2,6 +2,7 @@
 use super::*;
 #[cfg(test)]
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineIntegerType};
 use crate::kernel::{binary_term, unary_term};
@@ -85,12 +86,12 @@ impl Renderer<'_> {
             return true;
         }
         let unary = match value {
-            Int64From32(inner) => Some((inner, "Int64From32")),
-            UInt64From32(inner) => Some((inner, "UInt64From32")),
-            UInt32From64(inner) => Some((inner, "UInt32From64")),
-            Int64FromUInt32(inner) => Some((inner, "Int64FromUInt32")),
-            UInt64FromInt32(inner) => Some((inner, "UInt64FromInt32")),
-            UInt64FromInt64(inner) => Some((inner, "UInt64FromInt64")),
+            // A legacy-spelled conversion prints its spelling's name.
+            Cast {
+                spelling,
+                value: inner,
+                ..
+            } if *spelling != MachineCastSpelling::Generic => Some((inner, spelling.name())),
             unary_term!(Int32, BitwiseNot, inner) => Some((inner, "BitwiseNot")),
             Unary {
                 format,
@@ -334,7 +335,10 @@ mod tests {
                 "lshr",
             ),
             (binary_node!(Int32, ShiftRight, a.clone(), b), "ashr"),
-            (Bitvector32Term::UInt64FromInt32(a), "UInt64FromInt32("),
+            (
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, a),
+                "UInt64FromInt32(",
+            ),
         ] {
             let text = render(&Proposition::Equal(
                 Term::Bitvector32(value),

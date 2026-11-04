@@ -15,6 +15,7 @@
 use super::*;
 use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 /// The width of the carrier a term's value occupies.
@@ -307,10 +308,11 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
             condition_width_mismatch(value).map_or(Ok(()), Err)?;
             Ok(Some(CarrierWidth::of_machine_type(*to)))
         }
-        T::MachineIntegerCast {
+        T::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         } => {
             expect(
                 "MachineIntegerCast operand",
@@ -319,18 +321,18 @@ pub(crate) fn term_width(term: &Bitvector32Term) -> WidthResult {
             )?;
             Ok(Some(CarrierWidth::of_machine_type(*destination)))
         }
-        T::Int64From32(value)
-        | T::UInt64From32(value)
-        | T::Int64FromUInt32(value)
-        | T::UInt64FromInt32(value) => {
+        cast_term!(Int64From32, value)
+        | cast_term!(UInt64From32, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64FromInt32, value) => {
             expect("32-to-64-bit conversion", Bits32, value)?;
             Ok(Some(Bits64))
         }
-        T::UInt32From64(value) => {
+        cast_term!(UInt32From64, value) => {
             expect("64-to-32-bit conversion", Bits64, value)?;
             Ok(Some(Bits32))
         }
-        T::UInt64FromInt64(value) => operands("64-bit conversion", Bits64, &[value]),
+        cast_term!(UInt64FromInt64, value) => operands("64-bit conversion", Bits64, &[value]),
         T::Binary {
             format,
             op,
@@ -414,13 +416,17 @@ pub(crate) fn root_width(term: &Bitvector32Term) -> Option<CarrierWidth> {
         T::MemoryLoad(_, _, kind) => CarrierWidth::of_load(*kind),
         T::IntegerToMachine { destination, .. } => CarrierWidth::of_machine_type(*destination),
         T::BoolCast { to, .. } => CarrierWidth::of_machine_type(*to),
-        T::MachineIntegerCast { destination, .. } => CarrierWidth::of_machine_type(*destination),
-        T::Int64From32(_)
-        | T::UInt64From32(_)
-        | T::Int64FromUInt32(_)
-        | T::UInt64FromInt32(_)
-        | T::UInt64FromInt64(_) => Bits64,
-        T::UInt32From64(_) => Bits32,
+        T::Cast {
+            spelling: MachineCastSpelling::Generic,
+            to: destination,
+            ..
+        } => CarrierWidth::of_machine_type(*destination),
+        cast_term!(Int64From32, _)
+        | cast_term!(UInt64From32, _)
+        | cast_term!(Int64FromUInt32, _)
+        | cast_term!(UInt64FromInt32, _)
+        | cast_term!(UInt64FromInt64, _) => Bits64,
+        cast_term!(UInt32From64, _) => Bits32,
         T::Binary { format, .. } | T::Unary { format, .. } => CarrierWidth::native(*format),
         T::Float32Negate(_) | T::Float32Binary { .. } => Bits32,
         T::Float64Negate(_) | T::Float64Binary { .. } => Bits64,

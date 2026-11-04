@@ -71,8 +71,8 @@ mod integer;
 pub(crate) use integer::WeakIntegerTerm;
 mod kernel_term;
 pub use kernel_term::{
-    KernelIntegerOperator, KernelLegacyTerm, KernelMachineCastEncoding, KernelMachineLiteral,
-    KernelTerm, KernelTermNode, KernelType,
+    KernelIntegerOperator, KernelLegacyTerm, KernelMachineLiteral, KernelTerm, KernelTermNode,
+    KernelType,
 };
 pub(crate) use kernel_term::{KernelTermExport, KernelTermImport, clear_integer_bridge_memo};
 mod machine_integer;
@@ -809,21 +809,26 @@ pub enum Bitvector32Term {
         value: SharedIntegerTerm,
         destination: MachineIntegerType,
     },
-    /// Explicit integral conversion modulo the destination width. Wide casts
-    /// retain the operand's format instead of reusing a legacy word cast.
-    MachineIntegerCast {
+    /// Integral conversion of `value`, read at `from`, to `to`, modulo the
+    /// destination width. One node for every conversion; `spelling` keeps
+    /// the constructor that wrote it, so a conversion spelled by a legacy
+    /// per-pair constructor stays a different term from the
+    /// [`MachineCastSpelling::Generic`] one of the same formats. A legacy
+    /// spelling fixes its formats ([`MachineCastSpelling::legacy_formats`]):
+    /// the low word ([`MachineCastSpelling::UInt32From64`]) reads its operand
+    /// as the 64 bits of a `uint64`, whatever the operand's signedness.
+    /// Build it with [`Bitvector32Term::cast_node`] or the smart
+    /// constructors (`machine_integer_cast`, `int64_from_32`,
+    /// `uint32_from_64`, ...); match it with `cast_term!`. `spelling`
+    /// precedes the formats so the derived order of the conversions is the
+    /// order their per-pair variants had (`design/machine-integers.md`,
+    /// "Stage 3").
+    Cast {
+        spelling: MachineCastSpelling,
         value: Box<Bitvector32Term>,
-        source: MachineIntegerType,
-        destination: MachineIntegerType,
+        from: MachineIntegerType,
+        to: MachineIntegerType,
     },
-    Int64From32(Box<Bitvector32Term>),
-    UInt64From32(Box<Bitvector32Term>),
-    /// Unsigned narrowing modulo 2^32; the operand is a signed or unsigned
-    /// 64-bit integer and the result is a 32-bit bitvector.
-    UInt32From64(Box<Bitvector32Term>),
-    Int64FromUInt32(Box<Bitvector32Term>),
-    UInt64FromInt32(Box<Bitvector32Term>),
-    UInt64FromInt64(Box<Bitvector32Term>),
     Float32Negate(Box<Bitvector32Term>),
     Float32Binary {
         operator: CFloatBinaryOperator,
@@ -962,22 +967,21 @@ impl std::fmt::Debug for Bitvector32Term {
                 .field("value", value)
                 .field("destination", destination)
                 .finish(),
-            Self::MachineIntegerCast {
+            // A conversion prints as the variant its spelling replaced.
+            Self::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from,
+                to,
             } => f
                 .debug_struct("MachineIntegerCast")
                 .field("value", value)
-                .field("source", source)
-                .field("destination", destination)
+                .field("source", from)
+                .field("destination", to)
                 .finish(),
-            Self::Int64From32(value) => f.debug_tuple("Int64From32").field(value).finish(),
-            Self::UInt64From32(value) => f.debug_tuple("UInt64From32").field(value).finish(),
-            Self::UInt32From64(value) => f.debug_tuple("UInt32From64").field(value).finish(),
-            Self::Int64FromUInt32(value) => f.debug_tuple("Int64FromUInt32").field(value).finish(),
-            Self::UInt64FromInt32(value) => f.debug_tuple("UInt64FromInt32").field(value).finish(),
-            Self::UInt64FromInt64(value) => f.debug_tuple("UInt64FromInt64").field(value).finish(),
+            Self::Cast {
+                spelling, value, ..
+            } => f.debug_tuple(spelling.name()).field(value).finish(),
             Self::Float32Negate(value) => f.debug_tuple("Float32Negate").field(value).finish(),
             Self::Float32Binary {
                 operator,
@@ -2147,18 +2151,94 @@ macro_rules! arithmetic_c_value {
 }
 pub(crate) use arithmetic_c_value;
 
+/// The constructor that spelled a [`Bitvector32Term::Cast`] (and a kernel
+/// `MachineCast`): the generic conversion, or one of the six legacy
+/// per-pair conversions, each with fixed formats. Part of a conversion's
+/// identity, so the legacy and generic spellings of one pair of formats stay
+/// different terms, as they were different variants.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum MachineCastSpelling {
+    Generic,
+    Int64From32,
+    UInt64From32,
+    /// The low word of a 64-bit operand, read as the bits of a `uint64`.
+    UInt32From64,
+    Int64FromUInt32,
+    UInt64FromInt32,
+    UInt64FromInt64,
+}
+
+impl MachineCastSpelling {
+    /// The source and destination formats a legacy spelling fixes, `None`
+    /// for [`Self::Generic`].
+    pub(crate) const fn legacy_formats(self) -> Option<(MachineIntegerType, MachineIntegerType)> {
+        use MachineIntegerType as T;
+        Some(match self {
+            Self::Generic => return None,
+            Self::Int64From32 => (T::Int32, T::Int64),
+            Self::UInt64From32 => (T::UInt32, T::UInt64),
+            Self::UInt32From64 => (T::UInt64, T::UInt32),
+            Self::Int64FromUInt32 => (T::UInt32, T::Int64),
+            Self::UInt64FromInt32 => (T::Int32, T::UInt64),
+            Self::UInt64FromInt64 => (T::Int64, T::UInt64),
+        })
+    }
+
+    /// The name of the variant this spelling replaced, for `Debug`.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Generic => "MachineIntegerCast",
+            Self::Int64From32 => "Int64From32",
+            Self::UInt64From32 => "UInt64From32",
+            Self::UInt32From64 => "UInt32From64",
+            Self::Int64FromUInt32 => "Int64FromUInt32",
+            Self::UInt64FromInt32 => "UInt64FromInt32",
+            Self::UInt64FromInt64 => "UInt64FromInt64",
+        }
+    }
+}
+
+/// Matches a legacy-spelled [`Bitvector32Term::Cast`], binding its boxed
+/// operand: `cast_term!(Int64From32, value)`. A legacy spelling fixes its
+/// formats ([`MachineCastSpelling::legacy_formats`]); build one with
+/// [`Bitvector32Term::legacy_cast`]. A generic conversion is the struct
+/// `Cast { spelling: Generic, .. }`.
+macro_rules! cast_term {
+    ($spelling:ident, _ $(,)?) => {
+        $crate::kernel::Bitvector32Term::Cast {
+            spelling: $crate::kernel::MachineCastSpelling::$spelling,
+            ..
+        }
+    };
+    ($spelling:ident, $value:pat $(,)?) => {
+        $crate::kernel::Bitvector32Term::Cast {
+            spelling: $crate::kernel::MachineCastSpelling::$spelling,
+            value: $value,
+            ..
+        }
+    };
+}
+pub(crate) use cast_term;
+
+/// Matches the [`BitvectorUnaryOp`] of a legacy-spelled conversion:
+/// `cast_op!(UInt64FromInt64)`; build one with
+/// [`BitvectorUnaryOp::legacy_cast`].
+macro_rules! cast_op {
+    ($spelling:ident) => {
+        $crate::kernel::BitvectorUnaryOp::Cast {
+            spelling: $crate::kernel::MachineCastSpelling::$spelling,
+            ..
+        }
+    };
+}
+pub(crate) use cast_op;
+
 /// Matches every one-operand [`Bitvector32Term`] operation and conversion, binding its operand to
 /// `$term`.
 macro_rules! unary_machine_term {
     ($term:pat) => {
         $crate::kernel::Bitvector32Term::Unary { operand: $term, .. }
-            | $crate::kernel::Bitvector32Term::Int64From32($term)
-            | $crate::kernel::Bitvector32Term::MachineIntegerCast { value: $term, .. }
-            | $crate::kernel::Bitvector32Term::UInt64From32($term)
-            | $crate::kernel::Bitvector32Term::UInt32From64($term)
-            | $crate::kernel::Bitvector32Term::Int64FromUInt32($term)
-            | $crate::kernel::Bitvector32Term::UInt64FromInt32($term)
-            | $crate::kernel::Bitvector32Term::UInt64FromInt64($term)
+            | $crate::kernel::Bitvector32Term::Cast { value: $term, .. }
             | $crate::kernel::Bitvector32Term::Float32Negate($term)
             | $crate::kernel::Bitvector32Term::Float64Negate($term)
     };

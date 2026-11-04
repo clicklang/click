@@ -6,6 +6,7 @@
 //! explicit, separate policy for languages that specify them.
 
 use super::{Bitvector32Term, CValue, MachineIntegerType};
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::machine_integer::format_audit::{self, WordIdentity};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -389,10 +390,11 @@ impl MachineIntegerType {
                 crate::kernel::LoadKind::of_type(self.c_type()) == Some(*kind)
             }
             Bitvector32Term::IntegerToMachine { destination, .. } => *destination == self,
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } => *destination == self && source.accepts_cast_operand(value),
             _ => false,
         }
@@ -411,10 +413,11 @@ impl MachineIntegerType {
                     return crate::kernel::LoadKind::of_type(ty.c_type()) == Some(*kind);
                 }
                 Bitvector32Term::IntegerToMachine { destination, .. } => return *destination == ty,
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: operand,
-                    source,
-                    destination,
+                    from: source,
+                    to: destination,
                 } => {
                     if *destination != ty {
                         return false;
@@ -549,10 +552,11 @@ impl Bitvector32Term {
     /// its operand's (rule K8, a relation). One match on the root.
     pub(crate) fn narrow_widening32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
         match self {
-            Self::MachineIntegerCast {
+            Self::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } if is_narrow_widening32(*source, *destination) => Some((*source, value)),
             _ => None,
         }
@@ -585,10 +589,11 @@ impl Bitvector32Term {
     /// match on the root.
     pub(crate) fn sign_cast32_operand(&self) -> Option<(MachineIntegerType, &Self)> {
         match self {
-            Self::MachineIntegerCast {
+            Self::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } if is_sign_cast32(*source, *destination) => Some((*source, value)),
             _ => None,
         }
@@ -684,10 +689,11 @@ impl Bitvector32Term {
     #[track_caller]
     pub(crate) fn into_index_word32(self) -> Self {
         match self {
-            Self::MachineIntegerCast {
+            Self::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } if is_sign_cast32(source, destination) => {
                 format_audit::record(WordIdentity::SignCastPeeled, std::panic::Location::caller());
                 *value
@@ -699,10 +705,11 @@ impl Bitvector32Term {
     /// The unsigned byte a [`Self::signed_byte`] term converts, if this is one.
     pub(crate) fn signed_byte_operand(&self) -> Option<&Self> {
         match self {
-            Self::MachineIntegerCast {
+            Self::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source: MachineIntegerType::UInt8,
-                destination: MachineIntegerType::Int8,
+                from: MachineIntegerType::UInt8,
+                to: MachineIntegerType::Int8,
             } => Some(value),
             _ => None,
         }
@@ -740,9 +747,10 @@ impl Bitvector32Term {
         // conversions. Keep that representation convention local to the
         // word carrier; it must not erase a wide intermediate cast. σ of σ
         // is kept as written: R0 relates σ(σ(x)) to `x` in the e-graph.
-        if let Self::MachineIntegerCast {
-            source: original,
-            destination: intermediate,
+        if let Self::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: original,
+            to: intermediate,
             value: operand,
         } = value
         {
@@ -755,22 +763,25 @@ impl Bitvector32Term {
             {
                 return Self::machine_integer_cast(original, destination, *operand);
             }
-            return Self::MachineIntegerCast {
-                value: Box::new(Self::MachineIntegerCast {
-                    source: original,
-                    destination: intermediate,
+            return Self::Cast {
+                spelling: MachineCastSpelling::Generic,
+                value: Box::new(Self::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: operand,
+                    from: original,
+                    to: intermediate,
                 }),
-                source,
-                destination,
+                from: source,
+                to: destination,
             };
         }
         // Keep symbolic cast composition structural; a 32-to-64-bit
         // extension was given its typed node above.
-        Self::MachineIntegerCast {
+        Self::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(value),
-            source,
-            destination,
+            from: source,
+            to: destination,
         }
     }
 }
@@ -827,7 +838,10 @@ mod tests {
             );
             assert!(!matches!(
                 lowered,
-                Bitvector32Term::MachineIntegerCast { .. }
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    ..
+                }
             ));
             assert_eq!(
                 Bitvector32Term::machine_integer_cast(source, destination, x.clone()),
@@ -1052,10 +1066,12 @@ mod tests {
                             || intermediate.carrier_bytes() > 4
                             || destination.carrier_bytes() > 4)
                     {
-                        assert!(matches!(&term, Bitvector32Term::MachineIntegerCast {
-                            value, source: outer_source, destination: outer_destination,
+                        assert!(
+                            matches!(&term, Bitvector32Term::Cast { spelling: MachineCastSpelling::Generic,
+                            value, from: outer_source, to: outer_destination,
                         } if *outer_source == intermediate && *outer_destination == destination
-                            && matches!(value.as_ref(), Bitvector32Term::MachineIntegerCast { .. })));
+                            && matches!(value.as_ref(), Bitvector32Term::Cast { spelling: MachineCastSpelling::Generic, .. }))
+                        );
                     }
                     for input in [min.clone(), max.clone(), 0.into(), 1.into()] {
                         let constant =

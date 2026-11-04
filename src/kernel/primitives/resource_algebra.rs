@@ -2,6 +2,7 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::cast_term;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 mod observable;
@@ -10322,7 +10323,7 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
             ))));
         }
         Bitvector32Term::Variable(_) => term.clone(),
-        Bitvector32Term::UInt32From64(value) => value.as_ref().clone(),
+        cast_term!(UInt32From64, value) => value.as_ref().clone(),
         binary_term!(Int32, Add, left, right) => {
             let (value, constant) = match (left.as_ref(), right.as_ref()) {
                 (value, bits32_constant!(constant)) | (int32_constant!(constant), value)
@@ -10330,7 +10331,7 @@ pub(in crate::kernel) fn checked_native_range_endpoint(
                 {
                     let value = match value {
                         Bitvector32Term::Variable(_) => value.clone(),
-                        Bitvector32Term::UInt32From64(inner) => inner.as_ref().clone(),
+                        cast_term!(UInt32From64, inner) => inner.as_ref().clone(),
                         _ => return None,
                     };
                     (value, constant_u32(*constant))

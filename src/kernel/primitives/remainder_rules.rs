@@ -7,6 +7,7 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MachineCastSpelling, cast_term};
 
 impl C {
     /// In the nonnegative signed-word range, both signed and unsigned
@@ -41,7 +42,7 @@ impl C {
         let [n, d] = if let Some((_, _, operands)) = division_operands(result) {
             operands
         } else {
-            use crate::kernel::KernelMachineCastEncoding as Encoding;
+            use crate::kernel::MachineCastSpelling as Encoding;
             let (Encoding::Generic, source, destination, operand) = result.cast()? else {
                 return None;
             };
@@ -213,14 +214,15 @@ impl B {
                 // The low word is a word of no signedness; σ of it, `x as
                 // uint32 as int32`, has its bits.
                 let low = match n.as_ref() {
-                    B::MachineIntegerCast {
+                    B::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value,
-                        source: MachineIntegerType::UInt32,
-                        destination: MachineIntegerType::Int32,
+                        from: MachineIntegerType::UInt32,
+                        to: MachineIntegerType::Int32,
                     } => value.as_ref(),
                     n => n,
                 };
-                if let B::UInt32From64(wide) = low
+                if let cast_term!(UInt32From64, wide) = low
                     && let B::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Subtract,

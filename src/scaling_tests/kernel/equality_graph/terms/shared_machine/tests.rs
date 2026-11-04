@@ -110,7 +110,7 @@ fn comparison_nodes_reuse_shared_prefixes() {
 
 #[test]
 fn shared_cast_registration_and_readings_reuse_growing_prefixes() {
-    use crate::kernel::{KernelMachineCastEncoding as E, KernelType, MachineOperandView};
+    use crate::kernel::{KernelType, MachineCastSpelling as E, MachineOperandView};
     let mut samples = Vec::new();
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();

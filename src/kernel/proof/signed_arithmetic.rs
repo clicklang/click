@@ -12,6 +12,7 @@ use crate::kernel::MachineIntegerType;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, constant_u64, uint64_constant};
 use num_bigint::BigInt;
@@ -174,7 +175,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             Bitvector32Term::Variable(variable) => {
                 push_token!(SignedArithmeticAtomToken::Variable(*variable));
             }
-            Bitvector32Term::UInt32From64(value) => {
+            cast_term!(UInt32From64, value) => {
                 if let Bitvector32Term::Variable(variable) = value.as_ref() {
                     push_token!(SignedArithmeticAtomToken::Narrow64Variable(*variable));
                     continue;
@@ -243,10 +244,11 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             }
             // The `int32` widening of an 8- or 16-bit value is that value: an
             // opaque observation of its operand, as a 32-bit variable is.
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination: destination @ MachineIntegerType::Int32,
+                from: source,
+                to: destination @ MachineIntegerType::Int32,
             } if source.format().bits() < 32 => {
                 push_token!(SignedArithmeticAtomToken::Cast {
                     source: *source,
@@ -256,10 +258,11 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             }
             // σ, the 32-bit sign cast, is a node of its own: `u as int32` is
             // an opaque observation of its operand, as a variable is.
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } if crate::kernel::is_sign_cast32(*source, *destination) => {
                 push_token!(SignedArithmeticAtomToken::Cast {
                     source: *source,
@@ -630,18 +633,20 @@ pub(crate) fn widened_narrowed_cast(
     crate::kernel::MachineIntegerType,
     crate::kernel::MachineIntegerType,
 )> {
-    let Bitvector32Term::MachineIntegerCast {
+    let Bitvector32Term::Cast {
+        spelling: MachineCastSpelling::Generic,
         value: narrowed,
-        source: widened_from,
-        destination: crate::kernel::MachineIntegerType::Int32,
+        from: widened_from,
+        to: crate::kernel::MachineIntegerType::Int32,
     } = term
     else {
         return None;
     };
-    let Bitvector32Term::MachineIntegerCast {
+    let Bitvector32Term::Cast {
+        spelling: MachineCastSpelling::Generic,
         value,
-        source,
-        destination,
+        from: source,
+        to: destination,
     } = narrowed.as_ref()
     else {
         return None;
@@ -4857,24 +4862,32 @@ mod tests {
     #[test]
     fn narrowed_native_variable_is_an_opaque_distinct_signed_atom() {
         let variable = Bitvector32Term::Variable(Variable(42));
-        let narrowed = Bitvector32Term::UInt32From64(Box::new(variable.clone()));
+        let narrowed = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(variable.clone()),
+        );
         assert!(is_opaque_atom(&narrowed));
         assert_ne!(
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&variable)
         );
-        let changed =
-            Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(43))));
+        let changed = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(Bitvector32Term::Variable(Variable(43))),
+        );
         assert_ne!(
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&changed)
         );
-        let computed = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::Add,
-            left: Box::new(variable),
-            right: Box::new(Bitvector32Term::uint64_constant(2)),
-        }));
+        let computed = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(Bitvector32Term::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Add,
+                left: Box::new(variable),
+                right: Box::new(Bitvector32Term::uint64_constant(2)),
+            }),
+        );
         assert!(is_opaque_atom(&computed));
         assert_ne!(
             SignedArithmeticAtom::from_term(&computed),

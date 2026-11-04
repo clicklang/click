@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::MachineCastSpelling;
 
 #[test]
 fn exact_integer_numeric_work_has_explicit_size_scaling() {
@@ -111,10 +112,11 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
     let mut read: Option<SharedIntegerTerm> = None;
     for k in 0..n {
         let byte = Bitvector32Term::Variable(Variable(940_000 + u64::from(k)));
-        let widening = Bitvector32Term::MachineIntegerCast {
+        let widening = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(byte.clone()),
-            source: MachineIntegerType::UInt8,
-            destination: MachineIntegerType::Int32,
+            from: MachineIntegerType::UInt8,
+            to: MachineIntegerType::Int32,
         };
         let observed: SharedIntegerTerm =
             IntegerTerm::from_machine(MachineIntegerType::Int32, widening)

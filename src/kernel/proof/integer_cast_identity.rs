@@ -652,9 +652,10 @@ mod tests {
         ] {
             let cast = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 ty,
-                Bitvector32Term::MachineIntegerCast {
-                    source,
-                    destination,
+                Bitvector32Term::Cast {
+                    spelling: crate::kernel::MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
                     value: Box::new(value),
                 },
             ));

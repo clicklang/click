@@ -16,6 +16,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     native_constant, uint64_constant,
@@ -125,12 +126,16 @@ fn bitvector_payload(root: &Bitvector32Term) -> Option<usize> {
                 pending.push(left);
                 pending.push(right);
             }
-            Bitvector32Term::Int64FromUInt32(value)
-            | Bitvector32Term::UInt64From32(value)
-            | Bitvector32Term::UInt32From64(value)
+            cast_term!(Int64FromUInt32, value)
+            | cast_term!(UInt64From32, value)
+            | cast_term!(UInt32From64, value)
             | Bitvector32Term::Float32Negate(value)
             | Bitvector32Term::Float64Negate(value) => pending.push(value),
-            Bitvector32Term::MachineIntegerCast { value, .. } => pending.push(value),
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                value,
+                ..
+            } => pending.push(value),
             Bitvector32Term::PureFunctionApplication { name, arguments } => {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
@@ -309,9 +314,9 @@ fn legacy_bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bo
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
-            (Bitvector32Term::Int64FromUInt32(left), Bitvector32Term::Int64FromUInt32(right))
-            | (Bitvector32Term::UInt64From32(left), Bitvector32Term::UInt64From32(right))
-            | (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
+            (cast_term!(Int64FromUInt32, left), cast_term!(Int64FromUInt32, right))
+            | (cast_term!(UInt64From32, left), cast_term!(UInt64From32, right))
+            | (cast_term!(UInt32From64, left), cast_term!(UInt32From64, right)) => {
                 pending.push((left, right));
             }
             (bits32_constant!(left), bits32_constant!(right)) => {
@@ -354,15 +359,17 @@ fn legacy_bitvector_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bo
                 }
             }
             (
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: left,
-                    source: left_source,
-                    destination: left_destination,
+                    from: left_source,
+                    to: left_destination,
                 },
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: right,
-                    source: right_source,
-                    destination: right_destination,
+                    from: right_source,
+                    to: right_destination,
                 },
             ) => {
                 if left_source != right_source || left_destination != right_destination {
@@ -2576,21 +2583,21 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                     .copied()
                     .flatten()
                     .map(|value| !value),
-                Bitvector32Term::UInt64From32(value) => match value.as_ref() {
+                cast_term!(UInt64From32, value) => match value.as_ref() {
                     bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
                         .flatten(),
                 },
-                Bitvector32Term::UInt64FromInt32(value) => match value.as_ref() {
+                cast_term!(UInt64FromInt32, value) => match value.as_ref() {
                     bits32_constant!(value) => Some((constant_u32(*value) as i32 as i64) as u64),
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
                         .copied()
                         .flatten(),
                 },
-                Bitvector32Term::UInt64FromInt64(value) => match value.as_ref() {
+                cast_term!(UInt64FromInt64, value) => match value.as_ref() {
                     int64_constant!(value) => Some(constant_i64(*value) as u64),
                     _ => values
                         .get(&(value.as_ref() as *const _ as usize))
@@ -2609,15 +2616,15 @@ fn bounded_uint64_constants(roots: &[&Bitvector32Term]) -> HashMap<usize, Option
                 op: MachineUnaryOp::BitwiseNot,
                 operand: value,
             }
-            | Bitvector32Term::UInt64From32(value)
-            | Bitvector32Term::UInt64FromInt32(value)
-            | Bitvector32Term::UInt64FromInt64(value) => {
+            | cast_term!(UInt64From32, value)
+            | cast_term!(UInt64FromInt32, value)
+            | cast_term!(UInt64FromInt64, value) => {
                 pending.push((term, true));
                 let direct = matches!(
                     (term, value.as_ref()),
-                    (Bitvector32Term::UInt64From32(_), int32_constant!(_))
-                        | (Bitvector32Term::UInt64FromInt32(_), int32_constant!(_))
-                        | (Bitvector32Term::UInt64FromInt64(_), int64_constant!(_))
+                    (cast_term!(UInt64From32, _), int32_constant!(_))
+                        | (cast_term!(UInt64FromInt32, _), int32_constant!(_))
+                        | (cast_term!(UInt64FromInt64, _), int64_constant!(_))
                 );
                 if !direct {
                     pending.push((value, false));
@@ -3700,10 +3707,11 @@ mod tests {
     #[test]
     fn cast_term_identity_keeps_formats_and_operand_identity() {
         use crate::kernel::{IntegerTerm, MachineIntegerConstant, MachineIntegerType, Variable};
-        let native_cast = |source, destination, variable| Bitvector32Term::MachineIntegerCast {
+        let native_cast = |source, destination, variable| Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(Bitvector32Term::Variable(Variable(variable))),
-            source,
-            destination,
+            from: source,
+            to: destination,
         };
         let cast = native_cast(
             MachineIntegerType::Int32,
@@ -3867,7 +3875,10 @@ mod tests {
 
     #[test]
     fn int64_defined_uses_widening_ranges_and_refuses_unrelated_or_missing_bounds() {
-        let tag = Bitvector32Term::Int64FromUInt32(Box::new(int64_var(3)));
+        let tag = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::Int64FromUInt32,
+            Box::new(int64_var(3)),
+        );
         let b = int64_var(4);
         let c = Bitvector32Term::int64_constant;
         let upper = int64_fact(
@@ -5426,20 +5437,29 @@ mod unsigned_widening_tests {
     #[test]
     fn widened_operand_identity_preserves_leaf_and_conversion_identity() {
         let value = Bitvector32Term::Variable(Variable(994_101));
-        let widened = Bitvector32Term::UInt64From32(Box::new(value.clone()));
+        let widened = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt64From32,
+            Box::new(value.clone()),
+        );
         assert!(bitvector_equal(&widened, &widened));
         assert!(!bitvector_equal(
             &widened,
-            &Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::Variable(Variable(994_102))))
+            &Bitvector32Term::legacy_cast(
+                MachineCastSpelling::UInt64From32,
+                Box::new(Bitvector32Term::Variable(Variable(994_102)))
+            )
         ));
         assert!(!bitvector_equal(
             &widened,
-            &Bitvector32Term::Int64FromUInt32(Box::new(value.clone()))
+            &Bitvector32Term::legacy_cast(
+                MachineCastSpelling::Int64FromUInt32,
+                Box::new(value.clone())
+            )
         ));
         assert!(!bitvector_equal(&widened, &value));
         let mut deep = value;
         for _ in 0..MAX_TERM_PAYLOAD {
-            deep = Bitvector32Term::UInt64From32(Box::new(deep));
+            deep = Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(deep));
         }
         assert!(!bitvector_equal(&deep, &deep));
     }

@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::{BitvectorUnaryOp, MachineCastSpelling};
 
 #[test]
 fn ordinary_expression_queries_ignore_unrelated_classes() {
@@ -11,7 +12,7 @@ fn ordinary_expression_queries_ignore_unrelated_classes() {
         }
         graph.add_int32_equality(&word(940_061), &word(940_062));
         let build = |x| {
-            U::UInt64From32.build_raw(
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32).build_raw(
                 B::Machine(
                     crate::kernel::MachineIntegerType::Int32,
                     crate::kernel::MachineBinaryOp::BitwiseAnd,

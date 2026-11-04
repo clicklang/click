@@ -1,6 +1,7 @@
 //! Borrowed root views of machine operands. Inspecting a shared root never
 //! requests its boxed expansion; child observations retain child handles.
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::constant_u32;
 use crate::kernel::int32_constant;
 use crate::kernel::{constant_i64, int64_constant};
@@ -99,7 +100,7 @@ pub(super) fn shared_value_reading(
     mut ty: MachineIntegerType,
     root: &KernelTerm,
 ) -> Option<(MachineIntegerType, KernelTerm)> {
-    use crate::kernel::KernelMachineCastEncoding::Generic;
+    use MachineCastSpelling::Generic;
     SHARED_VALUE_READINGS.with(|cache| {
         let mut cache = cache.borrow_mut();
         let mut term = root.clone();
@@ -220,7 +221,7 @@ impl SharedMachineIntegerTerm {
             Self::from_shared(
                 destination,
                 KernelTerm::machine_cast_shared(
-                    extension.unwrap_or(crate::kernel::KernelMachineCastEncoding::Generic),
+                    extension.unwrap_or(MachineCastSpelling::Generic),
                     self.ty(),
                     destination,
                     root.clone(),
@@ -239,10 +240,11 @@ impl SharedMachineIntegerTerm {
         } else {
             Self::intern(
                 destination,
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: Box::new(self.value().clone()),
-                    source: self.ty(),
-                    destination,
+                    from: self.ty(),
+                    to: destination,
                 },
             )
         }
@@ -280,12 +282,7 @@ impl<'a> MachineOperandView<'a> {
             if let Self::Legacy(value) = self {
                 return ty.accepts_cast_operand(value);
             }
-            if let Some((
-                crate::kernel::KernelMachineCastEncoding::Generic,
-                source,
-                destination,
-                operand,
-            )) = self.cast()
+            if let Some((MachineCastSpelling::Generic, source, destination, operand)) = self.cast()
             {
                 if destination != ty {
                     return false;
@@ -306,7 +303,7 @@ impl<'a> MachineOperandView<'a> {
     pub(crate) fn cast(
         self,
     ) -> Option<(
-        crate::kernel::KernelMachineCastEncoding,
+        crate::kernel::MachineCastSpelling,
         MachineIntegerType,
         MachineIntegerType,
         Self,
@@ -323,8 +320,7 @@ impl<'a> MachineOperandView<'a> {
             },
             Self::Legacy(term) => {
                 let (op, operand) = term.as_unary()?;
-                let (encoding, source, destination) =
-                    crate::kernel::KernelMachineCastEncoding::of_unary(op)?;
+                let (encoding, source, destination) = MachineCastSpelling::of_unary(op)?;
                 Some((encoding, source, destination, Self::Legacy(operand)))
             }
         }
@@ -472,7 +468,7 @@ impl<'a> MachineOperandView<'a> {
     /// The legacy int64 root-width range, without expanding a shared cast or
     /// arithmetic operand. Generic casts deliberately retain their old refusal.
     pub(crate) fn int64_width_interval(self) -> Option<(i64, i64)> {
-        use crate::kernel::KernelMachineCastEncoding as E;
+        use crate::kernel::MachineCastSpelling as E;
         if let Some(int64_constant!(value)) = self.literal() {
             return Some((constant_i64(value), constant_i64(value)));
         }
@@ -518,7 +514,7 @@ impl<'a> MachineOperandView<'a> {
             Self::Shared(term)
                 if ty.format().bits() == 128
                     && !matches!(term.node(), KernelTermNode::Variable(_))
-                    && !matches!(self.cast(), Some((crate::kernel::KernelMachineCastEncoding::Generic, source, destination, operand))
+                    && !matches!(self.cast(), Some((MachineCastSpelling::Generic, source, destination, operand))
                         if destination == ty && operand.accepts_cast_operand(source)) =>
             {
                 None
@@ -538,7 +534,7 @@ impl<'a> MachineOperandView<'a> {
                 }
                 let observed_ty = match term.node() {
                     KernelTermNode::MachineCast {
-                        encoding: crate::kernel::KernelMachineCastEncoding::Generic,
+                        encoding: MachineCastSpelling::Generic,
                         destination,
                         ..
                     } if *destination != ty
@@ -608,9 +604,10 @@ mod tests {
                     } else {
                         Bitvector32Term::Variable(Variable(990303))
                     };
-                    let value = Bitvector32Term::MachineIntegerCast {
-                        source: original,
-                        destination: source,
+                    let value = Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
+                        from: original,
+                        to: source,
                         value: Box::new(child),
                     };
                     let root = KernelTermImport::default()
@@ -863,7 +860,7 @@ mod cast_tests {
 
     #[test]
     fn shared_widening_ranges_preserve_signedness_without_exporting() {
-        use crate::kernel::{KernelMachineCastEncoding as E, KernelType};
+        use crate::kernel::{KernelType, MachineCastSpelling as E};
         let _session = crate::kernel::VerificationSession::enter();
         let mut root = KernelTerm::variable(
             KernelType::C(MachineIntegerType::Int32.c_type()),
@@ -938,7 +935,7 @@ mod cast_tests {
 
     #[test]
     fn checking_cast_cache_survives_restore_but_not_a_new_verification() {
-        use crate::kernel::{KernelMachineCastEncoding as E, KernelType};
+        use crate::kernel::{KernelType, MachineCastSpelling as E};
         let mut term = KernelTerm::variable(
             KernelType::C(MachineIntegerType::Int32.c_type()),
             Variable(985003),
@@ -979,14 +976,15 @@ mod cast_tests {
 
     #[test]
     fn shared_cast_readings_match_boxed_readings_and_refusals() {
-        use crate::kernel::{KernelMachineCastEncoding as E, machine_integer::FORMATS};
+        use crate::kernel::{MachineCastSpelling as E, machine_integer::FORMATS};
         let _session = crate::kernel::VerificationSession::enter();
         for source in FORMATS {
             for destination in FORMATS {
                 let base = Bitvector32Term::Variable(Variable(985001));
-                let inner = Bitvector32Term::MachineIntegerCast {
-                    source: destination,
-                    destination: source,
+                let inner = Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: destination,
+                    to: source,
                     value: Box::new(base.clone()),
                 };
                 for operand in [
@@ -1002,9 +1000,10 @@ mod cast_tests {
                         )
                         .unwrap(),
                 ] {
-                    let boxed = Bitvector32Term::MachineIntegerCast {
-                        source,
-                        destination,
+                    let boxed = Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
+                        from: source,
+                        to: destination,
                         value: Box::new(operand),
                     };
                     let root = KernelTermImport::default()
@@ -1050,12 +1049,12 @@ mod cast_tests {
         }
         let base = Bitvector32Term::Variable(Variable(985002));
         for op in [
-            BitvectorUnaryOp::Int64From32,
-            BitvectorUnaryOp::UInt64From32,
-            BitvectorUnaryOp::UInt32From64,
-            BitvectorUnaryOp::Int64FromUInt32,
-            BitvectorUnaryOp::UInt64FromInt32,
-            BitvectorUnaryOp::UInt64FromInt64,
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt32From64),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64FromUInt32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt64),
         ] {
             let (encoding, source, destination) = E::of_unary(op).unwrap();
             let boxed = op.build_raw(base.clone());

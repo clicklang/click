@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
@@ -3507,15 +3508,17 @@ impl PureFactContext {
                 // instantiates as the read itself does. Constant work per
                 // matched node.
                 (
-                    Bitvector32Term::MachineIntegerCast {
+                    Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value: left,
-                        source: left_source,
-                        destination: left_destination,
+                        from: left_source,
+                        to: left_destination,
                     },
-                    Bitvector32Term::MachineIntegerCast {
+                    Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value: right,
-                        source: right_source,
-                        destination: right_destination,
+                        from: right_source,
+                        to: right_destination,
                     },
                 ) if left_source == right_source && left_destination == right_destination => {
                     collect_term_candidates(left, right, bound, candidates)

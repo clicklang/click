@@ -63,6 +63,7 @@ pub(in crate::kernel) mod step_effect;
 use crate::kernel::memory_provenance::with_extended_dag_bridging;
 use crate::kernel::primitives::*;
 use crate::kernel::unary_term;
+use crate::kernel::{MachineCastSpelling, cast_term};
 
 /// A point on the current proof path, named by the memory snapshot the
 /// kernel had reached there: `entry`, a `mark`ed label, or "here".
@@ -1543,13 +1544,17 @@ fn collect_bitvector_reads(term: &Bitvector32Term, reads: &mut Vec<ResourceRead>
             collect_bitvector_reads(right, reads);
         }
         unary_term!(Bits32, BitwiseNot, inner)
-        | Bitvector32Term::Int64From32(inner)
-        | Bitvector32Term::MachineIntegerCast { value: inner, .. }
-        | Bitvector32Term::UInt64From32(inner)
-        | Bitvector32Term::UInt32From64(inner)
-        | Bitvector32Term::Int64FromUInt32(inner)
-        | Bitvector32Term::UInt64FromInt32(inner)
-        | Bitvector32Term::UInt64FromInt64(inner) => collect_bitvector_reads(inner, reads),
+        | cast_term!(Int64From32, inner)
+        | Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value: inner,
+            ..
+        }
+        | cast_term!(UInt64From32, inner)
+        | cast_term!(UInt32From64, inner)
+        | cast_term!(Int64FromUInt32, inner)
+        | cast_term!(UInt64FromInt32, inner)
+        | cast_term!(UInt64FromInt64, inner) => collect_bitvector_reads(inner, reads),
         Bitvector32Term::If {
             condition,
             then_term,

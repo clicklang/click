@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 #[test]
 fn repeated_deep_term_equivalence_has_linear_work_scaling() {
@@ -82,9 +83,10 @@ fn narrowed_variable_atom_identity_work_scales_linearly() {
     for size in [16usize, 64, 256, 1024] {
         let terms: Vec<_> = (0..size)
             .map(|index| {
-                Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(Variable(
-                    index as u64,
-                ))))
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(Bitvector32Term::Variable(Variable(index as u64))),
+                )
             })
             .collect();
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {

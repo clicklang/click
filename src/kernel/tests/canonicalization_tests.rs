@@ -3,6 +3,7 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -103,13 +104,17 @@ fn collect_offset_load_variables_from_term(
         Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
             collect_offset_load_variables_from_term(value, load_variables);
         }
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
+        cast_term!(Int64From32, value)
+        | Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value,
+            ..
+        }
+        | cast_term!(UInt64From32, value)
+        | cast_term!(UInt32From64, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value)
         | Bitvector32Term::Unary { operand: value, .. } => {
             collect_offset_load_variables_from_term(value, load_variables);
         }
@@ -176,13 +181,17 @@ fn assert_scaled_index_free_of_raw_loads(
             assert_scaled_index_free_of_raw_loads(left, load_variables);
             assert_scaled_index_free_of_raw_loads(right, load_variables);
         }
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::MachineIntegerCast { value, .. }
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
+        cast_term!(Int64From32, value)
+        | Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value,
+            ..
+        }
+        | cast_term!(UInt64From32, value)
+        | cast_term!(UInt32From64, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value)
         | Bitvector32Term::Unary { operand: value, .. } => {
             assert_scaled_index_free_of_raw_loads(value, load_variables);
         }
@@ -374,7 +383,7 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
     }
     macro_rules! unary {
         ($variant:ident, $value:expr) => {
-            Bitvector32Term::$variant(Box::new($value))
+            Bitvector32Term::legacy_cast(MachineCastSpelling::$variant, Box::new($value))
         };
     }
 

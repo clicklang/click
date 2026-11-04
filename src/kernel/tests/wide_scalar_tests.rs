@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 use crate::kernel::uint64_constant;
 use num_bigint::BigInt;
@@ -307,9 +308,10 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
     assert_eq!(machine.ty(), MachineIntegerType::Int64);
     assert!(matches!(
         machine.value(),
-        Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::UInt128,
-            destination: MachineIntegerType::Int64,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::UInt128,
+            to: MachineIntegerType::Int64,
             ..
         }
     ));
@@ -470,27 +472,32 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
 #[test]
 fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
     for term in [
-        Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::Int64,
-            destination: MachineIntegerType::UInt128,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int64,
+            to: MachineIntegerType::UInt128,
             value: Box::new(Bitvector32Term::Variable(Variable(149_006))),
         },
-        Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::Int128,
-            destination: MachineIntegerType::Int128,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int128,
+            to: MachineIntegerType::Int128,
             value: Box::new(Bitvector32Term::constant(1)),
         },
-        Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::Int64,
-            destination: MachineIntegerType::Int128,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int64,
+            to: MachineIntegerType::Int128,
             value: Box::new(Bitvector32Term::uint64_constant(1)),
         },
-        Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::Int64,
-            destination: MachineIntegerType::Int128,
-            value: Box::new(Bitvector32Term::MachineIntegerCast {
-                source: MachineIntegerType::Int32,
-                destination: MachineIntegerType::Int64,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int64,
+            to: MachineIntegerType::Int128,
+            value: Box::new(Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: MachineIntegerType::Int32,
+                to: MachineIntegerType::Int64,
                 value: Box::new(Bitvector32Term::int64_constant(1)),
             }),
         },

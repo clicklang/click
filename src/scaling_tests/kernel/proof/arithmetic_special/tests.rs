@@ -7,6 +7,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 #[test]
 fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
@@ -42,9 +43,10 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
     for size in [2usize, 8, 32, 96] {
         let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
         let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
-        let mut index = Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::Variable(
-            crate::kernel::Variable(1),
-        )));
+        let mut index = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(1))),
+        );
         for _ in 0..size {
             index = binary_node!(
                 Int32,
@@ -530,7 +532,8 @@ fn unsigned_widening_identity_work_scales_with_operand_payload() {
                 Box::new(Bitvector32Term::constant(0))
             );
         }
-        let widened = Bitvector32Term::UInt64From32(Box::new(value));
+        let widened =
+            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value));
         let (same, work) = crate::instrumentation::measure_deterministic_work(|| {
             bitvector_equal(&widened, &widened)
         });

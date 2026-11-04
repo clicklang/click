@@ -1,5 +1,6 @@
 // Deterministic work for the selected bounded pointer-value query.
 use super::*;
+use crate::kernel::MachineCastSpelling;
 
 #[test]
 fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
@@ -401,9 +402,10 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
             Box::new(pointer),
             LoadKind::UInt8,
         );
-        let cast = |value| Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::UInt8,
-            destination: MachineIntegerType::Int8,
+        let cast = |value| Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::UInt8,
+            to: MachineIntegerType::Int8,
             value: Box::new(value),
         };
         let left = cast(load.clone());
@@ -422,9 +424,10 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
             )),
             &facts
         ));
-        let other_cast = Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::UInt8,
-            destination: MachineIntegerType::UInt16,
+        let other_cast = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::UInt8,
+            to: MachineIntegerType::UInt16,
             value: Box::new(value),
         };
         assert!(!narrow_read_has_recorded_value(&left, &other_cast, &facts));

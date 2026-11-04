@@ -2,6 +2,7 @@
 // `src/surface/planning/proposition_search.rs`. The kernel itself never
 // calls it, so the tests import the planner explicitly.
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 use crate::kernel::{constant_u32, int32_constant};
 use crate::surface::planning::proposition_search::PropositionSearch;
@@ -3793,7 +3794,7 @@ fn modulo_casts_are_explicit_integer_boundaries_and_preserve_operand_definedness
     );
 }
 
-/// A modular narrowing (C++20, Rust `as`) is the `MachineIntegerCast` C
+/// A modular narrowing (C++20, Rust `as`) is the generic `Cast` C
 /// builds and files only its destination range: never the identity with
 /// its operand that a specification's checked narrowing files beside its
 /// range obligations. Filing it made `static_cast<unsigned char>(v)` of a
@@ -3830,7 +3831,10 @@ fn a_modular_narrowing_files_its_range_and_no_identity_with_its_operand() {
             assert!(
                 matches!(
                     value,
-                    crate::kernel::integer_c_value!(Bitvector32Term::MachineIntegerCast { .. })
+                    crate::kernel::integer_c_value!(Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
+                        ..
+                    })
                 ),
                 "{index} -> {target:?}: {value:?}"
             );

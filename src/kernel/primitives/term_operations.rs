@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_term};
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
@@ -284,7 +285,7 @@ impl Bitvector32Term {
                     _ => u32::MAX,
                 }
             }
-            Self::UInt32From64(value) => match value.as_ref() {
+            cast_term!(UInt32From64, value) => match value.as_ref() {
                 Self::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::ShiftRight,
@@ -372,7 +373,11 @@ impl Bitvector32Term {
 
     pub(crate) fn as_const(&self) -> Option<u32> {
         match self {
-            Self::MachineIntegerCast { .. } | Self::BoolCast { .. } => None,
+            Self::Cast {
+                spelling: MachineCastSpelling::Generic,
+                ..
+            }
+            | Self::BoolCast { .. } => None,
 
             native_constant!(_, _) => None,
 
@@ -386,12 +391,12 @@ impl Bitvector32Term {
             | Self::AlgebraicMatch { .. }
             | int64_constant!(_)
             | uint64_constant!(_)
-            | Self::Int64From32(_)
-            | Self::Int64FromUInt32(_)
-            | Self::UInt64From32(_)
-            | Self::UInt32From64(_)
-            | Self::UInt64FromInt32(_)
-            | Self::UInt64FromInt64(_)
+            | cast_term!(Int64From32, _)
+            | cast_term!(Int64FromUInt32, _)
+            | cast_term!(UInt64From32, _)
+            | cast_term!(UInt32From64, _)
+            | cast_term!(UInt64FromInt32, _)
+            | cast_term!(UInt64FromInt64, _)
             | crate::kernel::binary_wide_term!(..)
             | crate::kernel::unary_wide_term!(..)
             | Self::Float32Negate(_)
@@ -1061,11 +1066,11 @@ impl Bitvector32Term {
 fn int64_constant(term: &Bitvector32Term) -> Option<i64> {
     match term {
         int64_constant!(value) => Some(constant_i64(*value)),
-        Bitvector32Term::Int64From32(value) => match value.as_ref() {
+        cast_term!(Int64From32, value) => match value.as_ref() {
             bits32_constant!(value) => Some(i64::from(constant_u32(*value) as i32)),
             _ => int64_constant(value),
         },
-        Bitvector32Term::Int64FromUInt32(value) => match value.as_ref() {
+        cast_term!(Int64FromUInt32, value) => match value.as_ref() {
             bits32_constant!(value) => Some(i64::from(constant_u32(*value))),
             _ => int64_constant(value),
         },
@@ -1124,15 +1129,15 @@ fn uint64_constant(term: &Bitvector32Term) -> Option<u64> {
         // cast `(uint64)p` yields it. The address term reaches a proof only
         // when a pointer proved null is substituted into `(uint64)p`.
         Bitvector32Term::PointerAddress(pointer, _) if **pointer == Pointer::null() => Some(0),
-        Bitvector32Term::UInt64From32(value) => match value.as_ref() {
+        cast_term!(UInt64From32, value) => match value.as_ref() {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
             _ => uint64_constant(value),
         },
-        Bitvector32Term::UInt64FromInt32(value) => match value.as_ref() {
+        cast_term!(UInt64FromInt32, value) => match value.as_ref() {
             bits32_constant!(value) => Some((constant_u32(*value) as i32 as i64) as u64),
             _ => uint64_constant(value),
         },
-        Bitvector32Term::UInt64FromInt64(value) => match value.as_ref() {
+        cast_term!(UInt64FromInt64, value) => match value.as_ref() {
             int64_constant!(value) => Some(constant_i64(*value) as u64),
             _ => uint64_constant(value),
         },
@@ -1739,8 +1744,10 @@ impl Bitvector32Term {
         let value = value.into_word32();
         match value {
             int32_constant!(value) => Self::int64_constant(i64::from(constant_u32(value) as i32)),
-            int64_constant!(_) | Self::Int64From32(_) => value,
-            value => Self::Int64From32(Box::new(value)),
+            int64_constant!(_) | cast_term!(Int64From32, _) => value,
+            value => {
+                Bitvector32Term::legacy_cast(MachineCastSpelling::Int64From32, Box::new(value))
+            }
         }
     }
 
@@ -1751,11 +1758,13 @@ impl Bitvector32Term {
             match value {
                 uint64_constant!(bits) => Bitvector32Term::constant(constant_u64(bits) as u32),
                 int64_constant!(bits) => Bitvector32Term::constant(constant_i64(bits) as u32),
-                Bitvector32Term::UInt64From32(value)
-                | Bitvector32Term::Int64From32(value)
-                | Bitvector32Term::Int64FromUInt32(value)
-                | Bitvector32Term::UInt64FromInt32(value) => *value,
-                value => Bitvector32Term::UInt32From64(Box::new(value)),
+                cast_term!(UInt64From32, value)
+                | cast_term!(Int64From32, value)
+                | cast_term!(Int64FromUInt32, value)
+                | cast_term!(UInt64FromInt32, value) => *value,
+                value => {
+                    Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(value))
+                }
             }
         }
         match value {
@@ -1802,8 +1811,10 @@ impl Bitvector32Term {
         let value = value.into_word32();
         match value {
             int32_constant!(value) => Self::uint64_constant(u64::from(constant_u32(value))),
-            uint64_constant!(_) | Self::UInt64From32(_) => value,
-            value => Self::UInt64From32(Box::new(value)),
+            uint64_constant!(_) | cast_term!(UInt64From32, _) => value,
+            value => {
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value))
+            }
         }
     }
 
@@ -1811,8 +1822,10 @@ impl Bitvector32Term {
         let value = value.into_word32();
         match value {
             int32_constant!(value) => Self::int64_constant(i64::from(constant_u32(value))),
-            int64_constant!(_) | Self::Int64FromUInt32(_) => value,
-            value => Self::Int64FromUInt32(Box::new(value)),
+            int64_constant!(_) | cast_term!(Int64FromUInt32, _) => value,
+            value => {
+                Bitvector32Term::legacy_cast(MachineCastSpelling::Int64FromUInt32, Box::new(value))
+            }
         }
     }
 
@@ -1822,16 +1835,20 @@ impl Bitvector32Term {
             int32_constant!(value) => {
                 Self::uint64_constant((constant_u32(value) as i32 as i64) as u64)
             }
-            uint64_constant!(_) | Self::UInt64FromInt32(_) => value,
-            value => Self::UInt64FromInt32(Box::new(value)),
+            uint64_constant!(_) | cast_term!(UInt64FromInt32, _) => value,
+            value => {
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(value))
+            }
         }
     }
 
     pub(crate) fn uint64_from_int64(value: Self) -> Self {
         match value {
             int64_constant!(value) => Self::uint64_constant(constant_i64(value) as u64),
-            uint64_constant!(_) | Self::UInt64FromInt64(_) => value,
-            value => Self::UInt64FromInt64(Box::new(value)),
+            uint64_constant!(_) | cast_term!(UInt64FromInt64, _) => value,
+            value => {
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(value))
+            }
         }
     }
 
@@ -1840,9 +1857,9 @@ impl Bitvector32Term {
     pub(crate) fn int64_from_uint64_bits(value: Self) -> Self {
         match value {
             uint64_constant!(bits) => Self::int64_constant(constant_u64(bits) as i64),
-            Self::UInt64FromInt64(value) => *value,
-            Self::UInt64From32(value) => Self::int64_from_uint32(*value),
-            Self::UInt64FromInt32(value) => Self::int64_from_32(*value),
+            cast_term!(UInt64FromInt64, value) => *value,
+            cast_term!(UInt64From32, value) => Self::int64_from_uint32(*value),
+            cast_term!(UInt64FromInt32, value) => Self::int64_from_32(*value),
             value => value,
         }
     }
@@ -2584,7 +2601,7 @@ impl PointerOffsetTerm {
         // Recover its exact pointer scale without interpreting a modular
         // int32 product as an address displacement.
         if !unsigned {
-            if let Bitvector32Term::Int64From32(index) = &value
+            if let cast_term!(Int64From32, index) = &value
                 && u32::try_from(byte_width).is_ok()
             {
                 return Self::scale_int32(index.as_ref().clone(), byte_width);
@@ -2597,7 +2614,7 @@ impl PointerOffsetTerm {
             } = &value
             {
                 for (index, stride) in [(left, right), (right, left)] {
-                    if let (Bitvector32Term::Int64From32(index), int64_constant!(stride)) =
+                    if let (cast_term!(Int64From32, index), int64_constant!(stride)) =
                         (index.as_ref(), stride.as_ref())
                         && let Ok(stride) = u32::try_from(constant_i64(*stride))
                         && let Some(width) = i64::from(stride).checked_mul(byte_width)
@@ -2972,12 +2989,12 @@ impl ConditionTerm {
     pub(crate) fn uint64_index_order_guards(&self) -> Option<[Self; 2]> {
         fn wide(term: &Bitvector32Term) -> Option<Bitvector32Term> {
             match term {
-                Bitvector32Term::UInt32From64(value) => Some(value.as_ref().clone()),
+                cast_term!(UInt32From64, value) => Some(value.as_ref().clone()),
                 bits32_constant!(value) if constant_u32(*value) <= i32::MAX as u32 => Some(
                     Bitvector32Term::uint64_constant(u64::from(constant_u32(*value))),
                 ),
                 binary_term!(Int32, Add, left, right) if right.as_const().is_some() => {
-                    let Bitvector32Term::UInt32From64(value) = left.as_ref() else {
+                    let cast_term!(UInt32From64, value) = left.as_ref() else {
                         return None;
                     };
                     Some(Bitvector32Term::uint64_add(

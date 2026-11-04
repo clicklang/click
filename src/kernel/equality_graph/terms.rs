@@ -3438,7 +3438,10 @@ mod tests {
         }
         let mut low_word_only = EqualityGraph::default();
         low_word_only.add_int32_equality(
-            &Bitvector32Term::UInt32From64(Box::new(value.clone())),
+            &Bitvector32Term::legacy_cast(
+                crate::kernel::MachineCastSpelling::UInt32From64,
+                Box::new(value.clone()),
+            ),
             &Bitvector32Term::constant(0),
         );
         assert!(!low_word_only.are_equal(&scaled(1, true), &base));

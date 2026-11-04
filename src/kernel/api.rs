@@ -16,6 +16,7 @@ use crate::kernel::ResourceDescription;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
     bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
 };
@@ -76,7 +77,7 @@ pub(crate) fn memory_access_element_bound(
                 value, byte_width, ..
             } => {
                 let value = match value.as_ref() {
-                    Bitvector32Term::UInt64From32(index) => index,
+                    cast_term!(UInt64From32, index) => index,
                     value => value,
                 };
                 let stride = u32::try_from(*byte_width).ok()?;
@@ -8802,7 +8803,10 @@ fn rewrite_int32_term_by_exact_equality(
         )
     };
     match term {
-        Bitvector32Term::MachineIntegerCast { .. } => term.clone(),
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            ..
+        } => term.clone(),
 
         binary_term!(Int32, Add, left, right) => {
             let (left, right) = binary(left, right);
@@ -8839,12 +8843,12 @@ fn rewrite_int32_term_by_exact_equality(
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
-        | Bitvector32Term::Int64From32(_)
-        | Bitvector32Term::Int64FromUInt32(_)
-        | Bitvector32Term::UInt64From32(_)
-        | Bitvector32Term::UInt32From64(_)
-        | Bitvector32Term::UInt64FromInt32(_)
-        | Bitvector32Term::UInt64FromInt64(_)
+        | cast_term!(Int64From32, _)
+        | cast_term!(Int64FromUInt32, _)
+        | cast_term!(UInt64From32, _)
+        | cast_term!(UInt32From64, _)
+        | cast_term!(UInt64FromInt32, _)
+        | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..)
         | Bitvector32Term::RangeFold { .. }

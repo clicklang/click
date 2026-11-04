@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MachineCastSpelling, cast_term};
 
 impl PureFactContext {
     /// Selects exact premises for two terms pinned to the same signed constant.
@@ -1817,13 +1818,7 @@ impl PureFactContext {
                     continue;
                 }
             }
-            if let Some((
-                crate::kernel::KernelMachineCastEncoding::UInt64FromInt64,
-                _,
-                _,
-                operand,
-            )) = term.cast()
-            {
+            if let Some((MachineCastSpelling::UInt64FromInt64, _, _, operand)) = term.cast() {
                 term = operand;
                 continue;
             }
@@ -2220,21 +2215,20 @@ impl PureFactContext {
         match term {
             Bitvector32Term::Constant { .. } => term.clone(),
             Bitvector32Term::Variable(variable) => Bitvector32Term::Variable(*variable),
-            Bitvector32Term::UInt32From64(value) => {
-                match self.wide_constant_from_equalities(value) {
-                    Some(bits) => Bitvector32Term::constant(bits as u32),
-                    None => Bitvector32Term::uint32_from_64(
-                        self.simplify_bitvector_under_assumptions(value),
-                    ),
-                }
-            }
+            cast_term!(UInt32From64, value) => match self.wide_constant_from_equalities(value) {
+                Some(bits) => Bitvector32Term::constant(bits as u32),
+                None => Bitvector32Term::uint32_from_64(
+                    self.simplify_bitvector_under_assumptions(value),
+                ),
+            },
             // A narrowing conversion inside its destination range is its
             // operand's carrier (`narrowed_casts`); otherwise it stays the
             // conversion of its simplified operand.
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } => match self.narrowed_cast_carrier(term) {
                 Some(carrier) => self.simplify_bitvector_under_assumptions(&carrier),
                 None => Bitvector32Term::machine_integer_cast(

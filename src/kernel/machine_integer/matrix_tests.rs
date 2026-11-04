@@ -10,6 +10,7 @@
 use super::representation::{self, Division};
 use super::*;
 use crate::kernel::MachineBinaryOp;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate, SpecialArithmeticNode,
@@ -84,10 +85,11 @@ fn constant(ty: Ty, value: &BigInt) -> Bitvector32Term {
 fn value(ty: Ty, variable: u64) -> Bitvector32Term {
     let word = Bitvector32Term::Variable(Variable(variable));
     if ty.format().bits() < 32 {
-        Bitvector32Term::MachineIntegerCast {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(word),
-            source: Ty::Int32,
-            destination: ty,
+            from: Ty::Int32,
+            to: ty,
         }
     } else {
         word
@@ -970,7 +972,13 @@ fn a_narrow_widening_into_32_bits_has_its_operand_word_at_every_narrow_format() 
         for destination in [Ty::Int32, Ty::UInt32] {
             let operand = value(source, 172_091);
             let cast = conversion::convert_term(source, destination, operand.clone());
-            assert!(matches!(cast, Bitvector32Term::MachineIntegerCast { .. }));
+            assert!(matches!(
+                cast,
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    ..
+                }
+            ));
             assert_eq!(cast.narrow_widening32_operand(), Some((source, &operand)));
             assert_eq!(cast.clone().into_word32(), cast);
             assert_ne!(

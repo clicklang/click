@@ -4,6 +4,7 @@ use super::resource_tracker::cell_source::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::{BitvectorUnaryOp, MachineCastSpelling, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 use std::collections::BTreeSet;
@@ -5247,10 +5248,11 @@ pub(crate) fn narrow_read_has_recorded_value(
     // its stored value compared through the same widening.
     let stored_value_matches = |term: &Bitvector32Term, other: &Bitvector32Term| {
         let (term, widening) = match term {
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } if source.format().bits() < 32 && destination.format().bits() == 32 => {
                 (value.as_ref(), Some((*source, *destination)))
             }
@@ -5595,8 +5597,14 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &Bitvector32Term) -> Bitvecto
             }
             AtomicCanonicalizationTask::RebuildUnary(op) => {
                 let value = results.pop().expect("visited unary term");
-                let smart =
-                    op.is_float() || matches!(op, BitvectorUnaryOp::MachineIntegerCast { .. });
+                let smart = op.is_float()
+                    || matches!(
+                        op,
+                        BitvectorUnaryOp::Cast {
+                            spelling: MachineCastSpelling::Generic,
+                            ..
+                        }
+                    );
                 results.push(if smart {
                     op.build(value)
                 } else {
@@ -6638,15 +6646,17 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                     continue;
                 }
                 match term {
-                    Bitvector32Term::MachineIntegerCast {
+                    Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value,
-                        source,
-                        destination,
+                        from: source,
+                        to: destination,
                     } => push_unary(
                         &mut tasks,
-                        BitvectorUnaryOp::MachineIntegerCast {
-                            source,
-                            destination,
+                        BitvectorUnaryOp::Cast {
+                            spelling: MachineCastSpelling::Generic,
+                            from: source,
+                            to: destination,
                         },
                         value,
                     ),
@@ -6691,24 +6701,36 @@ fn normalize_exact_memory_loads_in_bitvector_iterative(
                         left,
                         right,
                     ),
-                    Bitvector32Term::Int64From32(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::Int64From32, value)
-                    }
-                    Bitvector32Term::UInt64From32(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::UInt64From32, value)
-                    }
-                    Bitvector32Term::UInt32From64(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::UInt32From64, value)
-                    }
-                    Bitvector32Term::Int64FromUInt32(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::Int64FromUInt32, value)
-                    }
-                    Bitvector32Term::UInt64FromInt32(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::UInt64FromInt32, value)
-                    }
-                    Bitvector32Term::UInt64FromInt64(value) => {
-                        push_unary(&mut tasks, BitvectorUnaryOp::UInt64FromInt64, value)
-                    }
+                    cast_term!(Int64From32, value) => push_unary(
+                        &mut tasks,
+                        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32),
+                        value,
+                    ),
+                    cast_term!(UInt64From32, value) => push_unary(
+                        &mut tasks,
+                        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32),
+                        value,
+                    ),
+                    cast_term!(UInt32From64, value) => push_unary(
+                        &mut tasks,
+                        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt32From64),
+                        value,
+                    ),
+                    cast_term!(Int64FromUInt32, value) => push_unary(
+                        &mut tasks,
+                        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64FromUInt32),
+                        value,
+                    ),
+                    cast_term!(UInt64FromInt32, value) => push_unary(
+                        &mut tasks,
+                        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt32),
+                        value,
+                    ),
+                    cast_term!(UInt64FromInt64, value) => push_unary(
+                        &mut tasks,
+                        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt64),
+                        value,
+                    ),
                     Bitvector32Term::Unary {
                         format,
                         op,

@@ -7,6 +7,7 @@ use crate::kernel::binary_term;
 use crate::kernel::proof::fact_reasoning::{
     ForallInstantiationError, InstanceArgument, check_forall_instantiation, instantiate_universal,
 };
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -8855,7 +8856,10 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
     let native_count = Bitvector32Term::Variable(Variable(973_001));
     let narrow = PureFactContext::new().assume_proposition(fact(
         CMemory::new(),
-        Bitvector32Term::UInt32From64(Box::new(native_count.clone())),
+        Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            Box::new(native_count.clone()),
+        ),
         false,
     ));
     assert!(
@@ -8940,8 +8944,8 @@ fn native_loadability_prefix_coverage_retains_full_width_bounds() {
     );
     let low_word_bound = Proposition::ConditionIs(
         ConditionTerm::unsigned_less_equal(
-            Bitvector32Term::UInt32From64(Box::new(requested)),
-            Bitvector32Term::UInt32From64(Box::new(held)),
+            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(requested)),
+            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(held)),
         ),
         true,
     );

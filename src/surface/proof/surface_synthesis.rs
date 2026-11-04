@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u64, int32_constant, int64_constant, uint32_constant,
@@ -3516,8 +3517,9 @@ fn bitvector_spells_uint32(
         | binary_term!(Int32, Remainder, left, right) => either(left, right),
         binary_term!(UInt32, Divide, ..) | binary_term!(UInt32, Remainder, ..) => true,
         // A conversion to `uint32`, spelled `x as uint32`.
-        Bitvector32Term::MachineIntegerCast {
-            destination: MachineIntegerType::UInt32,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            to: MachineIntegerType::UInt32,
             ..
         } => true,
         _ => false,
@@ -3704,10 +3706,11 @@ fn synthesize_surface_bitvector(
     match term {
         // The 32-bit widening of a narrow value is written as the
         // conversion it is (`c as int32`, `c as uint32`).
-        Bitvector32Term::MachineIntegerCast {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         } if crate::kernel::is_narrow_widening32(*source, *destination) => {
             let operand =
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
@@ -3717,8 +3720,11 @@ fn synthesize_surface_bitvector(
                 synthesize_int32_operand(operand)
             }
         }
-        Bitvector32Term::MachineIntegerCast {
-            value, destination, ..
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value,
+            to: destination,
+            ..
         } => {
             let operand =
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
@@ -4128,20 +4134,20 @@ fn synthesize_surface_bitvector(
         uint64_constant!(value) => Some(ContractExpression::CFragment(CExpression::Value(
             CValue::UInt64(Bitvector32Term::uint64_constant(constant_u64(*value))),
         ))),
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value) => {
+        cast_term!(Int64From32, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64From32, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value) => {
             let mut operand =
                 synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?;
             // Widening interprets the source word's signedness. Its name
             // alone may have a different type (e.g. zero-extending int32 x
             // after `x as uint32`). Preserve that interpretation explicitly.
-            if !matches!(term, Bitvector32Term::UInt64FromInt64(_)) {
+            if !matches!(term, cast_term!(UInt64FromInt64, _)) {
                 let unsigned_source = matches!(
                     term,
-                    Bitvector32Term::Int64FromUInt32(_) | Bitvector32Term::UInt64From32(_)
+                    cast_term!(Int64FromUInt32, _) | cast_term!(UInt64From32, _)
                 );
                 if unsigned_source {
                     operand = synthesize_uint32_operand(operand)?;
@@ -4153,7 +4159,7 @@ fn synthesize_surface_bitvector(
                 expression: Box::new(contract_expression_to_c_fragment(&operand)?),
                 target_type: if matches!(
                     term,
-                    Bitvector32Term::Int64From32(_) | Bitvector32Term::Int64FromUInt32(_)
+                    cast_term!(Int64From32, _) | cast_term!(Int64FromUInt32, _)
                 ) {
                     CType::Int64
                 } else {
@@ -4166,24 +4172,17 @@ fn synthesize_surface_bitvector(
                 explicit_qualification: false,
             }))
         }
-        Bitvector32Term::UInt32From64(value) => {
-            Some(ContractExpression::CFragment(CExpression::Cast {
-                expression: Box::new(contract_expression_to_c_fragment(
-                    &synthesize_surface_bitvector(
-                        value,
-                        parameter_binding,
-                        state,
-                        bound_variables,
-                    )?,
-                )?),
-                target_type: CType::UInt32,
-                integer_mode: crate::kernel::CIntegerCastMode::Standard,
-                pointee_struct: None,
-                pointee_volatile: false,
-                pointee_constant: false,
-                explicit_qualification: false,
-            }))
-        }
+        cast_term!(UInt32From64, value) => Some(ContractExpression::CFragment(CExpression::Cast {
+            expression: Box::new(contract_expression_to_c_fragment(
+                &synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
+            )?),
+            target_type: CType::UInt32,
+            integer_mode: crate::kernel::CIntegerCastMode::Standard,
+            pointee_struct: None,
+            pointee_volatile: false,
+            pointee_constant: false,
+            explicit_qualification: false,
+        })),
         Bitvector32Term::Binary {
             op, left, right, ..
         } => {
@@ -5064,7 +5063,7 @@ fn synthesis_element_index(
             // Recover the original expression, whose re-lowering restores it.
             // This is a structural inverse, never a fact-based narrowing.
             match (unsigned, value.as_ref()) {
-                (true, Bitvector32Term::UInt64From32(index)) => Some(index.as_ref().clone()),
+                (true, cast_term!(UInt64From32, index)) => Some(index.as_ref().clone()),
                 _ => Some(value.as_ref().clone()),
             }
         }
