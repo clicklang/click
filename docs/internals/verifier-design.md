@@ -443,6 +443,14 @@ the candidate-search build boundary. Repeated fixed-span misses beside growing
 short fragments and exact early/late hits have separate scaling coverage;
 selecting one fact does not compose a partition or normalize suppliers.
 
+Memory-view satisfaction uses that same indexed one-fact check. Empty views
+and exact held views retain their direct checks; other views require a selected
+supplier covering the whole query. Failed selection does not enumerate the
+resource-key bucket or normalize a collection of adjacent fragments. Scaling
+controls grow both owned and viewed fragments beside a fixed missing view,
+with repeated queries and exact early/late hits. Non-memory view queries and
+memory queries for other ownership quantities retain separate routes.
+
 Call planning retains memory split origins while constructing residual owners.
 Each new residual occurrence maps directly to its original pre-reservation
 owner in a call-local persistent map. Repeated splits propagate that original
@@ -564,7 +572,7 @@ search to establish that refusal. Typed queries check each selected piece's
 access designation for both narrow and native coordinates; narrow byte
 transfers retain their suppliers' carriers instead. After the first
 piece, constant fragment composition requires exact adjacency and refuses
-selected overlapping suppliers. Viewed and other-quantity satisfaction routes
+selected overlapping suppliers. Other-quantity memory satisfaction routes
 remain separate audit targets.
 
 A proof can combine differently sized owned fields by folding a resource whose

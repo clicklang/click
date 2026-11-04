@@ -6382,11 +6382,12 @@ impl ResourceContext {
         {
             return true;
         }
-        // Exact ownership of a resource definitionally includes its exact
+        // Exact ownership of a non-memory resource includes its exact
         // view. The resource-key index already erases access mode and owned
         // quantity, so answer this common core-projection query without
         // entering proof-aware memory/snapshot entailment.
         if fact.is_view()
+            && fact.memory_range().is_none()
             && self
                 .storage
                 .index
@@ -6407,6 +6408,13 @@ impl ResourceContext {
                 })
             {
                 return true;
+            }
+            // Observation selects one held supplier. Do not assemble or
+            // normalize a speculative collection of alternative fragments.
+            if fact.is_view() {
+                return self
+                    .directly_supporting_memory_fact(fact, range, assumptions)
+                    .is_some();
             }
             // Decide unit ownership by constructing its consumption
             // on a persistent branch. The caller retains every occurrence;

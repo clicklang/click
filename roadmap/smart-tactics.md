@@ -34,8 +34,8 @@ facts do not establish flat cost as the queried class or bucket grows.
 1. **Remaining fragment-selection routes.**
    `without_fact_incrementally_impl` still enumerates candidates for requests
    outside unit-owned memory. `satisfies_fact` still enumerates and
-   normalizes suppliers for views and other quantities. Isolate real checking
-   callers and red scaling curves before changing these remaining routes.
+   normalizes memory suppliers for other ownership quantities. Isolate real
+   checking callers and red scaling curves before changing these remaining routes.
    Distinguish the relevant pieces consumed by explicit composition from
    rejected candidates and speculative searches. Preserve symbolic/wide range
    carriers, split origins, ownership refusals and branch isolation. Incremental
