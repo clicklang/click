@@ -1,0 +1,15 @@
+{
+  "units": {
+    "program_bindings": {
+      "language": "rust",
+      "sources": { "bindings.rs": {} },
+      "crate": {
+        "name": "program_bindings",
+        "edition": "2021",
+        "features": [],
+        "roots": ["program_bindings::count"],
+        "files": ["bindings.rs"]
+      }
+    }
+  }
+}

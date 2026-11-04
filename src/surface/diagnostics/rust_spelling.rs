@@ -42,9 +42,18 @@ pub(crate) fn rust_spelling() -> bool {
     rust_slice_parameters().is_some()
 }
 
-/// The Rust spelling of the variable `name`: `bytes.len()` for the length
-/// of the slice parameter `bytes`.
+/// The spelling of the program variable `name` where its bare name is not
+/// its own: `bytes.len()` for the length of the Rust slice parameter `bytes`,
+/// and `c(iterations)`, or `rust(iterations)`, for a variable named like a
+/// loop's pass count, which that spelling means wherever it is written.
 pub(crate) fn rust_variable_spelling(name: &str) -> Option<String> {
+    if name == crate::surface::LOOP_ITERATIONS_NAME {
+        return Some(if rust_spelling() {
+            format!("rust({name})")
+        } else {
+            format!("c({name})")
+        });
+    }
     let slice = name.strip_suffix("_len")?;
     rust_slice_parameters()?
         .iter()

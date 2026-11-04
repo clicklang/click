@@ -672,7 +672,7 @@ fn synthesize_snapshot_local(term: &Bitvector32Term) -> Option<ContractExpressio
         }
         Some(ContractExpression::At {
             selector: selector.clone(),
-            expression: Box::new(if name == "result" {
+            expression: Box::new(if crate::surface::is_click_value_name(name) {
                 ContractExpression::CBinding(name.to_string())
             } else {
                 ContractExpression::CFragment(CExpression::Variable(
@@ -695,7 +695,7 @@ fn synthesize_recorded_local(term: &Bitvector32Term) -> Option<ContractExpressio
         }
         Some(ContractExpression::At {
             selector: selector.clone(),
-            expression: Box::new(if name == "result" {
+            expression: Box::new(if crate::surface::is_click_value_name(name) {
                 ContractExpression::CBinding(name.to_string())
             } else {
                 ContractExpression::CFragment(CExpression::Variable(
@@ -3620,7 +3620,7 @@ fn synthesize_surface_bitvector(
     if let Some(name) = named {
         return Some(if name == crate::kernel::C_CONTRACT_RESULT_NAME {
             ContractExpression::CFragment(CExpression::Variable("result".to_string()))
-        } else if name == "result" {
+        } else if crate::surface::is_click_value_name(name) {
             ContractExpression::CBinding(name.to_string())
         } else {
             ContractExpression::CFragment(CExpression::Variable(
@@ -3644,13 +3644,13 @@ fn synthesize_surface_bitvector(
                     region: CodeRegionRef::Function,
                     kind: ProgramPointKind::Entry,
                 }),
-                expression: Box::new(if name == "result" {
+                expression: Box::new(if crate::surface::is_click_value_name(&name) {
                     ContractExpression::CBinding(name)
                 } else {
                     ContractExpression::CFragment(CExpression::Variable(name))
                 }),
             }
-        } else if name == "result" {
+        } else if crate::surface::is_click_value_name(&name) {
             ContractExpression::CBinding(name)
         } else {
             ContractExpression::CFragment(CExpression::Variable(name))

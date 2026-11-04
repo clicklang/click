@@ -347,11 +347,7 @@ impl<'a> Proof<'a> {
         if let Some(crate::kernel::IntegerTerm::Variable(variable)) = self
             .execution_context()
             .and_then(|context| context.constants.invariant_body_context.as_deref())
-            .and_then(|bundle| {
-                bundle.iterations.as_ref().filter(|_| {
-                    !crate::surface::loop_iterations_hidden_by(&bundle.iteration_entry_state)
-                })
-            })
+            .and_then(|bundle| bundle.iterations.as_ref())
         {
             labels.integer_source_name(*variable, crate::surface::LOOP_ITERATIONS_NAME.to_string());
         }
@@ -1970,7 +1966,7 @@ impl<'a> Proof<'a> {
         };
         // The bundle's proof reads the head's pass count as `iterations`.
         let root = match &bundle.iterations {
-            Some(count) => root.with_loop_iterations(count, &bundle.iteration_entry_state),
+            Some(count) => root.with_loop_iterations(count),
             None => root,
         };
         if let Some(parent_lineage) = self.trace_lineage(self.claim_label()) {
