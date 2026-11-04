@@ -575,6 +575,10 @@ impl SharedMachineIntegerTerm {
         };
         if let Some(term) = KernelTermImport::default().machine_arithmetic(ty, value) {
             let shared = Self::from_shared(ty, term).expect("arithmetic storage fragment");
+            let MachineIntegerOperand::Shared { boxed, .. } = &shared.0.operand else {
+                unreachable!()
+            };
+            let _ = boxed.set(value.clone());
             shared.remember_explicit_import(key);
             return shared;
         }
@@ -598,13 +602,6 @@ impl SharedMachineIntegerTerm {
     }
 
     fn remember_explicit_import(&self, key: MachineIntegerKey) {
-        let MachineIntegerKey::Legacy { value, .. } = &key else {
-            unreachable!()
-        };
-        let MachineIntegerOperand::Shared { boxed, .. } = &self.0.operand else {
-            unreachable!()
-        };
-        let _ = boxed.set(value.clone());
         MACHINE_INTEGER_INTERNER
             .get()
             .expect("shared machine interner")
