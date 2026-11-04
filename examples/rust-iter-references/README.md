@@ -13,7 +13,7 @@ source body binds `byte`. Dereferencing it requires input views; shared-referenc
 qualifiers survive local declarations. Rust rejects writing through the
 reference. Both reference and copied patterns also work over direct slices.
 
-The proof observes `iter_cursor` and `iter_remaining`, without MIR IDs or a
+The proof observes `iter.as_slice()` and `iter.len()`, without MIR IDs or a
 generated processed count. It derives a prefix length from original length
 minus remaining length, relates it to the cursor, and bounds each sum by 255
 times that prefix length. `let { result: loaded_byte } = step();` names the actual checked

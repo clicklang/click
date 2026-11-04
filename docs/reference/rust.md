@@ -1234,16 +1234,25 @@ require view authority. Shared-reference qualifiers survive local declarations.
 The original Rust source stays unchanged.
 
 The adapter retains Charon's native control flow, iterator calls, and `Option`
-branches. A shared iterator named `iter` exposes `iter_cursor`,
-`iter_remaining`, and `iter_live`; unnamed or ambiguous iterators use their
-`__rust_mir_ID` identity as the prefix. A successful `next()` records the
+branches. A proof reads a loop's iterator as `iter` inside that loop's
+clauses and phases, and as `loop(i).iter` anywhere, through Rust's own
+methods: `iter.len()` is the remaining length and `iter.as_slice()` the
+remaining elements, which read as a slice parameter does, so
+`iter.as_slice() == bytes + (bytes.len() - iter.len())` places the cursor and
+`iter.as_slice().len()` is `iter.len()`. The importer records which iterator
+each loop advances, so the iterator needs no name of its own; diagnostics
+print its state the same way. The older spellings of that state,
+`<iterator>_cursor` and `<iterator>_remaining`, are still read while other
+iterator kinds migrate. A successful `next()` records the
 shared element address in the returned option, advances the cursor, and
 reduces the remaining length before entering the Rust body. Copied patterns
 read that address; reference patterns bind it directly. An exhausted iterator
 exits without a read or pointer advance, including for an empty slice.
 
 There is no generated processed-count or index variable. Sidecars choose their
-own properties of iterator state. The sum examples explicitly relate the cursor
+own properties of iterator state
+([`examples/rust-iterators/sum.click`](https://github.com/clicklang/click/blob/master/examples/rust-iterators/sum.click)).
+The sum examples explicitly relate the cursor
 to the original slice and derive a processed prefix as original length minus
 remaining length; the remaining length also proves termination. This length is
 the iterator's remaining slice metadata, represented as full-width `uint64`

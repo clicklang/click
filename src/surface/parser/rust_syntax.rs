@@ -1094,6 +1094,65 @@ impl Parser {
         Ok(None)
     }
 
+    /// `iter.len()` and `iter.as_slice()`: inside a `loop` block, read from
+    /// the iterator that loop advances, which the loop phase binds; with
+    /// `loop_index`, `loop(i).iter`, that loop's, read here. The cursor sits
+    /// at `iter` and the method follows. `iter.as_slice()` reads as a slice
+    /// parameter does, its data: `iter.as_slice().len()` is `iter.len()`.
+    pub(super) fn take_rust_iterator_method(
+        &mut self,
+        name: &str,
+        loop_index: Option<usize>,
+    ) -> Result<Option<ContractExpression>, ClickError> {
+        if !self.verifies_rust() || name != "iter" {
+            return Ok(None);
+        }
+        let call = |parser: &Self, at: usize, method: &str| {
+            parser.tokens.get(at) == Some(&Token::Dot)
+                && matches!(parser.tokens.get(at + 1), Some(Token::Ident(found)) if found == method)
+                && parser.tokens.get(at + 2) == Some(&Token::LParen)
+                && parser.tokens.get(at + 3) == Some(&Token::RParen)
+        };
+        let at = self.position;
+        let method = if call(self, at, "as_slice") && call(self, at + 4, "len") {
+            Some((crate::surface::IterMethod::Len, 8))
+        } else if call(self, at, "as_slice") {
+            Some((crate::surface::IterMethod::AsSlice, 4))
+        } else if call(self, at, "len") {
+            Some((crate::surface::IterMethod::Len, 4))
+        } else {
+            None
+        };
+        let Some(index) = loop_index else {
+            if self.loop_block_depth == 0 {
+                // Outside a loop, `iter` is the program's own name.
+                return Ok(None);
+            }
+            let Some((method, width)) = method else {
+                return Err(self.error(
+                    "inside a loop, `iter` is the loop's iterator, read through its methods \
+                     (`iter.len()`, `iter.as_slice()`); a Rust local named `iter` is `rust(iter)`",
+                ));
+            };
+            self.position += width;
+            return Ok(Some(ContractExpression::Binding(
+                method.binding().to_string(),
+            )));
+        };
+        let Some((method, width)) = method else {
+            return Ok(None);
+        };
+        let Some(iterator) = self.rust_loop_iterators.get(index).cloned().flatten() else {
+            return Err(self.error(format!(
+                "loop {index} advances no iterator, so `loop({index}).iter` names nothing"
+            )));
+        };
+        self.position += width;
+        crate::surface::rust_iterator_method(&iterator, method)
+            .map(Some)
+            .map_err(|message| self.error(message))
+    }
+
     pub(super) fn take_rust_slice_len(&mut self, name: &str) -> Option<String> {
         if !self.rust_slice_params.contains(name)
             || self.peek() != Some(&Token::Dot)

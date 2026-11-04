@@ -64,6 +64,19 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
             "`{claim_label}` tactic {tactic_index}: `loop` requires the execution frontier to be at a loop; current frontier is region({statement_index})"
         )));
     };
+    // Inside a loop's clauses and phases, `iter` is the iterator that loop
+    // advances: each clause reads its own loop's.
+    let scope_for = |index: usize| {
+        let mut scope = proof_locals.clone();
+        scope.extend(crate::surface::loop_iterator_bindings(
+            function_block.signature(),
+            index,
+        ));
+        scope
+    };
+    let loop_proof_locals = scope_for(loop_index);
+    let _iterator_spelling = crate::surface::diagnostics::LoopPhaseSpelling::enter(loop_index);
+    let proof_locals = &loop_proof_locals;
     if execution
         .presentation
         .frontier_loop_clauses
@@ -117,7 +130,7 @@ pub(in crate::surface::proof) fn execute_frontier_local_loop(
     for (offset, clause) in nested_loop_clauses.into_iter().enumerate() {
         current_loop_clauses.push(
             clause
-                .with_scope(proof_locals.clone())
+                .with_scope(scope_for(loop_index + offset + 1))
                 .bound_to_loop(loop_index + offset + 1),
         );
     }

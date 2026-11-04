@@ -460,6 +460,107 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
     format!("loop({index}).{LOOP_ITERATIONS_NAME}")
 }
 
+/// A method a proof reads a loop's iterator through.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum IterMethod {
+    /// `iter.len()`: the elements it has left.
+    Len,
+    /// `iter.as_slice()`: the slice of them, which reads as a slice
+    /// parameter does, its data.
+    AsSlice,
+}
+
+impl IterMethod {
+    const ALL: [IterMethod; 2] = [IterMethod::Len, IterMethod::AsSlice];
+
+    /// The binding a `loop` block's `iter.<method>()` reads, which the loop
+    /// phase binds to that loop's iterator.
+    pub(crate) fn binding(self) -> &'static str {
+        match self {
+            IterMethod::Len => "iter.len()",
+            IterMethod::AsSlice => "iter.as_slice()",
+        }
+    }
+}
+
+/// `iter.<method>()` of `iterator`, read from the state the importer keeps
+/// for it.
+pub(crate) fn rust_iterator_method(
+    iterator: &syntax::RustLoopIterator,
+    method: IterMethod,
+) -> Result<ContractExpression, String> {
+    let suffix = match method {
+        IterMethod::Len => "remaining",
+        IterMethod::AsSlice => "cursor",
+    };
+    match iterator.kind {
+        syntax::RustIteratorKind::Slice | syntax::RustIteratorKind::Enumerate => {
+            Ok(ContractExpression::CFragment(CExpression::Variable(
+                format!("{}_{suffix}", iterator.local),
+            )))
+        }
+        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::Range => Err(format!(
+            "this method of a {} iterator is not supported yet",
+            match iterator.kind {
+                syntax::RustIteratorKind::Chunks => "`chunks_exact`",
+                _ => "range",
+            }
+        )),
+    }
+}
+
+/// The Rust spelling of the importer's iterator state variable `name` in a
+/// function whose loops advance `iterators`: `loop(i).iter.len()` for loop
+/// `i`'s remaining length, `loop(i).iter.as_slice()` for its cursor, and
+/// bare `iter.len()` for the iterator of `current`, the loop whose phases
+/// are being checked.
+pub(crate) fn rust_iterator_spelling(
+    iterators: &[Option<syntax::RustLoopIterator>],
+    current: Option<usize>,
+    name: &str,
+) -> Option<String> {
+    iterators.iter().enumerate().find_map(|(index, iterator)| {
+        let iterator = iterator.as_ref()?;
+        IterMethod::ALL.into_iter().find_map(|method| {
+            (rust_iterator_method(iterator, method).ok()?
+                == ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+            .then(|| {
+                if current == Some(index) {
+                    method.binding().to_string()
+                } else {
+                    format!("loop({index}).{}", method.binding())
+                }
+            })
+        })
+    })
+}
+
+/// The proof names a loop's iterator gives inside loop `loop_index` of the
+/// Rust function `signature`: `iter.len()` and `iter.as_slice()`, when that
+/// loop advances one.
+pub(crate) fn loop_iterator_bindings(
+    signature: &FunctionSignature,
+    loop_index: usize,
+) -> Vec<(String, ContractExpression)> {
+    let Some(iterator) = signature
+        .rust_loop_iterators()
+        .get(loop_index)
+        .cloned()
+        .flatten()
+    else {
+        return Vec::new();
+    };
+    IterMethod::ALL
+        .into_iter()
+        .filter_map(|method| {
+            Some((
+                method.binding().to_string(),
+                rust_iterator_method(&iterator, method).ok()?,
+            ))
+        })
+        .collect()
+}
+
 /// Whether a bare `name` is a Click value, `result` or a loop's
 /// `iterations`, so a program binding of that name is written `c(name)`, or
 /// `rust(name)` for a Rust source.
@@ -1625,16 +1726,25 @@ pub struct FunctionSignature {
 /// print as `name.len()`. `None` for a signature in the C-shaped spelling.
 /// Presentation only: the Rust and C-shaped spellings of one declaration are
 /// equal.
+/// It also carries the iterator each of the function's loops advances,
+/// which a proof names `iter` and `loop(i).iter`.
 #[derive(Clone, Debug, Default)]
-pub(crate) struct RustSignatureSpelling(Option<Vec<String>>);
+pub(crate) struct RustSignatureSpelling(
+    Option<Vec<String>>,
+    std::sync::Arc<[Option<syntax::RustLoopIterator>]>,
+);
 
 impl RustSignatureSpelling {
     pub(crate) fn rust(slice_parameters: Vec<String>) -> Self {
-        Self(Some(slice_parameters))
+        Self(Some(slice_parameters), std::sync::Arc::from([]))
     }
 
     pub(crate) fn slice_parameters(&self) -> Option<&[String]> {
         self.0.as_deref()
+    }
+
+    pub(crate) fn loop_iterators(&self) -> &std::sync::Arc<[Option<syntax::RustLoopIterator>]> {
+        &self.1
     }
 }
 
@@ -8812,6 +8922,21 @@ impl FunctionSignature {
     /// for the C-shaped spelling.
     pub(crate) fn rust_slice_parameters(&self) -> Option<&[String]> {
         self.rust_spelling.slice_parameters()
+    }
+
+    /// The iterator each loop of this Rust function advances, by loop index.
+    pub(crate) fn rust_loop_iterators(
+        &self,
+    ) -> &std::sync::Arc<[Option<syntax::RustLoopIterator>]> {
+        self.rust_spelling.loop_iterators()
+    }
+
+    pub(crate) fn with_rust_loop_iterators(
+        mut self,
+        iterators: &[Option<syntax::RustLoopIterator>],
+    ) -> Self {
+        self.rust_spelling.1 = std::sync::Arc::from(iterators);
+        self
     }
 
     pub fn with_return_pointee_constant(mut self, return_pointee_constant: bool) -> Self {

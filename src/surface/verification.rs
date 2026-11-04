@@ -5485,6 +5485,7 @@ impl parser::ProgramLayouts {
                     struct_pointers: function.local_struct_pointers().clone(),
                     references: function.local_references().clone(),
                     pointers: function.local_pointers().clone(),
+                    loop_iterators: function.loop_iterators().to_vec(),
                 },
             );
         }

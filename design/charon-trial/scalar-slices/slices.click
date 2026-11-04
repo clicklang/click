@@ -75,29 +75,29 @@ fn last(xs: &[i64]) -> i64 {
 } by {
     step_until(loop(0));
     loop {
-        decreases iter_remaining;
+        decreases iter.len();
         views xs[0..xs.len()];
         invariant xs.len() <= 1000u64;
-        invariant iter_remaining <= xs.len();
-        invariant iter_cursor == xs + (xs.len() - iter_remaining);
+        invariant iter.len() <= xs.len();
+        invariant iter.as_slice() == xs + (xs.len() - iter.len());
         preserve by {
             mark iteration;
-            have to_integer(xs.len() - iter_remaining) < 18446744073709551615;
+            have to_integer(xs.len() - iter.len()) < 18446744073709551615;
             step_until(back_edge());
-            have to_integer(iter_remaining) == to_integer(at(iteration, iter_remaining)) - 1;
-            have to_integer(xs.len() - iter_remaining) == to_integer(xs.len()) - to_integer(iter_remaining);
-            have to_integer(xs.len() - at(iteration, iter_remaining)) == to_integer(xs.len()) - to_integer(at(iteration, iter_remaining));
-            have to_integer((xs.len() - at(iteration, iter_remaining)) + 1u64) == to_integer(xs.len() - at(iteration, iter_remaining)) + 1;
-            have to_integer(xs.len() - iter_remaining) == to_integer((xs.len() - at(iteration, iter_remaining)) + 1u64);
-            have iter_remaining <= xs.len();
-            have iter_remaining < at(iteration, iter_remaining);
-            have at(iteration, iter_cursor) + 1 == xs + ((xs.len() - at(iteration, iter_remaining)) + 1u64) by {
+            have to_integer(iter.len()) == to_integer(at(iteration, iter.len())) - 1;
+            have to_integer(xs.len() - iter.len()) == to_integer(xs.len()) - to_integer(iter.len());
+            have to_integer(xs.len() - at(iteration, iter.len())) == to_integer(xs.len()) - to_integer(at(iteration, iter.len()));
+            have to_integer((xs.len() - at(iteration, iter.len())) + 1u64) == to_integer(xs.len() - at(iteration, iter.len())) + 1;
+            have to_integer(xs.len() - iter.len()) == to_integer((xs.len() - at(iteration, iter.len())) + 1u64);
+            have iter.len() <= xs.len();
+            have iter.len() < at(iteration, iter.len());
+            have at(iteration, iter.as_slice()) + 1 == xs + ((xs.len() - at(iteration, iter.len())) + 1u64) by {
                 solve() using {
-                    at(iteration, iter_cursor) == xs + at(iteration, (xs.len() - iter_remaining));
-                    at(iteration, to_integer(xs.len() - iter_remaining) < 18446744073709551615);
+                    at(iteration, iter.as_slice()) == xs + at(iteration, (xs.len() - iter.len()));
+                    at(iteration, to_integer(xs.len() - iter.len()) < 18446744073709551615);
                 };
             }
-            have iter_cursor == xs + (xs.len() - iter_remaining);
+            have iter.as_slice() == xs + (xs.len() - iter.len());
         }
     }
 }
