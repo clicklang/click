@@ -324,10 +324,12 @@ Remaining groups to audit and migrate:
   condition-identity adapters, including observation lookup forms. Distinguish
   live checker consumers from test-only reference exports and explicit legacy
   producer/output boundaries.
-  `TermRewrite::integer_shared` now retains comparison and machine-variable
-  substitutions, but other rewrite modes still cross its boxed machine
-  observation bridge. Exact Integer congruence and compound machine-source
-  rewrites need their own parity/no-export audit before this group is complete.
+  `TermRewrite::integer_shared` retains unguarded machine observations across
+  exact Integer congruence, compound machine-source replacement and typed
+  variable substitution. Exact congruence preserves raw operators and casts;
+  selected source/replacement imports are cached per numeric interpretation.
+  Conditional reductions and opaque leaves outside the shared operand fragment
+  still require a parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
   matches direct path facts by shared comparison identity. Its 32-bit guards
   have no-export coverage; unresolved 64-bit guards still reach the general
