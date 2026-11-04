@@ -2131,12 +2131,49 @@ fn synthesize_surface_bool(
     }
 }
 
+/// Whether `expression` reads a `bool` local of `state`, or reads one at a
+/// recorded point.
+fn names_bool_local(expression: &ContractExpression, state: &CState) -> bool {
+    match expression {
+        ContractExpression::CFragment(CExpression::Variable(name))
+        | ContractExpression::CBinding(name) => {
+            matches!(state.locals().get(name), Some(CValue::Bool(_)))
+        }
+        ContractExpression::At { expression, .. } => names_bool_local(expression, state),
+        _ => false,
+    }
+}
+
 fn synthesize_surface_atomic_proposition(
     proposition: &Proposition,
     parameter_binding: ParameterBinding<'_>,
     state: &CState,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ClickProposition> {
+    // A `bool` local's truth, C's test `w != 0` at `uint8` of its carrier:
+    // the claim on the local, `w` or `not w`, which is what a claim on it
+    // lowers to. Compared with an integer, as `w != 0`, it would not lower.
+    if let Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt8,
+            relation: CompareRelation::Equal,
+            left,
+            right,
+        },
+        value,
+    ) = proposition
+        && right.bool_constant_value() == Some(false)
+        && let Some(word) =
+            synthesize_surface_bitvector(left, parameter_binding, state, bound_variables)
+        && names_bool_local(&word, state)
+    {
+        let claim = crate::surface::bool_truth(word);
+        return Some(if *value {
+            ClickProposition::Not(Box::new(claim))
+        } else {
+            claim
+        });
+    }
     if let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,

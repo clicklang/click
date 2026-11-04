@@ -288,8 +288,17 @@ impl<'a> Proof<'a> {
             let result = introduced.plan_invariant_bundle_closure()?;
             if result.is_some() {
                 scope.succeed();
+                return Ok(result);
             }
-            return Ok(result);
+            // A leaf the introduced premises contradict, as a guarded member
+            // `done implies ...` is on a path whose test said `!done`: the
+            // contradiction is between a premise and the context, so the
+            // member closes whole, as `have` would close it.
+            let whole = self.close_bundle_member_by_solve()?;
+            if whole.is_some() {
+                scope.succeed();
+            }
+            return Ok(whole);
         }
         let result = self.close_bundle_member_by_solve()?;
         if result.is_none() {
