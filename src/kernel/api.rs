@@ -6280,9 +6280,21 @@ fn checked_int32_reassociated_add_domain_as_written(
     assumptions: &PureFactContext,
     goal: &Proposition,
 ) -> bool {
-    let query = crate::kernel::machine_integer::definedness::interval_query_form(goal);
-    let goal = query.as_ref().unwrap_or(goal);
-    let Proposition::ConditionIs(
+    use crate::kernel::machine_integer::{
+        Operation,
+        definedness::{OverflowQueryView, ordinary_arithmetic_guard_view},
+    };
+    use crate::kernel::{MachineBinaryOp, MachineOperandView as View};
+    let query = ordinary_arithmetic_guard_view(goal);
+    let operands = if let Some(query) = &query {
+        if query.format != MachineIntegerType::Int32 || query.operation != Operation::Add {
+            return false;
+        }
+        query
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view())
+    } else if let Proposition::ConditionIs(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
@@ -6291,44 +6303,69 @@ fn checked_int32_reassociated_add_domain_as_written(
         },
         false,
     ) = goal
-    else {
+    {
+        [View::Legacy(left), View::Legacy(right)]
+    } else {
         return false;
     };
-    let (a, b, c) = match (left.as_ref(), right.as_ref()) {
-        (a, binary_term!(Int32, Add, b, c)) | (binary_term!(Int32, Add, b, c), a) => {
-            (a, b.as_ref(), c.as_ref())
+    fn nested(value: View<'_>) -> Option<[View<'_>; 2]> {
+        match value.binary() {
+            Some((MachineIntegerType::Int32, MachineBinaryOp::Add, pair)) => Some(pair),
+            _ => None,
         }
-        _ => return false,
-    };
-    [
-        ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
-        ConditionTerm::signed_add_overflows(Bitvector32Term::add(a.clone(), b.clone()), c.clone()),
-        ConditionTerm::signed_add_overflows(b.clone(), c.clone()),
-    ]
-    .iter()
-    .all(|condition| {
-        PureFactContext::settles_exactly(
-            assumptions,
-            &Proposition::ConditionIs(condition.clone(), false),
-        ) || PureFactContext::settles_exactly(
-            assumptions,
-            &Proposition::ConditionIs(
-                match condition {
-                    ConditionTerm::Overflows {
-                        format: MachineIntegerType::Int32,
-                        op: OverflowOperation::Add,
-                        left,
-                        right,
-                    } => ConditionTerm::signed_add_overflows(
-                        right.as_ref().clone(),
-                        left.as_ref().clone(),
-                    ),
-                    _ => unreachable!(),
-                },
-                false,
+    }
+    let checks = |a: View<'_>, [b, c]: [View<'_>; 2]| {
+        let sum = match [a, b] {
+            [View::Legacy(a), View::Legacy(b)] => crate::kernel::SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                Bitvector32Term::add(a.clone(), b.clone()),
             ),
-        )
-    })
+            operands => {
+                let roots = operands.map(|operand| match operand {
+                    View::Shared(root) => root.clone(),
+                    View::Legacy(value) => crate::kernel::KernelTermImport::default()
+                        .machine(MachineIntegerType::Int32, value),
+                });
+                crate::kernel::SharedMachineIntegerTerm::from_shared(
+                    MachineIntegerType::Int32,
+                    crate::kernel::KernelTerm::machine_binary_shared(
+                        MachineIntegerType::Int32,
+                        MachineBinaryOp::Add,
+                        roots,
+                    ),
+                )
+                .unwrap_or_else(|| {
+                    // Opaque legacy families still use their existing producer
+                    // boundary until they acquire shared operand identities.
+                    crate::kernel::SharedMachineIntegerTerm::intern(
+                        MachineIntegerType::Int32,
+                        Bitvector32Term::add(
+                            a.retain(MachineIntegerType::Int32).value().clone(),
+                            b.retain(MachineIntegerType::Int32).value().clone(),
+                        ),
+                    )
+                })
+            }
+        };
+        [[a, b], [sum.operand_view(), c], [b, c]]
+            .into_iter()
+            .all(|pair| {
+                [pair, [pair[1], pair[0]]].into_iter().any(|pair| {
+                    let query = OverflowQueryView::from_operands(
+                        MachineIntegerType::Int32,
+                        Operation::Add,
+                        pair,
+                    )
+                    .expect("signed addition query");
+                    query
+                        .bounds()
+                        .iter()
+                        .all(|bound| assumptions.settles_exactly(bound))
+                })
+            })
+    };
+    nested(operands[1]).is_some_and(|pair| checks(operands[0], pair))
+        || nested(operands[0]).is_some_and(|pair| checks(operands[1], pair))
 }
 
 /// Reconstruct a count bound checked against this state's immutable ledger and
