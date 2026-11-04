@@ -218,8 +218,13 @@ Remaining groups to audit and migrate:
   exporting arithmetic. Growing-prefix admission uses an indexed execution-id
   ceiling lookup; named loads still resolve their live snapshot dependencies. Its old boxed path interface remains for the other
   atomic/domain consumers. The graph-only derived-order query and order-shape
-  classification read views; admitting shared facts to the difference graph is
-  still a separate remaining task, not an implicit proving fallback here.
+  classification read views. Difference-graph order admission now retains shared
+  operands and reads the existing domain/operand-key index without exporting
+  arithmetic, including deferred cast, sign-flip and affine links. Native
+  queries retain their compatibility index until those consumers migrate;
+  repeated native queries must not re-import their complete expression trees. Equality,
+  exclusion and residue admission still have native adapters to migrate; order
+  admission does not declare those routes complete.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;

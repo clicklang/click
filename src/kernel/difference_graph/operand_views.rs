@@ -6,7 +6,7 @@ use crate::kernel::uint64_constant;
 use crate::kernel::{MachineCastSpelling as E, MachineOperandView as V};
 use cache::{Answer, Kind, QueryKey, Read};
 
-fn format(domain: Domain) -> MachineIntegerType {
+pub(super) fn format(domain: Domain) -> MachineIntegerType {
     match domain {
         Domain::Int32 => MachineIntegerType::Int32,
         Domain::UInt32 => MachineIntegerType::UInt32,
@@ -20,7 +20,7 @@ fn atom(term: V<'_>) -> Option<MachineTerm> {
     term.literal()
         .or_else(|| term.variable().copied().map(MachineTerm::Variable))
 }
-fn constant_view(domain: Domain, term: V<'_>) -> Option<i128> {
+pub(super) fn constant_view(domain: Domain, term: V<'_>) -> Option<i128> {
     constant(domain, &term.literal()?)
 }
 fn binary_domain(domain: Domain, ty: MachineIntegerType) -> bool {
@@ -44,7 +44,7 @@ fn modular_parts_view(domain: Domain, term: V<'_>) -> Option<(V<'_>, i128)> {
         _ => None,
     }
 }
-fn link_parts_view(domain: Domain, term: V<'_>) -> Option<(Domain, V<'_>, i128, bool)> {
+pub(super) fn link_parts_view(domain: Domain, term: V<'_>) -> Option<(Domain, V<'_>, i128, bool)> {
     if let Some((base, k)) = modular_parts_view(domain, term) {
         return Some((domain, base, k, false));
     }
@@ -69,7 +69,7 @@ fn link_parts_view(domain: Domain, term: V<'_>) -> Option<(Domain, V<'_>, i128, 
         _ => None,
     }
 }
-fn sign_flip_view(domain: Domain, term: V<'_>) -> Option<V<'_>> {
+pub(super) fn sign_flip_view(domain: Domain, term: V<'_>) -> Option<V<'_>> {
     let (ty, MachineBinaryOp::BitwiseXor, [a, b]) = term.binary()? else {
         return None;
     };
@@ -84,6 +84,38 @@ fn sign_flip_view(domain: Domain, term: V<'_>) -> Option<V<'_>> {
     } else {
         None
     }
+}
+
+pub(super) fn narrow_cast_view(
+    domain: Domain,
+    term: V<'_>,
+) -> Option<(V<'_>, (i128, i128), (i128, i128), i128)> {
+    let (E::Generic, source, destination, value) = term.cast()? else {
+        return None;
+    };
+    if domain != Domain::Int32 {
+        return None;
+    }
+    let source = narrow_range(source)?;
+    let destination = narrow_range(destination)?;
+    Some((
+        value,
+        source,
+        destination,
+        destination.1 - destination.0 + 1,
+    ))
+}
+
+pub(super) fn word_mask_view(term: V<'_>) -> Option<(i128, V<'_>)> {
+    let (ty, MachineBinaryOp::BitwiseAnd, [a, b]) = term.binary()? else {
+        return None;
+    };
+    if !binary_domain(Domain::Int32, ty) {
+        return None;
+    }
+    constant_view(Domain::UInt32, b)
+        .map(|mask| (mask, a))
+        .or_else(|| constant_view(Domain::UInt32, a).map(|mask| (mask, b)))
 }
 
 struct Query<'a> {
@@ -129,8 +161,13 @@ impl DifferenceGraph {
             let key = Key::for_format(format(domain), V::Shared(&root));
             self.shared_queries
                 .invalidate(Read::Operand(domain, key.clone()));
-            self.operand_nodes.insert((domain, key), node);
+            self.operand_affines.insert((domain, key), (Some(node), 0));
         }
+    }
+
+    pub(super) fn invalidate_operand(&mut self, domain: Domain, term: V<'_>) {
+        self.shared_queries
+            .invalidate(Read::Operand(domain, Key::for_format(format(domain), term)));
     }
 
     /// The existing order decision, with retained comparison operands.
@@ -396,8 +433,8 @@ impl<'a> Query<'a> {
     fn resolve_uncached(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
         let key = Key::for_format(format(domain), term);
         self.depend(Read::Operand(domain, key.clone()));
-        if let Some(node) = self.graph.operand_nodes.get(&(domain, key)) {
-            return Some((Some(*node), 0));
+        if let Some(affine) = self.graph.operand_affines.get(&(domain, key)) {
+            return Some(*affine);
         }
         if let Some(base) = sign_flip_view(domain, term) {
             let base = self.resolve(domain, base)?;
@@ -945,6 +982,66 @@ mod tests {
                     "{ty:?} {relation:?}"
                 );
                 assert_eq!(KernelTermExport::machine_export_count(), before);
+            }
+        }
+    }
+
+    #[test]
+    fn shared_order_admission_matches_native_and_invalidates_only_its_branch() {
+        use crate::kernel::machine_integer::comparison::{
+            comparison_view, condition_for_operand_views,
+        };
+        let _session = crate::kernel::VerificationSession::enter();
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let word = |n| match ty {
+                MachineIntegerType::Int64 => MachineTerm::int64_constant(n),
+                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(n as u64),
+                _ => MachineTerm::constant(n as u32),
+            };
+            let native_left = MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Multiply,
+                left: Box::new(MachineTerm::Variable(Variable(997861))),
+                right: Box::new(word(3)),
+            };
+            let native_right = MachineTerm::Variable(Variable(997862));
+            let left = KernelTermImport::default()
+                .machine_arithmetic(ty, &native_left)
+                .unwrap();
+            let right = KernelTermImport::default()
+                .machine_arithmetic(ty, &native_right)
+                .unwrap();
+            for truth in [false, true] {
+                let source = condition_for_operand_views(
+                    ty,
+                    CompareRelation::LessThan,
+                    [V::Shared(&left), V::Shared(&right)],
+                );
+                let query = comparison_view(&source, true).unwrap();
+                let parent = DifferenceGraph::new();
+                let exports = KernelTermExport::machine_export_count();
+                assert_eq!(parent.decide_shared_order(&query), None);
+                let mut child = parent.clone();
+                child.assume_condition(&source, truth);
+                let mut native = DifferenceGraph::new();
+                native.assume_condition(
+                    &ConditionTerm::machine_compare(
+                        ty,
+                        CompareRelation::LessThan,
+                        native_left.clone(),
+                        native_right.clone(),
+                    ),
+                    truth,
+                );
+                assert_eq!(child.decide_shared_order(&query), Some(truth));
+                assert_eq!(native.decide_shared_order(&query), Some(truth));
+                assert_eq!(parent.decide_shared_order(&query), None);
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
             }
         }
     }

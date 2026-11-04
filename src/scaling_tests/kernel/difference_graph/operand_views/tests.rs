@@ -105,3 +105,46 @@ fn check_changing_context_prefixes(bounded: bool) {
         assert!(pair[1].1 <= pair[0].1 * 5 + 100, "{samples:?}");
     }
 }
+
+#[test]
+fn growing_shared_order_sources_are_indexed_without_exporting_prefixes() {
+    use crate::kernel::machine_integer::comparison::{
+        comparison_view, condition_for_operand_views,
+    };
+    let mut samples = Vec::new();
+    for size in [32, 64, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(998701));
+        let one = KernelTermImport::default()
+            .machine_arithmetic(ty, &1u32.into())
+            .unwrap();
+        let upper = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(998702));
+        let mut graph = DifferenceGraph::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), one.clone()],
+                );
+                let source = condition_for_operand_views(
+                    ty,
+                    CompareRelation::LessThan,
+                    [V::Shared(&root), V::Shared(&upper)],
+                );
+                graph.assume_condition(&source, true);
+                assert_eq!(
+                    graph.decide_shared_order(&comparison_view(&source, true).unwrap()),
+                    Some(true)
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push((size, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1].1 <= pair[0].1 * 3 + 100, "{samples:?}");
+    }
+}
