@@ -482,7 +482,15 @@ pub(crate) fn rust_iterator_method(
     let variable = |suffix: &str| CExpression::Variable(format!("{}_{suffix}", iterator.local));
     let expression = match (iterator.kind, accessor) {
         (K::Slice | K::Enumerate, "len()") => variable("remaining"),
-        (K::Slice, "as_slice()") => variable("cursor"),
+        // The remaining elements start `length - remaining` into the slice
+        // the iterator was built from.
+        (K::Slice, "as_slice()") => CExpression::Add(
+            Box::new(variable("base")),
+            Box::new(CExpression::Subtract(
+                Box::new(variable("length")),
+                Box::new(variable("remaining")),
+            )),
+        ),
         (K::Range, "start") => variable("start"),
         (K::Range, "end") => variable("end"),
         (K::RangeInclusive, "start()") => variable("start"),

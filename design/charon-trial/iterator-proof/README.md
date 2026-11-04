@@ -8,7 +8,7 @@ every signature, specification function, precondition, and postcondition.
 The native Charon artifact and import lock support offline checks.
 
 The original body sums every byte through implicit shared slice iteration.
-The proof relates the actual iterator cursor and remaining length to the
+The proof relates the iterator's remaining length, `iter.len()`, to the
 input prefix, proves a mathematical integer sum, and bounds every checked
 signed addition. The original bound and viewed byte range include empty
 inputs and arbitrary byte values; no input values or source body are changed.
