@@ -437,6 +437,29 @@ mod tests {
     }
 
     #[test]
+    fn signed_observation_retains_a_substituted_unsigned_carrier() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int64;
+        let source = MachineTerm::Variable(Variable(992303));
+        let replacement = MachineTerm::uint64_constant(u64::MAX);
+        let input = IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(format, imported(format, source.clone()))
+                .unwrap(),
+        );
+        let expected =
+            IntegerTerm::from_machine(format, replacement.clone()).unwrap_or_else(|| {
+                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                    format,
+                    replacement.clone(),
+                ))
+            });
+        let exports = KernelTermExport::machine_export_count();
+        let actual = TermRewrite::for_bits_checked(&source, &replacement).integer(&input);
+        assert_eq!(actual, expected);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
     fn variable_substitution_preserves_shared_cast_rules() {
         let _session = crate::kernel::VerificationSession::enter();
         let variable = MachineTerm::Variable(Variable(992302));
