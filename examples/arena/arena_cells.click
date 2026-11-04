@@ -2226,7 +2226,22 @@ void arena_free(struct region* region) {
             }
             have region->arena == old(region->arena);
             have to_integer(i) == to_integer(at(opened, i)) + 1;
-            have 0 <= to_integer(region->end) - to_integer(i);
+            have 0 <= (to_integer(region->end) - to_integer(i)) by {
+                arithmetic_certificate {
+                    negated_goal => (to_integer(region->end) - to_integer(i)) < 0;
+                    premise 0: to_integer(i) <= to_integer(old(region->end)) => to_integer(i) <=
+                        to_integer(old(region->end));
+                    premise 1: to_integer(region->end) == to_integer(old(region->end)) =>
+                        to_integer(region->end) == to_integer(old(region->end));
+                    less_equal_from_equal 2 reverse => to_integer(old(region->end)) <= to_integer(region->end);
+                    add 0, 1 => ((to_integer(region->end) - to_integer(i)) + to_integer(i)) < (0 +
+                        to_integer(old(region->end)));
+                    add 4, 3 => ((to_integer(region->end) - to_integer(i)) + to_integer(i) +
+                        to_integer(old(region->end))) < (0 + to_integer(old(region->end)) +
+                        to_integer(region->end));
+                    conclusion 5;
+                }
+            }
             have to_integer(region->end) - to_integer(i) < to_integer(region->end) - to_integer(at(opened, i));
         }
     }
@@ -4132,7 +4147,10 @@ int32 arena_pipeline(
     }
     have defined(at(z3, combined->start) + 4);
     have to_integer(at(z3, combined->start) + 4) == to_integer(at(z3, combined->start)) + 4;
-    have to_integer(at(z3, combined->end)) == to_integer(at(z3, combined->start) + 4) by solve();
+    have to_integer(at(z3, combined->end)) == to_integer((at(z3, combined->start) + 4)) by {
+        rewrite(to_integer((at(z3, combined->start) + 4)) == (to_integer(at(z3, combined->start)) + 4));
+        extract(to_integer(at(z3, combined->end)) == (to_integer(at(z3, combined->start)) + 4));
+    }
     have at(z3, combined->end) == at(z3, combined->start) + 4 by solve() using {
         to_integer(at(z3, combined->end)) == to_integer(at(z3, combined->start) + 4);
         to_integer(at(z3, combined->start) + 4) == to_integer(at(z3, combined->start)) + 4;
@@ -4147,7 +4165,10 @@ int32 arena_pipeline(
     have r3.end <= g3.capacity;
     have r3.start <= 2147483644;
     have defined(r3.start + 3);
-    have r3.start + 3 < r3.end;
+    have (to_integer(r3.start) + 3) < to_integer(r3.end) by {
+        rewrite(to_integer(at(z3, combined->end)) == (to_integer(at(z3, combined->start)) + 4));
+        normalize();
+    }
     have value == 33;
     mark w3;
     step(arena_write, { r: r3, st: g3 });
