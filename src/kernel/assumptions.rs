@@ -984,6 +984,10 @@ impl Drop for DeferredStatedIndexNode {
 }
 
 thread_local! {
+    // Fact-free queries share structural registration within a verification.
+    // Never insert assumptions here; reset with all arena-dependent caches.
+    static INTRINSIC_CONTEXT: RefCell<Option<std::rc::Rc<PureFactContext>>> =
+        const { RefCell::new(None) };
     static INCOMPLETE_REASONING_EPOCH: Cell<u64> = const { Cell::new(0) };
     static DECIDE_MEMO: RefCell<std::collections::HashMap<(u64, ConditionTerm), Option<bool>>> =
         RefCell::new(std::collections::HashMap::new());
@@ -1014,6 +1018,7 @@ thread_local! {
 /// Empties this module's memo tables at a verification boundary (ids keep
 /// counting, so a later entry cannot alias an old id).
 pub(crate) fn clear_assumption_memos() {
+    INTRINSIC_CONTEXT.with(|context| *context.borrow_mut() = None);
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
     ASSUMPTIONS_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
     LOGICAL_READ_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
