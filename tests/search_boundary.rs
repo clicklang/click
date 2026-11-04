@@ -720,6 +720,7 @@ fn constant_owned_consumption_rejects_candidate_search() {
         for function in [
             "consume_unit_owned_memory",
             "consume_symbolic_partition",
+            "memory_range_definitely_shorter",
             "reserve_owned_memory_fragments_impl",
         ] {
             let source = format!("fn {function}(c: C) {{ c.{name}(); }}");

@@ -20309,3 +20309,19 @@ fn compact_store_proof_repairs_expand_and_replay() {
         .unwrap_or_else(|error| panic!("{fixture}: {error}\n{expanded}"));
     }
 }
+
+#[test]
+#[ignore = "nightly: symbolic ownership endpoint proof expansion and replay"]
+fn symbolic_ownership_window_endpoint_expands_and_replays() {
+    let (source, c_sources) = mdtest_sources("mdtests/a_callee_owns_a_window_of_a_64_bit_range.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "write.contract")
+        .unwrap_or_else(|error| panic!("{}", error.report()));
+    crate::surface::without_implicit_auto_for_claim("write.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
