@@ -17192,8 +17192,10 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_sources = [("forks.c", c_source)];
     for proofs in [
         ["", "", ""],
-        [" by solve()", " by solve()", ""],
-        ["", "", ";"],
+        // Per-claim scripts execute a prefix; the implicit tail handles
+        // the remaining normal and exceptional paths.
+        [" by { step(); }", " by { step(); }", ""],
+        ["", "", " by { step(); }"],
     ] {
         let click_source = format!(
             "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x;\n    exceptional ensures exception == 7;\n}}\n{}{}{}",
