@@ -374,6 +374,10 @@ impl TermClasses {
                     }
                 }
                 // Leaves retain load-name registration and literal normalization.
+                N::IntegerToMachine { .. } => self.intern_typed_machine(
+                    term.machine_conversion_leaf().expect("conversion leaf"),
+                    width,
+                ),
                 N::Variable(variable) => self.intern_typed_machine(&T::Variable(*variable), width),
                 N::MachineLiteral(value) => {
                     crate::instrumentation::record_deterministic_work(1);

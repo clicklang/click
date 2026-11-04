@@ -44,6 +44,14 @@ fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut 
         collect_bitvector_carriers(machine.value(), variables);
         return;
     };
+    if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
+        for (_, leaf) in leaves.iter() {
+            collect_bitvector_carriers(
+                leaf.machine_conversion_leaf().expect("conversion leaf"),
+                variables,
+            );
+        }
+    }
     let written = shared_machine_syntax_variables(root, || variables.visit());
     let Some(written) = written else {
         return;

@@ -128,6 +128,7 @@ struct TermData {
     key: NodeKey,
     // Temporary reverse bridge. Weak because the old node caches this term.
     integer: Mutex<WeakIntegerTerm>,
+    machine_leaf: std::sync::OnceLock<MachineTerm>,
 }
 
 struct NodeKeyData {
@@ -135,6 +136,8 @@ struct NodeKeyData {
     ty: KernelType,
     node: KernelTermNode,
     shared_machine_operand: bool,
+    producer_local_identity: bool,
+    machine_conversions: bool,
     machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
@@ -155,11 +158,39 @@ impl NodeKey {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         ty.hash(&mut hash);
         node.hash(&mut hash);
+        // A fresh legacy identity belongs to its producer, so importing an
+        // equal native payload independently need not recover the same node.
+        // Do not admit a conversion over such a payload into shared observations.
+        let producer_local_identity = match &node {
+            KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
+                matches!(value.identity, LegacyIdentity::Fresh(_))
+            }
+            KernelTermNode::Call { arguments, .. }
+            | KernelTermNode::IntegerOperation { arguments, .. } => arguments
+                .iter()
+                .any(KernelTerm::has_producer_local_identity),
+            KernelTermNode::MachineBinary { arguments, .. }
+            | KernelTermNode::BoolCompare { arguments, .. }
+            | KernelTermNode::IntegerCompare { arguments, .. }
+            | KernelTermNode::BoolEqual { arguments } => arguments
+                .iter()
+                .any(KernelTerm::has_producer_local_identity),
+            KernelTermNode::BoolIf { arguments } => arguments
+                .iter()
+                .any(KernelTerm::has_producer_local_identity),
+            KernelTermNode::BoolCast { operand, .. }
+            | KernelTermNode::IntegerToMachine { operand, .. }
+            | KernelTermNode::MachineObservation { operand, .. }
+            | KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.has_producer_local_identity(),
+            _ => false,
+        };
         // This migration fragment has exact structural identities all the way
         // to its leaves, including explicit conversion roots. Opaque payloads
         // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
             KernelTermNode::MachineLiteral(_) => true,
+            KernelTermNode::IntegerToMachine { .. } => !producer_local_identity,
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
             }
@@ -170,11 +201,22 @@ impl NodeKey {
             | KernelTermNode::MachineCast { operand, .. } => operand.is_shared_machine_operand(),
             _ => false,
         };
+        let machine_conversions = match &node {
+            KernelTermNode::IntegerToMachine { .. } => true,
+            KernelTermNode::MachineBinary { arguments, .. } => {
+                arguments.iter().any(KernelTerm::has_machine_conversions)
+            }
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_conversions(),
+            _ => false,
+        };
         let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
             machine_constant,
             fingerprint: hash.finish(),
             shared_machine_operand,
+            producer_local_identity,
+            machine_conversions,
             ty,
             node,
         }))
@@ -238,6 +280,7 @@ impl Interner {
             id,
             key: key.clone(),
             integer: Mutex::default(),
+            machine_leaf: Default::default(),
         });
         self.terms.insert(key.clone(), Arc::downgrade(&value));
         self.cleanup.push_back(key);
@@ -262,6 +305,14 @@ impl KernelTerm {
 
     pub(crate) fn machine_constant_reading(&self) -> Option<&KernelMachineLiteral> {
         self.0.key.0.machine_constant.as_ref()
+    }
+
+    pub(crate) fn has_producer_local_identity(&self) -> bool {
+        self.0.key.0.producer_local_identity
+    }
+
+    pub(crate) fn has_machine_conversions(&self) -> bool {
+        self.0.key.0.machine_conversions
     }
 
     pub(crate) fn is_shared_machine_operand(&self) -> bool {
@@ -604,6 +655,32 @@ mod tests {
                 SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int8, operand).is_none()
             );
         }
+    }
+
+    #[test]
+    fn integer_conversion_observations_keep_producer_local_payloads_outside_the_fragment() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            "opaque_argument".into(),
+            vec![PureFunctionArgument::Value(CValue::Int32(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(CMemory::new()),
+                    Box::new(Pointer::symbolic(Variable(87654328))),
+                    LoadKind::Int32,
+                ),
+            ))],
+        ));
+        let native = MachineTerm::IntegerToMachine {
+            value: value.into(),
+            destination: format,
+        };
+        let mut importer = KernelTermImport::default();
+        let root = importer.machine(format, &native);
+        assert!(root.has_producer_local_identity());
+        assert!(SharedMachineIntegerTerm::from_shared(format, root.clone()).is_none());
+        assert!(importer.machine_arithmetic(format, &native).is_none());
+        assert_eq!(KernelTermExport::machine(&root).unwrap(), native);
     }
 
     #[test]

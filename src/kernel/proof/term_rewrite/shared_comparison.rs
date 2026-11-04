@@ -13,6 +13,8 @@ pub(super) fn clear() {
 }
 
 impl TermRewrite<'_> {
+    /// Reconstruct shared arithmetic, including Integer conversion leaves.
+    /// Other opaque read values retain the compatibility boundary.
     pub(super) fn comparison_operand(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         // Only the ordinary comparison scope may share work between queries.
         // A nested binder's renamed/opaque reads use this traversal's own memo.
@@ -60,6 +62,10 @@ impl TermRewrite<'_> {
                     KernelTermImport::default().machine_arithmetic(format, &rewritten)?
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
+                KernelTermNode::IntegerToMachine { .. } => {
+                    let value = self.bits(term.machine_conversion_leaf().expect("conversion leaf"));
+                    KernelTermImport::default().machine_arithmetic(format, &value)?
+                }
                 KernelTermNode::MachineBinary {
                     format,
                     operator,
@@ -333,8 +339,186 @@ fn comparison_binary_uncached(
 }
 
 #[cfg(test)]
+fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
+    let ty = MachineIntegerType::Int32;
+    let index = MachineTerm::Variable(Variable(992201));
+    let pointer = |value| Pointer {
+        block: PointerBlock::Concrete("opaque-comparison".into()),
+        offset: PointerOffsetTerm::Int32Scaled {
+            value: Box::new(value),
+            byte_width: 4,
+        },
+    };
+    let memory = crate::kernel::intern_c_memory(
+        CMemory::new()
+            .with_block("opaque-comparison", 64)
+            .store(pointer(index.clone()), CValue::Int32(value)),
+    );
+    let written = MachineTerm::Binary {
+        format: ty,
+        op: MachineBinaryOp::Add,
+        left: Box::new(index.clone()),
+        right: Box::new(MachineTerm::constant(0)),
+    };
+    let load = crate::kernel::eval::load_variable_for_exact_cell(
+        &memory,
+        &pointer(written),
+        crate::kernel::LoadKind::Int32,
+        4,
+    );
+    let canonical = crate::kernel::eval::load_variable_for_exact_cell(
+        &memory,
+        &pointer(index),
+        crate::kernel::LoadKind::Int32,
+        4,
+    );
+    (load, canonical)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn comparison_keeps_arithmetic_shared_when_a_read_exposes_an_integer_conversion() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let opaque = MachineTerm::IntegerToMachine {
+            value: IntegerTerm::Variable(Variable(992202)).into(),
+            destination: ty,
+        };
+        let (load, _) = comparison_read_fixture(opaque.clone());
+        let rewritten = TermRewrite::for_arithmetic_comparison().bits(&MachineTerm::Variable(load));
+        assert_eq!(rewritten, opaque);
+
+        let mut root = imported(ty, MachineTerm::Variable(load));
+        for _ in 0..4 {
+            root = KernelTerm::machine_binary_shared(
+                ty,
+                MachineBinaryOp::Add,
+                [root.clone(), root.clone()],
+            );
+        }
+        let proposition = Proposition::ConditionIs(
+            ConditionTerm::integer_less_than(
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap()),
+                IntegerTerm::constant_i64(0),
+            ),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let _ = TermRewrite::arithmetic_comparison(&proposition);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn comparison_rewrite_preserves_values_and_snapshot_separation() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let facts = PureFactContext::new();
+        let (seven, canonical_seven) = comparison_read_fixture(7u32.into());
+        let (eight, _) = comparison_read_fixture(8u32.into());
+        let (unknown, _) = comparison_read_fixture(MachineTerm::IntegerToMachine {
+            value: IntegerTerm::Variable(Variable(992202)).into(),
+            destination: MachineIntegerType::Int32,
+        });
+        let var = MachineTerm::Variable;
+        for (left, right, expected) in [
+            (var(seven), var(canonical_seven), Some(true)),
+            (var(seven), 7u32.into(), Some(true)),
+            (var(eight), 7u32.into(), Some(false)),
+            (var(seven), var(eight), Some(false)),
+            (var(unknown), 7u32.into(), None),
+        ] {
+            assert_eq!(
+                {
+                    let written = Proposition::ConditionIs(
+                        ConditionTerm::equal(left.clone(), right.clone()),
+                        true,
+                    );
+                    let normalized =
+                        TermRewrite::arithmetic_comparison(&written).unwrap_or(written);
+                    let Proposition::ConditionIs(condition, true) = normalized else {
+                        unreachable!()
+                    };
+                    facts.decide(&condition)
+                },
+                expected,
+                "{left:?} == {right:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn comparison_preserves_stored_value_premise_matching() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let (read, _) = comparison_read_fixture(7u32.into());
+        let bound = MachineTerm::Variable(Variable(992203));
+        let claim = |value| {
+            Proposition::ConditionIs(ConditionTerm::signed_less_than(value, bound.clone()), true)
+        };
+        assert!(
+            crate::kernel::proof::fact_reasoning::condition_polarity_equivalent(
+                &claim(MachineTerm::Variable(read)),
+                &claim(7u32.into())
+            )
+        );
+    }
+
+    #[test]
+    fn shared_integer_conversions_preserve_carriers_and_equality_authority() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let a = Variable(992211);
+        let b = Variable(992212);
+        let c = Variable(992213);
+        let expression = |integer| {
+            imported(
+                format,
+                MachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: Box::new(MachineTerm::IntegerToMachine {
+                        destination: format,
+                        value: IntegerTerm::Add(
+                            IntegerTerm::Variable(integer).into(),
+                            IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                                format,
+                                MachineTerm::Variable(a),
+                            ))
+                            .into(),
+                        )
+                        .into(),
+                    }),
+                    right: Box::new(MachineTerm::Variable(c)),
+                },
+            )
+        };
+        let (left, right) = (expression(a), expression(b));
+        let exports = KernelTermExport::machine_export_count();
+        let observed = |root| SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+        let mut carriers = CarrierVariables::default();
+        collect_machine_carriers(&observed(left.clone()), &mut carriers);
+        assert_eq!(carriers.c, BTreeSet::from([a, c]));
+        assert_eq!(carriers.integer, BTreeSet::from([a]));
+        assert!(carriers.algebraic.is_empty());
+        let condition = ConditionTerm::integer_equal(
+            IntegerTerm::Machine(observed(left.clone())),
+            IntegerTerm::Machine(observed(right)),
+        );
+        let parent = PureFactContext::new();
+        assert_eq!(parent.decide(&condition), None);
+        let child = parent.clone().assume_condition(
+            ConditionTerm::integer_equal(IntegerTerm::Variable(a), IntegerTerm::Variable(b)),
+            true,
+        );
+        assert_eq!(child.decide(&condition), Some(true));
+        assert_eq!(parent.decide(&condition), None);
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        // Explicit output still reconstructs the exact source and imports to
+        // the same identity after the original boxed source has been dropped.
+        let native = KernelTermExport::machine(&left).unwrap();
+        assert_eq!(imported(format, native), left);
+    }
 
     #[test]
     fn shared_comparison_reconstruction_matches_native_casts() {

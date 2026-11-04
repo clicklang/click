@@ -9,6 +9,7 @@ use crate::kernel::{constant_i64, int64_constant};
 // Only written machine variables are cached. Registered-load dependencies are
 // resolved by each collector against its current registry, never cached here.
 thread_local! {
+    static SHARED_MACHINE_CONVERSIONS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
     static SHARED_MACHINE_CARRIERS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentSet<Variable>>> = Default::default();
 }
 
@@ -17,6 +18,7 @@ pub(crate) fn clear_shared_machine_variable_cache() {
     clear_shared_value_readings();
     KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
+    SHARED_MACHINE_CONVERSIONS.with(|cache| cache.borrow_mut().clear());
 }
 
 /// Written variables of the shared arithmetic storage fragment. This summary
@@ -41,7 +43,9 @@ pub(crate) fn shared_machine_syntax_variables(
                 KernelTermNode::Variable(variable) => {
                     crate::persistent::PersistentSet::default().with_value(*variable)
                 }
-                KernelTermNode::MachineLiteral(_) => Default::default(),
+                KernelTermNode::MachineLiteral(_) | KernelTermNode::IntegerToMachine { .. } => {
+                    Default::default()
+                }
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -80,6 +84,70 @@ pub(crate) fn shared_machine_syntax_variables(
                 }
                 _ => unreachable!("shared machine observation storage fragment"),
             };
+            cache.insert(term.id(), result);
+        }
+        Some(cache[&root.id()].clone())
+    })
+}
+
+/// Conversion leaves carry scoped Integer payloads. Keep those separate from
+/// scalar variable names so collectors apply their existing carrier/binder rules.
+/// This memo contains syntax only; load registries are read by each caller.
+pub(crate) fn shared_machine_conversion_leaves(
+    root: &KernelTerm,
+    mut visit: impl FnMut() -> bool,
+) -> Option<crate::persistent::PersistentMap<u64, KernelTerm>> {
+    if !root.has_machine_conversions() {
+        return Some(Default::default());
+    }
+    SHARED_MACHINE_CONVERSIONS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut pending = vec![(root, false)];
+        while let Some((term, finish)) = pending.pop() {
+            if !visit() {
+                return None;
+            }
+            if cache.contains_key(&term.id()) {
+                continue;
+            }
+            let children: Vec<_> = match term.node() {
+                KernelTermNode::MachineBinary { arguments, .. } => arguments.iter().collect(),
+                KernelTermNode::MachineUnary { operand, .. }
+                | KernelTermNode::MachineCast { operand, .. } => vec![operand],
+                _ => Vec::new(),
+            };
+            if !finish && !children.is_empty() {
+                pending.push((term, true));
+                pending.extend(children.into_iter().map(|c| (c, false)));
+                continue;
+            }
+            let mut result = crate::persistent::PersistentMap::default();
+            if matches!(term.node(), KernelTermNode::IntegerToMachine { .. }) {
+                result.insert(term.id(), term.clone());
+            }
+            for child in children {
+                let entries = &cache[&child.id()];
+                if result.is_empty() {
+                    result = entries.clone();
+                    continue;
+                }
+                if result.shares_root_with(entries) {
+                    continue;
+                }
+                let smaller = if result.len() < entries.len() {
+                    let smaller = result;
+                    result = entries.clone();
+                    smaller
+                } else {
+                    entries.clone()
+                };
+                for (id, leaf) in smaller.iter() {
+                    if !visit() {
+                        return None;
+                    }
+                    result.insert(*id, leaf.clone());
+                }
+            }
             cache.insert(term.id(), result);
         }
         Some(cache[&root.id()].clone())
@@ -252,7 +320,10 @@ impl SharedMachineIntegerTerm {
 
     pub(crate) fn operand_view(&self) -> MachineOperandView<'_> {
         match &self.0.operand {
-            MachineIntegerOperand::Shared { term, .. } => MachineOperandView::Shared(term),
+            MachineIntegerOperand::Shared { term, .. } => term
+                .machine_conversion_leaf()
+                .map(MachineOperandView::Legacy)
+                .unwrap_or(MachineOperandView::Shared(term)),
             MachineIntegerOperand::Legacy(value) => MachineOperandView::Legacy(value),
         }
     }
@@ -280,6 +351,11 @@ impl<'a> MachineOperandView<'a> {
                 return true;
             }
             if let Self::Legacy(value) = self {
+                return ty.accepts_cast_operand(value);
+            }
+            if let Self::Shared(term) = self
+                && let Some(value) = term.machine_conversion_leaf()
+            {
                 return ty.accepts_cast_operand(value);
             }
             if let Some((MachineCastSpelling::Generic, source, destination, operand)) = self.cast()
@@ -501,12 +577,20 @@ impl<'a> MachineOperandView<'a> {
                 }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
                 KernelTermNode::Variable(_) => None,
+                KernelTermNode::IntegerToMachine { destination, .. } => {
+                    Some(CarrierWidth::of_machine_type(*destination))
+                }
                 _ => unreachable!("shared machine operand fragment"),
             },
         }
     }
 
     pub(crate) fn observe(self, ty: MachineIntegerType) -> Option<IntegerTerm> {
+        if let Self::Shared(term) = self
+            && let Some(value) = term.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).observe(ty);
+        }
         if let Some(literal) = self.literal() {
             return IntegerTerm::from_machine(ty, literal);
         }

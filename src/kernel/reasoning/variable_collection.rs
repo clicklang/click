@@ -2633,6 +2633,16 @@ fn collect_integer_variables_seen(
         IntegerTerm::Machine(value) => match value.operand_view() {
             MachineOperandView::Legacy(value) => collect_bitvector_variables(value, variables),
             MachineOperandView::Shared(root) => {
+                if let Some(leaves) =
+                    shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
+                {
+                    for (_, leaf) in leaves.iter() {
+                        collect_bitvector_variables(
+                            leaf.machine_conversion_leaf().expect("conversion leaf"),
+                            variables,
+                        );
+                    }
+                }
                 if let Some(written) =
                     shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
                 {
@@ -3348,6 +3358,17 @@ fn collect_integer_bitvector_capture_variables(
                 collect_bitvector_capture_variables_seen(value, variables, integer_seen)
             }
             MachineOperandView::Shared(root) => {
+                if let Some(leaves) =
+                    shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
+                {
+                    for (_, leaf) in leaves.iter() {
+                        collect_bitvector_capture_variables_seen(
+                            leaf.machine_conversion_leaf().expect("conversion leaf"),
+                            variables,
+                            integer_seen,
+                        );
+                    }
+                }
                 if let Some(written) =
                     shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
                 {

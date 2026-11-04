@@ -64,6 +64,14 @@ impl Index {
                         MachineOperandView::Legacy(value) if value.as_const().is_some() => continue,
                         _ => return None,
                     };
+                    if !crate::kernel::shared_machine_conversion_leaves(&root, || {
+                        crate::instrumentation::record_deterministic_work(1);
+                        true
+                    })?
+                    .is_empty()
+                    {
+                        return None;
+                    }
                     let variables = shared_machine_syntax_variables(&root, || {
                         crate::instrumentation::record_deterministic_work(1);
                         true

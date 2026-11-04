@@ -13,7 +13,8 @@ mod operand_correspondence;
 #[cfg(test)]
 use crate::kernel::CompareRelation;
 pub(crate) use machine_view::{
-    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_syntax_variables,
+    MachineOperandView, clear_shared_machine_variable_cache, shared_machine_conversion_leaves,
+    shared_machine_syntax_variables,
 };
 use num_bigint::BigInt;
 #[cfg(test)]
@@ -589,9 +590,9 @@ impl SharedMachineIntegerTerm {
         Self::intern_key(key)
     }
 
-    /// Observe an already shared arithmetic operand without materializing its
-    /// boxed prefixes. The compatibility boundary deliberately excludes opaque
-    /// leaves whose KernelTerm identities are producer-specific.
+    /// Observe shared arithmetic and typed Integer conversions without
+    /// materializing boxed prefixes. Other opaque leaves whose KernelTerm
+    /// identities are producer-specific remain outside this fragment.
     pub(crate) fn from_shared(ty: MachineIntegerType, term: KernelTerm) -> Option<Self> {
         if term.ty() != &KernelType::C(ty.c_type()) || !term.is_shared_machine_operand() {
             return None;
