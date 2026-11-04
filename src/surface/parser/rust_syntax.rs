@@ -1094,11 +1094,13 @@ impl Parser {
         Ok(None)
     }
 
-    /// `iter.len()` and `iter.as_slice()`: inside a `loop` block, read from
-    /// the iterator that loop advances, which the loop phase binds; with
-    /// `loop_index`, `loop(i).iter`, that loop's, read here. The cursor sits
-    /// at `iter` and the method follows. `iter.as_slice()` reads as a slice
-    /// parameter does, its data: `iter.as_slice().len()` is `iter.len()`.
+    /// `iter.<accessor>`, Rust's own accessors of a loop's iterator
+    /// (`iter.len()`, `iter.as_slice()`, a range's `iter.start`): inside a
+    /// `loop` block, read from the iterator that loop advances, which the
+    /// loop phase binds; with `loop_index`, `loop(i).iter`, that loop's,
+    /// read here. The cursor sits after `iter`. `iter.as_slice()` reads as a
+    /// slice parameter does, its data: `iter.as_slice().len()` is
+    /// `iter.len()`.
     pub(super) fn take_rust_iterator_method(
         &mut self,
         name: &str,
@@ -1107,39 +1109,52 @@ impl Parser {
         if !self.verifies_rust() || name != "iter" {
             return Ok(None);
         }
-        let call = |parser: &Self, at: usize, method: &str| {
-            parser.tokens.get(at) == Some(&Token::Dot)
-                && matches!(parser.tokens.get(at + 1), Some(Token::Ident(found)) if found == method)
-                && parser.tokens.get(at + 2) == Some(&Token::LParen)
-                && parser.tokens.get(at + 3) == Some(&Token::RParen)
+        let accessor_at = |parser: &Self, at: usize| -> Option<(String, usize)> {
+            let Some(Token::Dot) = parser.tokens.get(at) else {
+                return None;
+            };
+            let Some(Token::Ident(name)) = parser.tokens.get(at + 1) else {
+                return None;
+            };
+            let call = parser.tokens.get(at + 2) == Some(&Token::LParen)
+                && parser.tokens.get(at + 3) == Some(&Token::RParen);
+            Some(if call {
+                (format!("{name}()"), 4)
+            } else {
+                (name.clone(), 2)
+            })
         };
         let at = self.position;
-        let method = if call(self, at, "as_slice") && call(self, at + 4, "len") {
-            Some((crate::surface::IterMethod::Len, 8))
-        } else if call(self, at, "as_slice") {
-            Some((crate::surface::IterMethod::AsSlice, 4))
-        } else if call(self, at, "len") {
-            Some((crate::surface::IterMethod::Len, 4))
-        } else {
-            None
-        };
+        let accessor = accessor_at(self, at).map(|(accessor, width)| {
+            // `iter.as_slice().len()` is `iter.len()`.
+            match accessor_at(self, at + width) {
+                Some((next, more)) if accessor == "as_slice()" && next == "len()" => {
+                    (next, width + more)
+                }
+                _ => (accessor, width),
+            }
+        });
+        let accessor = accessor.filter(|(accessor, _)| {
+            crate::surface::RUST_ITERATOR_ACCESSORS.contains(&accessor.as_str())
+        });
         let Some(index) = loop_index else {
             if self.loop_block_depth == 0 {
                 // Outside a loop, `iter` is the program's own name.
                 return Ok(None);
             }
-            let Some((method, width)) = method else {
+            let Some((accessor, width)) = accessor else {
                 return Err(self.error(
-                    "inside a loop, `iter` is the loop's iterator, read through its methods \
-                     (`iter.len()`, `iter.as_slice()`); a Rust local named `iter` is `rust(iter)`",
+                    "inside a loop, `iter` is the loop's iterator, read through Rust's own \
+                     accessors (`iter.len()`, `iter.as_slice()`, a range's `iter.start`); a \
+                     Rust local named `iter` is `rust(iter)`",
                 ));
             };
             self.position += width;
-            return Ok(Some(ContractExpression::Binding(
-                method.binding().to_string(),
-            )));
+            return Ok(Some(ContractExpression::Binding(format!(
+                "iter.{accessor}"
+            ))));
         };
-        let Some((method, width)) = method else {
+        let Some((accessor, width)) = accessor else {
             return Ok(None);
         };
         let Some(iterator) = self.rust_loop_iterators.get(index).cloned().flatten() else {
@@ -1148,7 +1163,7 @@ impl Parser {
             )));
         };
         self.position += width;
-        crate::surface::rust_iterator_method(&iterator, method)
+        crate::surface::rust_iterator_method(&iterator, &accessor)
             .map(Some)
             .map_err(|message| self.error(message))
     }

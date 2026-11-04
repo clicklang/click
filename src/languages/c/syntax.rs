@@ -246,9 +246,11 @@ pub enum RustIteratorKind {
     /// `ChunksExact<u8>`: `_cursor`, `_remaining` bytes, `_size`, `_tail`
     /// and `_tail_len`.
     Chunks,
-    /// `Range` or `RangeInclusive`: `_start`, `_end`, and an inclusive
-    /// range's `_done`.
+    /// `Range`: `_start` and `_end`.
     Range,
+    /// `RangeInclusive`: `_start`, `_end`, and `_done`, whether it has
+    /// yielded its end.
+    RangeInclusive,
 }
 
 /// One string literal occurring in a C function. The hidden name is emitted

@@ -2,8 +2,9 @@ verifying "exits.rs";
 
 // A `return` from a loop body runs to the function exit as a C `return`
 // does; a labeled `break` or `continue` leaves each loop it crosses through
-// an escape flag the enclosing loop checks. Nested loops' iterators share
-// the source name `iter`, so `first_row` names each by its compiler local.
+// an escape flag the enclosing loop checks. In nested loops `iter` is the
+// inner loop's iterator inside it; `first_row` names the outer one
+// `loop(0).iter` there.
 
 fn has_zero(xs: &[u8]) -> bool {
     views xs[0..xs.len()];
@@ -24,10 +25,10 @@ fn position(xs: &[u8], v: u8) -> usize {
 } by {
     step_until(loop(0));
     loop {
-        decreases iter_end - iter_start;
+        decreases iter.end - iter.start;
         views xs[0..xs.len()];
-        invariant iter_end == xs.len();
-        invariant iter_start <= xs.len();
+        invariant iter.end == xs.len();
+        invariant iter.start <= xs.len();
     }
 }
 
@@ -75,17 +76,17 @@ fn first_row(n: u32, m: u32) -> u32 {
 } by {
     step_until(loop(0));
     loop {
-        decreases __rust_mir_7_end - __rust_mir_7_start;
-        invariant __rust_mir_7_end == n;
-        invariant __rust_mir_7_start <= n;
+        decreases iter.end - iter.start;
+        invariant iter.end == n;
+        invariant iter.start <= n;
         invariant row <= n;
         preserve by {
             step_until(loop(1));
             loop {
-                decreases __rust_mir_16_end - __rust_mir_16_start;
-                invariant __rust_mir_7_end == n;
-                invariant __rust_mir_7_start <= n;
-                invariant 1u32 <= __rust_mir_7_start;
+                decreases iter.end - iter.start;
+                invariant loop(0).iter.end == n;
+                invariant loop(0).iter.start <= n;
+                invariant 1u32 <= loop(0).iter.start;
                 invariant row <= n;
             }
         }

@@ -1290,25 +1290,29 @@ this subset.
 ## Range loops
 
 `for i in a..b` over an integer `a..b` of any admitted width holds the range
-in two locals of its element type, `iter_start` and `iter_end`, the bounds of
-the iterator the compiler names `iter`; a nested loop's iterator, whose name
-is ambiguous, uses its `__rust_mir_ID` identity as the prefix, as slice
-iterators do. A range stored in a local first, `let r = a..b; for i in r`,
-is the same. The exporter checks that `into_iter` and `next` are the core
+as its two bounds, of its element type. A proof reads them through the
+range's own public fields, `iter.start` and `iter.end`, inside the loop, and
+`loop(i).iter.start` anywhere; `iter.len()` is `iter.end - iter.start`. In
+nested loops `iter` is the inner loop's iterator inside it, and the outer
+one is `loop(i).iter` there. A range stored in a local first,
+`let r = a..b; for i in r`, is the same. The exporter checks that
+`into_iter` and `next` are the core
 `impl<I: Iterator> IntoIterator for I` and `impl<A: Step> Iterator for
-Range<A>`. `next` yields `Some(iter_start)` and advances `iter_start` while
-`iter_start < iter_end`, else `None`; the advance owes the addition's check,
+Range<A>`. `next` yields `Some(iter.start)` and advances `iter.start` while
+`iter.start < iter.end`, else `None`; the advance owes the addition's check,
 which the guard decides. The loop's `Option` is an ordinary `Option` value,
 so the body reads the yielded value as a `match` arm does.
 
-Invariants are written over the bounds: `decreases iter_end - iter_start`
-ranks the loop, and after it the exit guard gives `iter_start >= iter_end`.
+Invariants are written over the bounds: `decreases iter.end - iter.start`
+ranks the loop, and after it the exit guard gives `iter.start >= iter.end`.
 [`design/charon-trial/ranges`](https://github.com/clicklang/click/blob/master/design/charon-trial/ranges/ranges.click)
 verifies counts over `u32`, `i32` `a..b` and `i64` ranges, the last byte a
 loop over `0..bytes.len()` reads, and nested ranges.
 
 An inclusive range `a..=b`, which the compiler builds with
-`RangeInclusive::new`, also holds `iter_done`, whether it has yielded `b`.
+`RangeInclusive::new`, is read through `RangeInclusive`'s own `iter.start()`
+and `iter.end()`; its state also holds `iter_done`, whether it has yielded
+`b`, which its proofs still name while it awaits a Rust spelling.
 It yields while `iter_done == 0 and iter_start <= iter_end`; each iteration
 yields `iter_start` and then, as an ordinary branch of the loop body,
 advances it while `iter_start < iter_end` and sets `iter_done` at
