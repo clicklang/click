@@ -205,9 +205,10 @@ Remaining groups to audit and migrate:
   propositions. Their builders, indexed path collectors and checkers read
   endpoint views directly, preserving polarity and their existing endpoint
   connection rules without exporting shared arithmetic. The signed collector
-  retains constant connections and selected memory bridging. Native range/domain
-  evidence still uses its boxed-step compatibility wrapper; migrate those
-  callers before removing that boundary. Canonical range-bound lookup and
+  retains constant connections and selected memory bridging. Range-membership
+  and memory-frame path consumers now retain those original sources too; boxed
+  path adapters remain only as test references. Individual native domain steps
+  still retain boxed endpoints. Canonical range-bound lookup and
   nonnegative induction-domain admission read indexed endpoint views directly;
   the native bound-entry exporter remains for the other evidence and output
   callers.
@@ -216,10 +217,15 @@ Remaining groups to audit and migrate:
   Range-bound path evidence, including its strict-successor route, also retains
   source propositions and checks each edge and constant connection without
   exporting arithmetic. Growing-prefix admission uses an indexed execution-id
-  ceiling lookup; named loads still resolve their live snapshot dependencies. Its old boxed path interface remains for the other
-  atomic/domain consumers. The graph-only derived-order query and order-shape
-  classification read views; admitting shared facts to the difference graph is
-  still a separate remaining task, not an implicit proving fallback here.
+  ceiling lookup; named loads still resolve their live snapshot dependencies.
+  The graph-only derived-order query and order-shape
+  classification read views. Difference-graph order admission now retains shared
+  operands and reads the existing domain/operand-key index without exporting
+  arithmetic, including deferred cast, sign-flip and affine links. Native
+  queries retain their compatibility index until those consumers migrate;
+  repeated native queries must not re-import their complete expression trees. Equality,
+  exclusion and residue admission still have native adapters to migrate; order
+  admission does not declare those routes complete.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;

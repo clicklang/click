@@ -534,3 +534,80 @@ fn shared_successor_transport_uses_ordinary_dispatch_without_export() {
     assert_eq!(KernelTermExport::machine_export_count(), exports);
     assert!(!shared.has_boxed_operand());
 }
+
+#[test]
+fn range_membership_retains_shared_order_path_sources() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
+    };
+    let mut samples = Vec::new();
+    for size in [8, 32, 96] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(998801));
+        let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
+        let mut facts = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for level in 0..size {
+                let x = MachineTerm::Variable(Variable(998900 + level * 3));
+                let y = MachineTerm::Variable(Variable(998901 + level * 3));
+                let missing = MachineTerm::Variable(Variable(998902 + level * 3));
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                let middle = IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),
+                );
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_equal(0u32.into(), x.clone()),
+                    true,
+                );
+                let parent = facts.clone();
+                facts = facts
+                    .assume_condition(
+                        ConditionTerm::integer_less_than(observe(x.clone()), middle.clone()),
+                        true,
+                    )
+                    .assume_condition(
+                        ConditionTerm::integer_less_equal(middle, observe(y.clone())),
+                        true,
+                    );
+                assert!(
+                    crate::kernel::assumptions::bitvector_index_in_range_shallow(
+                        &x,
+                        &0u32.into(),
+                        &y,
+                        &facts
+                    )
+                );
+                assert!(
+                    !crate::kernel::assumptions::bitvector_index_in_range_shallow(
+                        &x,
+                        &0u32.into(),
+                        &missing,
+                        &facts
+                    )
+                );
+                assert!(
+                    !crate::kernel::assumptions::bitvector_index_in_range_shallow(
+                        &x,
+                        &0u32.into(),
+                        &y,
+                        &parent
+                    )
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push((size as usize, work));
+    }
+    for pair in samples.windows(2) {
+        assert!(
+            pair[1].1 * pair[0].0 <= pair[0].1 * pair[1].0 * 2,
+            "{samples:?}"
+        );
+    }
+}

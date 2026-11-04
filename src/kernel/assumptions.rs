@@ -9725,7 +9725,11 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
     assumptions: &PureFactContext,
 ) -> bool {
     let recorded_exact_order_path = |left: &MachineTerm, right: &MachineTerm, strict: bool| {
-        let Some(path) = assumptions.exact_signed_order_path_evidence(left, right, strict) else {
+        let Some(path) = assumptions.exact_signed_order_source_path(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+            strict,
+        ) else {
             return false;
         };
         for step in path {
@@ -9851,7 +9855,11 @@ pub(in crate::kernel) fn element_delta_in_range_by_affine_arithmetic(
     assumptions: &PureFactContext,
 ) -> bool {
     let recorded_exact_order_path = |left: &MachineTerm, right: &MachineTerm, strict: bool| {
-        let Some(path) = assumptions.exact_signed_order_path_evidence(left, right, strict) else {
+        let Some(path) = assumptions.exact_signed_order_source_path(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+            strict,
+        ) else {
             return false;
         };
         for step in path {

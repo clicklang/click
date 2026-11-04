@@ -110,7 +110,7 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     },
     StoreCommonBaseSignedOrder {
         condition: ConditionTerm,
-        path: Vec<SignedOrderDerivationStep>,
+        path: Vec<OrderDerivationStep>,
         reversed: bool,
     },
     StoreSeparatedRanges {
@@ -607,7 +607,12 @@ impl MemoryDagHopJustification {
                 } else {
                     (left.as_ref(), right.as_ref())
                 };
-                assumptions.checks_exact_signed_order_path(path, lower, upper, true)
+                assumptions.checks_exact_signed_order_source_path(
+                    path,
+                    MachineOperandView::Legacy(lower),
+                    MachineOperandView::Legacy(upper),
+                    true,
+                )
             }
             Self::StoreSeparatedRanges {
                 authority,
