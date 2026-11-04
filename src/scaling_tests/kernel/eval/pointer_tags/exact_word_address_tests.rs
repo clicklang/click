@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 #[test]
 fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
@@ -137,7 +138,7 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
         let cleared = Bitvector32Term::uint64_bitwise_and(
             Bitvector32Term::uint64_bitwise_or(
                 Bitvector32Term::pointer_address(pointer.clone()),
-                Bitvector32Term::UInt64FromInt32(Box::new(tag)),
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag)),
             ),
             Bitvector32Term::uint64_constant(!3),
         );

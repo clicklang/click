@@ -5,6 +5,7 @@
 //! and overflow semantics.  Mathematical integers have no C representation.
 
 use super::*;
+use crate::kernel::{MachineCastSpelling, cast_term};
 #[cfg(test)]
 use crate::kernel::{bits32_constant, constant_u32};
 mod machine_view;
@@ -1292,10 +1293,13 @@ impl IntegerTerm {
         // wider than the value's format is the caller's, not structure the
         // source wrote, and the conversion itself is retained).
         match &value {
-            Bitvector32Term::MachineIntegerCast { destination, .. }
-                if *destination != ty
-                    && ty.format().bits() <= 32
-                    && ty.format().contains(destination.format()) =>
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                to: destination,
+                ..
+            } if *destination != ty
+                && ty.format().bits() <= 32
+                && ty.format().contains(destination.format()) =>
             {
                 Self::from_machine(*destination, value)
             }
@@ -1386,18 +1390,26 @@ pub(crate) fn machine_value_reading(
         }
     }
     match value {
-        Bitvector32Term::MachineIntegerCast { destination, .. }
-            if *destination != ty
-                && ty.format().bits() <= 32
-                && ty.format().contains(destination.format()) =>
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            to: destination,
+            ..
+        } if *destination != ty
+            && ty.format().bits() <= 32
+            && ty.format().contains(destination.format()) =>
         {
             return machine_value_reading(*destination, value);
         }
-        Bitvector32Term::MachineIntegerCast { destination, .. } if *destination != ty => {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            to: destination,
+            ..
+        } if *destination != ty => {
             return None;
         }
-        Bitvector32Term::MachineIntegerCast {
-            source,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: source,
             value: operand,
             ..
         } if ty.format().bits() > source.format().bits()
@@ -1407,13 +1419,13 @@ pub(crate) fn machine_value_reading(
         }
         // A value-preserving 32-to-64-bit extension node, the spelling C
         // lowering builds, is read as its operand like the generic widening.
-        Bitvector32Term::Int64From32(operand) if ty == MachineIntegerType::Int64 => {
+        cast_term!(Int64From32, operand) if ty == MachineIntegerType::Int64 => {
             return machine_value_reading(MachineIntegerType::Int32, operand);
         }
-        Bitvector32Term::Int64FromUInt32(operand) if ty == MachineIntegerType::Int64 => {
+        cast_term!(Int64FromUInt32, operand) if ty == MachineIntegerType::Int64 => {
             return machine_value_reading(MachineIntegerType::UInt32, operand);
         }
-        Bitvector32Term::UInt64From32(operand) if ty == MachineIntegerType::UInt64 => {
+        cast_term!(UInt64From32, operand) if ty == MachineIntegerType::UInt64 => {
             return machine_value_reading(MachineIntegerType::UInt32, operand);
         }
         _ => {}

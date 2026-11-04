@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -5308,9 +5309,9 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
         } if *actual_width == byte_width => Some(match value.as_ref() {
             // These widenings keep the value, so the element is named by
             // the narrow index, as a signed 32-bit index names it.
-            Bitvector32Term::Int64From32(narrow)
-            | Bitvector32Term::UInt64From32(narrow)
-            | Bitvector32Term::Int64FromUInt32(narrow) => narrow.as_ref().clone(),
+            cast_term!(Int64From32, narrow)
+            | cast_term!(UInt64From32, narrow)
+            | cast_term!(Int64FromUInt32, narrow) => narrow.as_ref().clone(),
             wide => wide.clone(),
         }),
         PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
@@ -7241,8 +7242,11 @@ pub(super) fn describe_bitvector_with_context(
         return name;
     }
     match term {
-        Bitvector32Term::MachineIntegerCast {
-            value, destination, ..
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value,
+            to: destination,
+            ..
         } => format!(
             "({})",
             click_cast(
@@ -7302,23 +7306,23 @@ pub(super) fn describe_bitvector_with_context(
                 describe_bitvector_with_context(value, parameter_binding)
             )
         }
-        Bitvector32Term::Int64From32(value) | Bitvector32Term::Int64FromUInt32(value) => format!(
+        cast_term!(Int64From32, value) | cast_term!(Int64FromUInt32, value) => format!(
             "({})",
             click_cast(
                 &describe_bitvector_with_context(value, parameter_binding),
                 "int64"
             )
         ),
-        Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value) => format!(
+        cast_term!(UInt64From32, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value) => format!(
             "({})",
             click_cast(
                 &describe_bitvector_with_context(value, parameter_binding),
                 "uint64"
             )
         ),
-        Bitvector32Term::UInt32From64(value) => format!(
+        cast_term!(UInt32From64, value) => format!(
             "({})",
             click_cast(
                 &describe_bitvector_with_context(value, parameter_binding),

@@ -1,5 +1,6 @@
 //! Literal values and selected conditional witnesses on shared term roots.
 use super::{MachineAtom, PendingUnions, TermClasses};
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::assumptions::SignedConstantResolution;
 use crate::kernel::prelude::*;
 use crate::kernel::unary_term;
@@ -208,10 +209,11 @@ pub(super) fn word_cast_operand(
     crate::kernel::MachineIntegerType,
 )> {
     match term {
-        Bitvector32Term::MachineIntegerCast {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         } if source.format().bits() <= 32 && destination.format().bits() <= 32 => {
             Some((value, *source, *destination))
         }

@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_u32, int64_constant, native_constant, uint64_constant,
@@ -480,7 +481,10 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
 
 pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) -> Option<u32> {
     match term {
-        Bitvector32Term::MachineIntegerCast { .. } => None,
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            ..
+        } => None,
         // Rule C1: a decided `Bool` casts to 1 or 0.
         Bitvector32Term::BoolCast { value, .. } => {
             Some(u32::from(normalize_condition_without_assumptions(value)?))
@@ -491,12 +495,12 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
-        | Bitvector32Term::Int64From32(_)
-        | Bitvector32Term::UInt64From32(_)
-        | Bitvector32Term::UInt32From64(_)
-        | Bitvector32Term::Int64FromUInt32(_)
-        | Bitvector32Term::UInt64FromInt32(_)
-        | Bitvector32Term::UInt64FromInt64(_)
+        | cast_term!(Int64From32, _)
+        | cast_term!(UInt64From32, _)
+        | cast_term!(UInt32From64, _)
+        | cast_term!(Int64FromUInt32, _)
+        | cast_term!(UInt64FromInt32, _)
+        | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..)
         | Bitvector32Term::Float32Negate(_)

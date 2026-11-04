@@ -3,6 +3,7 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{PureFactContext, Variable};
 use crate::kernel::{constant_u32, int32_constant};
@@ -127,7 +128,7 @@ fn overflow_is_decided_at_the_edges_of_the_range() {
 #[test]
 fn unsigned_conversion_keeps_a_nonnegative_value() {
     let i = variable(0);
-    let wide = Bitvector32Term::UInt64From32(Box::new(i.clone()));
+    let wide = Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(i.clone()));
     let length = variable(1);
     let below = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
@@ -1017,7 +1018,9 @@ fn a_zero_extension_reads_its_operands_bounds() {
     use Bitvector32Term as T;
     let (x, y) = (variable(0), variable(1));
     let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let wide = |term: &Bitvector32Term| T::Int64FromUInt32(boxed(term));
+    let wide = |term: &Bitvector32Term| {
+        Bitvector32Term::legacy_cast(MachineCastSpelling::Int64FromUInt32, boxed(term))
+    };
     let sum = |a: &Bitvector32Term, b: &Bitvector32Term| T::Binary {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Add,
@@ -1193,10 +1196,11 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         right: Box::new(T::int64_constant(1)),
     };
     assert_eq!(all_ones.decide(&increment_overflows(&x)), Some(false));
-    let cast = T::MachineIntegerCast {
+    let cast = T::Cast {
+        spelling: MachineCastSpelling::Generic,
         value: boxed(&x),
-        source: M::UInt64,
-        destination: M::Int64,
+        from: M::UInt64,
+        to: M::Int64,
     };
     assert_eq!(all_ones.decide(&increment_overflows(&cast)), Some(false));
     // The largest signed value is its own unsigned reading, and its
@@ -1242,13 +1246,16 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             true,
         ),
     ]);
-    let divisor = T::Int64From32(boxed(&d));
-    let remainder = T::UInt32From64(Box::new(T::Binary {
-        format: MachineIntegerType::Int64,
-        op: MachineBinaryOp::Remainder,
-        left: boxed(&n),
-        right: Box::new(divisor.clone()),
-    }));
+    let divisor = Bitvector32Term::legacy_cast(MachineCastSpelling::Int64From32, boxed(&d));
+    let remainder = Bitvector32Term::legacy_cast(
+        MachineCastSpelling::UInt32From64,
+        Box::new(T::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Remainder,
+            left: boxed(&n),
+            right: Box::new(divisor.clone()),
+        }),
+    );
     let positive = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::GreaterThan,
@@ -1292,7 +1299,10 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Divide,
         left: boxed(&n),
-        right: Box::new(T::Int64From32(boxed(&d))),
+        right: Box::new(Bitvector32Term::legacy_cast(
+            MachineCastSpelling::Int64From32,
+            boxed(&d),
+        )),
     };
     assert_eq!(
         unknown.decide(&ConditionTerm::Overflows {
@@ -1633,10 +1643,11 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
     let mut decided = 0;
     for (source, destination) in [(M::UInt8, M::Int8), (M::Int8, M::UInt8), (M::Int8, M::Int8)] {
         let (low, high) = range(source);
-        let cast = Bitvector32Term::MachineIntegerCast {
+        let cast = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(v.clone()),
-            source,
-            destination,
+            from: source,
+            to: destination,
         };
         for actual in [low, low + 1, -1, 0, 1, 100, high - 1, high] {
             if actual < low || actual > high {
@@ -1674,10 +1685,11 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
         (le(&v, &constant(255)), true),
         (
             ConditionTerm::equal(
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: Box::new(v.clone()),
-                    source: M::UInt8,
-                    destination: M::Int8,
+                    from: M::UInt8,
+                    to: M::Int8,
                 },
                 constant(-56),
             ),
@@ -1691,10 +1703,11 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
     // Without the operand's range, the cast says nothing about it.
     let unbounded = graph(&[(
         ConditionTerm::equal(
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value: Box::new(v.clone()),
-                source: M::UInt8,
-                destination: M::Int8,
+                from: M::UInt8,
+                to: M::Int8,
             },
             constant(-56),
         ),

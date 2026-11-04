@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_node;
+use crate::kernel::cast_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
 
@@ -532,7 +533,7 @@ impl SelectedFacts<'_> {
                 right,
             } => {
                 let narrowed_constant = |term: &Bitvector32Term| match term {
-                    Bitvector32Term::UInt32From64(wide) => self
+                    cast_term!(UInt32From64, wide) => self
                         .wide_constant_from_equalities(wide)
                         .map(|bits| bits as u32),
                     bits32_constant!(bits) => Some(constant_u32(*bits)),

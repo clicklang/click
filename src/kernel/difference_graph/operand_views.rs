@@ -3,7 +3,7 @@ use super::*;
 pub(super) mod cache;
 use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
 use crate::kernel::uint64_constant;
-use crate::kernel::{KernelMachineCastEncoding as E, MachineOperandView as V};
+use crate::kernel::{MachineCastSpelling as E, MachineOperandView as V};
 use cache::{Answer, Kind, QueryKey, Read};
 
 fn format(domain: Domain) -> MachineIntegerType {

@@ -640,7 +640,7 @@ pointer field's cells hold it.
 **One byte, one name.** A byte has a single load term: its unsigned (`UInt8`)
 read. A signed (`Int8`) read of the byte is not a load term of its own; it is
 the two's-complement conversion of that one term,
-`MachineIntegerCast { UInt8 -> Int8 }`, built only by
+the generic `Cast { UInt8 -> Int8 }`, built only by
 `Bitvector32Term::memory_read` (and `canonical_form_of_load`, which delegates
 to it for the `Int8` kind). So a signed and an unsigned read of the same byte
 are related by construction: `s[i] == -1` names the same unknown as

@@ -6,6 +6,7 @@ use crate::kernel::ResourceDescription;
 use crate::kernel::binary_node;
 use crate::kernel::population_authority::c_creation::is_external_population_anchor;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
@@ -299,10 +300,11 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
             HavocIdentityTask::Bitvector(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
-                    Bitvector32Term::MachineIntegerCast {
+                    Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value,
-                        source,
-                        destination,
+                        from: source,
+                        to: destination,
                     } => {
                         let _ = write!(identity, "tmcast{source:?}:{destination:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
@@ -415,42 +417,42 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                         };
                         push_havoc_binary(&mut identity, &mut tasks, tag, *left, *right);
                     }
-                    Bitvector32Term::Int64From32(value) => push_havoc_binary(
+                    cast_term!(Int64From32, value) => push_havoc_binary(
                         &mut identity,
                         &mut tasks,
                         "ti64f32",
                         *value.clone(),
                         *value,
                     ),
-                    Bitvector32Term::UInt64From32(value) => push_havoc_binary(
+                    cast_term!(UInt64From32, value) => push_havoc_binary(
                         &mut identity,
                         &mut tasks,
                         "tu64f32",
                         *value.clone(),
                         *value,
                     ),
-                    Bitvector32Term::UInt32From64(value) => push_havoc_binary(
+                    cast_term!(UInt32From64, value) => push_havoc_binary(
                         &mut identity,
                         &mut tasks,
                         "tu32f64",
                         *value.clone(),
                         *value,
                     ),
-                    Bitvector32Term::Int64FromUInt32(value) => push_havoc_binary(
+                    cast_term!(Int64FromUInt32, value) => push_havoc_binary(
                         &mut identity,
                         &mut tasks,
                         "ti64fu32",
                         *value.clone(),
                         *value,
                     ),
-                    Bitvector32Term::UInt64FromInt32(value) => push_havoc_binary(
+                    cast_term!(UInt64FromInt32, value) => push_havoc_binary(
                         &mut identity,
                         &mut tasks,
                         "tu64fi32",
                         *value.clone(),
                         *value,
                     ),
-                    Bitvector32Term::UInt64FromInt64(value) => push_havoc_binary(
+                    cast_term!(UInt64FromInt64, value) => push_havoc_binary(
                         &mut identity,
                         &mut tasks,
                         "tu64fi64",
@@ -1824,6 +1826,10 @@ pub(crate) fn held_term_fingerprint(term: &Bitvector32Term) -> u64 {
         // fingerprint, as the operators' is.
         if let Bitvector32Term::Constant { format, .. } = term {
             format.hash(hasher);
+        }
+        // So is a conversion's spelling: one variant spells every conversion.
+        if let Bitvector32Term::Cast { spelling, .. } = term {
+            spelling.hash(hasher);
         }
         match term {
             Bitvector32Term::Variable(variable) => variable.hash(hasher),

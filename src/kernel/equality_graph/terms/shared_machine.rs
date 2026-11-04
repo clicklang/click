@@ -1,6 +1,7 @@
 //! Register shared machine operands without exporting boxed prefixes.
 //! The operator nodes are the same nodes used by legacy congruence registration.
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::{
     Bitvector32Term as T, BitvectorBinaryOp as B, CarrierWidth as W, KernelMachineLiteral as L,
     KernelTerm, KernelTermNode as N,
@@ -311,7 +312,7 @@ impl TermClasses {
                     destination,
                     operand,
                 } => {
-                    use crate::kernel::KernelMachineCastEncoding::Generic;
+                    use MachineCastSpelling::Generic;
                     let generic = *encoding == Generic;
                     let native = W::of_machine_type(*destination);
                     let narrow = generic
@@ -620,9 +621,10 @@ mod tests {
         let _session = crate::kernel::VerificationSession::enter();
         for source in FORMATS {
             for destination in FORMATS {
-                let boxed = T::MachineIntegerCast {
-                    source,
-                    destination,
+                let boxed = T::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
                     value: Box::new(T::Variable(Variable(985101))),
                 };
                 let root = KernelTermImport::default()

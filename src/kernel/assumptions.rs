@@ -4,6 +4,7 @@ use super::prelude::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     native_constant, uint32_constant, uint64_constant,
@@ -1682,11 +1683,16 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
     if let Bitvector32Term::Constant { format, .. } = term {
         std::hash::Hash::hash(format, hasher);
     }
+    // So is a conversion's spelling, as the per-pair variants were.
+    if let Bitvector32Term::Cast { spelling, .. } = term {
+        std::hash::Hash::hash(spelling, hasher);
+    }
     match term {
-        Bitvector32Term::MachineIntegerCast {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         } => {
             std::hash::Hash::hash(source, hasher);
             std::hash::Hash::hash(destination, hasher);
@@ -1719,12 +1725,12 @@ fn hash_memory_blind_bitvector<H: std::hash::Hasher>(term: &Bitvector32Term, has
             hash_memory_blind_bitvector(left, hasher);
             hash_memory_blind_bitvector(right, hasher);
         }
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value) => hash_memory_blind_bitvector(value, hasher),
+        cast_term!(Int64From32, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64From32, value)
+        | cast_term!(UInt32From64, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value) => hash_memory_blind_bitvector(value, hasher),
         Bitvector32Term::Unary {
             format,
             op,
@@ -2153,15 +2159,18 @@ fn collect_bitvector_memory_loads_with_width(
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
     match term {
-        Bitvector32Term::MachineIntegerCast { value, source, .. } => {
-            collect_bitvector_memory_loads_with_width(
-                value,
-                current_memory,
-                loads,
-                Some(source.format().byte_width()),
-                seen_integers,
-            )
-        }
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            value,
+            from: source,
+            ..
+        } => collect_bitvector_memory_loads_with_width(
+            value,
+            current_memory,
+            loads,
+            Some(source.format().byte_width()),
+            seen_integers,
+        ),
 
         bits32_constant!(_)
         | Bitvector32Term::Variable(_)
@@ -2216,12 +2225,12 @@ fn collect_bitvector_memory_loads_with_width(
                 seen_integers,
             )
         }
-        Bitvector32Term::Int64From32(value)
-        | Bitvector32Term::Int64FromUInt32(value)
-        | Bitvector32Term::UInt64From32(value)
-        | Bitvector32Term::UInt32From64(value)
-        | Bitvector32Term::UInt64FromInt32(value)
-        | Bitvector32Term::UInt64FromInt64(value)
+        cast_term!(Int64From32, value)
+        | cast_term!(Int64FromUInt32, value)
+        | cast_term!(UInt64From32, value)
+        | cast_term!(UInt32From64, value)
+        | cast_term!(UInt64FromInt32, value)
+        | cast_term!(UInt64FromInt64, value)
         | Bitvector32Term::Unary { operand: value, .. }
         | Bitvector32Term::Float32Negate(value)
         | Bitvector32Term::Float64Negate(value) => {
@@ -7381,8 +7390,13 @@ impl PureFactContext {
             } = &condition
         {
             for side in [left.as_ref(), right.as_ref()] {
-                if matches!(side, Bitvector32Term::MachineIntegerCast { .. })
-                    && let Some(carrier) = self.narrowed_cast_carrier(side)
+                if matches!(
+                    side,
+                    Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
+                        ..
+                    }
+                ) && let Some(carrier) = self.narrowed_cast_carrier(side)
                 {
                     let identity = ConditionTerm::equal(side.clone(), carrier);
                     if identity != condition {
@@ -11512,10 +11526,11 @@ mod integer_observation_tests {
         // The byte is a C narrowing, a value of 8 bits; its promotion is a
         // widening node of its own (rule K8, a relation), which the
         // overflow test reads.
-        let byte = Bitvector32Term::MachineIntegerCast {
+        let byte = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(Bitvector32Term::Variable(Variable(821))),
-            source: MachineIntegerType::Int32,
-            destination: MachineIntegerType::UInt8,
+            from: MachineIntegerType::Int32,
+            to: MachineIntegerType::UInt8,
         };
         let promoted = Bitvector32Term::machine_integer_cast(
             MachineIntegerType::UInt8,
@@ -11544,10 +11559,11 @@ mod integer_observation_tests {
         // A conversion into 8 bits is a native 8-bit value, so its
         // observation compares as a native 8-bit comparison and reads back
         // exactly.
-        let byte = Bitvector32Term::MachineIntegerCast {
+        let byte = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(Bitvector32Term::Variable(Variable(811))),
-            source: MachineIntegerType::Int32,
-            destination: MachineIntegerType::UInt8,
+            from: MachineIntegerType::Int32,
+            to: MachineIntegerType::UInt8,
         };
         let observed: SharedIntegerTerm =
             IntegerTerm::from_machine(MachineIntegerType::UInt8, byte.clone())

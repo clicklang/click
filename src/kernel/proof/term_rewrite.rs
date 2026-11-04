@@ -10,6 +10,7 @@ use crate::kernel::{
     AlgebraicBitvectorMatchArm, AlgebraicResultMatchArm, AlgebraicTerm, AlgebraicTermNode,
     AlgebraicValue, PureFunctionArgument,
 };
+use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_term};
 #[cfg(test)]
 use num_traits::ToPrimitive;
 use std::collections::HashMap;
@@ -2429,15 +2430,17 @@ impl<'a> TermRewrite<'a> {
             return None;
         }
         let (
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value: original,
-                source: original_source,
-                destination: original_destination,
+                from: original_source,
+                to: original_destination,
             },
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value: rewritten,
-                source: rewritten_source,
-                destination: rewritten_destination,
+                from: rewritten_source,
+                to: rewritten_destination,
             },
         ) = (original, rewritten)
         else {
@@ -5270,20 +5273,22 @@ impl<'a> TermRewrite<'a> {
             }
         }
         let result = match v {
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             } => {
                 let original = value;
                 let value = self.bits(value);
                 if self.integer_exact.is_some() {
                     // Exact Integer congruence preserves native syntax. Folding
                     // an unrelated cast changes the opaque observation's ID.
-                    Bitvector32Term::MachineIntegerCast {
+                    Bitvector32Term::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value: Box::new(value),
-                        source: *source,
-                        destination: *destination,
+                        from: *source,
+                        to: *destination,
                     }
                 } else if let Some(carrier) =
                     self.widened_narrowed_cast_carrier(original, &value, *source, *destination)
@@ -5295,10 +5300,10 @@ impl<'a> TermRewrite<'a> {
             }
 
             Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => v.clone(),
-            Bitvector32Term::UInt32From64(v) => {
+            cast_term!(UInt32From64, v) => {
                 let value = self.bits(v);
                 if self.integer_exact.is_some() {
-                    Bitvector32Term::UInt32From64(Box::new(value))
+                    Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(value))
                 } else {
                     Bitvector32Term::uint32_from_64(value)
                 }
@@ -5611,7 +5616,10 @@ mod tests {
                 name: "many".into(),
                 arguments: vec![
                     PureFunctionArgument::Value(CValue::UInt32(
-                        Bitvector32Term::UInt32From64(Box::new(value.clone()))
+                        Bitvector32Term::legacy_cast(
+                            MachineCastSpelling::UInt32From64,
+                            Box::new(value.clone())
+                        )
                     ));
                     size
                 ],

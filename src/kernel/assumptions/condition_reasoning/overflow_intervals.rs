@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 #[cfg(test)]
 use crate::kernel::binary_term;
@@ -713,7 +714,7 @@ impl PureFactContext {
         let mut range = (0, u32::MAX as i64);
         // The `uint32` widening of an unsigned 8- or 16-bit value is in its
         // source's range (the format's own range, no fact read).
-        if let Some((crate::kernel::KernelMachineCastEncoding::Generic, source, _, _)) = term.cast()
+        if let Some((MachineCastSpelling::Generic, source, _, _)) = term.cast()
             && source.format().bits() < 32
             && !source.format().is_signed()
         {
@@ -740,7 +741,7 @@ impl PureFactContext {
     fn int32_widening_sibling_view(
         term: MachineOperandView<'_>,
     ) -> Option<crate::kernel::SharedMachineIntegerTerm> {
-        use crate::kernel::{KernelMachineCastEncoding as E, SharedMachineIntegerTerm};
+        use crate::kernel::{MachineCastSpelling as E, SharedMachineIntegerTerm};
         let (E::Generic, source, MachineIntegerType::UInt32, value) = term.cast()? else {
             return None;
         };
@@ -767,9 +768,7 @@ impl PureFactContext {
     fn widened_unsigned_operand_view(
         term: MachineOperandView<'_>,
     ) -> Option<Option<MachineOperandView<'_>>> {
-        if let Some((crate::kernel::KernelMachineCastEncoding::Int64FromUInt32, _, _, value)) =
-            term.cast()
-        {
+        if let Some((MachineCastSpelling::Int64FromUInt32, _, _, value)) = term.cast() {
             return Some(Some(value));
         }
         match term.literal()? {
@@ -1114,7 +1113,7 @@ impl PureFactContext {
     /// The interval is reconstructed over the term's structure, so the walk
     /// is finite with no depth cut: each arithmetic node ranges its operands.
     fn signed_interval_uncached(&self, term: MachineOperandView<'_>) -> Option<(i64, i64)> {
-        use crate::kernel::{KernelMachineCastEncoding as E, MachineBinaryOp as Op};
+        use crate::kernel::{MachineBinaryOp as Op, MachineCastSpelling as E};
         if let Some(value) = self.signed_constant_known_equal_view(term) {
             return Some((value, value));
         }
@@ -1324,9 +1323,10 @@ mod tests {
             ),
             (MachineIntegerType::Int32, MachineIntegerType::UInt8, (2, 4)),
         ] {
-            let written = Bitvector32Term::MachineIntegerCast {
-                source,
-                destination,
+            let written = Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: source,
+                to: destination,
                 value: Box::new(x.clone()),
             };
             let root = KernelTermImport::default()
@@ -2233,7 +2233,11 @@ mod shared_widened_query_tests {
             let mut range = (0, u32::MAX as i64);
             // The `uint32` widening of an unsigned 8- or 16-bit value is in its
             // source's range (the format's own range, no fact read).
-            if let Bitvector32Term::MachineIntegerCast { source, .. } = term
+            if let Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: source,
+                ..
+            } = term
                 && source.format().bits() < 32
                 && !source.format().is_signed()
             {
@@ -2256,10 +2260,11 @@ mod shared_widened_query_tests {
         }
 
         fn reference_int32_widening_sibling(term: &Bitvector32Term) -> Option<Bitvector32Term> {
-            let Bitvector32Term::MachineIntegerCast {
+            let Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination: MachineIntegerType::UInt32,
+                from: source,
+                to: MachineIntegerType::UInt32,
             } = term
             else {
                 return None;
@@ -2277,7 +2282,7 @@ mod shared_widened_query_tests {
             term: &Bitvector32Term,
         ) -> Option<Option<&Bitvector32Term>> {
             match term {
-                Bitvector32Term::Int64FromUInt32(value) => Some(Some(value)),
+                cast_term!(Int64FromUInt32, value) => Some(Some(value)),
                 int64_constant!(value) if (0..=u32::MAX as i64).contains(&constant_i64(*value)) => {
                     Some(None)
                 }

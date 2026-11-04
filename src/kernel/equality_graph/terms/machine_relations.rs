@@ -47,6 +47,7 @@
 use super::*;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{BitvectorBinaryOp as B, BitvectorUnaryOp as U, MachineUnaryOp};
+use crate::kernel::{MachineCastSpelling, cast_op};
 
 /// The format an operator node computes in: the 32-bit word (either 32-bit
 /// format's operator of one kind), or one format.
@@ -233,16 +234,17 @@ enum Decoded {
 fn cast_key_of_unary(op: U) -> Option<CastKey> {
     use MachineIntegerType as Ty;
     let (source, destination) = match op {
-        U::MachineIntegerCast {
-            source,
-            destination,
+        U::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: source,
+            to: destination,
         } => (CastSource::Format(source), destination),
-        U::UInt32From64 => (CastSource::Word64, Ty::UInt32),
-        U::UInt64FromInt64 => (CastSource::Format(Ty::Int64), Ty::UInt64),
-        U::Int64From32 => (CastSource::Format(Ty::Int32), Ty::Int64),
-        U::UInt64From32 => (CastSource::Format(Ty::UInt32), Ty::UInt64),
-        U::Int64FromUInt32 => (CastSource::Format(Ty::UInt32), Ty::Int64),
-        U::UInt64FromInt32 => (CastSource::Format(Ty::Int32), Ty::UInt64),
+        cast_op!(UInt32From64) => (CastSource::Word64, Ty::UInt32),
+        cast_op!(UInt64FromInt64) => (CastSource::Format(Ty::Int64), Ty::UInt64),
+        cast_op!(Int64From32) => (CastSource::Format(Ty::Int32), Ty::Int64),
+        cast_op!(UInt64From32) => (CastSource::Format(Ty::UInt32), Ty::UInt64),
+        cast_op!(Int64FromUInt32) => (CastSource::Format(Ty::UInt32), Ty::Int64),
+        cast_op!(UInt64FromInt32) => (CastSource::Format(Ty::Int32), Ty::UInt64),
         U::Machine(..) | U::Float32Negate | U::Float64Negate => return None,
     };
     Some(CastKey {
@@ -790,9 +792,10 @@ impl TermClasses {
                 )))
             }
             Application::Apply(function, _) => match self.machine_heads.get(&function).copied()? {
-                MachineHead::Unary(U::MachineIntegerCast {
-                    source,
-                    destination,
+                MachineHead::Unary(U::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
                 }) if representation::narrow_carrier_mask(destination).is_some() => {
                     Some(self.narrow_cast_parts(source, destination, value, pending))
                 }
@@ -839,19 +842,24 @@ impl TermClasses {
                 ),
                 L::Cast => unary(
                     self,
-                    U::MachineIntegerCast {
-                        source,
-                        destination,
+                    U::Cast {
+                        spelling: MachineCastSpelling::Generic,
+                        from: source,
+                        to: destination,
                     },
                     crate::kernel::CarrierWidth::of_machine_type(destination),
                 ),
-                L::LowWord => unary(self, U::UInt32From64, crate::kernel::CarrierWidth::Bits32),
+                L::LowWord => unary(
+                    self,
+                    U::legacy_cast(MachineCastSpelling::UInt32From64),
+                    crate::kernel::CarrierWidth::Bits32,
+                ),
                 L::Extend64 => {
                     let op = match (to.is_signed(), from.is_signed()) {
-                        (true, true) => U::Int64From32,
-                        (true, false) => U::Int64FromUInt32,
-                        (false, true) => U::UInt64FromInt32,
-                        (false, false) => U::UInt64From32,
+                        (true, true) => U::legacy_cast(MachineCastSpelling::Int64From32),
+                        (true, false) => U::legacy_cast(MachineCastSpelling::Int64FromUInt32),
+                        (false, true) => U::legacy_cast(MachineCastSpelling::UInt64FromInt32),
+                        (false, false) => U::legacy_cast(MachineCastSpelling::UInt64From32),
                     };
                     unary(self, op, crate::kernel::CarrierWidth::Bits64)
                 }
@@ -859,7 +867,7 @@ impl TermClasses {
                 L::Reinterpret64 if to.is_signed() => value,
                 L::Reinterpret64 => unary(
                     self,
-                    U::UInt64FromInt64,
+                    U::legacy_cast(MachineCastSpelling::UInt64FromInt64),
                     crate::kernel::CarrierWidth::Bits64,
                 ),
             },

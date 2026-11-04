@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{MachineIntegerType, OverflowOperation};
 
 #[test]
@@ -490,7 +491,10 @@ fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
             );
         }
         let query = ConditionTerm::uint64_equal(
-            Bitvector32Term::UInt64FromInt64(Box::new(value.clone())),
+            Bitvector32Term::legacy_cast(
+                MachineCastSpelling::UInt64FromInt64,
+                Box::new(value.clone()),
+            ),
             value.clone(),
         );
         let (answer, work) =
@@ -507,7 +511,8 @@ fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
     for depth in [8usize, 32, 128, 512] {
         let mut term = value.clone();
         for _ in 0..depth {
-            term = Bitvector32Term::UInt64FromInt64(Box::new(term));
+            term =
+                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(term));
         }
         let query = ConditionTerm::uint64_equal(term, value.clone());
         let (answer, work) =
@@ -610,8 +615,7 @@ fn shared_masked_order_queries_do_not_export_growing_operands() {
 #[test]
 fn shared_widened_queries_and_evidence_do_not_export_operands() {
     use crate::kernel::{
-        IntegerTerm, KernelMachineCastEncoding as E, KernelTerm, KernelType,
-        SharedMachineIntegerTerm,
+        IntegerTerm, KernelTerm, KernelType, MachineCastSpelling as E, SharedMachineIntegerTerm,
     };
     let mut samples = Vec::new();
     for size in [8, 32, 96] {

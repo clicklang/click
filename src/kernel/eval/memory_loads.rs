@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::{bits32_constant, int64_constant, native_constant, uint64_constant};
 
 #[derive(Default)]
@@ -4008,8 +4009,14 @@ fn substitute_load_variables(
             }
             Task::RebuildUnary(op) => {
                 let value = term_results.pop().expect("visited unary term");
-                let smart =
-                    op.is_float() || matches!(op, BitvectorUnaryOp::MachineIntegerCast { .. });
+                let smart = op.is_float()
+                    || matches!(
+                        op,
+                        BitvectorUnaryOp::Cast {
+                            spelling: MachineCastSpelling::Generic,
+                            ..
+                        }
+                    );
                 term_results.push(if smart {
                     op.build(value)
                 } else {

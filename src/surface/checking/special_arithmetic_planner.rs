@@ -6,6 +6,7 @@ use crate::kernel::MachineBinaryOp;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::cast_term;
 use crate::kernel::proof::arithmetic_special::{
     SpecialArithmeticCertificate as KernelCertificate, SpecialArithmeticNode as KernelNode,
     signed_constant_bound_on_view, signed_definedness_query,
@@ -898,7 +899,7 @@ fn bounded_term_work(root: &Bitvector32Term) -> bool {
                 pending.push(left);
                 pending.push(right);
             }
-            Bitvector32Term::UInt32From64(value) => pending.push(value),
+            cast_term!(UInt32From64, value) => pending.push(value),
             Bitvector32Term::PointerAddress(pointer, _)
                 if !bounded_offset_work(&pointer.offset) =>
             {
@@ -940,7 +941,7 @@ fn bounded_term_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
             return false;
         }
         match (left, right) {
-            (Bitvector32Term::UInt32From64(left), Bitvector32Term::UInt32From64(right)) => {
+            (cast_term!(UInt32From64, left), cast_term!(UInt32From64, right)) => {
                 pending.push((left, right))
             }
             (bits32_constant!(a), bits32_constant!(b)) if constant_u32(*a) == constant_u32(*b) => {}

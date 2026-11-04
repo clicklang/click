@@ -510,7 +510,7 @@ checks the evaluated source and destination types, folds root constants through
 arena. Its terms come from the one conversion table
 (`machine_integer::conversion::lower` and `convert_term`), which C's
 conversions use too, so a conversion has one term in every language: a
-result of 8 or 16 bits is the `MachineIntegerCast` node C builds, printed
+result of 8 or 16 bits is the generic `Cast` node C builds, printed
 `x as uint8` or `x as int8`, and is filed with its destination's range as C's
 is, and with nothing else: the identity with its operand is a checked
 (specification) narrowing's, filed beside its range obligations. Rule K7 (below) makes its word the operand's low bits, so
@@ -524,7 +524,7 @@ and 0 otherwise, which owes nothing. A conversion to `bool` is the test
 widths are refused here; their ordinary conversions use their own rules. Evaluation
 of the operand still carries its definedness obligations, including overflow.
 This explicit policy does not relax ordinary C casts or checked Integer
-conversions. Casts involving 128-bit values use `MachineIntegerCast`, retaining
+conversions. Casts involving 128-bit values use the generic `Cast`, retaining
 both source and destination types. Constants fold through the same exact
 format policy, and symbolic operands remain typed through substitution and
 proof rewriting. The existing 8–64-bit casts keep their current carriers.
@@ -565,7 +565,7 @@ includes the unchanged Bitcoin fast-path operand conversion expressions.
 ## The 32-bit sign cast
 
 A C conversion between `int` and `unsigned int` is the sign cast σ, the
-`MachineIntegerCast` node from `int32` to `uint32` or back
+generic `Cast` node from `int32` to `uint32` or back
 (`Bitvector32Term::sign_cast32`). C assignment, return, argument and cast
 conversions build it, the usual arithmetic conversions build it for an
 `int` operand of an `unsigned` operation, and so does the modulo boundary
@@ -574,7 +574,7 @@ above (Rust `as`, C++ conversions, specification casts). A sign-cleared
 constructor folds a constant and keeps σ of σ as written: `σ(σ(x))` is a
 node over σ(x), which the e-graph's R0 puts in `x`'s class.
 The widening of an 8- or 16-bit value into `int32` or `uint32` is also
-a `MachineIntegerCast`, read as its operand's word by rule K8 (below).
+a generic `Cast`, read as its operand's word by rule K8 (below).
 
 σ keeps every bit. From 2026-10-25 the kernel read σ(x) as `x`'s 32-bit
 word (rules K1 to K4); step 4b of "Every format its own nodes"
@@ -680,10 +680,11 @@ and its refusal,
 ## The word of a narrow cast
 
 Every conversion into an 8- or 16-bit format, in C, C++, Rust or a
-specification, is `MachineIntegerCast` (the conversion table's `Cast`
+specification, is a generic `Cast` node (the conversion table's `Cast`
 entry). Rule K7 (decision of 2026-10-26) gives its 32-bit word: for a
 destination of `b` bits, `m = 2^b - 1` and `s = 2^(b-1)`, and `w` the
-operand's word (its low word `UInt32From64(x)` for a 64-bit operand),
+operand's word (its low word, the `UInt32From64` spelling of `Cast`, for a
+64-bit operand),
 
 | Destination | Word of `Cast(S -> F, x)` |
 |---|---|
@@ -1221,7 +1222,7 @@ widening of an 8- or 16-bit value into a type that contains it is admitted
 when the observation reads the same word, or its 32-to-64-bit sign
 extension (zero extension for an unsigned source); the word is the value's
 canonical carrier, so the source's own range serves as the two bounds. C's narrowing into those types is a typed
-`MachineIntegerCast` node; the rule compares it with the canonical cast, and
+generic `Cast` node; the rule compares it with the canonical cast, and
 also looks through a C conversion from a 32-bit type that contains the
 destination (`w as int32 as uint16`) to the carrier beneath it, under the same
 bounds. A different mask, operand, or destination is refused; widening after an intervening truncation cannot be

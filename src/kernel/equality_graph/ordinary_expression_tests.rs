@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 use crate::kernel::{
     BitvectorBinaryOp as B, BitvectorUnaryOp as U, CarrierWidth as W, IntegerTerm as I,
@@ -104,19 +105,44 @@ fn unary_operations() -> Vec<(U, bool, bool)> {
             true,
             true,
         ),
-        (U::Int64From32, false, true),
-        (U::UInt64From32, false, true),
-        (U::UInt32From64, true, false),
-        (U::Int64FromUInt32, false, true),
-        (U::UInt64FromInt32, false, true),
-        (U::UInt64FromInt64, true, true),
+        (
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32),
+            false,
+            true,
+        ),
+        (
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32),
+            false,
+            true,
+        ),
+        (
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt32From64),
+            true,
+            false,
+        ),
+        (
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64FromUInt32),
+            false,
+            true,
+        ),
+        (
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt32),
+            false,
+            true,
+        ),
+        (
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt64),
+            true,
+            true,
+        ),
     ];
     for source in [M::Int8, M::UInt16, M::Int32, M::UInt32, M::Int64, M::UInt64] {
         for destination in [M::Int8, M::UInt16, M::Int32, M::UInt32, M::Int64, M::UInt64] {
             ops.push((
-                U::MachineIntegerCast {
-                    source,
-                    destination,
+                U::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
                 },
                 W::of_machine_type(source) == W::Bits64,
                 W::of_machine_type(destination) == W::Bits64,
@@ -188,9 +214,11 @@ fn every_integer_operator_propagates_early_and_late_aliases() {
             }
             // An 8- or 16-bit operand is a value of its width, equated at it.
             match &a {
-                Bitvector32Term::MachineIntegerCast { source, .. }
-                    if source.format().bits() < 32 =>
-                {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    ..
+                } if source.format().bits() < 32 => {
                     let mut state = graph.state.lock().expect("equality graph");
                     state.terms.add_typed_equality(
                         W::of_machine_type(*source),
@@ -272,8 +300,8 @@ fn casts_from_integer_share_aliases_and_preserve_conversion_identity() {
     }
     assert!(!graph.are_int32_equal(&cast(x.clone(), M::Int8), &cast(y.clone(), M::UInt8)));
     assert!(!graph.are_uint64_equal(
-        &U::Int64From32.build_raw(word(940_033)),
-        &U::UInt64From32.build_raw(word(940_033))
+        &BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32).build_raw(word(940_033)),
+        &BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32).build_raw(word(940_033))
     ));
 }
 #[test]
@@ -331,7 +359,7 @@ fn nested_operators_register_the_pointer_arguments_they_use() {
         ))],
     };
     let expression = |pointer| {
-        U::UInt64From32.build_raw(
+        BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32).build_raw(
             B::Machine(
                 crate::kernel::MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::BitwiseAnd,

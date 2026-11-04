@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::Bitvector32Term;
 use crate::kernel::binary_term;
 use crate::kernel::{bits32_constant, constant_u32};
 
@@ -5617,8 +5618,10 @@ mod word_tag_tests {
     use super::*;
 
     fn word() -> (Bitvector32Term, CValue) {
-        let bits =
-            Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::Variable(Variable(997_070))));
+        let bits = Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt64From32,
+            Box::new(Bitvector32Term::Variable(Variable(997_070))),
+        );
         let value =
             CValue::UInt64(bits.clone()).complete_word(Pointer::symbolic(Variable(997_071)));
         (bits, value)

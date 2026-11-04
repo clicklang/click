@@ -203,7 +203,7 @@ fn division_guards_retain_shared_prefixes_in_linear_work() {
 fn division_guard_casts_reuse_growing_composition_prefixes() {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use crate::kernel::{
-        CType, KernelMachineCastEncoding as Encoding, KernelTerm, KernelTermExport, KernelType,
+        CType, KernelTerm, KernelTermExport, KernelType, MachineCastSpelling as Encoding,
         MachineOperandView as V,
     };
     let samples = [16usize, 64, 256].map(|size| {

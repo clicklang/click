@@ -6,6 +6,7 @@
 use super::*;
 use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_op};
 
 /// A two-operand arithmetic [`Bitvector32Term`] operator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -21,37 +22,37 @@ pub(crate) enum BitvectorBinaryOp {
 pub(crate) enum BitvectorUnaryOp {
     /// A format-carrying machine operator ([`Bitvector32Term::Unary`]).
     Machine(MachineIntegerType, MachineUnaryOp),
-    Int64From32,
-    UInt64From32,
-    UInt32From64,
-    Int64FromUInt32,
-    UInt64FromInt32,
-    UInt64FromInt64,
+    /// A conversion ([`Bitvector32Term::Cast`]): its spelling and formats.
+    Cast {
+        spelling: MachineCastSpelling,
+        from: MachineIntegerType,
+        to: MachineIntegerType,
+    },
     Float32Negate,
     Float64Negate,
-    MachineIntegerCast {
-        source: MachineIntegerType,
-        destination: MachineIntegerType,
-    },
 }
 
-/// The operator and format of a machine operator node, which its variant
-/// alone does not name ([`Bitvector32Term::machine_operator`]).
+/// The operator and format of a machine operator node, or the spelling of a
+/// conversion, which its variant alone does not name
+/// ([`Bitvector32Term::machine_operator`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum MachineOperator {
     Binary(MachineBinaryOp, MachineIntegerType),
     Unary(MachineUnaryOp, MachineIntegerType),
+    Cast(MachineCastSpelling),
 }
 
 impl Bitvector32Term {
-    /// The operator and format of a `Binary` or `Unary` node, `None` for any
-    /// other. Code that compares nodes by variant (a discriminant test, a
-    /// shape hash) compares this too, since one variant spells every
-    /// machine operator.
+    /// The operator and format of a `Binary` or `Unary` node and the
+    /// spelling of a `Cast`, `None` for any other. Code that compares nodes
+    /// by variant (a discriminant test, a shape hash) compares this too,
+    /// since one variant spells every machine operator and every
+    /// conversion.
     pub(crate) fn machine_operator(&self) -> Option<MachineOperator> {
         match self {
             Self::Binary { op, format, .. } => Some(MachineOperator::Binary(*op, *format)),
             Self::Unary { op, format, .. } => Some(MachineOperator::Unary(*op, *format)),
+            Self::Cast { spelling, .. } => Some(MachineOperator::Cast(*spelling)),
             _ => None,
         }
     }
@@ -88,15 +89,9 @@ impl Bitvector32Term {
             | Self::IntegerToMachine { .. }
             | unary_term!(Int32, BitwiseNot, _)
             | Self::Unary { .. }
-            | Self::Int64From32(_)
-            | Self::UInt64From32(_)
-            | Self::UInt32From64(_)
-            | Self::Int64FromUInt32(_)
-            | Self::UInt64FromInt32(_)
-            | Self::UInt64FromInt64(_)
+            | Self::Cast { .. }
             | Self::Float32Negate(_)
             | Self::Float64Negate(_)
-            | Self::MachineIntegerCast { .. }
             | Self::BoolCast { .. } => None,
         }
     }
@@ -110,25 +105,21 @@ impl Bitvector32Term {
                 op,
                 operand,
             } => Some((BitvectorUnaryOp::Machine(*format, *op), operand)),
-            Self::Int64From32(value) => Some((BitvectorUnaryOp::Int64From32, value)),
-            Self::UInt64From32(value) => Some((BitvectorUnaryOp::UInt64From32, value)),
-            Self::UInt32From64(value) => Some((BitvectorUnaryOp::UInt32From64, value)),
-            Self::Int64FromUInt32(value) => Some((BitvectorUnaryOp::Int64FromUInt32, value)),
-            Self::UInt64FromInt32(value) => Some((BitvectorUnaryOp::UInt64FromInt32, value)),
-            Self::UInt64FromInt64(value) => Some((BitvectorUnaryOp::UInt64FromInt64, value)),
-            Self::Float32Negate(value) => Some((BitvectorUnaryOp::Float32Negate, value)),
-            Self::Float64Negate(value) => Some((BitvectorUnaryOp::Float64Negate, value)),
-            Self::MachineIntegerCast {
+            Self::Cast {
+                spelling,
                 value,
-                source,
-                destination,
+                from,
+                to,
             } => Some((
-                BitvectorUnaryOp::MachineIntegerCast {
-                    source: *source,
-                    destination: *destination,
+                BitvectorUnaryOp::Cast {
+                    spelling: *spelling,
+                    from: *from,
+                    to: *to,
                 },
                 value,
             )),
+            Self::Float32Negate(value) => Some((BitvectorUnaryOp::Float32Negate, value)),
+            Self::Float64Negate(value) => Some((BitvectorUnaryOp::Float64Negate, value)),
             Bitvector32Term::Constant { .. }
             | Self::Variable(_)
             | Self::If { .. }
@@ -144,6 +135,51 @@ impl Bitvector32Term {
             | Self::Float64Binary { .. }
             | Self::BoolCast { .. } => None,
         }
+    }
+}
+
+impl Bitvector32Term {
+    /// The bare legacy-spelled conversion node of `value`, at the formats
+    /// its spelling fixes ([`MachineCastSpelling::legacy_formats`]).
+    pub(crate) fn legacy_cast(spelling: MachineCastSpelling, value: Box<Self>) -> Self {
+        let (from, to) = spelling
+            .legacy_formats()
+            .expect("a legacy conversion spelling");
+        Self::Cast {
+            spelling,
+            value,
+            from,
+            to,
+        }
+    }
+
+    /// The bare conversion node of `value` with this spelling, without
+    /// folding. A legacy spelling takes its own formats, whatever `from` and
+    /// `to` say ([`MachineCastSpelling::legacy_formats`]).
+    pub(crate) fn cast_node(
+        spelling: MachineCastSpelling,
+        from: MachineIntegerType,
+        to: MachineIntegerType,
+        value: Self,
+    ) -> Self {
+        let (from, to) = spelling.legacy_formats().unwrap_or((from, to));
+        Self::Cast {
+            spelling,
+            value: Box::new(value),
+            from,
+            to,
+        }
+    }
+}
+
+impl BitvectorUnaryOp {
+    /// The conversion operator of a legacy spelling, at the formats it fixes
+    /// ([`MachineCastSpelling::legacy_formats`]).
+    pub(crate) fn legacy_cast(spelling: MachineCastSpelling) -> Self {
+        let (from, to) = spelling
+            .legacy_formats()
+            .expect("a legacy conversion spelling");
+        Self::Cast { spelling, from, to }
     }
 }
 
@@ -229,16 +265,7 @@ impl BitvectorUnaryOp {
 
     /// Whether the operator converts an integer between C widths.
     pub(crate) fn is_width_conversion(self) -> bool {
-        matches!(
-            self,
-            Self::Int64From32
-                | Self::UInt64From32
-                | Self::UInt32From64
-                | Self::Int64FromUInt32
-                | Self::UInt64FromInt32
-                | Self::UInt64FromInt64
-                | Self::MachineIntegerCast { .. }
-        )
+        matches!(self, Self::Cast { .. })
     }
 
     /// Whether the operator is the 32-bit word complement. Some traversals
@@ -254,18 +281,19 @@ impl BitvectorUnaryOp {
     pub(crate) fn build(self, value: Bitvector32Term) -> Bitvector32Term {
         match self {
             Self::Machine(format, op) => Bitvector32Term::machine_unary(format, op, value),
-            Self::Int64From32 => Bitvector32Term::int64_from_32(value),
-            Self::UInt64From32 => Bitvector32Term::uint64_from_32(value),
-            Self::UInt32From64 => Bitvector32Term::uint32_from_64(value),
-            Self::Int64FromUInt32 => Bitvector32Term::int64_from_uint32(value),
-            Self::UInt64FromInt32 => Bitvector32Term::uint64_from_int32(value),
-            Self::UInt64FromInt64 => Bitvector32Term::uint64_from_int64(value),
+            Self::Cast { spelling, from, to } => match spelling {
+                MachineCastSpelling::Generic => {
+                    Bitvector32Term::machine_integer_cast(from, to, value)
+                }
+                MachineCastSpelling::Int64From32 => Bitvector32Term::int64_from_32(value),
+                MachineCastSpelling::UInt64From32 => Bitvector32Term::uint64_from_32(value),
+                MachineCastSpelling::UInt32From64 => Bitvector32Term::uint32_from_64(value),
+                MachineCastSpelling::Int64FromUInt32 => Bitvector32Term::int64_from_uint32(value),
+                MachineCastSpelling::UInt64FromInt32 => Bitvector32Term::uint64_from_int32(value),
+                MachineCastSpelling::UInt64FromInt64 => Bitvector32Term::uint64_from_int64(value),
+            },
             Self::Float32Negate => Bitvector32Term::float32_negate(value),
             Self::Float64Negate => Bitvector32Term::float64_negate(value),
-            Self::MachineIntegerCast {
-                source,
-                destination,
-            } => Bitvector32Term::machine_integer_cast(source, destination, value),
         }
     }
 
@@ -274,10 +302,10 @@ impl BitvectorUnaryOp {
     pub(crate) fn build_raw(self, value: Bitvector32Term) -> Bitvector32Term {
         let value = match self {
             Self::Machine(MachineIntegerType::Int32 | MachineIntegerType::UInt32, _)
-            | Self::Int64From32
-            | Self::UInt64From32
-            | Self::Int64FromUInt32
-            | Self::UInt64FromInt32 => value.constant_word32(),
+            | cast_op!(Int64From32)
+            | cast_op!(UInt64From32)
+            | cast_op!(Int64FromUInt32)
+            | cast_op!(UInt64FromInt32) => value.constant_word32(),
             _ => value,
         };
         let value = Box::new(value);
@@ -287,22 +315,14 @@ impl BitvectorUnaryOp {
                 op,
                 operand: value,
             },
-            Self::Int64From32 => Bitvector32Term::Int64From32(value),
-            Self::UInt64From32 => Bitvector32Term::UInt64From32(value),
-            Self::UInt32From64 => Bitvector32Term::UInt32From64(value),
-            Self::Int64FromUInt32 => Bitvector32Term::Int64FromUInt32(value),
-            Self::UInt64FromInt32 => Bitvector32Term::UInt64FromInt32(value),
-            Self::UInt64FromInt64 => Bitvector32Term::UInt64FromInt64(value),
+            Self::Cast { spelling, from, to } => Bitvector32Term::Cast {
+                spelling,
+                value,
+                from,
+                to,
+            },
             Self::Float32Negate => Bitvector32Term::Float32Negate(value),
             Self::Float64Negate => Bitvector32Term::Float64Negate(value),
-            Self::MachineIntegerCast {
-                source,
-                destination,
-            } => Bitvector32Term::MachineIntegerCast {
-                value,
-                source,
-                destination,
-            },
         }
     }
 }
@@ -611,19 +631,20 @@ mod tests {
             ),
             BitvectorUnaryOp::Machine(MachineIntegerType::Int64, MachineUnaryOp::BitwiseNot),
             BitvectorUnaryOp::Machine(MachineIntegerType::UInt64, MachineUnaryOp::BitwiseNot),
-            BitvectorUnaryOp::Int64From32,
-            BitvectorUnaryOp::UInt64From32,
-            BitvectorUnaryOp::UInt32From64,
-            BitvectorUnaryOp::Int64FromUInt32,
-            BitvectorUnaryOp::UInt64FromInt32,
-            BitvectorUnaryOp::UInt64FromInt64,
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt32From64),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64FromUInt32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt32),
+            BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64FromInt64),
             BitvectorUnaryOp::Float32Negate,
             BitvectorUnaryOp::Float64Negate,
             // Not a 32-to-64-bit extension: those build the typed extension
             // node, their one spelling.
-            BitvectorUnaryOp::MachineIntegerCast {
-                source: MachineIntegerType::Int64,
-                destination: MachineIntegerType::UInt64,
+            BitvectorUnaryOp::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: MachineIntegerType::Int64,
+                to: MachineIntegerType::UInt64,
             },
         ]
     }

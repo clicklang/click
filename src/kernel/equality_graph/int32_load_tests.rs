@@ -1,4 +1,5 @@
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 fn var(id: u64) -> Bitvector32Term {
     Bitvector32Term::Variable(Variable(id))
@@ -446,20 +447,22 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
             1,
         ))
     };
-    let widen = |value: Bitvector32Term| Bitvector32Term::MachineIntegerCast {
+    let widen = |value: Bitvector32Term| Bitvector32Term::Cast {
+        spelling: MachineCastSpelling::Generic,
         value: Box::new(value),
-        source: MachineIntegerType::UInt8,
-        destination: MachineIntegerType::Int32,
+        from: MachineIntegerType::UInt8,
+        to: MachineIntegerType::Int32,
     };
     let sizes = [8_u64, 32, 128, 512];
     let mut samples = Vec::new();
     for size in sizes {
         // Keep term-bridge imports cold at every sample size.
         crate::kernel::clear_integer_bridge_memo();
-        let word = |value: Bitvector32Term| Bitvector32Term::MachineIntegerCast {
+        let word = |value: Bitvector32Term| Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: Box::new(value),
-            source: MachineIntegerType::UInt8,
-            destination: MachineIntegerType::UInt32,
+            from: MachineIntegerType::UInt8,
+            to: MachineIntegerType::UInt32,
         };
         let mut widened = widen(read(0));
         let mut words = word(read(0));

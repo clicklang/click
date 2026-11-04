@@ -2,9 +2,10 @@
 //! explicitly named Legacy leaf is a lossless boundary for unmigrated sorts.
 //! No constructor consults facts, evaluates arithmetic, or unfolds a call.
 use super::*;
+use crate::kernel::MachineCastSpelling;
 mod boolean;
 mod machine;
-pub use machine::{KernelMachineCastEncoding, KernelMachineLiteral};
+pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, Weak};
@@ -73,7 +74,7 @@ pub enum KernelTermNode {
         operand: KernelTerm,
     },
     MachineCast {
-        encoding: KernelMachineCastEncoding,
+        encoding: MachineCastSpelling,
         source: MachineIntegerType,
         destination: MachineIntegerType,
         operand: KernelTerm,
@@ -608,9 +609,10 @@ mod tests {
     #[test]
     fn observation_storage_shares_casts_but_keeps_opaque_compatibility_boundaries() {
         let format = MachineIntegerType::Int32;
-        let cast = Bitvector32Term::MachineIntegerCast {
-            source: MachineIntegerType::Int8,
-            destination: format,
+        let cast = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int8,
+            to: format,
             value: Box::new(Bitvector32Term::Variable(Variable(87654326))),
         };
         let term = KernelTermImport::default().machine(format, &cast);

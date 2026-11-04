@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 fn boxed(term: Bitvector32Term) -> Box<Bitvector32Term> {
     Box::new(term)
@@ -29,16 +30,18 @@ fn operator_families_imply_their_carrier() {
         Ok(Some(CarrierWidth::Bits64))
     );
     assert_eq!(
-        term_width(&Bitvector32Term::Int64From32(boxed(
-            Bitvector32Term::constant(7)
-        ))),
+        term_width(&Bitvector32Term::legacy_cast(
+            MachineCastSpelling::Int64From32,
+            boxed(Bitvector32Term::constant(7))
+        )),
         Ok(Some(CarrierWidth::Bits64))
     );
     assert_eq!(
-        term_width(&Bitvector32Term::MachineIntegerCast {
+        term_width(&Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: boxed(Bitvector32Term::uint64_constant(7)),
-            source: MachineIntegerType::UInt64,
-            destination: MachineIntegerType::UInt128,
+            from: MachineIntegerType::UInt64,
+            to: MachineIntegerType::UInt128,
         }),
         Ok(Some(CarrierWidth::Bits128))
     );
@@ -136,14 +139,15 @@ fn a_condition_reports_each_variable_at_the_width_it_is_used() {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
         left: boxed(Bitvector32Term::Variable(n)),
-        right: boxed(Bitvector32Term::UInt32From64(boxed(
-            Bitvector32Term::Binary {
+        right: boxed(Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt32From64,
+            boxed(Bitvector32Term::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: boxed(Bitvector32Term::Variable(n)),
                 right: boxed(Bitvector32Term::uint64_constant(1)),
-            },
-        ))),
+            }),
+        )),
     };
     assert_eq!(
         condition_variable_widths(&mixed),

@@ -2,7 +2,7 @@
 //! Native narrow comparisons and their promoted spellings share this reading;
 //! stored terms and the comparison's written direction remain unchanged.
 use crate::kernel::{
-    CompareRelation, ConditionTerm, KernelMachineCastEncoding as Encoding, MachineIntegerType,
+    CompareRelation, ConditionTerm, MachineCastSpelling as Encoding, MachineIntegerType,
     MachineOperandView as View,
 };
 use crate::kernel::{constant_u32, int32_constant, uint32_constant};

@@ -276,10 +276,11 @@ mod shared_query_tests {
             match side {
                 IntegerTerm::Machine(machine) => {
                     let word = machine.value().clone();
-                    let widened = Bitvector32Term::MachineIntegerCast {
+                    let widened = Bitvector32Term::Cast {
+                        spelling: crate::kernel::MachineCastSpelling::Generic,
                         value: Box::new(word.clone()),
-                        source: machine.ty(),
-                        destination: ty,
+                        from: machine.ty(),
+                        to: ty,
                     };
                     // A value of another width is never `ty`'s word as written:
                     // its word in `ty` is its widening, a node of its own.
@@ -328,9 +329,10 @@ mod shared_query_tests {
                     left: Box::new(variable.clone()),
                     right: Box::new(variable.clone()),
                 },
-                Bitvector32Term::MachineIntegerCast {
-                    source: MachineIntegerType::Int32,
-                    destination: format,
+                Bitvector32Term::Cast {
+                    spelling: crate::kernel::MachineCastSpelling::Generic,
+                    from: MachineIntegerType::Int32,
+                    to: format,
                     value: Box::new(variable),
                 },
             ];

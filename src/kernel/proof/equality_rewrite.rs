@@ -2,6 +2,7 @@
 
 use super::fact_reasoning::exactly_available_fact;
 use super::{ProofFacts, PropositionObligation, PropositionSource};
+use crate::kernel::Bitvector32Term;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
@@ -3305,14 +3306,19 @@ mod tests {
         // These raw native forms are valid opaque observation identities.
         // Congruence must not fold them while rewriting an unrelated Integer.
         let terms = [
-            Bitvector32Term::MachineIntegerCast {
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value: Box::new(Bitvector32Term::constant(1)),
-                source: MachineIntegerType::Int32,
-                destination: MachineIntegerType::Int64,
+                from: MachineIntegerType::Int32,
+                to: MachineIntegerType::Int64,
             },
-            Bitvector32Term::Int64FromUInt32(Box::new(Bitvector32Term::UInt32From64(Box::new(
-                Bitvector32Term::uint64_constant(1),
-            )))),
+            Bitvector32Term::legacy_cast(
+                MachineCastSpelling::Int64FromUInt32,
+                Box::new(Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(Bitvector32Term::uint64_constant(1)),
+                )),
+            ),
             Bitvector32Term::If {
                 condition: Box::new(ConditionTerm::Constant(true)),
                 then_term: Box::new(Bitvector32Term::int64_constant(1)),
@@ -3350,13 +3356,14 @@ mod tests {
         let cast = |value: IntegerTerm| {
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int64,
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value: Box::new(Bitvector32Term::IntegerToMachine {
                         value: value.into(),
                         destination: MachineIntegerType::Int32,
                     }),
-                    source: MachineIntegerType::Int32,
-                    destination: MachineIntegerType::Int64,
+                    from: MachineIntegerType::Int32,
+                    to: MachineIntegerType::Int64,
                 },
             ))
         };

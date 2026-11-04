@@ -581,6 +581,33 @@ Progress:
   derived order and hashes: session preparation by +0.16% in total (at most
   +1.3%, `bounded-pool`), claim verification by -0.10% (at most -8.7%, one
   `cpp-stack` claim), expansion by 4 units.
+- One conversion node is done (2026-11-04). `Cast { spelling, value, from,
+  to }` replaces `MachineIntegerCast` and the six legacy per-pair
+  conversions (`Int64From32`, `UInt64From32`, `UInt32From64`,
+  `Int64FromUInt32`, `UInt64FromInt32`, `UInt64FromInt64`), and
+  `BitvectorUnaryOp::Cast { spelling, from, to }` their seven shape
+  operators. The spelling is `MachineCastSpelling`, the kernel term's
+  former `KernelMachineCastEncoding` under one name: `Generic` or one of
+  the six legacy spellings. It is part of the identity, so no two terms
+  that were distinct become equal: a legacy-spelled conversion and the
+  generic one of the same formats stay two terms. A legacy spelling fixes
+  its formats (`MachineCastSpelling::legacy_formats`); the low word reads
+  its operand as `uint64` bits, the kernel's convention (maintainer
+  direction, 2026-11-04: it reads the 64-bit operand's bits, so a fixed
+  source is principled, and no source signedness is recorded). The
+  builders keep their names (`machine_integer_cast`, `int64_from_32`,
+  `uint32_from_64`, ...) beside the bare `Bitvector32Term::legacy_cast`
+  and `cast_node`; patterns use `cast_term!(Spelling, value)` and
+  `cast_op!(Spelling)`. `spelling` precedes the formats, so the derived
+  order of conversions is the old one. Discriminant-based comparisons and
+  hashes read the spelling (`machine_operator()` returns it, and the
+  memory-blind hash and the held-term fingerprint hash it); `Debug`
+  prints the former variant names. The lookup key `AlphaBitvectorKey`
+  keeps its per-spelling variants. Every `click verify` output over the
+  integer mdtests and the examples (434 targets) is byte-identical, and
+  every `click audit --verbose` verdict and work unit (147 targets) is
+  unchanged: session preparation, expansion and claim verification
+  totals are equal.
 
 
 - Every format its own nodes (planned 2026-10-29, [Decisions](#decisions)).
@@ -822,7 +849,8 @@ Progress:
      format audit's `promoted-narrow-arithmetic` still records. The core
      library's narrow `wrapping_add`, `wrapping_sub` and `wrapping_mul` are
      `a + b`, `a - b` and `a * b` at their result type.
-  9. The 64-bit relations and the legacy conversions merged into `Cast`.
+  9. The 64-bit relations and the legacy conversions merged into `Cast`
+     (the conversions done 2026-11-04, above).
   10. Generic `T: intn` / `T: uintn` library theorems.
 
 ### Stage 4. Front ends and library

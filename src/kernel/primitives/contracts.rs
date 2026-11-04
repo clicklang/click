@@ -1,6 +1,7 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
@@ -3186,11 +3187,17 @@ pub(crate) fn wide_range_bounds(
         CValue::Int32(bits32_constant!(bits)) => Some(Bitvector32Term::uint64_constant(
             constant_u32(*bits) as i32 as i64 as u64,
         )),
-        CValue::Int32(term) => Some(Bitvector32Term::UInt64FromInt32(Box::new(term.clone()))),
+        CValue::Int32(term) => Some(Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt64FromInt32,
+            Box::new(term.clone()),
+        )),
         CValue::Int64(int64_constant!(value)) => {
             Some(Bitvector32Term::uint64_constant(constant_i64(*value) as u64))
         }
-        CValue::Int64(term) => Some(Bitvector32Term::UInt64FromInt64(Box::new(term.clone()))),
+        CValue::Int64(term) => Some(Bitvector32Term::legacy_cast(
+            MachineCastSpelling::UInt64FromInt64,
+            Box::new(term.clone()),
+        )),
         _ => None,
     };
     let wide_typed = |value: &CValue| matches!(value, CValue::UInt64(_) | CValue::Int64(_));

@@ -1,6 +1,7 @@
 //! Lossless machine-value boundary. Result type and operator format are
 //! separate: a uint32 value can contain a sign-free int32 word operation.
 use super::*;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::{
     constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, native_constant,
     uint32_constant, uint64_constant,
@@ -52,7 +53,7 @@ impl KernelTerm {
     }
 
     pub(crate) fn machine_cast_shared(
-        encoding: KernelMachineCastEncoding,
+        encoding: MachineCastSpelling,
         source: MachineIntegerType,
         destination: MachineIntegerType,
         operand: Self,
@@ -200,39 +201,17 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
     }
 }
 
-/// Transitional checker encoding, kept distinct from cast semantics so an
-/// import/export round trip preserves the exact old constructor. Remove this
-/// distinction when checker consumers no longer require the old tree.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub enum KernelMachineCastEncoding {
-    Generic,
-    Int64From32,
-    UInt64From32,
-    UInt32From64,
-    Int64FromUInt32,
-    UInt64FromInt32,
-    UInt64FromInt64,
-}
-
-impl KernelMachineCastEncoding {
+/// The kernel reads a conversion's spelling as the term does: its
+/// `MachineCast` node keeps the [`MachineCastSpelling`], so an
+/// import/export round trip preserves the exact constructor.
+impl MachineCastSpelling {
     pub(crate) fn of_unary(
         op: BitvectorUnaryOp,
     ) -> Option<(Self, MachineIntegerType, MachineIntegerType)> {
-        use BitvectorUnaryOp as U;
-        use MachineIntegerType as T;
-        Some(match op {
-            U::MachineIntegerCast {
-                source,
-                destination,
-            } => (Self::Generic, source, destination),
-            U::Int64From32 => (Self::Int64From32, T::Int32, T::Int64),
-            U::UInt64From32 => (Self::UInt64From32, T::UInt32, T::UInt64),
-            U::UInt32From64 => (Self::UInt32From64, T::UInt64, T::UInt32),
-            U::Int64FromUInt32 => (Self::Int64FromUInt32, T::UInt32, T::Int64),
-            U::UInt64FromInt32 => (Self::UInt64FromInt32, T::Int32, T::UInt64),
-            U::UInt64FromInt64 => (Self::UInt64FromInt64, T::Int64, T::UInt64),
-            _ => return None,
-        })
+        match op {
+            BitvectorUnaryOp::Cast { spelling, from, to } => Some((spelling, from, to)),
+            _ => None,
+        }
     }
 
     pub(crate) fn unary(
@@ -240,18 +219,11 @@ impl KernelMachineCastEncoding {
         source: MachineIntegerType,
         destination: MachineIntegerType,
     ) -> BitvectorUnaryOp {
-        use BitvectorUnaryOp as U;
-        match self {
-            Self::Generic => U::MachineIntegerCast {
-                source,
-                destination,
-            },
-            Self::Int64From32 => U::Int64From32,
-            Self::UInt64From32 => U::UInt64From32,
-            Self::UInt32From64 => U::UInt32From64,
-            Self::Int64FromUInt32 => U::Int64FromUInt32,
-            Self::UInt64FromInt32 => U::UInt64FromInt32,
-            Self::UInt64FromInt64 => U::UInt64FromInt64,
+        let (from, to) = self.legacy_formats().unwrap_or((source, destination));
+        BitvectorUnaryOp::Cast {
+            spelling: self,
+            from,
+            to,
         }
     }
 }
@@ -309,11 +281,11 @@ impl KernelTermImport {
             value
                 if value
                     .as_unary()
-                    .and_then(|(op, _)| KernelMachineCastEncoding::of_unary(op))
+                    .and_then(|(op, _)| MachineCastSpelling::of_unary(op))
                     .is_some() =>
             {
                 let (op, operand) = value.as_unary()?;
-                let (encoding, source, destination) = KernelMachineCastEncoding::of_unary(op)?;
+                let (encoding, source, destination) = MachineCastSpelling::of_unary(op)?;
                 KernelTermNode::MachineCast {
                     encoding,
                     source,
@@ -393,42 +365,19 @@ impl KernelTermImport {
                 operator: *op,
                 operand: self.machine(*format, operand),
             },
-            Old::MachineIntegerCast {
-                source,
-                destination,
+            // A legacy spelling's formats are fixed: the low word reads its
+            // operand as `uint64` bits, not as its source C type.
+            Old::Cast {
+                spelling,
                 value,
+                from,
+                to,
             } => Node::MachineCast {
-                encoding: KernelMachineCastEncoding::Generic,
-                source: *source,
-                destination: *destination,
-                operand: self.machine(*source, value),
+                encoding: *spelling,
+                source: *from,
+                destination: *to,
+                operand: self.machine(*from, value),
             },
-            Old::Int64From32(value)
-            | Old::UInt64From32(value)
-            | Old::UInt32From64(value)
-            | Old::Int64FromUInt32(value)
-            | Old::UInt64FromInt32(value)
-            | Old::UInt64FromInt64(value) => {
-                use KernelMachineCastEncoding as Encoding;
-                use MachineIntegerType as Ty;
-                let (encoding, source, destination) = match term {
-                    Old::Int64From32(_) => (Encoding::Int64From32, Ty::Int32, Ty::Int64),
-                    Old::UInt64From32(_) => (Encoding::UInt64From32, Ty::UInt32, Ty::UInt64),
-                    // Low bits do not depend on signedness. UInt64 is the
-                    // operand's bit interpretation, not its source C type.
-                    Old::UInt32From64(_) => (Encoding::UInt32From64, Ty::UInt64, Ty::UInt32),
-                    Old::Int64FromUInt32(_) => (Encoding::Int64FromUInt32, Ty::UInt32, Ty::Int64),
-                    Old::UInt64FromInt32(_) => (Encoding::UInt64FromInt32, Ty::Int32, Ty::UInt64),
-                    Old::UInt64FromInt64(_) => (Encoding::UInt64FromInt64, Ty::Int64, Ty::UInt64),
-                    _ => unreachable!(),
-                };
-                Node::MachineCast {
-                    encoding,
-                    source,
-                    destination,
-                    operand: self.machine(source, value),
-                }
-            }
             // Loads, binders and pointer observations retain their complete
             // legacy payload.
             _ => {
@@ -500,23 +449,7 @@ impl KernelTermExport {
                 source,
                 destination,
                 operand,
-            } => {
-                use KernelMachineCastEncoding as Encoding;
-                let value = Box::new(Self::machine(operand)?);
-                match encoding {
-                    Encoding::Generic => Old::MachineIntegerCast {
-                        source: *source,
-                        destination: *destination,
-                        value,
-                    },
-                    Encoding::Int64From32 => Old::Int64From32(value),
-                    Encoding::UInt64From32 => Old::UInt64From32(value),
-                    Encoding::UInt32From64 => Old::UInt32From64(value),
-                    Encoding::Int64FromUInt32 => Old::Int64FromUInt32(value),
-                    Encoding::UInt64FromInt32 => Old::UInt64FromInt32(value),
-                    Encoding::UInt64FromInt64 => Old::UInt64FromInt64(value),
-                }
-            }
+            } => Old::cast_node(*encoding, *source, *destination, Self::machine(operand)?),
             Node::Legacy(value) => {
                 let PureFunctionArgument::Value(value) = value.value() else {
                     return Err("expected a machine value legacy payload");
@@ -633,16 +566,18 @@ mod tests {
     #[test]
     fn specialized_casts_share_typed_nodes_without_losing_their_encoding() {
         use Bitvector32Term as Old;
+        use MachineCastSpelling as S;
         use MachineIntegerType as Ty;
-        let casts: [(fn(Box<Old>) -> Old, Ty, Ty); 6] = [
-            (Old::Int64From32, Ty::Int32, Ty::Int64),
-            (Old::UInt64From32, Ty::UInt32, Ty::UInt64),
-            (Old::UInt32From64, Ty::UInt64, Ty::UInt32),
-            (Old::Int64FromUInt32, Ty::UInt32, Ty::Int64),
-            (Old::UInt64FromInt32, Ty::Int32, Ty::UInt64),
-            (Old::UInt64FromInt64, Ty::Int64, Ty::UInt64),
+        let casts = [
+            (S::Int64From32, Ty::Int32, Ty::Int64),
+            (S::UInt64From32, Ty::UInt32, Ty::UInt64),
+            (S::UInt32From64, Ty::UInt64, Ty::UInt32),
+            (S::Int64FromUInt32, Ty::UInt32, Ty::Int64),
+            (S::UInt64FromInt32, Ty::Int32, Ty::UInt64),
+            (S::UInt64FromInt64, Ty::Int64, Ty::UInt64),
         ];
-        for (constructor, source, destination) in casts {
+        for (spelling, source, destination) in casts {
+            let constructor = |value| Old::legacy_cast(spelling, value);
             let operand = Old::Variable(Variable(991103));
             let value = PureFunctionArgument::Value(wrap_exact(
                 destination,
@@ -663,9 +598,10 @@ mod tests {
             assert_eq!(KernelTermImport::default().argument(&value), common);
             let generic = PureFunctionArgument::Value(wrap_exact(
                 destination,
-                Old::MachineIntegerCast {
-                    source,
-                    destination,
+                Old::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
                     value: Box::new(operand),
                 },
             ));
@@ -685,12 +621,12 @@ mod tests {
 
     #[test]
     fn machine_cast_bridge_keeps_source_and_destination_without_evaluation() {
-        let source =
-            PureFunctionArgument::Value(CValue::UInt64(Bitvector32Term::MachineIntegerCast {
-                source: MachineIntegerType::Int32,
-                destination: MachineIntegerType::UInt64,
-                value: Box::new(Bitvector32Term::constant(u32::MAX)),
-            }));
+        let source = PureFunctionArgument::Value(CValue::UInt64(Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int32,
+            to: MachineIntegerType::UInt64,
+            value: Box::new(Bitvector32Term::constant(u32::MAX)),
+        }));
         let term = KernelTermImport::default().argument(&source);
         assert_eq!(term.children()[0].ty(), &KernelType::C(CType::Int32));
         assert_eq!(term.ty(), &KernelType::C(CType::UInt64));
@@ -765,7 +701,7 @@ impl KernelTerm {
                     break KernelTermImport::default().machine(destination, &value);
                 }
                 if let KernelTermNode::MachineCast {
-                    encoding: KernelMachineCastEncoding::Generic,
+                    encoding: MachineCastSpelling::Generic,
                     source: original,
                     destination: intermediate,
                     operand,
@@ -787,7 +723,7 @@ impl KernelTerm {
                     term,
                     source,
                     destination,
-                    KernelMachineCastEncoding::Generic,
+                    MachineCastSpelling::Generic,
                 );
             };
             for key in path {
@@ -801,7 +737,7 @@ impl KernelTerm {
         operand: Self,
         source: MachineIntegerType,
         destination: MachineIntegerType,
-        encoding: KernelMachineCastEncoding,
+        encoding: MachineCastSpelling,
     ) -> Self {
         Self::machine_cast_shared(
             encoding,
@@ -824,10 +760,10 @@ impl KernelTerm {
             KernelTermNode::MachineLiteral(L::UInt64(bits)) => literal(*bits as u32),
             KernelTermNode::MachineCast {
                 encoding:
-                    KernelMachineCastEncoding::Int64From32
-                    | KernelMachineCastEncoding::UInt64From32
-                    | KernelMachineCastEncoding::Int64FromUInt32
-                    | KernelMachineCastEncoding::UInt64FromInt32,
+                    MachineCastSpelling::Int64From32
+                    | MachineCastSpelling::UInt64From32
+                    | MachineCastSpelling::Int64FromUInt32
+                    | MachineCastSpelling::UInt64FromInt32,
                 operand,
                 ..
             } => operand.with_machine_observation_type(Ty::Int32),
@@ -835,7 +771,7 @@ impl KernelTerm {
                 value.clone(),
                 Ty::UInt64,
                 Ty::UInt32,
-                KernelMachineCastEncoding::UInt32From64,
+                MachineCastSpelling::UInt32From64,
             )
             .with_machine_observation_type(Ty::Int32),
         };
@@ -895,7 +831,7 @@ impl KernelTerm {
         use crate::kernel::machine_integer::conversion::{
             ConversionLowering as C, ConversionPolicy, convert_value, lower,
         };
-        use KernelMachineCastEncoding as E;
+        use MachineCastSpelling as E;
         assert!(self.is_shared_machine_operand());
         if let KernelTermNode::MachineLiteral(literal) = self.node() {
             let value = convert_value(source.value_from_term(literal.legacy_term()), destination)

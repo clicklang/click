@@ -19,6 +19,7 @@ use crate::kernel::{
     CComparisonOperator, CFloatClassification, CFloatCondition, CMemoryRange, ConditionTerm,
     Pointer, PointerBlock, PointerOffsetTerm, Proposition, Variable,
 };
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, native_constant,
     uint64_constant,
@@ -2228,10 +2229,11 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 next_binder,
             )?),
         ),
-        Bitvector32Term::MachineIntegerCast {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         } => AlphaBitvectorKey::MachineIntegerCast(
             *source,
             *destination,
@@ -2459,36 +2461,36 @@ fn alpha_bitvector_key_with_bindings<const ALLOW_LOADS: bool>(
                 alpha_integer_key_with_bindings(value.as_ref(), bindings, next_binder)?,
             )
         }
-        Bitvector32Term::Int64From32(value) => {
+        cast_term!(Int64From32, value) => {
             AlphaBitvectorKey::Int64From32(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(value, bindings, next_binder)?))
         }
-        Bitvector32Term::UInt64From32(value) => {
+        cast_term!(UInt64From32, value) => {
             AlphaBitvectorKey::UInt64From32(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(value, bindings, next_binder)?))
         }
-        Bitvector32Term::UInt32From64(value) => {
+        cast_term!(UInt32From64, value) => {
             AlphaBitvectorKey::UInt32From64(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(value, bindings, next_binder)?))
         }
-        Bitvector32Term::Int64FromUInt32(value) => {
+        cast_term!(Int64FromUInt32, value) => {
             AlphaBitvectorKey::Int64FromUInt32(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(
                 value, bindings, next_binder
             )?))
         }
-        Bitvector32Term::UInt64FromInt32(value) => {
+        cast_term!(UInt64FromInt32, value) => {
             AlphaBitvectorKey::UInt64FromInt32(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(
                 value, bindings, next_binder
             )?))
         }
-        Bitvector32Term::UInt64FromInt64(value) => {
+        cast_term!(UInt64FromInt64, value) => {
             AlphaBitvectorKey::UInt64FromInt64(Box::new(alpha_bitvector_key_with_bindings::<
                 ALLOW_LOADS,
             >(

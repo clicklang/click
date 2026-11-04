@@ -25,6 +25,7 @@ use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     native_constant, uint64_constant,
@@ -1402,9 +1403,15 @@ impl DifferenceGraph {
         let (low, high) = match (domain, term) {
             // A 32-bit widening of a narrow value holds its operand's value,
             // in the operand's format's range (rule K8, a relation).
-            (Domain::Int32, T::MachineIntegerCast { value, source, .. })
-                if term.narrow_widening32_operand().is_some() =>
-            {
+            (
+                Domain::Int32,
+                T::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    value,
+                    from: source,
+                    ..
+                },
+            ) if term.narrow_widening32_operand().is_some() => {
                 self.term_interval(Domain::Narrow(*source), value)
             }
             (Domain::Int32, binary_term!(Bits32, Add, a, b))
@@ -1609,16 +1616,17 @@ impl DifferenceGraph {
             // unsigned reading wraps it above, as for any word).
             (
                 Domain::Int32,
-                T::MachineIntegerCast {
+                T::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value,
-                    source,
-                    destination,
+                    from: source,
+                    to: destination,
                 },
             ) if crate::kernel::is_sign_cast32(*source, *destination) => {
                 self.term_interval(domain, value)
             }
             // Unsigned narrowing keeps the operand modulo 2^32.
-            (Domain::Int32, T::UInt32From64(inner)) => {
+            (Domain::Int32, cast_term!(UInt32From64, inner)) => {
                 let (low, high) = self.term_interval(word_domain(inner), inner);
                 wrap_interval(Domain::Int32, low, high)
             }
@@ -1658,8 +1666,12 @@ impl DifferenceGraph {
                     (then_low.min(else_low), then_high.max(else_high))
                 }
             },
-            (Domain::Int64, T::Int64From32(inner)) => self.term_interval(Domain::Int32, inner),
-            (Domain::UInt64, T::UInt64From32(inner)) => self.term_interval(Domain::UInt32, inner),
+            (Domain::Int64, cast_term!(Int64From32, inner)) => {
+                self.term_interval(Domain::Int32, inner)
+            }
+            (Domain::UInt64, cast_term!(UInt64From32, inner)) => {
+                self.term_interval(Domain::UInt32, inner)
+            }
             // Unsigned division by a divisor known to be positive.
             (
                 Domain::UInt64,
@@ -1706,10 +1718,11 @@ impl DifferenceGraph {
             // modulo 2^64.
             (
                 Domain::Int64 | Domain::UInt64,
-                T::MachineIntegerCast {
+                T::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value,
-                    source: source @ (M::Int64 | M::UInt64),
-                    destination: M::Int64 | M::UInt64,
+                    from: source @ (M::Int64 | M::UInt64),
+                    to: M::Int64 | M::UInt64,
                 },
             ) => {
                 let source = if *source == M::Int64 {
@@ -1720,14 +1733,14 @@ impl DifferenceGraph {
                 let (low, high) = self.term_interval(source, value);
                 wrap_interval(domain, low, high)
             }
-            (Domain::UInt64, T::UInt64FromInt64(value)) => {
+            (Domain::UInt64, cast_term!(UInt64FromInt64, value)) => {
                 let (low, high) = self.term_interval(Domain::Int64, value);
                 wrap_interval(domain, low, high)
             }
             // Zero extension: a non-negative `int32` keeps its value, a
             // negative one gains 2^32, and an operand of unknown sign lands
             // in `[0, 2^32)`.
-            (Domain::Int64, T::Int64FromUInt32(inner)) => {
+            (Domain::Int64, cast_term!(Int64FromUInt32, inner)) => {
                 let (low, high) = self.term_interval(Domain::Int32, inner);
                 if low >= 0 {
                     (low, high)
@@ -2086,10 +2099,11 @@ fn narrow_cast_parts(
 ) -> Option<(&Bitvector32Term, (i128, i128), (i128, i128), i128)> {
     let (
         Domain::Int32,
-        Bitvector32Term::MachineIntegerCast {
+        Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         },
     ) = (domain, term)
     else {
@@ -2178,9 +2192,9 @@ fn word_domain(term: &Bitvector32Term) -> Domain {
             op: MachineUnaryOp::BitwiseNot,
             ..
         }
-        | T::UInt64From32(..)
-        | T::UInt64FromInt32(..)
-        | T::UInt64FromInt64(..) => Domain::UInt64,
+        | cast_term!(UInt64From32, _)
+        | cast_term!(UInt64FromInt32, _)
+        | cast_term!(UInt64FromInt64, _) => Domain::UInt64,
         _ => Domain::Int64,
     }
 }
@@ -2795,10 +2809,11 @@ fn link_parts(
         // widths).
         (
             Domain::Int32 | Domain::UInt32,
-            T::MachineIntegerCast {
+            T::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             },
         ) if crate::kernel::is_narrow_widening32(*source, *destination) => {
             Some((Domain::Narrow(*source), value.as_ref(), 0, false))
@@ -2808,10 +2823,11 @@ fn link_parts(
         // its own nodes", step 4b; rule K3 read through σ's node).
         (
             Domain::Int32 | Domain::UInt32,
-            T::MachineIntegerCast {
+            T::Cast {
+                spelling: MachineCastSpelling::Generic,
                 value,
-                source,
-                destination,
+                from: source,
+                to: destination,
             },
         ) if crate::kernel::is_sign_cast32(*source, *destination) => {
             Some((domain, value.as_ref(), 0, false))
@@ -2861,15 +2877,21 @@ fn link_parts(
             },
         ) => constant(domain, right).map(|k| (domain, left.as_ref(), -k, false)),
         // Sign extension keeps every value.
-        (Domain::Int64, T::Int64From32(inner)) => Some((Domain::Int32, inner, 0, false)),
+        (Domain::Int64, cast_term!(Int64From32, inner)) => Some((Domain::Int32, inner, 0, false)),
         // Zero extension keeps the full unsigned word, including its high bit.
-        (Domain::UInt64, T::UInt64From32(inner)) => Some((Domain::UInt32, inner, 0, false)),
+        (Domain::UInt64, cast_term!(UInt64From32, inner)) => {
+            Some((Domain::UInt32, inner, 0, false))
+        }
         // Reinterpreting a signed 64-bit value keeps a non-negative value.
-        (Domain::UInt64, T::UInt64FromInt64(inner)) => Some((Domain::Int64, inner, 0, true)),
+        (Domain::UInt64, cast_term!(UInt64FromInt64, inner)) => {
+            Some((Domain::Int64, inner, 0, true))
+        }
         // Zero extension of an `int32` bit pattern keeps a non-negative
         // value; so does sign extension read as unsigned.
-        (Domain::Int64, T::Int64FromUInt32(inner))
-        | (Domain::UInt64, T::UInt64FromInt32(inner)) => Some((Domain::Int32, inner, 0, true)),
+        (Domain::Int64, cast_term!(Int64FromUInt32, inner))
+        | (Domain::UInt64, cast_term!(UInt64FromInt32, inner)) => {
+            Some((Domain::Int32, inner, 0, true))
+        }
         _ => None,
     }
 }

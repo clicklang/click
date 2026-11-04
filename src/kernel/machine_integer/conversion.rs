@@ -22,6 +22,7 @@
 //! term.
 
 use super::representation;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_term;
 use crate::kernel::{Bitvector32Term, CValue, IntegerTerm, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
@@ -46,7 +47,7 @@ pub(crate) enum ConversionLowering {
     Identity,
     /// `int32` to `uint32` or back: the sign cast σ (rules K1 to K4).
     SignCast,
-    /// `MachineIntegerCast`: every conversion into an 8- or 16-bit format
+    /// The generic `Cast`: every conversion into an 8- or 16-bit format
     /// (its word is rule K7's), every widening of an 8- or 16-bit value into
     /// a 32-bit format (whose word is its operand's, rule K8), and every
     /// conversion involving 128 bits.
@@ -163,8 +164,8 @@ pub(crate) fn usual_arithmetic_format(
 pub(crate) fn extension_encoding(
     source: MachineIntegerType,
     destination: MachineIntegerType,
-) -> Option<crate::kernel::KernelMachineCastEncoding> {
-    use crate::kernel::KernelMachineCastEncoding as E;
+) -> Option<crate::kernel::MachineCastSpelling> {
+    use crate::kernel::MachineCastSpelling as E;
     if lower(source, destination, ConversionPolicy::Modular).lowering
         != ConversionLowering::Extend64
     {
@@ -188,11 +189,11 @@ pub(crate) fn extension_encoding(
 /// value of its source. `UInt64FromInt32` does not, and neither does a
 /// generic node, which the readings handle on their own.
 pub(crate) fn reads_as_operand(
-    encoding: crate::kernel::KernelMachineCastEncoding,
+    encoding: crate::kernel::MachineCastSpelling,
     source: MachineIntegerType,
     destination: MachineIntegerType,
 ) -> bool {
-    use crate::kernel::KernelMachineCastEncoding as E;
+    use crate::kernel::MachineCastSpelling as E;
     matches!(
         encoding,
         E::Int64From32 | E::Int64FromUInt32 | E::UInt64From32
@@ -280,7 +281,7 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
     let IntegerTerm::Machine(machine) = observed.value_read() else {
         return Vec::new();
     };
-    use crate::kernel::KernelMachineCastEncoding as E;
+    use crate::kernel::MachineCastSpelling as E;
     let Some((encoding, source, _, operand)) = machine.operand_view().cast() else {
         return Vec::new();
     };
@@ -308,7 +309,7 @@ pub(crate) fn cast_operands(observed: &IntegerTerm) -> Vec<IntegerTerm> {
 pub(crate) fn widened_narrow_word(
     observed: &IntegerTerm,
 ) -> Option<crate::kernel::MachineOperandView<'_>> {
-    use crate::kernel::KernelMachineCastEncoding as E;
+    use crate::kernel::MachineCastSpelling as E;
     let IntegerTerm::Machine(machine) = observed else {
         return None;
     };
@@ -350,7 +351,7 @@ pub(crate) fn narrow_widening(observed: &IntegerTerm, original: &IntegerTerm) ->
         return false;
     }
     match machine.operand_view().cast() {
-        Some((crate::kernel::KernelMachineCastEncoding::Generic, from, _, value)) => {
+        Some((MachineCastSpelling::Generic, from, _, value)) => {
             from == operand.ty() && value.retain(operand.ty()) == *operand
         }
         _ => false,
@@ -381,7 +382,7 @@ fn cast_of_written_sign_cast(
         return None;
     };
     let (encoding, source, destination, _) = written.operand_view().cast()?;
-    if encoding != crate::kernel::KernelMachineCastEncoding::Generic
+    if encoding != MachineCastSpelling::Generic
         || source.format().bits() != 32
         || destination.format().bits() != 32
         || source == destination
@@ -398,7 +399,7 @@ fn cast_of_written_sign_cast(
         let exact = matches_kernel(machine, &converted);
         let numeric = match converted.node() {
             crate::kernel::KernelTermNode::MachineCast {
-                encoding: crate::kernel::KernelMachineCastEncoding::Generic,
+                encoding: MachineCastSpelling::Generic,
                 source,
                 destination,
                 operand,
@@ -447,7 +448,7 @@ fn cast_through_readings(
     // inner carrier is shown below to be the source's value inside the
     // destination range, the conversion leaves that word unchanged.
     // The same bounds are still required.
-    if let Some((crate::kernel::KernelMachineCastEncoding::Generic, through, destination, inner)) =
+    if let Some((MachineCastSpelling::Generic, through, destination, inner)) =
         machine.operand_view().cast()
         && destination == machine.ty()
         && through.format().bits() <= 32
@@ -615,7 +616,7 @@ fn cast_shared_operand(
     operand: &crate::kernel::SharedMachineIntegerTerm,
     term: &crate::kernel::KernelTerm,
 ) -> Option<crate::kernel::MachineIntegerFormat> {
-    use crate::kernel::{KernelMachineCastEncoding as E, KernelTermNode as N, MachineBinaryOp};
+    use crate::kernel::{KernelTermNode as N, MachineBinaryOp, MachineCastSpelling as E};
     let (source, destination) = (operand.ty(), machine.ty());
     if !operand.operand_view().accepts_cast_operand(source) {
         return None;
@@ -716,10 +717,11 @@ mod shared_operand_tests {
         // inner carrier is shown below to be the source's value inside the
         // destination range, the conversion leaves that word unchanged.
         // The same bounds are still required.
-        if let Bitvector32Term::MachineIntegerCast {
+        if let Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value: inner,
-            source: through,
-            destination,
+            from: through,
+            to: destination,
         } = machine.value()
             && *destination == machine.ty()
             && through.format().bits() <= 32
@@ -859,9 +861,10 @@ mod shared_operand_tests {
                     name: "cast_opaque_word".to_string(),
                     arguments: vec![Bitvector32Term::Variable(Variable(982105))],
                 });
-                words.push(Bitvector32Term::MachineIntegerCast {
-                    source,
-                    destination: source,
+                words.push(Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: source,
                     value: Box::new(Bitvector32Term::Variable(Variable(982105))),
                 });
             }
@@ -989,9 +992,10 @@ mod shared_operand_tests {
         let original = IntegerTerm::from_machine(source, word.clone()).unwrap();
         let other =
             IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(982103))).unwrap();
-        let widened = Bitvector32Term::MachineIntegerCast {
-            source,
-            destination,
+        let widened = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: source,
+            to: destination,
             value: Box::new(word),
         };
         let observed = IntegerTerm::from_machine(destination, widened).unwrap();

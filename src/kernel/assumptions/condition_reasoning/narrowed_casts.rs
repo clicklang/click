@@ -2,7 +2,7 @@
 //! destination's range.
 //!
 //! C converts an integer to a narrower type, or between the two signednesses
-//! of one width, modulo 2^N (`Bitvector32Term::MachineIntegerCast`; see
+//! of one width, modulo 2^N (the generic `Bitvector32Term::Cast`; see
 //! `conversion::convert_value`). When the operand's value
 //! lies in the destination's range the conversion changes nothing, and its result is the
 //! operand's own carrier: the same 32-bit word for a source that fits in 32
@@ -25,6 +25,7 @@
 //! operand; nothing else in the context is visited.
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::MachineIntegerType as Ty;
 
 /// One bound a narrowing conversion's operand must meet to be unchanged.
@@ -207,10 +208,11 @@ impl PureFactContext {
         term: &Bitvector32Term,
     ) -> Option<Bitvector32Term> {
         let (_, narrowed) = term.narrow_widening32_operand()?;
-        let Bitvector32Term::MachineIntegerCast {
+        let Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
             value,
-            source,
-            destination,
+            from: source,
+            to: destination,
         } = narrowed
         else {
             return None;
@@ -235,9 +237,7 @@ impl PureFactContext {
         &self,
         term: MachineOperandView<'_>,
     ) -> Option<(i64, i64)> {
-        let (crate::kernel::KernelMachineCastEncoding::Generic, source, destination, value) =
-            term.cast()?
-        else {
+        let (MachineCastSpelling::Generic, source, destination, value) = term.cast()? else {
             return None;
         };
         if !matches!(destination.format().bits(), 8 | 16)

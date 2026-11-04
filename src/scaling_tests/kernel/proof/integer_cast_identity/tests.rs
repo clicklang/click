@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 /// A narrow value's 32-bit widening is identified with the value in work
 /// independent of the ambient premises, when the certificate cites bounds on
@@ -89,9 +90,11 @@ fn integer_cast_identity_identifies_only_the_widening_of_a_narrow_value() {
 fn legacy_integer_cast_identity_work_depends_on_nodes_and_explicit_bounds() {
     let value = Bitvector32Term::Variable(Variable(168_001));
     let original = IntegerTerm::from_machine(Ty::Int64, value.clone()).unwrap();
-    let observed =
-        IntegerTerm::from_machine(Ty::UInt64, Bitvector32Term::UInt64FromInt64(value.into()))
-            .unwrap();
+    let observed = IntegerTerm::from_machine(
+        Ty::UInt64,
+        Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt64, value.into()),
+    )
+    .unwrap();
     let goal = Proposition::ConditionIs(
         ConditionTerm::integer_equal(observed, original.clone()),
         true,

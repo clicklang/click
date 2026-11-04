@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32};
 
@@ -575,15 +576,19 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     }
     fn collect_shallow_term_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
         match term {
-            Bitvector32Term::MachineIntegerCast { .. } | Bitvector32Term::BoolCast { .. } => {}
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                ..
+            }
+            | Bitvector32Term::BoolCast { .. } => {}
 
             Bitvector32Term::Constant { .. }
-            | Bitvector32Term::Int64From32(_)
-            | Bitvector32Term::Int64FromUInt32(_)
-            | Bitvector32Term::UInt64From32(_)
-            | Bitvector32Term::UInt32From64(_)
-            | Bitvector32Term::UInt64FromInt32(_)
-            | Bitvector32Term::UInt64FromInt64(_)
+            | cast_term!(Int64From32, _)
+            | cast_term!(Int64FromUInt32, _)
+            | cast_term!(UInt64From32, _)
+            | cast_term!(UInt32From64, _)
+            | cast_term!(UInt64FromInt32, _)
+            | cast_term!(UInt64FromInt64, _)
             | crate::kernel::binary_wide_term!(..)
             | crate::kernel::unary_wide_term!(..) => {}
             Bitvector32Term::Variable(variable) => {

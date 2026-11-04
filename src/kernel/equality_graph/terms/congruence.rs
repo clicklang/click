@@ -10,6 +10,7 @@ use crate::kernel::{
     ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_op};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, int64_constant, uint64_constant};
 
@@ -945,10 +946,11 @@ impl TermClasses {
                     // A conversion into a narrow format: its node, of its
                     // own width, whose 32-bit widening has its operand's
                     // masked word (rule K7').
-                    if let T::MachineIntegerCast {
+                    if let T::Cast {
+                        spelling: MachineCastSpelling::Generic,
                         value,
-                        source,
-                        destination,
+                        from: source,
+                        to: destination,
                     } = term
                         && width == W::of_machine_type(*destination)
                         && representation::narrow_carrier_mask(*destination).is_some()
@@ -1057,10 +1059,12 @@ impl TermClasses {
                                     crate::kernel::MachineIntegerType::Int32,
                                     crate::kernel::MachineUnaryOp::BitwiseNot,
                                 )
-                                | U::UInt32From64 => W::Bits32,
-                                U::MachineIntegerCast { destination, .. } => {
-                                    W::of_machine_type(destination)
-                                }
+                                | cast_op!(UInt32From64) => W::Bits32,
+                                U::Cast {
+                                    spelling: MachineCastSpelling::Generic,
+                                    to: destination,
+                                    ..
+                                } => W::of_machine_type(destination),
                                 U::Machine(format, _) if format.format().bits() < 32 => {
                                     W::native(format)
                                 }
@@ -1068,17 +1072,21 @@ impl TermClasses {
                             }
                     {
                         let source = match op {
-                            U::Int64From32
-                            | U::UInt64From32
-                            | U::Int64FromUInt32
-                            | U::UInt64FromInt32
+                            cast_op!(Int64From32)
+                            | cast_op!(UInt64From32)
+                            | cast_op!(Int64FromUInt32)
+                            | cast_op!(UInt64FromInt32)
                             | U::Machine(
                                 crate::kernel::MachineIntegerType::Int32,
                                 crate::kernel::MachineUnaryOp::BitwiseNot,
                             ) => W::Bits32,
-                            U::UInt32From64 | U::UInt64FromInt64 => W::Bits64,
+                            cast_op!(UInt32From64) | cast_op!(UInt64FromInt64) => W::Bits64,
                             U::Machine(format, _) => W::native(format),
-                            U::MachineIntegerCast { source, .. } => W::of_machine_type(source),
+                            U::Cast {
+                                spelling: MachineCastSpelling::Generic,
+                                from: source,
+                                ..
+                            } => W::of_machine_type(source),
                             U::Float32Negate | U::Float64Negate => unreachable!(),
                         };
                         let head = self.intern_node(Node::MachineUnary(op, width));
@@ -1420,14 +1428,18 @@ impl TermClasses {
             (node, word, word_format)
         } else {
             let head = self.intern_node(Node::MachineUnary(
-                U::MachineIntegerCast {
-                    source,
-                    destination,
+                U::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: source,
+                    to: destination,
                 },
                 W::Bits32,
             ));
             let node = self.intern_node(Node::Apply(head, value));
-            let low = self.intern_node(Node::MachineUnary(U::UInt32From64, W::Bits32));
+            let low = self.intern_node(Node::MachineUnary(
+                U::legacy_cast(MachineCastSpelling::UInt32From64),
+                W::Bits32,
+            ));
             (
                 node,
                 self.intern_node(Node::Apply(low, value)),

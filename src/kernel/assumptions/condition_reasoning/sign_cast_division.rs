@@ -28,6 +28,7 @@
 
 use super::*;
 use crate::kernel::MachineBinaryOp as Op;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::MachineIntegerType as Ty;
 use crate::kernel::machine_integer::{
     Relation,
@@ -93,9 +94,7 @@ fn comparison(condition: &ConditionTerm) -> Option<NativeComparisonView<'_>> {
 }
 
 fn division_operands(term: View<'_>) -> Option<(Ty, Op, [View<'_>; 2])> {
-    let (crate::kernel::KernelMachineCastEncoding::Generic, source, destination, operand) =
-        term.cast()?
-    else {
+    let (MachineCastSpelling::Generic, source, destination, operand) = term.cast()? else {
         return None;
     };
     if !crate::kernel::is_sign_cast32(source, destination) {
@@ -403,8 +402,8 @@ mod tests {
     #[test]
     fn fresh_shared_sign_division_uses_structural_mask_bounds_without_export() {
         use crate::kernel::{
-            CType, KernelMachineCastEncoding as Encoding, KernelTerm, KernelTermExport,
-            KernelTermImport, KernelType,
+            CType, KernelTerm, KernelTermExport, KernelTermImport, KernelType,
+            MachineCastSpelling as Encoding,
         };
         let _session = crate::kernel::VerificationSession::enter();
         let x = KernelTerm::variable(KernelType::C(CType::UInt32), Variable(189113));

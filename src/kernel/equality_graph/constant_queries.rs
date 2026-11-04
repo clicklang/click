@@ -1,9 +1,10 @@
 //! Constant discovery uses shared class annotations. Contextual arithmetic
 //! retains selected exact source premises when implicit provenance is requested.
 use super::*;
+use crate::kernel::Bitvector32Term;
 use crate::kernel::assumptions::record_implicit_reasoning_provenance;
 use crate::kernel::{
-    KernelMachineCastEncoding as Cast, MachineOperandView as V, Proposition, PureFactContext,
+    MachineCastSpelling as Cast, MachineOperandView as V, Proposition, PureFactContext,
 };
 use crate::kernel::{constant_i64, constant_u64, int64_constant, uint64_constant};
 use std::collections::{BTreeMap, BTreeSet};
@@ -238,9 +239,10 @@ mod tests {
     fn wide_source_index_keeps_a_written_endpoint_when_canonicalization_changes_it() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::UInt64;
-        let written = Bitvector32Term::MachineIntegerCast {
-            source: format,
-            destination: format,
+        let written = Bitvector32Term::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: format,
+            to: format,
             value: Box::new(Bitvector32Term::Variable(Variable(995879))),
         };
         assert_ne!(crate::kernel::canonical_term(&written), written);
@@ -278,36 +280,50 @@ mod tests {
         for (ty, written, expected) in [
             (
                 Ty::Int64,
-                Bitvector32Term::Int64From32(Box::new(Bitvector32Term::constant(u32::MAX))),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::Int64From32,
+                    Box::new(Bitvector32Term::constant(u32::MAX)),
+                ),
                 u64::MAX,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::UInt64FromInt32(Box::new(Bitvector32Term::constant(u32::MAX))),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt64FromInt32,
+                    Box::new(Bitvector32Term::constant(u32::MAX)),
+                ),
                 u64::MAX,
             ),
             (
                 Ty::Int64,
-                Bitvector32Term::Int64FromUInt32(Box::new(Bitvector32Term::uint32_constant(
-                    u32::MAX,
-                ))),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::Int64FromUInt32,
+                    Box::new(Bitvector32Term::uint32_constant(u32::MAX)),
+                ),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::UInt64From32(Box::new(Bitvector32Term::uint32_constant(u32::MAX))),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt64From32,
+                    Box::new(Bitvector32Term::uint32_constant(u32::MAX)),
+                ),
                 u32::MAX as u64,
             ),
             (
                 Ty::UInt64,
-                Bitvector32Term::UInt64FromInt64(Box::new(Bitvector32Term::int64_constant(-3))),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt64FromInt64,
+                    Box::new(Bitvector32Term::int64_constant(-3)),
+                ),
                 (-3i64) as u64,
             ),
             (
                 Ty::UInt32,
-                Bitvector32Term::UInt32From64(Box::new(Bitvector32Term::uint64_constant(
-                    0x1234567887654321,
-                ))),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(Bitvector32Term::uint64_constant(0x1234567887654321)),
+                ),
                 0x87654321,
             ),
         ] {

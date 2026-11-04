@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_node;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -3337,7 +3338,10 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                         byte_width: width,
                     },
                     MachineIntegerType::UInt32 => PointerOffsetTerm::Int64Scaled {
-                        value: Box::new(Bitvector32Term::UInt64From32(Box::new(index))),
+                        value: Box::new(Bitvector32Term::legacy_cast(
+                            MachineCastSpelling::UInt64From32,
+                            Box::new(index),
+                        )),
                         byte_width: width,
                         unsigned: true,
                     },

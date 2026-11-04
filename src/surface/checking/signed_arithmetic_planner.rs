@@ -14,6 +14,7 @@ use crate::kernel::proof::signed_arithmetic::{
 };
 use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
 use num_bigint::BigInt;
@@ -1914,12 +1915,12 @@ impl<'a> Planner<'a> {
                             tasks.push(Task::Visit(left));
                         }
                         unary_term!(Int32, BitwiseNot, operand)
-                        | Bitvector32Term::Int64From32(operand)
-                        | Bitvector32Term::UInt64From32(operand)
-                        | Bitvector32Term::UInt32From64(operand)
-                        | Bitvector32Term::Int64FromUInt32(operand)
-                        | Bitvector32Term::UInt64FromInt32(operand)
-                        | Bitvector32Term::UInt64FromInt64(operand) => {
+                        | cast_term!(Int64From32, operand)
+                        | cast_term!(UInt64From32, operand)
+                        | cast_term!(UInt32From64, operand)
+                        | cast_term!(Int64FromUInt32, operand)
+                        | cast_term!(UInt64FromInt32, operand)
+                        | cast_term!(UInt64FromInt64, operand) => {
                             tasks.push(Task::Finish(term));
                             tasks.push(Task::Visit(operand));
                         }
@@ -1953,12 +1954,12 @@ impl<'a> Planner<'a> {
                                 .hash(&mut hasher);
                         }
                         unary_term!(Int32, BitwiseNot, operand)
-                        | Bitvector32Term::Int64From32(operand)
-                        | Bitvector32Term::UInt64From32(operand)
-                        | Bitvector32Term::UInt32From64(operand)
-                        | Bitvector32Term::Int64FromUInt32(operand)
-                        | Bitvector32Term::UInt64FromInt32(operand)
-                        | Bitvector32Term::UInt64FromInt64(operand) => {
+                        | cast_term!(Int64From32, operand)
+                        | cast_term!(UInt64From32, operand)
+                        | cast_term!(UInt32From64, operand)
+                        | cast_term!(Int64FromUInt32, operand)
+                        | cast_term!(UInt64FromInt32, operand)
+                        | cast_term!(UInt64FromInt64, operand) => {
                             self.term_hash_cache
                                 .get(&(operand.as_ref() as *const Bitvector32Term as usize))?
                                 .hash(&mut hasher);
@@ -2391,17 +2392,17 @@ impl<'a> Planner<'a> {
         while let Some(term) = pending.pop() {
             match term {
                 Bitvector32Term::Variable(_) | bits32_constant!(_) => {}
-                Bitvector32Term::UInt32From64(_)
-                    if SignedArithmeticAtom::from_term(term).is_some() => {}
+                cast_term!(UInt32From64, _) if SignedArithmeticAtom::from_term(term).is_some() => {}
                 Bitvector32Term::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
                 }
                 // The `int32` widening of an 8- or 16-bit value, an opaque
                 // value as the checker reads it (`is_opaque_root`).
-                Bitvector32Term::MachineIntegerCast {
+                Bitvector32Term::Cast {
+                    spelling: MachineCastSpelling::Generic,
                     value,
-                    source,
-                    destination: crate::kernel::MachineIntegerType::Int32,
+                    from: source,
+                    to: crate::kernel::MachineIntegerType::Int32,
                 } if source.format().bits() < 32 => pending.push(value),
                 _ => return false,
             }

@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::CompareRelation;
+use crate::kernel::MachineCastSpelling;
 use crate::kernel::bits32_constant;
 use crate::kernel::effective_type::CAccessClass;
 
@@ -1126,10 +1127,11 @@ fn checked_narrowing_identity_readings(
         _ => return None,
     };
     let converted = converted_term(converted)?;
-    let Bitvector32Term::MachineIntegerCast {
+    let Bitvector32Term::Cast {
+        spelling: MachineCastSpelling::Generic,
         value,
-        source: cast_source,
-        destination,
+        from: cast_source,
+        to: destination,
     } = converted
     else {
         return None;
@@ -2170,7 +2172,7 @@ fn evaluate_c_cast_paths(
                 // Rust `as` convert modulo 2^N and owe nothing; any other
                 // `Standard` cast owes the range. A modular conversion files
                 // no identity with its operand: its node is the same
-                // `MachineIntegerCast` a checked one builds, but nothing
+                // generic `Cast` a checked one builds, but nothing
                 // establishes the range the identity needs.
                 let conversion = if matches!(
                     integer_mode,
@@ -2343,7 +2345,14 @@ fn evaluate_c_cast_paths(
                     )
                     && matches!(
                         crate::kernel::c_narrow_integer_range(value),
-                        Some((Bitvector32Term::MachineIntegerCast { .. }, _, _))
+                        Some((
+                            Bitvector32Term::Cast {
+                                spelling: MachineCastSpelling::Generic,
+                                ..
+                            },
+                            _,
+                            _
+                        ))
                     )
                 {
                     add_narrow_integer_range_execution_pure_facts(&mut facts, assumptions, value);

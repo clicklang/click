@@ -292,10 +292,11 @@ fn boxed_machine_operation_of_integer_value(
                 let widened = if super::conversion::extension_encoding(machine.ty(), ty).is_some() {
                     super::conversion::convert_term(machine.ty(), ty, word.clone())
                 } else {
-                    Bitvector32Term::MachineIntegerCast {
+                    Bitvector32Term::Cast {
+                        spelling: crate::kernel::MachineCastSpelling::Generic,
                         value: Box::new(word.clone()),
-                        source: machine.ty(),
-                        destination: ty,
+                        from: machine.ty(),
+                        to: ty,
                     }
                 };
                 // A value of another width is never `ty`'s word as written:

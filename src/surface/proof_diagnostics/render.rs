@@ -6,6 +6,7 @@
 //! the useful part of a diagnostic.
 
 use crate::kernel::CResourceFact;
+use crate::kernel::MachineCastSpelling;
 #[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
@@ -2169,8 +2170,11 @@ impl Renderer<'_> {
                 self.pointer(pointer);
                 self.push(")");
             }
-            Bitvector32Term::MachineIntegerCast {
-                value, destination, ..
+            Bitvector32Term::Cast {
+                spelling: MachineCastSpelling::Generic,
+                value,
+                to: destination,
+                ..
             } => {
                 // A signed byte read renders as the conversion of the byte's
                 // unsigned read, which is what it is.

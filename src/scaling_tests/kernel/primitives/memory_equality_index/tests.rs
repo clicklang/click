@@ -3,6 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 
 /// The selection charges the same work beside 2, 4, 8 and 16 unrelated
 /// framed ranges as beside 1,024 (1,118 units at 16 to 1,024 on
@@ -306,8 +307,14 @@ fn wide_cursor_advance_keeps_its_native_producer_beside_narrow_aliases() {
         let prefix = Bitvector32Term::Variable(Variable(988_411));
         let narrow = bytes.offset_by_elements(
             Bitvector32Term::subtract(
-                Bitvector32Term::UInt32From64(Box::new(prefix.clone())),
-                Bitvector32Term::UInt32From64(Box::new(remaining.clone())),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(prefix.clone()),
+                ),
+                Bitvector32Term::legacy_cast(
+                    MachineCastSpelling::UInt32From64,
+                    Box::new(remaining.clone()),
+                ),
             ),
             1,
         );

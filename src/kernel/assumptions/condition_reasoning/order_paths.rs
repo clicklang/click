@@ -1,5 +1,6 @@
 use super::*;
 use crate::kernel::binary_term;
+use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
 use crate::kernel::{constant_u64, uint64_constant};
@@ -1806,8 +1807,7 @@ impl PureFactContext {
         if bound > i32::MAX as u32 {
             return None;
         }
-        if let Some((crate::kernel::KernelMachineCastEncoding::Generic, source, destination, bits)) =
-            term.cast()
+        if let Some((MachineCastSpelling::Generic, source, destination, bits)) = term.cast()
             && crate::kernel::is_sign_cast32(source, destination)
         {
             term = bits;
@@ -2102,7 +2102,7 @@ impl PureFactContext {
         &self,
         condition: &ConditionTerm,
     ) -> Option<bool> {
-        use crate::kernel::KernelMachineCastEncoding as Cast;
+        use crate::kernel::MachineCastSpelling as Cast;
         use crate::kernel::machine_integer::{
             Relation,
             comparison::{ComparisonOperand, comparison_view},
@@ -2511,7 +2511,7 @@ impl PureFactContext {
             comparison_view, condition_for_operand_views,
         };
         use crate::kernel::{
-            KernelMachineCastEncoding, KernelTerm, KernelTermImport, MachineBinaryOp,
+            KernelTerm, KernelTermImport, MachineBinaryOp, MachineCastSpelling,
             SharedMachineIntegerTerm,
         };
         let view = comparison_view(condition, true)?;
@@ -2537,7 +2537,7 @@ impl PureFactContext {
         }
         fn low_word(operand: MachineOperandView<'_>) -> Option<MachineOperandView<'_>> {
             match operand.cast()? {
-                (KernelMachineCastEncoding::UInt32From64, _, _, value) => Some(value),
+                (MachineCastSpelling::UInt32From64, _, _, value) => Some(value),
                 _ => None,
             }
         }
@@ -2705,7 +2705,7 @@ mod slice_index_tests {
             right: Box::new(b),
         };
         let low = add(
-            Bitvector32Term::UInt32From64(Box::new(n)),
+            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(n)),
             add(Bitvector32Term::constant(1), Bitvector32Term::constant(1)),
         );
         let native = ConditionTerm::signed_less_than(low.clone(), Bitvector32Term::constant(22));
@@ -2780,7 +2780,10 @@ mod slice_index_tests {
                         } else {
                             PureFactContext::new()
                         };
-                        let low = Bitvector32Term::UInt32From64(Box::new(n));
+                        let low = Bitvector32Term::legacy_cast(
+                            MachineCastSpelling::UInt32From64,
+                            Box::new(n),
+                        );
                         let low = if offset == 0 {
                             low
                         } else {

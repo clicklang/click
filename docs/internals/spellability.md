@@ -185,7 +185,7 @@ existing `to_int32`, `to_uint64`, etc. calls; exporting reconstructs the origina
 conversion without evaluating the operand or consulting range facts.
 Wide symbolic cast chains retain their intermediate nodes. Collapsing
 `(x as int128) as int64` used to create a generic `int32`-to-`int64` cast,
-while its direct spelling lowered to `Int64From32`. Retaining the chain
+while its direct spelling lowered to the `Int64From32` spelling of `Cast`. Retaining the chain
 restores the round trip. The existing 32-bit word-cast conventions remain.
 The speller now handles explicit wide casts and wide literal payloads.
 Cast-composition equalities, including 128-bit intermediates, are maintained

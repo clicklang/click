@@ -520,7 +520,23 @@ In `src/kernel/`:
   bits; read them with `constant_u32`, `constant_i64` or `constant_u64`, the
   value types the per-format constants had; `Debug` still prints the
   per-format variant names. Code that hashes or compares
-  nodes by discriminant also takes a constant's format. Every operator of a
+  nodes by discriminant also takes a constant's format. A conversion is one
+  node, `Cast { spelling, value, from, to }`, whose `MachineCastSpelling`
+  (shared with the kernel term's `MachineCast` encoding) is `Generic` or
+  one of the six legacy per-pair spellings (`Int64From32`, `UInt64From32`,
+  `UInt32From64`, `Int64FromUInt32`, `UInt64FromInt32`, `UInt64FromInt64`).
+  The spelling is part of the identity, so a legacy-spelled conversion and
+  the generic one of the same formats are different terms. A legacy
+  spelling fixes its formats (`MachineCastSpelling::legacy_formats`); the
+  low word reads its operand as `uint64` bits whatever the operand's
+  signedness. Build one with the smart constructors
+  (`machine_integer_cast`, `int64_from_32`, `uint32_from_64`, ...),
+  `Bitvector32Term::legacy_cast` or `cast_node`; match a legacy spelling
+  with `cast_term!(Int64From32, value)` (`cast_op!` for its
+  `BitvectorUnaryOp`) and the generic one with
+  `Cast { spelling: Generic, .. }`. `Debug` prints the former variant names,
+  and `machine_operator()` returns the spelling for discriminant-based
+  comparisons and hashes. Every operator of a
   `uint32` value is built at `uint32` over operands and constants in that
   format, through
   the format-parametric constructors (`add_at`, `subtract_at`, ...,
@@ -627,7 +643,7 @@ its format, and its range is its format's: no range fact is filed for it.
   projection is joined to the same read of its recorded source by one
   indexed edge (`Node::NarrowRead`), as a four-byte read is. Byte views
   produce `(v >> 8k)` as `uint8`.
-- Every conversion into a narrow format is a `MachineIntegerCast` node (or
+- Every conversion into a narrow format is a generic `Cast` node (or
   `IntegerToMachine` from an Integer), from the conversion table
   (`machine_integer::conversion::lower`, `convert_term`). A checked
   (`Standard`) narrowing owes the destination range as obligations and
@@ -663,7 +679,7 @@ Scalar `uint32`
 addition, subtraction, and multiplication use the same 32-bit operator
 nodes as `int32`, without signed overflow obligations: the operators read
 words. A conversion between `int32` and `uint32` is the sign cast σ, a
-`MachineIntegerCast` node of its own (step 4b of "Every format its own
+generic `Cast` node of its own (step 4b of "Every format its own
 nodes"): operators, comparisons and observations keep it as written, the
 e-graph relates it to its operand by R0 and R-dist, the difference graph
 links either 32-bit reading of σ(x) to the same reading of `x`, rule W
@@ -686,7 +702,7 @@ division, and unsigned right shift has a distinct logical-shift node. Equality
 and ordered comparisons select the unsigned conditions. Stores and function
 returns preserve the `uint32` type tag. Scalar narrowing in C is GCC's
 modulo 2^N conversion at every boundary and adds no obligation; into a one- or
-two-byte type it yields a `MachineIntegerCast` node, filed with the
+two-byte type it yields a generic `Cast` node, filed with the
 destination's range, which is the operand's carrier once the operand's range
 is known (`narrowed_cast_identity`). A conversion between the two
 signednesses of one width changes no bit, so its signed reading is negative
@@ -751,7 +767,7 @@ the widths a rule supports; it asks the module
 | Sign cast σ (K1 deleted) | `Bitvector32Term::sign_cast32`, `sign_cast32_operand`; the e-graph's `intern_conversion` and `convert_like` (σ an `Int32Unary::Cast` node); the difference graph's `link_parts` and `structural_interval`; `into_index_word32` (G1) | σ(x) between `int32` and `uint32` is a node of its own wherever a term is built: no constructor, observation, e-graph or difference-graph reader peels it. The e-graph relates it to `x` by R0 and R-dist (σ of a sign-free operator is the operator at the other format over σ of its operands; σ of a low word is that low word), the difference graph links either 32-bit reading of σ(x) to the same reading of `x` with offset 0, and an element index alone reads σ's operand in `int32` index coordinates. The constructor folds a constant and keeps σ of σ as written; R0 puts σ(σ(x)) in `x`'s class. Two smart-search readers see through one σ at a side's root: `σ(x) == x` is a vacuous rewrite and no rewrite candidate (`is_sign_cast32_of`, `equality_is_vacuous`, `connected_equalities`), and `σ(y) <=u c` below the sign bit is the signed range of `y` (`unsigned_upper_bound_below_sign_bit`) |
 | R-mem at 32 bits (K5's naming deleted) | `CType::read_cell`, `LoadKind::read_cell`, `LoadKind::reads_value`; the checked stored-value evidence (`CheckedLoadEqualityEvidence::OriginStoredValue`), `is_store_fact` | the `uint32` read of a cell is σ of its `int32` read; a read of a cell stored at the other 32-bit signedness, wherever a load term is answered from a cell or a store, is σ of the stored word, and only a read of the stored kind is the stored term itself. A range's `fits` guard is `σ(end - start) <=u limit` (`memory_range_byte_count_extent`), σ of the `int32` element count as written |
 | Observation of σ (K2 deleted) | rule W: `machine_value_reading` | `to_integer` of σ(x) at `int32` or `uint32` keeps σ as written and reads as `x` at that format, through every σ of a written chain: `to_integer((a as uint32) as int32)` reads as `to_integer(a)` (`machine_view::shared_value_reading` takes one cached step per σ node) |
-| 32-to-64-bit extension, one spelling | `conversion::extension_encoding`, `conversion::reads_as_operand`; `Bitvector32Term::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the typed node C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never a generic `Cast`; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
+| 32-to-64-bit extension, one spelling | `conversion::extension_encoding`, `conversion::reads_as_operand`; `Bitvector32Term::machine_integer_cast`, `SharedMachineIntegerTerm::cast_operand`, `KernelTerm::checking_machine_cast`; rule W: `machine_value_reading`, `machine_view::shared_value_reading` | a conversion from `int32` or `uint32` to `int64` or `uint64` is the legacy-spelled `Cast` C lowering builds (`Int64From32`, `Int64FromUInt32`, `UInt64From32`, `UInt64FromInt32`) wherever it is built, never the generic spelling; `to_integer` of the three value-preserving ones at their destination reads as their operand, one match on the root. A cast-identity certificate checks an extension's bounds at its destination format |
 | 32-bit equality one fact (K6, lookup-level) | `comparison_identity` (`ConditionTerm::comparison_fact`, `as_fact_comparison`, `fact_format`), `Bitvector32Term::sign_cast32_bits`; `condition_match_key` | a 32-bit equality is a term of the format it is written at, `u == v` at `uint32` over `uint32` operands; identity, hashing, order and every structural fact key read it at `int32`, each side through one σ and a constant of either spelling as its bits, so `u == v` at `uint32` and `u as int32 == v as int32` are one fact. One match per side, no clone; no term is re-filed |
 | Sign test of σ (sign bit at 32 bits) | `condition_reasoning/sign_bit.rs`: `sign_bit_equivalents`, `names_sign_cast32` | `u as int32 < 0` is `u > 2^31 - 1`, and `x as uint32 > 2^31 - 1` is `x < 0`, the equivalent built through σ, reading σ of a σ as that σ's operand (the constructor keeps σ of σ); a decision or known-condition lookup of either reads the other, and assuming a test of σ also files its equivalent |
 | Sign cast of a quotient (C) | `condition_reasoning/sign_cast_division.rs`: `decide_by_sign_cast_division`, `sign_cast_division_equivalent`, `names_sign_cast_division`; `Bitvector32Term::sign_cast_division_operands`; `ConditionTerm::nonnegative_division_bound_guards` | `(a / b) as int32 == (a as int32) / (b as int32)` for `uint32` `a`, `b` with `0 <= a as int32` and `0 < b as int32`, and `(x / y) as uint32 == (x as uint32) / (y as uint32)` for `int32` `x`, `y` with `0 <= x` and `0 < y`, and the same for `%`. Read at decision time on a comparison naming σ of a quotient, and filed beside such a fact when it is assumed: one match on each side's root and two sign decisions per side; the quotient bound guards read it too. A quotient by zero is not related |
@@ -804,7 +820,8 @@ cast takes exactly the values 1 and 0, which lie in every format.
 
 Rule K7 (decision of 2026-10-26, `design/machine-integers.md`). For `F` of
 `b` = 8 or 16 bits, `m = 2^b - 1`, `s = 2^(b-1)`, and `S` of at most 64
-bits, with `w = x` up to 32 bits and `w = UInt32From64(x)` at 64: the cast
+bits, with `w = x` up to 32 bits and `w` the low word of `x` (the
+`UInt32From64` spelling of `Cast`) at 64: the cast
 denotes `n mod 2^b` read in `F` (`n` the operand's value), whose word is the
 zero or sign extension of those bits (the narrow-value invariant above). `w`
 holds `n mod 2^32`, so its low `b` bits are `n mod 2^b`; `w & m` is their
