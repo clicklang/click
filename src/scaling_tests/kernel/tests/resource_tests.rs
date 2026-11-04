@@ -3251,6 +3251,125 @@ fn memory_direct_support_miss_ignores_fragment_frontier() {
     );
 }
 
+#[test]
+fn memory_view_query_miss_ignores_fragment_frontier() {
+    let mut curves = Vec::new();
+    for owned in [false, true] {
+        for count in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer::symbolic(Variable(995_000));
+            let range = |i: usize| {
+                CMemoryRange::new(
+                    base.clone(),
+                    MachineTerm::constant(i as u32),
+                    MachineTerm::constant(i as u32 + 1),
+                )
+            };
+            let assumptions = PureFactContext::new();
+            let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts(
+                (0..count).map(|i| {
+                    if owned {
+                        CResourceFact::own_memory(range(i))
+                    } else {
+                        CResourceFact::view_memory(range(i))
+                    }
+                }),
+            );
+            context.synchronize_memory_equalities(&assumptions);
+            let mut work = Vec::new();
+            for query in [0, count - 1, count] {
+                let required = CResourceFact::view_memory(if query == count {
+                    CMemoryRange::new(base.clone(), 0u32.into(), 128u32.into())
+                } else {
+                    range(query)
+                });
+                for _ in 0..3 {
+                    let (selected, units) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            context.satisfies_fact(&required, &assumptions)
+                        });
+                    assert_eq!(selected, query < count, "count {count}, query {query}");
+                    assert_eq!(context.facts().len(), count);
+                    work.push(units);
+                }
+            }
+            curves.push((count, work));
+        }
+    }
+    eprintln!("memory view query lookup (fragments, first/last/miss x3 work): {curves:?}");
+    assert!(
+        curves
+            .chunks_exact(3)
+            .all(|curve| curve.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 32))),
+        "memory support selection scans fragment candidates: {curves:?}"
+    );
+}
+
+#[test]
+fn memory_view_consumption_miss_ignores_fragment_frontier() {
+    let mut curves = Vec::new();
+    for owned in [false, true] {
+        for count in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let base = Pointer::symbolic(Variable(995_000));
+            let range = |i: usize| {
+                CMemoryRange::new(
+                    base.clone(),
+                    MachineTerm::constant(i as u32),
+                    MachineTerm::constant(i as u32 + 1),
+                )
+            };
+            let assumptions = PureFactContext::new();
+            let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts(
+                (0..count).map(|i| {
+                    if owned {
+                        CResourceFact::own_memory(range(i))
+                    } else {
+                        CResourceFact::view_memory(range(i))
+                    }
+                }),
+            );
+            context.synchronize_memory_equalities(&assumptions);
+            let mut work = Vec::new();
+            for query in [0, count - 1, count] {
+                let required = CResourceFact::view_memory(if query == count {
+                    CMemoryRange::new(base.clone(), 0u32.into(), 128u32.into())
+                } else {
+                    range(query)
+                });
+                for _ in 0..3 {
+                    let (selected, units) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            context
+                                .clone()
+                                .without_fact_incrementally(&required, &assumptions)
+                                .is_some()
+                        });
+                    assert_eq!(selected, query < count, "count {count}, query {query}");
+                    assert_eq!(context.facts().len(), count);
+                    work.push(units);
+                }
+            }
+            curves.push((count, work));
+        }
+    }
+    eprintln!("memory view consumption lookup (fragments, first/last/miss x3 work): {curves:?}");
+    assert!(
+        curves
+            .chunks_exact(3)
+            .all(|curve| curve.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 32))),
+        "memory support selection scans fragment candidates: {curves:?}"
+    );
+}
+
 /// Origin comparison must not inspect facts or other resource candidates.
 /// Grow the former incident-bound frontier beside a constant-coordinate split.
 #[test]

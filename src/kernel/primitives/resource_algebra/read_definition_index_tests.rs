@@ -128,6 +128,16 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
             context.synchronize_memory_equalities(&facts);
             let required = CResourceFact::view_memory(range(1, 3).with_typed_carrier());
             for _ in 0..3 {
+                assert!(context.satisfies_fact(&required, &facts));
+                let remaining = context
+                    .clone()
+                    .without_fact_incrementally(&required, &facts)
+                    .unwrap();
+                assert!(std::sync::Arc::ptr_eq(&context.storage, &remaining.storage));
+                assert!(std::sync::Arc::ptr_eq(
+                    &context.loan_dependencies,
+                    &remaining.loan_dependencies,
+                ));
                 assert_eq!(
                     context.directly_supporting_fact(&required, &facts),
                     Some(&held)
@@ -149,10 +159,18 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
                         .with_typed_carrier(),
                 );
                 assert!(context.directly_supporting_fact(&wrong, &facts).is_none());
+                assert!(!context.satisfies_fact(&wrong, &facts));
+                assert!(
+                    context
+                        .clone()
+                        .without_fact_incrementally(&wrong, &facts)
+                        .is_none()
+                );
                 assert!(context.contains_exact_representation(&held));
             }
             let child = context.clone().without_exact_representation(&held).unwrap();
             assert!(child.directly_supporting_fact(&required, &facts).is_none());
+            assert!(!child.satisfies_fact(&required, &facts));
             assert_eq!(
                 context.directly_supporting_fact(&required, &facts),
                 Some(&held)
@@ -160,6 +178,13 @@ fn memory_direct_support_preserves_held_identity_and_authority() {
             for quantity in [0u32, u32::MAX] {
                 let invalid = ResourceContext::new_with_equalities(&facts).unchecked_with_fact(
                     CResourceFact::own_quantity(CResource::Memory(range(0, 4)), quantity.into()),
+                );
+                assert!(!invalid.satisfies_fact(&required, &facts));
+                assert!(
+                    invalid
+                        .clone()
+                        .without_fact_incrementally(&required, &facts)
+                        .is_none()
                 );
                 assert!(
                     invalid
