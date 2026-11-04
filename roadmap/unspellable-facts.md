@@ -200,11 +200,16 @@ Remaining groups to audit and migrate:
   and bounded certificate conclusion identity already read views.
   `interval_query_form` remains in Surface search/output adapters and test
   references, not kernel atomic derivation.
-  Wide-order evidence now retains the original source propositions. Its
-  builder, indexed path collector and checker read endpoint views directly,
-  including polarity and canonical load/name connections, without exporting
-  shared arithmetic. Signed-order evidence remains a separate boxed consumer;
-  migrate its endpoint comparisons and constant connections together.
+  Atomic signed- and wide-order paths now retain the original source
+  propositions. Their builders, indexed path collectors and checkers read
+  endpoint views directly, preserving polarity and their existing endpoint
+  connection rules without exporting shared arithmetic. The signed collector
+  retains constant connections and selected memory bridging. Native range/domain
+  evidence still uses its boxed-step compatibility wrapper; migrate those
+  callers before removing that boundary. Canonical range-bound lookup and
+  nonnegative induction-domain admission read indexed endpoint views directly;
+  the native bound-entry exporter remains for the other evidence and output
+  callers.
   Integer certificate premise availability (`proof/object.rs`) must retain the
   checked across-effect bridge when replacing its native/overflow queries.
   `condition_as_order_fact` also exports in constant-bound evidence,

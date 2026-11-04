@@ -83,7 +83,7 @@ impl PropositionDerivation {
     /// Return the exact ordered edges selected by an atomic signed-order
     /// decision. `None` means this derivation used another rule; an empty
     /// path is never recorded.
-    pub fn signed_order_path(&self) -> Option<&[SignedOrderDerivationStep]> {
+    pub fn signed_order_path(&self) -> Option<&[OrderDerivationStep]> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::SignedOrderPath(path),
@@ -95,7 +95,7 @@ impl PropositionDerivation {
 
     /// Return the format and the exact ordered edges selected by an atomic
     /// 64-bit or `uint32` order decision.
-    pub fn wide_order_path(&self) -> Option<(MachineIntegerType, &[WideOrderDerivationStep])> {
+    pub fn wide_order_path(&self) -> Option<(MachineIntegerType, &[OrderDerivationStep])> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::WideOrderPath { format, path },
@@ -1207,7 +1207,7 @@ impl LoadAddressCongruenceEvidence {
     }
 }
 
-impl WideOrderDerivationStep {
+impl OrderDerivationStep {
     /// The exact proposition supporting this oriented edge.
     pub fn premise(&self) -> &Proposition {
         &self.premise

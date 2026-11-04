@@ -12763,14 +12763,14 @@ impl OrderFactsByLower {
     }
 
     /// The `int32` order facts written with lower end `lower`.
-    pub(crate) fn written_from<'a>(
+    pub(in crate::kernel) fn written_from_view<'a>(
         &'a self,
-        lower: &Bitvector32Term,
-    ) -> impl Iterator<Item = &'a ConditionTerm> + 'a {
+        lower: crate::kernel::MachineOperandView<'_>,
+    ) -> impl Iterator<Item = &'a ConditionTerm> + use<'a> {
         self.written
             .get(&checked_scalar_facts::ScalarOperandKey::for_format(
                 MachineIntegerType::Int32,
-                crate::kernel::MachineOperandView::Legacy(lower),
+                lower,
             ))
             .into_iter()
             .flat_map(crate::persistent::PersistentSet::iter)
