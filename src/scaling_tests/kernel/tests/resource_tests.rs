@@ -3449,6 +3449,16 @@ fn native_fold_rejection_ignores_fragments_beyond_a_gap() {
 /// A non-consuming ownership check must not enumerate candidates after a gap.
 #[test]
 fn native_ownership_query_stops_at_a_fixed_gap() {
+    constant_ownership_query_stops_at_a_fixed_gap(true);
+}
+
+#[test]
+#[ignore = "nightly: multi-size constant narrow ownership scaling control"]
+fn narrow_ownership_query_stops_at_a_fixed_gap() {
+    constant_ownership_query_stops_at_a_fixed_gap(false);
+}
+
+fn constant_ownership_query_stops_at_a_fixed_gap(native: bool) {
     let mut curves = Vec::new();
     for case in ["gap", "owner", "joined", "views"] {
         let mut samples = Vec::new();
@@ -3456,14 +3466,7 @@ fn native_ownership_query_stops_at_a_fixed_gap() {
             let _session = crate::kernel::VerificationSession::enter();
             let facts = PureFactContext::new();
             let p = Pointer::symbolic(Variable(989_970));
-            let range = |start, end| {
-                CMemoryRange::new_wide(
-                    p.clone(),
-                    MachineTerm::uint64_constant(start),
-                    MachineTerm::uint64_constant(end),
-                    4,
-                )
-            };
+            let range = |start, end| constant_query_range(p.clone(), start, end, native);
             let own = |start, end| CResourceFact::own_memory(range(start, end));
             let first = own(
                 0,
@@ -3509,7 +3512,7 @@ fn native_ownership_query_stops_at_a_fixed_gap() {
             }
             samples.push((count, queries));
         }
-        eprintln!("native ownership {case}, count/work/maps: {samples:?}");
+        eprintln!("constant ownership native={native} {case}, count/work/maps: {samples:?}");
         curves.push(samples);
     }
     for samples in curves {
@@ -3526,18 +3529,23 @@ fn native_ownership_query_stops_at_a_fixed_gap() {
 
 #[test]
 fn native_ownership_query_scales_with_selected_pieces() {
+    constant_ownership_query_scales_with_selected_pieces(true);
+}
+
+#[test]
+#[ignore = "nightly: multi-size constant narrow ownership scaling control"]
+fn narrow_ownership_query_scales_with_selected_pieces() {
+    constant_ownership_query_scales_with_selected_pieces(false);
+}
+
+fn constant_ownership_query_scales_with_selected_pieces(native: bool) {
     let mut samples = Vec::new();
     for count in [4u64, 16, 64, 256] {
         let _session = crate::kernel::VerificationSession::enter();
         let facts = PureFactContext::new();
         let p = Pointer::symbolic(Variable(989_971));
         let own = |start, end| {
-            CResourceFact::own_memory(CMemoryRange::new_wide(
-                p.clone(),
-                MachineTerm::uint64_constant(start),
-                MachineTerm::uint64_constant(end),
-                4,
-            ))
+            CResourceFact::own_memory(constant_query_range(p.clone(), start, end, native))
         };
         let mut context = ResourceContext::new_with_equalities(&facts);
         for i in 0..count {
@@ -3560,7 +3568,7 @@ fn native_ownership_query_scales_with_selected_pieces() {
         }
         samples.push((count, queries));
     }
-    eprintln!("native selected pieces, count/work/maps: {samples:?}");
+    eprintln!("constant selected pieces native={native}, count/work/maps: {samples:?}");
     assert!(
         samples[3]
             .1
@@ -3569,6 +3577,19 @@ fn native_ownership_query_scales_with_selected_pieces() {
             .all(|(big, small)| big.0 <= small.0 * 96 + 256 && big.1 <= small.1 * 192 + 1024),
         "{samples:?}"
     );
+}
+
+fn constant_query_range(p: Pointer, start: u64, end: u64, native: bool) -> CMemoryRange {
+    if native {
+        CMemoryRange::new_wide(
+            p,
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
+            4,
+        )
+    } else {
+        CMemoryRange::new_with_element_width(p, (start as u32).into(), (end as u32).into(), 4)
+    }
 }
 
 #[test]
