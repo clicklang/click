@@ -2262,3 +2262,104 @@ fn native_equality_after_shared_admission_keeps_existing_bounds() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
+    use crate::kernel::machine_integer::comparison::{
+        comparison_view, condition_for_operand_views,
+    };
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt8,
+        MachineIntegerType::Int16,
+        MachineIntegerType::UInt16,
+    ] {
+        let x = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993281));
+        let root =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Multiply, [x.clone(), x]);
+        let seven = MachineTerm::narrow_constant(format, 7);
+        let native_x = MachineTerm::Variable(Variable(993281));
+        let native_root = MachineTerm::machine_binary(
+            format,
+            MachineBinaryOp::Multiply,
+            native_x.clone(),
+            native_x,
+        );
+        for relation in [
+            CompareRelation::Equal,
+            CompareRelation::LessThan,
+            CompareRelation::LessEqual,
+        ] {
+            let query = condition_for_operand_views(
+                format,
+                relation,
+                [V::Shared(&root), V::Legacy(&seven)],
+            );
+            let native_query = ConditionTerm::machine_compare(
+                format,
+                relation,
+                native_root.clone(),
+                seven.clone(),
+            );
+            for truth in [false, true] {
+                let parent = ContextDifferenceGraph::default();
+                let decide = |g: &DifferenceGraph| {
+                    g.decide(&query)
+                        .or_else(|| g.decide_shared_order(&comparison_view(&query, true).unwrap()))
+                };
+                assert_eq!(decide(&parent.graph(Vec::new)), None);
+                let exports = KernelTermExport::machine_export_count();
+                let mut child = parent.clone();
+                child.assume(&query, truth);
+                assert_eq!(
+                    decide(child.built().unwrap()),
+                    Some(truth),
+                    "{format:?} {relation:?} {truth}"
+                );
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                assert_eq!(
+                    child.built().unwrap().decide(&native_query),
+                    Some(truth),
+                    "shared source, native query: {format:?} {relation:?} {truth}"
+                );
+                let native_graph = graph(&[(native_query.clone(), truth)]);
+                assert_eq!(native_graph.decide(&native_query), Some(truth));
+                assert_eq!(
+                    decide(&native_graph),
+                    Some(truth),
+                    "native source, shared query: {format:?} {relation:?} {truth}"
+                );
+                assert_eq!(decide(parent.built().unwrap()), None);
+                child.withdraw(&query);
+                assert!(child.built().is_none());
+                assert_eq!(decide(&child.graph(Vec::new)), None);
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+        let word = KernelTerm::variable(KernelType::C(format.c_type()), Variable(993282));
+        let ones = MachineTerm::narrow_constant(format, u128::MAX);
+        let zero = MachineTerm::narrow_constant(format, 0);
+        let equality = condition_for_operand_views(
+            format,
+            CompareRelation::Equal,
+            [V::Shared(&word), V::Legacy(&ones)],
+        );
+        let negative = condition_for_operand_views(
+            format,
+            CompareRelation::LessThan,
+            [V::Shared(&word), V::Legacy(&zero)],
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let facts = graph(&[(equality, true)]);
+        assert_eq!(
+            facts.decide(&negative),
+            Some(matches!(
+                format,
+                MachineIntegerType::Int8 | MachineIntegerType::Int16
+            ))
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

@@ -240,8 +240,13 @@ Remaining groups to audit and migrate:
   Native imports reuse the opposite signedness observation's DAG when available,
   changing only the root's numeric interpretation. Explicit native constructors
   retain a later supplied boxed input; query-only imports leave shared storage
-  untouched. Shared narrow admission and the higher-level wide dispatcher still
-  need auditing; this graph migration does not complete those consumers.
+  untouched. Shared narrow graph admission and queries use the existing
+  value-preserving 32-bit widening, passing the widened view directly rather
+  than rebuilding a condition whose reader can recover the narrow form.
+  Fresh narrow aliases share their original-domain coordinate before widening;
+  equivalent cast nodes must not grow until they exhaust the bounded graph
+  walk. The higher-level wide dispatcher still needs migration; these graph
+  changes do not complete that consumer.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;
@@ -289,9 +294,16 @@ Remaining groups to audit and migrate:
   registration also uses the cached syntax summary to skip pointer discovery
   for plain arithmetic without load names, retaining scoped inspection for
   conversion payloads and load-bearing expressions.
-  `condition_as_order_fact` still exports in constant-bound evidence and
-  quantified/derived order collectors; those are live checker routes, not
-  output adapters.
+  `condition_as_order_fact` still exports in the selected-condition path
+  checker and its quantified/derived order collectors (`selected_conditions.rs`
+  and `bounds.rs`). Migrating them also requires preserving selected transport
+  equality, positive-offset connections and constant connections. The
+  occurrences in `order_paths.rs` and the proposition-reasoning regression are
+  test-only reference walkers, not outstanding live consumers.
+  `signed_order_bound_entries` still supplies memory-equality candidate
+  construction; its proof/facts occurrence is test-only. Kernel uses of
+  `interval_query_form` are also test references; its live callers are Surface
+  planning/output adapters.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.

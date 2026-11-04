@@ -2,7 +2,14 @@
 fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
     use crate::kernel::machine_integer::comparison::condition_for_operand_views;
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineOperandView as V};
-    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+    for format in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt8,
+        MachineIntegerType::Int16,
+        MachineIntegerType::UInt16,
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt64,
+    ] {
         let mut samples = Vec::new();
         for size in [16, 64, 256] {
             let _session = crate::kernel::VerificationSession::enter();
@@ -11,7 +18,7 @@ fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
             let mut facts = DifferenceGraph::new();
             let exports = KernelTermExport::machine_export_count();
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-                for _ in 0..size {
+                for step in 0..size {
                     root = KernelTerm::machine_binary_shared(
                         format,
                         MachineBinaryOp::Multiply,
@@ -24,7 +31,11 @@ fn retained_equality_aliases_reuse_one_coordinate_across_growing_prefixes() {
                     );
                     assert_eq!(facts.decide(&alias), None);
                     facts.assume_condition(&alias, true);
-                    assert_eq!(facts.decide(&alias), Some(true));
+                    assert_eq!(
+                        facts.decide(&alias),
+                        Some(true),
+                        "{format:?} {size} step {step}"
+                    );
                 }
             });
             assert_eq!(KernelTermExport::machine_export_count(), exports);
