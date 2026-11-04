@@ -505,8 +505,8 @@ including repeated queries and persistent-map work. Build guards prohibit the
 removed frame iteration and normalization APIs in these completion paths.
 Nonconstant insertion candidates remain a separate audit target.
 
-Explicit ownership composition for a constant narrow- or native-indexed range
-with unit quantity uses `consume_constant_owned_memory`. It nominates one whole
+Explicit ownership composition for a narrow- or native-indexed range
+with unit quantity uses `consume_unit_owned_memory`. It nominates one whole
 supplier, or consumes successive indexed fragments through the existing reservation
 operation, stopping at the first gap or unsuitable supplier. It retains split
 origins when requested and edits a persistent branch; it neither collects a
@@ -528,8 +528,15 @@ Every selected piece must lie inside the request; a gap, ambiguous successor,
 cycle, wrong designation, or non-unit owner refuses without trying alternatives.
 Consumption and non-consuming queries share this persistent operation. Scaling
 controls grow unrelated same-base fragments beside a fixed symbolic partition.
-Symbolic requests remain a separate audit target. A build guard forbids
-candidate enumeration in this constant-consumption path.
+Symbolic unit-owned requests use the same singleton supplier and exact-endpoint
+composition, without enumerating incident order bounds or candidate frontiers.
+A selected narrow cell written `(p + i)[0..1]` is restated as `p[i..i+1]`
+before containment and adjacency, retaining its carrier. This uses the existing
+exact coordinate rule on that piece, not an alias or supplier search.
+Complete-fold controls keep the footprint fixed while growing incident order
+facts, including refusal and successful composition; selected-piece controls
+measure larger actual partitions separately. Other quantities remain an audit
+target. A build guard forbids candidate enumeration in this consumption path.
 
 Non-consuming `satisfies_fact` queries for constant native ranges with unit
 ownership use that same indexed consumption operation on a persistent copy.

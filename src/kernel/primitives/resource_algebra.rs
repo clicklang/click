@@ -6384,7 +6384,7 @@ impl ResourceContext {
             {
                 return self
                     .clone()
-                    .consume_constant_owned_memory(fact, assumptions, None)
+                    .consume_unit_owned_memory(fact, assumptions, None)
                     .is_some();
             }
             let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
@@ -6862,10 +6862,8 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
-            && !range.has_symbolic_bounds()
-        {
-            return self.consume_constant_owned_memory(fact, assumptions, origins);
+        if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
+            return self.consume_unit_owned_memory(fact, assumptions, origins);
         }
         let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
         let mut selected = self;
@@ -6915,9 +6913,9 @@ impl ResourceContext {
         Some(selected)
     }
 
-    /// Consume an explicit constant footprint through retained supplier identities.
+    /// Consume an explicit unit-owned footprint through retained supplier identities.
     /// A gap ends the operation; no candidate frontier is collected or retried.
-    fn consume_constant_owned_memory(
+    fn consume_unit_owned_memory(
         mut self,
         required: &CResourceFact,
         assumptions: &PureFactContext,
@@ -6937,28 +6935,29 @@ impl ResourceContext {
         {
             return Some(self);
         }
-        if range.wide_bounds().is_some()
-            && candidates.entries.single_supplier().is_some_and(|entry| {
-                self.fact(entry)
-                    .memory_own_range()
-                    .is_some_and(CMemoryRange::has_symbolic_bounds)
-            })
+        if range.has_symbolic_bounds()
+            || (range.wide_bounds().is_some()
+                && candidates.entries.single_supplier().is_some_and(|entry| {
+                    self.fact(entry)
+                        .memory_own_range()
+                        .is_some_and(CMemoryRange::has_symbolic_bounds)
+                }))
         {
-            return self.consume_native_symbolic_partition(required, assumptions, origins);
+            return self.consume_symbolic_partition(required, assumptions, origins);
         }
         self.reserve_owned_memory_fragments_impl(required, assumptions, origins)
             .map(|(remaining, _)| remaining)
     }
 
-    /// Compose the selected native endpoint chain, without inspecting other
-    /// starts. Constant queries may have symbolic intermediate partition points.
-    fn consume_native_symbolic_partition(
+    /// Compose the selected endpoint chain, without inspecting other starts.
+    /// Requests and their intermediate partition points may be symbolic.
+    fn consume_symbolic_partition(
         mut self,
         required: &CResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
     ) -> Option<Self> {
-        let range = required.memory_own_range().expect("native ownership query");
+        let range = required.memory_own_range().expect("unit ownership query");
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         let Some(first) = candidates.entries.single_supplier() else {
             return None;
@@ -6976,6 +6975,24 @@ impl ResourceContext {
             }
             let Some(piece) = candidates.supplier_at_base(next, range.base()) else {
                 return None;
+            };
+            // A selected cell such as (p + i)[0..1] must use the request's
+            // coordinates before containment and adjacency. This restates one
+            // supplied footprint; it never discovers another owner or alias.
+            let piece = match piece.memory_own_range() {
+                Some(selected)
+                    if range.wide_bounds().is_none()
+                        && selected.wide_bounds().is_none()
+                        && selected.base() != range.base()
+                        && constant_range_extent(selected).is_some() =>
+                {
+                    CResourceFact::own_memory(memory_range_rebased(
+                        selected,
+                        range.base(),
+                        assumptions,
+                    )?)
+                }
+                _ => piece,
             };
             let Some(piece_range) = piece.memory_own_range() else {
                 return None;

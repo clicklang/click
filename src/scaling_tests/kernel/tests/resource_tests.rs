@@ -3677,3 +3677,369 @@ fn native_symbolic_partition_ignores_unrelated_fragments() {
         );
     }
 }
+
+#[test]
+fn symbolic_fold_consumption_ignores_unselected_fragments() {
+    let mut curves = Vec::new();
+    for case in ["gap", "owner", "joined"] {
+        let complete = case != "gap";
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (instance, mut definition, _) = instance_memory_fixture();
+            let endpoint = Bitvector32Term::Variable(Variable(989_980));
+            let bound = |n| CExpression::Value(CValue::UInt64(Bitvector32Term::uint64_constant(n)));
+            definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: bound(0),
+                end: CExpression::Value(CValue::UInt64(endpoint.clone())),
+                element_width: 4,
+                guard: None,
+                uninitialized: false,
+                value_runs: Default::default(),
+            })];
+            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+                unreachable!()
+            };
+            let piece = |start: u64, end: Bitvector32Term| {
+                CResourceFact::own_memory(CMemoryRange::new_wide(
+                    value.pointer().clone(),
+                    Bitvector32Term::uint64_constant(start),
+                    end,
+                    4,
+                ))
+            };
+            let facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::uint64_less_than(
+                        Bitvector32Term::uint64_constant(2),
+                        endpoint.clone(),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::uint64_less_than(
+                        endpoint.clone(),
+                        Bitvector32Term::uint64_constant(1024),
+                    ),
+                    true,
+                );
+            let first = piece(
+                0,
+                match case {
+                    "owner" => endpoint.clone(),
+                    _ => Bitvector32Term::uint64_constant(1),
+                },
+            );
+            let mut resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(first.clone());
+            if case == "joined" {
+                resources = resources.unchecked_with_fact(piece(1, endpoint.clone()));
+            }
+            for index in 0..count {
+                let start = 2048 + 2 * u64::from(index);
+                resources = resources
+                    .unchecked_with_fact(piece(start, Bitvector32Term::uint64_constant(start + 1)));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let state = CState::new().with_resource_context(resources);
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        rewrite_resource_instance(&state, &instance, &definition, &facts, false)
+                    })
+                });
+                assert_eq!(result.is_ok(), complete, "{complete}/{count}: {result:?}");
+                assert_eq!(
+                    state.resources().facts().len(),
+                    count as usize + 1 + usize::from(case == "joined")
+                );
+                assert!(state.resources().contains_exact_representation(&first));
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("symbolic fold case={case}, count/work/maps: {samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "symbolic fold scans rejected fragments: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn symbolic_offset_fold_stops_at_first_gap() {
+    let mut curves = Vec::new();
+    for case in ["gap", "owner", "joined"] {
+        let complete = case != "gap";
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (instance, mut definition, _) = instance_memory_fixture();
+            let endpoint = Bitvector32Term::Variable(Variable(989_980));
+            let shifted = |n| {
+                Bitvector32Term::uint64_add(endpoint.clone(), Bitvector32Term::uint64_constant(n))
+            };
+            let bound = |n| CExpression::Value(CValue::UInt64(shifted(n)));
+            definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: bound(0),
+                end: bound(1024),
+                element_width: 4,
+                guard: None,
+                uninitialized: false,
+                value_runs: Default::default(),
+            })];
+            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+                unreachable!()
+            };
+            let piece = |start: u64, end: u64| {
+                CResourceFact::own_memory(CMemoryRange::new_wide(
+                    value.pointer().clone(),
+                    shifted(start),
+                    shifted(end),
+                    4,
+                ))
+            };
+            let facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::uint64_less_than(
+                        Bitvector32Term::uint64_constant(2),
+                        endpoint.clone(),
+                    ),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::uint64_less_than(
+                        endpoint.clone(),
+                        Bitvector32Term::uint64_constant(1024),
+                    ),
+                    true,
+                );
+            let first = piece(
+                0,
+                match case {
+                    "owner" => 1024,
+                    "joined" => 512,
+                    _ => 1,
+                },
+            );
+            let mut resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(first.clone());
+            if case == "joined" {
+                resources = resources.unchecked_with_fact(piece(512, 1024));
+            }
+            for index in 0..count {
+                let start = if complete { 2048 } else { 100 } + 2 * u64::from(index);
+                resources = resources.unchecked_with_fact(piece(start, start + 1));
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let state = CState::new().with_resource_context(resources);
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        rewrite_resource_instance(&state, &instance, &definition, &facts, false)
+                    })
+                });
+                assert_eq!(result.is_ok(), complete, "{complete}/{count}: {result:?}");
+                assert_eq!(
+                    state.resources().facts().len(),
+                    count as usize + 1 + usize::from(case == "joined")
+                );
+                assert!(state.resources().contains_exact_representation(&first));
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("symbolic offset fold case={case}, count/work/maps: {samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "symbolic offset fold scans rejected fragments: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn symbolic_fold_does_not_scan_incident_order_bounds() {
+    let mut curves = Vec::new();
+    for case in ["gap", "owner", "joined", "rebased"] {
+        let complete = case != "gap";
+        let mut samples = Vec::new();
+        for count in [4u32, 16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let (instance, mut definition, _) = instance_memory_fixture();
+            let endpoint = Bitvector32Term::Variable(Variable(989_980));
+            let shifted = |n| Bitvector32Term::add(endpoint.clone(), Bitvector32Term::constant(n));
+            let bound = |n| CExpression::Value(CValue::Int32(shifted(n)));
+            definition.contains = vec![CResourceSpec::owned_memory(CMemorySegment {
+                base: c_variable("p"),
+                start: bound(0),
+                end: bound(1024),
+                element_width: 4,
+                guard: None,
+                uninitialized: false,
+                value_runs: Default::default(),
+            })];
+            let CValue::Pointer(value) = instance.arguments()[0].as_c_value().unwrap() else {
+                unreachable!()
+            };
+            let piece = |start: u32, end: u32| {
+                CResourceFact::own_memory(CMemoryRange::new(
+                    value.pointer().clone(),
+                    shifted(start),
+                    shifted(end),
+                ))
+            };
+            let mut facts = PureFactContext::new()
+                .assume_condition(
+                    ConditionTerm::signed_less_than(Bitvector32Term::constant(2), endpoint.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(
+                        endpoint.clone(),
+                        Bitvector32Term::constant(1024),
+                    ),
+                    true,
+                );
+            let first = piece(
+                0,
+                match case {
+                    "owner" => 1024,
+                    "joined" => 512,
+                    _ => 1,
+                },
+            );
+            let first = if case == "rebased" {
+                CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                    value.pointer().offset_by_elements(endpoint.clone(), 4),
+                    0u32.into(),
+                    1u32.into(),
+                    4,
+                ))
+            } else {
+                first
+            };
+            let mut resources =
+                ResourceContext::new_with_equalities(&facts).unchecked_with_fact(first.clone());
+            if case == "joined" || case == "rebased" {
+                resources = resources
+                    .unchecked_with_fact(piece(if case == "joined" { 512 } else { 1 }, 1024));
+            }
+            for index in 0..count {
+                facts = facts.assume_condition(
+                    ConditionTerm::signed_less_than(
+                        Bitvector32Term::Variable(Variable(990_000 + u64::from(index))),
+                        endpoint.clone(),
+                    ),
+                    true,
+                );
+            }
+            resources.synchronize_memory_equalities(&facts);
+            let state = CState::new().with_resource_context(resources);
+            let mut queries = Vec::new();
+            for _ in 0..3 {
+                let ((result, work), maps) = crate::persistent::measure_persistent_work(|| {
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        rewrite_resource_instance(&state, &instance, &definition, &facts, false)
+                    })
+                });
+                assert_eq!(result.is_ok(), complete, "{complete}/{count}: {result:?}");
+                assert_eq!(
+                    state.resources().facts().len(),
+                    1 + usize::from(case == "joined" || case == "rebased")
+                );
+                assert!(state.resources().contains_exact_representation(&first));
+                queries.push((work, maps));
+            }
+            samples.push((count, queries));
+        }
+        eprintln!("symbolic incident-bound fold case={case}, count/work/maps: {samples:?}");
+        curves.push(samples);
+    }
+    for samples in curves {
+        assert!(
+            samples[3]
+                .1
+                .iter()
+                .zip(&samples[0].1)
+                .all(|(big, small)| big.0 <= small.0 + 64 && big.1 <= small.1 * 3 + 512),
+            "symbolic incident-bound fold scans rejected fragments: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn symbolic_consumption_scales_with_selected_pieces() {
+    let mut samples = Vec::new();
+    for count in [4u32, 16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = Bitvector32Term::Variable(Variable(989_981));
+        let facts = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::signed_less_than(0u32.into(), index.clone()),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(index.clone(), 1024u32.into()),
+                true,
+            );
+        let p = Pointer::symbolic(Variable(989_971));
+        let own = |start: u32, end: u32| {
+            CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+                p.clone(),
+                Bitvector32Term::add(index.clone(), start.into()),
+                Bitvector32Term::add(index.clone(), end.into()),
+                4,
+            ))
+        };
+        let mut context = ResourceContext::new_with_equalities(&facts);
+        for i in 0..count {
+            context = context.unchecked_with_fact(own(i, i + 1));
+        }
+        context.synchronize_memory_equalities(&facts);
+        let required = own(0, count);
+        let mut queries = Vec::new();
+        for _ in 0..3 {
+            let ((answer, work), maps) = crate::persistent::measure_persistent_work(|| {
+                crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .clone()
+                        .without_fact_incrementally(&required, &facts)
+                })
+            });
+            assert!(answer.is_some(), "count={count}");
+            assert_eq!(answer.unwrap().facts().len(), 0);
+            assert_eq!(context.facts().len(), count as usize);
+            assert!(context.contains_exact_representation(&own(0, 1)));
+            assert!(context.contains_exact_representation(&own(count - 1, count)));
+            queries.push((work, maps));
+        }
+        samples.push((count, queries));
+    }
+    eprintln!("symbolic selected pieces, count/work/maps: {samples:?}");
+    assert!(
+        samples[3]
+            .1
+            .iter()
+            .zip(&samples[0].1)
+            .all(|(big, small)| big.0 <= small.0 * 96 + 256 && big.1 <= small.1 * 192 + 1024),
+        "{samples:?}"
+    );
+}
