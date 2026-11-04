@@ -472,6 +472,16 @@ impl<T: Ord> PersistentSet<T> {
         self.map.get(value).is_some()
     }
 
+    /// Greatest member strictly below `value`, without enumerating the set.
+    pub(crate) fn get_less_than(&self, value: &T) -> Option<&T> {
+        self.map.get_less_than(value).map(|(key, ())| key)
+    }
+
+    /// Least member strictly above `value`, without enumerating the set.
+    pub(crate) fn get_greater_than(&self, value: &T) -> Option<&T> {
+        self.map.get_greater_than(value).map(|(key, ())| key)
+    }
+
     pub(crate) fn without_value(&self, value: &T) -> Self {
         Self {
             map: self.map.without_key(value),
