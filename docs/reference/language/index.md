@@ -3578,6 +3578,15 @@ string variable and cannot be reinterpreted as contract `result`. Expansion
 uses this spelling when an explicit proof must name an overlapping C
 binding.
 
+The same holds for every Click value name: in a loop's clauses and phases bare
+`iterations` is the loop's pass count, and `c(iterations)` a program variable
+named `iterations`; diagnostics print that variable as `c(iterations)`
+([`a_c_local_named_iterations_is_written_c_iterations.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_local_named_iterations_is_written_c_iterations.md)).
+A Rust sidecar writes the form in its own language, `rust(name)`, and refuses
+`c(name)`; a C or C++ sidecar refuses `rust(name)`
+([`a_c_sidecar_names_a_program_binding_c_not_rust.md`](https://github.com/clicklang/click/blob/master/mdtests/a_c_sidecar_names_a_program_binding_c_not_rust.md),
+[`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).
+
 Returning a pointer does not extend an automatic object's lifetime. A returned
 pointer must refer to storage that outlives the call, such as caller-provided,
 static, or live heap storage; a postcondition that dereferences a returned

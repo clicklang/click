@@ -437,8 +437,9 @@ impl Parser {
                     self.integer_operand_in_scope(&arm.body, scope)
                 })
             }),
+            // `c(name)` is the program's binding, never a Click Integer.
+            ContractExpression::CBinding(_) => false,
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
                 match self.local_operand(scope, name) {
                     Some(operand) => operand == LocalOperand::Integer,
@@ -456,8 +457,8 @@ impl Parser {
                     || crate::surface::integer_truncation::is_integer_truncation(name)
                     || self.integer_function_names.contains(name)
             }
+            ContractExpression::CBinding(_) => false,
             ContractExpression::Binding(name)
-            | ContractExpression::CBinding(name)
             | ContractExpression::CFragment(CExpression::Variable(name)) => {
                 self.names.contains_any(NameKind::INTEGERS, name)
                     || crate::surface::is_loop_iterations_spelling(name)

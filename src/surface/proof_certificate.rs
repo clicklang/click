@@ -164,7 +164,6 @@ pub struct CertificateStructuralClause {
     pub(super) label: Option<String>,
     pub(super) decreases: Option<TerminationMeasure>,
     pub(super) diverges: bool,
-    pub(super) iterations_is_c: bool,
     pub(super) items: Vec<CertificateStructuralItem>,
     pub(super) resources: Vec<ResourceClause>,
     pub(super) initialize_proof: Option<Box<ProofCertificate>>,
@@ -673,7 +672,6 @@ impl ProofStep {
                 label: clause.label.clone(),
                 decreases: clause.decreases.clone(),
                 diverges: clause.diverges,
-                iterations_is_c: clause.iterations_is_c,
                 resources: clause.resources.clone(),
                 items: clause
                     .items
@@ -994,7 +992,6 @@ impl ProofStep {
                 label: clause.label.clone(),
                 decreases: clause.decreases.clone(),
                 diverges: clause.diverges,
-                iterations_is_c: clause.iterations_is_c,
                 resources: clause.resources.clone(),
                 items: clause
                     .items

@@ -285,6 +285,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "peel",
     "signed_int32",
     "rules",
+    "rust",
     "in",
     "induct",
     "initialize",
@@ -459,10 +460,11 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
     format!("loop({index}).{LOOP_ITERATIONS_NAME}")
 }
 
-/// Whether the function has a C object named `iterations`, which keeps its
-/// C meaning: the loop's pass count then has no bare spelling in its phases.
-pub(crate) fn loop_iterations_hidden_by(state: &CState) -> bool {
-    state.locals().contains_name(LOOP_ITERATIONS_NAME)
+/// Whether a bare `name` is a Click value, `result` or a loop's
+/// `iterations`, so a program binding of that name is written `c(name)`, or
+/// `rust(name)` for a Rust source.
+pub(crate) fn is_click_value_name(name: &str) -> bool {
+    name == "result" || name == LOOP_ITERATIONS_NAME
 }
 
 /// Whether `name` is a loop's pass count as the parser spells it.
@@ -1864,9 +1866,6 @@ pub struct StructuralClauseData {
     /// It excludes a `decreases` clause and requires the enclosing function
     /// to be declared `diverges` too.
     diverges: bool,
-    /// Whether the clause's `iterations` names a C object of the function
-    /// rather than the loop's pass count, which then has no bare spelling.
-    iterations_is_c: bool,
     items: Vec<StructuralItem>,
     /// The proof locals in scope where a frontier loop clause was written: a
     /// proof `match` arm's bindings, `let { ... } = unfold(...)` names, call-result
@@ -4744,21 +4743,17 @@ impl SpecElaborationContext {
     }
 
     /// A loop clause's context. `iterations` is the loop's pass count, which
-    /// each loop phase binds where it lowers the invariant, unless the clause
-    /// (`iterations_is_c`) reads a C object of that name.
-    fn for_loop_invariant(loop_index: usize, iterations_is_c: bool) -> Self {
+    /// each loop phase binds where it lowers the invariant; a program binding
+    /// of that name is `c(iterations)`.
+    fn for_loop_invariant(loop_index: usize) -> Self {
         Self {
             current_loop_entry: Some(loop_index),
-            integer_values: if iterations_is_c {
-                PersistentMap::default()
-            } else {
-                PersistentMap::default().with_inserted(
-                    LOOP_ITERATIONS_NAME.to_string(),
-                    crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::var(
-                        crate::kernel::LOOP_ITERATIONS_VARIABLE,
-                    )),
-                )
-            },
+            integer_values: PersistentMap::default().with_inserted(
+                LOOP_ITERATIONS_NAME.to_string(),
+                crate::kernel::SpecIntegerExpression::Term(crate::kernel::IntegerTerm::var(
+                    crate::kernel::LOOP_ITERATIONS_VARIABLE,
+                )),
+            ),
             ..Self::default()
         }
     }
@@ -9058,11 +9053,6 @@ impl StructuralClause {
     /// Whether the loop head declares `diverges`.
     pub fn diverges(&self) -> bool {
         self.diverges
-    }
-
-    /// Whether the clause's `iterations` is a C object, not the pass count.
-    pub(crate) fn iterations_is_c(&self) -> bool {
-        self.iterations_is_c
     }
 
     pub fn items(&self) -> &[StructuralItem] {

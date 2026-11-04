@@ -1216,6 +1216,11 @@ and the bound `0 <= total and total <= 255 * i` establish the result and
 safety of every intermediate addition. It covers empty input and supports
 profiling, audit, and expanded-proof reverification.
 
+A loop's clauses read its pass count as `iterations`, and a Rust local of
+that name as `rust(iterations)`: in a Rust sidecar `rust(name)` names a
+program binding a Click name shadows, where a C sidecar writes `c(name)`
+([`design/charon-trial/program-bindings`](https://github.com/clicklang/click/blob/master/design/charon-trial/program-bindings/bindings.click)).
+
 ## Slice iterator loops
 
 `for &byte in bytes`, `for byte in bytes`, and either pattern over
