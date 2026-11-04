@@ -837,3 +837,20 @@ fn exact_alias_owner_neighbors_reject_supplier_scans() {
         );
     }
 }
+
+#[test]
+fn ownership_validity_rejects_mixed_access_buckets() {
+    for name in ["memory_by_base", "memory_by_block"] {
+        let source = format!("fn owned_validity_candidates(c: C) {{ c.{name}.get(k); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+    assert!(
+        boundary::check_source(
+            "src/kernel/primitives/resource_algebra.rs",
+            "fn owned_validity_candidates(c: C) { c.owned_memory_by_base.get(k); }"
+        )
+        .is_ok()
+    );
+}

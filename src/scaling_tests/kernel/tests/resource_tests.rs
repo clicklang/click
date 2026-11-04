@@ -1511,6 +1511,73 @@ fn translated_owner_insertion_uses_interval_neighbors() {
 }
 
 #[test]
+fn ownership_alias_checks_do_not_filter_read_only_views() {
+    for has_owner in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(995_700));
+            let q = Pointer::symbolic(Variable(995_701));
+            let index = MachineTerm::var(Variable(995_702));
+            let end = MachineTerm::add(index.clone(), 1u32.into());
+            let assumptions = PureFactContext::new()
+                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true)
+                .assume_condition(
+                    ConditionTerm::signed_less_than(4u32.into(), end.clone()),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_than(index.clone(), 5u32.into()),
+                    true,
+                );
+            let range =
+                |base, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
+            let mut context = ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_facts((0..size).map(|i| {
+                    CResourceFact::view_memory(range(
+                        q.clone(),
+                        (16 + 4 * i as u32).into(),
+                        (17 + 4 * i as u32).into(),
+                    ))
+                }));
+            if has_owner {
+                context = context.unchecked_with_fact(CResourceFact::own_memory(range(
+                    q.clone(),
+                    4u32.into(),
+                    5u32.into(),
+                )));
+            }
+            context.synchronize_memory_equalities(&assumptions);
+            let required = CResourceFact::own_memory(range(p, index, end));
+            let mut work = Vec::new();
+            for _ in 0..3 {
+                let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
+                    context
+                        .clone()
+                        .try_compose_into_valid_context_delaying_normalization(
+                            [required.clone()],
+                            &assumptions,
+                        )
+                });
+                assert_eq!(result.is_ok(), !has_owner);
+                assert_eq!(context.facts().len(), size + usize::from(has_owner));
+                work.push(units);
+            }
+            samples.push((size, work));
+        }
+        eprintln!("ownership checks beside views, has_owner={has_owner}: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 24)),
+            "ownership checks filter read-only views: {samples:?}"
+        );
+    }
+}
+
+#[test]
 fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
     for native in [false, true] {
         let mut samples = Vec::new();
@@ -1518,14 +1585,16 @@ fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Pointer::symbolic(Variable(995_600));
             let q = Pointer::symbolic(Variable(995_601));
-            let assumptions = PureFactContext::new().assume_condition(
-                ConditionTerm::pointer_equal(p.clone(), q.clone()), true,
-            );
+            let assumptions = PureFactContext::new()
+                .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
             let owned = |base: Pointer, start: u32| {
                 CResourceFact::own_memory(if native {
-                    CMemoryRange::new_wide(base,
+                    CMemoryRange::new_wide(
+                        base,
                         MachineTerm::uint64_constant(u64::from(start)),
-                        MachineTerm::uint64_constant(u64::from(start + 1)), 4)
+                        MachineTerm::uint64_constant(u64::from(start + 1)),
+                        4,
+                    )
                 } else {
                     CMemoryRange::new_with_element_width(base, start.into(), (start + 1).into(), 4)
                 })
@@ -1536,11 +1605,15 @@ fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
             let mut work = Vec::new();
             for (start, accepted) in [(0, true), (4, false), (4 * size as u32, false)] {
                 for _ in 0..3 {
-                    let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
-                        context.clone().try_compose_into_valid_context_delaying_normalization(
-                            [owned(p.clone(), start)], &assumptions,
-                        )
-                    });
+                    let (result, units) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            context
+                                .clone()
+                                .try_compose_into_valid_context_delaying_normalization(
+                                    [owned(p.clone(), start)],
+                                    &assumptions,
+                                )
+                        });
                     assert_eq!(result.is_ok(), accepted);
                     assert_eq!(context.facts().len(), size);
                     work.push(units);
@@ -1549,9 +1622,14 @@ fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
             samples.push((size, work));
         }
         eprintln!("exact alias owner checks, native={native}: {samples:?}");
-        assert!(samples.windows(2).all(|pair| pair[0].1.iter().zip(&pair[1].1)
-            .all(|(small, large)| *large <= *small + 48)),
-            "exact pointer aliases scan owned fragments: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 48)),
+            "exact pointer aliases scan owned fragments: {samples:?}"
+        );
     }
 }
 

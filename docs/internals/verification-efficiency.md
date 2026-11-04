@@ -443,7 +443,9 @@ coordinate index, provided its cached count covers every owner in the queried
 block or root. An exact cross-block alias rebases the query before that same
 selection; a merely related root must not discard its displacement. This
 selection adds no separation facts and still uses the ordinary pair-overlap
-rule. Symbolic bounds, incompletely indexed roots, and other related bases
+rule. Exact-base candidate buckets contain only owners, maintained on
+resource insertion and consumption, so unresolved interval checks do not scan
+read-only views before checking the owners. Symbolic bounds, incompletely indexed roots, and other related bases
 still enumerate candidates: a known violation of the fast-part rule
 (see "Fast-part scans" in
 [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).

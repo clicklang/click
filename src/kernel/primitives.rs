@@ -10207,6 +10207,9 @@ pub(super) struct ResourceContextIndex {
     /// equalities can then find only the facts whose bases they identify,
     /// without scanning every resource in an aliased block.
     pub(super) memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
+    /// Ownership-only exact-base buckets. Validity checks must not filter
+    /// read observations out of the general memory bucket.
+    pub(super) owned_memory_by_base: PersistentMap<Pointer, ResourceEntryIds>,
     /// Raw address anchors maintained during resource publication, for queries
     /// before a proof boundary has paired the input with an equality graph.
     /// Structural candidates maintained at resource publication, independent

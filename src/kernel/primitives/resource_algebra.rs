@@ -630,6 +630,11 @@ impl ResourceContextIndex {
                 .update(range, fact.is_own(), entry, true, fact);
             result.memory_objects.update(entry, true, fact);
             if mode {
+                result.owned_memory_by_base = insert_resource_index_entry(
+                    &result.owned_memory_by_base,
+                    range.base().clone(),
+                    entry,
+                );
                 if let Some(variable) = owned_range_base_variable(range) {
                     result.owned_memory_by_base_variable = insert_resource_index_entry(
                         &result.owned_memory_by_base_variable,
@@ -921,6 +926,8 @@ impl ResourceContextIndex {
                 .update(range, fact.is_own(), entry, false, fact);
             result.memory_objects.update(entry, false, fact);
             if mode {
+                result.owned_memory_by_base =
+                    remove_resource_index_entry(&result.owned_memory_by_base, range.base(), entry);
                 if let Some(variable) = owned_range_base_variable(range) {
                     result.owned_memory_by_base_variable = remove_resource_index_entry(
                         &result.owned_memory_by_base_variable,
@@ -6061,12 +6068,10 @@ impl ResourceContext {
                 return;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if let Some(entries) = index.memory_by_base.get(at) {
+            if let Some(entries) = index.owned_memory_by_base.get(at) {
                 for entry in entries.iter() {
                     crate::instrumentation::record_deterministic_work(1);
-                    if self.fact(*entry).memory_own_range().is_some() {
-                        candidates.insert(*entry);
-                    }
+                    candidates.insert(*entry);
                 }
             }
         };
