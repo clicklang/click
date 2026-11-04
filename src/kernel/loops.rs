@@ -5185,6 +5185,7 @@ fn collect_invariant_check_obligations_with_mode(
 pub(super) fn collect_loop_ranking_obligations(
     state: &CState,
     iteration_entry_state: &CState,
+    head_iterations: Option<&IntegerTerm>,
     ranking_measures: &[CRankingComponent],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -5199,12 +5200,22 @@ pub(super) fn collect_loop_ranking_obligations(
     };
     let mut pre = Vec::with_capacity(ranking_measures.len());
     let mut post = Vec::with_capacity(ranking_measures.len());
+    // A measure may read the loop's pass count `iterations`: the head's `K`
+    // where the pass starts, and `K + 1` at its back edge.
+    let scope =
+        |count: Option<IntegerTerm>| count.map(crate::kernel::spec::LoopIterationsScope::enter);
     for measure in ranking_measures {
+        let entry = scope(head_iterations.cloned());
         pre.push(crate::kernel::termination::c_ranking_measure_term(
             measure,
             iteration_entry_state,
             &mut reader,
         )?);
+        drop(entry);
+        let _back_edge = scope(
+            head_iterations
+                .map(|head| IntegerTerm::add(head.clone(), IntegerTerm::constant(1.into()))),
+        );
         post.push(crate::kernel::termination::c_ranking_measure_term(
             measure,
             state,
@@ -5262,6 +5273,7 @@ pub(super) fn collect_loop_ranking_obligations(
 pub(super) fn loop_ranking_obligations_or_refusal(
     state: &CState,
     iteration_entry_state: &CState,
+    head_iterations: &IntegerTerm,
     ranking_measures: &[CRankingComponent],
     assumptions: &PureFactContext,
     budget: &mut ExecutionBudget,
@@ -5269,6 +5281,7 @@ pub(super) fn loop_ranking_obligations_or_refusal(
     match collect_loop_ranking_obligations(
         state,
         iteration_entry_state,
+        Some(head_iterations),
         ranking_measures,
         assumptions,
         budget,
@@ -5489,6 +5502,7 @@ pub(super) fn collect_loop_preservation_summary(
                             path_obligations.extend(loop_ranking_obligations_or_refusal(
                                 &next_state,
                                 top_state,
+                                &head.iterations,
                                 ranking_measures,
                                 &path_assumptions,
                                 budget,

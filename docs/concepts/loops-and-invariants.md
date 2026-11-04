@@ -355,7 +355,8 @@ loop {
 
 The loop rule binds it per phase: the entry checks the invariants at `0`, the
 head assumes them at a fresh `K` with `0 <= K`, and the back edge checks them
-at `K + 1`. A `continue` is a back edge; a `break` exits during a pass that
+at `K + 1`. A `decreases` component reads it the same way, at `K` and
+`K + 1`, so `decreases n - iterations` ranks the loop. A `continue` is a back edge; a `break` exits during a pass that
 does not count, so the exit's count is the head's `K`. Past the loop the proof
 names that `K` as `loop(i).iterations`, the count the exit facts are stated
 over (`have loop(0).iterations == n`). A nested loop's `iterations` is its own
