@@ -630,6 +630,11 @@ impl ResourceContextIndex {
                 .update(range, fact.is_own(), entry, true, fact);
             result.memory_objects.update(entry, true, fact);
             if mode {
+                result.owned_memory_by_base = insert_resource_index_entry(
+                    &result.owned_memory_by_base,
+                    range.base().clone(),
+                    entry,
+                );
                 if let Some(variable) = owned_range_base_variable(range) {
                     result.owned_memory_by_base_variable = insert_resource_index_entry(
                         &result.owned_memory_by_base_variable,
@@ -921,6 +926,8 @@ impl ResourceContextIndex {
                 .update(range, fact.is_own(), entry, false, fact);
             result.memory_objects.update(entry, false, fact);
             if mode {
+                result.owned_memory_by_base =
+                    remove_resource_index_entry(&result.owned_memory_by_base, range.base(), entry);
                 if let Some(variable) = owned_range_base_variable(range) {
                     result.owned_memory_by_base_variable = remove_resource_index_entry(
                         &result.owned_memory_by_base_variable,
@@ -5990,12 +5997,34 @@ impl ResourceContext {
         Some(selected)
     }
 
+    /// The caller supplies a directly stated equality of the two bases.
+    /// Rebase before reading coordinates; a merely related root may have a
+    /// nonzero displacement and cannot use this operation. The root count
+    /// prevents selection from hiding owners with symbolic coordinates.
+    fn constant_owned_neighbors_at_exact_alias(
+        &self,
+        range: &CMemoryRange,
+        alias: &Pointer,
+    ) -> Option<BTreeSet<ResourceEntryId>> {
+        let rebased = range.with_base(alias.clone());
+        let (origin, start, end) = constant_memory_coordinates(&rebased)?;
+        let members = self
+            .storage
+            .index
+            .owned_memory_by_root
+            .get(&memory_base_root(alias))?
+            .len();
+        self.constant_owned_neighbors(&origin, start, end, members)
+    }
+
     /// The owned memory entries whose overlap with `range` the facts could
     /// prove, in entry order: the owned ranges of its block at a root related
     /// to its base or to a same-block exact alias of it
     /// ([`related_memory_base_roots`]), the owned ranges whose own base has a
     /// same-block exact alias at such a root, and the owned ranges based
-    /// exactly at a cross-block exact alias of its base.
+    /// exactly at a cross-block exact alias of its base. A completely indexed
+    /// constant-coordinate root at an exact alias instead nominates its
+    /// interval neighbors, including constant translations of that alias.
     ///
     /// These are the pairs `memory_ranges_proven_overlapping` can answer
     /// through a relating fact. It rebases through exact aliases and then
@@ -6039,17 +6068,22 @@ impl ResourceContext {
                 return;
             }
             crate::instrumentation::record_deterministic_work(1);
-            if let Some(entries) = index.memory_by_base.get(at) {
+            if let Some(entries) = index.owned_memory_by_base.get(at) {
                 for entry in entries.iter() {
                     crate::instrumentation::record_deterministic_work(1);
-                    if self.fact(*entry).memory_own_range().is_some() {
-                        candidates.insert(*entry);
-                    }
+                    candidates.insert(*entry);
                 }
             }
         };
         for alias in assumptions.exact_pointer_aliases(base) {
-            add_owned_at_base(&mut candidates, alias);
+            if Some(&alias.block) == skip_block {
+                continue;
+            }
+            if let Some(neighbors) = self.constant_owned_neighbors_at_exact_alias(range, alias) {
+                candidates.extend(neighbors);
+            } else {
+                add_owned_at_base(&mut candidates, alias);
+            }
         }
         if Some(&base.block) == skip_block {
             return candidates;

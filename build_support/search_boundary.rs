@@ -43,6 +43,15 @@ struct Boundary<'a> {
 impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "owned_validity_candidates"
+            && matches!(name, "memory_by_base" | "memory_by_block")
+        {
+            self.errors.push(format!(
+                "{}: {}: ownership validity must select owner-only buckets ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/loans.rs"
             && matches!(
                 name,
@@ -150,6 +159,7 @@ impl Boundary<'_> {
                 "directly_supporting_memory_fact"
                     | "constant_relative_byte_endpoints"
                     | "constant_memory_coordinates"
+                    | "constant_owned_neighbors_at_exact_alias"
                     | "consume_unit_owned_memory"
                     | "consume_symbolic_partition"
                     | "memory_range_definitely_shorter"
