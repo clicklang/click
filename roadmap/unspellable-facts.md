@@ -247,6 +247,13 @@ Remaining groups to audit and migrate:
   equivalent cast nodes must not grow until they exhaust the bounded graph
   walk. The higher-level wide dispatcher still needs migration; these graph
   changes do not complete that consumer.
+  The masked-zero equality rule now reads retained 64-bit operands and keeps
+  its bound as cited evidence. Native and shared inputs use the same rule;
+  absent or refuted bounds remain unknown. Recorded wide-equation endpoint
+  queries also accept shared operands, retaining logical-read dependencies,
+  current equality classes and the original source endpoints. Pointer-address/tag
+  forms and general wide simplification still need migration before removing
+  the wide-equality compatibility bridge.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;
@@ -294,16 +301,29 @@ Remaining groups to audit and migrate:
   registration also uses the cached syntax summary to skip pointer discovery
   for plain arithmetic without load names, retaining scoped inspection for
   conversion payloads and load-bearing expressions.
-  `condition_as_order_fact` still exports in the selected-condition path
-  checker and its quantified/derived order collectors (`selected_conditions.rs`
-  and `bounds.rs`). Migrating them also requires preserving selected transport
-  equality, positive-offset connections and constant connections. The
-  occurrences in `order_paths.rs` and the proposition-reasoning regression are
-  test-only reference walkers, not outstanding live consumers.
-  `signed_order_bound_entries` still supplies memory-equality candidate
-  construction; its proof/facts occurrence is test-only. Kernel uses of
-  `interval_query_form` are also test references; its live callers are Surface
-  planning/output adapters.
+  Selected-condition paths and their quantified/derived order collectors
+  retain operand identities. Their transport equality reads shared operands,
+  retaining the existing native leaf rules, logical-load registration, scoped
+  memoization, positive-offset connections and constant connections. Guarded
+  derived bounds remain unavailable without the guard; finite universal
+  instances retain their substituted operands. Variable substitution now rewrites
+  shared machine observations directly, preserving raw arithmetic operators and
+  existing cast rules. Substitution results remain query-local, including when
+  registered-load resolution is enabled. Additive matching counts shared
+  DAG occurrences with exact multiplicities rather than flattening every path
+  into a list; constant accumulation retains its existing wrapping semantics.
+  `condition_as_order_fact` occurrences in `order_paths.rs` and the
+  proposition-reasoning regression are test-only reference walkers.
+  Memory-equality candidate construction now reads retained bound operands
+  and registers their indexed addresses directly in the equality graph.
+  Internal affine address normalization also registers retained atoms directly,
+  without exporting them for sorting or reconstruction. Query registration
+  preserves current block aliases and adds no storage or permission evidence;
+  the existing coverage check still validates the selected supplier.
+  `signed_order_bound_entries` remains a Surface planning adapter; its
+  proof/facts occurrence is test-only. Kernel uses of `interval_query_form`
+  are also test references; its live callers are Surface planning/output
+  adapters.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
@@ -311,6 +331,12 @@ Remaining groups to audit and migrate:
   condition-identity adapters, including observation lookup forms. Distinguish
   live checker consumers from test-only reference exports and explicit legacy
   producer/output boundaries.
+  `TermRewrite::integer_shared` retains unguarded machine observations across
+  exact Integer congruence, compound machine-source replacement and typed
+  variable substitution. Exact congruence preserves raw operators and casts;
+  selected source/replacement imports are cached per numeric interpretation.
+  Conditional reductions and opaque leaves outside the shared operand fragment
+  still require a parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
   matches direct path facts by shared comparison identity. Its 32-bit guards
   have no-export coverage; unresolved 64-bit guards still reach the general

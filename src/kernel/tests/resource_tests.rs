@@ -6782,3 +6782,415 @@ fn comparing_equal_resource_contexts_walks_no_facts() {
         );
     }
 }
+
+#[test]
+fn constant_owner_neighbors_ignore_empty_ranges_and_preserve_branches() {
+    for origin in [None, Some(0), Some(1u64 << 63)] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let base = Pointer::symbolic(Variable(995_200));
+        let range = |start: u64, end: u64| match origin {
+            Some(origin) => CMemoryRange::new_wide(
+                base.clone(),
+                MachineTerm::uint64_constant(origin + start),
+                MachineTerm::uint64_constant(origin + end),
+                4,
+            ),
+            None => CMemoryRange::new(base.clone(), (start as u32).into(), (end as u32).into()),
+        };
+        let owner = CResourceFact::own_memory(range(0, 10));
+        let empty = CResourceFact::own_memory(range(5, 5));
+        let reversed = CResourceFact::own_memory(range(8, 7));
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            owner.clone(),
+            empty.clone(),
+            reversed,
+        ]);
+        assert!(context.is_valid(&assumptions));
+        let overlap = CResourceFact::own_memory(range(6, 9));
+        assert!(
+            !context
+                .clone()
+                .unchecked_with_fact(overlap.clone())
+                .is_valid(&assumptions)
+        );
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [overlap.clone()],
+                    &assumptions
+                )
+                .is_err()
+        );
+        let child = context
+            .clone()
+            .without_exact_representation(&owner)
+            .unwrap()
+            .without_exact_representation(&empty)
+            .unwrap();
+        assert!(
+            child
+                .try_compose_into_valid_context_delaying_normalization(
+                    [overlap.clone()],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization([overlap], &assumptions)
+                .is_err()
+        );
+        assert!(
+            context
+                .try_compose_into_valid_context_delaying_normalization(
+                    [CResourceFact::own_memory(range(6, 6))],
+                    &assumptions
+                )
+                .is_ok()
+        );
+    }
+}
+
+#[test]
+fn native_owner_neighbors_compare_exact_mixed_width_bytes() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let base = Pointer::symbolic(Variable(995_201));
+    let owned = |start, end, width| {
+        CResourceFact::own_memory(CMemoryRange::new_wide(
+            base.clone(),
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
+            width,
+        ))
+    };
+    // These byte coordinates exceed u64::MAX, but the range terms themselves
+    // retain their unsigned element indices and must not be narrowed or wrapped.
+    let start = 1u64 << 62;
+    let owner = owned(start, start + 4, 4);
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owner);
+    let overlap = owned(start * 2 + 2, start * 2 + 3, 2);
+    assert!(
+        context
+            .clone()
+            .unchecked_with_fact(overlap.clone())
+            .validity_error(&assumptions)
+            .is_some()
+    );
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([overlap], &assumptions)
+            .is_err()
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(start * 2 + 8, start * 2 + 9, 2)],
+                &assumptions
+            )
+            .is_ok()
+    );
+    let limit = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owned(
+        u64::MAX - 4,
+        u64::MAX - 2,
+        u32::MAX,
+    ));
+    assert!(
+        limit
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(u64::MAX - 3, u64::MAX, u32::MAX)],
+                &assumptions
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn translated_owner_coordinates_preserve_overlap_and_branch_isolation() {
+    for native in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let prefix = PointerOffsetTerm::Variable(Variable(995_400));
+        let owned = |delta: i64, start: u32, end: u32, width: u32| {
+            let base = Pointer {
+                block: PointerBlock::Symbolic(Variable(995_401)),
+                offset: PointerOffsetTerm::add(prefix.clone(), PointerOffsetTerm::Constant(delta)),
+            };
+            CResourceFact::own_memory(if native {
+                CMemoryRange::new_wide(
+                    base,
+                    MachineTerm::uint64_constant(start.into()),
+                    MachineTerm::uint64_constant(end.into()),
+                    width,
+                )
+            } else {
+                CMemoryRange::new_with_element_width(base, start.into(), end.into(), width)
+            })
+        };
+        let first = owned(0, 0, 1, 4);
+        let second = owned(8, 0, 1, 4);
+        let empty = owned(2, 0, 0, 1);
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            first.clone(),
+            second,
+            empty.clone(),
+        ]);
+        assert!(context.is_valid(&assumptions));
+        // Different base/range spellings of the same bytes and a partial overlap
+        // of different widths must fail both complete and incremental checks.
+        for overlap in [owned(-4, 1, 2, 4), owned(2, 0, 1, 2), owned(4, 1, 2, 4)] {
+            assert!(
+                !context
+                    .clone()
+                    .unchecked_with_fact(overlap.clone())
+                    .is_valid(&assumptions)
+            );
+            assert!(
+                context
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization([overlap], &assumptions)
+                    .is_err()
+            );
+        }
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(4, 0, 1, 4)],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        let child = context
+            .clone()
+            .without_exact_representation(&first)
+            .unwrap()
+            .without_exact_representation(&empty)
+            .unwrap();
+        assert!(
+            child
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(-4, 1, 2, 4)],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        assert!(
+            context
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(-4, 1, 2, 4)],
+                    &assumptions
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn translated_owner_coordinates_keep_native_extent_and_symbolic_origin() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let owned = |variable, delta, start, end| {
+        CResourceFact::own_memory(CMemoryRange::new_wide(
+            Pointer {
+                block: PointerBlock::Symbolic(Variable(995_402)),
+                offset: PointerOffsetTerm::add(
+                    PointerOffsetTerm::Constant(delta),
+                    PointerOffsetTerm::Variable(Variable(variable)),
+                ),
+            },
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
+            4,
+        ))
+    };
+    let start = 1u64 << 63;
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owned(
+        995_403,
+        0,
+        start,
+        start + 1,
+    ));
+    let same_bytes = owned(995_403, -4, start + 1, start + 2);
+    assert!(
+        !context
+            .clone()
+            .unchecked_with_fact(same_bytes.clone())
+            .is_valid(&assumptions)
+    );
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([same_bytes], &assumptions)
+            .is_err()
+    );
+    // An unrelated symbolic origin is not the same address merely because
+    // its block and constant displacement match.
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(995_404, 0, start, start + 1)],
+                &assumptions
+            )
+            .is_ok()
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(995_403, 4, start, start + 1)],
+                &assumptions
+            )
+            .is_ok()
+    );
+}
+
+#[test]
+fn owned_root_neighbors_keep_alias_and_duplicate_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::var(Variable(id)), 1),
+    };
+    let p = pointer(995_600);
+    let q = pointer(995_601);
+    let owned = |base, start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            start.into(),
+            end.into(),
+            4,
+        ))
+    };
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+        owned(p.clone(), 0, 1),
+        owned(p.clone(), 2, 3),
+        owned(q.clone(), 5, 6),
+    ]);
+    let required = owned(p.clone(), 5, 6);
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([required.clone()], &assumptions)
+            .is_ok()
+    );
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization(
+                [required.clone(), required.clone()],
+                &assumptions
+            )
+            .is_err()
+    );
+    let aliases = assumptions
+        .clone()
+        .assume_condition(ConditionTerm::pointer_equal(p, q), true);
+    assert!(context.is_valid(&aliases));
+    assert!(
+        !context
+            .clone()
+            .unchecked_with_fact(required.clone())
+            .is_valid(&aliases)
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization([required], &aliases)
+            .is_err()
+    );
+}
+
+#[test]
+fn owned_root_neighbors_require_complete_coordinate_coverage() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let index = MachineTerm::var(Variable(995_620));
+    let assumptions =
+        PureFactContext::new().assume_proposition(equality(index.clone(), 5u32.into()));
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::var(Variable(id)), 4),
+    };
+    let p = pointer(995_621);
+    let q = pointer(995_622);
+    let range = |base, start, end| CMemoryRange::new_with_element_width(base, start, end, 4);
+    let shifted = Pointer {
+        block: p.block.clone(),
+        offset: PointerOffsetTerm::add(
+            p.offset.clone(),
+            PointerOffsetTerm::scale_int32(index.clone(), 4),
+        ),
+    };
+    for held in [
+        CResourceFact::own_memory(range(
+            p.clone(),
+            index.clone(),
+            MachineTerm::add(index.clone(), 1u32.into()),
+        )),
+        CResourceFact::own_memory(range(shifted, 0u32.into(), 1u32.into())),
+    ] {
+        let required = CResourceFact::own_memory(range(p.clone(), 5u32.into(), 6u32.into()));
+        // Supply the two overlap inequalities explicitly: this regression
+        // tests candidate retention, independently of arithmetic search.
+        let available = held.memory_own_range().unwrap();
+        let requested = required.memory_own_range().unwrap();
+        let delta = requested
+            .base()
+            .element_index_from_base_with_width(available.base(), available.element_width())
+            .expect("explicit relative index");
+        let assumptions = assumptions
+            .clone()
+            .assume_condition(
+                ConditionTerm::signed_less_than(
+                    available.start().clone(),
+                    MachineTerm::add(delta.clone(), requested.end().clone()),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::signed_less_than(
+                    MachineTerm::add(delta, requested.start().clone()),
+                    available.end().clone(),
+                ),
+                true,
+            );
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            held.clone(),
+            CResourceFact::own_memory(range(q.clone(), 0u32.into(), 1u32.into())),
+        ]);
+        assert!(context.is_valid(&assumptions));
+        assert!(
+            !context
+                .clone()
+                .unchecked_with_fact(required.clone())
+                .is_valid(&assumptions)
+        );
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [required.clone()],
+                    &assumptions
+                )
+                .is_err()
+        );
+        let child = context.clone().without_exact_representation(&held).unwrap();
+        assert!(
+            child
+                .try_compose_into_valid_context_delaying_normalization(
+                    [required.clone()],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        assert!(
+            context
+                .try_compose_into_valid_context_delaying_normalization([required], &assumptions)
+                .is_err()
+        );
+    }
+}

@@ -8,7 +8,7 @@ use crate::persistent::{PersistentMap, PersistentSet};
 // Arithmetic has shared syntax identities. Opaque legacy leaves must stay in
 // this context's index: globally interning a memory load compares snapshots
 // from independent verification arenas and charges unrelated memory contents.
-#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(in crate::kernel) enum ScalarOperandKey {
     Shared(MachineAtom),
     Written(MachineTerm),

@@ -358,23 +358,54 @@ fn owned_range_base_variable(range: &CMemoryRange) -> Option<Variable> {
     memory_base_variable(range.base())
 }
 
-/// Constant byte coordinates relative to the exact base, for ordered neighbour
-/// probes and partition sweeps. Narrow bounds retain their signed meaning;
-/// native bounds retain their unsigned meaning and enter this index only when
-/// both byte coordinates fit exactly. Resource terms themselves are unchanged.
-fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i64>, Option<i64>) {
+/// Exact byte coordinates relative to the base, for ordered neighbour probes
+/// and partition sweeps. Signed narrow bounds and unsigned native bounds both
+/// fit in i128 after multiplication by the u32 element width. Resource terms
+/// themselves are unchanged; no machine-integer narrowing is involved.
+fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i128>, Option<i128>) {
     let (start, end) = match range.wide_bounds() {
         Some((start, end)) => (
-            start.uint64_as_const().and_then(|n| i64::try_from(n).ok()),
-            end.uint64_as_const().and_then(|n| i64::try_from(n).ok()),
+            start.uint64_as_const().map(i128::from),
+            end.uint64_as_const().map(i128::from),
         ),
-        None => (range.signed_constant_start(), range.signed_constant_end()),
+        None => (
+            range.signed_constant_start().map(i128::from),
+            range.signed_constant_end().map(i128::from),
+        ),
     };
-    let width = i64::from(range.element_width());
-    (
-        start.and_then(|n| n.checked_mul(width)),
-        end.and_then(|n| n.checked_mul(width)),
-    )
+    let width = i128::from(range.element_width());
+    (start.map(|n| n * width), end.map(|n| n * width))
+}
+
+/// Key constant ranges by their symbolic base and exact byte coordinates.
+/// Pointer construction combines trailing constant translations; peel just
+/// that explicit displacement, without traversing offsets or consulting facts.
+fn constant_memory_coordinates(range: &CMemoryRange) -> Option<(Pointer, i128, i128)> {
+    let (start, end) = constant_relative_byte_endpoints(range);
+    let (start, end) = (start?, end?);
+    let original = range.base();
+    let (offset, displacement) = match &original.offset {
+        PointerOffsetTerm::Constant(n) => (PointerOffsetTerm::Constant(0), i128::from(*n)),
+        PointerOffsetTerm::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (PointerOffsetTerm::Constant(a), PointerOffsetTerm::Constant(b)) => (
+                PointerOffsetTerm::Constant(0),
+                i128::from(*a) + i128::from(*b),
+            ),
+            (rest, PointerOffsetTerm::Constant(n)) | (PointerOffsetTerm::Constant(n), rest) => {
+                (rest.clone(), i128::from(*n))
+            }
+            _ => (original.offset.clone(), 0),
+        },
+        _ => (original.offset.clone(), 0),
+    };
+    Some((
+        Pointer {
+            block: original.block.clone(),
+            offset,
+        },
+        start.checked_add(displacement)?,
+        end.checked_add(displacement)?,
+    ))
 }
 
 pub(super) fn remove_resource_index_entry<K: Ord + Clone>(
@@ -643,13 +674,17 @@ impl ResourceContextIndex {
                         .with_inserted(block.clone(), ());
                 }
             }
-            if let (Some(start), Some(end)) = constant_relative_byte_endpoints(range) {
-                let base = (range.base().clone(), mode);
-                result.concrete_memory = insert_resource_index_entry(
-                    &result.concrete_memory,
-                    (base.0.clone(), mode, start, end),
-                    entry,
-                );
+            if let Some((origin, start, end)) = constant_memory_coordinates(range) {
+                let base = (origin, mode);
+                // Empty intervals carry no overlap obligation and must not
+                // hide a nonempty predecessor from the neighbour check.
+                if start < end {
+                    result.concrete_memory = insert_resource_index_entry(
+                        &result.concrete_memory,
+                        (base.0.clone(), mode, start, end),
+                        entry,
+                    );
+                }
                 let count = result
                     .concrete_memory_by_base
                     .get(&base)
@@ -923,13 +958,15 @@ impl ResourceContextIndex {
                         result.shared_owned_memory_blocks.without_key(&block);
                 }
             }
-            if let (Some(start), Some(end)) = constant_relative_byte_endpoints(range) {
-                let base = (range.base().clone(), mode);
-                result.concrete_memory = remove_resource_index_entry(
-                    &result.concrete_memory,
-                    &(base.0.clone(), mode, start, end),
-                    entry,
-                );
+            if let Some((origin, start, end)) = constant_memory_coordinates(range) {
+                let base = (origin, mode);
+                if start < end {
+                    result.concrete_memory = remove_resource_index_entry(
+                        &result.concrete_memory,
+                        &(base.0.clone(), mode, start, end),
+                        entry,
+                    );
+                }
                 let count = result
                     .concrete_memory_by_base
                     .get(&base)
@@ -5839,49 +5876,25 @@ impl ResourceContext {
             let Some(right_range) = right.memory_own_range() else {
                 continue;
             };
-            let (start, end) = constant_relative_byte_endpoints(right_range);
-            let same_base_concrete = start.zip(end).and_then(|(start, end)| {
-                let owned_in_block = self
+            let coordinates = constant_memory_coordinates(right_range);
+            if coordinates
+                .as_ref()
+                .is_some_and(|(_, start, end)| start >= end)
+            {
+                continue;
+            }
+            let same_origin_neighbors = coordinates.and_then(|(origin, start, end)| {
+                let members = self
                     .storage
                     .index
                     .owned_memory_by_block
                     .get(&right_range.base().block)?
                     .len();
-                let represented = *self
-                    .storage
-                    .index
-                    .concrete_memory_by_base
-                    .get(&(right_range.base().clone(), true))?;
-                (represented == owned_in_block).then_some((start, end))
+                self.constant_owned_neighbors(&origin, start, end, members)
             });
-            if let Some((start, end)) = same_base_concrete {
-                let key = (right_range.base().clone(), true, start, end);
-                let mut candidates = BTreeSet::new();
-                if let Some(duplicates) = self.storage.index.concrete_memory.get(&key) {
-                    candidates.extend(
-                        duplicates
-                            .iter()
-                            .copied()
-                            .filter(|entry| *entry != right_entry),
-                    );
-                }
-                if let Some((candidate_key, entries)) =
-                    self.storage.index.concrete_memory.get_less_than(&key)
-                    && candidate_key.0 == key.0
-                    && candidate_key.1 == key.1
-                    && let Some(entry) = entries.iter().next_back()
-                {
-                    candidates.insert(*entry);
-                }
-                if let Some((candidate_key, entries)) =
-                    self.storage.index.concrete_memory.get_greater_than(&key)
-                    && candidate_key.0 == key.0
-                    && candidate_key.1 == key.1
-                    && let Some(entry) = entries.iter().next()
-                {
-                    candidates.insert(*entry);
-                }
-                // Every owned range of this block is at this base, so the two
+            if let Some(mut candidates) = same_origin_neighbors {
+                candidates.remove(&right_entry);
+                // Every owned range of this block has this origin, so the two
                 // neighbours stand for the block; ranges an exact alias
                 // relates from other blocks are still compared.
                 if assumptions.has_pointer_block_aliases() {
@@ -5925,6 +5938,56 @@ impl ResourceContext {
         }
         self.advance_prepared_memory_equalities(assumptions);
         Ok((self, inserted))
+    }
+
+    /// Nominate at most four entries when this origin accounts for every
+    /// member of the caller's block or root. Empty intervals have no overlap.
+    /// Duplicate keys need only the first and last occurrences: after the
+    /// caller excludes itself, one representative of the other owners remains.
+    fn constant_owned_neighbors(
+        &self,
+        origin: &Pointer,
+        start: i128,
+        end: i128,
+        members: usize,
+    ) -> Option<BTreeSet<ResourceEntryId>> {
+        let represented = *self
+            .storage
+            .index
+            .concrete_memory_by_base
+            .get(&(origin.clone(), true))?;
+        if represented != members {
+            return None;
+        }
+        let mut selected = BTreeSet::new();
+        if start >= end {
+            return Some(selected);
+        }
+        let key = (origin.clone(), true, start, end);
+        let index = &self.storage.index.concrete_memory;
+        if let Some(duplicates) = index.get(&key) {
+            if let Some(entry) = duplicates.iter().next() {
+                selected.insert(*entry);
+            }
+            if let Some(entry) = duplicates.iter().next_back() {
+                selected.insert(*entry);
+            }
+        }
+        if let Some((neighbor, entries)) = index.get_less_than(&key)
+            && neighbor.0 == key.0
+            && neighbor.1
+            && let Some(entry) = entries.iter().next_back()
+        {
+            selected.insert(*entry);
+        }
+        if let Some((neighbor, entries)) = index.get_greater_than(&key)
+            && neighbor.0 == key.0
+            && neighbor.1
+            && let Some(entry) = entries.iter().next()
+        {
+            selected.insert(*entry);
+        }
+        Some(selected)
     }
 
     /// The owned memory entries whose overlap with `range` the facts could
@@ -6003,12 +6066,23 @@ impl ResourceContext {
             }
             roots.extend(related_memory_base_roots(&alias, assumptions));
         }
+        let query_root = memory_base_root(base);
+        let coordinates = constant_memory_coordinates(range);
         for root in &roots {
             crate::instrumentation::record_deterministic_work(1);
             if let Some(entries) = index.owned_memory_by_root.get(root) {
-                for entry in entries.iter() {
-                    crate::instrumentation::record_deterministic_work(1);
-                    candidates.insert(*entry);
+                let neighbors = coordinates.as_ref().and_then(|(origin, start, end)| {
+                    (root == &query_root)
+                        .then(|| self.constant_owned_neighbors(origin, *start, *end, entries.len()))
+                        .flatten()
+                });
+                if let Some(neighbors) = neighbors {
+                    candidates.extend(neighbors);
+                } else {
+                    for entry in entries.iter() {
+                        crate::instrumentation::record_deterministic_work(1);
+                        candidates.insert(*entry);
+                    }
                 }
             }
             // The other direction: an owned range whose own base has a
@@ -6190,23 +6264,25 @@ impl ResourceContext {
             // partition violation the whole resource model rests on — were
             // admitted. Both endpoints, and the running maximum, are the
             // signed numbers they are.
-            let one_concrete_base = owned.first().map(|(_, range)| range.base()).filter(|base| {
-                owned.iter().all(|(_, range)| {
-                    let (start, end) = constant_relative_byte_endpoints(range);
-                    range.base() == *base && start.is_some() && end.is_some()
+            let coordinates = owned
+                .iter()
+                .map(|(fact, range)| {
+                    constant_memory_coordinates(range)
+                        .map(|(origin, start, end)| (origin, start, end, *fact))
                 })
-            });
-            if one_concrete_base.is_some() {
-                let mut ordered = owned
+                .collect::<Option<Vec<_>>>();
+            if let Some(coordinates) = coordinates
+                && coordinates
+                    .first()
+                    .is_some_and(|first| coordinates.iter().all(|entry| entry.0 == first.0))
+            {
+                let mut ordered = coordinates
                     .into_iter()
-                    .map(|(fact, range)| {
-                        let (start, end) = constant_relative_byte_endpoints(range);
-                        (start.unwrap(), end.unwrap(), fact, range)
-                    })
+                    .map(|(_, start, end, fact)| (start, end, fact))
                     .collect::<Vec<_>>();
-                ordered.sort_by_key(|(start, end, _, _)| (*start, *end));
-                let mut furthest: Option<(i64, &CResourceFact)> = None;
-                for (_, end, fact, _) in ordered {
+                ordered.sort_by_key(|(start, end, _)| (*start, *end));
+                let mut furthest: Option<(i128, &CResourceFact)> = None;
+                for (_, end, fact) in ordered {
                     // A checkpoint, not only a charge: an exhausted run stops
                     // here with no proven overlap, as a limited `decide`
                     // does, and the pending limit fails the run.
@@ -7267,10 +7343,8 @@ impl ResourceContext {
     ) -> Option<(ResourceEntryId, CResourceFact)> {
         let fact = self.fact(entry);
         let range = fact.memory_own_range()?;
-        let (Some(start), Some(end)) = constant_relative_byte_endpoints(range) else {
-            return None;
-        };
-        let key = (range.base().clone(), true, start, end);
+        let (origin, start, end) = constant_memory_coordinates(range)?;
+        let key = (origin, true, start, end);
         let index = &self.storage.index.concrete_memory;
         let before = index
             .get_less_than(&key)
@@ -11333,8 +11407,32 @@ fn memory_ranges_proven_overlapping_without_aliases(
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
+    // Empty constant intervals own no bytes. This must agree with the
+    // neighbour index, which omits them so they cannot hide an overlap.
+    let empty = |range: &CMemoryRange| {
+        let (start, end) = constant_relative_byte_endpoints(range);
+        start.zip(end).is_some_and(|(start, end)| start >= end)
+    };
+    if empty(left) || empty(right) {
+        return false;
+    }
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
+    }
+    if let (Some((left_origin, a, b)), Some((right_origin, c, d))) = (
+        constant_memory_coordinates(left),
+        constant_memory_coordinates(right),
+    ) && left_origin == right_origin
+    {
+        return a < b
+            && c < d
+            && a < d
+            && c < b
+            && (!use_separation
+                || !assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        left, right,
+                    ));
     }
     if left.wide_bounds().is_some() || right.wide_bounds().is_some() {
         return wide_memory_ranges_proven_overlapping(left, right, assumptions)

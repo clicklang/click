@@ -518,6 +518,39 @@ for complete fragment coverage or enumerate views to establish absence. This
 is conservative refusal, not new alias or ownership evidence. The complete-call
 control also bounds completion beside unrelated constant owners.
 
+The constant-range neighbour index stores exact signed `i128` byte coordinates:
+this covers signed narrow bounds and every unsigned native endpoint multiplied
+by its `u32` element width. Large same-base native coordinates use the same
+predecessor/successor validity checks as small ones, without a block scan or
+machine-integer narrowing. Known-empty intervals count as represented but do
+not enter neighbour ordering, where they could hide a containing owner.
+The pair overlap predicate and incremental insertion agree that a constant
+empty interval has no overlap obligation. Index removal uses the same rule
+and preserves branch isolation. Scaling controls
+hold an insertion fixed beside growing owners above the old signed limit;
+semantic controls retain overlap rejection, mixed widths, maximal endpoints,
+empty/reversed intervals and persistent removal.
+
+The same index strips a literal leading or trailing byte displacement from a
+range's base and adds it to the exact coordinates. Pointer construction already
+combines trailing constant displacements, so this inspects one offset node;
+it does not normalize a symbolic expression, traverse history, or consult
+facts. Original resource terms and occurrences remain unchanged. Constant
+translations of one symbolic base share neighbour checks and the full-context
+sweep; the overlap predicate uses that same geometry, including native bounds
+and mixed element widths. Refusal and removal controls retain distinct symbolic
+origins, negative displacements, empty ranges, aliases and branch isolation.
+An unrelated origin in the same block does not disable this check: the existing
+root membership count is compared with the selected origin's coordinate count.
+When those counts match, the queried root contributes only its adjacent keys
+and first/last duplicate occurrences (at most four nominees). Root discovery
+still includes aliases, and roots reached through facts keep their checks.
+Symbolic bounds or multiple coordinate origins within the queried root fail
+the coverage guard and retain the existing route. No root members are scanned
+to establish coverage, and no new index or fact is created. Scaling controls
+grow the queried root beside an unrelated owner; semantic controls retain
+alias collisions, duplicate insertions, unindexed members and branch isolation.
+
 Call completion inserts returned outputs and recovered escrows into the valid
 persistent frame using incremental conflict checks. It never normalizes a whole
 memory block or revalidates old-old ownership pairs. Returned-view authority is

@@ -390,3 +390,89 @@ fn ordinary_condition_misses_do_not_walk_aliases_or_variable_buckets() {
         );
     }
 }
+
+#[test]
+fn additive_dag_matching_retains_multiplicity_without_expanding_occurrences() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+    let ty = MachineIntegerType::Int32;
+    let mut samples = Vec::new();
+    for size in [8, 32, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(993521));
+        let other = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(993522));
+        for _ in 0..size {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let context = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let (parts, constant) = retained_additive_parts(V::Shared(&root), ty);
+            assert_eq!(constant, 0);
+            assert_eq!(parts.len(), 1);
+            assert_eq!(parts[0].1, num_bigint::BigUint::from(1u32) << size);
+            assert!(
+                !context
+                    .bitvector_terms_equal_for_transport_views(V::Shared(&root), V::Shared(&other))
+            );
+            let query = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                ty,
+                CompareRelation::Equal,
+                [V::Shared(&root), V::Shared(&other)],
+            );
+            assert_eq!(context.decide(&query), None);
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(samples.windows(2).all(|p| p[1] <= p[0] * 5), "{samples:?}");
+}
+
+#[test]
+fn retained_transport_reuses_growing_prefixes_across_context_changes() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+    let ty = MachineIntegerType::Int32;
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = |n| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(n));
+        let mut root = variable(993531);
+        let [a, b] = [variable(993532), variable(993533)];
+        let mut context = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for step in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    [root.clone(), root],
+                );
+                let left = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    [root.clone(), a.clone()],
+                );
+                let right = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    [root.clone(), b.clone()],
+                );
+                context = context.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(994000 + step)),
+                        MachineTerm::constant(7),
+                    ),
+                    true,
+                );
+                let _scope = context.enter_id_scope();
+                assert!(!context.bitvector_terms_equal_for_transport_views(
+                    V::Shared(&left),
+                    V::Shared(&right)
+                ));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(samples.windows(2).all(|p| p[1] <= p[0] * 5), "{samples:?}");
+}

@@ -316,49 +316,34 @@ impl PureFactContext {
             (Some(a), _) | (_, Some(a)) => a,
             _ => return false,
         };
-        fn parts(view: V<'_>, format: MachineIntegerType) -> (Vec<V<'_>>, u32) {
-            let mut pending = vec![view];
-            let mut terms = Vec::new();
-            let mut constant = 0u32;
-            while let Some(term) = pending.pop() {
-                crate::instrumentation::record_deterministic_work(1);
-                if let Some((ty, Op::Add, [a, b])) = term.binary()
-                    && ty == format
-                {
-                    pending.push(a);
-                    pending.push(b);
-                } else if let Some(value) = term.word32_constant() {
-                    constant = constant.wrapping_add(value);
-                } else {
-                    terms.push(term);
-                }
-            }
-            (terms, constant)
-        }
-        let (a, ac) = parts(left, format);
-        let (b, bc) = parts(right, format);
-        if ac != bc || a.len() != b.len() {
+        let (a, ac) = retained_additive_parts(left, format);
+        let (b, bc) = retained_additive_parts(right, format);
+        if ac != bc {
             return false;
         }
-        let a: Vec<_> = a.into_iter().map(|v| Key::for_format(format, v)).collect();
-        let b: Vec<_> = b.into_iter().map(|v| Key::for_format(format, v)).collect();
-        // Register both sides before reading roots: registering a later term
-        // can close a root-local identity involving an earlier one.
-        for key in a.iter().chain(&b) {
+        let a: Vec<_> = a
+            .into_iter()
+            .map(|(v, n)| (Key::for_format(format, v), n))
+            .collect();
+        let b: Vec<_> = b
+            .into_iter()
+            .map(|(v, n)| (Key::for_format(format, v), n))
+            .collect();
+        for (key, _) in a.iter().chain(&b) {
             self.equality_graph
                 .scalar_normalization_class_view(key.operand_view());
         }
-        let signature = |terms: Vec<Key>| {
-            let mut keys: Vec<Result<u64, Key>> = terms
-                .into_iter()
-                .map(|key| {
-                    self.equality_graph
-                        .scalar_normalization_class_view(key.operand_view())
-                        .map(|(root, _)| Ok(root))
-                        .unwrap_or(Err(key))
-                })
-                .collect();
-            keys.sort();
+        let signature = |terms: Vec<(Key, num_bigint::BigUint)>| {
+            let mut keys =
+                std::collections::BTreeMap::<Result<u64, Key>, num_bigint::BigUint>::new();
+            for (key, count) in terms {
+                let class = self
+                    .equality_graph
+                    .scalar_normalization_class_view(key.operand_view())
+                    .map(|(root, _)| Ok(root))
+                    .unwrap_or(Err(key));
+                *keys.entry(class).or_default() += count;
+            }
             keys
         };
         signature(a) == signature(b)
@@ -1802,35 +1787,57 @@ impl PureFactContext {
                     return self
                         .decide_citing(&ConditionTerm::uint64_equal(left.clone(), tag), used);
                 }
-                self.decide_masked_zero(left, right, used)
+                self.decide_masked_zero(
+                    MachineOperandView::Legacy(left),
+                    MachineOperandView::Legacy(right),
+                    used,
+                )
             }
         }
     }
 
-    /// `(x & m) == 0` holds when `x` is below the lowest set bit of `m`.
-    fn decide_masked_zero(
+    /// The Integer observation of a wide equality, with its original
+    /// polarity. Native pointer-word queries keep their existing rule order.
+    pub(in crate::kernel) fn decide_shared_mask_zero(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        condition: &ConditionTerm,
         used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
     ) -> Option<bool> {
-        let masked = if right.uint64_as_const() == Some(0) {
+        use crate::kernel::machine_integer::{Relation, comparison::native_comparison_view};
+        let view = native_comparison_view(condition, true)?;
+        if view.format.format().bits() != 64
+            || !matches!(view.relation, Relation::Equal | Relation::NotEqual)
+        {
+            return None;
+        }
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        self.decide_masked_zero(left, right, used)
+            .map(|value| value == (view.relation == Relation::Equal))
+    }
+
+    /// `(x & m) == 0` holds when `x` is below the lowest set bit of `m`.
+    pub(in crate::kernel) fn decide_masked_zero(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
+    ) -> Option<bool> {
+        let masked = if right.uint64_constant() == Some(0) {
             left
-        } else if left.uint64_as_const() == Some(0) {
+        } else if left.uint64_constant() == Some(0) {
             right
         } else {
             return None;
         };
-        let MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::BitwiseAnd,
-            left: first,
-            right: second,
-        } = masked
+        let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [first, second]) =
+            masked.binary()?
         else {
             return None;
         };
-        let (value, mask) = match (first.uint64_as_const(), second.uint64_as_const()) {
+        let (value, mask) = match (first.uint64_constant(), second.uint64_constant()) {
             (None, Some(mask)) => (first, mask),
             (Some(mask), None) => (second, mask),
             _ => return None,
@@ -1838,15 +1845,13 @@ impl PureFactContext {
         if mask == 0 {
             return Some(true);
         }
-        let bound = 1u64.checked_shl(mask.trailing_zeros())?;
-        (self.decide_citing(
-            &ConditionTerm::uint64_less_than(
-                value.as_ref().clone(),
-                MachineTerm::uint64_constant(bound),
-            ),
-            used,
-        ) == Some(true))
-        .then_some(true)
+        let bound = MachineTerm::uint64_constant(1u64.checked_shl(mask.trailing_zeros())?);
+        let guard = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessThan,
+            [value, MachineOperandView::Legacy(&bound)],
+        );
+        (self.decide_citing(&guard, used) == Some(true)).then_some(true)
     }
 }
 
@@ -3377,7 +3382,24 @@ mod exact_order_path_tests {
         right: &MachineTerm,
         require_strict: bool,
     ) -> bool {
-        let order_facts = context.selected_for_test().condition_order_facts();
+        let order_facts: Vec<_> = context
+            .selected_for_test()
+            .condition_order_facts()
+            .iter()
+            .map(|(a, b, strict)| {
+                (
+                    a.operand_view()
+                        .retain(MachineIntegerType::Int32)
+                        .value()
+                        .clone(),
+                    b.operand_view()
+                        .retain(MachineIntegerType::Int32)
+                        .value()
+                        .clone(),
+                    *strict,
+                )
+            })
+            .collect();
         let mut stack = vec![(left.clone(), false)];
         let mut seen = BTreeSet::new();
         while let Some((current, strict_so_far)) = stack.pop() {

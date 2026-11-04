@@ -7,7 +7,27 @@ use crate::kernel::{MachineOperandView as V, SharedMachineIntegerTerm};
 use crate::kernel::{constant_u32, int32_constant};
 
 /// One collected order fact: `left (<|<=) right` with its strictness.
-pub(in crate::kernel) type OrderFact = (MachineTerm, MachineTerm, bool);
+pub(in crate::kernel) type OrderFact = (OrderOperand, OrderOperand, bool);
+pub(in crate::kernel) type OrderOperand = super::super::checked_scalar_facts::ScalarOperandKey;
+
+pub(in crate::kernel::assumptions) fn retain_order_operand(view: V<'_>) -> OrderOperand {
+    match view {
+        V::Legacy(term) => OrderOperand::Written(term.clone()),
+        V::Shared(_) => OrderOperand::for_format(MachineIntegerType::Int32, view),
+    }
+}
+
+pub(in crate::kernel::assumptions) fn retained_order_fact(
+    condition: &ConditionTerm,
+    truth: bool,
+) -> Option<OrderFact> {
+    let view = order_view_at_format(condition, truth, MachineIntegerType::Int32)?;
+    Some((
+        retain_order_operand(view.operands[0].operand_view()),
+        retain_order_operand(view.operands[1].operand_view()),
+        view.relation == Relation::Less,
+    ))
+}
 
 thread_local! {
     // Order-path queries re-collect the same order facts from the same fact
@@ -95,11 +115,11 @@ impl PureFactContext {
     pub(in crate::kernel) fn collect_derived_order_facts_from_proposition(
         &self,
         proposition: &Proposition,
-        order_facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
+        order_facts: &mut Vec<OrderFact>,
     ) {
         match proposition {
             Proposition::ConditionIs(condition, value) => {
-                if let Some(order_fact) = condition_as_order_fact(condition, *value) {
+                if let Some(order_fact) = retained_order_fact(condition, *value) {
                     order_facts.push(order_fact);
                 }
             }
@@ -140,7 +160,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn collect_finite_forall_order_facts(
         &self,
         proposition: &Proposition,
-        order_facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
+        order_facts: &mut Vec<OrderFact>,
     ) {
         let mut variables = Vec::new();
         let body = collect_forall_chain(proposition, &mut variables);
@@ -174,7 +194,7 @@ impl PureFactContext {
         variables: &[Variable],
         ranges: &[FiniteForAllRange],
         values: &mut Vec<i64>,
-        order_facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
+        order_facts: &mut Vec<OrderFact>,
     ) {
         if values.len() == variables.len() {
             let mut instantiated = body.clone();
@@ -917,7 +937,7 @@ impl SelectedFacts<'_> {
                 complete = false;
                 break;
             }
-            if let Some(fact) = condition_as_order_fact(condition, *value) {
+            if let Some(fact) = retained_order_fact(condition, *value) {
                 facts.push(fact);
             }
         }
@@ -927,7 +947,7 @@ impl SelectedFacts<'_> {
                 let scanned = self
                     .condition_facts
                     .scan_for_upkeep()
-                    .filter_map(|(condition, value)| condition_as_order_fact(condition, *value))
+                    .filter_map(|(condition, value)| retained_order_fact(condition, *value))
                     .collect::<Vec<_>>();
                 assert_eq!(
                     facts, scanned,

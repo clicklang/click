@@ -10224,13 +10224,14 @@ pub(super) struct ResourceContextIndex {
     /// contribute same-block separation candidates, so projecting a
     /// composition's pairs visits these blocks and not one per allocation.
     pub(super) shared_owned_memory_blocks: PersistentMap<PointerBlock, ()>,
-    /// Owned and viewed ranges with constant endpoints, keyed by base, mode,
+    /// Nonempty constant byte ranges, keyed by symbolic origin, mode,
     /// and the **signed** values of those endpoints. The key's order is what
     /// the partition check's predecessor and successor probes stand in for a
     /// pairwise scan with, so it is an ordering question wearing a key's
     /// clothes: read as `u32`, a range starting below its base sorted past
     /// every range there is and its overlapping neighbour was never probed.
-    pub(super) concrete_memory: PersistentMap<(Pointer, bool, i64, i64), ResourceEntryIds>,
+    pub(super) concrete_memory: PersistentMap<(Pointer, bool, i128, i128), ResourceEntryIds>,
+    /// All constant ranges, including known-empty ones, represented at this origin.
     pub(super) concrete_memory_by_base: PersistentMap<(Pointer, bool), usize>,
     /// Owned memory ranges keyed by their base's root: the block and the
     /// first symbolic atom of the base offset, in canonical form (absent for

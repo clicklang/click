@@ -124,6 +124,16 @@ jobs:
           key: ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-
+      # Keep these separately so adding frontend reuse does not invalidate
+      # existing Click build snapshots. Restore after the build-cache key is
+      # computed: Charon's checkout contains Cargo manifests and lockfiles.
+      - uses: actions/cache/restore@v4
+        id: frontend_cache
+        with:
+          path: |
+            target/cpp-exporter
+            target/charon-source
+          key: ${{ runner.os }}-${{ runner.arch }}-click-frontends-v1-${{ hashFiles('tools/cpp-exporter/**', 'scripts/build-cpp-exporter.sh', 'scripts/build-charon.sh', 'scripts/setup-environment.sh', 'src/languages/rust/charon-profile.json') }}
       # Compile the single cfg(test) executable, plus the exporter. All test
       # execution happens on consumers of this immutable build artifact.
       - name: Build exporters and test archive
@@ -162,6 +172,16 @@ jobs:
             target/debug
             target/charon
           key: ${{ steps.build_cache.outputs.cache-primary-key }}
+
+      # Only master publishes reusable frontend state. PR and queue jobs
+      # still run the build scripts' fingerprint and pinned-revision checks.
+      - uses: actions/cache/save@v4
+        if: github.event_name == 'push' && steps.frontend_cache.outputs.cache-hit != 'true'
+        with:
+          path: |
+            target/cpp-exporter
+            target/charon-source
+          key: ${{ steps.frontend_cache.outputs.cache-primary-key }}
 
   test_shards:
     needs: [scope, prepare]

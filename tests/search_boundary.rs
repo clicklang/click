@@ -720,6 +720,8 @@ fn indexed_memory_support_rejects_candidate_search() {
     ] {
         for function in [
             "directly_supporting_memory_fact",
+            "constant_relative_byte_endpoints",
+            "constant_memory_coordinates",
             "consume_unit_owned_memory",
             "consume_symbolic_partition",
             "memory_range_definitely_shorter",
@@ -795,5 +797,26 @@ fn explicit_loop_frames_reject_ambient_ownership_and_observation_scans() {
     for name in ["owned_memory_facts", "memory_facts_in_block"] {
         let source = format!("fn with_loop_frame_resources(c: C) {{ c.{name}(); }}");
         assert!(boundary::check_source("src/kernel/loops.rs", &source).is_err());
+    }
+}
+
+#[test]
+fn owned_neighbor_selection_rejects_candidate_enumeration() {
+    for name in [
+        "collect",
+        "find",
+        "find_map",
+        "filter",
+        "flat_map",
+        "for_each",
+        "owned_validity_candidates",
+        "memory_fact_candidates",
+        "normalized_memory_suppliers",
+        "facts",
+    ] {
+        let source = format!("fn constant_owned_neighbors(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
     }
 }

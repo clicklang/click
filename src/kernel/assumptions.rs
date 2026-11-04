@@ -1155,7 +1155,7 @@ thread_local! {
     static LOGICAL_READ_MEMO_IDS: RefCell<std::collections::HashMap<(u64, u64), u64>> =
         RefCell::new(std::collections::HashMap::new());
     static TRANSPORT_EQUAL_MEMO: RefCell<
-        std::collections::HashMap<(u64, MachineTerm, MachineTerm), bool>,
+        std::collections::HashMap<(u64, checked_scalar_facts::ScalarOperandKey, checked_scalar_facts::ScalarOperandKey), bool>,
     > = RefCell::new(std::collections::HashMap::new());
     static CONSTANT_NORMALIZATION_MEMO: RefCell<
         std::collections::HashMap<(u64, MachineTerm), Option<i64>>,

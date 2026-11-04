@@ -526,6 +526,10 @@ impl PureFactContext {
                 return Some(value);
             }
         }
+        // The mask rule retains its selected bound and operand structure.
+        if let Some(value) = self.decide_shared_mask_zero(condition, &mut Default::default()) {
+            return Some(value);
+        }
         // Still required for wide equality and remaining compatibility rules.
         if !crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
             .is_some_and(|view| {
@@ -3057,6 +3061,104 @@ mod shared_equality_dispatch_tests {
     use crate::kernel::{
         KernelTerm, KernelTermExport, KernelType, MachineBinaryOp as Op, SharedMachineIntegerTerm,
     };
+
+    #[test]
+    fn wide_mask_zero_keeps_shared_bounds_and_selected_evidence() {
+        use crate::kernel::MachineOperandView as V;
+        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+        for mask in [0, 8, 24, 1u64 << 63] {
+            for reversed in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let ty = MachineIntegerType::UInt64;
+                let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983001));
+                let y = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(983002));
+                let sum = KernelTerm::machine_binary_shared(ty, Op::Add, [x, y]);
+                let literal = |n| {
+                    crate::kernel::KernelTermImport::default()
+                        .machine_arithmetic(ty, &MachineTerm::uint64_constant(n))
+                        .unwrap()
+                };
+                let mask_term = literal(mask);
+                let operands = if reversed {
+                    [mask_term, sum.clone()]
+                } else {
+                    [sum.clone(), mask_term]
+                };
+                let masked = KernelTerm::machine_binary_shared(ty, Op::BitwiseAnd, operands);
+                let zero = literal(0);
+                let condition = condition_for_operand_views(
+                    ty,
+                    CompareRelation::Equal,
+                    [V::Shared(&masked), V::Shared(&zero)],
+                );
+                let limit = MachineTerm::uint64_constant(if mask == 0 {
+                    1
+                } else {
+                    1 << mask.trailing_zeros()
+                });
+                let guard = condition_for_operand_views(
+                    ty,
+                    CompareRelation::LessThan,
+                    [V::Shared(&sum), V::Legacy(&limit)],
+                );
+                let parent = PureFactContext::new();
+                let context = parent.clone().assume_condition(guard.clone(), true);
+                let exports = KernelTermExport::machine_export_count();
+                assert_eq!(context.decide(&condition), Some(true));
+                let not_equal = ConditionTerm::integer_not_equal(
+                    IntegerTerm::Machine(
+                        SharedMachineIntegerTerm::from_shared(ty, masked.clone()).unwrap(),
+                    ),
+                    IntegerTerm::constant_i64(0),
+                );
+                assert_eq!(context.decide(&not_equal), Some(false));
+                let mut used = crate::kernel::eval::pointer_tags::UsedFacts::new();
+                assert_eq!(context.decide_citing(&condition, &mut used), Some(true));
+                assert!(used.complete);
+                if mask != 0 {
+                    assert_eq!(used.premises, vec![Proposition::ConditionIs(guard, true)]);
+                    assert_eq!(
+                        parent.decide_masked_zero(
+                            V::Shared(&masked),
+                            V::Shared(&zero),
+                            &mut Default::default()
+                        ),
+                        None
+                    );
+                } else {
+                    assert!(used.premises.is_empty());
+                }
+                if mask != 0 {
+                    let false_guard = condition_for_operand_views(
+                        ty,
+                        CompareRelation::LessThan,
+                        [V::Shared(&sum), V::Legacy(&limit)],
+                    );
+                    let refuted = parent.assume_condition(false_guard, false);
+                    assert_eq!(
+                        refuted.decide_masked_zero(
+                            V::Shared(&masked),
+                            V::Shared(&zero),
+                            &mut Default::default()
+                        ),
+                        None
+                    );
+                }
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                // The reference path is an explicit test export, after the
+                // shared no-export assertion above.
+                let native = KernelTermExport::machine(&masked).unwrap();
+                assert_eq!(
+                    context.decide_masked_zero(
+                        V::Legacy(&native),
+                        V::Legacy(&MachineTerm::uint64_constant(0)),
+                        &mut Default::default()
+                    ),
+                    Some(true)
+                );
+            }
+        }
+    }
 
     #[test]
     fn fresh_word_equalities_match_native_proofs_refutations_and_unknowns() {

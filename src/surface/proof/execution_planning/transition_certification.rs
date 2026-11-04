@@ -107,9 +107,11 @@ pub(in crate::surface) fn without_open_obligation_probe<R>(operation: impl FnOnc
 
 /// Runs `operation` with every `Fast` refusal that carries a structured
 /// requirement recorded instead of returned, and returns what the step met.
-/// What `operation` produces is a checked step only when nothing was
-/// recorded: otherwise it skipped the recorded obligations, so callers
-/// discard it and use only the list.
+/// With recorded obligations, a successful result is a conditional successor,
+/// not a checked step. A caller may retain it privately and publish it only
+/// after proving every recorded obligation against the original input state.
+/// It must never use the candidate's facts to discharge those obligations.
+/// Failed preparations have no successor to retain and may require recovery.
 pub(in crate::surface) fn probe_open_obligations<R>(
     operation: impl FnOnce() -> R,
 ) -> (R, OpenObligationProbe) {
@@ -758,6 +760,14 @@ fn certified_transitions_from_execution(
                 }
             );
             for obligation in path.obligations() {
+                // Entry requirements cannot cite facts produced by this call.
+                // In particular an identical `ensures` is conditional on the
+                // very requirement being checked, not evidence for it.
+                let prerequisite_assumptions = if obligation.call_requirement_site().is_some() {
+                    executed_under
+                } else {
+                    &prerequisite_assumptions
+                };
                 let proposition = obligation.proposition();
                 let derivation = match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact => {

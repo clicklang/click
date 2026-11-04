@@ -4510,6 +4510,9 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
                 ensures result == 0 implies owner->data == old(owner->data);
             } by {
                 unfold(allocated_cell(owner));
+                // Declare both pointers, save the old cell, and allocate its replacement.
+                step(); step(); step(); step();
+                branch { step(); } else { }
                 step_until(function.exit);
                 fold(allocated_cell(owner));
                 solve();
@@ -10415,7 +10418,8 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     verify_c0_sources(&rewritten, &sources)
         .expect("the serialized nested branch-arm scope should independently reverify");
 
-    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(flag + 1))", 1);
+    // This arm has flag != 0, so marker(0) is distinct without risking overflow.
+    let corrupted = rewritten.replacen("open(marker(flag))", "open(marker(0))", 1);
     assert_ne!(
         corrupted, rewritten,
         "the expansion should expose the nested branch-arm resource selection"
@@ -10426,7 +10430,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
     assert!(
         error
             .message()
-            .contains("`open(marker((flag + 1)))` Requires owns marker((flag + 1))"),
+            .contains("`open(marker(0))` Requires owns marker(0)"),
         "the checked nested branch-arm entry should reject the tamper directly: {error:?}"
     );
 }
@@ -12887,8 +12891,8 @@ fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
             "separate_symbolic_unwritten_read.md",
             "write_i_read_j",
             CProofClaim::Ensure(0),
-            "normalize();",
-            "normalize() using { 0u32 == 1u32; };",
+            "have result == old(p[j])",
+            "have result != old(p[j])",
         ),
     ] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -13451,9 +13455,13 @@ fn branch_continuation_claims_retain_their_selected_outcome_step() {
         };
         let lines = expanded.lines().collect::<Vec<_>>();
         assert!(
-            lines[retained.clone()]
-                .iter()
-                .any(|line| line.trim_start().starts_with("premise 0: at(region(")),
+            lines[retained.clone()].iter().any(|line| {
+                line.trim_start()
+                    .strip_prefix("premise 0: ")
+                    .is_some_and(|premise| {
+                        premise.trim_start_matches('(').starts_with("at(region(")
+                    })
+            }),
             "the retained step does not cite the anchored branch premises:\n{expanded}"
         );
         verify_c0_sources(&expanded, &c_sources).unwrap_or_else(|error| {
@@ -14307,20 +14315,18 @@ fn source_expander_derives_separation_from_call_postconditions() {
         .expect("bounded call ranges should verify before expansion");
     let expanded = expand_c0_tactic_source_at(click_source, &c_sources, line, column)
         .expect("call postconditions should expand into an explicit separation derivation");
-    // The call postconditions are written against the snapshots where they were read:
-    // anchored rewrites, not unanchored equalities that would re-read the
-    // fields in the proof's current state.
+    // Reuse the separation fact at the call snapshot instead of requiring
+    // the expander to rediscover it through individual field rewrites.
+    let separation = "separate(memory(*right), memory(left->data[0..left->len]))";
+    let anchored = format!("at(region(2).entry, {separation})");
+    let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(
-        expanded
-            .contains("rewrite(at(region(2).entry, left->len) == at(region(2).entry, length));"),
-        "{expanded}"
-    );
-    assert!(
-        expanded.contains("rewrite(at(region(2).entry, left->data) == at(region(2).entry, data));"),
-        "{expanded}"
+        compact.contains(&format!(
+            "transport({anchored}, {separation}) using {{ {anchored}; }};"
+        )),
+        "the separation transport must cite its call-snapshot premise: {expanded}"
     );
     assert!(!expanded.contains("load_int32_pointer"), "{expanded}");
-    assert!(expanded.contains("assumption();"), "{expanded}");
     assert!(!expanded.contains("derive using"), "{expanded}");
     verify_c0_sources(&expanded, &c_sources)
         .expect("the expanded separation derivation should check");
@@ -17186,8 +17192,10 @@ fn throwing_call_forks_expand_and_reverify_in_every_position() {
     let c_sources = [("forks.c", c_source)];
     for proofs in [
         ["", "", ""],
-        [" by solve()", " by solve()", ""],
-        ["", "", ";"],
+        // Per-claim scripts execute a prefix; the implicit tail handles
+        // the remaining normal and exceptional paths.
+        [" by { step(); }", " by { step(); }", ""],
+        ["", "", " by { step(); }"],
     ] {
         let click_source = format!(
             "verifying \"forks.c\";\nint32 helper(int32 x) throws int32 {{\n    ensures result == x;\n    exceptional ensures exception == 7;\n}}\n{}{}{}",
