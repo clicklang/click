@@ -1081,7 +1081,26 @@ fn loop_iterator(
                 S::SharedArrayNext { iterator, .. } => (iterator, K::Slice),
                 S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
                 S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
-                S::RangeNext { iterator, .. } => (iterator, K::Range),
+                S::RangeNext { iterator, .. } => {
+                    let inclusive = mir.locals.iter().any(|local| {
+                        local.name == *iterator
+                            && matches!(
+                                local.value_type,
+                                Type::Range {
+                                    inclusive: true,
+                                    ..
+                                }
+                            )
+                    });
+                    (
+                        iterator,
+                        if inclusive {
+                            K::RangeInclusive
+                        } else {
+                            K::Range
+                        },
+                    )
+                }
                 _ => return None,
             };
             Some(RustLoopIterator {
