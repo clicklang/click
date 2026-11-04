@@ -142,7 +142,369 @@ int32 vector_copy(
         preserve by {
             step();
             step();
-            solve();
+            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } by {
+                intro();
+                intro();
+                instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, k) using {
+                    0 <= k and k < length;
+                    at(region(3).entry, i) < at(region(3).entry, length);
+                    at(function.entry, 0) <= at(function.entry, length);
+                    at(function.entry, 0) <= at(function.entry, dst_capacity);
+                    at(function.entry, 0) <= at(function.entry, src_capacity);
+                    at(region(3).entry, 0) <= at(region(3).entry, i);
+                    at(function.entry, 1) <= at(function.entry, dst_capacity);
+                    at(function.entry, 1) <= at(function.entry, src_capacity);
+                    at(function.entry, length) <= at(function.entry, 1073741823);
+                    at(function.entry, length) <= at(function.entry, dst_capacity);
+                    at(function.entry, length) <= at(function.entry, src_capacity);
+                    at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
+                    at(function.entry, src_capacity) <= at(function.entry, 1073741823);
+                    at(region(3).entry, i) <= at(region(3).entry, length);
+                    at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
+                    at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                    at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                    little_endian();
+                    at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
+                    at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
+                    at(function.entry, separate(memory(dst[0..dst_capacity]), memory(src[0..src_capacity])));
+                    forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry,
+                        k) < at(region(3).entry, i) implies at(region(3).entry, dst[k]) == old(src[k]) };
+                };
+                have at(region(3).entry, src[k]) == src[k] by {
+                    transport(at(region(3).entry, src[k]) == at(region(3).entry, src[k]), at(region(3).entry, src[k]) == src[k]) using {
+                        at(region(3).entry, src[k]) == at(region(3).entry, src[k]);
+                        0 <= k and k < length;
+                        at(region(3).entry, i) < at(region(3).entry, length);
+                        at(function.entry, 0) <= at(function.entry, length);
+                        at(function.entry, 0) <= at(function.entry, dst_capacity);
+                        at(function.entry, 0) <= at(function.entry, src_capacity);
+                        at(region(3).entry, 0) <= at(region(3).entry, i);
+                        at(function.entry, 1) <= at(function.entry, dst_capacity);
+                        at(function.entry, 1) <= at(function.entry, src_capacity);
+                        at(function.entry, length) <= at(function.entry, 1073741823);
+                        at(function.entry, length) <= at(function.entry, dst_capacity);
+                        at(function.entry, length) <= at(function.entry, src_capacity);
+                        at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
+                        at(function.entry, src_capacity) <= at(function.entry, 1073741823);
+                        at(region(3).entry, i) <= at(region(3).entry, length);
+                        at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
+                        at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                        at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                        little_endian();
+                        at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
+                        at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
+                        at(function.entry, separate(memory(dst[0..dst_capacity]),
+                            memory(src[0..src_capacity])));
+                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
+                            at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k])
+                            == old(src[k]) };
+                    };
+                }
+                have src[k] == at(region(3).entry, src[k]) by {
+                    rewrite(at(region(3).entry, src[k]) == src[k]);
+                    normalize();
+                }
+                rewrite(src[k] == at(region(3).entry, src[k]));
+                assumption();
+            }
+            have 0 <= i by {
+                arithmetic_certificate signed_int32 {
+                    premise 0: (at(region(3).entry, 0) as int32) <= (at(region(3).entry, i) as int32) =>
+                        (at(region(3).entry, 0) as int32) <= (at(region(3).entry, i) as int32);
+                    premise 1: (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as int32) =>
+                        (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as int32);
+                    int32_range => to_integer((length as int32)) <= to_integer((2147483647 as int32));
+                    add 1, 2 => (to_integer((at(region(3).entry, i) as int32)) + to_integer((length as int32)))
+                        < (to_integer((at(region(3).entry, length) as int32)) + to_integer((2147483647 as
+                        int32)));
+                    interval_from_affine 0 (at(region(3).entry, i)) (0) (2147483647);
+                    interval_from_affine 3 (at(region(3).entry, i)) (-2147483648) (2147483646);
+                    interval_intersect 4, 5 (0) (2147483646);
+                    interval_atom (1) (1) (1);
+                    interval_add_bounded 6, 7 (1) (2147483647);
+                    trivial => -1 <= 0;
+                    add 0, 9 => (to_integer((at(region(3).entry, 0) as int32)) + -1) <=
+                        (to_integer((at(region(3).entry, i) as int32)) + 0);
+                    affine_conclusion 10 8 => (0 as int32) <= (i as int32);
+                    conclusion 11;
+                }
+            }
+            have i <= length by {
+                arithmetic_certificate signed_int32 {
+                    premise 0: (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as int32) =>
+                        (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as int32);
+                    int32_range => to_integer((length as int32)) <= to_integer((2147483647 as int32));
+                    add 0, 1 => (to_integer((at(region(3).entry, i) as int32)) + to_integer((length as int32)))
+                        < (to_integer((at(region(3).entry, length) as int32)) + to_integer((2147483647 as
+                        int32)));
+                    interval_from_affine 2 (at(region(3).entry, i)) (-2147483648) (2147483646);
+                    interval_atom (1) (1) (1);
+                    interval_add_bounded 3, 4 (-2147483647) (2147483647);
+                    affine_conclusion 0 5 => (i as int32) <= (length as int32);
+                    conclusion 6;
+                }
+            }
+            have forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
+                intro();
+                intro();
+                extract(0 <= k);
+                extract(k < i);
+                if at(region(4).entry, k) < at(region(4).entry, (i as int32)) {
+                    have at(region(4).entry, k) != at(region(4).entry, (i as int32)) by {
+                        have at(region(4).entry, k) < at(region(4).entry, (i as int32)) by {
+                            assumption();
+                        }
+                        intro();
+                        arithmetic_certificate {
+                            premise 0: at(region(4).entry, k) < at(region(4).entry, (i as int32)) =>
+                                at(region(4).entry, k) < at(region(4).entry, (i as int32));
+                            premise 1: at(region(4).entry, k) == at(region(4).entry, (i as int32)) =>
+                                at(region(4).entry, k) == at(region(4).entry, (i as int32));
+                            less_equal_from_equal 1 reverse => at(region(4).entry, to_integer(((i as int32) as
+                                int32))) <= at(region(4).entry, to_integer((k as int32)));
+                            add 0, 2 => (at(region(4).entry, to_integer((k as int32))) + at(region(4).entry,
+                                to_integer(((i as int32) as int32)))) < (at(region(4).entry, to_integer(((i as
+                                int32) as int32))) + at(region(4).entry, to_integer((k as int32))));
+                            trivial => -1 <= 0;
+                            equal_from_bounds 3, 4 => false == true;
+                            conclusion 5;
+                        }
+                    }
+                    instantiate(forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry, src[k]) == old(src[k]) }, 0) using {
+                        at(region(3).entry, i) < at(region(3).entry, length);
+                        at(region(4).entry, k) < at(region(4).entry, (i as int32));
+                        k < i;
+                        0 <= length;
+                        0 <= dst_capacity;
+                        0 <= src_capacity;
+                        at(region(3).entry, 0) <= at(region(3).entry, i);
+                        0 <= k;
+                        0 <= i;
+                        1 <= dst_capacity;
+                        1 <= src_capacity;
+                        length <= 1073741823;
+                        length <= dst_capacity;
+                        length <= src_capacity;
+                        dst_capacity <= 1073741823;
+                        src_capacity <= 1073741823;
+                        at(region(3).entry, i) <= at(region(3).entry, length);
+                        i <= length;
+                        at(region(4).entry, k) != at(region(4).entry, (i as int32));
+                        (length as uint32) <= 1073741823u32;
+                        (dst_capacity as uint32) <= 1073741823u32;
+                        (src_capacity as uint32) <= 1073741823u32;
+                    };
+                    transport(at(region(3).entry, src[0]) == old(src[0]), dst[k] == old(src[k])) using {
+                        at(region(3).entry, src[0]) == old(src[0]);
+                        at(region(4).entry, k) < at(region(4).entry, (i as int32));
+                        0 <= k;
+                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
+                            at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k])
+                            == old(src[k]) };
+                    };
+                } else {
+                    have at(region(4).entry, k) == at(region(4).entry, (i as int32)) by {
+                        have at(region(4).entry, k) <= at(region(4).entry, (i as int32)) by {
+                            arithmetic_certificate signed_int32 {
+                                premise 0: (at(region(3).entry, i) as int32) < (at(region(3).entry, length) as
+                                    int32) => (at(region(3).entry, i) as int32) < (at(region(3).entry, length)
+                                    as int32);
+                                premise 1: (k as int32) < (i as int32) => (k as int32) < (i as int32);
+                                premise 2: (at(region(3).entry, 0) as int32) <= (at(region(3).entry, i) as
+                                    int32) => (at(region(3).entry, 0) as int32) <= (at(region(3).entry, i) as
+                                    int32);
+                                premise 3: (at(function.entry, length) as int32) <= (at(function.entry,
+                                    dst_capacity) as int32) => (at(function.entry, length) as int32) <=
+                                    (at(function.entry, dst_capacity) as int32);
+                                premise 4: (at(function.entry, dst_capacity) as int32) <= (at(function.entry,
+                                    1073741823) as int32) => (at(function.entry, dst_capacity) as int32) <=
+                                    (at(function.entry, 1073741823) as int32);
+                                premise 5: (at(function.entry, i) as int32) <= (at(function.entry, length) as
+                                    int32) => (at(function.entry, i) as int32) <= (at(function.entry, length) as
+                                    int32);
+                                add 3, 4 => (to_integer((at(function.entry, length) as int32)) +
+                                    to_integer((at(function.entry, dst_capacity) as int32))) <=
+                                    (to_integer((at(function.entry, dst_capacity) as int32)) +
+                                    to_integer((at(function.entry, 1073741823) as int32)));
+                                add 0, 6 => (to_integer((at(region(3).entry, i) as int32)) +
+                                    (to_integer((at(function.entry, length) as int32)) +
+                                    to_integer((at(function.entry, dst_capacity) as int32)))) <
+                                    (to_integer((at(region(3).entry, length) as int32)) +
+                                    (to_integer((at(function.entry, dst_capacity) as int32)) +
+                                    to_integer((at(function.entry, 1073741823) as int32))));
+                                interval_from_affine 2 (at(region(3).entry, i)) (0) (2147483647);
+                                interval_from_affine 7 (at(region(3).entry, i)) (-2147483648) (1073741822);
+                                interval_intersect 8, 9 (0) (1073741822);
+                                interval_atom (1) (1) (1);
+                                interval_add_bounded 10, 11 (1) (1073741823);
+                                affine_premise 1 12 12 => to_integer((k as int32)) < to_integer((i as int32));
+                                conclusion 13;
+                            }
+                        }
+                        arithmetic_certificate {
+                            premise 0: at(region(4).entry, k) <= at(region(4).entry, (i as int32)) =>
+                                at(region(4).entry, k) <= at(region(4).entry, (i as int32));
+                            premise 1: not k < at(region(3).entry, i) => not k < at(region(3).entry, i);
+                            equal_from_bounds 0, 1 => at(region(4).entry, k) == at(region(4).entry, (i as
+                                int32));
+                            conclusion 2;
+                        }
+                    }
+                    rewrite(at(region(4).entry, k) == at(region(4).entry, (i as int32)));
+                    instantiate(forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) }, k) using {
+                        at(region(3).entry, i) < at(region(3).entry, length);
+                        not k < at(region(3).entry, i);
+                        k < i;
+                        at(function.entry, 0) <= at(function.entry, length);
+                        at(function.entry, 0) <= at(function.entry, dst_capacity);
+                        at(function.entry, 0) <= at(function.entry, src_capacity);
+                        at(region(3).entry, 0) <= at(region(3).entry, i);
+                        0 <= k;
+                        at(function.entry, 0) <= at(function.entry, i);
+                        at(function.entry, 1) <= at(function.entry, dst_capacity);
+                        at(function.entry, 1) <= at(function.entry, src_capacity);
+                        at(function.entry, length) <= at(function.entry, 1073741823);
+                        at(function.entry, length) <= at(function.entry, dst_capacity);
+                        at(function.entry, length) <= at(function.entry, src_capacity);
+                        at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
+                        at(function.entry, src_capacity) <= at(function.entry, 1073741823);
+                        at(region(3).entry, i) <= at(region(3).entry, length);
+                        at(function.entry, i) <= at(function.entry, length);
+                        at(region(4).entry, k) == at(region(4).entry, (i as int32));
+                        at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
+                        at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                        at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                        little_endian();
+                        at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
+                        at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
+                        at(function.entry, separate(memory(dst[0..dst_capacity]),
+                            memory(src[0..src_capacity])));
+                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
+                            at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry,
+                            src[k]) == old(src[k]) };
+                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
+                            at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k])
+                            == old(src[k]) };
+                    };
+                    transport(src[k] == old(src[k]), at(region(3).entry, src[i]) == old(src[at(region(3).entry, i)])) using {
+                        src[k] == old(src[k]);
+                        at(region(3).entry, i) < at(region(3).entry, length);
+                        not k < at(region(3).entry, i);
+                        k < i;
+                        at(function.entry, 0) <= at(function.entry, length);
+                        at(function.entry, 0) <= at(function.entry, dst_capacity);
+                        at(function.entry, 0) <= at(function.entry, src_capacity);
+                        at(region(3).entry, 0) <= at(region(3).entry, i);
+                        0 <= k;
+                        at(function.entry, 0) <= at(function.entry, i);
+                        at(function.entry, 1) <= at(function.entry, dst_capacity);
+                        at(function.entry, 1) <= at(function.entry, src_capacity);
+                        at(function.entry, length) <= at(function.entry, 1073741823);
+                        at(function.entry, length) <= at(function.entry, dst_capacity);
+                        at(function.entry, length) <= at(function.entry, src_capacity);
+                        at(function.entry, dst_capacity) <= at(function.entry, 1073741823);
+                        at(function.entry, src_capacity) <= at(function.entry, 1073741823);
+                        at(region(3).entry, i) <= at(region(3).entry, length);
+                        at(function.entry, i) <= at(function.entry, length);
+                        at(region(4).entry, k) == at(region(4).entry, (i as int32));
+                        at(function.entry, (length as uint32)) <= at(function.entry, 1073741823u32);
+                        at(function.entry, (dst_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                        at(function.entry, (src_capacity as uint32)) <= at(function.entry, 1073741823u32);
+                        little_endian();
+                        at(function.entry, viewable((src as (int32 *))[0..src_capacity]));
+                        at(function.entry, viewable((dst as (int32 *))[0..dst_capacity]));
+                        at(function.entry, separate(memory(dst[0..dst_capacity]),
+                            memory(src[0..src_capacity])));
+                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
+                            at(region(3).entry, k) < at(region(3).entry, length) implies at(region(3).entry,
+                            src[k]) == old(src[k]) };
+                        forall (k: int32) { at(region(3).entry, 0) <= at(region(3).entry, k) and
+                            at(region(3).entry, k) < at(region(3).entry, i) implies at(region(3).entry, dst[k])
+                            == old(src[k]) };
+                    };
+                }
+            }
+            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i by {
+                intro();
+                assumption();
+            }
+            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i implies i <= length by {
+                intro();
+                intro();
+                assumption();
+            }
+            have forall (k: int32) { 0 <= k and k < length implies src[k] == old(src[k]) } implies 0 <= i implies i <= length implies forall (k: int32) { 0 <= k and k < i implies dst[k] == old(src[k]) } by {
+                intro();
+                intro();
+                intro();
+                assumption();
+            }
+            have (let integer_value: Integer = 0; integer_value) <= (to_integer((length as int32)) - to_integer((i as int32))) by {
+                arithmetic_certificate {
+                    negated_goal => (to_integer((length as int32)) - to_integer((i as int32))) < (let
+                        integer_value: Integer = 0; integer_value);
+                    premise 0: to_integer((i as int32)) <= to_integer((length as int32)) => to_integer((i as
+                        int32)) <= to_integer((length as int32));
+                    add 0, 1 => ((to_integer((length as int32)) - to_integer((i as int32))) + to_integer((i as
+                        int32))) < ((let integer_value: Integer = 0; integer_value) + to_integer((length as
+                        int32)));
+                    conclusion 2;
+                }
+            }
+            have (let integer_value: Integer = (to_integer((length as int32)) - to_integer((i as int32))); integer_value) < (to_integer((length as int32)) - to_integer(at(region(3).entry, (i as int32)))) by {
+                have -2147483648 <= (to_integer(at(region(3).entry, (i as int32))) + 1) by {
+                    arithmetic_certificate {
+                        negated_goal => (to_integer(at(region(3).entry, (i as int32))) + 1) < -2147483648;
+                        premise 0: 0 <= to_integer(at(region(3).entry, (i as int32))) => 0 <=
+                            to_integer(at(region(3).entry, (i as int32)));
+                        add 0, 1 => (to_integer(at(region(3).entry, (i as int32))) + 1 + 0) < (-2147483648 +
+                            to_integer(at(region(3).entry, (i as int32))));
+                        conclusion 2;
+                    }
+                }
+                have (to_integer(at(region(3).entry, (i as int32))) + 1) <= 2147483647 by {
+                    arithmetic_certificate {
+                        negated_goal => 2147483647 < (to_integer(at(region(3).entry, (i as int32))) + 1);
+                        premise 0: to_integer(at(region(3).entry, (i as int32))) <
+                            to_integer(at(region(3).entry, length)) => to_integer(at(region(3).entry, (i as
+                            int32))) < to_integer(at(region(3).entry, length));
+                        premise 1: to_integer(at(region(3).entry, length)) <= 1073741823 =>
+                            to_integer(at(region(3).entry, length)) <= 1073741823;
+                        add 0, 1 => (2147483647 + 1 + (to_integer(at(region(3).entry, (i as int32))) + 1)) <=
+                            (to_integer(at(region(3).entry, (i as int32))) + 1 + to_integer(at(region(3).entry,
+                            length)));
+                        add 3, 2 => (2147483647 + 1 + (to_integer(at(region(3).entry, (i as int32))) + 1) +
+                            to_integer(at(region(3).entry, length))) <= (to_integer(at(region(3).entry, (i as
+                            int32))) + 1 + to_integer(at(region(3).entry, length)) + 1073741823);
+                        conclusion 4;
+                    }
+                }
+                have to_integer((i as int32)) == (to_integer(at(region(3).entry, (i as int32))) + 1) by {
+                    arithmetic_certificate rules {
+                        premise 0: -2147483648 <= (to_integer(at(region(3).entry, (i as int32))) + 1) =>
+                            -2147483648 <= (to_integer(at(region(3).entry, (i as int32))) + 1);
+                        premise 1: (to_integer(at(region(3).entry, (i as int32))) + 1) <= 2147483647 =>
+                            (to_integer(at(region(3).entry, (i as int32))) + 1) <= 2147483647;
+                        integer_operation_identity bounds [0, 1] => to_integer((i as int32)) ==
+                            (to_integer(at(region(3).entry, (i as int32))) + 1);
+                        conclusion 0;
+                    }
+                }
+                arithmetic_certificate {
+                    negated_goal => (to_integer((length as int32)) - to_integer(at(region(3).entry, (i as
+                        int32)))) <= (let integer_value: Integer = (to_integer((length as int32)) -
+                        to_integer((i as int32))); integer_value);
+                    premise 0: to_integer((i as int32)) == (to_integer(at(region(3).entry, (i as int32))) + 1)
+                        => to_integer((i as int32)) == (to_integer(at(region(3).entry, (i as int32))) + 1);
+                    less_equal_from_equal 1 reverse => (to_integer(at(region(3).entry, (i as int32))) + 1) <=
+                        to_integer((i as int32));
+                    add 0, 2 => ((to_integer((length as int32)) - to_integer(at(region(3).entry, (i as int32))))
+                        + (to_integer(at(region(3).entry, (i as int32))) + 1)) <= ((let integer_value: Integer =
+                        (to_integer((length as int32)) - to_integer((i as int32))); integer_value) +
+                        to_integer((i as int32)));
+                    conclusion 3;
+                }
+            }
         }
     }
     have i == length;
@@ -243,11 +605,149 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         have owner->cap == at(region(9).entry, new_capacity);
-        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by solve();
+        have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
+            intro();
+            intro();
+            instantiate(forall (__click_q0: int32) { at(region(13).entry, 0) <= at(region(13).entry, __click_q0) and at(region(13).entry, __click_q0) < at(region(13).entry, owner->len) implies at(region(13).entry, new_data[__click_q0]) == at(region(13).entry, old_data[__click_q0]) }, k) using {
+                0 <= k and k < old(owner->len);
+                owner->data == owner->data;
+            };
+            transport(at(region(13).entry, new_data[k]) == at(region(13).entry, old_data[k]), owner->data[k] == old(owner->data[k])) using {
+                at(region(13).entry, new_data[k]) == at(region(13).entry, old_data[k]);
+                0 <= k and k < old(owner->len);
+                owner->data == owner->data;
+            };
+        }
         fold(allocated_vector(owner));
         have result == 0 implies owner->cap == old(owner->cap);
         have result == 0 implies owner->data == old(owner->data);
-        have result == 1 implies owner->cap == (old(owner->cap) + 1);
+        have result == 1 implies to_integer(owner->cap) == (to_integer(old(owner->cap)) + 1) by {
+            have 0 == 0 implies (let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
+                intro();
+                if at(function.entry, owner->cap < (536870910 as int32)) {
+                    have at(function.entry, owner->cap != (536870910 as int32)) by {
+                        if at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) {
+                            have at(function.entry, owner->cap) != (at(function.entry, 1073741823) as int32) by {
+                                have at(function.entry, owner->cap) < (at(function.entry, 1073741823) as int32) by {
+                                    assumption();
+                                }
+                                intro();
+                                arithmetic_certificate {
+                                    premise 0: at(function.entry, owner->cap) < (at(function.entry,
+                                        1073741823) as int32) => at(function.entry, owner->cap) <
+                                        (at(function.entry, 1073741823) as int32);
+                                    premise 1: at(function.entry, owner->cap) == (at(function.entry,
+                                        1073741823) as int32) => at(function.entry, owner->cap) ==
+                                        (at(function.entry, 1073741823) as int32);
+                                    less_equal_from_equal 1 reverse => to_integer(((at(function.entry,
+                                        1073741823) as int32) as int32)) <= at(function.entry,
+                                        to_integer((owner->cap as int32)));
+                                    add 0, 2 => (at(function.entry, to_integer((owner->cap as int32))) +
+                                        to_integer(((at(function.entry, 1073741823) as int32) as int32))) <
+                                        (to_integer(((at(function.entry, 1073741823) as int32) as int32)) +
+                                        at(function.entry, to_integer((owner->cap as int32))));
+                                    trivial => -1 <= 0;
+                                    equal_from_bounds 3, 4 => false == true;
+                                    conclusion 5;
+                                }
+                            }
+                            arithmetic_certificate signed_int32 {
+                                premise 0: (at(function.entry, owner->cap) as int32) < (at(function.entry,
+                                    536870910) as int32) => (at(function.entry, owner->cap) as int32) <
+                                    (at(function.entry, 536870910) as int32);
+                                premise 1: (at(function.entry, 1) as int32) <= (at(function.entry,
+                                    owner->cap) as int32) => (at(function.entry, 1) as int32) <=
+                                    (at(function.entry, owner->cap) as int32);
+                                interval_from_affine 1 (at(function.entry, owner->cap)) (1) (2147483647);
+                                interval_from_affine 0 (at(function.entry, owner->cap)) (-2147483648)
+                                    (536870909);
+                                interval_intersect 2, 3 (1) (536870909);
+                                interval_atom (536870910) (536870910) (536870910);
+                                interval_compare 4, 5 ne => at(function.entry, owner->cap != (536870910 as
+                                    int32));
+                                conclusion 6;
+                            }
+                        } else {
+                            have at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32) by {
+                                have at(function.entry, owner->cap) <= (at(function.entry, 1073741823) as int32) by {
+                                    assumption();
+                                }
+                                arithmetic_certificate {
+                                    premise 0: at(function.entry, owner->cap) <= (at(function.entry,
+                                        1073741823) as int32) => at(function.entry, owner->cap) <=
+                                        (at(function.entry, 1073741823) as int32);
+                                    premise 1: not at(function.entry, owner->cap) < at(function.entry,
+                                        1073741823) => not at(function.entry, owner->cap) <
+                                        at(function.entry, 1073741823);
+                                    equal_from_bounds 0, 1 => at(function.entry, owner->cap) ==
+                                        (at(function.entry, 1073741823) as int32);
+                                    conclusion 2;
+                                }
+                            }
+                            rewrite(at(function.entry, owner->cap) == (at(function.entry, 1073741823) as int32));
+                            normalize();
+                        }
+                    }
+                    have -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
+                        arithmetic_certificate {
+                            negated_goal => (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <
+                                -2147483648;
+                            premise 0: 0 <= to_integer(at(region(5).exit, (old_capacity as int32))) => 0 <=
+                                to_integer(at(region(5).exit, (old_capacity as int32)));
+                            add 0, 1 => (to_integer(at(region(5).exit, (old_capacity as int32))) + 1 + 0) <
+                                (-2147483648 + to_integer(at(region(5).exit, (old_capacity as int32))));
+                            conclusion 2;
+                        }
+                    }
+                    have (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <= 2147483647 by {
+                        arithmetic_certificate {
+                            negated_goal => 2147483647 < (to_integer(at(region(5).exit, (old_capacity as
+                                int32))) + 1);
+                            premise 0: to_integer(at(region(5).exit, (old_capacity as int32))) < 536870910
+                                => to_integer(at(region(5).exit, (old_capacity as int32))) < 536870910;
+                            add 0, 1 => (2147483647 + 1 + (to_integer(at(region(5).exit, (old_capacity as
+                                int32))) + 1)) <= (to_integer(at(region(5).exit, (old_capacity as int32))) +
+                                1 + 536870910);
+                            conclusion 2;
+                        }
+                    }
+                    have to_integer((let integer_value: Integer = to_integer(at(region(7).exit, (new_capacity as int32))); integer_value)) == (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) by {
+                        arithmetic_certificate rules {
+                            premise 0: -2147483648 <= (to_integer(at(region(5).exit, (old_capacity as
+                                int32))) + 1) => -2147483648 <= (to_integer(at(region(5).exit, (old_capacity
+                                as int32))) + 1);
+                            premise 1: (to_integer(at(region(5).exit, (old_capacity as int32))) + 1) <=
+                                2147483647 => (to_integer(at(region(5).exit, (old_capacity as int32))) + 1)
+                                <= 2147483647;
+                            integer_operation_identity bounds [0, 1] => to_integer((let integer_value:
+                                Integer = to_integer(at(region(7).exit, (new_capacity as int32)));
+                                integer_value)) == (to_integer(at(region(5).exit, (old_capacity as int32)))
+                                + 1);
+                            conclusion 0;
+                        }
+                    }
+                    assumption();
+                } else {
+                    have at(function.entry, owner->cap == (536870910 as int32)) by {
+                        have at(function.entry, owner->cap <= (536870910 as int32)) by {
+                            assumption();
+                        }
+                        arithmetic_certificate {
+                            premise 0: at(function.entry, owner->cap <= (536870910 as int32)) =>
+                                at(function.entry, owner->cap <= (536870910 as int32));
+                            premise 1: not at(function.entry, owner->cap) < at(function.entry, 536870910) =>
+                                not at(function.entry, owner->cap) < at(function.entry, 536870910);
+                            equal_from_bounds 0, 1 => at(function.entry, owner->cap) == at(function.entry,
+                                (536870910 as int32));
+                            conclusion 2;
+                        }
+                    }
+                    rewrite(at(function.entry, owner->cap == (536870910 as int32)));
+                    normalize();
+                }
+            }
+            assumption();
+        }
         assumption();
         assumption();
         assumption();
