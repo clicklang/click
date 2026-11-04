@@ -65,6 +65,26 @@ impl OrderBoundIndex {
     pub(in crate::kernel) fn get_operand(&self, term: V<'_>) -> Option<&Bounds> {
         self.endpoints.get(&Key::for_format(self.format?, term))
     }
+    /// Select the original source of exactly this edge, without walking the
+    /// endpoint's other bounds or materializing either operand.
+    pub(in crate::kernel) fn exact_source(
+        &self,
+        left: V<'_>,
+        right: V<'_>,
+        strict: bool,
+    ) -> Option<&Proposition> {
+        crate::instrumentation::record_deterministic_work(1);
+        let format = self.format?;
+        let left = Key::for_format(format, left);
+        let right = Key::for_format(format, right);
+        self.endpoints
+            .get(&left)?
+            .entries
+            .get(&(left, right, strict, true))?
+            .iter()
+            .next()
+    }
+
     pub(in crate::kernel) fn shares_root_with(&self, other: &Self) -> bool {
         self.format == other.format && self.endpoints.shares_root_with(&other.endpoints)
     }

@@ -211,7 +211,7 @@ impl PropositionDerivation {
 
     /// Return the exact `value < INT32_MAX` premise selected when the atomic
     /// prover established that `value + 1` is defined.
-    pub fn int32_increment_below_max_is_defined_step(&self) -> Option<&SignedOrderDerivationStep> {
+    pub fn int32_increment_below_max_is_defined_premise(&self) -> Option<&Proposition> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::Int32IncrementBelowMaxIsDefined(step),
@@ -222,7 +222,7 @@ impl PropositionDerivation {
     }
 
     /// Return the exact maximum bound selected for `defined(1 + value)`.
-    pub fn int32_one_plus_below_max_is_defined_step(&self) -> Option<&SignedOrderDerivationStep> {
+    pub fn int32_one_plus_below_max_is_defined_premise(&self) -> Option<&Proposition> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence: AtomicPropositionDerivationEvidence::Int32OnePlusBelowMaxIsDefined(step),
@@ -246,15 +246,15 @@ impl PropositionDerivation {
     /// Return the exact nonnegative-amount and remaining-headroom premises
     /// selected when the atomic prover established symbolic addition
     /// definedness through the named int32 theorem.
-    pub fn int32_nonnegative_add_within_max_steps(
+    pub fn int32_nonnegative_add_within_max_premises(
         &self,
-    ) -> Option<(&SignedOrderDerivationStep, &SignedOrderDerivationStep)> {
+    ) -> Option<(&Proposition, &Proposition)> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence:
                     AtomicPropositionDerivationEvidence::Int32NonnegativeAddWithinMaxIsDefined(evidence),
                 ..
-            } => Some((&evidence.amount_nonnegative, &evidence.within_headroom)),
+            } => Some((&evidence[0], &evidence[1])),
             _ => None,
         }
     }
@@ -262,9 +262,9 @@ impl PropositionDerivation {
     /// Return the exact nonnegative-amount and amount-within-value premises
     /// selected when the atomic prover established symbolic subtraction
     /// definedness through the named int32 theorem.
-    pub fn int32_nonnegative_subtract_within_value_steps(
+    pub fn int32_nonnegative_subtract_within_value_premises(
         &self,
-    ) -> Option<(&SignedOrderDerivationStep, &SignedOrderDerivationStep)> {
+    ) -> Option<(&Proposition, &Proposition)> {
         match &self.rule {
             PropositionDerivationRule::ContextualAtomic {
                 evidence:
@@ -272,7 +272,7 @@ impl PropositionDerivation {
                         evidence,
                     ),
                 ..
-            } => Some((&evidence.amount_nonnegative, &evidence.within_value)),
+            } => Some((&evidence[0], &evidence[1])),
             _ => None,
         }
     }

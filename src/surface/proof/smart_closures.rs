@@ -10498,9 +10498,7 @@ impl<'a> Proof<'a> {
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
-                    [derivation
-                        .int32_increment_below_max_is_defined_step()?
-                        .premise()],
+                    [derivation.int32_increment_below_max_is_defined_premise()?],
                     premise_pairs,
                     false,
                 )?;
@@ -10508,21 +10506,15 @@ impl<'a> Proof<'a> {
             })
             .or_else(|| {
                 let recorded = recorded_premise_pairs(
-                    [derivation
-                        .int32_one_plus_below_max_is_defined_step()?
-                        .premise()],
+                    [derivation.int32_one_plus_below_max_is_defined_premise()?],
                     premise_pairs,
                     false,
                 )?;
                 plan_explicit_one_plus_below_max_is_defined(goal, &recorded)
             })
             .or_else(|| {
-                let (first, second) = derivation.int32_nonnegative_add_within_max_steps()?;
-                let recorded = recorded_premise_pairs(
-                    [first.premise(), second.premise()],
-                    premise_pairs,
-                    false,
-                )?;
+                let (first, second) = derivation.int32_nonnegative_add_within_max_premises()?;
+                let recorded = recorded_premise_pairs([first, second], premise_pairs, false)?;
                 let mut tactics =
                     plan_explicit_nonnegative_add_within_max_is_defined(goal, &recorded)?;
                 // Outside an execution the theorem's conclusion is the exact
@@ -10533,12 +10525,9 @@ impl<'a> Proof<'a> {
                 Some(tactics)
             })
             .or_else(|| {
-                let (first, second) = derivation.int32_nonnegative_subtract_within_value_steps()?;
-                let recorded = recorded_premise_pairs(
-                    [first.premise(), second.premise()],
-                    premise_pairs,
-                    false,
-                )?;
+                let (first, second) =
+                    derivation.int32_nonnegative_subtract_within_value_premises()?;
+                let recorded = recorded_premise_pairs([first, second], premise_pairs, false)?;
                 plan_explicit_nonnegative_subtract_within_value_is_defined(goal, &recorded)
             })
             .or_else(|| {

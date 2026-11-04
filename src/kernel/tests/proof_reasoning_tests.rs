@@ -1823,12 +1823,9 @@ fn increment_definedness_derivation_retains_its_exact_max_bound() {
         .derive_solve_proposition(&goal)
         .expect("the strict maximum bound should prove increment definedness");
     let step = derivation
-        .int32_increment_below_max_is_defined_step()
+        .int32_increment_below_max_is_defined_premise()
         .expect("the atomic decision should retain its named-rule premise");
-    assert_eq!(step.lower(), &value);
-    assert_eq!(step.upper(), &int_max);
-    assert!(step.is_strict());
-    assert_eq!(step.premise(), &premise);
+    assert_eq!(step, &premise);
     assert!(derivation.check(&assumptions));
 }
 
@@ -1865,12 +1862,9 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
         .derive_solve_proposition(&defined_goal)
         .expect("the maximum bound should prove one-plus definedness");
     let defined_step = defined
-        .int32_one_plus_below_max_is_defined_step()
+        .int32_one_plus_below_max_is_defined_premise()
         .expect("definedness must retain the operand-order-specific rule");
-    assert_eq!(defined_step.lower(), &value);
-    assert_eq!(defined_step.upper(), &int_max);
-    assert!(defined_step.is_strict());
-    assert_eq!(defined_step.premise(), &premise);
+    assert_eq!(defined_step, &premise);
     assert!(defined.check(&assumptions));
 
     let strict = assumptions
@@ -1921,16 +1915,10 @@ fn symbolic_add_definedness_retains_both_exact_named_theorem_bounds() {
         .derive_solve_proposition(&goal)
         .expect("the two named-theorem bounds should prove symbolic addition definedness");
     let (nonnegative_step, headroom_step) = derivation
-        .int32_nonnegative_add_within_max_steps()
+        .int32_nonnegative_add_within_max_premises()
         .expect("the atomic decision should retain both named-theorem premises");
-    assert_eq!(nonnegative_step.lower(), &Bitvector32Term::constant(0));
-    assert_eq!(nonnegative_step.upper(), &amount);
-    assert!(!nonnegative_step.is_strict());
-    assert_eq!(nonnegative_step.premise(), &amount_nonnegative);
-    assert_eq!(headroom_step.lower(), &value);
-    assert_eq!(headroom_step.upper(), &headroom);
-    assert!(!headroom_step.is_strict());
-    assert_eq!(headroom_step.premise(), &within_headroom);
+    assert_eq!(nonnegative_step, &amount_nonnegative);
+    assert_eq!(headroom_step, &within_headroom);
     assert!(derivation.check(&assumptions));
     assert!(!derivation.check(&PureFactContext::new()));
 }
@@ -1964,16 +1952,10 @@ fn symbolic_subtract_definedness_retains_both_exact_named_theorem_bounds() {
         .derive_solve_proposition(&goal)
         .expect("the two named-theorem bounds should prove symbolic subtraction definedness");
     let (nonnegative_step, within_value_step) = derivation
-        .int32_nonnegative_subtract_within_value_steps()
+        .int32_nonnegative_subtract_within_value_premises()
         .expect("the atomic decision should retain both named-theorem premises");
-    assert_eq!(nonnegative_step.lower(), &Bitvector32Term::constant(0));
-    assert_eq!(nonnegative_step.upper(), &amount);
-    assert!(!nonnegative_step.is_strict());
-    assert_eq!(nonnegative_step.premise(), &amount_nonnegative);
-    assert_eq!(within_value_step.lower(), &amount);
-    assert_eq!(within_value_step.upper(), &value);
-    assert!(!within_value_step.is_strict());
-    assert_eq!(within_value_step.premise(), &within_value);
+    assert_eq!(nonnegative_step, &amount_nonnegative);
+    assert_eq!(within_value_step, &within_value);
     assert!(derivation.check(&assumptions));
     assert!(!derivation.check(&PureFactContext::new()));
 }
