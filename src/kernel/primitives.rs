@@ -13271,18 +13271,6 @@ pub(crate) enum Int32OneLeEvidence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Int32NonnegativeAddWithinMaxEvidence {
-    pub(super) amount_nonnegative: SignedOrderDerivationStep,
-    pub(super) within_headroom: SignedOrderDerivationStep,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct Int32NonnegativeSubtractWithinValueEvidence {
-    pub(super) amount_nonnegative: SignedOrderDerivationStep,
-    pub(super) within_value: SignedOrderDerivationStep,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct Int32LeAndNotLtEqualityEvidence {
     pub(super) less_equal: Proposition,
     pub(super) not_less_than: Proposition,
@@ -13326,11 +13314,11 @@ pub(crate) enum AtomicPropositionDerivationEvidence {
     Int32IncrementUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementConstantUpperBound(Box<SignedOrderDerivationStep>),
     Int32IncrementStrictlyIncreases(Box<SignedOrderDerivationStep>),
-    Int32IncrementBelowMaxIsDefined(Box<SignedOrderDerivationStep>),
-    Int32OnePlusBelowMaxIsDefined(Box<SignedOrderDerivationStep>),
+    Int32IncrementBelowMaxIsDefined(Box<Proposition>),
+    Int32OnePlusBelowMaxIsDefined(Box<Proposition>),
     Int32OnePlusStrictlyIncreases(Box<SignedOrderDerivationStep>),
-    Int32NonnegativeAddWithinMaxIsDefined(Box<Int32NonnegativeAddWithinMaxEvidence>),
-    Int32NonnegativeSubtractWithinValueIsDefined(Box<Int32NonnegativeSubtractWithinValueEvidence>),
+    Int32NonnegativeAddWithinMaxIsDefined(Box<[Proposition; 2]>),
+    Int32NonnegativeSubtractWithinValueIsDefined(Box<[Proposition; 2]>),
     Int32IncrementLowerBound(Box<Int32IncrementBoundsEvidence>),
     Int32IncrementGreaterEqualLowerBound(Box<Int32IncrementBoundsEvidence>),
     Int32IncrementStrictGreaterLowerBound(Box<Int32IncrementBoundsEvidence>),

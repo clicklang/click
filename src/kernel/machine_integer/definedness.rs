@@ -223,6 +223,26 @@ pub(crate) fn ordinary_arithmetic_guard_view(
     .then_some(query)
 }
 
+/// Read a complete ordinary range domain or an explicitly written legacy
+/// nonoverflow condition, retaining the operand handles in either case.
+pub(crate) fn range_domain_query(proposition: &Proposition) -> Option<OverflowQueryView> {
+    if let Some(query) = ordinary_arithmetic_guard_view(proposition) {
+        return Some(query);
+    }
+    let Proposition::ConditionIs(condition, false) = proposition else {
+        return None;
+    };
+    let (format, operation, left, right) = representation::overflow_operation(condition)?;
+    OverflowQueryView::from_operands(
+        format,
+        operation,
+        [
+            crate::kernel::MachineOperandView::Legacy(left),
+            crate::kernel::MachineOperandView::Legacy(right),
+        ],
+    )
+}
+
 /// Private input form for the existing interval proof rules. Stored facts,
 /// obligations and certificate results keep the ordinary propositions. This
 /// adapter reads only the explicit proposition, never the ambient context.

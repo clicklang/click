@@ -42,7 +42,7 @@ impl PureFactContext {
         self.indexed_constant_interval_view(MachineOperandView::Legacy(term), true)
     }
 
-    fn indexed_constant_interval_view(
+    pub(in crate::kernel::assumptions) fn indexed_constant_interval_view(
         &self,
         term: MachineOperandView<'_>,
         unsigned: bool,
@@ -329,7 +329,7 @@ impl PureFactContext {
 
     /// Ordinary bounds and legacy predicates ask the same arithmetic query.
     /// Only the original operands and their indexed ranges are inspected.
-    pub(super) fn decide_overflow_query(
+    pub(in crate::kernel::assumptions) fn decide_overflow_query(
         &self,
         query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
     ) -> Option<bool> {

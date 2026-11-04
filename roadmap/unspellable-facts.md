@@ -172,11 +172,19 @@ Remaining groups to audit and migrate:
   opposite bounds, memory/equality sources, and negative answers. Ordinary
   signed/unsigned order rules, successor transport and wide order walks already
   read views; their completion does not remove the equality dispatcher.
-- [ ] Atomic domain evidence and certificate premise adapters. Migrate the
-  remaining `interval_query_form` callers in atomic derivation. Reassociated-add
-  checking and conditional normalization now read ordinary domain views. Certificate availability must retain
-  its checked across-effect memory bridge. Ring-overflow decisions and bounded
-  certificate conclusion identity already read views.
+  Fresh subtraction-domain refusals still reach this exporter through the
+  general equality check; the named domain selector and evidence checker keep
+  shared operands on both success and refusal.
+- [ ] Atomic domain evidence and certificate premise adapters. Atomic derivation
+  now reads ordinary range-domain views and retains the exact premises for
+  increment, one-plus, nonnegative addition and subtraction. Their source
+  lookup selects one existing order-index entry; balanced-unit sums also read
+  operand views. Reassociated-add checking and conditional normalization read
+  ordinary domains. Certificate availability still needs migration while
+  retaining its checked across-effect memory bridge. Ring-overflow decisions
+  and bounded certificate conclusion identity already read views.
+  `interval_query_form` remains in Surface search/output adapters and test
+  references, not kernel atomic derivation.
 - [ ] Remaining difference-graph comparison/admission and interval-query
   adapters. Wide constant evaluation and the wide interval entry points already
   read views; preserve width and source evidence in the remaining consumers.
