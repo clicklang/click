@@ -588,6 +588,45 @@ body and require the normal application binary. Their production targets retain
 the original tests without that feature. Fast-only support modules deliberately
 retain each standalone harness's support namespace.
 
+### Batching short diagnostic tests
+
+With `fast-gate`, the 97 eligible cases in
+`src/surface/tests/diagnostic_tests.rs` run in batches of at most four. Each
+case starts on a fresh 8 MiB-stack thread, retaining thread-local isolation
+while sharing the existing immutable library-syntax cache across cases.
+Lowered environments, proof state, and certificates remain session-local.
+The original test bodies and assertions are unchanged. Individual entries
+are ignored only in `fast-gate`; ordinary and nightly builds run them normally.
+To run one individually in a fast-gate build, select its exact name and add
+`--ignored`. Batch output names each case, its elapsed time, and any failure.
+A test checks that the batch registry covers every such ignored entry exactly
+once. New unbatched tests continue to run individually.
+
+The half-second eligibility policy applies to individual cases, not the sum
+of a batch. Batches keep nextest's existing 30-second process containment:
+serial execution makes this an upper bound on any constituent case too.
+No verifier work limits or nextest timeouts are increased. Keep batches small
+so they distribute across CI partitions and do not hide slow cases.
+
+### Profiling markdown fixture phases
+
+Set `CLICK_MDTEST_PHASE_TIMINGS=1` to report Markdown reading, input preparation,
+project loading, and verification separately. For a focused run:
+
+```console
+CLICK_MDTEST_PHASE_TIMINGS=1 MDTEST_FILTER=a_population_entry_count_is_spelled_in_a_diagnostic cargo test --lib --features fast-gate gate_tests::mdtests::mdtests -- --exact --nocapture
+```
+
+Combine this with `CLICK_TACTIC_WORK_REPORT=/tmp/mdtest-work` to record
+verification work without disabling budgets. Reports are opt-in and do not
+change fixture expectations. Diagnostic-only negative fixtures should fail
+with a direct check when searching for the deliberately false goal is not
+part of the behavior under test. Preserve the diagnostic assertion and the
+state needed to exercise it; semantic rejection tests still need to test
+the intended proof operation.
+
+### CI preparation and test partitions
+
 CI uses these internal modes for code-affecting changes:
 
 - `--ci-quality` runs formatting, setup/build regressions, and documentation
