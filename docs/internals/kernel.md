@@ -171,22 +171,24 @@ the trusted implementation settles that question.
 
 ### Built-in arithmetic theorems
 
-`prove_int32_nonnegative_add_within_max_is_defined`,
-`prove_int32_nonnegative_subtract_within_value_is_defined`,
-`prove_int32_add_to_integer`, `prove_int32_subtract_to_integer` and the
-`uint32` order builders such as `prove_uint32_increment_upper_bound` are
-kernel axioms exposed as named standard theorems. They construct only the
-fixed checked-arithmetic, observation and order implications documented in
-the standard library. Standard-library verification
+The machine-integer kernel standard theorems of `library/integer.click` are
+`int32_remainder_to_integer`; the `uint32` and `uint64` multiply, divide and
+remainder observation laws; `uint32_multiply_guard_by_integer_bound`,
+`uint32_remainder_less_than_divisor`,
+`uint32_less_than_divisor_implies_remainder_is_value` and
+`uint32_difference_decreases_after_increment`; the eight `to_*_round_trip`
+laws; the seven 16-bit packing laws; and `uint32_from_le_bytes`. Each is a
+kernel axiom built by a `prove_*` operation that constructs only the fixed
+implication documented in the standard library. Standard-library verification
 (`verify_standard_library`, run by the nightly suite) checks each parsed
 declaration against its exact proposition. The `int32` increment,
-predecessor, order and remaining definedness lemmas and the `uint64` order
-transitivities are proved library theorems instead, with pinned
-`arithmetic_certificate` or `assumption()` proofs, and add no kernel
-operation. The prelude and the kernel ship in one executable, so ordinary
-verifications apply these declarations as dependencies without re-checking
-them; expanded user proofs use the ordinary simple `apply(...) using { ... }`
-tactic.
+predecessor, order and definedness lemmas, the in-range `+` and `-`
+observation laws and the `uint64` order transitivities are proved library
+theorems instead, with pinned `arithmetic_certificate` proofs, and add no
+kernel operation. The prelude and the kernel ship in one executable, so
+ordinary verifications apply these declarations as dependencies without
+re-checking them; expanded user proofs use the ordinary simple
+`apply(...) using { ... }` tactic.
 
 ### Execution and contract evidence
 

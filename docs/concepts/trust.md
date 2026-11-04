@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 151 theorems, 60 of them kernel standard, in 3,100 lines | `library/` |
+| Click library theorems | Proved ones are checked by `verify_standard_library`; kernel standard theorems are trusted kernel builders whose declarations it shape-checks. All are then applied without re-checking | 151 theorems, 48 of them kernel standard, in 3,500 lines | `library/` |
 | `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, one per Rust core method an import calls, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -40,7 +40,7 @@ audited number.
 `src/kernel` defines proof states, checked transitions, and certification. A
 `Theorem` is an abstract value that only kernel operations can construct. Every
 public kernel function that returns a `Theorem` is an axiom in Click's sense,
-even when its Rust name is `prove_*`: about 100 such operations, some of which
+even when its Rust name is `prove_*`: about 90 such operations, some of which
 are parameterized families (see [Kernel](../internals/kernel.md#trusted-shape)
 and the glossary entry for axiom). Some of them are also exposed as the kernel
 standard library theorems below. `separation::restrict` is likewise a named
@@ -122,30 +122,31 @@ The `library/` modules declare 151 theorems. `verify_standard_library`
 checks each one, in one of two ways; the nightly suite runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
-- **91 are proved.** Their written or default proofs are checked like any
+- **103 are proved.** Their written or default proofs are checked like any
   other proof. They include the `int32` increment, predecessor, order and
-  definedness lemmas, `int32_add_defined_by_integer_bounds`,
-  `int64_add_defined_by_integer_bounds` and the `uint64` order
-  transitivities, each with a pinned proof of `assumption()` or one
-  `arithmetic_certificate`.
-- **60 are kernel standard theorems.** They have no proof. The check is
+  definedness lemmas, the in-range `+` and `-` observation laws at `int32`,
+  `int64`, `uint32` and `uint64`, and the `uint64` order transitivities,
+  each with a pinned proof of `assumption()` and `arithmetic_certificate`
+  steps.
+- **48 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
   proposition a Rust kernel builder constructs (`prove_*`, mostly in
   `src/kernel/api.rs`); the theorem is then recorded as an axiom
   (`verify_kernel_standard_theorem_axiom` in
   `src/surface/proof/pure_theorems.rs`; `is_kernel_standard_theorem_name`
   lists them). Their soundness rests on those builders, which are part of the
-  trusted kernel. They are 39 machine-integer laws in `integer.click`
-  (exact observations of arithmetic, the remaining definedness and `uint32`
-  order laws, round trips, 16-bit packing and the `uint32_from_le_bytes`
-  byte layout), 5 Integer truncation
-  laws, 6 `Nat` conversion laws and 10 separation laws.
+  trusted kernel. They are 27 machine-integer laws in `integer.click`
+  (`int32_remainder_to_integer`; the `uint32` and `uint64` multiply, divide
+  and remainder laws and the other `uint32` remainder, product-guard and
+  wrapping-difference laws; the 8 round trips; 16-bit packing; and the
+  `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
+  conversion laws and 10 separation laws.
 
 Ordinary verification then applies every library theorem as a dependency
 without re-checking it, except that a C proof that cites an `int32` library
 theorem certification consumes checks that theorem once. A proved library
-theorem is trusted to the extent that the check of its proof is; a kernel standard theorem is trusted to the extent
-that its builder is.
+theorem is trusted to the extent that the check of its proof is; a kernel
+standard theorem is trusted to the extent that its builder is.
 
 The library also declares seven `axiom`s, which are trusted, not proved: the
 laws of the primitive type `Vec<T>` in `library/rust/vec.click`, which relate
