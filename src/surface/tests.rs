@@ -814,7 +814,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
 
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
-fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
+fn instance_return_folds_follow_distinct_c_results_after_explicit_splits() {
     let source = r#"verifying "read.c";
         resource cell(p: int32*) {
             field value: int32;
@@ -824,7 +824,7 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
             owns c: cell(p);
             ensures (use_value == 0 and result == fallback) or (use_value != 0 and result == c.value);
             ensures c.value == old(c.value);
-        } by { unfold(c); step_until(function.exit); fold(c); solve(); }
+        } by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }
     "#;
     let c = [(
         "read.c",
@@ -834,7 +834,7 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
     let expanded = verified[0].expanded_proof_source().unwrap();
     verify_c0_sources(
         &source.replace(
-            "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
+            "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
             &expanded,
         ),
         &c,
@@ -847,9 +847,9 @@ fn instance_return_folds_follow_distinct_c_results_without_proof_branching() {
         )
         .is_err()
     );
-    let body = "by { unfold(c); step_until(function.exit); if use_value == 0 { fold(c); solve(); } else { fold(c); solve(); } }";
+    let body = "by { unfold(c); if use_value == 0 { step_until(function.exit); fold(c); solve(); } else { step_until(function.exit); fold(c); solve(); } }";
     let branched = source.replace(
-        "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
+        "by { unfold(c); branch { step(); } else { } step_until(function.exit); fold(c); solve(); }",
         body,
     );
     let verified = verify_c0_sources(&branched, &c).unwrap();
