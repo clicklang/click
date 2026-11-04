@@ -1714,6 +1714,26 @@ impl EqualityGraph {
                         continue;
                     }
                     *shared_seen = shared_seen.with_value(term.id());
+                    // Plain shared arithmetic can contain pointers only through
+                    // registered load names. Its syntax summary is independent
+                    // of this branch, so skip a pointer-free prefix without
+                    // installing every node again in each sibling context.
+                    // Integer conversions can contain other pointer-bearing
+                    // payloads and retain the ordinary scoped walk below.
+                    if !term.has_machine_conversions()
+                        && crate::kernel::shared_machine_syntax_variables(term, || {
+                            crate::instrumentation::record_deterministic_work(1);
+                            true
+                        })
+                        .is_some_and(|variables| {
+                            let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
+                            variables
+                                .get_greater_than(&Variable(range.start - 1))
+                                .is_none_or(|variable| variable.0 >= range.end)
+                        })
+                    {
+                        continue;
+                    }
                     match term.node() {
                         N::MachineBinary { arguments, .. } => {
                             pending.extend(arguments.iter().map(Work::SharedMachine))

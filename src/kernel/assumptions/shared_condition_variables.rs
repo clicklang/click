@@ -32,6 +32,7 @@ struct Node {
 #[derive(Clone, Debug)]
 struct Source {
     roots: Vec<KernelTerm>,
+    direct_variables: Option<Vec<Variable>>,
     value: bool,
 }
 #[derive(Clone, Debug, Default)]
@@ -42,11 +43,12 @@ pub(in crate::kernel) struct Index {
 impl Index {
     /// This fragment's only dependencies are its written scalar variables.
     /// Registered reads retain the existing snapshot/address-dependent index.
-    fn roots(condition: &ConditionTerm) -> Option<Vec<KernelTerm>> {
+    fn source(condition: &ConditionTerm, truth: bool) -> Option<Source> {
         let crate::kernel::integer_comparison_condition!(left, right) = condition else {
             return None;
         };
         let mut roots = Vec::new();
+        let mut direct_variables = BTreeSet::new();
         let mut shared = false;
         let mut has_variables = false;
         for value in [left.as_ref(), right.as_ref()] {
@@ -83,13 +85,24 @@ impl Index {
                     {
                         return None;
                     }
+                    // Three witnesses distinguish a bounded (at most two)
+                    // dependency set without enumerating a large set.
+                    direct_variables.extend(variables.iter().take(3).copied());
                     has_variables |= !variables.is_empty();
                     roots.push(root);
                 }
                 _ => return None,
             }
         }
-        (shared && has_variables).then_some(roots)
+        (shared && has_variables).then(|| {
+            let direct =
+                (direct_variables.len() <= 2).then(|| direct_variables.into_iter().collect());
+            Source {
+                roots,
+                direct_variables: direct,
+                value: truth,
+            }
+        })
     }
 
     fn install_root(&mut self, root: &KernelTerm) {
@@ -122,12 +135,29 @@ impl Index {
     }
 
     fn add_source(&mut self, fact: Fact, source: Source) {
-        for root in &source.roots {
-            self.install_root(root);
-        }
+        // A large DAG can mention only one or two variables. Attach such
+        // sources directly: rebuilding syntax edges in every sibling branch
+        // would repeatedly walk the same growing prefix. The bounded variable
+        // summary is syntax-only; each branch still owns its facts/witnesses.
+        let keys = if let Some(variables) = &source.direct_variables {
+            variables
+                .iter()
+                .map(|variable| {
+                    let key = Key::Variable(*variable);
+                    if !self.nodes.contains_key(&key) {
+                        self.nodes.insert(key, Node::default());
+                    }
+                    key
+                })
+                .collect::<Vec<_>>()
+        } else {
+            for root in &source.roots {
+                self.install_root(root);
+            }
+            source.roots.iter().map(Key::of).collect()
+        };
         let mut pending = Vec::new();
-        for root in &source.roots {
-            let key = Key::of(root);
+        for key in keys {
             let mut node = self.nodes.get(&key).unwrap().clone();
             node.facts = node.facts.with_value(fact.clone());
             self.nodes.insert(key, node);
@@ -151,10 +181,10 @@ impl Index {
             if self.contains(condition) {
                 return true;
             }
-            let Some(roots) = Self::roots(condition) else {
+            let Some(source) = Self::source(condition, value) else {
                 return false;
             };
-            self.add_source(Fact::new(condition.clone()), Source { roots, value });
+            self.add_source(Fact::new(condition.clone()), source);
         } else {
             if !self.contains(condition) {
                 return false;

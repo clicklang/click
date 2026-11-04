@@ -109,6 +109,8 @@ pub(crate) struct DifferenceGraph {
     nodes: PersistentMap<(Domain, MachineTerm), NodeId>,
     /// Stable node/offset names justified when each shared operand is admitted.
     operand_affines: PersistentMap<(Domain, OperandKey), Affine>,
+    /// Native-only contexts need no syntax bridge on a native query miss.
+    has_shared_admissions: bool,
     domains: PersistentMap<NodeId, Domain>,
     /// Tightened intervals; a node absent here ranges over its domain.
     bounds: PersistentMap<NodeId, (i128, i128)>,
@@ -897,6 +899,7 @@ impl DifferenceGraph {
             return self.affine(domain, &atom);
         }
         if matches!(term, V::Shared(_)) {
+            self.has_shared_admissions = true;
             let key = OperandKey::for_format(operand_views::format(domain), term);
             if let Some(known) = self.operand_affines.get(&(domain, key.clone())) {
                 return *known;
@@ -983,6 +986,22 @@ impl DifferenceGraph {
         }
         if let Some(node) = self.nodes.get(&(domain, term.clone())) {
             return Some((Some(*node), 0));
+        }
+        // A shared source has no boxed key in `nodes`. Read its retained
+        // coordinate through the same typed syntax identity; importing this
+        // explicitly native query is memoized, and never exports a shared
+        // source. Keep native-only graphs on their existing lookup path.
+        if self.has_shared_admissions
+            && let Some(shared) = crate::kernel::SharedMachineIntegerTerm::import_arithmetic(
+                operand_views::format(domain),
+                term,
+            )
+            && let Some(affine) = self.operand_affines.get(&(
+                domain,
+                OperandKey::for_format(operand_views::format(domain), shared.operand_view()),
+            ))
+        {
+            return Some(*affine);
         }
         if let Some(base) = sign_flip_base(domain, term) {
             return self.known_flip(domain, self.resolve(domain, base)?);
@@ -1969,6 +1988,23 @@ impl ContextDifferenceGraph {
 /// Whether difference logic reads anything from a fact about `condition`.
 fn expresses(condition: &ConditionTerm) -> bool {
     use ConditionTerm as C;
+    // The context cache must observe every order source accepted by
+    // `assume_condition`, including retained Integer observations. Otherwise a
+    // graph built before the source was added misses its incremental update,
+    // and withdrawing a source leaves its old edge in the cached graph.
+    if crate::kernel::machine_integer::comparison::comparison_view(condition, true).is_some_and(
+        |view| {
+            order_domain(view.format).is_some()
+                && matches!(
+                    view.relation,
+                    crate::kernel::machine_integer::Relation::Less
+                        | crate::kernel::machine_integer::Relation::LessEqual
+                )
+        },
+    ) {
+        return true;
+    }
+
     matches!(
         condition,
         C::Compare { format, .. } if format.format().bits() < 32
@@ -1978,75 +2014,9 @@ fn expresses(condition: &ConditionTerm) -> bool {
         || matches!(
             condition,
             C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                relation: CompareRelation::Equal,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::LessEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int64,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::LessEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt64,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::LessThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::LessEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::GreaterThan,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::UInt32,
-                relation: CompareRelation::GreaterEqual,
-                ..
-            } | C::Compare {
-                format: MachineIntegerType::Int64,
+                format: MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 ..
             }

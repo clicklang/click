@@ -1369,62 +1369,127 @@ impl PureFactContext {
         condition: &ConditionTerm,
         value: bool,
     ) -> bool {
+        use crate::kernel::machine_integer::{
+            Relation,
+            comparison::{comparison_view, condition_for_operand_views},
+        };
+        use MachineOperandView as V;
         if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
         }
         if value && self.decide_from_variable_chain(condition) == Some(true) {
             return true;
         }
-        // A `uint32` bound below the sign bit is the signed pair
-        // `0 <= term` and `term <= bound`, read the same way the
-        // condition checker reads it (`unsigned_upper_bound_below_sign_bit`),
-        // so the two provers agree on what a range's extent guard means.
-        if value
-            && let Some((term, bound, _)) = unsigned_upper_bound_below_sign_bit(condition, true)
-        {
+        let Some(view) = comparison_view(condition, value) else {
+            return false;
+        };
+        let strict = match view.relation {
+            Relation::Less => true,
+            Relation::LessEqual => false,
+            _ => return false,
+        };
+        let [left, right] = view.operands.each_ref().map(|v| v.operand_view());
+        let written_constant = |v: V<'_>| v.literal().and_then(|v| v.as_const());
+        let order = |left, right, strict| {
+            condition_for_operand_views(
+                MachineIntegerType::Int32,
+                if strict {
+                    CompareRelation::LessThan
+                } else {
+                    CompareRelation::LessEqual
+                },
+                [left, right],
+            )
+        };
+        // An unsigned upper bound below the sign bit is the signed pair
+        // 0 <= term and term <= bound, at the same written word reading.
+        if value && view.format == MachineIntegerType::UInt32 && written_constant(left).is_none() {
+            let Some(bound) = written_constant(right)
+                .and_then(|bound| {
+                    if strict {
+                        bound.checked_sub(1)
+                    } else {
+                        Some(bound)
+                    }
+                })
+                .filter(|bound| *bound <= i32::MAX as u32)
+            else {
+                return false;
+            };
+            let left = match left.cast() {
+                Some((MachineCastSpelling::Generic, source, destination, operand))
+                    if crate::kernel::is_sign_cast32(source, destination) =>
+                {
+                    operand
+                }
+                _ => left,
+            };
+            let zero = MachineTerm::constant(0);
+            let bound = MachineTerm::constant(bound);
             return self.proves_order_condition_for_memory_resolution(
-                &ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
+                &order(V::Legacy(&zero), left, false),
                 true,
             ) && self.proves_order_condition_for_memory_resolution(
-                &ConditionTerm::signed_less_equal(term.clone(), MachineTerm::constant(bound)),
+                &order(left, V::Legacy(&bound), false),
                 true,
             );
         }
-        condition_as_order_fact(condition, value).is_some_and(|(left, right, strict)| {
-            // The extreme and successor rules are the ones the condition
-            // checker reads the same way (`decide_from_order_facts`); the
-            // successor rules run only after the path search has missed.
-            if order_holds_at_int32_extreme(&left, &right, strict) {
-                return true;
-            }
-            let simplified_left = self.simplify_bitvector_under_assumptions(&left);
-            let simplified_right = self.simplify_bitvector_under_assumptions(&right);
-            if self.difference_graph_proves_order(&simplified_left, &simplified_right, strict) {
-                return true;
-            }
-            if let Some((below, above)) = successor_bound_as_strict_order(&left, &right, strict)
-                && self.proves_order_condition_for_memory_resolution(
-                    &ConditionTerm::signed_less_than(below, above),
-                    true,
-                )
-            {
-                return true;
-            }
-            constant_below_successor_as_order(&left, &right, strict).is_some_and(
-                |((below, above, reduced_strict), base)| {
-                    self.proves_order_condition_for_memory_resolution(
-                        &order_condition(below, above, reduced_strict),
-                        true,
-                    ) && self.proves_order_condition_for_memory_resolution(
-                        &ConditionTerm::signed_less_than(
-                            base,
-                            MachineTerm::constant(i32::MAX as u32),
-                        ),
-                        true,
-                    )
-                },
-            )
-        })
+        if view.format != MachineIntegerType::Int32 {
+            return false;
+        }
+        let maximum = MachineTerm::constant(i32::MAX as u32);
+        let minimum = MachineTerm::constant(i32::MIN as u32);
+        if !strict
+            && (right.literal().as_ref() == Some(&maximum)
+                || left.literal().as_ref() == Some(&minimum))
+        {
+            return true;
+        }
+        // Use the common checking simplifier; it retains shared operands and
+        // consults the ordinary equality/constant indexes for these endpoints.
+        let native = [left, right].map(|view| match view {
+            V::Legacy(term) => Some(self.simplify_bitvector_under_assumptions(term)),
+            V::Shared(_) => None,
+        });
+        let shared = [left, right].map(|view| match view {
+            V::Shared(root) => Some(self.checking_word32_shared_root(root)),
+            V::Legacy(_) => None,
+        });
+        let [lower, upper] = std::array::from_fn(|i| {
+            native[i].as_ref().map(V::Legacy).unwrap_or_else(|| {
+                V::Shared(shared[i].as_ref().expect("one operand representation"))
+            })
+        });
+        if self.difference_graph_proves_order_views(lower, upper, strict) {
+            return true;
+        }
+        // The successor rules keep the written endpoints and run after the
+        // graph query, just as the ordinary condition checker does.
+        if !strict
+            && let Some(base) = left.int32_add_const_base(1)
+            && self.proves_order_condition_for_memory_resolution(&order(base, right, true), true)
+        {
+            return true;
+        }
+        let Some((constant, base)) = written_constant(left).zip(right.int32_add_const_base(1))
+        else {
+            return false;
+        };
+        let Some(reduced) = (if strict {
+            Some(constant as i32)
+        } else {
+            (constant as i32).checked_sub(1)
+        }) else {
+            return false;
+        };
+        let reduced = MachineTerm::constant(reduced as u32);
+        self.proves_order_condition_for_memory_resolution(
+            &order(V::Legacy(&reduced), base, false),
+            true,
+        ) && self.proves_order_condition_for_memory_resolution(
+            &order(base, V::Legacy(&maximum), true),
+            true,
+        )
     }
 }
 
@@ -3608,6 +3673,187 @@ mod exact_order_path_tests {
         assert_eq!(
             large, small,
             "the walk cost {large} beside 1,024 facts and {small} beside 16"
+        );
+    }
+}
+
+#[cfg(test)]
+mod memory_order_view_tests {
+    use super::*;
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
+        SharedMachineIntegerTerm,
+    };
+
+    fn observed_condition(condition: &ConditionTerm) -> ConditionTerm {
+        let ConditionTerm::Compare {
+            format,
+            relation,
+            left,
+            right,
+        } = condition
+        else {
+            unreachable!()
+        };
+        let observe = |value: &MachineTerm| {
+            IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(
+                    *format,
+                    KernelTermImport::default()
+                        .machine_arithmetic(*format, value)
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        let (left, right) = (observe(left), observe(right));
+        match relation {
+            CompareRelation::LessThan => ConditionTerm::integer_less_than(left, right),
+            CompareRelation::LessEqual => ConditionTerm::integer_less_equal(left, right),
+            CompareRelation::GreaterThan => ConditionTerm::integer_greater_than(left, right),
+            CompareRelation::GreaterEqual => ConditionTerm::integer_greater_equal(left, right),
+            CompareRelation::Equal => ConditionTerm::integer_equal(left, right),
+        }
+    }
+
+    #[test]
+    fn memory_order_views_keep_extremes_successors_and_unsigned_domains() {
+        let x = MachineTerm::Variable(Variable(993201));
+        let y = MachineTerm::Variable(Variable(993202));
+        let sum = MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add,
+            left: Box::new(x.clone()),
+            right: Box::new(1u32.into()),
+        };
+        let square = MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Multiply,
+            left: Box::new(x.clone()),
+            right: Box::new(x.clone()),
+        };
+        let le = ConditionTerm::signed_less_equal;
+        let lt = ConditionTerm::signed_less_than;
+        let zero = MachineTerm::constant(0);
+        let maximum = MachineTerm::constant(i32::MAX as u32);
+        let lower = le(zero.clone(), x.clone());
+        let upper = lt(x.clone(), maximum.clone());
+        let below_y = lt(x.clone(), y.clone());
+        let wide = MachineTerm::Variable(Variable(993203));
+        let narrowed = MachineTerm::uint32_from_64(wide.clone());
+        let cases = [
+            (
+                vec![ConditionTerm::equal(x.clone(), 2u32.into())],
+                le(square.clone(), 4u32.into()),
+                true,
+                true,
+            ),
+            (
+                vec![ConditionTerm::equal(x.clone(), 2u32.into())],
+                le(square.clone(), 3u32.into()),
+                true,
+                false,
+            ),
+            (
+                vec![ConditionTerm::uint64_equal(
+                    wide,
+                    MachineTerm::uint64_constant(0x1_0000_0007),
+                )],
+                le(narrowed, 7u32.into()),
+                true,
+                true,
+            ),
+            (vec![], le(sum.clone(), y.clone()), true, false),
+            (
+                vec![below_y.clone()],
+                le(sum.clone(), y.clone()),
+                true,
+                true,
+            ),
+            (
+                vec![below_y.clone()],
+                lt(sum.clone(), y.clone()),
+                true,
+                false,
+            ),
+            (
+                vec![below_y],
+                ConditionTerm::signed_greater_than(sum.clone(), y),
+                false,
+                true,
+            ),
+            (
+                vec![lower.clone(), upper.clone()],
+                lt(zero.clone(), sum.clone()),
+                true,
+                true,
+            ),
+            (
+                vec![lower.clone()],
+                lt(zero.clone(), sum.clone()),
+                true,
+                false,
+            ),
+            (
+                vec![lower.clone(), upper],
+                le(1u32.into(), sum.clone()),
+                true,
+                true,
+            ),
+            (
+                vec![],
+                le(MachineTerm::constant(i32::MIN as u32), square.clone()),
+                true,
+                true,
+            ),
+            (vec![], le(square, maximum), true, true),
+            (
+                vec![lower, le(x.clone(), 15u32.into())],
+                ConditionTerm::unsigned_less_equal(sum.clone(), 17u32.into()),
+                true,
+                true,
+            ),
+            (
+                vec![le(x, 15u32.into())],
+                ConditionTerm::unsigned_less_equal(sum.clone(), 17u32.into()),
+                true,
+                false,
+            ),
+            (
+                vec![],
+                ConditionTerm::unsigned_less_than(sum, zero),
+                true,
+                false,
+            ),
+        ];
+        for (premises, native, truth, expected) in cases {
+            let _session = crate::kernel::VerificationSession::enter();
+            let facts = premises
+                .into_iter()
+                .fold(PureFactContext::new(), |facts, premise| {
+                    facts.assume_condition(premise, true)
+                });
+            let shared = observed_condition(&native);
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                facts.proves_order_condition_for_memory_resolution(&shared, truth),
+                expected,
+                "shared {native:?}, polarity {truth}"
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert_eq!(
+                facts.proves_order_condition_for_memory_resolution(&native, truth),
+                expected,
+                "native {native:?}, polarity {truth}"
+            );
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/memory_order_views.rs"
         );
     }
 }
