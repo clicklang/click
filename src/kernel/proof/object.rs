@@ -1782,6 +1782,7 @@ impl<L: Clone, P: Clone, T: Clone, S: Clone>
             crate::kernel::c_loop_ranking_obligations_at_back_edge(
                 &back_edge_state,
                 iteration_entry,
+                head_iterations,
                 ranking_measures,
                 facts.assumptions(),
             )

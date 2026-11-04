@@ -1333,12 +1333,14 @@ pub fn c_execution_environment_with_recursion_anchor(
 pub fn c_loop_ranking_obligations_at_back_edge(
     state: &CState,
     iteration_entry_state: &CState,
+    head_iterations: &IntegerTerm,
     ranking_measures: &[CRankingComponent],
     assumptions: &PureFactContext,
 ) -> Result<Vec<ProofObligation>, String> {
     collect_loop_ranking_obligations(
         state,
         iteration_entry_state,
+        Some(head_iterations),
         ranking_measures,
         assumptions,
         &mut ExecutionBudget::beside_live_state(),
