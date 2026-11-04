@@ -2636,6 +2636,34 @@ fn collect_integer_variables_seen(
                 if let Some(written) =
                     shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
                 {
+                    if EXECUTION_CEILING_ONLY.with(std::cell::Cell::get) {
+                        // Only the maximum execution id is requested. The
+                        // persistent syntax summary answers that by key; walking
+                        // every prefix's variables would make admission quadratic.
+                        variables.extend(
+                            written
+                                .get_less_than(&Variable(
+                                    crate::kernel::ExecutionBudget::KERNEL_VARIABLE_CEILING,
+                                ))
+                                .copied(),
+                        );
+                        // Load names can hide execution ids in their live address
+                        // and snapshot. Resolve just those names with the ordinary
+                        // leaf rule, never caching registry-dependent answers.
+                        let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
+                        let mut previous = Variable(range.start - 1);
+                        while let Some(variable) = written.get_greater_than(&previous) {
+                            if variable.0 >= range.end || checked_collection_checkpoint() {
+                                break;
+                            }
+                            collect_bitvector_variables(
+                                &MachineTerm::Variable(*variable),
+                                variables,
+                            );
+                            previous = *variable;
+                        }
+                        return;
+                    }
                     for variable in written.iter() {
                         if checked_collection_checkpoint() {
                             return;

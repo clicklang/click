@@ -688,7 +688,7 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
     assert_eq!(condition, &ConditionTerm::equal(write_index, read_index));
     assert_eq!(
         path.iter()
-            .map(SignedOrderDerivationStep::premise)
+            .map(OrderDerivationStep::premise)
             .cloned()
             .collect::<Vec<_>>(),
         vec![

@@ -434,6 +434,15 @@ its separate iterator. Build boundaries pin both the support caller and
 `MemoryFactEntries::single_supplier`; scaling tests cover exact hits, symbolic
 misses, and a fixed-span refusal beside increasing short owned fragments.
 
+One-fact memory evidence selection (`directly_supporting_fact`) uses the same
+indexed nomination for owned and viewed requirements. It aligns and checks the
+selected supplier once, requires positive quantity from an owner, and returns
+that exact held representation. A refusal does not try other candidates.
+Its dedicated memory helper is covered by
+the candidate-search build boundary. Repeated fixed-span misses beside growing
+short fragments and exact early/late hits have separate scaling coverage;
+selecting one fact does not compose a partition or normalize suppliers.
+
 Call planning retains memory split origins while constructing residual owners.
 Each new residual occurrence maps directly to its original pre-reservation
 owner in a call-local persistent map. Repeated splits propagate that original
@@ -538,20 +547,25 @@ facts, including refusal and successful composition; selected-piece controls
 measure larger actual partitions separately. Other quantities remain an audit
 target. A build guard forbids candidate enumeration in this consumption path.
 
-Non-consuming `satisfies_fact` queries for native or symbolic ranges with unit
-ownership use that same indexed consumption operation on a persistent copy.
+Non-consuming `satisfies_fact` queries for all unit-owned memory ranges use
+that same indexed consumption operation on a persistent copy.
 Success establishes the requested ownership without changing the caller's
 occurrences; failure stops at a gap or unsuitable supplier. They never enter
 the enumeration/normalization fallback. Scaling controls hold the requested
-range fixed beside growing rejected fragments, then separately grow the
-selected contiguous pieces; both include repeated queries and persistent-map
+range fixed beside growing rejected fragments for both narrow and native
+constant bounds, then separately grow the selected contiguous pieces; both
+include repeated queries and persistent-map
 work. Symbolic-query controls also grow incident order facts, including cold
 and repeated refusals, adjacent composition and saved-cell coordinates; queries
 preserve parent ownership and branch isolation. A structurally known shorter
 selected footprint skips whole-supplier coverage before adjacent composition;
 byte lengths include element widths, with no order-premise or pointer-offset
-search to establish that refusal. Constant narrow-indexed, viewed,
-and other-quantity satisfaction routes remain separate audit targets.
+search to establish that refusal. Typed queries check each selected piece's
+access designation for both narrow and native coordinates; narrow byte
+transfers retain their suppliers' carriers instead. After the first
+piece, constant fragment composition requires exact adjacency and refuses
+selected overlapping suppliers. Viewed and other-quantity satisfaction routes
+remain separate audit targets.
 
 A proof can combine differently sized owned fields by folding a resource whose
 body owns the complete object, then unfolding it before a call that borrows the

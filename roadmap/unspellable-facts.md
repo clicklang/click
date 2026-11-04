@@ -205,12 +205,35 @@ Remaining groups to audit and migrate:
   propositions. Their builders, indexed path collectors and checkers read
   endpoint views directly, preserving polarity and their existing endpoint
   connection rules without exporting shared arithmetic. The signed collector
-  retains constant connections and selected memory bridging. Native range/domain
-  evidence still uses its boxed-step compatibility wrapper; migrate those
-  callers before removing that boundary. Canonical range-bound lookup and
+  retains constant connections and selected memory bridging. Range-membership
+  and memory-frame path consumers now retain those original sources too; boxed
+  path adapters remain only as test references. Individual native domain steps
+  still retain boxed endpoints. Canonical range-bound lookup and
   nonnegative induction-domain admission read indexed endpoint views directly;
   the native bound-entry exporter remains for the other evidence and output
   callers.
+  Singleton constant evidence now retains the original bound propositions and
+  their selected constant equalities, reading endpoints directly from views.
+  Range-bound path evidence, including its strict-successor route, also retains
+  source propositions and checks each edge and constant connection without
+  exporting arithmetic. Growing-prefix admission uses an indexed execution-id
+  ceiling lookup; named loads still resolve their live snapshot dependencies.
+  The graph-only derived-order query and order-shape
+  classification read views. Difference-graph order admission now retains shared
+  operands and reads the existing domain/operand-key index without exporting
+  arithmetic, including deferred cast, sign-flip and affine links. Native
+  queries retain their compatibility index until those consumers migrate;
+  repeated native queries must not re-import their complete expression trees. Equality,
+  exclusion and residue admission still have native adapters to migrate; order
+  admission does not declare those routes complete.
+  Shared scalar dependency admission now stores syntax edges and attaches facts
+  at their roots, instead of filing every prefix under every variable. Each
+  node propagates at most two distinct witnesses along a monotone branch;
+  singleton and existence queries read those witnesses. Complete selection
+  follows the reverse edges once and preserves source ordering. Native and
+  registered-load dependencies retain their existing indexing. The original
+  distinct-variable growing-prefix regression now passes without exports;
+  candidate parity, branch isolation and withdrawal are checked separately.
   Integer certificate native premise availability now uses ordinary shared
   lookup, including mirrored native sources across a checked memory frame.
   Both certificate-local boxed retries are removed. Nonoverflow source lookup

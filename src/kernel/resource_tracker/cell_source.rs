@@ -110,7 +110,7 @@ pub(in crate::kernel) enum MemoryDagHopJustification {
     },
     StoreCommonBaseSignedOrder {
         condition: ConditionTerm,
-        path: Vec<SignedOrderDerivationStep>,
+        path: Vec<OrderDerivationStep>,
         reversed: bool,
     },
     StoreSeparatedRanges {
@@ -373,13 +373,13 @@ impl AccessInRangeEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(in crate::kernel) enum RangeBoundEvidence {
     Intrinsic,
-    SignedOrderPath(Vec<SignedOrderDerivationStep>),
+    SignedOrderPath(Vec<OrderDerivationStep>),
     /// `left < base + 1` and `base < right` imply `left < right` over
     /// signed int32. The second strict bound also proves that `base + 1`
     /// does not wrap.
     StrictUpperViaSuccessor {
-        to_successor: SignedOrderDerivationStep,
-        successor_base_to_upper: Vec<SignedOrderDerivationStep>,
+        to_successor: OrderDerivationStep,
+        successor_base_to_upper: Vec<OrderDerivationStep>,
     },
 }
 
@@ -607,7 +607,12 @@ impl MemoryDagHopJustification {
                 } else {
                     (left.as_ref(), right.as_ref())
                 };
-                assumptions.checks_exact_signed_order_path(path, lower, upper, true)
+                assumptions.checks_exact_signed_order_source_path(
+                    path,
+                    MachineOperandView::Legacy(lower),
+                    MachineOperandView::Legacy(upper),
+                    true,
+                )
             }
             Self::StoreSeparatedRanges {
                 authority,
@@ -1057,31 +1062,36 @@ impl RangeBoundEvidence {
         condition: &ConditionTerm,
         assumptions: &PureFactContext,
     ) -> Option<Self> {
+        use crate::kernel::assumptions::{
+            checked_scalar_facts::ScalarOperandKey as Key, order_view_at_format,
+        };
+        use crate::kernel::machine_integer::Relation;
         if condition == &ConditionTerm::Constant(true) {
             return Some(Self::Intrinsic);
         }
-        let (left, right, strict) = condition_as_order_fact(condition, true)?;
-        if let Some(step) = assumptions.exact_direct_order_step(&left, &right, strict) {
+        let view = order_view_at_format(condition, true, MachineIntegerType::Int32)?;
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let strict = view.relation == Relation::Less;
+        if let Some(step) = assumptions.exact_direct_order_source_step(left, right, strict) {
             return Some(Self::SignedOrderPath(vec![step]));
         }
         if strict {
-            let successor = assumptions.signed_order_bound_entries(&left).find_map(
-                |(fact_endpoint, successor, strict, forward)| {
-                    if !strict || !forward || fact_endpoint != left {
+            let successor = assumptions.signed_order_bound_views(left).find_map(
+                |(endpoint, successor, strict, forward)| {
+                    if !strict || !forward || Key::new(endpoint) != Key::new(left) {
                         return None;
                     }
-                    let successor_base = successor.add_const_base(1)?;
+                    let base = successor.int32_add_const_base(1)?;
                     let to_successor =
-                        assumptions.exact_direct_order_step(&fact_endpoint, &successor, true)?;
+                        assumptions.exact_direct_order_source_step(endpoint, successor, true)?;
                     let successor_base_to_upper = assumptions
-                        .exact_direct_order_step(&successor_base, &right, true)
+                        .exact_direct_order_source_step(base, right, true)
                         .map(|step| vec![step])
                         .or_else(|| {
-                            assumptions.exact_signed_order_path_evidence(
-                                &successor_base,
-                                &right,
-                                true,
-                            )
+                            assumptions.exact_signed_order_source_path(base, right, true)
                         })?;
                     Some(Self::StrictUpperViaSuccessor {
                         to_successor,
@@ -1094,44 +1104,62 @@ impl RangeBoundEvidence {
             }
         }
         assumptions
-            .exact_signed_order_path_evidence(&left, &right, strict)
+            .exact_signed_order_source_path(left, right, strict)
             .map(Self::SignedOrderPath)
     }
 
     fn checks(&self, condition: &ConditionTerm, assumptions: &PureFactContext) -> bool {
+        use crate::kernel::assumptions::{
+            checked_scalar_facts::ScalarOperandKey as Key, order_view_at_format,
+        };
+        use crate::kernel::machine_integer::Relation;
+        if matches!(self, Self::Intrinsic) {
+            return condition == &ConditionTerm::Constant(true);
+        }
+        let Some(goal) = order_view_at_format(condition, true, MachineIntegerType::Int32) else {
+            return false;
+        };
+        let [left, right] = goal
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let strict = goal.relation == Relation::Less;
         match self {
-            Self::Intrinsic => condition == &ConditionTerm::Constant(true),
+            Self::Intrinsic => unreachable!(),
             Self::SignedOrderPath(path) => {
-                condition_as_order_fact(condition, true).is_some_and(|(left, right, strict)| {
-                    assumptions.checks_exact_signed_order_path(path, &left, &right, strict)
-                })
+                assumptions.checks_exact_signed_order_source_path(path, left, right, strict)
             }
             Self::StrictUpperViaSuccessor {
                 to_successor,
                 successor_base_to_upper,
             } => {
-                let ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    left,
-                    right,
-                } = condition
+                let Proposition::ConditionIs(condition, truth) = &to_successor.premise else {
+                    return false;
+                };
+                let Some(edge) = order_view_at_format(condition, *truth, MachineIntegerType::Int32)
                 else {
                     return false;
                 };
-                if to_successor.lower != **left || !to_successor.strict {
+                let [lower, upper] = edge
+                    .operands
+                    .each_ref()
+                    .map(|operand| operand.operand_view());
+                if !strict
+                    || edge.relation != Relation::Less
+                    || Key::new(lower) != Key::new(left)
+                    || assumptions.exact_condition_value(condition) != Some(*truth)
+                {
                     return false;
                 }
-                let Some(successor_base) = to_successor.upper.add_const_base(1) else {
+                let Some(base) = upper.int32_add_const_base(1) else {
                     return false;
                 };
-                assumptions.checks_exact_order_step(to_successor)
-                    && assumptions.checks_exact_signed_order_path(
-                        successor_base_to_upper,
-                        &successor_base,
-                        right,
-                        true,
-                    )
+                assumptions.checks_exact_signed_order_source_path(
+                    successor_base_to_upper,
+                    base,
+                    right,
+                    true,
+                )
             }
         }
     }
@@ -2242,5 +2270,75 @@ mod cache_independence_tests {
             );
             assert_eq!(warm_stop, cold_stop);
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_range_bound_evidence_tests {
+    use super::*;
+
+    #[test]
+    fn range_bounds_retain_shared_sources_and_checked_successor_links() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let variable = |n| KernelTerm::variable(KernelType::C(CType::Int32), Variable(n));
+        let product = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Multiply,
+            [variable(994101), variable(994102)],
+        );
+        let next = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [
+                product.clone(),
+                KernelTermImport::default().machine(format, &MachineTerm::constant(1)),
+            ],
+        );
+        let observed = SharedMachineIntegerTerm::from_shared(format, product.clone()).unwrap();
+        let compare = |a, b| {
+            ConditionTerm::integer_less_than(
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, a).unwrap()),
+                IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, b).unwrap()),
+            )
+        };
+        let goal = compare(variable(994103), variable(994104));
+        for successor in [false, true] {
+            let first = Proposition::ConditionIs(
+                compare(
+                    variable(994103),
+                    if successor {
+                        next.clone()
+                    } else {
+                        product.clone()
+                    },
+                ),
+                true,
+            );
+            let second = Proposition::ConditionIs(compare(product.clone(), variable(994104)), true);
+            let exports = KernelTermExport::machine_export_count();
+            let facts = PureFactContext::new()
+                .assume_proposition(first.clone())
+                .assume_proposition(second.clone());
+            let evidence =
+                RangeBoundEvidence::for_true_condition(&goal, &facts).expect("shared range path");
+            assert_eq!(
+                matches!(evidence, RangeBoundEvidence::StrictUpperViaSuccessor { .. }),
+                successor
+            );
+            assert!(evidence.checks(&goal, &facts));
+            for source in [first, second] {
+                assert!(
+                    !evidence.checks(&goal, &PureFactContext::new().assume_proposition(source))
+                );
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(!observed.has_boxed_operand());
+        }
+    }
+    mod scaling_tests {
+        include!(
+            "../../scaling_tests/kernel/resource_tracker/cell_source/shared_range_bound_evidence_tests.rs"
+        );
     }
 }

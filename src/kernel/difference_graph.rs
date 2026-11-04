@@ -33,6 +33,21 @@ use crate::kernel::{
 use crate::persistent::PersistentMap;
 
 mod operand_views;
+use crate::kernel::MachineOperandView as V;
+use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as OperandKey;
+use operand_views::{
+    constant_view, link_parts_view, narrow_cast_view, sign_flip_view, word_mask_view,
+};
+
+fn order_domain(format: MachineIntegerType) -> Option<Domain> {
+    Some(match format {
+        MachineIntegerType::Int32 => Domain::Int32,
+        MachineIntegerType::UInt32 => Domain::UInt32,
+        MachineIntegerType::Int64 => Domain::Int64,
+        MachineIntegerType::UInt64 => Domain::UInt64,
+        _ => return None,
+    })
+}
 
 /// The integer domain a node's value ranges over.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -92,13 +107,8 @@ struct PendingLink {
 pub(crate) struct DifferenceGraph {
     shared_queries: operand_views::cache::SharedQueryCache,
     nodes: PersistentMap<(Domain, MachineTerm), NodeId>,
-    operand_nodes: PersistentMap<
-        (
-            Domain,
-            crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
-        ),
-        NodeId,
-    >,
+    /// Stable node/offset names justified when each shared operand is admitted.
+    operand_affines: PersistentMap<(Domain, OperandKey), Affine>,
     domains: PersistentMap<NodeId, Domain>,
     /// Tightened intervals; a node absent here ranges over its domain.
     bounds: PersistentMap<NodeId, (i128, i128)>,
@@ -311,6 +321,27 @@ impl DifferenceGraph {
             } = condition
         {
             self.exclude(condition, a, b);
+            return;
+        }
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::comparison_view(condition, value)
+            && matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Less
+                    | crate::kernel::machine_integer::Relation::LessEqual
+            )
+            && let Some(domain) = order_domain(view.format)
+        {
+            if self.contradictory {
+                return;
+            }
+            let lower = self.affine_view(domain, view.operands[0].operand_view());
+            let upper = self.affine_view(domain, view.operands[1].operand_view());
+            self.constrain(
+                upper,
+                lower,
+                -i128::from(view.relation == crate::kernel::machine_integer::Relation::Less),
+            );
             return;
         }
         for (domain, lower, upper, strict) in condition_orders(condition, value) {
@@ -730,29 +761,55 @@ impl DifferenceGraph {
         distance
     }
 
+    fn affine(&mut self, domain: Domain, term: &MachineTerm) -> Affine {
+        self.affine_view(domain, V::Legacy(term))
+    }
+
+    fn lookup_operand(&self, domain: Domain, term: V<'_>) -> Option<NodeId> {
+        match term {
+            V::Legacy(written) => self.nodes.get(&(domain, written.clone())).copied(),
+            V::Shared(_) => self
+                .operand_affines
+                .get(&(
+                    domain,
+                    OperandKey::for_format(operand_views::format(domain), term),
+                ))
+                .and_then(|(node, offset)| (*offset == 0).then_some(*node).flatten()),
+        }
+    }
+
     /// The node for `term`, created with its pending links when new.
-    fn node(&mut self, domain: Domain, term: &MachineTerm) -> NodeId {
-        if let Some(node) = self.nodes.get(&(domain, term.clone())) {
-            return *node;
+    fn node_view(&mut self, domain: Domain, term: V<'_>) -> NodeId {
+        if let Some(node) = self.lookup_operand(domain, term) {
+            return node;
         }
         let node = self.next;
         self.next += 1;
-        self.nodes.insert((domain, term.clone()), node);
-        self.index_operand_node(domain, term, node);
+        match term {
+            V::Legacy(written) => {
+                self.nodes.insert((domain, written.clone()), node);
+                self.index_operand_node(domain, written, node);
+            }
+            V::Shared(_) => {
+                let key = OperandKey::for_format(operand_views::format(domain), term);
+                self.invalidate_operand(domain, term);
+                self.operand_affines.insert((domain, key), (Some(node), 0));
+            }
+        }
         self.domains.insert(node, domain);
         // Intrinsic mask bounds belong to the node when it is introduced,
         // so excluding one endpoint can tighten the maintained interval.
         // Inspect only the selected term and its literal mask.
         if matches!(domain, Domain::Int32 | Domain::UInt32)
-            && let Some((mask, _)) = word_constant_mask(term)
+            && let Some((mask, _)) = word_mask_view(term)
             && (domain == Domain::UInt32 || mask <= i128::from(i32::MAX))
         {
             self.tighten(node, Some(0), Some(mask));
         }
-        if let Some((value, source, destination, modulus)) = narrow_cast_parts(domain, term) {
+        if let Some((value, source, destination, modulus)) = narrow_cast_view(domain, term) {
             // A cast's value is always in its destination's range.
             self.tighten(node, Some(destination.0), Some(destination.1));
-            if let (Some(base), 0) = self.affine(Domain::Int32, value) {
+            if let (Some(base), 0) = self.affine_view(Domain::Int32, value) {
                 self.cast_links.insert(
                     node,
                     CastLink {
@@ -766,8 +823,8 @@ impl DifferenceGraph {
                 self.resolve_casts(node);
             }
         }
-        if let Some(base) = sign_flip_base(domain, term) {
-            match self.affine(domain, base) {
+        if let Some(base) = sign_flip_view(domain, term) {
+            match self.affine_view(domain, base) {
                 (None, value) => {
                     let value = flip_sign(domain, value);
                     self.tighten(node, Some(value), Some(value));
@@ -782,7 +839,7 @@ impl DifferenceGraph {
             }
         }
         if domain == Domain::UInt32 {
-            match self.affine(Domain::Int32, term) {
+            match self.affine_view(Domain::Int32, term) {
                 (None, value) => {
                     let value = value.rem_euclid(UNSIGNED32_MODULUS);
                     self.tighten(node, Some(value), Some(value));
@@ -796,8 +853,8 @@ impl DifferenceGraph {
                 (Some(_), _) => {}
             }
         }
-        if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
-            let base = self.affine(base_domain, base);
+        if let Some((base_domain, base, offset, nonnegative)) = link_parts_view(domain, term) {
+            let base = self.affine_view(base_domain, base);
             match base {
                 (None, constant) => {
                     // A constant base: the value is known when it fits.
@@ -831,34 +888,58 @@ impl DifferenceGraph {
     /// justifies names the base directly rather than a new node, so the
     /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
     /// hanging an edge pair off it that every bound on `x` must walk.
-    fn affine(&mut self, domain: Domain, term: &MachineTerm) -> Affine {
-        if let Some(value) = constant(domain, term) {
+    fn affine_view(&mut self, domain: Domain, term: V<'_>) -> Affine {
+        if matches!(term, V::Shared(_))
+            && let Some(atom) = term
+                .literal()
+                .or_else(|| term.variable().copied().map(MachineTerm::Variable))
+        {
+            return self.affine(domain, &atom);
+        }
+        if matches!(term, V::Shared(_)) {
+            let key = OperandKey::for_format(operand_views::format(domain), term);
+            if let Some(known) = self.operand_affines.get(&(domain, key.clone())) {
+                return *known;
+            }
+            let affine = self.affine_view_uncached(domain, term);
+            // Once a link is justified, later graph additions only tighten
+            // its domain. Retain its coordinate, not the bounds used to find
+            // it, so every growing prefix is admitted once per branch.
+            self.invalidate_operand(domain, term);
+            self.operand_affines.insert((domain, key), affine);
+            return affine;
+        }
+        self.affine_view_uncached(domain, term)
+    }
+
+    fn affine_view_uncached(&mut self, domain: Domain, term: V<'_>) -> Affine {
+        if let Some(value) = constant_view(domain, term) {
             return (None, value);
         }
-        if let Some(node) = self.nodes.get(&(domain, term.clone())) {
-            return (Some(*node), 0);
+        if let Some(node) = self.lookup_operand(domain, term) {
+            return (Some(node), 0);
         }
-        if let Some((base_domain, base, offset, nonnegative)) = link_parts(domain, term) {
-            let base = self.affine(base_domain, base);
+        if let Some((base_domain, base, offset, nonnegative)) = link_parts_view(domain, term) {
+            let base = self.affine_view(base_domain, base);
             if base.0.is_some()
                 && link_fits(self.affine_interval(base), offset, domain, nonnegative)
             {
                 return (base.0, base.1 + offset);
             }
         }
-        if let Some(base) = sign_flip_base(domain, term) {
-            let base = self.affine(domain, base);
+        if let Some(base) = sign_flip_view(domain, term) {
+            let base = self.affine_view(domain, base);
             if let Some(flipped) = self.known_flip(domain, base) {
                 return flipped;
             }
         }
         if domain == Domain::UInt32 {
-            let signed = self.affine(Domain::Int32, term);
+            let signed = self.affine_view(Domain::Int32, term);
             if let Some(unsigned) = self.known_reading(signed) {
                 return unsigned;
             }
         }
-        (Some(self.node(domain, term)), 0)
+        (Some(self.node_view(domain, term)), 0)
     }
 
     /// `term`'s bitvector value as a node plus a constant modulo the
@@ -2093,28 +2174,6 @@ fn narrow_range(kind: crate::kernel::MachineIntegerType) -> Option<(i128, i128)>
 /// A cast between narrow integer types (`int32` or narrower, as `int32`
 /// values): its operand, the source and destination ranges, and the
 /// destination's modulus. The cast keeps the operand modulo that modulus.
-fn narrow_cast_parts(
-    domain: Domain,
-    term: &MachineTerm,
-) -> Option<(&MachineTerm, (i128, i128), (i128, i128), i128)> {
-    let (
-        Domain::Int32,
-        MachineTerm::Cast {
-            spelling: MachineCastSpelling::Generic,
-            value,
-            from: source,
-            to: destination,
-        },
-    ) = (domain, term)
-    else {
-        return None;
-    };
-    let source_range = narrow_range(*source)?;
-    let destination_range = narrow_range(*destination)?;
-    let modulus = destination_range.1 - destination_range.0 + 1;
-    Some((value, source_range, destination_range, modulus))
-}
-
 /// When `term` is `x ^ MIN` in a signed `domain`: `x`. Flipping the sign
 /// bit moves a value of known sign by half the modulus.
 fn sign_flip_base(domain: Domain, term: &MachineTerm) -> Option<&MachineTerm> {

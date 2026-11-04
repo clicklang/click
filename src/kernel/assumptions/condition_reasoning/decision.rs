@@ -181,22 +181,26 @@ impl PureFactContext {
             let Proposition::ConditionIs(ref condition, value) = source else {
                 continue;
             };
-            let (left, right, strict) = condition_as_order_fact(condition, value)?;
-            let (endpoint, other, forward) = if left == *term {
-                (left, right, true)
-            } else if right == *term {
-                (right, left, false)
+            let view = order_view_at_format(condition, value, MachineIntegerType::Int32)?;
+            let strict = view.relation == crate::kernel::machine_integer::Relation::Less;
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            let (other, forward) = if left.variable() == Some(&variable) {
+                (right, true)
+            } else if right.variable() == Some(&variable) {
+                (left, false)
             } else {
                 continue;
             };
-            let pinned = self.indexed_exact_int32_constant(&other);
-            let other_value = signed_bitvector_constant(&other)
+            let pinned = self.indexed_exact_int32_constant_view(other);
+            let other_value = other
+                .word32_constant()
+                .map(|bits| i64::from(bits as i32))
                 .or_else(|| pinned.as_ref().map(|(value, _)| *value));
             let evidence = IndexedSignedOrderBoundEvidence {
                 other_equality: pinned.map(|(_, source)| source),
-                endpoint,
-                other: other.clone(),
-                strict,
                 forward,
                 source: Box::new(source),
             };
@@ -1317,11 +1321,9 @@ impl PureFactContext {
                 );
                 variables.iter().find_map(|variable| {
                     crate::instrumentation::record_deterministic_work(1);
-                    let facts = self.condition_facts_by_variable.get(variable)?;
-                    if facts.len() != 1 { return None; }
-                    let (fact, fact_value) = facts.iter().next()?;
-                    (*fact_value == value && self.condition_matches(fact.as_ref(), &condition))
-                        .then(|| Proposition::ConditionIs(fact.as_ref().clone(), *fact_value))
+                    let (fact, fact_value) = self.singleton_condition_variable(*variable)?;
+                    (fact_value == value && self.condition_matches(fact, &condition))
+                        .then(|| Proposition::ConditionIs(fact.clone(), fact_value))
                 })
             });
         if let Some(proposition) = matched {
@@ -3325,5 +3327,98 @@ mod intrinsic_context_tests {
             let _session = VerificationSession::enter();
             check();
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_singleton_bound_evidence_tests {
+    use super::*;
+
+    #[test]
+    fn singleton_evidence_keeps_shared_bound_sources_and_requires_their_pins() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let root = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Multiply,
+            [
+                KernelTerm::variable(KernelType::C(CType::Int32), Variable(994001)),
+                KernelTerm::variable(KernelType::C(CType::Int32), Variable(994002)),
+            ],
+        );
+        let observation = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+        let product = IntegerTerm::Machine(observation.clone());
+        let x = MachineTerm::Variable(Variable(994003));
+        let named = IntegerTerm::from_machine(format, x.clone()).unwrap();
+        let lower = Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(product.clone(), named.clone()),
+            true,
+        );
+        let upper = Proposition::ConditionIs(
+            ConditionTerm::integer_less_equal(named, product.clone()),
+            true,
+        );
+        let pin = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(product, IntegerTerm::constant_i64(7)),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let facts = PureFactContext::new()
+            .assume_proposition(lower.clone())
+            .assume_proposition(upper.clone())
+            .assume_proposition(pin.clone());
+        let native_product = MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Multiply,
+            left: Box::new(MachineTerm::Variable(Variable(994001))),
+            right: Box::new(MachineTerm::Variable(Variable(994002))),
+        };
+        for (source, native_left, native_right) in
+            [(&lower, &native_product, &x), (&upper, &x, &native_product)]
+        {
+            let Proposition::ConditionIs(condition, truth) = source else {
+                unreachable!()
+            };
+            // Keep the graph-only route's admission boundary: a held fact
+            // can be available to other indexes without being a graph edge.
+            // This query migration must preserve the native answer either way.
+            assert_eq!(
+                facts.proves_condition_from_derived_order_facts(condition, *truth),
+                facts.difference_graph_proves_order(native_left, native_right, false)
+            );
+            assert!(
+                !PureFactContext::new()
+                    .proves_condition_from_derived_order_facts(condition, *truth)
+            );
+        }
+        let (value, evidence) = facts
+            .signed_constant_evidence(&x)
+            .expect("two pinned bounds");
+        assert_eq!(value, 7);
+        assert!(matches!(
+            evidence,
+            SignedConstantEvidence::SingletonBounds { .. }
+        ));
+        let certificate = DirectBitvectorEqualityEvidence::EqualSignedConstants {
+            value,
+            left: evidence,
+            right: SignedConstantEvidence::Constant,
+        };
+        let seven = MachineTerm::constant(7);
+        assert!(certificate.checks(&x, &seven, &facts));
+        for premises in [
+            vec![lower.clone(), upper.clone()],
+            vec![lower, pin.clone()],
+            vec![upper, pin],
+        ] {
+            let incomplete = premises
+                .into_iter()
+                .fold(PureFactContext::new(), |facts, premise| {
+                    facts.assume_proposition(premise)
+                });
+            assert!(!certificate.checks(&x, &seven, &incomplete));
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(!observation.has_boxed_operand());
     }
 }

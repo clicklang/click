@@ -4,7 +4,9 @@ A population's count at function entry is an opaque kernel symbol. A
 diagnostic spells it as the count it is, `old(count(pool_slot(pool)))` or
 `old(count(pool_object(pool, _)))`, rather than as an unnamed value. The
 closing ledger fact below is off by one, so the proof fails and lists the
-consumed-member bound on the entry slot count among its premises.
+consumed-member bound on the entry slot count among its premises. The explicit
+`assumption` failure exercises that diagnostic without searching for a proof
+of the deliberately false ledger equality.
 
 ```c filename=a_population_entry_count_is_spelled_in_a_diagnostic.c
 struct pool {
@@ -51,7 +53,7 @@ void pool_checkout(struct pool* pool, struct object* object) {
         have defined(old(pool->checked_out) + 1);
         have to_integer(pool->checked_out) == to_integer(count(pool_object(pool, _)));
         have to_integer(pool->capacity)
-            == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) + 1;
+            == to_integer(pool->checked_out) + to_integer(count(pool_slot(pool))) + 1 by assumption();
     }
 }
 ```

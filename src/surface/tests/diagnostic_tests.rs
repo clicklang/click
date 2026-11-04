@@ -3,6 +3,7 @@ use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
 fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {
     let c = r#"int32 unsigned_index(uint32 x) {
         int32 values[4] = {1, 2, 3, 4};
@@ -38,6 +39,7 @@ fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
 fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"verifying "f.c";
         int32 f(int32 x) { ensures result == x; } by {
@@ -62,6 +64,7 @@ fn unclosed_have_script_retains_its_remaining_goal_and_introduced_premise() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
 fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
     let source = r#"theorem unfinished(x: int32) {
         ensures x == 42 implies x == 43 by { intro(); }
@@ -82,6 +85,7 @@ fn unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
 fn missing_write_permission_explains_the_available_view_and_failed_check() {
     let c = "void write(int *p) { p[0] = 7; }";
     let source = r#"verifying "write.c"; void write(int32* p) { views p[0..1]; }"#;
@@ -105,6 +109,7 @@ fn missing_write_permission_explains_the_available_view_and_failed_check() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_01")]
 fn first_operation_failure_retains_the_required_access_and_empty_resources() {
     let c = "int read(int *p) { return *p; }";
     let source = r#"verifying "read.c"; int32 read(int32* p) { ensures result == 7; }"#;
@@ -124,6 +129,7 @@ fn first_operation_failure_retains_the_required_access_and_empty_resources() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_01")]
 fn execution_tactic_in_a_have_names_the_proposition_context() {
     let c = "int f(void) { return 7; }";
     let source = r#"verifying "f.c"; int32 f() { ensures result == 7; } by { have 1 == 1 by { step_until(function.exit); } step_until(function.exit); solve(); }"#;
@@ -151,6 +157,7 @@ fn execution_tactic_in_a_have_names_the_proposition_context() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_01")]
 fn failed_solve_reports_actual_cell_queries_separately_from_history_explanations() {
     let c = "void f(int *p, int i) { p[i] = 9; }";
     let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
@@ -187,6 +194,7 @@ fn failed_solve_reports_actual_cell_queries_separately_from_history_explanations
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_01")]
 fn failed_written_have_keeps_its_goal_and_actual_queries() {
     let c = "void f(int *p, int i) { p[i] = 9; }";
     let source = r#"verifying "f.c"; void f(int32* p, int32 i) {
@@ -217,6 +225,7 @@ fn failed_written_have_keeps_its_goal_and_actual_queries() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_02")]
 fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
     let c = "void drop(int *p) {} void f(int *p) { drop(p); }";
     let source = r#"verifying "f.c";
@@ -236,6 +245,7 @@ fn failed_outcome_reports_post_call_resources_not_the_execution_entry() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_02")]
 fn callback_sources_keep_field_names_through_subobject_lowering() {
     let functions = syntax::parse_functions_for_source(
         r#"
@@ -268,6 +278,7 @@ fn callback_sources_keep_field_names_through_subobject_lowering() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_02")]
 fn implicit_loop_closure_is_smart() {
     use crate::instrumentation::{VerificationEvent, collect};
     let c = "int f(int n) { while (n > 0) { n = n - 1; } return n; }";
@@ -300,6 +311,7 @@ fn implicit_loop_closure_is_smart() {
 /// smart tactic at the fold's site, so its search is charged to a smart
 /// budget and profiled apart from the fold's simple certificate check.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_02")]
 fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
     use crate::instrumentation::{IMPLICIT_AUTO_TACTIC, VerificationEvent, collect};
     let source = r#"
@@ -346,6 +358,7 @@ fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
 fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
     let source = r#"
         verifying "bound.c";
@@ -384,6 +397,7 @@ fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
 /// once charged to the `have`'s control budget and reported as an engine
 /// bug.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
 fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
     let source = r#"
         verifying "bound.c";
@@ -428,6 +442,7 @@ fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
 /// must return the arithmetic goal's diagnostic, not panic while wrapping
 /// the nested bridge's already-rendered diagnostic inside a new summary.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
 fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
     let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures x <= 1000u64 by { solve() using { x <= 50u64; } } }";
     let error = verify_click_theorems(source).expect_err("an unavailable premise must be refused");
@@ -449,6 +464,7 @@ fn wide_arithmetic_unavailable_premise_returns_one_diagnostic() {
 /// finishes. Report one bounded diagnostic, with at most one stage, rather
 /// than panicking while wrapping the nested refusal.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
 fn wide_arithmetic_budget_refusal_does_not_panic() {
     let source = "theorem bound(x: uint64) { requires x <= 100u64; ensures to_integer(x + 1u64 + 1u64) <= to_integer(1000u64) by { solve() using { x <= 100u64; } } }";
     let error = crate::instrumentation::with_tactic_work_limits(
@@ -469,6 +485,7 @@ fn wide_arithmetic_budget_refusal_does_not_panic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_04")]
 fn uninitialized_mutex_is_a_named_proof_prerequisite() {
     let c_source = r#"
         #include <pthread.h>
@@ -497,6 +514,7 @@ fn uninitialized_mutex_is_a_named_proof_prerequisite() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_04")]
 fn worker_without_protocol_contract_is_a_proof_error() {
     let c_source = r#"
         #include <pthread.h>
@@ -544,6 +562,7 @@ fn worker_without_protocol_contract_is_a_proof_error() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_04")]
 fn concise_error_context_preserves_click_binder_colons() {
     assert_eq!(
         concise_error_segments("foo: exists (path: Path) { x: y }: qux"),
@@ -560,6 +579,7 @@ fn concise_error_context_preserves_click_binder_colons() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_04")]
 fn concise_reason_keeps_list_entries_and_definitions_whole() {
     assert_eq!(
         concise_reason_lines(
@@ -587,6 +607,7 @@ fn concise_reason_keeps_list_entries_and_definitions_whole() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn click_addition_cancels_a_negated_pointer_base() {
     let base = MachineTerm::Variable(Variable(90));
     let index = MachineTerm::Variable(Variable(91));
@@ -744,6 +765,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
 /// to win: a `solve` refusal about `visited[k]` named "the store to `next[…]`".
 /// The address belongs to the base its bare index is taken from.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn an_unnamed_store_index_is_spelled_through_its_own_base() {
     let base = |variable: u64| Pointer {
         block: PointerBlock::ExternalArgument,
@@ -782,6 +804,7 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -800,6 +823,7 @@ fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_05")]
 fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
     let primary_cause = "owned_vector.grow path 2: ghost resource mismatch\n";
     let enormous = format!(
@@ -820,6 +844,7 @@ fn verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -871,6 +896,7 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
 /// ambient condition facts: [signed less-or-equal is true, ...]", which names
 /// neither the goal nor any premise.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn a_condition_search_miss_spells_its_goal_and_premises() {
     let x = MachineTerm::Variable(Variable(1));
     let y = MachineTerm::Variable(Variable(2));
@@ -915,6 +941,7 @@ fn a_condition_search_miss_spells_its_goal_and_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn verifier_diagnostics_bound_fact_items() {
     let facts = (0..20)
         .map(|index| {
@@ -934,6 +961,7 @@ fn verifier_diagnostics_bound_fact_items() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_06")]
 fn expired_project_deadline_outweighs_semantic_mismatch_diagnostic() {
     let error = crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
         ClickError::new("execution proof changed more than the certified ghost regions")
@@ -949,6 +977,7 @@ fn expired_project_deadline_outweighs_semantic_mismatch_diagnostic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
 fn exhausted_work_budget_outweighs_missing_path_goal_diagnostic() {
     let limits = crate::instrumentation::TacticWorkLimits {
         simple: 0,
@@ -984,6 +1013,7 @@ fn exhausted_work_budget_outweighs_missing_path_goal_diagnostic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
 fn solve_uses_assumed_compound_proposition() {
     let proposition = Proposition::Or(
         Box::new(Proposition::Predicate {
@@ -1004,6 +1034,7 @@ fn solve_uses_assumed_compound_proposition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
 fn failed_algebraic_solve_reports_claim_without_internal_schema_dump() {
     let source = r#"
         spec enum Maybe<T> { None, Some(T) }
@@ -1036,6 +1067,7 @@ fn failed_algebraic_solve_reports_claim_without_internal_schema_dump() {
 /// report printed the goal twice.  The bounded printer renders the same claim
 /// in its source vocabulary, once.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_07")]
 fn failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump() {
     let source = r#"
         spec enum Color { Red, Black }
@@ -1095,6 +1127,7 @@ fn failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump() 
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
 fn negative_mdtest_failures_include_structured_proof_context() {
     for name in [
         "max_bad_ensure",
@@ -1147,6 +1180,7 @@ fn negative_mdtest_failures_include_structured_proof_context() {
 /// is now spelled on its own line in the bounded source vocabulary, which is
 /// what says which condition each arm assumes.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
 fn undecided_c_branch_step_reports_its_paths_without_a_memory_dump() {
     let c_source = r#"
 struct node {
@@ -1196,6 +1230,7 @@ int32 pick(struct node* node) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
 fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
     let call = crate::kernel::c_call("helper", Vec::new());
     let message =
@@ -1217,6 +1252,7 @@ fn maybe_throwing_step_diagnostic_teaches_outcomes_syntax() {
 /// inlined callee. `outcomes` has a `returned` and a `threw` arm and no way to
 /// take either of those, so the refusal must not offer it.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_08")]
 fn branch_split_step_diagnostic_does_not_offer_outcomes() {
     let call = crate::kernel::c_call("helper", Vec::new());
     let message =
@@ -1230,6 +1266,7 @@ fn branch_split_step_diagnostic_does_not_offer_outcomes() {
 /// every resource spec to the message. A statement head is the statement's own
 /// C spelling and nothing else.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn statement_head_names_the_guard_without_the_loop_node() {
     use crate::kernel::{
         c_and, c_assign, c_int32_literal, c_load, c_not_equal, c_variable, c_while,
@@ -1266,6 +1303,7 @@ fn statement_head_names_the_guard_without_the_loop_node() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
     use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
@@ -1295,6 +1333,7 @@ fn loan_refusal_diagnostic_renders_only_its_selected_subject() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
     use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     use crate::kernel::{LoanRefusal, LoanRefusalOperation, LoanRefusalSubject};
@@ -1329,6 +1368,7 @@ fn loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state() {
 /// context every other failed goal reports. It does not guess which step was
 /// missing.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_09")]
 fn identical_load_renders_name_distinct_snapshot_loads() {
     let c_source = r#"
             int32 sym_index_clobber(int32* p, int32 i) {
@@ -1385,6 +1425,7 @@ fn identical_load_renders_name_distinct_snapshot_loads() {
 /// is that order verifying. Where the store fits in an element the indexes
 /// really are the undecided part, and that sentence is unchanged.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
     let byte_reach = super::diagnostics::store_cause_between_indexes_for_tests(
         "a",
@@ -1497,6 +1538,7 @@ fn a_store_wider_than_an_element_is_refused_by_bytes_not_by_index() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
     let global = Pointer {
         block: "global:counter".into(),
@@ -1559,6 +1601,7 @@ fn empty_footprint_rejects_a_fact_aliased_write_and_effect_range() {
 /// A conditional term's guard is spelled as the comparison it means: a
 /// `uint32` order reads as an unsigned comparison of its operands.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_conditional_term_spells_its_unsigned_guard() {
     let x = MachineTerm::Variable(crate::kernel::Variable(7));
     let term = MachineTerm::If {
@@ -1577,6 +1620,7 @@ fn a_conditional_term_spells_its_unsigned_guard() {
 /// A condition's kind names a `uint32` order as unsigned, as it names a
 /// `uint64` one, and never as the signed order of its operands.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_10")]
 fn a_uint32_order_is_named_as_unsigned() {
     let (x, y) = (
         MachineTerm::Variable(crate::kernel::Variable(8)),
@@ -1609,6 +1653,7 @@ fn a_uint32_order_is_named_as_unsigned() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
 fn missing_mutex_use_names_the_required_resource_without_loan_internals() {
     let mutex = crate::kernel::Pointer {
         block: "selected_mutex".into(),
@@ -1705,6 +1750,7 @@ fn split_statement_sites(message: &str) -> (String, Vec<String>) {
 /// from the `C statement at` line each refusal gains, which names the line
 /// and column the statement moved to and quotes it without its comment.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
 fn statement_sites_change_nothing_but_the_location_line() {
     let shifted = shifted_sited_c_source();
     let original = crate::languages::c::syntax::parse_functions(SITED_C_SOURCE).unwrap();
@@ -1783,6 +1829,7 @@ fn statement_sites_change_nothing_but_the_location_line() {
 /// stay in the trace; they are not folded into the summary and reported as
 /// a line per colon.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
 fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
     let c_source = r#"
         int32 settle(int32 state) {
@@ -1826,6 +1873,7 @@ fn failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic() {
 /// tactic addressed by its source occurrence, and tracing it verifies
 /// neither another theorem nor a C function.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_11")]
 fn a_passing_theorem_retains_its_accepted_trace_path() {
     let source = r#"verifying "f.c";
 theorem good(x: int32, y: int32) {
@@ -1922,6 +1970,7 @@ fn folded_child_loop_fixture() -> crate::cli::MdTest {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
     let fixture = folded_child_loop_fixture();
     let sources = fixture
@@ -1952,6 +2001,7 @@ fn folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern() {
     let fixture = folded_child_loop_fixture();
     let sources = fixture
@@ -1988,6 +2038,7 @@ fn unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
     let proposition = ClickProposition::Comparison {
         operator: ComparisonOperator::Equal,
@@ -2016,6 +2067,7 @@ fn unheld_field_without_a_checked_consumption_does_not_invent_one() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_12")]
 fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
     use crate::kernel::{
         CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
@@ -2040,6 +2092,7 @@ fn source_unknown_local_pointer_diagnostics_identify_byte_units() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_13")]
 fn read_only_wide_index_diagnostic_requests_equality_without_inventing_a_store() {
     let source = "int32 last(int32* data, uint64 length) { return *(data + (length - 1ULL)); }";
     let sidecar = r#"
@@ -2218,6 +2271,7 @@ fn callback_script_tails_complete_or_report_a_bounded_failure() {
 /// A member offset that is not a whole struct stride used to be spelled
 /// through an unrelated int32 pointer, inventing an anchor/p alias repair.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_13")]
 fn struct_field_frame_failure_names_the_read_and_written_members() {
     let c_source = r#"
         struct node { uint64 tag; struct node *right; struct node *left; };
@@ -2254,6 +2308,7 @@ fn struct_field_frame_failure_names_the_read_and_written_members() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_13")]
 fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
     use crate::instrumentation::{VerificationEvent, collect};
     let source = r#"theorem nested(x: int32) {
@@ -2298,6 +2353,7 @@ fn pure_theorem_tactics_emit_claims_and_nested_written_source_paths() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_13")]
 fn pure_theorem_arithmetic_obeys_its_tactic_budget() {
     use crate::instrumentation::{
         TacticWorkLimits, VerificationEvent, collect, with_tactic_work_limits,
@@ -2343,6 +2399,7 @@ fn wide_conjunction_expansion_stays_parseable_and_checked() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_14")]
 fn pure_theorem_generic_and_structural_induction_emit_written_tactics() {
     use crate::instrumentation::{VerificationEvent, collect};
     let source = r#"
@@ -2456,6 +2513,7 @@ fn wide_loop_invariant_bundle_expands_without_dropping_members() {
 // Default theorem search is measured and bounded without inventing a written
 // source occurrence; the CLI declaration-location regression covers failures.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_14")]
 fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
     use crate::instrumentation::{VerificationEvent, collect};
     let source = "theorem implicit(x: int32) { requires x <= 1; ensures x <= 2; }";
@@ -2478,6 +2536,7 @@ fn implicit_theorem_search_is_timed_without_a_written_tactic_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_14")]
 fn linear_function_proofs_execute_once_at_multiple_sizes() {
     use crate::instrumentation::{VerificationEvent, collect};
     for size in [16, 64, 256] {
@@ -2503,6 +2562,7 @@ fn linear_function_proofs_execute_once_at_multiple_sizes() {
 /// A real child overwrite must report the exact rejected slot and null
 /// argument without suggesting that a missing equality is a verifier bug.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_14")]
 fn child_argument_trace_reports_the_rejected_pair() {
     let c = "struct node { struct node *left; struct node *right; }; void f(struct node *p) { p->right = 0; }";
     let source = r#"
@@ -2578,6 +2638,7 @@ void f(struct node* p) {
 /// Smart execution must record the same checked call facts as written steps,
 /// even when the later postcondition cannot be proved.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_15")]
 fn execute_failure_trace_retains_checked_call_facts() {
     let c = "int helper(void) { return 1; } int f(void) { return helper(); }";
     for execution in ["step_until(function.exit);", "step(); step();"] {
@@ -2605,6 +2666,7 @@ fn execute_failure_trace_retains_checked_call_facts() {
 /// the fact it could not establish by the declaration's own spelling, in the
 /// summary and in the trailer alike.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_15")]
 fn fold_over_a_hidden_record_names_the_failed_fact() {
     let c = "struct cell { int32 value; }; struct pair { struct cell* a; int32 n; }; \
              void clear(struct pair* p) { p->n = -1; }";
@@ -2624,6 +2686,7 @@ fn fold_over_a_hidden_record_names_the_failed_fact() {
 /// A resource's facts take no label, as a `requires` clause takes none, and
 /// the refusal says so rather than reporting a malformed proposition.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_15")]
 fn a_labelled_resource_fact_is_refused_by_name() {
     let source = "resource held(p: int32*) { owns *p; fact positive: *p > 0; }";
     let error = verify_c0_sources(source, &[]).unwrap_err();
@@ -2635,6 +2698,7 @@ fn a_labelled_resource_fact_is_refused_by_name() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_15")]
 fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
     let c = "void f(int *p) { *p = 9; }";
     for (resource, proof) in [
@@ -2685,6 +2749,7 @@ fn fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources() {
 /// Unnamed addresses still identify the exact blocking store, using the goal's
 /// label map. A history-only diagnostic must not claim missing proof facts.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     use crate::kernel::{LoadKind, intern_c_memory};
     use crate::surface::proof_diagnostics::render::{
@@ -2836,6 +2901,7 @@ fn long_theorem_traces_retain_every_step_and_reach_late_targets() {
 /// Retargeting changes a resource's index; the next call must show both
 /// actual indices and identify the equality it rejected.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn call_resource_diagnostic_shows_the_rejected_argument() {
     let c = r#"void retarget(int32 *p, int32 *q, int32 *anchor) {}
 void call(int32 *p, int32 *q, int32 *anchor) { retarget(p, q, anchor); retarget(p, q, anchor); }
@@ -2893,6 +2959,7 @@ void call(int32* p, int32* q, int32* anchor) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn call_resource_diagnostic_read_shows_snapshot_and_access() {
     use crate::kernel::{CMemoryRange, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
     let address = Pointer {
@@ -2925,6 +2992,7 @@ fn call_resource_diagnostic_read_shows_snapshot_and_access() {
 /// A budget refusal is still a failure at a checked source frontier. The
 /// failed search must not discard the preceding accepted store or nested fact.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_16")]
 fn smart_have_budget_refusal_retains_checked_trace_prefix() {
     for nested in [false, true] {
         let body = if nested {
@@ -2977,6 +3045,7 @@ fn smart_have_budget_refusal_retains_checked_trace_prefix() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
 fn loop_have_budget_refusal_retains_checked_store_trace() {
     let source = r#"verifying "f.c";
         void f(int32 *cell, int32 value) {
@@ -3015,6 +3084,7 @@ fn loop_have_budget_refusal_retains_checked_store_trace() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
 fn ordinary_concise_diagnostics_bound_late_requirement_context() {
     let error = ClickError::new("required fact unavailable")
         .with_missing_tactic_requirement("資源".repeat(DEFAULT_DIAGNOSTIC_BYTE_LIMIT));
@@ -3031,6 +3101,7 @@ fn ordinary_concise_diagnostics_bound_late_requirement_context() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
 fn ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full() {
     let error = ClickError::with_diagnostic(
         "required fact unavailable",
@@ -3084,6 +3155,7 @@ uint64 drain(uint64 len) {
 "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_17")]
 fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
     with_proof_trace("drain", || {
         let error = verify_c0_sources(CLOSURE_TRACE_CLICK, &[("loop.c", CLOSURE_TRACE_C)])
@@ -3155,6 +3227,7 @@ fn failed_invariant_closure_retains_body_trace_and_focused_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
 fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
     for size in [16, 32, 64] {
         let repeated = "   have len == len by normalize();\n".repeat(size);
@@ -3183,6 +3256,7 @@ fn failed_invariant_closure_trace_prefix_is_lazy_and_scales() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
 fn failed_invariant_closure_trace_keeps_its_branch_guard() {
     let c = "unsigned long branch_drain(unsigned long len, int flag) { while (len >= 16) { if (flag == 0) { len -= 16; } else { len -= 8; } } return len; }";
     let source = r#"target "x86_64-unknown-linux-gnu";
@@ -3221,6 +3295,7 @@ fn failed_invariant_closure_trace_keeps_its_branch_guard() {
 /// Native prefix proofs retain the source view and its coverage bound even
 /// when unrelated bounds exceed the general premise-reduction budget.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
 fn native_view_solve_selects_only_coverage_premises() {
     let extra_bounds = 63;
     for body in [
@@ -3242,6 +3317,7 @@ fn native_view_solve_selects_only_coverage_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_18")]
 fn native_view_solve_distinguishes_a_rejected_kernel_query() {
     let source = "target \"x86_64-unknown-linux-gnu\"; theorem false_view(p: uint8[], n: uint64) { views p[0u64..n]; requires n == 0u64; ensures viewable(p[0u64..1u64]) by { solve(); } }";
     let error = verify_c0_sources(source, &[]).expect_err("an empty view cannot cover one byte");
@@ -3259,6 +3335,7 @@ fn native_view_solve_distinguishes_a_rejected_kernel_query() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
     let _typed = crate::surface::proof_diagnostics::render::TypedNotationScope::enter();
     use crate::kernel::{
@@ -3340,6 +3417,7 @@ fn pending_call_obligations_use_shared_goal_printer_and_snapshot_legend() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn function_pointer_load_trace_shows_produced_value_and_read_snapshot() {
     use crate::surface::proof_trace::with_proof_trace;
     let c = r#"
@@ -3400,6 +3478,7 @@ void symbolic(int32* p, const struct callbacks* cb) {
 /// Resource comparisons must not collapse snapshot-dependent pointer arguments
 /// to one source address, or replace an unnamed offset with an ellipsis.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots() {
     use crate::kernel::{
         AlgebraicValue, CMemory, CPointerValue, CResource, CType, CValue, LoadKind, Pointer,
@@ -3466,6 +3545,7 @@ fn call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots(
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_19")]
 fn failed_final_assumption_preserves_its_checked_trace_context() {
     let source = r#"verifying "f.c";
         void f(int32 *cell, int32 value) {
@@ -3507,6 +3587,7 @@ fn failed_final_assumption_preserves_its_checked_trace_context() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
     for suffix in ["", " using { at(saved, p[0] == 7); }"] {
         let source = format!(
@@ -3548,6 +3629,7 @@ fn successful_transport_trace_keeps_checked_operands_without_added_facts() {
 /// expand` gives it. A step the script wrote, or an argument it wrote,
 /// prints neither.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
     for (suffix, elided) in [("", true), (" using { at(saved, p[0] == 7); }", false)] {
         let source = format!(
@@ -3607,6 +3689,7 @@ fn a_trace_marks_searched_steps_and_their_chosen_arguments() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn rejected_transport_prints_checked_reads_and_retains_prefix() {
     let stores = (1..10).map(|i| format!("p[{i}] = 9; ")).collect::<String>();
     let c = format!("void f(int32 *p) {{ {stores} p[0] = 9; return; }}");
@@ -3674,6 +3757,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_20")]
 fn failed_normalize_using_retains_actual_wide_read_resolution() {
     let c = "void f(uint64 *p) { int32 y = 0; return; }";
     let source = r#"verifying "f.c";
@@ -3709,6 +3793,7 @@ fn failed_normalize_using_retains_actual_wide_read_resolution() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
 fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
     let c = "void f(int32 *p, int32 *q) { while (1) { p[0] = 9; break; } return; }";
     let source = r#"verifying "f.c";
@@ -3750,6 +3835,7 @@ fn rejected_loop_transport_premise_uses_shared_exact_diagnostic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
 fn rejected_wide_transport_shows_actual_walk_stop_and_prefix() {
     let c = "void f(uint64 *p) { p[0] = 9; int32 y = 0; return; }";
     let source = r#"verifying "f.c";
@@ -3833,6 +3919,7 @@ fn a_failed_retain_names_the_population_count_requirement() {
 /// A `have` miss keeps the same checked prefix as other have failures.
 /// The failed smart candidates must not become facts in that prefix.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
 fn have_failure_trace_retains_checked_call_prefix() {
     let c = "int helper(void) { return 1; } int f(void) { int x; x = helper(); return x; }";
     let source = "verifying \"f.c\"; int32 helper() { ensures result == 1; } \
@@ -3854,6 +3941,7 @@ fn have_failure_trace_retains_checked_call_prefix() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_21")]
 fn budget_stopped_transport_retains_its_checked_loop_prefix() {
     use crate::instrumentation::{TacticWorkLimits, with_tactic_work_limits};
     let source = r#"verifying "f.c";
@@ -3896,6 +3984,7 @@ fn budget_stopped_transport_retains_its_checked_loop_prefix() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
 fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
     use crate::instrumentation::{TacticWorkLimits, collect_tactic_work, with_tactic_work_limits};
     let source = r#"verifying "f.c";
@@ -3973,6 +4062,7 @@ fn budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
 fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
     let source = r#"verifying "callback.c";
         spec enum Ref { At(struct node*), }
@@ -4025,6 +4115,7 @@ fn callback_refinement_hint_with_produced_resource_is_a_checked_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
 fn failed_branch_interface_retains_its_arm_and_written_requirement() {
     let c = "int advance(int x) { int y; if (x >= 0) { y = x; } else { y = 0; } return y; }";
     for (requirement, precondition, chosen, other) in [
@@ -4073,6 +4164,7 @@ fn failed_branch_interface_retains_its_arm_and_written_requirement() {
 /// lists it prints its constant in its own type, `4294967295u32`, not as the
 /// `int32` reading `-1`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_22")]
 fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
     let source = "verifying \"t.c\";\nunsigned read(unsigned *u) {\n    requires u[0] == 4294967295u32;\n    ensures result == 4294967295u32;\n}\n";
     let error = verify_c0_sources(
@@ -4086,6 +4178,7 @@ fn a_uint32_equality_above_int32_max_prints_in_its_own_type() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_23")]
 fn resource_separation_matches_written_goal_with_pointer_alias() {
     let c = r#"struct callbacks { void (*call)(int *p); };
         static void target(int *p) { }
@@ -4107,6 +4200,7 @@ fn resource_separation_matches_written_goal_with_pointer_alias() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_23")]
 fn struct_pointer_pointer_ranges_print_pointer_units() {
     let function = crate::languages::c::syntax::parse_function(
         "struct item { uint8 tag; int64 value; }; void inspect(struct item **pp) {}",
@@ -4138,6 +4232,7 @@ fn struct_pointer_pointer_ranges_print_pointer_units() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_23")]
 fn failed_invariant_after_branch_join_reports_the_join() {
     for (then_arm, else_arm) in [("len -= 16;", "len = 16;"), ("len = 16;", "len -= 16;")] {
         let c = format!(
@@ -4184,6 +4279,7 @@ fn failed_invariant_after_branch_join_reports_the_join() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_23")]
 fn failed_postcondition_after_branch_join_keeps_the_join_trace() {
     let c = "unsigned long choose(int flag) { unsigned long len; if (flag == 0) { len = 0; } else { len = 16; } return len; }";
     let source = r#"target "x86_64-unknown-linux-gnu";
@@ -4212,6 +4308,7 @@ fn failed_postcondition_after_branch_join_keeps_the_join_trace() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_24")]
 fn child_argument_goal_reports_scalar_indices() {
     let source = r#"
 verifying "f.c";
@@ -4235,4 +4332,214 @@ void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
         assert_eq!(report.matches("\ngoal: ").count(), 1, "{report}");
         assert!(report.contains("goal: 0 == 1"), "{report}");
     });
+}
+
+// nextest starts a process per test. Small batches reuse only immutable library
+// syntax; fresh threads retain the individual tests' thread-local isolation.
+// Non-fast builds keep the original tests. A fast-gate individual case can
+// still be selected explicitly with --ignored.
+#[cfg(feature = "fast-gate")]
+fn run_diagnostic_batch(cases: &[(&str, fn())]) {
+    for &(name, test) in cases {
+        eprintln!("diagnostic case {name} started");
+        let started = std::time::Instant::now();
+        let result = std::thread::Builder::new()
+            .name(name.to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(test)
+            .expect("start diagnostic case")
+            .join();
+        if let Err(panic) = result {
+            eprintln!("diagnostic case {name} FAILED");
+            std::panic::resume_unwind(panic);
+        }
+        eprintln!(
+            "diagnostic case {name} passed in {:.3}s",
+            started.elapsed().as_secs_f64()
+        );
+    }
+}
+
+#[cfg(feature = "fast-gate")]
+macro_rules! diagnostic_batches {
+    ($($batch:ident: [$($case:ident),+ $(,)?]),+ $(,)?) => {
+        $(
+            #[test]
+            fn $batch() {
+                run_diagnostic_batch(&[$((stringify!($case), $case)),+]);
+            }
+        )+
+
+        #[test]
+        fn diagnostic_batch_inventory_covers_each_ignored_case_once() {
+            let registered = [$($(stringify!($case)),+),+];
+            let actual = registered.into_iter().collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(actual.len(), registered.len(), "duplicate batched case");
+            let mut marked = false;
+            let mut expected = std::collections::BTreeSet::new();
+            for line in include_str!("diagnostic_tests.rs").lines() {
+                if line.contains("ignore = \"covered by diagnostic_batch_") {
+                    assert!(!marked, "batched-case annotation without a function");
+                    marked = true;
+                }
+                if marked && let Some(name) = line.trim().strip_prefix("fn ") {
+                    expected.insert(name.split('(').next().unwrap());
+                    marked = false;
+                }
+            }
+            assert!(!marked, "batched-case annotation without a function");
+            assert_eq!(expected, actual, "batch coverage must match the skipped individual tests");
+        }
+    };
+}
+
+#[cfg(feature = "fast-gate")]
+diagnostic_batches! {
+    diagnostic_batch_00: [
+        implicit_tail_handles_unsigned_statement_cases_with_tracing,
+        unclosed_have_script_retains_its_remaining_goal_and_introduced_premise,
+        unclosed_theorem_script_retains_its_remaining_goal_and_introduced_premise,
+        missing_write_permission_explains_the_available_view_and_failed_check,
+    ],
+    diagnostic_batch_01: [
+        first_operation_failure_retains_the_required_access_and_empty_resources,
+        execution_tactic_in_a_have_names_the_proposition_context,
+        failed_solve_reports_actual_cell_queries_separately_from_history_explanations,
+        failed_written_have_keeps_its_goal_and_actual_queries,
+    ],
+    diagnostic_batch_02: [
+        failed_outcome_reports_post_call_resources_not_the_execution_entry,
+        callback_sources_keep_field_names_through_subobject_lowering,
+        implicit_loop_closure_is_smart,
+        implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site,
+    ],
+    diagnostic_batch_03: [
+        auto_have_budget_failure_keeps_the_exhaustion_reason,
+        smart_closer_inside_a_have_script_spends_the_smart_budget,
+        wide_arithmetic_unavailable_premise_returns_one_diagnostic,
+        wide_arithmetic_budget_refusal_does_not_panic,
+    ],
+    diagnostic_batch_04: [
+        uninitialized_mutex_is_a_named_proof_prerequisite,
+        worker_without_protocol_contract_is_a_proof_error,
+        concise_error_context_preserves_click_binder_colons,
+        concise_reason_keeps_list_entries_and_definitions_whole,
+    ],
+    diagnostic_batch_05: [
+        click_addition_cancels_a_negated_pointer_base,
+        an_unnamed_store_index_is_spelled_through_its_own_base,
+        exact_struct_field_offsets_remain_resolvable_after_deadline,
+        verifier_diagnostics_are_bounded_deterministically_at_utf8_boundaries,
+    ],
+    diagnostic_batch_06: [
+        execution_effect_diagnostics_omit_raw_memory_snapshots,
+        a_condition_search_miss_spells_its_goal_and_premises,
+        verifier_diagnostics_bound_fact_items,
+        expired_project_deadline_outweighs_semantic_mismatch_diagnostic,
+    ],
+    diagnostic_batch_07: [
+        exhausted_work_budget_outweighs_missing_path_goal_diagnostic,
+        solve_uses_assumed_compound_proposition,
+        failed_algebraic_solve_reports_claim_without_internal_schema_dump,
+        failed_compound_algebraic_solve_renders_the_goal_once_without_a_debug_dump,
+    ],
+    diagnostic_batch_08: [
+        negative_mdtest_failures_include_structured_proof_context,
+        undecided_c_branch_step_reports_its_paths_without_a_memory_dump,
+        maybe_throwing_step_diagnostic_teaches_outcomes_syntax,
+        branch_split_step_diagnostic_does_not_offer_outcomes,
+    ],
+    diagnostic_batch_09: [
+        statement_head_names_the_guard_without_the_loop_node,
+        loan_refusal_diagnostic_renders_only_its_selected_subject,
+        loan_refusal_diagnostic_renders_a_range_subject_without_ledger_state,
+        identical_load_renders_name_distinct_snapshot_loads,
+    ],
+    diagnostic_batch_10: [
+        a_store_wider_than_an_element_is_refused_by_bytes_not_by_index,
+        empty_footprint_rejects_a_fact_aliased_write_and_effect_range,
+        a_conditional_term_spells_its_unsigned_guard,
+        a_uint32_order_is_named_as_unsigned,
+    ],
+    diagnostic_batch_11: [
+        missing_mutex_use_names_the_required_resource_without_loan_internals,
+        statement_sites_change_nothing_but_the_location_line,
+        failed_generated_loop_closer_reports_a_short_summary_at_the_loop_tactic,
+        a_passing_theorem_retains_its_accepted_trace_path,
+    ],
+    diagnostic_batch_12: [
+        folded_child_loop_field_refusal_names_the_fold_and_a_verified_remedy,
+        unfolded_algebraic_field_refusal_never_suggests_a_c_field_pattern,
+        unheld_field_without_a_checked_consumption_does_not_invent_one,
+        source_unknown_local_pointer_diagnostics_identify_byte_units,
+    ],
+    diagnostic_batch_13: [
+        read_only_wide_index_diagnostic_requests_equality_without_inventing_a_store,
+        struct_field_frame_failure_names_the_read_and_written_members,
+        pure_theorem_tactics_emit_claims_and_nested_written_source_paths,
+        pure_theorem_arithmetic_obeys_its_tactic_budget,
+    ],
+    diagnostic_batch_14: [
+        pure_theorem_generic_and_structural_induction_emit_written_tactics,
+        implicit_theorem_search_is_timed_without_a_written_tactic_path,
+        linear_function_proofs_execute_once_at_multiple_sizes,
+        child_argument_trace_reports_the_rejected_pair,
+    ],
+    diagnostic_batch_15: [
+        execute_failure_trace_retains_checked_call_facts,
+        fold_over_a_hidden_record_names_the_failed_fact,
+        a_labelled_resource_fact_is_refused_by_name,
+        fold_reports_the_instantiated_body_fact_in_plain_and_matched_resources,
+    ],
+    diagnostic_batch_16: [
+        memory_history_diagnostic_names_the_store_and_limits_its_claim,
+        call_resource_diagnostic_shows_the_rejected_argument,
+        call_resource_diagnostic_read_shows_snapshot_and_access,
+        smart_have_budget_refusal_retains_checked_trace_prefix,
+    ],
+    diagnostic_batch_17: [
+        loop_have_budget_refusal_retains_checked_store_trace,
+        ordinary_concise_diagnostics_bound_late_requirement_context,
+        ordinary_legacy_diagnostics_bound_late_context_but_traces_remain_full,
+        failed_invariant_closure_retains_body_trace_and_focused_fact,
+    ],
+    diagnostic_batch_18: [
+        failed_invariant_closure_trace_prefix_is_lazy_and_scales,
+        failed_invariant_closure_trace_keeps_its_branch_guard,
+        native_view_solve_selects_only_coverage_premises,
+        native_view_solve_distinguishes_a_rejected_kernel_query,
+    ],
+    diagnostic_batch_19: [
+        pending_call_obligations_use_shared_goal_printer_and_snapshot_legend,
+        function_pointer_load_trace_shows_produced_value_and_read_snapshot,
+        call_resource_diagnostic_distinguishes_exact_pointer_arguments_and_snapshots,
+        failed_final_assumption_preserves_its_checked_trace_context,
+    ],
+    diagnostic_batch_20: [
+        successful_transport_trace_keeps_checked_operands_without_added_facts,
+        a_trace_marks_searched_steps_and_their_chosen_arguments,
+        rejected_transport_prints_checked_reads_and_retains_prefix,
+        failed_normalize_using_retains_actual_wide_read_resolution,
+    ],
+    diagnostic_batch_21: [
+        rejected_loop_transport_premise_uses_shared_exact_diagnostic,
+        rejected_wide_transport_shows_actual_walk_stop_and_prefix,
+        have_failure_trace_retains_checked_call_prefix,
+        budget_stopped_transport_retains_its_checked_loop_prefix,
+    ],
+    diagnostic_batch_22: [
+        budget_stopped_explicit_transport_retains_its_checked_prefix_and_goal,
+        callback_refinement_hint_with_produced_resource_is_a_checked_proof,
+        failed_branch_interface_retains_its_arm_and_written_requirement,
+        a_uint32_equality_above_int32_max_prints_in_its_own_type,
+    ],
+    diagnostic_batch_23: [
+        resource_separation_matches_written_goal_with_pointer_alias,
+        struct_pointer_pointer_ranges_print_pointer_units,
+        failed_invariant_after_branch_join_reports_the_join,
+        failed_postcondition_after_branch_join_keeps_the_join_trace,
+    ],
+    diagnostic_batch_24: [
+        child_argument_goal_reports_scalar_indices,
+    ],
 }

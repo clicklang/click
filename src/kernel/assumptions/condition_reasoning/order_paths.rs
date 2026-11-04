@@ -1024,7 +1024,7 @@ impl PureFactContext {
         )
     }
 
-    pub(super) fn difference_graph_proves_order_views(
+    pub(in crate::kernel) fn difference_graph_proves_order_views(
         &self,
         left: MachineOperandView<'_>,
         right: MachineOperandView<'_>,
@@ -1076,6 +1076,7 @@ impl PureFactContext {
     /// context-free constant tail): equality, memory-DAG, quantified, and
     /// derived-edge joins need their own typed evidence before they may be
     /// exported as certificate provenance.
+    #[cfg(test)]
     pub(in crate::kernel) fn exact_signed_order_path_evidence(
         &self,
         left: &MachineTerm,
@@ -1089,8 +1090,7 @@ impl PureFactContext {
         )?
         .into_iter()
         .map(|step| {
-            // Compatibility boundary for the remaining native domain/range
-            // evidence consumers. Atomic order evidence retains the source.
+            // Boxed reference used by native path-parity tests only.
             let Proposition::ConditionIs(condition, value) = &step.premise else {
                 return None;
             };

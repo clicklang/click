@@ -3089,16 +3089,31 @@ impl ResourceContext {
         assumptions: &PureFactContext,
     ) -> Option<&CResourceFact> {
         if let Some(range) = required.memory_range() {
-            let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
-            return candidates.entries.iter().find_map(|entry| {
-                let aligned = candidates.requirement(entry, required)?;
-                let available = self.fact(entry);
-                resource_fact_entails(available, &aligned, assumptions).then_some(available)
-            });
+            return self.directly_supporting_memory_fact(required, range, assumptions);
         }
         self.direct_match_candidates_for(required, assumptions)
             .into_iter()
             .find(|available| resource_fact_entails(available, required, assumptions))
+    }
+
+    /// Check one indexed supplier and return its held representation. A failed
+    /// alignment or entailment check does not enumerate alternative suppliers.
+    fn directly_supporting_memory_fact(
+        &self,
+        required: &CResourceFact,
+        range: &CMemoryRange,
+        assumptions: &PureFactContext,
+    ) -> Option<&CResourceFact> {
+        let candidates = self.memory_fact_candidates(range, required.is_own(), assumptions);
+        let entry = candidates.entries.single_supplier()?;
+        let aligned = candidates.requirement(entry, required)?;
+        let available = self.fact(entry);
+        // Geometry nominates a supplier; an empty or negative owner supplies
+        // neither owned authority nor its read core.
+        if available.is_own() && !available.has_proven_positive_quantity(assumptions) {
+            return None;
+        }
+        resource_fact_entails(available, &aligned, assumptions).then_some(available)
     }
 
     /// Select token/composite candidates by shape and the first pointer's
@@ -3528,7 +3543,7 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
-        self.reserve_owned_memory_fragments_impl(required, assumptions, None)
+        self.reserve_owned_memory_fragments_impl(required, assumptions, None, false)
     }
 
     /// Speculative reservation returns its origins only on success. The caller
@@ -3544,6 +3559,7 @@ impl ResourceContext {
             required,
             assumptions,
             Some(&mut next_origins),
+            false,
         )?;
         Some((next, supports, next_origins))
     }
@@ -3553,6 +3569,7 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
+        establish_requested_carrier: bool,
     ) -> Option<(Self, Vec<ResourceOccurrenceId>)> {
         if required.owned_quantity_term()?.as_const()? != 1 {
             return None;
@@ -3595,17 +3612,19 @@ impl ResourceContext {
                 return None;
             }
             let available = candidate.memory_own_range()?;
-            // Native requests previously used whole-range entailment, including
-            // its typed designation check. Keep that check on this new route;
-            // narrow fragment transfer retains its existing carrier semantics.
-            if range.wide_bounds().is_some()
+            // A query must establish the requested carrier on every piece.
+            // Narrow byte transfers instead retain their suppliers' carriers;
+            // native transfers already require matching typed designations.
+            if (establish_requested_carrier || range.wide_bounds().is_some())
                 && range.typed_carrier
                 && !assumptions.access_designations_match(range.access_designation(), available)
             {
                 return None;
             }
             let base = entries.address()?;
-            let (bytes, piece) = if let Some((_, available_end)) = available.wide_bounds() {
+            let (bytes, piece) = if let Some((available_start, available_end)) =
+                available.wide_bounds()
+            {
                 // Keep native suppliers in their original coordinates. Only
                 // concrete, aligned pieces are consumed; never narrow a bound.
                 let point = CMemoryRange::new_with_element_width(
@@ -3620,6 +3639,11 @@ impl ResourceContext {
                     Some(assumptions),
                 )?)
                 .ok()?;
+                // After the first piece, compose only exact adjacency; a
+                // covering supplier may overlap bytes already consumed.
+                if cursor > 0 && at != available_start.uint64_as_const()? {
+                    return None;
+                }
                 let width = u64::from(available.element_width());
                 let bytes = available_end
                     .uint64_as_const()?
@@ -3644,6 +3668,9 @@ impl ResourceContext {
                     CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), 1u32.into(), 1);
                 let byte_available = byte_normalized_memory_range(available);
                 let at = exact_constant_base_delta(&byte_available, &point, Some(assumptions))?;
+                if cursor > 0 && at != byte_available.signed_constant_start()? {
+                    return None;
+                }
                 let available_end = byte_available.signed_constant_end()?;
                 let bytes = available_end
                     .checked_sub(at)
@@ -4857,6 +4884,11 @@ impl ResourceContext {
         let Some(variable) = memory_base_variable(at) else {
             return full_block();
         };
+        // Any scalar condition already makes this candidate set conservative.
+        // Read the maintained existence witness, without enumerating its facts.
+        if assumptions.has_condition_variable(variable) {
+            return full_block();
+        }
         let key = AtomicConnectionKey::Variable(variable);
         let (mut facts, _) = assumptions.atomic_facts_connected_to(&key, true);
         // Authority, read permissions, and subobject coverage do not equate
@@ -6376,15 +6408,13 @@ impl ResourceContext {
             {
                 return true;
             }
-            // Decide native or symbolic unit ownership by constructing its consumption
+            // Decide unit ownership by constructing its consumption
             // on a persistent branch. The caller retains every occurrence;
             // indexed selection stops at a gap instead of normalizing candidates.
-            if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
-                && (range.wide_bounds().is_some() || range.has_symbolic_bounds())
-            {
+            if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
                 return self
                     .clone()
-                    .consume_unit_owned_memory(fact, assumptions, None)
+                    .consume_unit_owned_memory(fact, assumptions, None, true)
                     .is_some();
             }
             let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
@@ -6863,7 +6893,7 @@ impl ResourceContext {
             return Some(self);
         }
         if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1) {
-            return self.consume_unit_owned_memory(fact, assumptions, origins);
+            return self.consume_unit_owned_memory(fact, assumptions, origins, false);
         }
         let candidates = self.memory_fact_candidates(range, fact.is_own(), assumptions);
         let mut selected = self;
@@ -6920,6 +6950,7 @@ impl ResourceContext {
         required: &CResourceFact,
         assumptions: &PureFactContext,
         mut origins: Option<&mut MemorySplitOrigins>,
+        establish_requested_carrier: bool,
     ) -> Option<Self> {
         let range = required.memory_own_range()?;
         let candidates = self.memory_fact_candidates(range, true, assumptions);
@@ -6949,8 +6980,13 @@ impl ResourceContext {
         {
             return self.consume_symbolic_partition(required, assumptions, origins);
         }
-        self.reserve_owned_memory_fragments_impl(required, assumptions, origins)
-            .map(|(remaining, _)| remaining)
+        self.reserve_owned_memory_fragments_impl(
+            required,
+            assumptions,
+            origins,
+            establish_requested_carrier,
+        )
+        .map(|(remaining, _)| remaining)
     }
 
     /// Compose the selected endpoint chain, without inspecting other starts.
