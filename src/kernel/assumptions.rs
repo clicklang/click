@@ -89,7 +89,9 @@ pub(crate) use proposition_reasoning::finite_forall_goal_instances;
 
 /// How a structural walk compares two load atoms. The walk itself is exact —
 /// it only ever descends through matching constructors — so the whole
-/// relation is only as strong as the load-atom rule plugged in here.
+/// relation is only as strong as the load-atom rule plugged in here. Registered
+/// names are offered before their raw origin snapshots, allowing an explicit
+/// named-load equality to supply authority without discarding those identities.
 pub(in crate::kernel) type LoadAtomsMatch<'a> =
     &'a dyn Fn(&Bitvector32Term, &Bitvector32Term) -> bool;
 
@@ -194,6 +196,9 @@ fn terms_equal_with_load_atoms(
                 && crate::kernel::is_load_variable(a)
                 && crate::kernel::is_load_variable(b) =>
         {
+            if loads_match(left, right) {
+                return true;
+            }
             match (
                 crate::kernel::registered_load_origin_term_for_variable(a),
                 crate::kernel::registered_load_origin_term_for_variable(b),
@@ -13191,6 +13196,13 @@ mod shared_load_atom_comparison_tests {
             let exports = KernelTermExport::machine_export_count();
             let calls = std::cell::Cell::new(0);
             let accept = |l: &Bitvector32Term, r: &Bitvector32Term| {
+                if let (Bitvector32Term::Variable(left), Bitvector32Term::Variable(right)) = (l, r)
+                {
+                    assert_eq!((*left, *right), (a, b));
+                    // This authority recognizes origin snapshots only. The
+                    // optional named-load check must still consult it.
+                    return false;
+                }
                 calls.set(calls.get() + 1);
                 assert_eq!(l, &left_load);
                 assert_eq!(r, &right_load);
@@ -13286,16 +13298,169 @@ mod shared_load_atom_comparison_tests {
                 IntegerTerm::constant_i64(7),
             )
         };
-        let source = Proposition::ConditionIs(condition(&before), true);
+        let (source, truth) =
+            crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+                &condition(&before),
+                true,
+            )
+            .unwrap();
+        let source = Proposition::ConditionIs(source, truth);
         let target = Proposition::ConditionIs(condition(&after), true);
-        assert_ne!(source, target);
-        let unframed = ProofFacts::from_ordered(std::slice::from_ref(&source));
+        for source in std::iter::once(Proposition::ConditionIs(condition(&before), true)).chain(
+            crate::kernel::proof::fact_reasoning::order_claim_forms(&source),
+        ) {
+            let unframed = ProofFacts::from_ordered(std::slice::from_ref(&source));
+            let framed = ProofFacts::from_ordered(&[source.clone(), equality.clone()]);
+            let exports = KernelTermExport::machine_export_count();
+            assert!(!unframed.exact_available_across_effects(&target, &[]));
+            let available = framed.exact_available_across_effects(&target, &[]);
+            if !available {
+                // Reference the existing certificate adapter: these premises
+                // must remain available when its boxed query is removed.
+                let Proposition::ConditionIs(condition, truth) = &target else {
+                    unreachable!()
+                };
+                let (native, truth) = crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(condition, *truth).unwrap();
+                let native = Proposition::ConditionIs(native, truth);
+                assert!(
+                    crate::kernel::proof::fact_reasoning::order_claim_forms(&native)
+                        .iter()
+                        .any(|p| framed.exact_available_across_effects(p, &[])),
+                    "legacy certificate route must supply the control"
+                );
+            }
+            assert!(available, "missing shared premise: {source:?}");
+            assert!(!unframed.exact_available_across_effects(&target, &[]));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+        use crate::kernel::machine_integer::{
+            Operation, comparison::native_comparison_view, definedness::OverflowQueryView,
+        };
+        let (native, _) =
+            crate::kernel::machine_integer::comparison::native_comparison_of_integer_observation(
+                &condition(&before),
+                true,
+            )
+            .unwrap();
+        let ConditionTerm::Compare { left, .. } = native else {
+            unreachable!()
+        };
+        let factor = Bitvector32Term::Variable(Variable(991010));
+        let source = Proposition::ConditionIs(
+            ConditionTerm::Overflows {
+                format: MachineIntegerType::Int32,
+                op: OverflowOperation::Multiply,
+                left,
+                right: Box::new(factor.clone()),
+            },
+            false,
+        );
+        let missing_frame = ProofFacts::from_ordered(std::slice::from_ref(&source));
         let framed = ProofFacts::from_ordered(&[source, equality]);
+        let later = condition(&after);
+        let view = native_comparison_view(&later, true).unwrap();
+        let query = OverflowQueryView::from_operands(
+            MachineIntegerType::Int32,
+            Operation::Multiply,
+            [
+                view.operands[0].operand_view(),
+                MachineOperandView::Legacy(&factor),
+            ],
+        )
+        .unwrap();
         let exports = KernelTermExport::machine_export_count();
-        assert!(!unframed.exact_available_across_effects(&target, &[]));
-        assert!(framed.exact_available_across_effects(&target, &[]));
-        assert!(!unframed.exact_available_across_effects(&target, &[]));
+        for bound in query.bounds() {
+            assert!(!missing_frame.listed_premise_available(&bound, &[], false));
+            assert!(framed.listed_premise_available(&bound, &[], false));
+            assert!(!missing_frame.listed_premise_available(&bound, &[], false));
+        }
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn held_nonoverflow_sources_supply_shared_bounds_without_export() {
+        use crate::kernel::machine_integer::{
+            Operation,
+            definedness::{OverflowQueryView, defined_formats},
+        };
+        use crate::kernel::proof::ProofFacts;
+        for ty in defined_formats() {
+            for (operation, op) in [
+                (Operation::Add, OverflowOperation::Add),
+                (Operation::Subtract, OverflowOperation::Subtract),
+                (Operation::Multiply, OverflowOperation::Multiply),
+            ] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let native = Bitvector32Term::Binary {
+                    format: ty,
+                    op: MachineBinaryOp::Multiply,
+                    left: Box::new(Bitvector32Term::Variable(Variable(991001))),
+                    right: Box::new(Bitvector32Term::Variable(Variable(991002))),
+                };
+                let source = |op, truth| {
+                    Proposition::ConditionIs(
+                        ConditionTerm::Overflows {
+                            format: ty,
+                            op,
+                            left: Box::new(native.clone()),
+                            right: Box::new(Bitvector32Term::Variable(Variable(991003))),
+                        },
+                        truth,
+                    )
+                };
+                let held = ProofFacts::from_ordered(&[source(op, false)]);
+                let missing = ProofFacts::from_ordered(&[]);
+                let refuted = ProofFacts::from_ordered(&[source(op, true)]);
+                let wrong = ProofFacts::from_ordered(&[source(
+                    if op == OverflowOperation::Add {
+                        OverflowOperation::Multiply
+                    } else {
+                        OverflowOperation::Add
+                    },
+                    false,
+                )]);
+                let variable = |id| KernelTerm::variable(KernelType::C(ty.c_type()), Variable(id));
+                let root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    [variable(991001), variable(991002)],
+                );
+                let right = variable(991003);
+                let query = OverflowQueryView::from_operands(
+                    ty,
+                    operation,
+                    [
+                        MachineOperandView::Shared(&root),
+                        MachineOperandView::Shared(&right),
+                    ],
+                )
+                .unwrap();
+                let exports = KernelTermExport::machine_export_count();
+                for bound in query.bounds() {
+                    assert!(
+                        held.listed_premise_available(&bound, &[], false),
+                        "{ty:?} {operation:?}"
+                    );
+                    assert!(!missing.listed_premise_available(&bound, &[], false));
+                    assert!(!refuted.listed_premise_available(&bound, &[], false));
+                    assert!(!wrong.listed_premise_available(&bound, &[], false));
+                }
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                for operand in &query.operands {
+                    let crate::kernel::machine_integer::comparison::ComparisonOperand::Observation(
+                        observation,
+                    ) = operand
+                    else {
+                        unreachable!()
+                    };
+                    // Fixed-size atom adapters may retain a native variable;
+                    // symbolic arithmetic must never acquire a boxed tree.
+                    if observation.operand_view().binary().is_some() {
+                        assert!(!observation.has_boxed_operand(), "{ty:?} {operation:?}");
+                    }
+                }
+            }
+        }
     }
 
     #[test]

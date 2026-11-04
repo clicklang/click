@@ -396,6 +396,21 @@ fn snapshot_blind_memory_range_key(range: &CMemoryRange) -> Box<SnapshotBlindMem
     })
 }
 
+/// Candidate identity for a legacy nonoverflow premise, read from retained
+/// query operands. Matching this key alone never supplies memory authority.
+pub(super) fn snapshot_blind_nonoverflow_key(
+    query: &crate::kernel::machine_integer::definedness::OverflowQueryView,
+) -> SnapshotBlindPropositionKey {
+    SnapshotBlindPropositionKey::Condition(
+        SnapshotBlindConditionKey::Comparison(
+            BitvectorComparisonOp::Overflows(query.format, query.operation_kind()),
+            snapshot_operands::operand(query.operands[0].operand_view()),
+            snapshot_operands::operand(query.operands[1].operand_view()),
+        ),
+        false,
+    )
+}
+
 fn snapshot_observation_key(
     condition: &ConditionTerm,
     value: bool,

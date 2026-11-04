@@ -60,25 +60,53 @@ impl PureFactContext {
             return same_value(a, c) && same_value(b, d);
         }
         conditions_equal_with_load_atoms(left, right, &|left, right| {
-            // The recorded-DAG check runs first: the broad fact-matching
-            // check below records generation-scoped negative answers for the
-            // same query, which would otherwise shadow this stronger one.
-            left == right
-                || match (left, right) {
-                    (
-                        Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-                        Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
-                    ) => {
-                        left_pointer == right_pointer
-                            && left_kind == right_kind
-                            && crate::kernel::explicit_atomic_equality_from_memory_derivations(
-                                left, right, self,
-                            )
-                    }
-                    _ => false,
-                }
-                || self.memory_loads_proven_equal(left, right)
+            self.load_atoms_equal_modulo_origin_unchanged(left, right)
         })
+    }
+
+    pub(in crate::kernel) fn operands_equal_modulo_origin_unchanged(
+        &self,
+        format: MachineIntegerType,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        operands_equal_with_load_atoms(format, left, right, &|left, right| {
+            self.load_atoms_equal_modulo_origin_unchanged(left, right)
+        })
+    }
+
+    fn load_atoms_equal_modulo_origin_unchanged(
+        &self,
+        left: &Bitvector32Term,
+        right: &Bitvector32Term,
+    ) -> bool {
+        // An explicitly held equality between two named word loads is also
+        // frame evidence. Keep those names available to the equality graph
+        // before consulting their raw origin snapshots.
+        if let (Bitvector32Term::Variable(a), Bitvector32Term::Variable(b)) = (left, right)
+            && crate::kernel::registered_load_kind_for_variable(a).is_some_and(LoadKind::is_word32)
+            && crate::kernel::registered_load_kind_for_variable(b).is_some_and(LoadKind::is_word32)
+            && self.int32_values_known_equal(left, right)
+        {
+            return true;
+        }
+        // The recorded-DAG check precedes the broad check, whose cached
+        // negative answer must not shadow the selected edge authority.
+        left == right
+            || match (left, right) {
+                (
+                    Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
+                    Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+                ) => {
+                    left_pointer == right_pointer
+                        && left_kind == right_kind
+                        && crate::kernel::explicit_atomic_equality_from_memory_derivations(
+                            left, right, self,
+                        )
+                }
+                _ => false,
+            }
+            || self.memory_loads_proven_equal(left, right)
     }
 
     pub(crate) fn proves_condition_exact(&self, condition: &ConditionTerm, value: bool) -> bool {

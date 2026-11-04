@@ -42,7 +42,9 @@ fn growing_shared_snapshot_comparisons_reuse_syntax_but_recheck_loads() {
                 }));
             }
         });
-        assert_eq!(calls.get(), size * 2);
+        // Acceptance checks the named pair once. Refusal checks both that
+        // pair and its raw origins; neither answer is cached as authority.
+        assert_eq!(calls.get(), size * 3);
         assert_eq!(KernelTermExport::machine_export_count(), exports);
         samples.push(work);
     }
