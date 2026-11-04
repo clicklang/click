@@ -6908,3 +6908,143 @@ fn native_owner_neighbors_compare_exact_mixed_width_bytes() {
             .is_err()
     );
 }
+
+#[test]
+fn translated_owner_coordinates_preserve_overlap_and_branch_isolation() {
+    for native in [false, true] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let assumptions = PureFactContext::new();
+        let prefix = PointerOffsetTerm::Variable(Variable(995_400));
+        let owned = |delta: i64, start: u32, end: u32, width: u32| {
+            let base = Pointer {
+                block: PointerBlock::Symbolic(Variable(995_401)),
+                offset: PointerOffsetTerm::add(prefix.clone(), PointerOffsetTerm::Constant(delta)),
+            };
+            CResourceFact::own_memory(if native {
+                CMemoryRange::new_wide(
+                    base,
+                    MachineTerm::uint64_constant(start.into()),
+                    MachineTerm::uint64_constant(end.into()),
+                    width,
+                )
+            } else {
+                CMemoryRange::new_with_element_width(base, start.into(), end.into(), width)
+            })
+        };
+        let first = owned(0, 0, 1, 4);
+        let second = owned(8, 0, 1, 4);
+        let empty = owned(2, 0, 0, 1);
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            first.clone(),
+            second,
+            empty.clone(),
+        ]);
+        assert!(context.is_valid(&assumptions));
+        // Different base/range spellings of the same bytes and a partial overlap
+        // of different widths must fail both complete and incremental checks.
+        for overlap in [owned(-4, 1, 2, 4), owned(2, 0, 1, 2), owned(4, 1, 2, 4)] {
+            assert!(
+                !context
+                    .clone()
+                    .unchecked_with_fact(overlap.clone())
+                    .is_valid(&assumptions)
+            );
+            assert!(
+                context
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization([overlap], &assumptions)
+                    .is_err()
+            );
+        }
+        assert!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(4, 0, 1, 4)],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        let child = context
+            .clone()
+            .without_exact_representation(&first)
+            .unwrap()
+            .without_exact_representation(&empty)
+            .unwrap();
+        assert!(
+            child
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(-4, 1, 2, 4)],
+                    &assumptions
+                )
+                .is_ok()
+        );
+        assert!(
+            context
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(-4, 1, 2, 4)],
+                    &assumptions
+                )
+                .is_err()
+        );
+    }
+}
+
+#[test]
+fn translated_owner_coordinates_keep_native_extent_and_symbolic_origin() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let assumptions = PureFactContext::new();
+    let owned = |variable, delta, start, end| {
+        CResourceFact::own_memory(CMemoryRange::new_wide(
+            Pointer {
+                block: PointerBlock::Symbolic(Variable(995_402)),
+                offset: PointerOffsetTerm::add(
+                    PointerOffsetTerm::Constant(delta),
+                    PointerOffsetTerm::Variable(Variable(variable)),
+                ),
+            },
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
+            4,
+        ))
+    };
+    let start = 1u64 << 63;
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owned(
+        995_403,
+        0,
+        start,
+        start + 1,
+    ));
+    let same_bytes = owned(995_403, -4, start + 1, start + 2);
+    assert!(
+        !context
+            .clone()
+            .unchecked_with_fact(same_bytes.clone())
+            .is_valid(&assumptions)
+    );
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization([same_bytes], &assumptions)
+            .is_err()
+    );
+    // An unrelated symbolic origin is not the same address merely because
+    // its block and constant displacement match.
+    assert!(
+        context
+            .clone()
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(995_404, 0, start, start + 1)],
+                &assumptions
+            )
+            .is_ok()
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(995_403, 4, start, start + 1)],
+                &assumptions
+            )
+            .is_ok()
+    );
+}
