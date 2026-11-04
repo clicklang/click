@@ -685,7 +685,13 @@ same profile. Cargo's extractor dependency pin is checked against it.
 The build job caches dependencies, Click's own build artifacts, and
 incremental compilation state under the compiler and dependency identity.
 Each revision saves a new snapshot and later runs restore the latest
-compatible snapshot. Cargo still checks source freshness and rebuilds changed
+compatible snapshot. A separate frontend cache retains the C++ exporter and
+its fingerprint plus Charon's pinned source checkout (including Git metadata).
+It is keyed by frontend sources, build/setup scripts, the Rust frontend profile,
+and runner OS/architecture, and published only by master. Build scripts still
+validate the exporter fingerprint and Charon revision on every run. Restore
+this cache after evaluating the Click build-cache key so Charon's Cargo files
+do not alter that key. Cargo still checks source freshness and rebuilds changed
 code. Build snapshots can be large, so cache transfer and fresh-checkout
 rebuild costs must be included
 when comparing CI timings; a cold cache still builds everything normally.
