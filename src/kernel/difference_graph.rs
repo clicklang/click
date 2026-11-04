@@ -246,6 +246,22 @@ impl DifferenceGraph {
     /// Records a true or false condition fact. A fact difference logic does
     /// not express is ignored.
     pub(crate) fn assume_condition(&mut self, condition: &ConditionTerm, value: bool) {
+        if let Some(view) = shared_narrow_comparison(condition, value) {
+            // Widening is injective. Share fresh aliases in their original
+            // narrow domain before introducing the widening links, so each
+            // new prefix does not add another pair of equivalent graph nodes.
+            if view.relation == crate::kernel::machine_integer::Relation::Equal
+                && self.alias_equality_views(
+                    view.format,
+                    view.operands[0].operand_view(),
+                    view.operands[1].operand_view(),
+                )
+            {
+                return;
+            }
+            self.assume_comparison_view(&view.widened().expect("narrow comparison"));
+            return;
+        }
         if let Some(widened) =
             crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition)
         {
@@ -283,63 +299,8 @@ impl DifferenceGraph {
         }
         if let Some(view) =
             crate::kernel::machine_integer::comparison::comparison_view(condition, value)
-            && matches!(
-                view.format,
-                MachineIntegerType::Int32
-                    | MachineIntegerType::UInt32
-                    | MachineIntegerType::Int64
-                    | MachineIntegerType::UInt64
-            )
-            && matches!(
-                view.relation,
-                crate::kernel::machine_integer::Relation::Equal
-                    | crate::kernel::machine_integer::Relation::NotEqual
-            )
+            && self.assume_comparison_view(&view)
         {
-            let [a, b] = view
-                .operands
-                .each_ref()
-                .map(|operand| operand.operand_view());
-            if view.relation == crate::kernel::machine_integer::Relation::NotEqual {
-                self.exclude_views(view.format, a, b);
-                return;
-            }
-            if view.format.format().bits() == 64 {
-                self.residues.assume_equal_views(a, b);
-            }
-            if self.alias_equality_views(view.format, a, b) {
-                return;
-            }
-            for &domain in equality_domains(view.format) {
-                if self.contradictory {
-                    return;
-                }
-                let a = self.affine_view(domain, a);
-                let b = self.affine_view(domain, b);
-                self.constrain(a, b, 0);
-                self.constrain(b, a, 0);
-            }
-            return;
-        }
-        if let Some(view) =
-            crate::kernel::machine_integer::comparison::comparison_view(condition, value)
-            && matches!(
-                view.relation,
-                crate::kernel::machine_integer::Relation::Less
-                    | crate::kernel::machine_integer::Relation::LessEqual
-            )
-            && let Some(domain) = order_domain(view.format)
-        {
-            if self.contradictory {
-                return;
-            }
-            let lower = self.affine_view(domain, view.operands[0].operand_view());
-            let upper = self.affine_view(domain, view.operands[1].operand_view());
-            self.constrain(
-                upper,
-                lower,
-                -i128::from(view.relation == crate::kernel::machine_integer::Relation::Less),
-            );
             return;
         }
         for (domain, lower, upper, strict) in condition_orders(condition, value) {
@@ -351,6 +312,67 @@ impl DifferenceGraph {
             // lower - upper <= -strict
             self.constrain(upper, lower, -i128::from(strict));
         }
+    }
+
+    fn assume_comparison_view(
+        &mut self,
+        view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
+    ) -> bool {
+        if matches!(
+            view.format,
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
+        ) && matches!(
+            view.relation,
+            crate::kernel::machine_integer::Relation::Equal
+                | crate::kernel::machine_integer::Relation::NotEqual
+        ) {
+            let [a, b] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            if view.relation == crate::kernel::machine_integer::Relation::NotEqual {
+                self.exclude_views(view.format, a, b);
+                return true;
+            }
+            if view.format.format().bits() == 64 {
+                self.residues.assume_equal_views(a, b);
+            }
+            if self.alias_equality_views(view.format, a, b) {
+                return true;
+            }
+            for &domain in equality_domains(view.format) {
+                if self.contradictory {
+                    return true;
+                }
+                let a = self.affine_view(domain, a);
+                let b = self.affine_view(domain, b);
+                self.constrain(a, b, 0);
+                self.constrain(b, a, 0);
+            }
+            return true;
+        }
+        if matches!(
+            view.relation,
+            crate::kernel::machine_integer::Relation::Less
+                | crate::kernel::machine_integer::Relation::LessEqual
+        ) && let Some(domain) = order_domain(view.format)
+        {
+            if self.contradictory {
+                return true;
+            }
+            let lower = self.affine_view(domain, view.operands[0].operand_view());
+            let upper = self.affine_view(domain, view.operands[1].operand_view());
+            self.constrain(
+                upper,
+                lower,
+                -i128::from(view.relation == crate::kernel::machine_integer::Relation::Less),
+            );
+            return true;
+        }
+        false
     }
 
     fn exclude_views(&mut self, format: MachineIntegerType, a: V<'_>, b: V<'_>) {
@@ -1207,6 +1229,21 @@ impl DifferenceGraph {
             return Some(*value);
         }
         if let Some(widened) =
+            shared_narrow_comparison(condition, true).and_then(|view| view.widened())
+        {
+            use crate::kernel::machine_integer::Relation;
+            return match widened.relation {
+                Relation::Equal | Relation::NotEqual => self
+                    .decide_equality_views(
+                        widened.format,
+                        widened.operands[0].operand_view(),
+                        widened.operands[1].operand_view(),
+                    )
+                    .map(|value| value == (widened.relation == Relation::Equal)),
+                _ => self.decide_shared_order(&widened),
+            };
+        }
+        if let Some(widened) =
             crate::kernel::machine_integer::comparison::narrow_comparison_as_int32(condition)
         {
             return self.decide(&widened);
@@ -2041,11 +2078,27 @@ impl ContextDifferenceGraph {
 }
 
 fn equality_domains(format: MachineIntegerType) -> &'static [Domain] {
-    if format.format().bits() == 32 {
-        &[Domain::Int32]
-    } else {
-        &[Domain::Int64, Domain::UInt64]
+    match format {
+        MachineIntegerType::Int8 => &[Domain::Narrow(MachineIntegerType::Int8)],
+        MachineIntegerType::UInt8 => &[Domain::Narrow(MachineIntegerType::UInt8)],
+        MachineIntegerType::Int16 => &[Domain::Narrow(MachineIntegerType::Int16)],
+        MachineIntegerType::UInt16 => &[Domain::Narrow(MachineIntegerType::UInt16)],
+        MachineIntegerType::Int32 | MachineIntegerType::UInt32 => &[Domain::Int32],
+        _ => &[Domain::Int64, Domain::UInt64],
     }
+}
+
+// Keep the existing native widening boundary for explicitly written inputs.
+// Shared inputs add only the two cast roots, retaining the operand DAGs.
+fn shared_narrow_comparison(
+    condition: &ConditionTerm,
+    truth: bool,
+) -> Option<crate::kernel::machine_integer::comparison::NativeComparisonView<'_>> {
+    if matches!(condition, ConditionTerm::Compare { .. }) {
+        return None;
+    }
+    let view = crate::kernel::machine_integer::comparison::comparison_view(condition, truth)?;
+    (view.format.format().bits() < 32).then_some(view)
 }
 
 /// Whether difference logic reads anything from a fact about `condition`.
@@ -2057,7 +2110,7 @@ fn expresses(condition: &ConditionTerm) -> bool {
     // and withdrawing a source leaves its old edge in the cached graph.
     if crate::kernel::machine_integer::comparison::comparison_view(condition, true).is_some_and(
         |view| {
-            order_domain(view.format).is_some()
+            (order_domain(view.format).is_some() || view.format.format().bits() < 32)
                 && matches!(
                     view.relation,
                     crate::kernel::machine_integer::Relation::Less

@@ -242,6 +242,9 @@ impl DifferenceGraph {
         if self.contradictory {
             return None;
         }
+        if let Some(widened) = view.widened() {
+            return self.decide_shared_order(&widened);
+        }
         let strict = match view.relation {
             Relation::Less => true,
             Relation::LessEqual => false,
