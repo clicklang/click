@@ -27,7 +27,7 @@ are longer-term work, after those priorities (maintainer, 2026-10-14 and
 | Smart planning and proof search | No | Part of `src/surface` | `src/surface/planning`, `src/surface/proof/smart_*` |
 | C front end and target model | Yes | 29,000 lines of Rust | `src/languages/c` |
 | C++ and Rust import, with their pinned external front ends | Yes, for those languages | 11,000 and 8,000 lines of Rust, plus a 4,500-line C++ exporter | `src/languages/cpp`, `src/languages/rust`, `tools/cpp-exporter` |
-| Click library theorems | Checked by the gate, then applied without re-checking | 162 theorems in 1,651 lines | `library/` |
+| Click library theorems | Proved ones are checked by the gate; kernel standard theorems are trusted kernel builders whose declarations the gate shape-checks. All are then applied without re-checking | 151 theorems, 76 of them kernel standard, in 3,000 lines | `library/` |
 | `extern` contracts | Yes: assumptions | 5 in the library, one per `snprintf` format a program uses, one per Rust core method an import calls, plus any you declare | `library/c/`, `src/languages/c/formatted_output.rs`, `src/languages/rust/standard_library.rs`, your sidecars |
 | CLI rendering and profiling | No: they do not decide validity | 9,500 lines of Rust | `src/bin` |
 
@@ -40,7 +40,7 @@ audited number.
 `src/kernel` defines proof states, checked transitions, and certification. A
 `Theorem` is an abstract value that only kernel operations can construct. Every
 public kernel function that returns a `Theorem` is an axiom in Click's sense,
-even when its Rust name is `prove_*`: about 125 such operations, some of which
+even when its Rust name is `prove_*`: about 115 such operations, some of which
 are parameterized families (see [Kernel](../internals/kernel.md#trusted-shape)
 and the glossary entry for axiom). Fifteen `prove_int32_*` operations are also
 exposed as named standard theorems. `separation::restrict` is likewise a named
@@ -118,10 +118,27 @@ contracts in `src/languages/cpp/standard_library.rs`. See
 
 ## The Click library
 
-The `library/` modules declare 162 theorems. None is an unproved axiom: the
-gate proves every one of them with `verify_standard_library`. Ordinary
-verification then applies them as dependencies without re-checking them, so a
-library theorem is trusted to the extent that the gate that checked it is.
+The `library/` modules declare 151 theorems. The gate checks each one with
+`verify_standard_library`, in one of two ways:
+
+- **75 are proved.** Their written or default proofs are checked like any
+  other proof.
+- **76 are kernel standard theorems.** They have no proof. The gate checks
+  only that the declaration's parameters, premises and conclusion match the
+  proposition a Rust kernel builder constructs (`prove_*`, mostly in
+  `src/kernel/api.rs`), and records the theorem as an axiom
+  (`verify_kernel_standard_theorem_axiom` in
+  `src/surface/proof/pure_theorems.rs`; `is_kernel_standard_theorem_name`
+  lists them). Their soundness rests on those builders, which are part of the
+  trusted kernel. They are 55 machine-integer laws in `integer.click`
+  (exact observations of arithmetic, definedness, order, round trips, 16-bit
+  packing and the `uint32_from_le_bytes` byte layout), 5 Integer truncation
+  laws, 6 `Nat` conversion laws and 10 separation laws.
+
+Ordinary verification then applies every library theorem as a dependency
+without re-checking it. A proved library theorem is trusted to the extent that
+the gate that checked it is; a kernel standard theorem is trusted to the extent
+that its builder is.
 
 The library also declares seven `axiom`s, which are trusted, not proved: the
 laws of the primitive type `Vec<T>` in `library/rust/vec.click`, which relate

@@ -1166,7 +1166,7 @@ Unsigned remainder agrees with the truncating Integer remainder. Both native and
 ```click
 theorem uint64_less_equal_to_integer(left: uint64, right: uint64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 ```
 
@@ -1179,7 +1179,7 @@ Native uint64 non-strict order implies exact Integer observation order, includin
 ```click
 theorem uint64_to_integer_less_equal_implies_less_equal(left: uint64, right: uint64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 ```
 
@@ -1192,7 +1192,7 @@ Exact Integer observation order implies native uint64 non-strict order. The math
 ```click
 theorem uint64_less_than_to_integer(left: uint64, right: uint64) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right);
+    ensures to_integer(left) < to_integer(right) by assumption();
 }
 ```
 
@@ -1205,7 +1205,7 @@ Native uint64 strict order implies strict order of the exact Integer observation
 ```click
 theorem uint64_to_integer_less_than_implies_less_than(left: uint64, right: uint64) {
     requires to_integer(left) < to_integer(right);
-    ensures left < right;
+    ensures left < right by assumption();
 }
 ```
 
@@ -1316,7 +1316,7 @@ logical right shift.
 ```click
 theorem uint64_less_than_implies_not_greater_equal(left: uint64, right: uint64) {
     requires left < right;
-    ensures not (left >= right);
+    ensures not (left >= right) by assumption();
 }
 ```
 
@@ -1329,7 +1329,7 @@ A strict unsigned order excludes the opposite greater-or-equal branch.
 ```click
 theorem uint64_to_integer_equal_implies_equal(left: uint64, right: uint64) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right;
+    ensures left == right by assumption();
 }
 ```
 
@@ -1342,7 +1342,7 @@ Equal exact unsigned observations identify the same native value, over the whole
 ```click
 theorem uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 ```
 
@@ -1355,7 +1355,7 @@ Preserves native unsigned order in exact Integer observations, including values 
 ```click
 theorem uint32_to_integer_less_equal_implies_less_equal(left: uint32, right: uint32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 ```
 
@@ -1368,7 +1368,7 @@ Reflects exact Integer observation order into native unsigned order. The mathema
 ```click
 theorem uint32_to_integer_equal_implies_equal(left: uint32, right: uint32) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right;
+    ensures left == right by assumption();
 }
 ```
 
@@ -1507,7 +1507,7 @@ The definedness premise excludes overflow; the equality is not unconditional.
 ```click
 theorem int32_less_equal_to_integer(left: int32, right: int32) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 ```
 
@@ -1522,7 +1522,7 @@ order between unrelated machine values.
 ```click
 theorem int32_to_integer_less_equal_implies_less_equal(left: int32, right: int32) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 ```
 
@@ -1535,7 +1535,7 @@ A proved non-strict order between exact signed observations establishes the nati
 ```click
 theorem int64_less_equal_to_integer(left: int64, right: int64) {
     requires left <= right;
-    ensures to_integer(left) <= to_integer(right);
+    ensures to_integer(left) <= to_integer(right) by assumption();
 }
 ```
 
@@ -1548,7 +1548,7 @@ The exact signed mathematical observation preserves native non-strict order. The
 ```click
 theorem int64_less_than_to_integer(left: int64, right: int64) {
     requires left < right;
-    ensures to_integer(left) < to_integer(right);
+    ensures to_integer(left) < to_integer(right) by assumption();
 }
 ```
 
@@ -1561,7 +1561,7 @@ Preserves the exact source comparison in signed 64-bit Integer observations, inc
 ```click
 theorem int64_greater_equal_to_integer(left: int64, right: int64) {
     requires left >= right;
-    ensures to_integer(left) >= to_integer(right);
+    ensures to_integer(left) >= to_integer(right) by assumption();
 }
 ```
 
@@ -1574,7 +1574,7 @@ Preserves the exact source comparison in signed 64-bit Integer observations, inc
 ```click
 theorem int64_to_integer_less_equal_implies_less_equal(left: int64, right: int64) {
     requires to_integer(left) <= to_integer(right);
-    ensures left <= right;
+    ensures left <= right by assumption();
 }
 ```
 
@@ -1587,7 +1587,7 @@ A proved non-strict order between exact signed observations establishes the nati
 ```click
 theorem int64_to_integer_equal_implies_equal(left: int64, right: int64) {
     requires to_integer(left) == to_integer(right);
-    ensures left == right;
+    ensures left == right by assumption();
 }
 ```
 
