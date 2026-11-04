@@ -6376,12 +6376,11 @@ impl ResourceContext {
             {
                 return true;
             }
-            // Decide constant native ownership by constructing its consumption
+            // Decide native or symbolic unit ownership by constructing its consumption
             // on a persistent branch. The caller retains every occurrence;
             // indexed selection stops at a gap instead of normalizing candidates.
             if fact.owned_quantity_term().and_then(|q| q.as_const()) == Some(1)
-                && range.wide_bounds().is_some()
-                && !range.has_symbolic_bounds()
+                && (range.wide_bounds().is_some() || range.has_symbolic_bounds())
             {
                 return self
                     .clone()
@@ -6926,6 +6925,10 @@ impl ResourceContext {
         let candidates = self.memory_fact_candidates(range, true, assumptions);
         if let Some(entry) = candidates.entries.single_supplier()
             && self.fact(entry).has_proven_positive_quantity(assumptions)
+            && !self
+                .fact(entry)
+                .memory_own_range()
+                .is_some_and(|available| memory_range_definitely_shorter(available, range))
             && let Some(aligned) = candidates.requirement(entry, required)
             && self.consume_fact_from_candidates_with_origins(
                 &aligned,
@@ -10697,6 +10700,19 @@ fn memory_resource_fact_range(fact: &CResourceFact) -> Option<&CMemoryRange> {
             | CResource::Iterated(_),
         ) => None,
     }
+}
+
+/// A structurally known shorter footprint cannot supply the whole request,
+/// regardless of pointer spelling. Do not ask pointer/order reasoning to
+/// rediscover this refusal before composing selected adjacent pieces.
+fn memory_range_definitely_shorter(available: &CMemoryRange, required: &CMemoryRange) -> bool {
+    let bytes = |range: &CMemoryRange| -> Option<u64> {
+        let (start, end) = range.int32_bounds()?;
+        let count = Bitvector32Term::subtract(end.clone(), start.clone()).as_const()?;
+        // Only use a representable nonnegative signed element count.
+        (count <= i32::MAX as u32).then_some(u64::from(count) * u64::from(range.element_width()))
+    };
+    matches!((bytes(available), bytes(required)), (Some(a), Some(r)) if a < r)
 }
 
 /// A constant range as the pair an address statement is made of: the signed

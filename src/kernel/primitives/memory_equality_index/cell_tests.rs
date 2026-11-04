@@ -1439,3 +1439,73 @@ fn native_fragment_consumption_checks_each_typed_designation() {
         assert!(context.contains_exact_representation(&second));
     }
 }
+
+#[test]
+fn symbolic_ownership_queries_preserve_authority_checks_and_branches() {
+    for native in [false, true] {
+        for case in ["owned", "gap", "view", "zero", "negative", "designation"] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(991_010));
+            let end = Bitvector32Term::Variable(Variable(991_011));
+            let c = |n: u32| {
+                if native {
+                    Bitvector32Term::uint64_constant(u64::from(n))
+                } else {
+                    n.into()
+                }
+            };
+            let less = |a, b| {
+                if native {
+                    ConditionTerm::uint64_less_than(a, b)
+                } else {
+                    ConditionTerm::signed_less_than(a, b)
+                }
+            };
+            let range = |a, b| {
+                if native {
+                    CMemoryRange::new_wide(p.clone(), a, b, 4)
+                } else {
+                    CMemoryRange::new(p.clone(), a, b)
+                }
+            };
+            let facts = PureFactContext::new()
+                .assume_condition(less(c(2), end.clone()), true)
+                .assume_condition(less(end.clone(), c(64)), true);
+            let first = CResourceFact::own_memory(range(c(0), c(2)));
+            let tail = range(c(if case == "gap" { 3 } else { 2 }), end.clone());
+            let second =
+                match case {
+                    "view" => CResourceFact::view_memory(tail),
+                    "zero" => CResourceFact::Own(CResource::Memory(tail), Box::new(0u32.into())),
+                    "negative" => {
+                        CResourceFact::Own(CResource::Memory(tail), Box::new(u32::MAX.into()))
+                    }
+                    "designation" => CResourceFact::own_memory(tail.with_designation(
+                        std::sync::Arc::new(Pointer::symbolic(Variable(991_012))),
+                    )),
+                    _ => CResourceFact::own_memory(tail),
+                };
+            let context = ResourceContext::new_with_equalities(&facts)
+                .unchecked_with_facts([first.clone(), second.clone()]);
+            context.synchronize_memory_equalities(&facts);
+            let required = CResourceFact::own_memory(range(c(0), end).with_typed_carrier());
+            for _ in 0..3 {
+                assert_eq!(
+                    context.satisfies_fact(&required, &facts),
+                    case == "owned",
+                    "{native}/{case}"
+                );
+                assert!(context.contains_exact_representation(&first));
+                assert!(context.contains_exact_representation(&second));
+            }
+            if case == "owned" {
+                let child = context
+                    .clone()
+                    .without_fact_incrementally(&first, &facts)
+                    .unwrap();
+                assert!(!child.satisfies_fact(&required, &facts));
+                assert!(context.satisfies_fact(&required, &facts));
+            }
+        }
+    }
+}

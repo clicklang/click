@@ -128,6 +128,7 @@ impl Boundary<'_> {
                 self.function.as_str(),
                 "consume_unit_owned_memory"
                     | "consume_symbolic_partition"
+                    | "memory_range_definitely_shorter"
                     | "reserve_owned_memory_fragments_impl"
             )
             && matches!(
