@@ -667,7 +667,11 @@ fn store_cell_effect(
             left,
             right,
         } = &condition
-            && let Some(path) = assumptions.exact_signed_order_path_evidence(left, right, true)
+            && let Some(path) = assumptions.exact_signed_order_source_path(
+                MachineOperandView::Legacy(left),
+                MachineOperandView::Legacy(right),
+                true,
+            )
         {
             hop(MemoryDagHopJustification::StoreCommonBaseSignedOrder {
                 condition,
@@ -680,7 +684,11 @@ fn store_cell_effect(
             left,
             right,
         } = &condition
-            && let Some(path) = assumptions.exact_signed_order_path_evidence(right, left, true)
+            && let Some(path) = assumptions.exact_signed_order_source_path(
+                MachineOperandView::Legacy(right),
+                MachineOperandView::Legacy(left),
+                true,
+            )
         {
             hop(MemoryDagHopJustification::StoreCommonBaseSignedOrder {
                 condition,

@@ -3157,6 +3157,7 @@ impl PureFactContext {
     /// Checks one retained signed-order path using only its exact named
     /// premises. This mirrors `exact_signed_order_path_evidence`'s terminal
     /// constant comparison but never searches the ambient order graph.
+    #[cfg(test)]
     pub(in crate::kernel) fn checks_exact_signed_order_path(
         &self,
         path: &[SignedOrderDerivationStep],
