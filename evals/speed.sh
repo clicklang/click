@@ -23,8 +23,8 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-MEMBERS=(arena rbtree-insert owned-vector)
-STRESS=(rbtree-erase)
+MEMBERS=(arena rbtree/rbtree-insert owned-vector)
+STRESS=(rbtree/rbtree-erase)
 
 work=0
 runs=3
