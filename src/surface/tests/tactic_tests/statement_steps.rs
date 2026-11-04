@@ -1373,3 +1373,67 @@ void change(struct node *g, struct node *source, struct node *t) {
 
 #[path = "../../../scaling_tests/surface/tests/tactic_tests/statement_steps.rs"]
 mod scaling_tests;
+
+#[test]
+fn prepared_call_cannot_use_its_postcondition_to_prove_its_precondition() {
+    let c = "int32 caller(int32 a) { return callee(a); }";
+    for step in [
+        "step();",
+        "step() by assumption();",
+        "step() { requires positive(a) == 1 by assumption(); }",
+    ] {
+        let source = format!(
+            r#"
+verifying "call.c";
+function positive(x: int32) -> int32 {{ if x > 0 {{ 1 }} else {{ 0 }} }}
+extern int32 callee(int32 x) {{
+    requires positive(x) == 1;
+    ensures positive(x) == 1;
+    ensures result == x;
+}}
+int32 caller(int32 a) {{
+    requires a < 0;
+    ensures result == a;
+}} by {{ {step} step(); solve(); }}
+"#
+        );
+        verify_c0_sources(&source, &[("call.c", c)])
+            .expect_err("a conditional successor must not supply its own prerequisite");
+    }
+}
+
+#[test]
+fn prepared_call_refuses_an_unproved_omitted_requirement() {
+    let source = r#"
+verifying "call.c";
+function positive(x: int32) -> int32 { if x > 0 { 1 } else { 0 } }
+extern int32 callee(int32 x, int32 y) {
+    requires positive(x) == 1;
+    requires positive(y) == 1;
+    ensures positive(y) == 1;
+    ensures result == x;
+}
+int32 caller(int32 a, int32 b) {
+    requires a > 0;
+    requires b < 0;
+    ensures result == a;
+} by {
+    step() {
+        requires positive(a) == 1 by {
+            unfold(positive(a)); normalize() using { a > 0; };
+        }
+    }
+    step(); solve();
+}
+"#;
+    let c = "int32 caller(int32 a, int32 b) { return callee(a, b); }";
+    for implicit in [true, false] {
+        let check = || verify_c0_sources(source, &[("call.c", c)]);
+        let result = if implicit {
+            check()
+        } else {
+            crate::surface::without_implicit_auto(check)
+        };
+        result.expect_err("every omitted slot must be discharged before publication");
+    }
+}
