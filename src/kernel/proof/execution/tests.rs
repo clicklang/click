@@ -1,9 +1,9 @@
 #[test]
 fn balanced_unit_sum_domain_requires_all_three_original_domains() {
     use crate::kernel::ConditionTerm;
-    let a = Bitvector32Term::Variable(Variable(100));
-    let b = Bitvector32Term::Variable(Variable(101));
-    let one = Bitvector32Term::constant(1);
+    let a = MachineTerm::Variable(Variable(100));
+    let b = MachineTerm::Variable(Variable(101));
+    let one = MachineTerm::constant(1);
     let guards = [
         ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
         ConditionTerm::signed_add_overflows(a.clone(), one.clone()),
@@ -11,8 +11,8 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
     ];
     let goal = Proposition::ConditionIs(
         ConditionTerm::signed_add_overflows(
-            Bitvector32Term::add(a.clone(), one.clone()),
-            Bitvector32Term::subtract(b.clone(), one.clone()),
+            MachineTerm::add(a.clone(), one.clone()),
+            MachineTerm::subtract(b.clone(), one.clone()),
         ),
         false,
     );
@@ -62,9 +62,9 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 // `src/surface/planning/proposition_search.rs`. Only these tests reach
 // it from inside the kernel.
 use crate::kernel::{
-    Bitvector32Term, CComparisonOperator, CCompositeResourceDefinition, CMemory,
-    CResourceAccessMode, CResourceFact, CResourceSpec, CType, CValue, Pointer, PointerBlock,
-    PointerOffsetTerm, SpecExpression, c_function, int32,
+    CComparisonOperator, CCompositeResourceDefinition, CMemory, CResourceAccessMode, CResourceFact,
+    CResourceSpec, CType, CValue, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
+    SpecExpression, c_function, int32,
 };
 use crate::surface::planning::proposition_search::PropositionSearch;
 
@@ -202,9 +202,9 @@ fn constructor_partition_fixture_with_type(
         CType::Int32,
         "entry",
         vec![],
-        CStatement::Return(CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(4_000_000)),
-        ))),
+        CStatement::Return(CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            Variable(4_000_000),
+        )))),
     );
     let mut core = ExecutionProofCore::at_entry(state.clone(), ExecutionFrontier::default());
     assert!(
@@ -344,7 +344,7 @@ fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
     let (core, value) = constructor_partition_fixture(2);
     let occupied = Variable(4_065_536);
     let root = ProofFacts::from_ordered(&[Proposition::Equal(
-        crate::kernel::Term::CValue(CValue::Int32(Bitvector32Term::Variable(occupied))),
+        crate::kernel::Term::CValue(CValue::Int32(MachineTerm::Variable(occupied))),
         crate::kernel::Term::CValue(int32(0)),
     )]);
     let env = crate::kernel::CExecutionEnvironment::new();
@@ -374,8 +374,7 @@ fn constructor_partition_witnesses_avoid_source_facts_and_previous_matches() {
 fn constructor_partition_witnesses_avoid_the_region_state_and_issued_variables() {
     let (_, value) = constructor_partition_fixture(2);
     let occupied = Variable(4_000_000);
-    let state =
-        CState::new().with_local("cursor", CValue::Int32(Bitvector32Term::Variable(occupied)));
+    let state = CState::new().with_local("cursor", CValue::Int32(MachineTerm::Variable(occupied)));
     let core = ExecutionProofCore::at_entry(state, ExecutionFrontier::default());
     let root = ProofFacts::default();
     let env = crate::kernel::CExecutionEnvironment::new();
@@ -444,7 +443,7 @@ fn constructor_partition_reserves_algebraic_variables_in_opaque_environment_term
         "opaque_environment",
         vec![],
         CStatement::Return(CExpression::Value(CValue::Int32(
-            Bitvector32Term::ClickFunctionApplication {
+            MachineTerm::ClickFunctionApplication {
                 name: "opaque".into(),
                 arguments: vec![PureFunctionArgument::Algebraic(value.clone())],
             },
@@ -519,7 +518,7 @@ fn cached_body_loadability_preserves_exact_range_and_snapshot_barriers() {
     let view = |memory, pointer, width, wide| Proposition::CMemoryLoadable {
         memory,
         base: pointer,
-        bytes: Bitvector32Term::constant(width),
+        bytes: MachineTerm::constant(width),
         wide,
     };
     let allowed = [view(before.clone(), at("body"), 8, false)]
@@ -674,8 +673,8 @@ fn return_proof_publication_shares_candidate_fact_and_effect_objects() {
             .map(|index| {
                 ExecutionPureFact::new(Proposition::ConditionIs(
                     crate::kernel::ConditionTerm::equal(
-                        crate::kernel::Bitvector32Term::Variable(crate::kernel::Variable(index)),
-                        crate::kernel::Bitvector32Term::constant(0),
+                        crate::kernel::MachineTerm::Variable(crate::kernel::Variable(index)),
+                        crate::kernel::MachineTerm::constant(0),
                     ),
                     false,
                 ))
@@ -767,8 +766,8 @@ fn returned_proposition_event(
 fn return_proposition_rejects_sibling_assumptions_and_other_memory() {
     let fact = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(42)),
-            Bitvector32Term::constant(0),
+            MachineTerm::Variable(Variable(42)),
+            MachineTerm::constant(0),
         ),
         true,
     );
@@ -876,49 +875,37 @@ fn return_proposition_accepts_materialized_reads_without_widening_or_value_facts
         bytes,
         wide: false,
     };
-    let valid = read(
-        memory.clone(),
-        pointer.clone(),
-        Bitvector32Term::constant(4),
-    );
+    let valid = read(memory.clone(), pointer.clone(), MachineTerm::constant(4));
     let bad_value = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(43)),
-            Bitvector32Term::constant(7),
+            MachineTerm::Variable(Variable(43)),
+            MachineTerm::constant(7),
         ),
         true,
     );
     let cases = [
         (valid, true),
         (
-            read(
-                memory.clone(),
-                pointer.clone(),
-                Bitvector32Term::constant(8),
-            ),
+            read(memory.clone(), pointer.clone(), MachineTerm::constant(8)),
             false,
         ),
         (
             read(
                 memory.clone(),
                 Pointer::symbolic(Variable(44)),
-                Bitvector32Term::constant(4),
+                MachineTerm::constant(4),
             ),
             false,
         ),
         (
-            read(
-                CMemory::new(),
-                pointer.clone(),
-                Bitvector32Term::constant(4),
-            ),
+            read(CMemory::new(), pointer.clone(), MachineTerm::constant(4)),
             false,
         ),
         (
             read(
                 memory.without_local_block(&pointer.block),
                 pointer,
-                Bitvector32Term::constant(4),
+                MachineTerm::constant(4),
             ),
             false,
         ),
@@ -974,11 +961,11 @@ fn return_argument_facts_require_an_ordinary_positive_or_viewed_resource() {
     use crate::kernel::{
         CComparisonOperator, SpecExpression, SpecProposition, c_parameter, c_variable,
     };
-    let value = CValue::Int32(Bitvector32Term::Variable(Variable(42)));
+    let value = CValue::Int32(MachineTerm::Variable(Variable(42)));
     let fact = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::signed_less_equal(
             1.into(),
-            Bitvector32Term::Variable(Variable(42)),
+            MachineTerm::Variable(Variable(42)),
         ),
         true,
     );
@@ -1381,8 +1368,8 @@ fn return_instance_guard_and_body_cannot_use_sibling_assumptions() {
         vec![int32(7).into(), AlgebraicValue::Algebraic(model.clone())].into(),
     )
     .unwrap();
-    let word = Bitvector32Term::Variable(Variable(42));
-    let guard = ConditionTerm::equal(word.clone(), Bitvector32Term::constant(0));
+    let word = MachineTerm::Variable(Variable(42));
+    let guard = ConditionTerm::equal(word.clone(), MachineTerm::constant(0));
     let condition = SpecProposition::Comparison {
         left: SpecExpression::Value(CValue::Int32(word)),
         operator: CComparisonOperator::Equal,
@@ -1514,11 +1501,7 @@ fn checked_call_event_must_name_a_call_introduced_by_its_statement() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Constant(0),
     };
-    let range = CMemoryRange::new(
-        pointer,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
-    );
+    let range = CMemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
     let before = CState::new().with_memory(CMemory::new().with_block("arg-memory", 4));
     let after = before
         .clone()
@@ -1637,7 +1620,7 @@ fn interface_pointer_congruence_preserves_scope_and_read_obligations() {
         &Proposition::CMemoryLoadable {
             memory: CMemory::new(),
             base: a,
-            bytes: Bitvector32Term::constant(8),
+            bytes: MachineTerm::constant(8),
             wide: false,
         }
     ));
@@ -1740,9 +1723,7 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
         offset: PointerOffsetTerm::Constant(0),
     };
     let caller = CState::new()
-        .with_memory(
-            CMemory::new().store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1))),
-        )
+        .with_memory(CMemory::new().store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))))
         .with_observed_population_family("item");
     let entry_state = crate::kernel::c_function_entry_state(&caller, &function, &[])
         .expect("the empty argument list should bind");
@@ -1763,7 +1744,7 @@ fn checked_function_entry_rebase_rejects_semantic_memory_and_population_changes(
 
     let changed_memory = caller
         .clone()
-        .with_memory(CMemory::new().store(pointer, CValue::Int32(Bitvector32Term::constant(2))));
+        .with_memory(CMemory::new().store(pointer, CValue::Int32(MachineTerm::constant(2))));
     assert!(
         checked
             .entry_state_for(&changed_memory, &function, &[], &assumptions)
@@ -1893,7 +1874,7 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
     };
     let changed_memory = observed
         .clone()
-        .with_memory(CMemory::new().store(pointer, CValue::Int32(Bitvector32Term::constant(1))));
+        .with_memory(CMemory::new().store(pointer, CValue::Int32(MachineTerm::constant(1))));
     assert!(
         CheckedResourceObservation::check(
             &function,
@@ -1922,16 +1903,16 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
         &CheckedCallEvents::default(),
     )
     .expect("the exact folded-to-body representation change should check");
-    let variable = Bitvector32Term::Variable(Variable(400));
+    let variable = MachineTerm::Variable(Variable(400));
     let strong = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::signed_greater_than(
             variable.clone(),
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
         ),
         true,
     );
     let weak = Proposition::ConditionIs(
-        crate::kernel::ConditionTerm::signed_greater_equal(variable, Bitvector32Term::constant(0)),
+        crate::kernel::ConditionTerm::signed_greater_equal(variable, MachineTerm::constant(0)),
         true,
     );
     let premise = facts.with_fact(strong);
@@ -2135,8 +2116,8 @@ fn checked_interface_effects_require_memory_diff_coverage() {
         after: after.memory().clone(),
         mutable_ranges: vec![CMemoryRange::new(
             declared_pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         )],
     });
     let mut summary_core = parent.clone();
@@ -2168,8 +2149,8 @@ fn checked_interface_effects_require_memory_diff_coverage() {
         after: erased_after.memory().clone(),
         mutable_ranges: vec![CMemoryRange::new(
             declared_pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         )],
     });
     let mut erased_core = erased_parent.clone();
@@ -2211,7 +2192,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         before: before.memory().clone(),
         after: freed.memory().clone(),
         allocation_base: allocation_base.clone(),
-        bytes: Bitvector32Term::constant(16),
+        bytes: MachineTerm::constant(16),
     });
     let mut freed_core = parent.clone();
     freed_core.state = freed.clone().into();
@@ -2264,8 +2245,8 @@ fn ground_comparison_premises_check_signed_literals_and_both_polarities() {
     use crate::kernel::ConditionTerm;
     for left in [i32::MIN, -1, 0, 1, i32::MAX] {
         for right in [i32::MIN, -1, 0, 1, i32::MAX] {
-            let l = Box::new(Bitvector32Term::constant(left as u32));
-            let r = Box::new(Bitvector32Term::constant(right as u32));
+            let l = Box::new(MachineTerm::constant(left as u32));
+            let r = Box::new(MachineTerm::constant(right as u32));
             for (condition, actual) in [
                 (
                     ConditionTerm::Compare {
@@ -2332,10 +2313,10 @@ fn ground_comparison_premises_check_signed_literals_and_both_polarities() {
             left: Box::new(binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Variable(crate::kernel::Variable(990))),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::Variable(crate::kernel::Variable(990))),
+                Box::new(MachineTerm::constant(1)),
             )),
-            right: Box::new(Bitvector32Term::constant(1)),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -2358,8 +2339,8 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterEqual,
-            left: Box::new(Bitvector32Term::Variable(Variable(991))),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(991))),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2367,8 +2348,8 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::GreaterThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(991))),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(991))),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2403,8 +2384,8 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(Bitvector32Term::constant(left)),
-                right: Box::new(Bitvector32Term::constant(right)),
+                left: Box::new(MachineTerm::constant(left)),
+                right: Box::new(MachineTerm::constant(right)),
             },
             true,
         );
@@ -2481,8 +2462,8 @@ fn a_summarized_loop_matches_only_a_less_annotated_source_loop() {
         crate::kernel::ConditionTerm::Compare {
             format: crate::kernel::MachineIntegerType::Int32,
             relation: crate::kernel::CompareRelation::GreaterEqual,
-            left: Box::new(Bitvector32Term::constant(0)),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2642,13 +2623,13 @@ fn branch_split_obligations_require_evidence_on_each_named_arm() {
     use crate::kernel::{ConditionTerm, ProofObligation};
     let state = CState::new();
     let condition = CExpression::Value(int32(1));
-    let x = Bitvector32Term::Variable(Variable(930_000));
+    let x = MachineTerm::Variable(Variable(930_000));
     let strong = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(x.clone(), Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_than(x.clone(), MachineTerm::constant(0)),
         true,
     );
     let required = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(x, Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_equal(x, MachineTerm::constant(0)),
         true,
     );
     let root = ProofFacts::default().with_fact(strong);
@@ -2788,7 +2769,7 @@ fn interface_logical_read_does_not_establish_validity() {
 #[test]
 fn interface_assertion_requires_an_available_proof_not_derivability() {
     use crate::kernel::ConditionTerm;
-    let term = Bitvector32Term::Variable(Variable(949_000));
+    let term = MachineTerm::Variable(Variable(949_000));
     let state = CState::new().with_local("x", CValue::Int32(term.clone()));
     let spec = SpecProposition::Comparison {
         left: SpecExpression::CExpression(CExpression::Variable("x".into())),
@@ -2796,11 +2777,11 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
         right: SpecExpression::Value(int32(0)),
     };
     let goal = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(term.clone(), Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_equal(term.clone(), MachineTerm::constant(0)),
         true,
     );
     let facts = ProofFacts::default().with_fact(Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(term, Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_than(term, MachineTerm::constant(0)),
         true,
     ));
     assert!(
@@ -2849,8 +2830,8 @@ fn interface_load_definition_rejects_wrong_variable_address_and_snapshot() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::MemoryLoad(
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
@@ -3022,8 +3003,8 @@ fn interface_branch_constructs_resources_and_rejects_unproved_facts() {
 
     let forged_fact = Proposition::ConditionIs(
         crate::kernel::ConditionTerm::signed_less_than(
-            Bitvector32Term::constant(1),
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(1),
+            MachineTerm::constant(0),
         ),
         true,
     );

@@ -193,7 +193,7 @@ mod tests {
     }
 
     fn int(value: u32) -> CValue {
-        CValue::Int32(super::super::Bitvector32Term::constant(value))
+        CValue::Int32(super::super::MachineTerm::constant(value))
     }
 
     const INT: CAccessClass = CAccessClass::Scalar(CScalarClass::Int);
@@ -225,7 +225,7 @@ mod tests {
         Pointer {
             block: PointerBlock::Heap(7),
             offset: PointerOffsetTerm::scale_int32(
-                super::super::Bitvector32Term::Variable(super::super::Variable(variable)),
+                super::super::MachineTerm::Variable(super::super::Variable(variable)),
                 4,
             ),
         }

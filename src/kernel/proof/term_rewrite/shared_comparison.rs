@@ -56,7 +56,7 @@ impl TermRewrite<'_> {
             let format = MachineIntegerType::from_c_type(*ty)?;
             let value = match term.node() {
                 KernelTermNode::Variable(variable) => {
-                    let rewritten = self.bits(&Bitvector32Term::Variable(*variable));
+                    let rewritten = self.bits(&MachineTerm::Variable(*variable));
                     KernelTermImport::default().machine_arithmetic(format, &rewritten)?
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
@@ -120,10 +120,10 @@ impl TermRewrite<'_> {
     }
 }
 
-fn literal(term: &KernelTerm) -> Option<Bitvector32Term> {
+fn literal(term: &KernelTerm) -> Option<MachineTerm> {
     MachineOperandView::Shared(term).literal()
 }
-fn imported(format: MachineIntegerType, value: Bitvector32Term) -> KernelTerm {
+fn imported(format: MachineIntegerType, value: MachineTerm) -> KernelTerm {
     KernelTermImport::default()
         .machine_arithmetic(format, &value)
         .expect("machine arithmetic result")
@@ -208,7 +208,7 @@ fn comparison_binary_uncached(
     // Reuse the established evaluator only for two fixed-size literal leaves.
     // No symbolic child is exported or temporarily represented as a native tree.
     if let (Some(a), Some(b)) = (literal(&left), literal(&right)) {
-        return imported(format, Bitvector32Term::machine_binary(format, op, a, b));
+        return imported(format, MachineTerm::machine_binary(format, op, a, b));
     }
     if word32 {
         match op {
@@ -352,27 +352,27 @@ mod tests {
         for source in formats {
             for destination in formats {
                 for inner in [
-                    Bitvector32Term::Variable(Variable(992100)),
+                    MachineTerm::Variable(Variable(992100)),
                     crate::kernel::machine_integer::range::constant_word(source, &1.into())
                         .unwrap(),
                 ] {
                     for native in [
-                        Bitvector32Term::Cast {
+                        MachineTerm::Cast {
                             spelling: MachineCastSpelling::Generic,
                             from: source,
                             to: destination,
                             value: Box::new(inner.clone()),
                         },
-                        Bitvector32Term::machine_integer_cast(source, destination, inner.clone()),
-                        Bitvector32Term::Cast {
+                        MachineTerm::machine_integer_cast(source, destination, inner.clone()),
+                        MachineTerm::Cast {
                             spelling: MachineCastSpelling::Generic,
                             from: source,
                             to: destination,
-                            value: Box::new(Bitvector32Term::Cast {
+                            value: Box::new(MachineTerm::Cast {
                                 spelling: MachineCastSpelling::Generic,
                                 from: destination,
                                 to: source,
-                                value: Box::new(Bitvector32Term::Variable(Variable(992101))),
+                                value: Box::new(MachineTerm::Variable(Variable(992101))),
                             }),
                         },
                     ] {
@@ -399,13 +399,13 @@ mod tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let x = Bitvector32Term::Variable(Variable(992001));
-            let y = Bitvector32Term::Variable(Variable(992002));
+            let x = MachineTerm::Variable(Variable(992001));
+            let y = MachineTerm::Variable(Variable(992002));
             let zero =
                 crate::kernel::machine_integer::range::constant_word(format, &0.into()).unwrap();
             let one =
                 crate::kernel::machine_integer::range::constant_word(format, &1.into()).unwrap();
-            let make = |op, a: Bitvector32Term, b: Bitvector32Term| Bitvector32Term::Binary {
+            let make = |op, a: MachineTerm, b: MachineTerm| MachineTerm::Binary {
                 format,
                 op,
                 left: Box::new(a),

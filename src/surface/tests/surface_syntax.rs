@@ -2447,7 +2447,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
     let surface = ClickProposition::And(Box::new(left.clone()), Box::new(right.clone()));
     let values = BTreeMap::from([(
         "x".to_string(),
-        CValue::Int32(Bitvector32Term::Variable(Variable(42))),
+        CValue::Int32(MachineTerm::Variable(Variable(42))),
     )]);
     let predicates = PredicateEnvironment::new(&[]);
     let functions = ClickFunctionEnvironment::new(&[]);
@@ -2497,13 +2497,13 @@ fn records_checked_surface_forms_for_lowered_propositions() {
 
 #[test]
 fn surface_synthesis_qualifies_a_c_local_named_result() {
-    let local = Bitvector32Term::Variable(Variable(42));
+    let local = MachineTerm::Variable(Variable(42));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(local.clone()),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2640,12 +2640,12 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(owner.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -2667,7 +2667,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     ));
     assert_eq!(describe_contract_expression(&left), "owner->len");
 
-    let data_pointer = Bitvector32Term::MemoryLoad(
+    let data_pointer = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(CMemory::new()),
         Box::new(owner.offset_by_bytes(8)),
         crate::kernel::LoadKind::Int32,
@@ -2683,12 +2683,12 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(first_data_cell),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -4910,8 +4910,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 #[test]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
-        Bitvector32Term, CMemoryRange, CPointerValue, CType, Pointer, PointerBlock,
-        PointerOffsetTerm,
+        CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
     };
     let c_source = "struct cell { int32 a; int32 b; int32 c; }; struct outer { int32 head; struct cell inner; int32 tail; }; int32 read(struct outer* p) { return p->tail; }";
     let functions = syntax::parse_functions(c_source).unwrap();
@@ -4937,8 +4936,8 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     ] {
         let range = CMemoryRange::new_with_element_width(
             base.clone(),
-            Bitvector32Term::constant(low),
-            Bitvector32Term::constant(high),
+            MachineTerm::constant(low),
+            MachineTerm::constant(high),
             width,
         );
         assert_eq!(
@@ -5675,8 +5674,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(984_500))),
-            right: Box::new(Bitvector32Term::constant(1)),
+            left: Box::new(MachineTerm::Variable(Variable(984_500))),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -5684,8 +5683,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(984_501))),
-            right: Box::new(Bitvector32Term::constant(7)),
+            left: Box::new(MachineTerm::Variable(Variable(984_501))),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -5716,8 +5715,8 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(984_502))),
-            right: Box::new(Bitvector32Term::constant(2)),
+            left: Box::new(MachineTerm::Variable(Variable(984_502))),
+            right: Box::new(MachineTerm::constant(2)),
         },
         true,
     );
@@ -5737,13 +5736,13 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
     for (ty, one, operator, authored) in [
         (
             "int32",
-            CValue::Int32(Bitvector32Term::constant(1)),
+            CValue::Int32(MachineTerm::constant(1)),
             "-",
             "to_integer(hi - 1) < to_integer(hi)",
         ),
         (
             "uint64",
-            CValue::UInt64(Bitvector32Term::uint64_constant(1)),
+            CValue::UInt64(MachineTerm::uint64_constant(1)),
             "+",
             "to_integer(hi) < to_integer(hi + 1u64)",
         ),
@@ -5786,12 +5785,10 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
         left: Box::new(left),
         right: Box::new(right),
     };
-    let hi = Bitvector32Term::Variable(Variable(984_600));
-    let lo = Bitvector32Term::Variable(Variable(984_601));
-    let difference =
-        Bitvector32Term::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
-    let original =
-        Proposition::ConditionIs(less_equal(Bitvector32Term::constant(0), difference), true);
+    let hi = MachineTerm::Variable(Variable(984_600));
+    let lo = MachineTerm::Variable(Variable(984_601));
+    let difference = MachineTerm::subtract_at(MachineIntegerType::Int32, hi.clone(), lo.clone());
+    let original = Proposition::ConditionIs(less_equal(MachineTerm::constant(0), difference), true);
     let state = CState::new()
         .with_local("hi", CValue::Int32(hi.clone()))
         .with_local("lo", CValue::Int32(lo.clone()));
@@ -5808,11 +5805,11 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let mut bounds = Vec::new();
     for term in [hi.clone(), lo.clone()] {
         bounds.push(Proposition::ConditionIs(
-            less_equal(Bitvector32Term::constant(0), term.clone()),
+            less_equal(MachineTerm::constant(0), term.clone()),
             true,
         ));
         bounds.push(Proposition::ConditionIs(
-            less_equal(term, Bitvector32Term::constant(100)),
+            less_equal(term, MachineTerm::constant(100)),
             true,
         ));
     }

@@ -22,8 +22,8 @@
 
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_term;
-use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm};
 use crate::kernel::{MachineBinaryOp, MachineUnaryOp};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{
@@ -91,7 +91,7 @@ struct PendingLink {
 #[derive(Clone, Default)]
 pub(crate) struct DifferenceGraph {
     shared_queries: operand_views::cache::SharedQueryCache,
-    nodes: PersistentMap<(Domain, Bitvector32Term), NodeId>,
+    nodes: PersistentMap<(Domain, MachineTerm), NodeId>,
     operand_nodes: PersistentMap<
         (
             Domain,
@@ -327,7 +327,7 @@ impl DifferenceGraph {
     /// Records `a != b` when one side is a constant and the other a node
     /// plus an offset: the node excludes one value, and its interval steps
     /// off that value if it is an end.
-    fn exclude(&mut self, condition: &ConditionTerm, a: &Bitvector32Term, b: &Bitvector32Term) {
+    fn exclude(&mut self, condition: &ConditionTerm, a: &MachineTerm, b: &MachineTerm) {
         let domains: &[Domain] = if matches!(
             condition,
             ConditionTerm::Compare {
@@ -374,8 +374,8 @@ impl DifferenceGraph {
     fn alias_equality(
         &mut self,
         condition: &ConditionTerm,
-        a: &Bitvector32Term,
-        b: &Bitvector32Term,
+        a: &MachineTerm,
+        b: &MachineTerm,
     ) -> bool {
         let domains: &[Domain] = if matches!(
             condition,
@@ -389,7 +389,7 @@ impl DifferenceGraph {
         } else {
             &[Domain::Int64, Domain::UInt64]
         };
-        let fresh = |graph: &Self, term: &Bitvector32Term| {
+        let fresh = |graph: &Self, term: &MachineTerm| {
             domains.iter().all(|domain| {
                 constant(*domain, term).is_none()
                     && link_parts(*domain, term).is_none()
@@ -731,7 +731,7 @@ impl DifferenceGraph {
     }
 
     /// The node for `term`, created with its pending links when new.
-    fn node(&mut self, domain: Domain, term: &Bitvector32Term) -> NodeId {
+    fn node(&mut self, domain: Domain, term: &MachineTerm) -> NodeId {
         if let Some(node) = self.nodes.get(&(domain, term.clone())) {
             return *node;
         }
@@ -831,7 +831,7 @@ impl DifferenceGraph {
     /// justifies names the base directly rather than a new node, so the
     /// values `x + 1`, `x + 2`, ... share `x`'s node instead of each
     /// hanging an edge pair off it that every bound on `x` must walk.
-    fn affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
+    fn affine(&mut self, domain: Domain, term: &MachineTerm) -> Affine {
         if let Some(value) = constant(domain, term) {
             return (None, value);
         }
@@ -866,7 +866,7 @@ impl DifferenceGraph {
     /// share a node, whether or not the sum wraps. Only the absence of
     /// overflow is keyed this way, which depends on the operands' bitvector
     /// values alone.
-    fn modular_affine(&mut self, domain: Domain, term: &Bitvector32Term) -> Affine {
+    fn modular_affine(&mut self, domain: Domain, term: &MachineTerm) -> Affine {
         match modular_parts(domain, term) {
             Some((base, k)) => {
                 let (node, offset) = self.modular_affine(domain, base);
@@ -880,7 +880,7 @@ impl DifferenceGraph {
     }
 
     /// `modular_affine` without adding to the graph.
-    fn modular_resolve(&self, domain: Domain, term: &Bitvector32Term) -> Option<Affine> {
+    fn modular_resolve(&self, domain: Domain, term: &MachineTerm) -> Option<Affine> {
         match modular_parts(domain, term) {
             Some((base, k)) => {
                 let (node, offset) = self.modular_resolve(domain, base)?;
@@ -896,7 +896,7 @@ impl DifferenceGraph {
     /// `term` as known nodes and constants, without adding to the graph.
     /// A term not in the graph resolves through a link its base's interval
     /// already justifies; otherwise `None`.
-    fn resolve(&self, domain: Domain, term: &Bitvector32Term) -> Option<Affine> {
+    fn resolve(&self, domain: Domain, term: &MachineTerm) -> Option<Affine> {
         if let Some(value) = constant(domain, term) {
             return Some((None, value));
         }
@@ -1264,7 +1264,7 @@ impl DifferenceGraph {
         // `[0, a]`: it is at most `a`, and below `a` when `b >= 1`.
         if let (
             Domain::UInt64,
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Subtract,
                 left: a,
@@ -1281,7 +1281,7 @@ impl DifferenceGraph {
         // An unsigned remainder is at most its dividend.
         if let (
             Domain::UInt64,
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Remainder,
                 left: a,
@@ -1340,7 +1340,7 @@ impl DifferenceGraph {
     /// the bitvector operation does not wrap). Anything else ranges over
     /// `domain`. Work is the term's size, plus the difference reads of
     /// `difference_interval`.
-    fn term_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+    fn term_interval(&self, domain: Domain, term: &MachineTerm) -> (i128, i128) {
         // A compound term a fact mentioned has a node of its own, whose
         // interval holds only what facts about the term said; its operands'
         // intervals may say more, so both are read.
@@ -1370,9 +1370,9 @@ impl DifferenceGraph {
     }
 
     /// `term_interval` from `term`'s operands alone.
-    fn structural_interval(&self, domain: Domain, term: &Bitvector32Term) -> (i128, i128) {
+    fn structural_interval(&self, domain: Domain, term: &MachineTerm) -> (i128, i128) {
         use crate::kernel::MachineIntegerType as M;
-        use Bitvector32Term as T;
+        use MachineTerm as T;
         if domain == Domain::UInt32 {
             // Masking a word bounds its unsigned value even when no fact
             // has named the compound term. Inspect only its operands.
@@ -1766,8 +1766,8 @@ impl DifferenceGraph {
     fn difference_interval(
         &self,
         domain: Domain,
-        a: &Bitvector32Term,
-        b: &Bitvector32Term,
+        a: &MachineTerm,
+        b: &MachineTerm,
     ) -> (i128, i128) {
         if a == b {
             return (0, 0);
@@ -1789,8 +1789,8 @@ impl DifferenceGraph {
     fn decide_overflow(
         &self,
         domain: Domain,
-        a: &Bitvector32Term,
-        b: &Bitvector32Term,
+        a: &MachineTerm,
+        b: &MachineTerm,
         operation: Operation,
     ) -> Option<bool> {
         let (a_low, a_high) = self.term_interval(domain, a);
@@ -1983,7 +1983,7 @@ enum Operation {
 /// domain, the operands, and whether the operation is commutative.
 fn overflow_parts(
     condition: &ConditionTerm,
-) -> Option<(u8, Domain, &Bitvector32Term, &Bitvector32Term, bool)> {
+) -> Option<(u8, Domain, &MachineTerm, &MachineTerm, bool)> {
     use ConditionTerm as C;
     Some(match condition {
         C::Overflows {
@@ -2095,11 +2095,11 @@ fn narrow_range(kind: crate::kernel::MachineIntegerType) -> Option<(i128, i128)>
 /// destination's modulus. The cast keeps the operand modulo that modulus.
 fn narrow_cast_parts(
     domain: Domain,
-    term: &Bitvector32Term,
-) -> Option<(&Bitvector32Term, (i128, i128), (i128, i128), i128)> {
+    term: &MachineTerm,
+) -> Option<(&MachineTerm, (i128, i128), (i128, i128), i128)> {
     let (
         Domain::Int32,
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             from: source,
@@ -2117,8 +2117,8 @@ fn narrow_cast_parts(
 
 /// When `term` is `x ^ MIN` in a signed `domain`: `x`. Flipping the sign
 /// bit moves a value of known sign by half the modulus.
-fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32Term> {
-    use Bitvector32Term as T;
+fn sign_flip_base(domain: Domain, term: &MachineTerm) -> Option<&MachineTerm> {
+    use MachineTerm as T;
     let (a, b) = match (domain, term) {
         (Domain::Int32, binary_term!(Bits32, BitwiseXor, a, b))
         | (
@@ -2143,7 +2143,7 @@ fn sign_flip_base(domain: Domain, term: &Bitvector32Term) -> Option<&Bitvector32
 }
 
 /// A word AND a literal mask, in either operand order.
-fn word_constant_mask(term: &Bitvector32Term) -> Option<(i128, &Bitvector32Term)> {
+fn word_constant_mask(term: &MachineTerm) -> Option<(i128, &MachineTerm)> {
     let binary_term!(Bits32, BitwiseAnd, a, b) = term else {
         return None;
     };
@@ -2170,8 +2170,8 @@ fn wrap_range((min, max): (i128, i128), low: i128, high: i128) -> (i128, i128) {
 /// The domain a 64-bit operand's value is read in: unsigned for an unsigned
 /// operation or constant, signed otherwise. Both readings bound each other
 /// (`term_interval`), so either is sound.
-fn word_domain(term: &Bitvector32Term) -> Domain {
-    use Bitvector32Term as T;
+fn word_domain(term: &MachineTerm) -> Domain {
+    use MachineTerm as T;
     match term {
         uint64_constant!(_)
         | T::Binary {
@@ -2208,7 +2208,7 @@ fn flip_sign(domain: Domain, value: i128) -> i128 {
 /// A pointer offset as `value * width` for an `int32` value, or a constant
 /// byte offset. Exact: the product is formed in 64 bits.
 enum ScaledOffset<'a> {
-    Scaled(&'a Bitvector32Term, i64),
+    Scaled(&'a MachineTerm, i64),
     Bytes(i64),
 }
 
@@ -2273,9 +2273,9 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
         ) if bytes.checked_rem(*byte_width) == Some(0) => {
             let count = bytes.checked_div(*byte_width)?;
             let count = if *unsigned {
-                Bitvector32Term::uint64_constant(u64::try_from(count).ok()?)
+                MachineTerm::uint64_constant(u64::try_from(count).ok()?)
             } else {
-                Bitvector32Term::int64_constant(count)
+                MachineTerm::int64_constant(count)
             };
             Some((value.as_ref().clone(), count))
         }
@@ -2293,7 +2293,7 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
             if bytes % width == 0 =>
         {
             let count = i32::try_from(bytes / width).ok()?;
-            (value.clone(), Bitvector32Term::constant(count as u32))
+            (value.clone(), MachineTerm::constant(count as u32))
         }
         _ => return None,
     };
@@ -2349,9 +2349,9 @@ fn offset_mismatch(
 /// not: an 8-aligned `addr` gives `(addr + 1) & 3 == 1`.
 #[derive(Clone, Debug, Default)]
 struct Residues {
-    known: PersistentMap<Bitvector32Term, Residue>,
+    known: PersistentMap<MachineTerm, Residue>,
     /// The terms each term was stated equal to, at most `EDGE_LIMIT` each.
-    equal_to: PersistentMap<Bitvector32Term, crate::persistent::PersistentSet<Bitvector32Term>>,
+    equal_to: PersistentMap<MachineTerm, crate::persistent::PersistentSet<MachineTerm>>,
 }
 
 /// `value mod 2^bits`, with `bits == 64` the exact value.
@@ -2395,7 +2395,7 @@ fn low_mask(bits: u32) -> u64 {
 }
 
 /// A 64-bit constant's bits.
-fn constant64(term: &Bitvector32Term) -> Option<u64> {
+fn constant64(term: &MachineTerm) -> Option<u64> {
     match term {
         uint64_constant!(value) => Some(constant_u64(*value)),
         int64_constant!(value) => Some(constant_i64(*value) as u64),
@@ -2407,17 +2407,17 @@ impl Residues {
     /// How far a residue follows stated equalities and term structure.
     const DEPTH: u32 = 6;
 
-    fn assume_equal(&mut self, a: &Bitvector32Term, b: &Bitvector32Term) {
+    fn assume_equal(&mut self, a: &MachineTerm, b: &MachineTerm) {
         charge();
         for (side, other) in [(a, b), (b, a)] {
             // `x & (2^k - 1) == c` gives `x ≡ c (mod 2^k)`.
-            if let Bitvector32Term::Binary {
+            if let MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::BitwiseAnd,
                 left: x,
                 right: mask,
             }
-            | Bitvector32Term::Binary {
+            | MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::BitwiseAnd,
                 left: x,
@@ -2441,7 +2441,7 @@ impl Residues {
         }
     }
 
-    fn decide_equal(&self, a: &Bitvector32Term, b: &Bitvector32Term) -> Option<bool> {
+    fn decide_equal(&self, a: &MachineTerm, b: &MachineTerm) -> Option<bool> {
         let (a, b) = (self.residue(a, Self::DEPTH)?, self.residue(b, Self::DEPTH)?);
         let bits = a.bits.min(b.bits);
         if (a.value ^ b.value) & low_mask(bits) != 0 {
@@ -2450,8 +2450,8 @@ impl Residues {
         (a.bits == 64 && b.bits == 64).then_some(true)
     }
 
-    fn residue(&self, term: &Bitvector32Term, depth: u32) -> Option<Residue> {
-        use Bitvector32Term as T;
+    fn residue(&self, term: &MachineTerm, depth: u32) -> Option<Residue> {
+        use MachineTerm as T;
         charge();
         if let Some(value) = constant64(term) {
             return Some(Residue::exact(value));
@@ -2540,7 +2540,7 @@ impl Residues {
         };
         let mut best = None;
         for (base, offset) in [(left, right), (right, left)] {
-            let base = Bitvector32Term::PointerAddress(
+            let base = MachineTerm::PointerAddress(
                 Box::new(Pointer {
                     block: pointer.block.clone(),
                     offset: base.as_ref().clone(),
@@ -2720,8 +2720,8 @@ impl PointerClasses {
 
 /// A sum or difference with a constant, as its other operand and the
 /// constant added.
-fn modular_parts(domain: Domain, term: &Bitvector32Term) -> Option<(&Bitvector32Term, i128)> {
-    use Bitvector32Term as T;
+fn modular_parts(domain: Domain, term: &MachineTerm) -> Option<(&MachineTerm, i128)> {
+    use MachineTerm as T;
     match (domain, term) {
         (Domain::Int32, binary_term!(Bits32, Add, a, b))
         | (
@@ -2776,7 +2776,7 @@ fn wrap(domain: Domain, value: i128) -> i128 {
 }
 
 /// `term`'s value in `domain` when it is a constant there.
-fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
+fn constant(domain: Domain, term: &MachineTerm) -> Option<i128> {
     match (domain, term) {
         // A `uint32` constant's word is the `Constant` of its bits (K1).
         (Domain::Int32, bits32_constant!(value)) => Some(i128::from(constant_u32(*value) as i32)),
@@ -2798,11 +2798,8 @@ fn constant(domain: Domain, term: &Bitvector32Term) -> Option<i128> {
 /// When `term` is a base plus a constant in `domain`, or a conversion that
 /// keeps its operand's value: the base's domain, the base, the constant,
 /// and whether only a non-negative base keeps its value.
-fn link_parts(
-    domain: Domain,
-    term: &Bitvector32Term,
-) -> Option<(Domain, &Bitvector32Term, i128, bool)> {
-    use Bitvector32Term as T;
+fn link_parts(domain: Domain, term: &MachineTerm) -> Option<(Domain, &MachineTerm, i128, bool)> {
+    use MachineTerm as T;
     match (domain, term) {
         // A 32-bit widening of a narrow value holds its operand's value, of
         // the operand's own format and range (rule K8, a relation across
@@ -2903,7 +2900,7 @@ fn link_parts(
 fn condition_orders(
     condition: &ConditionTerm,
     value: bool,
-) -> Vec<(Domain, Bitvector32Term, Bitvector32Term, bool)> {
+) -> Vec<(Domain, MachineTerm, MachineTerm, bool)> {
     use ConditionTerm as C;
     let (domain, left, right, strict) = match condition {
         C::Compare {

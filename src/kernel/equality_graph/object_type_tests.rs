@@ -59,8 +59,8 @@ fn model_source(pointer: &Pointer, condition: bool) -> Proposition {
 #[test]
 fn integer_address_word_aliases_do_not_supply_an_object_type() {
     let _session = VerificationSession::enter();
-    let a = Bitvector32Term::Variable(Variable(880_010));
-    let b = Bitvector32Term::Variable(Variable(880_011));
+    let a = MachineTerm::Variable(Variable(880_010));
+    let b = MachineTerm::Variable(Variable(880_011));
     let p = Pointer::integer_address(a.clone());
     let q = Pointer::integer_address(b.clone());
     let context = PureFactContext::new()
@@ -68,8 +68,8 @@ fn integer_address_word_aliases_do_not_supply_an_object_type() {
         .assume_condition(ConditionTerm::uint64_equal(a, b), true);
     assert!(can_type(&context, &p));
     assert!(context.equality_graph.are_uint64_equal(
-        &Bitvector32Term::PointerAddress(Box::new(p), AddressObjectClass::NONE),
-        &Bitvector32Term::PointerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
+        &MachineTerm::PointerAddress(Box::new(p), AddressObjectClass::NONE),
+        &MachineTerm::PointerAddress(Box::new(q.clone()), AddressObjectClass::NONE),
     ));
     assert!(!can_type(&context, &q));
 }

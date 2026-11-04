@@ -77,13 +77,13 @@ impl PureFactContext {
 
     fn load_atoms_equal_modulo_origin_unchanged(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         // An explicitly held equality between two named word loads is also
         // frame evidence. Keep those names available to the equality graph
         // before consulting their raw origin snapshots.
-        if let (Bitvector32Term::Variable(a), Bitvector32Term::Variable(b)) = (left, right)
+        if let (MachineTerm::Variable(a), MachineTerm::Variable(b)) = (left, right)
             && crate::kernel::registered_load_kind_for_variable(a).is_some_and(LoadKind::is_word32)
             && crate::kernel::registered_load_kind_for_variable(b).is_some_and(LoadKind::is_word32)
             && self.int32_values_known_equal(left, right)
@@ -95,8 +95,8 @@ impl PureFactContext {
         left == right
             || match (left, right) {
                 (
-                    Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-                    Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+                    MachineTerm::MemoryLoad(_, left_pointer, left_kind),
+                    MachineTerm::MemoryLoad(_, right_pointer, right_kind),
                 ) => {
                     left_pointer == right_pointer
                         && left_kind == right_kind
@@ -150,10 +150,10 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn memory_loads_proven_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
-        let checked_load_equality = |left: &Bitvector32Term, right: &Bitvector32Term| {
+        let checked_load_equality = |left: &MachineTerm, right: &MachineTerm| {
             let atomic = || {
                 let (Some(left), Some(right)) = (
                     crate::kernel::eval::viewed_as_memory_load(left),
@@ -173,16 +173,16 @@ impl PureFactContext {
         }
         // This resolver also handles 8-bit, 16-bit, and 64-bit loads. Only a
         // four-byte integer read may use the int32 graph for its value.
-        let is_four_byte_load = |load: &Bitvector32Term| match load {
-            Bitvector32Term::Variable(variable) => {
+        let is_four_byte_load = |load: &MachineTerm| match load {
+            MachineTerm::Variable(variable) => {
                 crate::kernel::registered_load_kind_for_variable(variable)
                     .is_some_and(LoadKind::is_word32)
             }
-            Bitvector32Term::MemoryLoad(_, _, kind) => kind.is_word32(),
+            MachineTerm::MemoryLoad(_, _, kind) => kind.is_word32(),
             _ => false,
         };
         let graph_proves_resolved_int32 =
-            |load: &Bitvector32Term, resolved: &Bitvector32Term, other: &Bitvector32Term| {
+            |load: &MachineTerm, resolved: &MachineTerm, other: &MachineTerm| {
                 is_four_byte_load(load) && self.int32_values_known_equal(resolved, other)
             };
         if let Some(resolved_left) = self.resolve_memory_load_term(left) {
@@ -300,15 +300,15 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn resolve_memory_load_term(
         &self,
-        term: &Bitvector32Term,
-    ) -> Option<Bitvector32Term> {
+        term: &MachineTerm,
+    ) -> Option<MachineTerm> {
         // A load variable resolves as the load it represents: the cell it reads
         // may be decided by this context's facts (a bound index proven
         // distinct from every stored cell) even though the variable was
         // created without them. The result is canonical so a resolution
         // to an earlier snapshot's load compares by canonical form.
         let viewed = crate::kernel::eval::viewed_as_memory_load(term)?;
-        let Bitvector32Term::MemoryLoad(memory, pointer, kind) = &viewed else {
+        let MachineTerm::MemoryLoad(memory, pointer, kind) = &viewed else {
             return None;
         };
         let value = match self

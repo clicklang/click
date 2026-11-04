@@ -7,10 +7,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use click::cli::{CInput, parse_mdtest, read_c_inputs, read_click_project};
 use click::kernel::{
-    Bitvector32Term, CExpression, CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CState,
-    CStatement, CType, CUndefinedBehavior, Pointer, PointerOffsetTerm, Proposition,
-    PureFactContext, ResourceContext, c_typed_pointer_value, int32,
-    prove_symbolic_c_function_execution,
+    CExpression, CFunctionOutcome, CMemory, CMemoryRange, CResourceFact, CState, CStatement, CType,
+    CUndefinedBehavior, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext,
+    ResourceContext, c_typed_pointer_value, int32, prove_symbolic_c_function_execution,
 };
 use click::languages::cpp::{
     CppBinaryOperator, CppCallArgument, CppCleanup, CppExceptionBehavior, CppExpression,
@@ -6178,8 +6177,8 @@ fn locked_cpp_artifact_lowers_directly_and_executes_reference_semantics() {
     let resources =
         ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         )));
     let arguments = vec![c_typed_pointer_value(pointer.clone(), CType::Int32Pointer)];
     let state = CState::new()

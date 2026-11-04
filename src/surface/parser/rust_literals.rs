@@ -188,7 +188,7 @@ impl IntegerLiteral {
         } else {
             value
         };
-        let narrow = Bitvector32Term::constant(bits as u32);
+        let narrow = MachineTerm::constant(bits as u32);
         Ok(match suffix {
             IntegerSuffix::I8 => crate::kernel::int8(narrow),
             IntegerSuffix::I16 => crate::kernel::int16(narrow),
@@ -197,10 +197,10 @@ impl IntegerLiteral {
             IntegerSuffix::U16 => crate::kernel::uint16(narrow),
             IntegerSuffix::U32 => crate::kernel::uint32(narrow),
             IntegerSuffix::I64 | IntegerSuffix::Isize => {
-                CValue::Int64(Bitvector32Term::int64_constant(bits as i64))
+                CValue::Int64(MachineTerm::int64_constant(bits as i64))
             }
             IntegerSuffix::U64 | IntegerSuffix::Usize => {
-                CValue::UInt64(Bitvector32Term::uint64_constant(bits))
+                CValue::UInt64(MachineTerm::uint64_constant(bits))
             }
         })
     }
@@ -245,22 +245,20 @@ impl IntegerLiteral {
                 .map_err(|_| "integer literal does not fit a native integer".to_string())?;
             if negative {
                 if magnitude <= 1 << 31 {
-                    CValue::Int32(Bitvector32Term::constant(
-                        0u32.wrapping_sub(magnitude as u32),
-                    ))
+                    CValue::Int32(MachineTerm::constant(0u32.wrapping_sub(magnitude as u32)))
                 } else if magnitude <= 1 << 63 {
-                    CValue::Int64(Bitvector32Term::int64_constant(
-                        0u64.wrapping_sub(magnitude) as i64,
+                    CValue::Int64(MachineTerm::int64_constant(
+                        0u64.wrapping_sub(magnitude) as i64
                     ))
                 } else {
                     return Err("negative integer literal does not fit i64".into());
                 }
             } else if magnitude <= i32::MAX as u64 {
-                CValue::Int32(Bitvector32Term::constant(magnitude as u32))
+                CValue::Int32(MachineTerm::constant(magnitude as u32))
             } else if magnitude <= i64::MAX as u64 {
-                CValue::Int64(Bitvector32Term::int64_constant(magnitude as i64))
+                CValue::Int64(MachineTerm::int64_constant(magnitude as i64))
             } else {
-                CValue::UInt64(Bitvector32Term::uint64_constant(magnitude))
+                CValue::UInt64(MachineTerm::uint64_constant(magnitude))
             }
         };
         // A narrow value's constant is native; its literal reads its value.
@@ -276,10 +274,10 @@ impl IntegerLiteral {
                     .and_then(crate::kernel::MachineIntegerConstant::to_i128)
                     .expect("literal constants") as i32 as u32;
                 match value {
-                    CValue::Int8(_) => CValue::Int8(Bitvector32Term::constant(word)),
-                    CValue::UInt8(_) => CValue::UInt8(Bitvector32Term::constant(word)),
-                    CValue::Int16(_) => CValue::Int16(Bitvector32Term::constant(word)),
-                    _ => CValue::UInt16(Bitvector32Term::constant(word)),
+                    CValue::Int8(_) => CValue::Int8(MachineTerm::constant(word)),
+                    CValue::UInt8(_) => CValue::UInt8(MachineTerm::constant(word)),
+                    CValue::Int16(_) => CValue::Int16(MachineTerm::constant(word)),
+                    _ => CValue::UInt16(MachineTerm::constant(word)),
                 }
             }
             _ => value,

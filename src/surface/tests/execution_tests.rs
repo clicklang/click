@@ -1305,8 +1305,8 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
     };
     let base = argument.pointer().clone();
     let first = base.clone();
-    let second = offset_pointer_by_int32_elements(base.clone(), Bitvector32Term::constant(1));
-    let third = offset_pointer_by_int32_elements(base.clone(), Bitvector32Term::constant(2));
+    let second = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(1));
+    let third = offset_pointer_by_int32_elements(base.clone(), MachineTerm::constant(2));
     let local_i = Pointer {
         block: "local:i".into(),
         offset: PointerOffsetTerm::Constant(0),
@@ -1327,8 +1327,8 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
     let initial_resources =
         ResourceContext::new().unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new(
             base.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(3),
+            MachineTerm::constant(0),
+            MachineTerm::constant(3),
         )));
     let final_memory = initial_memory
         .clone()
@@ -1428,8 +1428,8 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
                                         )
                                         .with_validated_ranges(vec![CMemoryRange::new(
                                             base.clone(),
-                                            Bitvector32Term::constant(0),
-                                            Bitvector32Term::constant(3),
+                                            MachineTerm::constant(0),
+                                            MachineTerm::constant(3),
                                         )]),
                                     ],
                                     body.as_ref().clone(),

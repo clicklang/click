@@ -178,8 +178,8 @@ impl std::fmt::Display for FoldReadDecline {
 pub(crate) struct FoldReadInterval {
     pub(crate) memory: CMemory,
     pub(crate) base: Pointer,
-    pub(crate) start: Bitvector32Term,
-    pub(crate) end: Bitvector32Term,
+    pub(crate) start: MachineTerm,
+    pub(crate) end: MachineTerm,
     pub(crate) element_width: u32,
 }
 
@@ -337,7 +337,7 @@ impl CheckedFoldReadSummary {
             return None;
         };
         let endpoint = |template: FoldEndpointTemplate| match template {
-            FoldEndpointTemplate::Literal(value) => Some(Bitvector32Term::constant(value)),
+            FoldEndpointTemplate::Literal(value) => Some(MachineTerm::constant(value)),
             FoldEndpointTemplate::Parameter(position) => match &arguments[position] {
                 PureFunctionArgument::Value(CValue::Int32(value)) => Some(value.clone()),
                 _ => None,
@@ -465,12 +465,10 @@ impl BodyChecker<'_> {
         }
     }
 
-    fn bitvector(&self, term: &Bitvector32Term, scope: Scope) -> Result<(), FoldReadDecline> {
+    fn bitvector(&self, term: &MachineTerm, scope: Scope) -> Result<(), FoldReadDecline> {
         match term {
             bits32_constant!(_) => Ok(()),
-            Bitvector32Term::Variable(variable)
-                if scope == Scope::Body && *variable == self.item =>
-            {
+            MachineTerm::Variable(variable) if scope == Scope::Body && *variable == self.item => {
                 Ok(())
             }
             _ => Err(Self::unsupported("an evaluated machine term")),
@@ -496,7 +494,7 @@ impl BodyChecker<'_> {
             )
             && matches!(
                 elements.as_ref(),
-                SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)))
+                SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
                     if *variable == self.item
             )
     }
@@ -1049,11 +1047,8 @@ struct LinearOffset {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum OffsetAtom {
     Variable(Variable),
-    Int32(Bitvector32Term),
-    Int64 {
-        value: Bitvector32Term,
-        unsigned: bool,
-    },
+    Int32(MachineTerm),
+    Int64 { value: MachineTerm, unsigned: bool },
 }
 
 impl LinearOffset {
@@ -1114,7 +1109,7 @@ impl LinearOffset {
     /// The form `element_width * sext(index) + constant`, when this is one:
     /// no atom at all (index `0`), or exactly one `int32` atom whose
     /// coefficient is the element width.
-    fn as_scaled_index(&self, element_width: u32) -> Option<(Bitvector32Term, i128)> {
+    fn as_scaled_index(&self, element_width: u32) -> Option<(MachineTerm, i128)> {
         match self.atoms.len() {
             // A constant delta names a constant index: the whole elements it
             // spans, when that is an `int32`, and the bytes left over.
@@ -1123,7 +1118,7 @@ impl LinearOffset {
                 let index = self.constant.div_euclid(width);
                 let index = i32::try_from(index).ok()?;
                 Some((
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::constant(index as u32),
                     self.constant - i128::from(index) * width,
                 ))
             }
@@ -1147,7 +1142,7 @@ fn scaled_index_from(
     pointer: &Pointer,
     base: &Pointer,
     element_width: u32,
-) -> Option<(Bitvector32Term, i128)> {
+) -> Option<(MachineTerm, i128)> {
     if pointer.block != base.block {
         return None;
     }
@@ -1159,8 +1154,8 @@ fn scaled_index_from(
 /// `left <= right` as signed `int32`, from syntax, constants, or one exact
 /// fact. Only indexed lookups: nothing scans the context.
 fn proven_signed_le(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
@@ -1186,8 +1181,8 @@ fn proven_signed_le(
 
 /// `left < right` as signed `int32`, from constants or one exact fact.
 fn proven_signed_lt(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);

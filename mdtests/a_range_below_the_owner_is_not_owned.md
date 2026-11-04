@@ -5,7 +5,7 @@ An element index is signed. `p[-1..0]` is the element *before* `p`, exactly as
 of them.
 
 `memory_range_covers`' constant-arithmetic arm read both endpoints of both
-ranges through `Bitvector32Term::as_const`, which answers `u32`. So `-1`
+ranges through `MachineTerm::as_const`, which answers `u32`. So `-1`
 arrived as `4294967295`, which clears `available_start <= required_start`
 against every owner there is, while the requirement's own end — `0` — cleared
 the other side against every owner whose end is nonnegative. `owns p[0..1]`

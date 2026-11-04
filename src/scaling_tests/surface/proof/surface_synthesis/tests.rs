@@ -11,10 +11,10 @@ fn boolean_local_synthesis_round_trips_and_scales_with_local_population() {
         for index in 0..size {
             state = state.with_local(
                 format!("a_{index:04}"),
-                crate::kernel::bool_value(Bitvector32Term::Variable(Variable(2000 + index as u64))),
+                crate::kernel::bool_value(MachineTerm::Variable(Variable(2000 + index as u64))),
             );
         }
-        let value = crate::kernel::bool_value(Bitvector32Term::Variable(Variable(9000)));
+        let value = crate::kernel::bool_value(MachineTerm::Variable(Variable(9000)));
         let CValue::Bool(term) = &value else {
             unreachable!()
         };
@@ -63,7 +63,7 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                 let cyclic = Pointer {
                     block: pointer.block.clone(),
                     offset: PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(Bitvector32Term::pointer_address(pointer.clone())),
+                        value: Box::new(MachineTerm::pointer_address(pointer.clone())),
                         byte_width: 4,
                     },
                 };

@@ -27,7 +27,7 @@ pub(super) enum ResourceBodyClosure {
 /// asking whether unrelated assumptions imply a contradictory arithmetic fact.
 /// Symbolic counts still require the existing checked proof queries.
 fn fold_resource_quantity_activity(
-    quantity: &Bitvector32Term,
+    quantity: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> (bool, bool) {
     if let Some(value) = quantity.as_const() {
@@ -40,7 +40,7 @@ fn fold_resource_quantity_activity(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(quantity.clone()),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         ),
@@ -52,7 +52,7 @@ fn fold_resource_quantity_activity(
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterThan,
                 left: Box::new(quantity.clone()),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         ),
@@ -323,8 +323,8 @@ fn dynamic_body_fact_dependency(
             .unwrap_or_else(|| {
                 CMemoryRange::new_with_element_width(
                     pointer,
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::constant(1),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
                     width,
                 )
             });
@@ -1191,7 +1191,7 @@ pub(super) fn project_initial_composite_resource_cores(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(Bitvector32Term::constant(0)),
+            &CValue::Int32(MachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )
@@ -1417,7 +1417,7 @@ pub(super) fn project_initial_resource_facts(
     spec_definitions: SpecDefinitions<'_>,
     claim_label: &str,
 ) -> Result<Vec<Proposition>, ClickError> {
-    let result = CValue::Int32(Bitvector32Term::constant(0));
+    let result = CValue::Int32(MachineTerm::constant(0));
     let mut facts = ProofResourcePureFacts::new(ProofFacts::from_ordered(available_pure_facts));
     append_state_resource_context_observable_facts_with_store(
         parameter_binding,
@@ -1677,7 +1677,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                 parameter_binding,
                 &state,
                 &state,
-                &CValue::Int32(Bitvector32Term::constant(0)),
+                &CValue::Int32(MachineTerm::constant(0)),
                 available_pure_facts.assumptions(),
                 &count_witness,
                 spec_definitions,
@@ -1715,7 +1715,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(Bitvector32Term::constant(0)),
+            &CValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &nonnegative_witness,
             spec_definitions,
@@ -1755,7 +1755,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &state,
             &state,
-            &CValue::Int32(Bitvector32Term::constant(0)),
+            &CValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &count_nonnegative_witness,
             spec_definitions,
@@ -1794,7 +1794,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(quantity.clone()),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 ),
@@ -1853,7 +1853,7 @@ fn observe_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(Bitvector32Term::constant(0)),
+        &CValue::Int32(MachineTerm::constant(0)),
         available_pure_facts,
         spec_definitions,
         false,
@@ -2063,7 +2063,7 @@ fn record_observed_composite_surface_facts<F: ResourcePureFacts>(
         parameter_binding,
         pre_state,
         fact_state,
-        &CValue::Int32(Bitvector32Term::constant(0)),
+        &CValue::Int32(MachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )?
@@ -2255,7 +2255,7 @@ pub(super) fn record_initial_composite_surface_facts(
             parameter_binding,
             state,
             state,
-            &CValue::Int32(Bitvector32Term::constant(0)),
+            &CValue::Int32(MachineTerm::constant(0)),
             &assumptions,
             spec_definitions,
         )?
@@ -2271,7 +2271,7 @@ pub(super) fn record_initial_composite_surface_facts(
                 parameter_binding,
                 state,
                 state,
-                &CValue::Int32(Bitvector32Term::constant(0)),
+                &CValue::Int32(MachineTerm::constant(0)),
                 available_pure_facts,
                 &surface,
                 spec_definitions,
@@ -2345,7 +2345,7 @@ fn project_held_resource_observable_facts(
 /// Whether an owned resource's quantity is known to be positive: a constant
 /// read as a signed `int32`, as `fold` reads one, or one the kernel's
 /// condition decision settles.
-fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFactContext) -> bool {
+fn owned_quantity_is_positive(quantity: &MachineTerm, assumptions: &PureFactContext) -> bool {
     quantity.as_const().is_some_and(|value| (value as i32) > 0)
         || holds_by_lookup_or_decision(
             assumptions,
@@ -2354,7 +2354,7 @@ fn owned_quantity_is_positive(quantity: &Bitvector32Term, assumptions: &PureFact
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: Box::new(quantity.clone()),
-                    right: Box::new(Bitvector32Term::constant(0)),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
                 true,
             ),
@@ -3262,7 +3262,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         parameter_binding,
         &state,
         &state,
-        &CValue::Int32(Bitvector32Term::constant(0)),
+        &CValue::Int32(MachineTerm::constant(0)),
         available_pure_facts.assumptions(),
         spec_definitions,
     )
@@ -3292,7 +3292,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let requested_quantity = abstract_resource
         .owned_quantity_term()
         .cloned()
-        .unwrap_or(Bitvector32Term::constant(1));
+        .unwrap_or(MachineTerm::constant(1));
     let assumptions = available_pure_facts.assumptions().clone();
     if let Some(authority) = state
         .resources()
@@ -3403,7 +3403,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
     let (population_name, population_arguments, population_count) = (
         requested_population_name,
         requested_population_arguments,
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(1),
     );
     if state.population_body_is_open(&population_name, &population_arguments) {
         return Err(ClickError::new("population body is already open"));
@@ -3648,7 +3648,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
             parameter_binding,
             &fact_state,
             &fact_state,
-            &CValue::Int32(Bitvector32Term::constant(0)),
+            &CValue::Int32(MachineTerm::constant(0)),
             available_pure_facts.assumptions(),
             &fact,
             spec_definitions,
@@ -5070,7 +5070,7 @@ fn fold_composite_resource_for_proof_with_closure(
 ) -> Result<CheckedResourceFold, ClickError> {
     let facts = ProofResourcePureFacts::new(facts);
     let outcome = CFunctionOutcome::Return {
-        value: CValue::Int32(Bitvector32Term::constant(0)),
+        value: CValue::Int32(MachineTerm::constant(0)),
         state: Box::new(state),
     };
     let (outcome, mut selections, loan_holds) = fold_composite_resources_on_outcome_with_facts(
@@ -5576,7 +5576,7 @@ fn materialize_composite_resource_cells_from_snapshot(
     for index in start..end {
         let pointer = offset_pointer_by_elements(
             range.base().clone(),
-            Bitvector32Term::constant(index),
+            MachineTerm::constant(index),
             element_width,
         );
         if matches!(memory.load(&pointer), CExpressionOutcome::Value(_)) {
@@ -5779,14 +5779,14 @@ void child_release(struct child* obj) {
         };
         let memory = CMemory::new();
         let index = Variable(2_000_000);
-        let index_term = || Box::new(Bitvector32Term::Variable(index));
+        let index_term = || Box::new(MachineTerm::Variable(index));
         let below = |end: u32| {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: index_term(),
-                    right: Box::new(Bitvector32Term::constant(end)),
+                    right: Box::new(MachineTerm::constant(end)),
                 },
                 true,
             )
@@ -5795,7 +5795,7 @@ void child_release(struct child* obj) {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::constant(0)),
                 right: index_term(),
             },
             true,
@@ -5819,11 +5819,7 @@ void child_release(struct child* obj) {
                 }),
             )),
         };
-        let range = CMemoryRange::new(
-            base,
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(4),
-        );
+        let range = CMemoryRange::new(base, MachineTerm::constant(0), MachineTerm::constant(4));
         let own = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range);
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -5881,18 +5877,17 @@ void child_release(struct child* obj) {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let memory =
-            CMemory::new().store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(0)));
+        let memory = CMemory::new().store(pointer.clone(), CValue::Int32(MachineTerm::constant(0)));
         let snapshot = crate::kernel::intern_c_memory_ref(&memory);
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 snapshot,
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let proposition = if definedness {
             Proposition::CMemoryReadDefined {
@@ -5903,11 +5898,7 @@ void child_release(struct child* obj) {
         } else {
             Proposition::ConditionIs(condition, true)
         };
-        let range = CMemoryRange::new(
-            pointer,
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
-        );
+        let range = CMemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
         let own = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -6017,11 +6008,11 @@ void child_release(struct child* obj) {
         );
 
         let opaque = Proposition::Equal(
-            Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+            Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                 name: "opaque".into(),
                 arguments: Vec::new(),
             }),
-            Term::Bitvector32(Bitvector32Term::constant(0)),
+            Term::Bitvector32(MachineTerm::constant(0)),
         );
         assert!(
             dynamic_body_fact_dependency(
@@ -6045,8 +6036,8 @@ mod wide_range_reader_tests {
         let base = Pointer::symbolic(Variable(985_600));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             4,
         );
         let literal = || ContractExpression::IntegerLiteral("0".into());
@@ -6190,7 +6181,7 @@ mod fold_quantity_activity_tests {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(Bitvector32Term::Variable(Variable(9_810_000 + index))),
+                        left: Box::new(MachineTerm::Variable(Variable(9_810_000 + index))),
                         right: Box::new(100u32.into()),
                     },
                     true,
@@ -6218,7 +6209,7 @@ mod fold_quantity_activity_tests {
     #[test]
     fn symbolic_counts_require_checked_zero_or_positive_facts() {
         let _session = crate::kernel::VerificationSession::enter();
-        let count = Bitvector32Term::Variable(Variable(9_820_001));
+        let count = MachineTerm::Variable(Variable(9_820_001));
         assert_eq!(
             fold_resource_quantity_activity(&count, &PureFactContext::new()),
             (false, false)
@@ -6341,7 +6332,7 @@ mod declared_scalar_field_observation_tests {
             matches!(value, CValue::Pointer(_)),
             "a pointer field must not be cached as an integer prefix"
         );
-        let expected = Pointer::loaded(&Bitvector32Term::MemoryLoad(
+        let expected = Pointer::loaded(&MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(base.clone()),
             crate::kernel::LoadKind::Int32,

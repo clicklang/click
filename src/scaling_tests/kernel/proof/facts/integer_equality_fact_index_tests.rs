@@ -7,9 +7,9 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
 fn wide_equality_decision_uses_only_its_indexed_component() {
-    let left = Bitvector32Term::Variable(Variable(211_000));
-    let middle = Bitvector32Term::Variable(Variable(211_001));
-    let equality = |a: Bitvector32Term, b: Bitvector32Term| {
+    let left = MachineTerm::Variable(Variable(211_000));
+    let middle = MachineTerm::Variable(Variable(211_001));
+    let equality = |a: MachineTerm, b: MachineTerm| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
@@ -20,24 +20,21 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
             true,
         )
     };
-    let required = equality(left.clone(), Bitvector32Term::uint64_constant(7));
-    let wrong = equality(left.clone(), Bitvector32Term::uint64_constant(9));
+    let required = equality(left.clone(), MachineTerm::uint64_constant(7));
+    let wrong = equality(left.clone(), MachineTerm::uint64_constant(9));
     let mut work = Vec::new();
     for size in [8, 16, 32, 64] {
         let unrelated = (0..size)
             .map(|index| {
                 equality(
-                    Bitvector32Term::Variable(Variable(212_000 + index)),
-                    Bitvector32Term::uint64_constant(index),
+                    MachineTerm::Variable(Variable(212_000 + index)),
+                    MachineTerm::uint64_constant(index),
                 )
             })
             .collect::<Vec<_>>();
         let facts = ProofFacts::from_ordered(&unrelated)
             .with_kernel_checked_fact(equality(left.clone(), middle.clone()))
-            .with_kernel_checked_fact(equality(
-                middle.clone(),
-                Bitvector32Term::uint64_constant(7),
-            ));
+            .with_kernel_checked_fact(equality(middle.clone(), MachineTerm::uint64_constant(7)));
         let (proved, measured) = crate::instrumentation::measure_deterministic_work(|| {
             facts.assumptions().proves_atomic_without_search(&required)
         });
@@ -57,14 +54,14 @@ fn wide_equality_decision_uses_only_its_indexed_component() {
     should_panic(expected = "a variable used at another width")
 )]
 fn a_narrow_equality_does_not_decide_a_wide_one() {
-    let left = Bitvector32Term::Variable(Variable(211_000));
-    let middle = Bitvector32Term::Variable(Variable(211_001));
+    let left = MachineTerm::Variable(Variable(211_000));
+    let middle = MachineTerm::Variable(Variable(211_001));
     let required = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
             relation: CompareRelation::Equal,
             left: Box::new(left.clone()),
-            right: Box::new(Bitvector32Term::uint64_constant(7)),
+            right: Box::new(MachineTerm::uint64_constant(7)),
         },
         true,
     );
@@ -83,7 +80,7 @@ fn a_narrow_equality_does_not_decide_a_wide_one() {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(middle),
-                right: Box::new(Bitvector32Term::uint64_constant(7)),
+                right: Box::new(MachineTerm::uint64_constant(7)),
             },
             true,
         ),
@@ -105,7 +102,7 @@ fn quantified_loadable_alpha_query_ignores_unrelated_snapshot_size() {
                 block: "quantified-viewable-work-0".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Variable(Variable(209_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(209_000))),
         );
         let source = loadable_forall(
             &source_memory,
@@ -221,8 +218,8 @@ fn proper_conjunct_index_walks_deep_conjunction_iteratively() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::constant(0)),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -251,12 +248,12 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                 },
                 // Distinct snapshots without contradictory literal
                 // premises: each read may consistently equal zero.
-                CValue::Int32(Bitvector32Term::Variable(Variable(986_000 + value as u64))),
+                CValue::Int32(MachineTerm::Variable(Variable(986_000 + value as u64))),
             );
             memories.push(crate::kernel::intern_c_memory(memory));
         }
         let load = |memory: &crate::kernel::SharedCMemory| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: "same-bucket-facts".into(),
@@ -273,7 +270,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(load(memory)),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 )
@@ -284,7 +281,7 @@ fn snapshot_blind_same_bucket_lookup_scales_without_deep_dedup() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load(memories.last().unwrap())),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );

@@ -19,8 +19,8 @@ fn wide_multiply_known_bounds_work_does_not_scan_unrelated_ambient_facts() {
         }
         let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::eval::apply_c_multiply(
-                CValue::Int128(Bitvector32Term::Variable(Variable(150_001))),
-                CValue::Int128(Bitvector32Term::Variable(Variable(150_002))),
+                CValue::Int128(MachineTerm::Variable(Variable(150_001))),
+                CValue::Int128(MachineTerm::Variable(Variable(150_002))),
                 Vec::new().into(),
                 Vec::new(),
                 &assumptions,
@@ -45,16 +45,16 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
     for (ty, input, expected) in [
         (
             MachineIntegerType::Int64,
-            Bitvector32Term::int64_constant(i64::MIN),
+            MachineTerm::int64_constant(i64::MIN),
             BigInt::from(i64::MIN) * 2,
         ),
         (
             MachineIntegerType::UInt64,
-            Bitvector32Term::uint64_constant(u64::MAX),
+            MachineTerm::uint64_constant(u64::MAX),
             BigInt::from(u64::MAX) * 2,
         ),
     ] {
-        let variable = Bitvector32Term::Variable(Variable(153_000));
+        let variable = MachineTerm::Variable(Variable(153_000));
         let condition = if ty == MachineIntegerType::Int64 {
             ConditionTerm::int64_equal(variable.clone(), input)
         } else {
@@ -68,11 +68,8 @@ fn wide_multiply_resolves_indexed_narrow_inputs_with_their_signedness() {
                     .assume_condition(ConditionTerm::Variable(Variable(154_000 + index)), true);
             }
             assumptions = assumptions.assume_condition(condition.clone(), true);
-            let widened = Bitvector32Term::machine_integer_cast(
-                ty,
-                MachineIntegerType::Int128,
-                variable.clone(),
-            );
+            let widened =
+                MachineTerm::machine_integer_cast(ty, MachineIntegerType::Int128, variable.clone());
             let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
                 crate::kernel::eval::apply_c_multiply(
                     CValue::Int128(widened),

@@ -1074,12 +1074,12 @@ fn thread_guarantees_are_withheld_until_join() {
         .unwrap();
     let postcondition = Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 intern_c_memory_ref(spawned.parent().memory()),
                 Box::new(pointer(0)),
                 crate::kernel::LoadKind::Int32,
             ),
-            Bitvector32Term::constant(77),
+            MachineTerm::constant(77),
         ),
         true,
     );

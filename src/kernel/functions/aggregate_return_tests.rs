@@ -571,7 +571,7 @@ fn supplied_constructor_destination_survives_two_procedure_boundaries() {
     );
     assert_eq!(
         state.memory.known_value(&destination.offset_by_bytes(8)),
-        Some(CValue::Int32(Bitvector32Term::constant(37))),
+        Some(CValue::Int32(MachineTerm::constant(37))),
     );
     assert_eq!(state.next_local_frame, caller.next_local_frame);
     assert!(state.memory.has_block(&destination.block));
@@ -590,7 +590,7 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
         .store(source.clone(), self_pointer.clone())
         .store(
             source.offset_by_bytes(8),
-            CValue::Int32(Bitvector32Term::constant(37)),
+            CValue::Int32(MachineTerm::constant(37)),
         );
     let mut state = CState::new()
         .with_population_creation_tracking()
@@ -615,7 +615,7 @@ fn aggregate_copy_return_preserves_self_pointer_through_two_materializations() {
         assert_ne!(pointer(&self_pointer), result.offset_by_bytes(8));
         assert_eq!(
             state.memory.known_value(&result.offset_by_bytes(8)),
-            Some(CValue::Int32(Bitvector32Term::constant(37))),
+            Some(CValue::Int32(MachineTerm::constant(37))),
         );
     }
 }
@@ -629,10 +629,9 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
         let _session = crate::kernel::VerificationSession::enter();
         let source = CMemory::frame_local_pointer(100, "descriptor");
         let backing = CMemory::frame_local_pointer(101, "caller_backing");
-        let caller = CMemory::new().with_block(backing.block.clone(), 4).store(
-            backing.clone(),
-            CValue::Int32(Bitvector32Term::constant(23)),
-        );
+        let caller = CMemory::new()
+            .with_block(backing.block.clone(), 4)
+            .store(backing.clone(), CValue::Int32(MachineTerm::constant(23)));
         let referent = if points_to_self {
             source.offset_by_bytes(8)
         } else {
@@ -645,7 +644,7 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
             .store(source.clone(), field.clone())
             .store(
                 source.offset_by_bytes(8),
-                CValue::Int32(Bitvector32Term::constant(23)),
+                CValue::Int32(MachineTerm::constant(23)),
             );
         let mut state = CState::new()
             .with_population_creation_tracking()
@@ -673,7 +672,7 @@ fn aggregate_copy_return_retirement_preserves_only_independently_live_backing() 
         assert_eq!(memory.has_block(&referent.block), !points_to_self);
         assert_eq!(
             memory.known_value(&backing),
-            Some(CValue::Int32(Bitvector32Term::constant(23))),
+            Some(CValue::Int32(MachineTerm::constant(23))),
         );
     }
 }
@@ -700,7 +699,7 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let input = CMemory::local_pointer("input-byte");
     let before = CMemory::new().with_block(input.block.clone(), 1);
     let read = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory.clone()),
             Box::new(input.clone()),
             LoadKind::UInt8,
@@ -789,7 +788,7 @@ fn symbolic_construction_storage_requires_written_fields_before_copy_return() {
     );
     state.set_memory(state.memory.clone().store(
         source.offset_by_bytes(8),
-        CValue::Int32(Bitvector32Term::constant(37)),
+        CValue::Int32(MachineTerm::constant(37)),
     ));
     assert!(complete_aggregate_return(&mut state, &copy_function(), value).is_ok());
 }
@@ -813,7 +812,7 @@ fn symbolic_construction_storage_is_unreadable_until_written() {
         for written in [false, true] {
             let memory = if written {
                 raw.clone()
-                    .store(source.clone(), CValue::Int32(Bitvector32Term::constant(37)))
+                    .store(source.clone(), CValue::Int32(MachineTerm::constant(37)))
             } else {
                 raw.clone()
             };
@@ -1010,7 +1009,7 @@ fn construction_object_offsets_participate_in_fresh_variable_collection() {
     let raw = CMemory::new().with_uninitialized_block(source.block.clone(), 4);
     let destination = Pointer {
         block: "local:variable-container".into(),
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(offset_variable), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(offset_variable), 4),
     };
     let mapped = crate::kernel::reasoning::substitute_pointer_variable_in_memory(
         &raw,
@@ -1324,7 +1323,7 @@ fn value_only_constructor_preserves_descriptor_across_result_copy_chains() {
         );
         assert_eq!(
             state.memory.known_value(&result.offset_by_bytes(8)),
-            Some(CValue::UInt64(Bitvector32Term::uint64_constant(37)))
+            Some(CValue::UInt64(MachineTerm::uint64_constant(37)))
         );
         assert_eq!(state.memory.known_value(backing), Some(int32(24)));
         assert!(

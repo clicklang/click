@@ -76,7 +76,7 @@ mod tests {
     use crate::kernel::proof::arithmetic_special::{
         SpecialArithmeticCertificate, SpecialArithmeticNode,
     };
-    use crate::kernel::{Bitvector32Term, IntegerTerm, MachineIntegerType, Variable};
+    use crate::kernel::{IntegerTerm, MachineIntegerType, MachineTerm, Variable};
     use MachineIntegerType as Ty;
     use num_bigint::BigInt;
 
@@ -92,12 +92,7 @@ mod tests {
             conclusion: 0,
         }
     }
-    fn operation(
-        ty: Ty,
-        subtract: bool,
-        left: Bitvector32Term,
-        right: Bitvector32Term,
-    ) -> Bitvector32Term {
+    fn operation(ty: Ty, subtract: bool, left: MachineTerm, right: MachineTerm) -> MachineTerm {
         let operation = if subtract {
             Operation::Subtract
         } else {
@@ -114,10 +109,9 @@ mod tests {
         lo: BigInt,
         hi: BigInt,
     ) -> (Vec<Proposition>, Proposition, IntegerTerm) {
-        let left = Bitvector32Term::Variable(Variable(171_001));
-        let right = Bitvector32Term::Variable(Variable(171_002));
-        let observe =
-            |value: &Bitvector32Term| IntegerTerm::from_machine(ty, value.clone()).unwrap();
+        let left = MachineTerm::Variable(Variable(171_001));
+        let right = MachineTerm::Variable(Variable(171_002));
+        let observe = |value: &MachineTerm| IntegerTerm::from_machine(ty, value.clone()).unwrap();
         let value = if subtract {
             IntegerTerm::subtract(observe(&left), observe(&right))
         } else {
@@ -237,8 +231,8 @@ mod tests {
 
     #[test]
     fn integer_operation_identity_refuses_mismatched_operations_types_and_polarity() {
-        let left = Bitvector32Term::Variable(Variable(171_001));
-        let right = Bitvector32Term::Variable(Variable(171_002));
+        let left = MachineTerm::Variable(Variable(171_001));
+        let right = MachineTerm::Variable(Variable(171_002));
         let (premises, goal, value) = inputs(
             Ty::Int32,
             false,

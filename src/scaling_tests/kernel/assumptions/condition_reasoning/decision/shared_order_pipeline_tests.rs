@@ -55,7 +55,7 @@ fn check_zero_prefixes(unresolved: bool, cancellation: bool) {
                 };
                 context = context.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(997640 + n as u64)),
+                        MachineTerm::Variable(Variable(997640 + n as u64)),
                         (n as u32).into(),
                     ),
                     true,

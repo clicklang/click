@@ -8,7 +8,7 @@ its range extends outside the owner.
 The original regression concerned `local_view_range_within_block`, the bounds
 check for implicit local storage.
 
-It read both endpoints through `Bitvector32Term::as_const`, which answers
+It read both endpoints through `MachineTerm::as_const`, which answers
 `u32`, and then took `end <= start` as "an empty range names no storage". A
 start of `-1` arrives there as `4294967295`, so every range that begins below
 its block took that exit and `memory.access_in_bounds` never ran — the exact

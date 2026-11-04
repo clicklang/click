@@ -14,8 +14,8 @@ fn projection_skips_unrelated_disjunctions_and_scalar_facts() {
             // Even scalar facts on a selected operand are not candidates.
             facts = facts.with_fact(Proposition::ConditionIs(
                 ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Variable(Variable(1)),
-                    Bitvector32Term::constant(10 + index as u32),
+                    MachineTerm::Variable(Variable(1)),
+                    MachineTerm::constant(10 + index as u32),
                 ),
                 true,
             ));

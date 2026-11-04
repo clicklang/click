@@ -173,7 +173,7 @@ mod tests {
                         c_type: CType::Int32,
                     },
                     operator: CComparisonOperator::Equal,
-                    right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                    right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                 }],
                 vec![],
                 vec![],

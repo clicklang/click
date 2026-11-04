@@ -14,8 +14,8 @@ fn product_and_bounds(
     right: MachineIntegerType,
 ) -> (IntegerTerm, [ConditionTerm; 2]) {
     let product = IntegerTerm::multiply(
-        IntegerTerm::from_machine(left, Bitvector32Term::Variable(Variable(150_001))).unwrap(),
-        IntegerTerm::from_machine(right, Bitvector32Term::Variable(Variable(150_002))).unwrap(),
+        IntegerTerm::from_machine(left, MachineTerm::Variable(Variable(150_001))).unwrap(),
+        IntegerTerm::from_machine(right, MachineTerm::Variable(Variable(150_002))).unwrap(),
     );
     let (min, max) = MachineIntegerType::Int128.format().bounds();
     let bounds = [
@@ -132,8 +132,8 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
             assumptions = assumptions.assume_condition(bound.clone(), true);
         }
         let paths = crate::kernel::eval::apply_c_multiply(
-            CValue::Int128(Bitvector32Term::Variable(Variable(150_001))),
-            CValue::Int128(Bitvector32Term::Variable(Variable(150_002))),
+            CValue::Int128(MachineTerm::Variable(Variable(150_001))),
+            CValue::Int128(MachineTerm::Variable(Variable(150_002))),
             Vec::new().into(),
             Vec::new(),
             &assumptions,
@@ -194,8 +194,8 @@ fn wide_multiply_unknown_bounds_retain_normal_and_both_overflow_paths() {
         );
     }
     let expression = c_multiply(
-        CExpression::Value(CValue::Int128(Bitvector32Term::Variable(Variable(150_001)))),
-        CExpression::Value(CValue::Int128(Bitvector32Term::Variable(Variable(150_002)))),
+        CExpression::Value(CValue::Int128(MachineTerm::Variable(Variable(150_001)))),
+        CExpression::Value(CValue::Int128(MachineTerm::Variable(Variable(150_002)))),
     );
     assert!(prove_c_expression_evaluation(CState::new(), expression).is_none());
 }
@@ -207,12 +207,12 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
     };
     let x = IntegerTerm::from_machine(
         MachineIntegerType::Int64,
-        Bitvector32Term::Variable(Variable(150_001)),
+        MachineTerm::Variable(Variable(150_001)),
     )
     .unwrap();
     let y = IntegerTerm::from_machine(
         MachineIntegerType::Int32,
-        Bitvector32Term::Variable(Variable(150_002)),
+        MachineTerm::Variable(Variable(150_002)),
     )
     .unwrap();
     let le = |a, b| Proposition::ConditionIs(ConditionTerm::integer_less_equal(a, b), true);
@@ -246,11 +246,11 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
     let state = CState::new()
         .with_local(
             "left",
-            CValue::Int64(Bitvector32Term::Variable(Variable(150_001))),
+            CValue::Int64(MachineTerm::Variable(Variable(150_001))),
         )
         .with_local(
             "right",
-            CValue::Int32(Bitvector32Term::Variable(Variable(150_002))),
+            CValue::Int32(MachineTerm::Variable(Variable(150_002))),
         );
     let expression = c_multiply(
         c_cast(c_variable("left"), CType::Int128),
@@ -267,7 +267,7 @@ fn wide_multiply_checked_product_bounds_certificate_discharges_native_guards() {
     assert!(paths[0].obligations.is_empty());
     // The product keeps the operands' widenings to `int128` as written; it
     // reads (rule W) as the product of the operands' own observations.
-    let CExpressionOutcome::Value(CValue::Int128(Bitvector32Term::IntegerToMachine {
+    let CExpressionOutcome::Value(CValue::Int128(MachineTerm::IntegerToMachine {
         value,
         destination: MachineIntegerType::Int128,
     })) = &paths[0].outcome

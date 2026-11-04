@@ -31,7 +31,7 @@ fn copying_a_union_drops_destination_views_absent_from_source() {
         .store_union(
             destination.clone(),
             CType::Int32,
-            CValue::Int32(Bitvector32Term::constant(0x5151)),
+            CValue::Int32(MachineTerm::constant(0x5151)),
         );
 
     let copied = copy_aggregate_fields(memory, &source, &destination, &layout);
@@ -72,19 +72,19 @@ fn forgotten_local_packet(union_written: bool) -> (CMemory, Pointer, Pointer, CA
     let mut memory = CMemory::new()
         .with_block(source.block.clone(), 8)
         .with_block(destination.block.clone(), 8)
-        .store(source.clone(), CValue::Int32(Bitvector32Term::constant(1)));
+        .store(source.clone(), CValue::Int32(MachineTerm::constant(1)));
     if union_written {
         memory = memory.store_union(
             source.offset_by_bytes(4),
             CType::Int32,
-            CValue::Int32(Bitvector32Term::constant(2)),
+            CValue::Int32(MachineTerm::constant(2)),
         );
     }
     // `source[u] = …` for an index the facts do not place: every cell
     // and view of the block may be the one it writes.
     let unplaced = Pointer {
         block: source.block.clone(),
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(925_001)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(925_001)), 4),
     };
     let memory = memory.without_possible_aliasing_cells(&unplaced, 4, &PureFactContext::new());
     assert!(memory.known_value(&source).is_none());

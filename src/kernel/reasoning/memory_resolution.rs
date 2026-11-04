@@ -13,13 +13,13 @@ pub(in crate::kernel) enum ResolutionQuery {
     CommonBaseDistinct(Pointer, Pointer),
     PointerEqual(Pointer, Pointer),
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
-    BitvectorEqual(Bitvector32Term, Bitvector32Term),
+    BitvectorEqual(MachineTerm, MachineTerm),
     SnapshotsMatch(SharedCMemory, SharedCMemory, Pointer),
     CanonicalMemory(SharedCMemory, Pointer),
     RangeDisjoint(Pointer, Pointer),
     RangesSeparate(CMemoryRange, CMemoryRange),
     RangeContained(CMemoryRange, CMemoryRange),
-    PointerInRange(Pointer, Pointer, Bitvector32Term, Bitvector32Term, u32),
+    PointerInRange(Pointer, Pointer, MachineTerm, MachineTerm, u32),
 }
 
 thread_local! {
@@ -126,7 +126,7 @@ enum ResolutionQueryKey {
     PointerDistinct(u64, bool, Pointer, Pointer),
     PointerEqual(u64, bool, Pointer, Pointer),
     PointerOffsetEqual(u64, bool, PointerOffsetTerm, PointerOffsetTerm),
-    BitvectorEqual(u64, bool, Bitvector32Term, Bitvector32Term),
+    BitvectorEqual(u64, bool, MachineTerm, MachineTerm),
 }
 
 thread_local! {
@@ -394,8 +394,8 @@ fn expired_nested_reasoning_does_not_poison_resolution_memo() {
     let key = ResolutionQueryKey::BitvectorEqual(
         7_490_001,
         false,
-        Bitvector32Term::Variable(Variable(7_490_002)),
-        Bitvector32Term::constant(1),
+        MachineTerm::Variable(Variable(7_490_002)),
+        MachineTerm::constant(1),
     );
     // Expiry occurs inside the memo boundary, including at a helper which
     // formerly called the raw deadline checkpoint without recording a cut.
@@ -1073,20 +1073,20 @@ fn wide_element_offsets_proven_distinct(
             },
         ) if *byte_width >= 1 && *bytes >= 0 && bytes % byte_width == 0 => (
             value.as_ref().clone(),
-            Bitvector32Term::uint64_constant((bytes / byte_width) as u64),
+            MachineTerm::uint64_constant((bytes / byte_width) as u64),
             *byte_width,
         ),
         _ => return None,
     };
     let (left, right, _) = (&left, &right, width);
     let decided = |condition: ConditionTerm| assumptions.decide(&condition);
-    let below = |smaller: &Bitvector32Term, larger: &Bitvector32Term| {
+    let below = |smaller: &MachineTerm, larger: &MachineTerm| {
         decided(ConditionTerm::uint64_less_than(
             smaller.clone(),
             larger.clone(),
         )) == Some(true)
     };
-    let unequal = |first: &Bitvector32Term, second: &Bitvector32Term| {
+    let unequal = |first: &MachineTerm, second: &MachineTerm| {
         decided(ConditionTerm::uint64_equal(first.clone(), second.clone())) == Some(false)
     };
     Some(below(left, right) || below(right, left) || unequal(left, right) || unequal(right, left))
@@ -1334,7 +1334,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             if let Some(pinned) = assumptions.wide_constant_from_equalities(value) {
                 return Some(pinned == (bytes / byte_width) as u64);
             }
-            let index = Bitvector32Term::uint64_constant((bytes / byte_width) as u64);
+            let index = MachineTerm::uint64_constant((bytes / byte_width) as u64);
             let stated = [
                 ConditionTerm::uint64_equal(value.as_ref().clone(), index.clone()),
                 ConditionTerm::uint64_equal(index, value.as_ref().clone()),
@@ -1383,9 +1383,9 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             continue;
         }
         let elements = (bytes / *byte_width) as u64;
-        let advanced = Bitvector32Term::uint64_add(
+        let advanced = MachineTerm::uint64_add(
             index.as_ref().clone(),
-            Bitvector32Term::uint64_constant(elements),
+            MachineTerm::uint64_constant(elements),
         );
         let same = advanced == **whole_index
             || assumptions.decide(&ConditionTerm::uint64_equal(
@@ -1395,7 +1395,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         if same
             && assumptions.decide(&ConditionTerm::uint64_less_equal(
                 index.as_ref().clone(),
-                Bitvector32Term::uint64_constant(u64::MAX - elements),
+                MachineTerm::uint64_constant(u64::MAX - elements),
             )) == Some(true)
         {
             return Some(true);
@@ -1482,7 +1482,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             let Ok(expected) = i32::try_from(expected) else {
                 return Some(false);
             };
-            let expected = Bitvector32Term::constant(expected as u32);
+            let expected = MachineTerm::constant(expected as u32);
             if delta.index == expected {
                 return Some(true);
             }
@@ -1546,7 +1546,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
         // bounds are the ones filed under the index itself, one keyed lookup
         // (`indexed_constant_interval`): this comparison runs for every pair
         // of cells a store or load is placed against, so it may not search.
-        let excluded = |symbolic: &Bitvector32Term, constant: &Bitvector32Term| {
+        let excluded = |symbolic: &MachineTerm, constant: &MachineTerm| {
             let Some(constant) = signed_bitvector_constant(constant) else {
                 return false;
             };
@@ -1577,13 +1577,13 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
 #[cfg(test)]
 #[test]
 fn indexed_field_offsets_use_exact_displacements() {
-    let index = Bitvector32Term::Variable(Variable(849));
+    let index = MachineTerm::Variable(Variable(849));
     let offset = PointerOffsetTerm::add(
         PointerOffsetTerm::Constant(4),
         PointerOffsetTerm::scale_int32(index.clone(), 4),
     );
     let assumptions = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index.clone(), Bitvector32Term::constant(1)),
+        ConditionTerm::equal(index.clone(), MachineTerm::constant(1)),
         true,
     );
     let concrete = PointerOffsetTerm::Constant(8);
@@ -1596,7 +1596,7 @@ fn indexed_field_offsets_use_exact_displacements() {
         Some(true)
     );
     let boundary = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index, Bitvector32Term::constant(i32::MAX as u32)),
+        ConditionTerm::equal(index, MachineTerm::constant(i32::MAX as u32)),
         true,
     );
     // Adding the field offset happens after sign extension: it must not
@@ -1622,10 +1622,10 @@ fn indexed_field_offsets_use_exact_displacements() {
 #[cfg(test)]
 #[test]
 fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
-    let index = Bitvector32Term::Variable(Variable(851));
+    let index = MachineTerm::Variable(Variable(851));
     let scaled = PointerOffsetTerm::scale_int32(index.clone(), 4);
     let at_least_one = PureFactContext::new().assume_condition(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(1), index.clone()),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(1), index.clone()),
         true,
     );
     for constant in [0, -4] {
@@ -1662,7 +1662,7 @@ fn a_constant_index_outside_the_recorded_bounds_is_a_different_offset() {
 #[cfg(test)]
 #[test]
 fn memory_resolution_uses_graph_offset_congruence_in_branch_scope() {
-    let scalar = |id: u64| Bitvector32Term::Variable(Variable(91_000 + id));
+    let scalar = |id: u64| MachineTerm::Variable(Variable(91_000 + id));
     let offset = |id| {
         PointerOffsetTerm::add(
             PointerOffsetTerm::Constant(4),
@@ -1752,13 +1752,13 @@ fn memory_resolution_uses_pointer_classes_across_blocks() {
 fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = crate::kernel::intern_c_memory(CMemory::new().with_block("offset-load", 16));
-    let scalar = |id: u64| Bitvector32Term::Variable(Variable(95_000 + id));
+    let scalar = |id: u64| MachineTerm::Variable(Variable(95_000 + id));
     let address = |index| Pointer {
         block: "offset-load".into(),
         offset: PointerOffsetTerm::scale_int32(index, 4),
     };
     let loaded = |memory: &SharedCMemory, index| {
-        Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+        MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             memory,
             &address(index),
             crate::kernel::LoadKind::Int32,
@@ -1766,10 +1766,12 @@ fn memory_resolution_graph_offsets_keep_load_snapshots_distinct() {
             memory,
         ))
     };
-    let after = crate::kernel::intern_c_memory(before.memory().clone().store(
-        address(scalar(1)),
-        CValue::Int32(Bitvector32Term::constant(9)),
-    ));
+    let after = crate::kernel::intern_c_memory(
+        before
+            .memory()
+            .clone()
+            .store(address(scalar(1)), CValue::Int32(MachineTerm::constant(9))),
+    );
     let left = PointerOffsetTerm::scale_int32(loaded(&before, scalar(1)), 4);
     let right = PointerOffsetTerm::scale_int32(loaded(&before, scalar(2)), 4);
     let changed = PointerOffsetTerm::scale_int32(loaded(&after, scalar(2)), 4);
@@ -2012,8 +2014,8 @@ fn run_value_at_equal_displaced_pointer(
 }
 
 fn bitvector_terms_equal_for_memory_resolution_unmemoized(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     if left == right {
@@ -2037,8 +2039,8 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     // through the registry so snapshot provenance fires exactly as it would
     // for the load term, then fall through to the variable-form
     // paths if the load view does not decide.
-    let canonical_view = |term: &Bitvector32Term| {
-        if let Bitvector32Term::Variable(variable) = term {
+    let canonical_view = |term: &MachineTerm| {
+        if let MachineTerm::Variable(variable) = term {
             return crate::kernel::eval::registered_load_origin_term_for_variable(variable);
         }
         None
@@ -2073,7 +2075,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     }) {
         return true;
     }
-    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Int32) = left
+    if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = left
         && let Some(CValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != left
@@ -2081,7 +2083,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     {
         return true;
     }
-    if let Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Int32) = right
+    if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = right
         && let Some(CValue::Int32(value)) =
             stored_value_at_equal_pointer(memory, pointer, assumptions)
         && &value != right
@@ -2092,7 +2094,7 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     if let Some((left, right)) = bitvector_equality_after_additive_cancellation(left, right) {
         return bitvector_terms_proven_equal_for_memory_resolution(&left, &right, assumptions);
     }
-    let zero = Bitvector32Term::constant(0);
+    let zero = MachineTerm::constant(0);
     if let binary_term!(Int32, Add, base, addend) = left
         && ((bitvector_terms_proven_equal_for_memory_resolution(base, right, assumptions)
             && bitvector_terms_proven_equal_for_memory_resolution(addend, &zero, assumptions))
@@ -2127,8 +2129,8 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
                 && bitvector_terms_proven_equal_for_memory_resolution(left_b, right_b, assumptions)
         }
         (
-            Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
-            Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
+            MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
+            MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
         ) => {
             // Equal addresses are not enough: two reads there are one value
             // only when they are one kind of read.
@@ -2157,8 +2159,8 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
 }
 
 pub(in crate::kernel) fn bitvector_terms_proven_equal_for_memory_resolution(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
@@ -2173,8 +2175,8 @@ pub(in crate::kernel) fn bitvector_terms_proven_equal_for_memory_resolution(
 /// resolution. Callers proving exact byte-offset equality must use the
 /// separate offset judgment rather than this wrapping value equality.
 pub(in crate::kernel) fn int32_values_proven_equal_for_memory_resolution(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     assumptions.int32_values_known_equal(left, right)
@@ -2334,8 +2336,8 @@ pub(in crate::kernel) fn memories_proven_equal_for_memory_resolution(
 }
 
 pub(in crate::kernel) fn memory_load_terms_equal_for_fact_transport(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
     let (Some(left_load), Some(right_load)) = (
@@ -2345,8 +2347,8 @@ pub(in crate::kernel) fn memory_load_terms_equal_for_fact_transport(
         return false;
     };
     let (
-        Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind),
-        Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind),
+        MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
+        MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
     ) = (&left_load, &right_load)
     else {
         return false;
@@ -2399,20 +2401,20 @@ pub(in crate::kernel) fn loads_lack_recorded_equality(
 /// Gate structural comparisons of load terms on positive recorded evidence.
 /// Stated equalities use the fact graph independently of this gate.
 pub(in crate::kernel) fn load_equality_lacks_recorded_evidence(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let load = |term: &Bitvector32Term| match term {
-        Bitvector32Term::MemoryLoad(_, _, _) => Some(term.clone()),
-        Bitvector32Term::Variable(variable) => {
+    let load = |term: &MachineTerm| match term {
+        MachineTerm::MemoryLoad(_, _, _) => Some(term.clone()),
+        MachineTerm::Variable(variable) => {
             crate::kernel::eval::registered_load_origin_term_for_variable(variable)
         }
         _ => None,
     };
     let (
-        Some(Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind)),
-        Some(Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind)),
+        Some(MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind)),
+        Some(MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind)),
     ) = (load(left), load(right))
     else {
         return false;
@@ -2679,7 +2681,7 @@ fn memory_has_materialized_load_from(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some(CValue::Int32(Bitvector32Term::MemoryLoad(snapshot, load_pointer, LoadKind::Int32))) =
+    let Some(CValue::Int32(MachineTerm::MemoryLoad(snapshot, load_pointer, LoadKind::Int32))) =
         materialized.known_value(pointer)
     else {
         return false;
@@ -2736,7 +2738,7 @@ pub(in crate::kernel) fn pointer_offsets_with_common_base_distinctness_condition
 pub(in crate::kernel) fn common_base_element_indices(
     left: &Pointer,
     right: &Pointer,
-) -> Option<(Bitvector32Term, Bitvector32Term, u32)> {
+) -> Option<(MachineTerm, MachineTerm, u32)> {
     let (left_index, right_index) = common_base_index_offsets(left, right)?;
     element_indices_of(&left_index, &right_index)
 }
@@ -2748,7 +2750,7 @@ pub(in crate::kernel) fn common_base_element_indices(
 fn element_indices_of(
     left_index: &PointerOffsetTerm,
     right_index: &PointerOffsetTerm,
-) -> Option<(Bitvector32Term, Bitvector32Term, u32)> {
+) -> Option<(MachineTerm, MachineTerm, u32)> {
     let element_width = common_pointer_offset_element_width(left_index, right_index)?;
     let left = element_index_from_offset(left_index, element_width)?;
     let right = element_index_from_offset(right_index, element_width)?;
@@ -3061,12 +3063,12 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
     let left_source = crate::kernel::intern_c_memory_ref(
         &shell
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(1))),
+            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
     );
     let right_source = crate::kernel::intern_c_memory_ref(
         &shell
             .clone()
-            .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(2))),
+            .store(pointer.clone(), CValue::Int32(MachineTerm::constant(2))),
     );
     let mut left = shell.clone();
     left.mark_forgotten_from(&left_source);
@@ -3087,7 +3089,7 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
     );
 
     let load = |memory: &CMemory| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -3104,7 +3106,7 @@ fn unrelated_forgotten_snapshots_do_not_prove_their_loads_equal() {
 fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let loads_proven_equal = |left: &CMemory, right: &CMemory, pointer: &Pointer| {
         let load = |memory: &CMemory| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -3137,14 +3139,14 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let mut uninitialized = heap_shell.clone();
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), Bitvector32Term::constant(4));
+        .insert(heap_pointer.clone(), MachineTerm::constant(4));
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .uninitialized_allocations
         .insert(heap_pointer.clone());
     let mut zeroed = heap_shell;
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), Bitvector32Term::constant(4));
+        .insert(heap_pointer.clone(), MachineTerm::constant(4));
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .zeroed_allocations
         .insert(heap_pointer.clone());
@@ -3172,7 +3174,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
                 block: PointerBlock::Heap(7_620_003),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::constant(4),
+            MachineTerm::constant(4),
         );
     assert!(
         memories_match_for_pointer_load(&concrete_memory, &with_unrelated_heap, &concrete),
@@ -3203,7 +3205,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     };
     let with_pending = concrete_memory.clone().with_pending_heap_allocation(
         pending_base,
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(4),
         false,
     );
     assert!(
@@ -3753,14 +3755,14 @@ pub(in crate::kernel) enum RunAccess {
     /// The access has the run base's atoms plus one scaled index, and this
     /// constant byte shift from element 0.
     Scaled {
-        index: Bitvector32Term,
+        index: MachineTerm,
         scale: i64,
         shift: i64,
     },
     /// The same with an unsigned 64-bit index, which is not read as a
     /// signed word.
     ScaledWide {
-        index: Bitvector32Term,
+        index: MachineTerm,
         scale: i64,
         shift: i64,
     },
@@ -4359,7 +4361,7 @@ fn one_element_gap_separates_bytes(
     }
     // Only a known direction can separate them now. Ask for it in the order
     // that puts the narrower requirement first.
-    let strictly_below = |low: &Bitvector32Term, high: &Bitvector32Term| {
+    let strictly_below = |low: &MachineTerm, high: &MachineTerm| {
         let condition = ConditionTerm::signed_less_than(low.clone(), high.clone());
         // This preliminary byte-gap check runs inside memory-history walks.
         // Even a recorded-order graph walk grows with ambient facts. Read
@@ -4674,13 +4676,13 @@ fn materialized_cell_source(cell_pointer: &Pointer, value: &CValue) -> Option<Sh
         CValue::Void | CValue::UInt32(_) => return None,
     };
     let load = match bits {
-        Bitvector32Term::MemoryLoad(_, _, _) => bits.clone(),
-        Bitvector32Term::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+        MachineTerm::MemoryLoad(_, _, _) => bits.clone(),
+        MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
             crate::kernel::eval::registered_load_term_for_variable(variable)?
         }
         _ => return None,
     };
-    let Bitvector32Term::MemoryLoad(source, source_pointer, kind) = load else {
+    let MachineTerm::MemoryLoad(source, source_pointer, kind) = load else {
         return None;
     };
     // The cell is the load only when it holds the load of its own kind: a
@@ -4835,25 +4837,25 @@ pub(in crate::kernel) fn collect_memory_effect_write_pointers(
 #[cfg(test)]
 #[test]
 fn offset_resolution_does_not_promote_wrapped_index_equality() {
-    let i = Bitvector32Term::Variable(Variable(90_001));
-    let j = Bitvector32Term::Variable(Variable(90_002));
-    let k = Bitvector32Term::Variable(Variable(90_003));
-    let scaled = |index: Bitvector32Term| PointerOffsetTerm::scale_int32(index, 4);
+    let i = MachineTerm::Variable(Variable(90_001));
+    let j = MachineTerm::Variable(Variable(90_002));
+    let k = MachineTerm::Variable(Variable(90_003));
+    let scaled = |index: MachineTerm| PointerOffsetTerm::scale_int32(index, 4);
     let sum = PointerOffsetTerm::Add(Box::new(scaled(i.clone())), Box::new(scaled(j.clone())));
     let other = scaled(k.clone());
-    let index_sum = Bitvector32Term::add(i.clone(), j.clone());
+    let index_sum = MachineTerm::add(i.clone(), j.clone());
     let assumptions = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(index_sum.clone(), k.clone()), true)
         .assume_condition(
-            ConditionTerm::equal(i.clone(), Bitvector32Term::constant(i32::MAX as u32)),
+            ConditionTerm::equal(i.clone(), MachineTerm::constant(i32::MAX as u32)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(j.clone(), Bitvector32Term::constant(1)),
+            ConditionTerm::equal(j.clone(), MachineTerm::constant(1)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(i32::MIN as u32)),
+            ConditionTerm::equal(k.clone(), MachineTerm::constant(i32::MIN as u32)),
             true,
         );
     assert_eq!(
@@ -4873,28 +4875,28 @@ fn offset_resolution_does_not_promote_wrapped_index_equality() {
 #[cfg(test)]
 #[test]
 fn offset_resolution_accepts_exact_index_equalities_at_each_width() {
-    let i = Bitvector32Term::Variable(Variable(90_011));
-    let j = Bitvector32Term::Variable(Variable(90_012));
-    let k = Bitvector32Term::Variable(Variable(90_013));
-    let index_sum = Bitvector32Term::add(i.clone(), j.clone());
+    let i = MachineTerm::Variable(Variable(90_011));
+    let j = MachineTerm::Variable(Variable(90_012));
+    let k = MachineTerm::Variable(Variable(90_013));
+    let index_sum = MachineTerm::add(i.clone(), j.clone());
     let fact = ConditionTerm::equal(index_sum, k.clone());
     let symbolic = PureFactContext::new().assume_condition(fact.clone(), true);
     let exact = symbolic
         .clone()
         .assume_condition(
-            ConditionTerm::equal(i.clone(), Bitvector32Term::constant(2)),
+            ConditionTerm::equal(i.clone(), MachineTerm::constant(2)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(j.clone(), Bitvector32Term::constant(3)),
+            ConditionTerm::equal(j.clone(), MachineTerm::constant(3)),
             true,
         )
         .assume_condition(
-            ConditionTerm::equal(k.clone(), Bitvector32Term::constant(5)),
+            ConditionTerm::equal(k.clone(), MachineTerm::constant(5)),
             true,
         );
     for width in [1, 4, 8] {
-        let scaled = |index: Bitvector32Term| PointerOffsetTerm::scale_int32(index, width);
+        let scaled = |index: MachineTerm| PointerOffsetTerm::scale_int32(index, width);
         let sum = PointerOffsetTerm::Add(Box::new(scaled(i.clone())), Box::new(scaled(j.clone())));
         let other = scaled(k.clone());
         assert_ne!(
@@ -4914,8 +4916,8 @@ fn offset_resolution_accepts_exact_index_equalities_at_each_width() {
 #[test]
 fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
     use crate::kernel::{IntegerTerm, MachineIntegerType};
-    let wide = Bitvector32Term::Variable(Variable(81001));
-    let narrow = Bitvector32Term::Variable(Variable(81002));
+    let wide = MachineTerm::Variable(Variable(81001));
+    let narrow = MachineTerm::Variable(Variable(81002));
     let observed_wide =
         IntegerTerm::from_machine(MachineIntegerType::UInt64, wide.clone()).unwrap();
     let observed_narrow =
@@ -4939,8 +4941,7 @@ fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
                 pointer_offsets_equal_for_memory_resolution(&left, &right, &checked),
                 Some(true)
             );
-            let common =
-                PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(81003)), 4);
+            let common = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(81003)), 4);
             assert_eq!(
                 pointer_offsets_equal_for_memory_resolution(
                     &PointerOffsetTerm::add(common.clone(), left),
@@ -4974,10 +4975,7 @@ fn mixed_index_offsets_require_exact_observations_and_matching_strides() {
         None
     );
     let truncated = empty.assume_condition(
-        ConditionTerm::equal(
-            Bitvector32Term::uint32_from_64(wide.clone()),
-            narrow.clone(),
-        ),
+        ConditionTerm::equal(MachineTerm::uint32_from_64(wide.clone()), narrow.clone()),
         true,
     );
     assert_ne!(

@@ -19,28 +19,26 @@ fn assert_narrow_cast_work(size: u64) {
             chain
         } else {
             let previous = if level % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
-            Bitvector32Term::machine_integer_cast(previous, Ty::UInt32, chain)
+            MachineTerm::machine_integer_cast(previous, Ty::UInt32, chain)
         };
-        chain = Bitvector32Term::machine_integer_cast(
+        chain = MachineTerm::machine_integer_cast(
             Ty::UInt32,
             destination,
-            Bitvector32Term::add(word, Bitvector32Term::constant(1)),
+            MachineTerm::add(word, MachineTerm::constant(1)),
         );
     }
     let graph = EqualityGraph::default();
     let ((), casts) = crate::instrumentation::measure_deterministic_work(|| {
         for i in 0..size {
-            let cast =
-                Bitvector32Term::machine_integer_cast(Ty::UInt32, Ty::UInt8, var(175_000 + i));
-            let widened = Bitvector32Term::machine_integer_cast(Ty::UInt8, Ty::UInt32, cast);
-            let mask =
-                Bitvector32Term::bitwise_and(var(175_000 + i), Bitvector32Term::constant(255));
+            let cast = MachineTerm::machine_integer_cast(Ty::UInt32, Ty::UInt8, var(175_000 + i));
+            let widened = MachineTerm::machine_integer_cast(Ty::UInt8, Ty::UInt32, cast);
+            let mask = MachineTerm::bitwise_and(var(175_000 + i), MachineTerm::constant(255));
             assert!(graph.are_int32_equal(&widened, &mask));
         }
     });
     let last = if size % 2 == 0 { Ty::UInt8 } else { Ty::Int16 };
     let ((), chain_work) = crate::instrumentation::measure_deterministic_work(|| {
-        let chain = Bitvector32Term::machine_integer_cast(last, Ty::UInt32, chain.clone());
+        let chain = MachineTerm::machine_integer_cast(last, Ty::UInt32, chain.clone());
         assert!(!graph.are_int32_equal(&chain, &var(174_000)));
     });
     // The chain's `int32` widening is σ of its `uint32` one (the
@@ -48,7 +46,7 @@ fn assert_narrow_cast_work(size: u64) {
     // per level. Measured at the three smaller sizes, which bound it.
     if size <= 256 {
         let ((), cross_work) = crate::instrumentation::measure_deterministic_work(|| {
-            let chain = Bitvector32Term::machine_integer_cast(last, Ty::Int32, chain.clone());
+            let chain = MachineTerm::machine_integer_cast(last, Ty::Int32, chain.clone());
             assert!(!graph.are_int32_equal(&chain, &var(174_001)));
         });
         assert!(

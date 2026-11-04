@@ -32,10 +32,7 @@ fn function_with_segment(name: &str, segment: CMemorySegment) -> CFunction {
 
 fn entry_state() -> CState {
     CState::new()
-        .with_local(
-            "active",
-            int32(Bitvector32Term::Variable(Variable(980_001))),
-        )
+        .with_local("active", int32(MachineTerm::Variable(Variable(980_001))))
         .with_local(
             "cells",
             CValue::pointer(Pointer {
@@ -115,8 +112,8 @@ fn unrelated_concrete_guard_does_not_refine_named_guard() {
 fn active_is_zero(value: bool) -> PureFactContext {
     PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(980_001)),
-            Bitvector32Term::constant(0),
+            MachineTerm::Variable(Variable(980_001)),
+            MachineTerm::constant(0),
         ),
         value,
     ))

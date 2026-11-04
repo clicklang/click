@@ -63,8 +63,8 @@ mod disjunction_projection_tests {
     fn value(id: u64, constant: u32) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(id)),
-                Bitvector32Term::constant(constant),
+                MachineTerm::Variable(Variable(id)),
+                MachineTerm::constant(constant),
             ),
             true,
         )
@@ -92,8 +92,8 @@ mod disjunction_projection_tests {
     fn projection_uses_scoped_equalities_and_removes_withdrawn_sources() {
         let alias = Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(1)),
-                Bitvector32Term::Variable(Variable(4)),
+                MachineTerm::Variable(Variable(1)),
+                MachineTerm::Variable(Variable(4)),
             ),
             true,
         );
@@ -112,8 +112,8 @@ mod disjunction_projection_tests {
         );
         let wide = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
-                Bitvector32Term::Variable(Variable(1)),
-                Bitvector32Term::uint64_constant(1),
+                MachineTerm::Variable(Variable(1)),
+                MachineTerm::uint64_constant(1),
             ),
             true,
         );
@@ -139,21 +139,21 @@ mod disjunction_projection_tests {
         };
         let before = CMemory::new().with_block("projection-cell", 4).store(
             pointer.clone(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(10))),
+            CValue::Int32(MachineTerm::Variable(Variable(10))),
         );
         let after = before.clone().store(
             pointer.clone(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(11))),
+            CValue::Int32(MachineTerm::Variable(Variable(11))),
         );
         let read = |memory| {
             Proposition::ConditionIs(
                 ConditionTerm::equal(
-                    Bitvector32Term::MemoryLoad(
+                    MachineTerm::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(pointer.clone()),
                         LoadKind::Int32,
                     ),
-                    Bitvector32Term::constant(0),
+                    MachineTerm::constant(0),
                 ),
                 true,
             )
@@ -704,7 +704,7 @@ impl ProofFacts {
                         }
                         if !bound_variables.is_empty()
                             && [a, b].iter().any(|term| match *term {
-                                Bitvector32Term::Variable(variable) => {
+                                MachineTerm::Variable(variable) => {
                                     bound_variables.contains(variable)
                                 }
                                 bits32_constant!(_) => false,
@@ -736,9 +736,9 @@ impl ProofFacts {
                         if a == b {
                             continue;
                         }
-                        let kind = |term: &Bitvector32Term| match term {
-                            Bitvector32Term::MemoryLoad(_, _, kind) => Some(*kind),
-                            Bitvector32Term::Variable(variable) => {
+                        let kind = |term: &MachineTerm| match term {
+                            MachineTerm::MemoryLoad(_, _, kind) => Some(*kind),
+                            MachineTerm::Variable(variable) => {
                                 crate::kernel::registered_load_kind_for_variable(variable)
                             }
                             _ => None,
@@ -802,11 +802,11 @@ impl ProofFacts {
                             true,
                         );
                         let recorded_wide_read = || {
-                            let raw = |term: &Bitvector32Term| match term {
-                                Bitvector32Term::Variable(variable) => {
+                            let raw = |term: &MachineTerm| match term {
+                                MachineTerm::Variable(variable) => {
                                     crate::kernel::registered_load_term_for_variable(variable)
                                 }
-                                Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+                                MachineTerm::MemoryLoad(..) => Some(term.clone()),
                                 _ => None,
                             };
                             raw(a).zip(raw(b)).is_some_and(|(a, b)|
@@ -1250,10 +1250,10 @@ impl ProofFacts {
         let renamed = crate::kernel::substitute_int32_variable_in_proposition(
             body,
             binder,
-            Bitvector32Term::Variable(fresh),
+            MachineTerm::Variable(fresh),
         );
         let renamed =
-            restore_range_extent_spelling(body, renamed, binder, &Bitvector32Term::Variable(fresh));
+            restore_range_extent_spelling(body, renamed, binder, &MachineTerm::Variable(fresh));
         Some((fresh, renamed))
     }
 
@@ -1309,7 +1309,7 @@ impl ProofFacts {
     /// Numeric induction enters once per theorem. Check its domain from
     /// exact signed bounds on this measure, without searching other facts
     /// or deriving a replacement proof state.
-    pub(crate) fn has_nonnegative_induction_domain(&self, measure: &Bitvector32Term) -> bool {
+    pub(crate) fn has_nonnegative_induction_domain(&self, measure: &MachineTerm) -> bool {
         use crate::kernel::MachineOperandView as V;
         use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
         let measure = Key::new(V::Legacy(measure));
@@ -2436,7 +2436,7 @@ impl ProofFacts {
     }
 
     #[cfg(test)]
-    pub(crate) fn equality_atom_lookup_comparisons(&self, term: &Bitvector32Term) -> usize {
+    pub(crate) fn equality_atom_lookup_comparisons(&self, term: &MachineTerm) -> usize {
         let key = bitvector_equality_atom_key(term).expect("test term should be an indexed atom");
         self.bitvector_equalities_by_atom.lookup_comparisons(&key)
     }
@@ -2507,7 +2507,7 @@ fn restore_range_extent_spelling(
     original: &Proposition,
     renamed: Proposition,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> Proposition {
     let recurse = |original: &Proposition, renamed: Proposition| {
         Box::new(restore_range_extent_spelling(original, renamed, from, to))
@@ -2566,11 +2566,11 @@ fn restore_range_extent_spelling(
 /// shape the folding constructors would collapse it to. `None` when the term
 /// is not a written range extent, which is every other byte count.
 fn substituted_range_extent(
-    bytes: &Bitvector32Term,
+    bytes: &MachineTerm,
     from: Variable,
-    to: &Bitvector32Term,
-) -> Option<Bitvector32Term> {
-    let substitute = |term: &Bitvector32Term| {
+    to: &MachineTerm,
+) -> Option<MachineTerm> {
+    let substitute = |term: &MachineTerm| {
         crate::kernel::reasoning::substitute_bitvector_variable(term, from, to)
     };
     let (count, width) = match bytes {
@@ -2968,7 +2968,7 @@ fn collect_proposition_algebraic_terms(
             _,
         ) => {
             for value in [left.as_ref(), right.as_ref()] {
-                if let Bitvector32Term::AlgebraicMatch { scrutinee, .. } = value {
+                if let MachineTerm::AlgebraicMatch { scrutinee, .. } = value {
                     collect_algebraic_term_roots(scrutinee, terms);
                 }
             }
@@ -3033,12 +3033,12 @@ fn collect_algebraic_term_roots(term: &AlgebraicTerm, terms: &mut BTreeSet<Algeb
     }
 }
 
-fn bitvector_equality_atom_key(term: &Bitvector32Term) -> Option<BitvectorEqualityAtomKey> {
+fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAtomKey> {
     match term {
         // A `uint32` constant is its word's `Constant` (rule K1).
         bits32_constant!(value) => Some(BitvectorEqualityAtomKey::Constant(constant_u32(*value))),
-        Bitvector32Term::Variable(variable) => Some(BitvectorEqualityAtomKey::Variable(*variable)),
-        Bitvector32Term::ClickFunctionApplication { name, arguments } => {
+        MachineTerm::Variable(variable) => Some(BitvectorEqualityAtomKey::Variable(*variable)),
+        MachineTerm::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             for argument in arguments {
                 match argument {
@@ -3071,7 +3071,7 @@ fn bitvector_equality_atom_key(term: &Bitvector32Term) -> Option<BitvectorEquali
                 arguments_hash: hasher.finish(),
             })
         }
-        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
+        MachineTerm::MemoryLoad(memory, pointer, kind) => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             std::hash::Hash::hash(pointer.as_ref(), &mut hasher);
             std::hash::Hash::hash(kind, &mut hasher);
@@ -3199,7 +3199,7 @@ fn collect_integer_bitvector_atoms(
     }
 }
 
-fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<BitvectorEqualityAtomKey>) {
+fn collect_bitvector_atoms(term: &MachineTerm, atoms: &mut BTreeSet<BitvectorEqualityAtomKey>) {
     if let Some(atom) = bitvector_equality_atom_key(term) {
         atoms.insert(atom);
     }
@@ -3208,14 +3208,14 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
         }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
+        MachineTerm::Float32Binary { left, right, .. }
+        | MachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_atoms(left, atoms);
             collect_bitvector_atoms(right, atoms);
         }
         crate::kernel::unary_machine_term!(value) => collect_bitvector_atoms(value, atoms),
-        Bitvector32Term::BoolCast { value, .. } => collect_condition_bitvector_atoms(value, atoms),
-        Bitvector32Term::If {
+        MachineTerm::BoolCast { value, .. } => collect_condition_bitvector_atoms(value, atoms),
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -3224,7 +3224,7 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             collect_bitvector_atoms(then_term, atoms);
             collect_bitvector_atoms(else_term, atoms);
         }
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -3236,30 +3236,26 @@ fn collect_bitvector_atoms(term: &Bitvector32Term, atoms: &mut BTreeSet<Bitvecto
             collect_bitvector_atoms(initial, atoms);
             collect_bitvector_atoms(body, atoms);
         }
-        Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+        MachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_atoms(argument, atoms);
             }
         }
-        Bitvector32Term::ClickFunctionApplication { .. } => {}
-        Bitvector32Term::AlgebraicMatch { arms, .. } => {
+        MachineTerm::ClickFunctionApplication { .. } => {}
+        MachineTerm::AlgebraicMatch { arms, .. } => {
             for arm in arms {
                 collect_bitvector_atoms(&arm.body, atoms);
             }
         }
-        Bitvector32Term::MemoryLoad(_, pointer, _) => {
-            collect_pointer_bitvector_atoms(pointer, atoms)
-        }
-        Bitvector32Term::PointerAddress(pointer, _) => {
-            collect_pointer_bitvector_atoms(pointer, atoms)
-        }
+        MachineTerm::MemoryLoad(_, pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
+        MachineTerm::PointerAddress(pointer, _) => collect_pointer_bitvector_atoms(pointer, atoms),
         // A load variable names one read; the atoms of the address it read
         // are the atoms an equality must rewrite to reach it (`p->q->x`
         // under `p->q == r`). Follow registered addresses a bounded number
         // of levels, so the selection stays proportional to the term.
-        Bitvector32Term::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
-        Bitvector32Term::Constant { .. } => {}
-        Bitvector32Term::IntegerToMachine { .. } => {}
+        MachineTerm::Variable(variable) => collect_load_address_atoms(*variable, atoms, 0),
+        MachineTerm::Constant { .. } => {}
+        MachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -3298,7 +3294,7 @@ fn collect_load_address_atoms(
                 if let Some(atom) = bitvector_equality_atom_key(value) {
                     atoms.insert(atom);
                 }
-                if let Bitvector32Term::Variable(inner) = value.as_ref() {
+                if let MachineTerm::Variable(inner) = value.as_ref() {
                     collect_load_address_atoms(*inner, atoms, depth + 1);
                 }
             }
@@ -3632,7 +3628,7 @@ fn collect_owned_atomic_conjuncts(fact: &Proposition, output: &mut Vec<Propositi
 mod integer_equality_fact_index_tests {
     use super::*;
     use crate::kernel::{
-        Bitvector32Term, CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType,
+        CMemory, CValue, IntegerRangeFoldIndex, IntegerTerm, MachineIntegerType, MachineTerm,
         Pointer, PointerOffsetTerm, SharedIntegerRangeEndpoint, SharedIntegerTerm,
         SharedMachineIntegerTerm, Sort, Variable,
     };
@@ -3646,12 +3642,12 @@ mod integer_equality_fact_index_tests {
             Proposition::ConditionIs(ConditionTerm::pointer_equal(read.clone(), target), true);
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory(CMemory::new()),
                     Box::new(read.offset_by_bytes(4)),
                     crate::kernel::LoadKind::Int32,
                 ),
-                Bitvector32Term::constant(42),
+                MachineTerm::constant(42),
             ),
             true,
         );
@@ -3668,8 +3664,8 @@ mod integer_equality_fact_index_tests {
             }
             facts = facts.with_kernel_checked_fact(alias.clone());
             assert_eq!(facts.load_equalities_mentioning(&goal), vec![alias.clone()]);
-            let comparisons = facts
-                .equality_atom_lookup_comparisons(&Bitvector32Term::Variable(Variable(949_001)));
+            let comparisons =
+                facts.equality_atom_lookup_comparisons(&MachineTerm::Variable(Variable(949_001)));
             let height = (u32::BITS - size.leading_zeros()) as usize;
             assert!(comparisons <= 2 * height + 4, "{size}: {comparisons}");
             assert!(
@@ -3688,8 +3684,8 @@ mod integer_equality_fact_index_tests {
 
     fn int32_index() -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
         }
     }
 
@@ -3731,7 +3727,7 @@ mod integer_equality_fact_index_tests {
             item,
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(Pointer {
                         block: "snapshot-alpha-facts".into(),
@@ -3751,14 +3747,14 @@ mod integer_equality_fact_index_tests {
         bytes: u32,
     ) -> Proposition {
         let bound_offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(binder)),
+            value: Box::new(MachineTerm::Variable(binder)),
             byte_width: 4,
         };
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
             PointerOffsetTerm::Add(
                 Box::new(bound_offset),
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(free)),
+                    value: Box::new(MachineTerm::Variable(free)),
                     byte_width: 1,
                 }),
             )
@@ -3773,7 +3769,7 @@ mod integer_equality_fact_index_tests {
                     block: block.into(),
                     offset,
                 },
-                bytes: Bitvector32Term::constant(bytes),
+                bytes: MachineTerm::constant(bytes),
                 wide: false,
             }),
         }
@@ -3788,14 +3784,14 @@ mod integer_equality_fact_index_tests {
         bytes: u32,
     ) -> Proposition {
         let bound_offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(binder)),
+            value: Box::new(MachineTerm::Variable(binder)),
             byte_width: 4,
         };
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
             PointerOffsetTerm::Add(
                 Box::new(bound_offset),
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(free)),
+                    value: Box::new(MachineTerm::Variable(free)),
                     byte_width: 1,
                 }),
             )
@@ -3810,7 +3806,7 @@ mod integer_equality_fact_index_tests {
                     block: block.into(),
                     offset,
                 },
-                bytes: Bitvector32Term::constant(bytes),
+                bytes: MachineTerm::constant(bytes),
                 wide: false,
             }),
         }
@@ -3824,8 +3820,8 @@ mod integer_equality_fact_index_tests {
                     block: block.into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(Variable(210_000)),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(Variable(210_000)),
             ))
         };
         let separation = Proposition::CResourceSeparate {
@@ -3834,8 +3830,8 @@ mod integer_equality_fact_index_tests {
         };
         let bound = Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(Variable(210_000)),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(Variable(210_000)),
             ),
             true,
         );
@@ -3866,7 +3862,7 @@ mod integer_equality_fact_index_tests {
 
     #[test]
     fn induction_domain_uses_only_the_selected_signed_bound_bucket() {
-        let measure = Bitvector32Term::Variable(Variable(123456));
+        let measure = MachineTerm::Variable(Variable(123456));
         for size in [8, 32, 128, 512] {
             let unrelated = (0..size)
                 .map(|index| {
@@ -3874,8 +3870,8 @@ mod integer_equality_fact_index_tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::GreaterEqual,
-                            left: Box::new(Bitvector32Term::Variable(Variable(index))),
-                            right: Box::new(Bitvector32Term::constant(0)),
+                            left: Box::new(MachineTerm::Variable(Variable(index))),
+                            right: Box::new(MachineTerm::constant(0)),
                         },
                         true,
                     )
@@ -3894,14 +3890,14 @@ mod integer_equality_fact_index_tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterThan,
                         left: Box::new(measure.clone()),
-                        right: Box::new(Bitvector32Term::constant(bound as u32)),
+                        right: Box::new(MachineTerm::constant(bound as u32)),
                     }
                 } else {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
                         left: Box::new(measure.clone()),
-                        right: Box::new(Bitvector32Term::constant(bound as u32)),
+                        right: Box::new(MachineTerm::constant(bound as u32)),
                     }
                 };
                 let facts =
@@ -4007,7 +4003,7 @@ mod integer_equality_fact_index_tests {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::constant(7)),
+            CValue::Int32(MachineTerm::constant(7)),
         ));
         let source_fact = less_equal(
             IntegerTerm::constant_i64(9),
@@ -4041,14 +4037,14 @@ mod integer_equality_fact_index_tests {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::Variable(Variable(207_000))),
+            CValue::Int32(MachineTerm::Variable(Variable(207_000))),
         );
         let changed_memory = memory.clone().store(
             Pointer {
                 block: "quantified-viewable".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::constant(7)),
+            CValue::Int32(MachineTerm::constant(7)),
         );
         let source = loadable_forall(
             &memory,
@@ -4156,11 +4152,11 @@ mod integer_equality_fact_index_tests {
                 name: "sample".to_string(),
                 arguments: vec![
                     Term::CState(Box::new(state)),
-                    Term::CValue(CValue::Int32(Bitvector32Term::Variable(binder))),
+                    Term::CValue(CValue::Int32(MachineTerm::Variable(binder))),
                 ],
             }),
         };
-        let state = CState::new().with_local("x", CValue::Int32(Bitvector32Term::constant(7)));
+        let state = CState::new().with_local("x", CValue::Int32(MachineTerm::constant(7)));
         let available = predicate("first", Variable(300_001), state.clone());
         let renamed = predicate("second", Variable(300_002), state.clone());
         let independently_empty = predicate("second", Variable(300_002), CState::new());
@@ -4168,7 +4164,7 @@ mod integer_equality_fact_index_tests {
         let changed_state = predicate(
             "second",
             Variable(300_002),
-            state.with_local("x", CValue::Int32(Bitvector32Term::constant(8))),
+            state.with_local("x", CValue::Int32(MachineTerm::constant(8))),
         );
         assert_eq!(
             quantified_equivalence_index_key(&available),
@@ -4196,7 +4192,7 @@ mod integer_equality_fact_index_tests {
                 block: block.into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::constant(1)),
+            CValue::Int32(MachineTerm::constant(1)),
         );
         let consequent = loadable_exists(&memory, "callee", Variable(207_700), block, None, 4);
         let renamed = loadable_exists(&memory, "caller", Variable(207_800), block, None, 4);
@@ -4220,14 +4216,14 @@ mod integer_equality_fact_index_tests {
             var: binder,
             sort: Sort::Algebraic(path_type.clone()),
             body: Box::new(Proposition::Equal(
-                Term::Bitvector32(Bitvector32Term::ClickFunctionApplication {
+                Term::Bitvector32(MachineTerm::ClickFunctionApplication {
                     name: "walk".into(),
                     arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
                         algebraic_type: path_type.clone(),
                         node: AlgebraicTermNode::Variable(binder),
                     })],
                 }),
-                Term::Bitvector32(Bitvector32Term::constant(1)),
+                Term::Bitvector32(MachineTerm::constant(1)),
             )),
         };
         let source = path_reaches("callee_path", Variable(207_750));
@@ -4475,7 +4471,7 @@ mod integer_equality_fact_index_tests {
                 IntegerTerm::var(accumulator),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(item),
+                    MachineTerm::Variable(item),
                 )),
             ),
         );
@@ -4497,7 +4493,7 @@ mod integer_equality_fact_index_tests {
                 block: "snapshot-alpha-facts".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::constant(7)),
+            CValue::Int32(MachineTerm::constant(7)),
         ));
         let source_fact = equality(
             IntegerTerm::constant_i64(9),
@@ -4588,8 +4584,8 @@ mod retained_root_context_tests {
                 .map(|index| {
                     Proposition::ConditionIs(
                         ConditionTerm::equal(
-                            Bitvector32Term::Variable(Variable(970_000 + u64::from(index))),
-                            Bitvector32Term::constant(index),
+                            MachineTerm::Variable(Variable(970_000 + u64::from(index))),
+                            MachineTerm::constant(index),
                         ),
                         true,
                     )
@@ -4621,8 +4617,8 @@ mod held_separation_tests {
                 block: "shared".into(),
                 offset: PointerOffsetTerm::Variable(Variable(980_000 + index)),
             },
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         ))
     }
 
@@ -4639,8 +4635,8 @@ mod held_separation_tests {
         };
         CResource::Memory(CMemoryRange::new_with_element_width(
             cell.base().clone(),
-            Bitvector32Term::constant(start),
-            Bitvector32Term::constant(end),
+            MachineTerm::constant(start),
+            MachineTerm::constant(end),
             width,
         ))
     }
@@ -4917,10 +4913,7 @@ mod integer_witness_freshness_tests {
         };
         let facts = ProofFacts::from_ordered(&[
             Proposition::ConditionIs(
-                ConditionTerm::equal(
-                    Bitvector32Term::Variable(load),
-                    Bitvector32Term::constant(0),
-                ),
+                ConditionTerm::equal(MachineTerm::Variable(load), MachineTerm::constant(0)),
                 true,
             ),
             integer_fact(binder),
@@ -4949,8 +4942,8 @@ mod quantified_conjunct_projection_tests {
     fn equals(var: u64, constant: u32) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(var)),
-                Bitvector32Term::constant(constant),
+                MachineTerm::Variable(Variable(var)),
+                MachineTerm::constant(constant),
             ),
             true,
         )
@@ -4958,8 +4951,8 @@ mod quantified_conjunct_projection_tests {
     fn at_most(var: u64, bound: u32) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
-                Bitvector32Term::Variable(Variable(var)),
-                Bitvector32Term::constant(bound),
+                MachineTerm::Variable(Variable(var)),
+                MachineTerm::constant(bound),
             ),
             true,
         )

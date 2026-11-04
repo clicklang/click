@@ -118,9 +118,9 @@ fn returned_symbolic_cell_rejoins_without_scanning_unrelated_ownership() {
     let mut samples = Vec::new();
     for size in [4_u64, 16, 64, 256] {
         let base = Pointer::symbolic(Variable(987_400));
-        let index = Bitvector32Term::Variable(Variable(987_401));
-        let middle = Bitvector32Term::add(index.clone(), 1u32.into());
-        let end = Bitvector32Term::add(index.clone(), 2u32.into());
+        let index = MachineTerm::Variable(Variable(987_401));
+        let middle = MachineTerm::add(index.clone(), 1u32.into());
+        let end = MachineTerm::add(index.clone(), 2u32.into());
         let range = |base, start, end| {
             CResourceFact::own_memory(CMemoryRange::new_with_element_width(base, start, end, 4))
         };

@@ -101,16 +101,16 @@ fn conditional_universal_certification_ignores_unrelated_facts() {
 
 #[test]
 fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
-    let a = Bitvector32Term::Variable(Variable(960_170));
-    let b = Bitvector32Term::Variable(Variable(960_171));
-    let c = Bitvector32Term::Variable(Variable(960_172));
+    let a = MachineTerm::Variable(Variable(960_170));
+    let b = MachineTerm::Variable(Variable(960_171));
+    let c = MachineTerm::Variable(Variable(960_172));
     let goal = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(a.clone(), Bitvector32Term::add(b.clone(), c.clone())),
+        ConditionTerm::signed_add_overflows(a.clone(), MachineTerm::add(b.clone(), c.clone())),
         false,
     );
     let guards = [
         ConditionTerm::signed_add_overflows(a.clone(), b.clone()),
-        ConditionTerm::signed_add_overflows(Bitvector32Term::add(a.clone(), b.clone()), c.clone()),
+        ConditionTerm::signed_add_overflows(MachineTerm::add(a.clone(), b.clone()), c.clone()),
         ConditionTerm::signed_add_overflows(b.clone(), c.clone()),
     ];
     for missing in 0..3 {
@@ -130,8 +130,8 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(961_000 + index)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(961_000 + index)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -152,11 +152,11 @@ fn reassociated_signed_add_domain_requires_each_guard_and_scales() {
     );
     // The sequential total can be in range while the regrouped inner sum
     // overflows: MIN + MAX + 1 == 0 is not a license to evaluate MAX + 1.
-    let a = Bitvector32Term::constant(i32::MIN as u32);
-    let b = Bitvector32Term::constant(i32::MAX as u32);
-    let c = Bitvector32Term::constant(1);
+    let a = MachineTerm::constant(i32::MIN as u32);
+    let b = MachineTerm::constant(i32::MAX as u32);
+    let c = MachineTerm::constant(1);
     let goal = Proposition::ConditionIs(
-        ConditionTerm::signed_add_overflows(a, Bitvector32Term::add(b, c)),
+        ConditionTerm::signed_add_overflows(a, MachineTerm::add(b, c)),
         false,
     );
     assert!(!crate::kernel::api::checked_int32_reassociated_add_domain(
@@ -198,8 +198,8 @@ fn shared_reassociated_add_domains_keep_operands_and_required_guards() {
         for index in 0..size {
             base = base.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(973_000 + index)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(973_000 + index)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             );

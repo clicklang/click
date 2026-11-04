@@ -245,7 +245,7 @@ impl CheckedOrderBounds {
         }
     }
 
-    pub(super) fn signed_wide_interval(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
+    pub(super) fn signed_wide_interval(&self, term: &MachineTerm) -> Option<(i64, i64)> {
         self.signed_wide_interval_view(crate::kernel::MachineOperandView::Legacy(term))
     }
 
@@ -268,7 +268,7 @@ impl CheckedOrderBounds {
         ))
     }
 
-    pub(super) fn interval(&self, term: &Bitvector32Term, unsigned: bool) -> Option<(i64, i64)> {
+    pub(super) fn interval(&self, term: &MachineTerm, unsigned: bool) -> Option<(i64, i64)> {
         self.interval_view(MachineOperandView::Legacy(term), unsigned)
     }
 
@@ -361,10 +361,7 @@ impl CheckedOrderBounds {
 
     /// At most one numeric extremum and one unambiguous symbolic source per
     /// direction. The fixed four slots are selected, never a bucket iterator.
-    pub(super) fn constant_evidence_sources(
-        &self,
-        term: &Bitvector32Term,
-    ) -> [Option<Proposition>; 4] {
+    pub(super) fn constant_evidence_sources(&self, term: &MachineTerm) -> [Option<Proposition>; 4] {
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("select constant bound evidence", 1);
         crate::instrumentation::record_deterministic_work(1);
@@ -390,7 +387,7 @@ impl CheckedOrderBounds {
     }
 
     /// Numeric extrema and carrier limits implied by a direct strict edge.
-    pub(super) fn interval_with_strict(&self, term: &Bitvector32Term) -> Option<(i64, i64)> {
+    pub(super) fn interval_with_strict(&self, term: &MachineTerm) -> Option<(i64, i64)> {
         self.interval_with_strict_view(MachineOperandView::Legacy(term))
     }
 
@@ -411,7 +408,7 @@ impl CheckedOrderBounds {
         ))
     }
 
-    pub(super) fn strict_upper(&self, term: &Bitvector32Term) -> Option<Proposition> {
+    pub(super) fn strict_upper(&self, term: &MachineTerm) -> Option<Proposition> {
         self.strict_upper_view(MachineOperandView::Legacy(term))
     }
 
@@ -453,21 +450,21 @@ mod tests {
             MachineIntegerType::UInt32,
             MachineIntegerType::Int64,
         ] {
-            let x = Bitvector32Term::Variable(Variable(982003));
+            let x = MachineTerm::Variable(Variable(982003));
             let literal = |n| {
                 if format == MachineIntegerType::Int64 {
-                    Bitvector32Term::int64_constant(n)
+                    MachineTerm::int64_constant(n)
                 } else {
-                    Bitvector32Term::constant(n as u32)
+                    MachineTerm::constant(n as u32)
                 }
             };
-            let bound = Bitvector32Term::Binary {
+            let bound = MachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,
                 left: Box::new(literal(1)),
                 right: Box::new(literal(2)),
             };
-            let observe = |word: &Bitvector32Term| {
+            let observe = |word: &MachineTerm| {
                 SharedMachineIntegerTerm::from_shared(
                     format,
                     KernelTermImport::default().machine(format, word),
@@ -502,10 +499,9 @@ mod tests {
     #[test]
     fn signed_wide_extrema_keep_strictness_withdrawal_and_branches() {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = Bitvector32Term::Variable(Variable(982000));
-        let less = |n| {
-            ConditionTerm::int64_signed_less_than(x.clone(), Bitvector32Term::int64_constant(n))
-        };
+        let x = MachineTerm::Variable(Variable(982000));
+        let less =
+            |n| ConditionTerm::int64_signed_less_than(x.clone(), MachineTerm::int64_constant(n));
         let mut index = CheckedOrderBounds::default();
         index.adjust(&less(10), true, true);
         index.adjust(&less(0), false, true);

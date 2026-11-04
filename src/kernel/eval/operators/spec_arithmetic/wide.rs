@@ -92,7 +92,7 @@ pub(super) fn apply(
         .and_then(|constant| {
             crate::kernel::machine_integer::range::constant_word(destination, constant)
         })
-        .unwrap_or_else(|| Bitvector32Term::IntegerToMachine {
+        .unwrap_or_else(|| MachineTerm::IntegerToMachine {
             value: result.into(),
             destination,
         });

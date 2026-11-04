@@ -16,8 +16,8 @@
 
 use super::{Operation, Relation};
 use crate::kernel::MachineBinaryOp;
-use crate::kernel::{Bitvector32Term, ConditionTerm, MachineIntegerType};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{ConditionTerm, MachineIntegerType, MachineTerm};
 
 /// The word a format's values ride in, which decides its nodes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -78,19 +78,19 @@ fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerType> {
 pub(crate) fn operation_word(
     ty: MachineIntegerType,
     operation: Operation,
-    left: Box<Bitvector32Term>,
-    right: Box<Bitvector32Term>,
-) -> Option<Bitvector32Term> {
+    left: Box<MachineTerm>,
+    right: Box<MachineTerm>,
+) -> Option<MachineTerm> {
     let format = operator_format(ty)?;
     let (left, right) = if word(ty) == Word::Bits32 {
         (
-            Box::new(Bitvector32Term::operand32(format, *left)),
-            Box::new(Bitvector32Term::operand32(format, *right)),
+            Box::new(MachineTerm::operand32(format, *left)),
+            Box::new(MachineTerm::operand32(format, *right)),
         )
     } else {
         (left, right)
     };
-    Some(Bitvector32Term::Binary {
+    Some(MachineTerm::Binary {
         op: machine_binary_op_of(operation),
         format,
         left,
@@ -116,7 +116,7 @@ pub(crate) fn operation_observation(
             if word(ty) == Word::Bits32
                 && let crate::kernel::KernelTermNode::MachineLiteral(literal) = term.node()
             {
-                let literal = Bitvector32Term::operand32(format, literal.legacy_term());
+                let literal = MachineTerm::operand32(format, literal.legacy_term());
                 return KernelTermImport::default()
                     .machine_arithmetic(format, &literal)
                     .expect("literal arithmetic operand");
@@ -145,15 +145,15 @@ pub(crate) fn operation_observation(
 }
 
 /// The machine operation `left op right` at `ty`, built by the folding
-/// constructors (`Bitvector32Term::machine_binary`), which simplify constant
+/// constructors (`MachineTerm::machine_binary`), which simplify constant
 /// operands. `None` where `ty` has no such node.
 pub(crate) fn folded_operation_word(
     ty: MachineIntegerType,
     operation: Operation,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Option<Bitvector32Term> {
-    Some(Bitvector32Term::machine_binary(
+    left: MachineTerm,
+    right: MachineTerm,
+) -> Option<MachineTerm> {
+    Some(MachineTerm::machine_binary(
         operator_format(ty)?,
         machine_binary_op_of(operation),
         left,
@@ -165,8 +165,8 @@ pub(crate) fn folded_operation_word(
 /// machine `+`, `-` or `*` at `ty`.
 pub(crate) fn word_operation(
     ty: MachineIntegerType,
-    value: &Bitvector32Term,
-) -> Option<(Operation, &Bitvector32Term, &Bitvector32Term)> {
+    value: &MachineTerm,
+) -> Option<(Operation, &MachineTerm, &MachineTerm)> {
     use crate::kernel::MachineOperandView as View;
     let (operation, [View::Legacy(left), View::Legacy(right)]) =
         view_operation(ty, View::Legacy(value))?
@@ -210,7 +210,7 @@ fn operation_of_machine_binary_op(op: MachineBinaryOp) -> Option<Operation> {
 }
 
 /// Whether `value` is a machine `+`, `-` or `*` at any format.
-pub(crate) fn is_ring_operation(value: &Bitvector32Term) -> bool {
+pub(crate) fn is_ring_operation(value: &MachineTerm) -> bool {
     [
         MachineIntegerType::Int32,
         MachineIntegerType::Int64,
@@ -227,8 +227,8 @@ pub(crate) fn is_ring_operation(value: &Bitvector32Term) -> bool {
 pub(crate) fn comparison(
     ty: MachineIntegerType,
     relation: Relation,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
 ) -> Option<(ConditionTerm, bool)> {
     let compare = match relation {
         Relation::Less => CompareRelation::LessThan,
@@ -257,11 +257,7 @@ pub(crate) fn spells_comparison_natively(ty: MachineIntegerType) -> bool {
 /// its width.
 pub(crate) fn comparison_readings(
     condition: &ConditionTerm,
-) -> Option<(
-    &Bitvector32Term,
-    &Bitvector32Term,
-    &'static [MachineIntegerType],
-)> {
+) -> Option<(&MachineTerm, &MachineTerm, &'static [MachineIntegerType])> {
     use MachineIntegerType as Ty;
     let ConditionTerm::Compare {
         format,
@@ -323,8 +319,8 @@ fn overflow_operation_of(operation: Operation) -> OverflowOperation {
 pub(crate) fn overflow_condition(
     ty: MachineIntegerType,
     operation: Operation,
-    left: Box<Bitvector32Term>,
-    right: Box<Bitvector32Term>,
+    left: Box<MachineTerm>,
+    right: Box<MachineTerm>,
 ) -> Option<ConditionTerm> {
     has_overflow_test(ty).then(|| ConditionTerm::Overflows {
         format: ty,
@@ -338,12 +334,7 @@ pub(crate) fn overflow_condition(
 /// `*`.
 pub(crate) fn overflow_operation(
     condition: &ConditionTerm,
-) -> Option<(
-    MachineIntegerType,
-    Operation,
-    &Bitvector32Term,
-    &Bitvector32Term,
-)> {
+) -> Option<(MachineIntegerType, Operation, &MachineTerm, &MachineTerm)> {
     let ConditionTerm::Overflows {
         format,
         op,
@@ -380,8 +371,8 @@ pub(crate) enum Division {
 /// and 128-bit formats have none.
 pub(crate) fn word_division(
     ty: MachineIntegerType,
-    value: &Bitvector32Term,
-) -> Option<(Division, &Bitvector32Term, &Bitvector32Term)> {
+    value: &MachineTerm,
+) -> Option<(Division, &MachineTerm, &MachineTerm)> {
     let (division, [left, right]) =
         view_division(ty, crate::kernel::MachineOperandView::Legacy(value))?;
     let (
@@ -423,12 +414,10 @@ pub(crate) fn has_legacy_conversions(ty: MachineIntegerType) -> bool {
 /// The 32-bit word a 32- or 64-bit value's low bits ride in: the value
 /// itself at 32 bits, its `UInt32From64` narrowing at 64. `None` for a
 /// narrow or 128-bit format.
-pub(crate) fn low_word(ty: MachineIntegerType, value: &Bitvector32Term) -> Option<Bitvector32Term> {
+pub(crate) fn low_word(ty: MachineIntegerType, value: &MachineTerm) -> Option<MachineTerm> {
     match (word(ty), ty.format().bits()) {
         (Word::Bits32, 32) => Some(value.clone()),
-        (Word::Signed64 | Word::Unsigned64, _) => {
-            Some(Bitvector32Term::uint32_from_64(value.clone()))
-        }
+        (Word::Signed64 | Word::Unsigned64, _) => Some(MachineTerm::uint32_from_64(value.clone())),
         _ => None,
     }
 }
@@ -473,21 +462,21 @@ pub(crate) fn narrow_carrier_mask(ty: MachineIntegerType) -> Option<(u32, Option
 pub(crate) fn narrow_cast_word(
     source: MachineIntegerType,
     destination: MachineIntegerType,
-    value: Bitvector32Term,
-) -> Option<Bitvector32Term> {
+    value: MachineTerm,
+) -> Option<MachineTerm> {
     let (mask, sign) = narrow_carrier_mask(destination)?;
     let word = match source.format().bits() {
-        8 | 16 => Bitvector32Term::machine_integer_cast(source, MachineIntegerType::Int32, value),
+        8 | 16 => MachineTerm::machine_integer_cast(source, MachineIntegerType::Int32, value),
         32 => value,
-        64 => Bitvector32Term::uint32_from_64(value),
+        64 => MachineTerm::uint32_from_64(value),
         _ => return None,
     };
-    let low = Bitvector32Term::bitwise_and(word, Bitvector32Term::constant(mask));
+    let low = MachineTerm::bitwise_and(word, MachineTerm::constant(mask));
     Some(match sign {
         None => low,
-        Some(sign) => Bitvector32Term::subtract(
-            Bitvector32Term::bitwise_xor(low, Bitvector32Term::constant(sign)),
-            Bitvector32Term::constant(sign),
+        Some(sign) => MachineTerm::subtract(
+            MachineTerm::bitwise_xor(low, MachineTerm::constant(sign)),
+            MachineTerm::constant(sign),
         ),
     })
 }

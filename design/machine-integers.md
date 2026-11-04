@@ -20,7 +20,7 @@ Nothing in the kernel says once what a value of one of these types is, how
 it converts, or which rules hold for it. Each rule carries its own list of
 supported widths, and the lists disagree.
 
-**Representation.** `Bitvector32Term` (`src/kernel/primitives.rs`) has 60
+**Representation.** `MachineTerm` (`src/kernel/primitives.rs`) has 60
 variants and no width field. The width is implied by the operator family,
 the constant's shape, a load's kind, or the enclosing `CValue` tag.
 
@@ -163,7 +163,7 @@ every width, beside the existing `Integer*` comparisons. The XOR encoding of
 `uint32` order goes away.
 
 The existing constructors (`ConditionTerm::signed_less_than`,
-`Bitvector32Term::add`, ...) and the uniform views in `term_shape.rs` stay as
+`MachineTerm::add`, ...) and the uniform views in `term_shape.rs` stay as
 the API most code uses. They then build or read the format-carrying nodes,
 so most call sites do not change.
 
@@ -253,7 +253,7 @@ families at the surface.
 
 The ruling in `typed-indices.md` gave four reasons. Measured now:
 
-- **"About 8,000 match sites".** `Bitvector32Term::` variants appear about
+- **"About 8,000 match sites".** `MachineTerm::` variants appear about
   11,600 times in 147 non-test files. About 3,200 of those are leaves
   (`Variable`, constants), which a merge of the typed operators does not
   touch. The per-width operators and conversions account for about 2,700
@@ -451,14 +451,15 @@ Done 2026-10-24. What changed:
   `Cast`, starting with the 64-bit duplicates, then the 32-bit operators,
   then the six legacy conversions.
 - Keep the constructor API. Retire `Bitvector32Term`'s name when it no
-  longer describes the type.
+  longer describes the type (renamed `MachineTerm`, 2026-11-04; see
+  Progress).
 - Separate floats into their own term type (retired 2026-11-04; see
   Progress).
 - Load equations take their load's format.
 
 Progress:
 
-- The 64-bit operators are merged (2026-10-24). `Bitvector32Term` has
+- The 64-bit operators are merged (2026-10-24). `MachineTerm` has
   `Binary { format, op, left, right }` (`MachineBinaryOp`) and
   `Unary { format, op, operand }` (`MachineUnaryOp`) in place of its 24
   `Int64*` and `UInt64*` operator variants; `ShiftRight` is arithmetic at
@@ -498,13 +499,13 @@ Progress:
   each read is its own load), as a signed byte read is the conversion of the
   byte's unsigned read. Kernel-internal reads stay `Int32`. A trace prints
   either 32-bit kind as `read<Bits32>`, as before. No verdict changed.
-- Step 2, constants with a format, is done (2026-10-25). `Bitvector32Term`
+- Step 2, constants with a format, is done (2026-10-25). `MachineTerm`
   has `UInt32Constant(u32)` beside `Constant(u32)`, which stays the `int32`
   spelling of every kernel-internal constant. A C, C++ or Rust value at
   `uint32` takes it: literals (`c_uint32_literal`, the C++ scalar literal,
   Rust `u32` literals and suffixes), `MachineIntegerType::constant_term`
   and every conversion fold at `uint32`, `kernel::uint32` and
-  `value_from_term` at `uint32` (`Bitvector32Term::in_format32`, one match
+  `value_from_term` at `uint32` (`MachineTerm::in_format32`, one match
   on the root). Its word is `Constant` of the same bits (rule K1): the
   32-bit operator, comparison and overflow constructors and the raw
   32-bit operator builders read it as `Constant` (`into_word32`,
@@ -563,7 +564,7 @@ Progress:
   `Constant { format, bits }` replaces `Constant(u32)`, `UInt32Constant`,
   `Int64Constant`, `UInt64Constant` and `MachineIntegerConstant`: one node
   for every format, its bits masked to the format. The builders keep the
-  old names (`Bitvector32Term::constant` at `int32`, `uint32_constant`,
+  old names (`MachineTerm::constant` at `int32`, `uint32_constant`,
   `int64_constant`, `uint64_constant`, `machine_constant`), and patterns
   name a format (`int32_constant!`, `uint32_constant!`, `bits32_constant!`,
   `int64_constant!`, `uint64_constant!`, `native_constant!` for 8, 16 and
@@ -597,7 +598,7 @@ Progress:
   direction, 2026-11-04: it reads the 64-bit operand's bits, so a fixed
   source is principled, and no source signedness is recorded). The
   builders keep their names (`machine_integer_cast`, `int64_from_32`,
-  `uint32_from_64`, ...) beside the bare `Bitvector32Term::legacy_cast`
+  `uint32_from_64`, ...) beside the bare `MachineTerm::legacy_cast`
   and `cast_node`; patterns use `cast_term!(Spelling, value)` and
   `cast_op!(Spelling)`. `spelling` precedes the formats, so the derived
   order of conversions is the old one. Discriminant-based comparisons and
@@ -620,7 +621,7 @@ Progress:
   not a construction shortcut, so it is not a Stage 3 item.
 - Floats stay in the term family (2026-11-04). The
   split would give floats a term type of their own, `FloatTerm` with a
-  bits leaf (a `Bitvector32Term`: variable, load, constant, application)
+  bits leaf (a `MachineTerm`: variable, load, constant, application)
   and float negation and arithmetic nodes, held by `CValue::Float32`,
   `CValue::Float64` and `CFloatCondition`. It keeps every identity only if
   no float operation sits under a non-float node. A census (a temporary
@@ -636,6 +637,11 @@ Progress:
   `CFloatCondition` sites and 147 uses of the float variants and their
   shape operators) for two fixtures, so it is retired. If floats gain
   richer symbolic use, that bits-leaf `FloatTerm` remains the design.
+- `Bitvector32Term` is renamed `MachineTerm` (2026-11-04), since it holds
+  every machine width (8 to 128-bit integers and float bit patterns). The
+  rename is mechanical: constructors, variants and `Debug` output are
+  unchanged, and so are `Term::Bitvector32` and `Sort::Bitvector32`. Older
+  entries above use the new name.
 
 
 - Every format its own nodes (planned 2026-10-29, [Decisions](#decisions)).
@@ -745,7 +751,7 @@ Progress:
      `uint32_and_int32_chains_cost_alike` (equal work at every size). Two
      readers see through one σ for the smart search's cheap closers, each
      one match at a side's root: a 32-bit equality `σ(x) == x` is vacuous
-     as a rewrite and is not a rewrite candidate (`Bitvector32Term::is_sign_cast32_of`), and a
+     as a rewrite and is not a rewrite candidate (`MachineTerm::is_sign_cast32_of`), and a
      `uint32` bound below the sign bit, `σ(y) <=u c`, files and decides its
      signed range on `y` (`unsigned_upper_bound_below_sign_bit`). The
      follow-up PR (2026-11-02, [Decisions](#decisions)) removes two of the
@@ -1178,7 +1184,7 @@ Maintainer direction, 2026-10-25:
   observation depends only on its operands' bits.
 - **K5 (memory), 2026-10-25.** A 32-bit read at signedness F of a cell
   holding a value stored at the other signedness S returns σ_{S→F} of the
-  stored word (`Bitvector32Term::sign_cast32`, in `CType::read_cell`). Every
+  stored word (`MachineTerm::sign_cast32`, in `CType::read_cell`). Every
   load-after-store resolution that answers a load *term* (`read_cell` on a
   `LoadKind`, the materialization and stored-read checks in
   `memory_resolution.rs`, `memory_provenance.rs`, `contract_claims.rs`,
@@ -1487,7 +1493,7 @@ Maintainer direction, 2026-11-01 (`from_machine` stops folding, PR 4):
   | A machine constant observes as its Integer constant (with a `uint32` constant's word, K1) | Kept | A literal has no structure the constant loses, and every Integer evaluator, normalizer and certificate reads Integer constants; carrying `to_integer(5i32)` would be unwieldy for no retained structure |
   | A 128-bit observation of a term the wide format does not accept (`None`) | Kept | A refusal, not a normalization |
 
-  The 32-bit cast-chain collapse in `Bitvector32Term::machine_integer_cast`
+  The 32-bit cast-chain collapse in `MachineTerm::machine_integer_cast`
   is a constructor of the conversion, not of the observation, and is
   outside this audit.
 
@@ -1644,7 +1650,7 @@ Follow-up, 2026-11-03 (σ of σ as written), under the maintainer's rule that
 lowering keeps the source term's structure and equivalences live in
 reasoning:
 
-- **σ of σ is kept as written.** `Bitvector32Term::machine_integer_cast`
+- **σ of σ is kept as written.** `MachineTerm::machine_integer_cast`
   no longer folds σ(σ(x)) to `x`; `(int32)((uint32)a)` is two σ nodes over
   `a`, and prints as written. R0 already puts σ(σ(x)) in `x`'s class, so
   equality carries across by congruence. The sign-bit rule's equivalent

@@ -77,14 +77,14 @@ impl ExecutionMatchPlan {
                         variant: arm.variant.clone(),
                         bindings: arm.bindings.clone(),
                         body: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                            Bitvector32Term::constant(u32::from(left.contains(&index))),
+                            MachineTerm::constant(u32::from(left.contains(&index))),
                         ))),
                     })
                     .collect(),
             },
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(1),
             ))),
         }
     }

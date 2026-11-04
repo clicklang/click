@@ -114,7 +114,7 @@ fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses
         IntegerTerm::constant_i64(0).into(),
     );
     let written = ConditionTerm::IntegerEqual(
-        IntegerTerm::from_machine(format, Bitvector32Term::Variable(load))
+        IntegerTerm::from_machine(format, MachineTerm::Variable(load))
             .unwrap()
             .into(),
         IntegerTerm::constant_i64(0).into(),

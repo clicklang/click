@@ -108,7 +108,7 @@ fn wide_scalar_symbolic_identity_substitution_and_observation_preserve_type() {
             unreachable!()
         };
         assert_eq!(outcome, &CExpressionOutcome::Value(value.clone()));
-        let term = Bitvector32Term::Variable(variable);
+        let term = MachineTerm::Variable(variable);
         let observation = IntegerTerm::from_machine(ty, term).unwrap();
         let IntegerTerm::Machine(observed) = observation else {
             unreachable!()
@@ -146,15 +146,15 @@ fn wide_scalar_rejects_legacy_carriers_and_unsupported_arithmetic() {
             .constant_term(MachineIntegerConstant::from_unsigned(other.format(), 1).unwrap())
             .unwrap();
         for term in [
-            Bitvector32Term::constant(1),
-            Bitvector32Term::int64_constant(1),
-            Bitvector32Term::uint64_constant(1),
+            MachineTerm::constant(1),
+            MachineTerm::int64_constant(1),
+            MachineTerm::uint64_constant(1),
             wrong,
             binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Variable(Variable(148_002))),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::Variable(Variable(148_002))),
+                Box::new(MachineTerm::constant(1)),
             ),
         ] {
             assert!(IntegerTerm::from_machine(ty, term.clone()).is_none());
@@ -281,9 +281,9 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let term = Bitvector32Term::Variable(Variable(149_003));
+        let term = MachineTerm::Variable(Variable(149_003));
         let wide =
-            Bitvector32Term::machine_integer_cast(source, MachineIntegerType::Int128, term.clone());
+            MachineTerm::machine_integer_cast(source, MachineIntegerType::Int128, term.clone());
         // The observation keeps its widening as written; its value is the
         // operand's by rule W.
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int128, wide).unwrap();
@@ -291,8 +291,8 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
         assert_ne!(observed, original);
         assert_eq!(observed.value_read(), &original);
     }
-    let term = Bitvector32Term::Variable(Variable(149_004));
-    let narrowed = Bitvector32Term::machine_integer_cast(
+    let term = MachineTerm::Variable(Variable(149_004));
+    let narrowed = MachineTerm::machine_integer_cast(
         MachineIntegerType::UInt128,
         MachineIntegerType::Int64,
         term.clone(),
@@ -308,7 +308,7 @@ fn wide_cast_widening_preserves_integer_observation_but_narrowing_does_not() {
     assert_eq!(machine.ty(), MachineIntegerType::Int64);
     assert!(matches!(
         machine.value(),
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt128,
             to: MachineIntegerType::Int64,
@@ -370,7 +370,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
     let mut none = Vec::new();
     assert!(
         crate::kernel::eval::coerce_c_value_to_type(
-            CValue::Int128(Bitvector32Term::Variable(Variable(149_005))),
+            CValue::Int128(MachineTerm::Variable(Variable(149_005))),
             CType::Int64,
             &mut none,
             &PureFactContext::new(),
@@ -389,7 +389,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
                 assumptions,
             )
         };
-    let value = CValue::Int128(Bitvector32Term::Variable(Variable(149_005)));
+    let value = CValue::Int128(MachineTerm::Variable(Variable(149_005)));
     let mut obligations = Vec::new();
     let result = coerce_c_value_to_type(
         value,
@@ -426,7 +426,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
         }
         let mut remaining = Vec::new();
         let result = coerce_c_value_to_type(
-            CValue::Int128(Bitvector32Term::Variable(Variable(149_005))),
+            CValue::Int128(MachineTerm::Variable(Variable(149_005))),
             CType::Int64,
             &mut remaining,
             &assumptions,
@@ -435,7 +435,7 @@ fn wide_cast_specification_signed_narrowing_keeps_both_range_obligations() {
         assert_eq!(result.c_type(), CType::Int64);
         assert_eq!(remaining.len(), 2 - provided);
     }
-    let value = CValue::Int128(Bitvector32Term::Variable(Variable(149_005)));
+    let value = CValue::Int128(MachineTerm::Variable(Variable(149_005)));
     assert!(
         crate::kernel::machine_integer::conversion::convert_value(value, MachineIntegerType::Int64)
             .is_some()
@@ -472,33 +472,33 @@ fn wide_cast_function_argument_widens_and_return_narrows_without_truncating_earl
 #[test]
 fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
     for term in [
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int64,
             to: MachineIntegerType::UInt128,
-            value: Box::new(Bitvector32Term::Variable(Variable(149_006))),
+            value: Box::new(MachineTerm::Variable(Variable(149_006))),
         },
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int128,
             to: MachineIntegerType::Int128,
-            value: Box::new(Bitvector32Term::constant(1)),
+            value: Box::new(MachineTerm::constant(1)),
         },
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int64,
             to: MachineIntegerType::Int128,
-            value: Box::new(Bitvector32Term::uint64_constant(1)),
+            value: Box::new(MachineTerm::uint64_constant(1)),
         },
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::Int64,
             to: MachineIntegerType::Int128,
-            value: Box::new(Bitvector32Term::Cast {
+            value: Box::new(MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 from: MachineIntegerType::Int32,
                 to: MachineIntegerType::Int64,
-                value: Box::new(Bitvector32Term::int64_constant(1)),
+                value: Box::new(MachineTerm::int64_constant(1)),
             }),
         },
     ] {
@@ -510,7 +510,7 @@ fn wide_cast_hostile_metadata_and_word_payloads_are_rejected_locally() {
     }
     assert!(
         crate::kernel::machine_integer::conversion::convert_value(
-            CValue::Int64(Bitvector32Term::machine_constant(
+            CValue::Int64(MachineTerm::machine_constant(
                 MachineIntegerConstant::from_unsigned(
                     MachineIntegerType::UInt128.format(),
                     u128::MAX
@@ -531,11 +531,10 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
     };
     let memory = CMemory::new().with_block("wide-cast-source", 4).store(
         pointer.clone(),
-        CValue::Int32(Bitvector32Term::constant((-1i32) as u32)),
+        CValue::Int32(MachineTerm::constant((-1i32) as u32)),
     );
-    let load =
-        Bitvector32Term::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
-    let wide = Bitvector32Term::machine_integer_cast(
+    let load = MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::Int32);
+    let wide = MachineTerm::machine_integer_cast(
         MachineIntegerType::Int32,
         MachineIntegerType::Int128,
         load,
@@ -553,7 +552,7 @@ fn wide_cast_canonicalization_keeps_source_load_width_and_memory_dependencies() 
 
 #[test]
 fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
-    let bits = Bitvector32Term::Variable(Variable(149_100));
+    let bits = MachineTerm::Variable(Variable(149_100));
     let mut none = Vec::new();
     assert_eq!(
         crate::kernel::eval::coerce_c_value_to_type(
@@ -579,7 +578,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let bound = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
-            Bitvector32Term::uint64_constant(i64::MAX as u64),
+            MachineTerm::uint64_constant(i64::MAX as u64),
         ),
         true,
     );
@@ -613,7 +612,7 @@ fn uint64_to_int64_specification_cast_requires_exact_representable_range() {
     let weaker = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(
             bits.clone(),
-            Bitvector32Term::uint64_constant((i64::MAX as u64) + 1),
+            MachineTerm::uint64_constant((i64::MAX as u64) + 1),
         ),
         true,
     );
@@ -656,9 +655,9 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
             offset: PointerOffsetTerm::Constant(0),
         };
         let bits = if signed {
-            Bitvector32Term::int64_constant(0x1_0000_0001)
+            MachineTerm::int64_constant(0x1_0000_0001)
         } else {
-            Bitvector32Term::uint64_constant(0x1_0000_0001)
+            MachineTerm::uint64_constant(0x1_0000_0001)
         };
         let value = if signed {
             CValue::Int64(bits.clone())
@@ -670,8 +669,7 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                 .with_block("wide-cached-read", 8)
                 .store(pointer.clone(), value),
         );
-        let load =
-            |kind| Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
+        let load = |kind| MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
         assert_eq!(
             crate::kernel::api::canonicalize_atomic_loads(&load(LoadKind::Bits64)),
             bits
@@ -691,11 +689,11 @@ fn wide_cached_load_canonicalization_preserves_kind_and_all_bits() {
                 )
                 .store(
                     pointer.offset_by_bytes(4),
-                    CValue::Int32(Bitvector32Term::constant(0)),
+                    CValue::Int32(MachineTerm::constant(0)),
                 ),
         );
         let changed =
-            Bitvector32Term::MemoryLoad(overwritten, Box::new(pointer.clone()), LoadKind::Bits64);
+            MachineTerm::MemoryLoad(overwritten, Box::new(pointer.clone()), LoadKind::Bits64);
         assert!(
             !crate::kernel::memory_provenance::wide_loads_have_same_canonical_value(
                 &changed,

@@ -5,7 +5,7 @@ use crate::kernel::{IntegerTerm as I, MachineIntegerType as M, SharedIntegerTerm
 fn cached(model: &AlgebraicTerm) -> I {
     I::from_machine(
         M::Int32,
-        Bitvector32Term::ClickFunctionApplication {
+        MachineTerm::ClickFunctionApplication {
             name: "cached".into(),
             arguments: vec![PureFunctionArgument::Algebraic(model.clone())],
         },
@@ -120,25 +120,24 @@ fn integer_order_truth_follows_aliases_without_merging_unrelated_true_facts() {
 #[test]
 fn integer_observations_keep_machine_types_and_read_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
-    let bits = Bitvector32Term::Variable(Variable(920_131));
+    let bits = MachineTerm::Variable(Variable(920_131));
     let signed = I::from_machine(M::Int32, bits.clone()).unwrap();
     let unsigned = I::from_machine(M::UInt32, bits).unwrap();
     let graph = EqualityGraph::default();
     assert!(!graph.are_integer_equal(&signed, &unsigned));
     let p = Pointer::symbolic(Variable(920_132));
-    let before = intern_c_memory(
-        CMemory::new().store(p.clone(), CValue::Int32(Bitvector32Term::constant(7))),
-    );
+    let before =
+        intern_c_memory(CMemory::new().store(p.clone(), CValue::Int32(MachineTerm::constant(7))));
     let after = intern_c_memory(
         before
             .memory()
             .clone()
-            .store(p.clone(), CValue::Int32(Bitvector32Term::constant(9))),
+            .store(p.clone(), CValue::Int32(MachineTerm::constant(9))),
     );
     let read = |memory| {
         I::from_machine(
             M::Int32,
-            Bitvector32Term::MemoryLoad(memory, Box::new(p.clone()), LoadKind::Int32),
+            MachineTerm::MemoryLoad(memory, Box::new(p.clone()), LoadKind::Int32),
         )
         .unwrap()
     };
@@ -189,23 +188,23 @@ fn literal_integer_identities_join_classes_without_rewriting_terms() {
 fn fold_endpoint_congruence_keeps_the_bound_body_exact() {
     use crate::kernel::{IntegerRangeFoldIndex, MachineBinaryOp as Op};
     let _session = crate::kernel::VerificationSession::enter();
-    let endpoint = Bitvector32Term::Variable(Variable(989_781));
-    let predecessor = Bitvector32Term::logical_machine_binary(
+    let endpoint = MachineTerm::Variable(Variable(989_781));
+    let predecessor = MachineTerm::logical_machine_binary(
         M::Int32,
         Op::Subtract,
         endpoint.clone(),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(1),
     );
-    let restored = Bitvector32Term::logical_machine_binary(
+    let restored = MachineTerm::logical_machine_binary(
         M::Int32,
         Op::Add,
         predecessor,
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(1),
     );
     let body = I::Variable(Variable(989_782));
-    let fold = |end: Bitvector32Term, body: I| I::RangeFold {
+    let fold = |end: MachineTerm, body: I| I::RangeFold {
         index: IntegerRangeFoldIndex::Int32 {
-            start: crate::kernel::SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+            start: crate::kernel::SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
             end: crate::kernel::SharedIntegerRangeEndpoint::intern(end),
         },
         initial: I::constant_i64(0).into(),
@@ -228,7 +227,7 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
         Operation, modular::wrapped_equality_of_integer_equality,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let observe = |n| I::from_machine(M::Int32, Bitvector32Term::Variable(Variable(n))).unwrap();
+    let observe = |n| I::from_machine(M::Int32, MachineTerm::Variable(Variable(n))).unwrap();
     let (x, y, z) = (observe(982700), observe(982701), observe(982702));
     let mut expressions = vec![x.clone(), I::Negate(x.clone().into())];
     for op in Operation::ALL {
@@ -254,8 +253,8 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
             );
             let parent = graph.clone();
             graph.add_int32_equality(
-                &Bitvector32Term::Variable(Variable(982702)),
-                &Bitvector32Term::constant(7),
+                &MachineTerm::Variable(Variable(982702)),
+                &MachineTerm::constant(7),
             );
             assert!(parent.knows_condition(&wrapped, true));
         }
@@ -265,8 +264,8 @@ fn integer_residue_projection_matches_the_legacy_wrapped_consequences() {
 #[test]
 fn integer_residue_consequence_is_withdrawn_with_its_source() {
     let _session = crate::kernel::VerificationSession::enter();
-    let x = Bitvector32Term::Variable(Variable(982703));
-    let y = Bitvector32Term::Variable(Variable(982704));
+    let x = MachineTerm::Variable(Variable(982703));
+    let y = MachineTerm::Variable(Variable(982704));
     let source = eq(
         I::Subtract(
             I::from_machine(M::Int32, x.clone()).unwrap().into(),
@@ -275,10 +274,7 @@ fn integer_residue_consequence_is_withdrawn_with_its_source() {
         I::constant_i64(0),
     );
     let goal = Proposition::ConditionIs(
-        ConditionTerm::equal(
-            Bitvector32Term::subtract(x, y),
-            Bitvector32Term::constant(0),
-        ),
+        ConditionTerm::equal(MachineTerm::subtract(x, y), MachineTerm::constant(0)),
         true,
     );
     let context = PureFactContext::new().assume_proposition(source.clone());
@@ -294,7 +290,7 @@ fn constant_residue_projection_preserves_the_operation_alias_route() {
         modular::wrapped_equality_of_integer_equality,
     };
     let _session = crate::kernel::VerificationSession::enter();
-    let x = I::from_machine(M::Int32, Bitvector32Term::Variable(Variable(982709))).unwrap();
+    let x = I::from_machine(M::Int32, MachineTerm::Variable(Variable(982709))).unwrap();
     let exact = I::Subtract(x.clone().into(), x.into());
     let condition = ConditionTerm::IntegerEqual(exact.into(), I::constant_i64(0).into());
     assert!(wrapped_equality_of_integer_equality(&condition, true).is_none());

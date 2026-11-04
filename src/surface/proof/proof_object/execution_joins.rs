@@ -4464,8 +4464,8 @@ mod progress_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(Bitvector32Term::Variable(Variable(0))),
-                right: Box::new(Bitvector32Term::constant(index)),
+                left: Box::new(MachineTerm::Variable(Variable(0))),
+                right: Box::new(MachineTerm::constant(index)),
             },
             true,
         )
@@ -4477,9 +4477,9 @@ mod progress_tests {
             crate::surface::parse("int32 identity(int32 x) { ensures result == x; }").unwrap();
         let parsed = syntax::parse_function("int32 identity(int32 x) { return x; }").unwrap();
         let function = parsed.to_kernel_function();
-        let arguments = [CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(71_000)),
-        ))];
+        let arguments = [CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            Variable(71_000),
+        )))];
         let functions = CExecutionEnvironment::new();
         let resources = ResourceEnvironment::new(&[]);
         let predicates = PredicateEnvironment::new(&[]);
@@ -4523,8 +4523,8 @@ mod progress_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(Bitvector32Term::Variable(Variable(71_000))),
-                right: Box::new(Bitvector32Term::constant(10)),
+                left: Box::new(MachineTerm::Variable(Variable(71_000))),
+                right: Box::new(MachineTerm::constant(10)),
             },
             true,
         );
@@ -4616,9 +4616,9 @@ mod progress_tests {
         )
         .expect("test C function should parse");
         let function = parsed_function.to_kernel_function();
-        let arguments = vec![CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(71_000)),
-        ))];
+        let arguments = vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            Variable(71_000),
+        )))];
         let function_environment = CExecutionEnvironment::new();
         let condition = ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),

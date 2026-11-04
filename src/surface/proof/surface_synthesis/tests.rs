@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::binary_node;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Compare structural lowering separately from proving the use site's debts.
@@ -82,7 +82,7 @@ fn recorded_qualified_cells(
     block: &str,
     name: &str,
     cells: i32,
-) -> (CState, SurfacePropositionMap, Vec<Bitvector32Term>) {
+) -> (CState, SurfacePropositionMap, Vec<MachineTerm>) {
     let state = CState::new()
         .with_memory(CMemory::new().with_block(block, 4 * u32::try_from(cells).unwrap()));
     let base = CValue::typed_pointer(
@@ -129,7 +129,7 @@ fn recorded_qualified_cells(
 /// `file_scope_static_arrays` call carries: each cell of the callee's own
 /// static array is strictly inside `(-1000, 1000)`, left-nested exactly as
 /// the contract's `and` chain lowers.
-fn cells_within_bounds(loads: &[Bitvector32Term]) -> Proposition {
+fn cells_within_bounds(loads: &[MachineTerm]) -> Proposition {
     let clauses = loads.iter().flat_map(|load| {
         [
             Proposition::ConditionIs(
@@ -137,7 +137,7 @@ fn cells_within_bounds(loads: &[Bitvector32Term]) -> Proposition {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterThan,
                     left: Box::new(load.clone()),
-                    right: Box::new(Bitvector32Term::constant((-1000i32) as u32)),
+                    right: Box::new(MachineTerm::constant((-1000i32) as u32)),
                 },
                 true,
             ),
@@ -146,7 +146,7 @@ fn cells_within_bounds(loads: &[Bitvector32Term]) -> Proposition {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
                     left: Box::new(load.clone()),
-                    right: Box::new(Bitvector32Term::constant(1000)),
+                    right: Box::new(MachineTerm::constant(1000)),
                 },
                 true,
             ),
@@ -217,10 +217,8 @@ fn qualified_names_in(proposition: &ClickProposition) -> BTreeSet<String> {
 /// of either is checked against the same cells.
 #[test]
 fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
-    let state = CState::new().with_local(
-        "x",
-        CValue::Int32(Bitvector32Term::Variable(Variable(894321))),
-    );
+    let state =
+        CState::new().with_local("x", CValue::Int32(MachineTerm::Variable(Variable(894321))));
     let candidate = ClickProposition::Comparison {
         left: ContractExpression::Call {
             name: "to_integer".into(),
@@ -429,12 +427,12 @@ fn external_byte_range_caller() -> (Vec<syntax::C0Parameter>, Vec<CExpression>, 
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+            value: Box::new(MachineTerm::Variable(Variable(100_000))),
             byte_width: 1,
         },
     };
     let pointer = CValue::typed_pointer(pointer, CType::UInt8Pointer);
-    let length = CValue::Int32(Bitvector32Term::Variable(Variable(1)));
+    let length = CValue::Int32(MachineTerm::Variable(Variable(1)));
     let parameters = vec![
         syntax::C0Parameter::new(C0Type::UInt8Pointer, "bytes".to_string(), None),
         syntax::C0Parameter::new(C0Type::Int32, "len".to_string(), None),
@@ -458,10 +456,7 @@ fn exact_external_zero_based_byte_range_round_trips_symbolic_end() {
             CExpression::Value(CValue::Pointer(pointer)) => pointer.pointer().clone(),
             _ => unreachable!(),
         },
-        bytes: Bitvector32Term::add(
-            Bitvector32Term::Variable(Variable(1)),
-            Bitvector32Term::constant(1),
-        ),
+        bytes: MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)),
         wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
@@ -500,10 +495,7 @@ fn exact_external_zero_based_byte_range_resolves_direct_variable_argument() {
     let requirement = Proposition::CMemoryLoadable {
         memory: state.memory().clone(),
         base,
-        bytes: Bitvector32Term::add(
-            Bitvector32Term::Variable(Variable(1)),
-            Bitvector32Term::constant(1),
-        ),
+        bytes: MachineTerm::add(MachineTerm::Variable(Variable(1)), MachineTerm::constant(1)),
         wide: false,
     };
     let synthesized = synthesize_source_projection_proposition_with_bound_variable_names(
@@ -534,7 +526,7 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
             CExpression::Value(CValue::Pointer(pointer)) => pointer.pointer().clone(),
             _ => unreachable!(),
         },
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     assert!(
@@ -552,8 +544,8 @@ fn exact_external_zero_based_byte_range_rejects_ambiguous_alias() {
 /// The `forall_loadable_range` call requirement as the kernel emits it:
 /// every in-range byte of an external-argument pointer is loadable, its byte
 /// count left as the written `(k + 1) - k`.
-fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -> Proposition {
-    let index = Bitvector32Term::Variable(binder);
+fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Proposition {
+    let index = MachineTerm::Variable(binder);
     Proposition::ForAll {
         name: Default::default(),
         var: binder,
@@ -564,7 +556,7 @@ fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessEqual,
-                        left: Box::new(Bitvector32Term::constant(0)),
+                        left: Box::new(MachineTerm::constant(0)),
                         right: Box::new(index.clone()),
                     },
                     true,
@@ -585,7 +577,7 @@ fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Add(
                         Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                            value: Box::new(MachineTerm::Variable(Variable(100_000))),
                             byte_width: 1,
                         }),
                         Box::new(PointerOffsetTerm::Int32Scaled {
@@ -601,7 +593,7 @@ fn external_byte_range_requirement(binder: Variable, length: &Bitvector32Term) -
                         Int32,
                         Add,
                         Box::new(index.clone()),
-                        Box::new(Bitvector32Term::constant(1)),
+                        Box::new(MachineTerm::constant(1)),
                     )),
                     Box::new(index),
                 ),
@@ -617,12 +609,12 @@ fn external_symbolic_element_context(
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+            value: Box::new(MachineTerm::Variable(Variable(100_000))),
             byte_width: 1,
         },
     };
     let pointer = CValue::typed_pointer(pointer, CType::UInt8Pointer);
-    let index = CValue::Int32(Bitvector32Term::Variable(Variable(100_001)));
+    let index = CValue::Int32(MachineTerm::Variable(Variable(100_001)));
     let parameters = vec![
         syntax::C0Parameter::new(C0Type::UInt8Pointer, "bytes".to_string(), None),
         syntax::C0Parameter::new(C0Type::Int32, "index".to_string(), None),
@@ -639,20 +631,17 @@ fn external_symbolic_element_context(
 }
 
 fn external_symbolic_element_requirement(memory: CMemory, index: Variable) -> Proposition {
-    external_symbolic_element_requirement_term(memory, Bitvector32Term::Variable(index))
+    external_symbolic_element_requirement_term(memory, MachineTerm::Variable(index))
 }
 
-fn external_symbolic_element_requirement_term(
-    memory: CMemory,
-    index: Bitvector32Term,
-) -> Proposition {
+fn external_symbolic_element_requirement_term(memory: CMemory, index: MachineTerm) -> Proposition {
     Proposition::CMemoryLoadable {
         memory,
         base: Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                    value: Box::new(MachineTerm::Variable(Variable(100_000))),
                     byte_width: 1,
                 }),
                 Box::new(PointerOffsetTerm::Int32Scaled {
@@ -668,7 +657,7 @@ fn external_symbolic_element_requirement_term(
                 Int32,
                 Add,
                 Box::new(index.clone()),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::constant(1)),
             )),
             Box::new(index),
         ),
@@ -684,7 +673,7 @@ fn external_symbolic_element_constant_byte_requirement(
     let Proposition::CMemoryLoadable { bytes, .. } = &mut requirement else {
         unreachable!();
     };
-    *bytes = Bitvector32Term::constant(1);
+    *bytes = MachineTerm::constant(1);
     requirement
 }
 
@@ -755,7 +744,7 @@ fn replace_full_external_cstr_range_with_constant_byte_count(requirement: &mut P
     fn replace(proposition: &mut Proposition, inside_forall: bool) -> bool {
         match proposition {
             Proposition::CMemoryLoadable { bytes, .. } if inside_forall => {
-                *bytes = Bitvector32Term::constant(1);
+                *bytes = MachineTerm::constant(1);
                 true
             }
             Proposition::And(left, right)
@@ -938,11 +927,11 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(Variable(100_002))),
+                    value: Box::new(MachineTerm::Variable(Variable(100_002))),
                     byte_width: 1,
                 }),
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(Variable(100_001))),
+                    value: Box::new(MachineTerm::Variable(Variable(100_001))),
                     byte_width: 1,
                 }),
             ),
@@ -953,10 +942,10 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
             Box::new(binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Variable(Variable(100_001))),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::Variable(Variable(100_001))),
+                Box::new(MachineTerm::constant(1)),
             )),
-            Box::new(Bitvector32Term::Variable(Variable(100_001))),
+            Box::new(MachineTerm::Variable(Variable(100_001))),
         ),
         wide: false,
     };
@@ -988,11 +977,11 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
         };
         base.offset = PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                value: Box::new(MachineTerm::Variable(Variable(100_000))),
                 byte_width: 2,
             }),
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_001))),
+                value: Box::new(MachineTerm::Variable(Variable(100_001))),
                 byte_width: 2,
             }),
         );
@@ -1020,8 +1009,7 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
 fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     let memory = CMemory::new().with_block("strlen:constant-bytes", 16);
     let (parameters, arguments, state) = external_symbolic_element_context(memory.clone());
-    let requirement =
-        external_symbolic_element_requirement_term(memory, Bitvector32Term::constant(3));
+    let requirement = external_symbolic_element_requirement_term(memory, MachineTerm::constant(3));
     let synthesized = synthesize_surface_proposition(
         &requirement,
         ParameterBinding::new(&parameters, &arguments),
@@ -1039,12 +1027,12 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     let Proposition::CMemoryLoadable { base, bytes, .. } = lowered else {
         panic!("the lowered fallback must remain one viewability");
     };
-    assert_eq!(bytes, Bitvector32Term::constant(1));
+    assert_eq!(bytes, MachineTerm::constant(1));
     assert_eq!(
         base.offset,
         PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                value: Box::new(MachineTerm::Variable(Variable(100_000))),
                 byte_width: 1,
             }),
             Box::new(PointerOffsetTerm::Constant(3)),
@@ -1070,7 +1058,7 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
         unreachable!();
     };
     base.offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(100_001))),
+        value: Box::new(MachineTerm::Variable(Variable(100_001))),
         byte_width: 1,
     };
     let synthesized = synthesize_surface_proposition(
@@ -1107,7 +1095,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
         },
         CType::UInt8Pointer,
     );
-    let start = CValue::Int32(Bitvector32Term::Variable(Variable(100_001)));
+    let start = CValue::Int32(MachineTerm::Variable(Variable(100_001)));
     let state = CState::new()
         .with_memory(memory.clone())
         .with_local("elements", pointer)
@@ -1117,7 +1105,7 @@ fn non_external_named_range_still_uses_general_synthesis() {
         base: Pointer {
             block: PointerBlock::Concrete("local:elements".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_001))),
+                value: Box::new(MachineTerm::Variable(Variable(100_001))),
                 byte_width: 1,
             },
         },
@@ -1127,10 +1115,10 @@ fn non_external_named_range_still_uses_general_synthesis() {
             Box::new(binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Variable(Variable(100_001))),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::Variable(Variable(100_001))),
+                Box::new(MachineTerm::constant(1)),
             )),
-            Box::new(Bitvector32Term::Variable(Variable(100_001))),
+            Box::new(MachineTerm::Variable(Variable(100_001))),
         ),
         wide: false,
     };
@@ -1169,8 +1157,8 @@ fn strlen_quantified_element_range_requirement_round_trips() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::GreaterEqual,
-                        left: Box::new(Bitvector32Term::Variable(binder)),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        left: Box::new(MachineTerm::Variable(binder)),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 )),
@@ -1178,8 +1166,8 @@ fn strlen_quantified_element_range_requirement_round_trips() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(Bitvector32Term::Variable(binder)),
-                        right: Box::new(Bitvector32Term::Variable(Variable(100_001))),
+                        left: Box::new(MachineTerm::Variable(binder)),
+                        right: Box::new(MachineTerm::Variable(Variable(100_001))),
                     },
                     true,
                 )),
@@ -1212,7 +1200,7 @@ fn external_element_range_context(
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+            value: Box::new(MachineTerm::Variable(Variable(100_000))),
             byte_width: i64::from(width),
         },
     };
@@ -1230,26 +1218,26 @@ fn external_element_range_context(
     .collect();
     let arguments = vec![
         CExpression::Value(pointer.clone()),
-        CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(100_001)))),
-        CExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(100_002)))),
+        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(100_001)))),
+        CExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(100_002)))),
     ];
     let state = CState::new()
         .with_local("elements", pointer)
         .with_local(
             "start",
-            CValue::Int32(Bitvector32Term::Variable(Variable(100_001))),
+            CValue::Int32(MachineTerm::Variable(Variable(100_001))),
         )
         .with_local(
             "end",
-            CValue::Int32(Bitvector32Term::Variable(Variable(100_002))),
+            CValue::Int32(MachineTerm::Variable(Variable(100_002))),
         );
     (parameters, arguments, state)
 }
 
 fn external_element_range_requirement(
     width: u32,
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
 ) -> Proposition {
     Proposition::CMemoryLoadable {
         memory: CMemory::new(),
@@ -1257,7 +1245,7 @@ fn external_element_range_requirement(
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                    value: Box::new(MachineTerm::Variable(Variable(100_000))),
                     byte_width: i64::from(width),
                 }),
                 Box::new(PointerOffsetTerm::Int32Scaled {
@@ -1275,7 +1263,7 @@ fn external_element_range_requirement(
                 Box::new(end),
                 Box::new(start)
             )),
-            Box::new(Bitvector32Term::constant(width)),
+            Box::new(MachineTerm::constant(width)),
         ),
         wide: false,
     }
@@ -1296,7 +1284,7 @@ fn external_element_range_requirement(
 #[test]
 fn external_argument_range_loadability_round_trips_through_the_range_form() {
     let (parameters, arguments, state) = external_byte_range_caller();
-    let length = Bitvector32Term::Variable(Variable(1));
+    let length = MachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
     let spelled = {
         let _budget = SurfaceSynthesisScope::enter();
@@ -1333,7 +1321,7 @@ fn external_argument_range_loadability_round_trips_through_the_range_form() {
 #[test]
 fn quantified_loadability_uses_saved_snapshot() {
     let (parameters, arguments, snapshot) = external_byte_range_caller();
-    let length = Bitvector32Term::Variable(Variable(1));
+    let length = MachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
     let post = snapshot.clone().with_memory(
         snapshot
@@ -1399,8 +1387,8 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
             external_element_range_context(parameter_type, pointer_type, width);
         let requirement = external_element_range_requirement(
             width,
-            Bitvector32Term::Variable(Variable(100_001)),
-            Bitvector32Term::Variable(Variable(100_002)),
+            MachineTerm::Variable(Variable(100_001)),
+            MachineTerm::Variable(Variable(100_002)),
         );
         let synthesized = {
             let _budget = SurfaceSynthesisScope::enter();
@@ -1439,11 +1427,8 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
 
     let (parameters, arguments, state) =
         external_element_range_context(C0Type::Int32Pointer, CType::Int32Pointer, 4);
-    let requirement = external_element_range_requirement(
-        4,
-        Bitvector32Term::constant(3),
-        Bitvector32Term::constant(8),
-    );
+    let requirement =
+        external_element_range_requirement(4, MachineTerm::constant(3), MachineTerm::constant(8));
     let synthesized = {
         let _budget = SurfaceSynthesisScope::enter();
         synthesize_surface_proposition(
@@ -1465,12 +1450,12 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     else {
         panic!("the folded range must remain a memory-viewability requirement");
     };
-    assert_eq!(bytes, Bitvector32Term::constant(20));
+    assert_eq!(bytes, MachineTerm::constant(20));
     assert_eq!(
         base.offset,
         PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                value: Box::new(MachineTerm::Variable(Variable(100_000))),
                 byte_width: 4,
             }),
             Box::new(PointerOffsetTerm::Constant(12)),
@@ -1484,19 +1469,19 @@ fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
         external_element_range_context(syntax::C0Type::Int32Pointer, CType::Int32Pointer, 4);
     let mut requirement = external_element_range_requirement(
         4,
-        Bitvector32Term::Variable(Variable(100_001)),
-        Bitvector32Term::Variable(Variable(100_002)),
+        MachineTerm::Variable(Variable(100_001)),
+        MachineTerm::Variable(Variable(100_002)),
     );
     let Proposition::CMemoryLoadable { base, .. } = &mut requirement else {
         unreachable!();
     };
     base.offset = PointerOffsetTerm::Add(
         Box::new(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+            value: Box::new(MachineTerm::Variable(Variable(100_000))),
             byte_width: 4,
         }),
         Box::new(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(100_003))),
+            value: Box::new(MachineTerm::Variable(Variable(100_003))),
             byte_width: 4,
         }),
     );
@@ -1517,7 +1502,7 @@ fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
 #[test]
 fn forall_loadable_range_call_requirement_is_spellable() {
     let (parameters, arguments, state) = external_byte_range_caller();
-    let length = Bitvector32Term::Variable(Variable(1));
+    let length = MachineTerm::Variable(Variable(1));
     let requirement = external_byte_range_requirement(Variable(3_100_000), &length);
     let _budget = SurfaceSynthesisScope::enter();
     assert!(
@@ -1546,7 +1531,7 @@ fn exists_loadable_range_call_requirement_is_spellable() {
         sort: Sort::CInt32,
         body: Box::new(external_byte_range_requirement(
             Variable(3_100_001),
-            &Bitvector32Term::Variable(witness),
+            &MachineTerm::Variable(witness),
         )),
     };
     let _budget = SurfaceSynthesisScope::enter();
@@ -1672,8 +1657,8 @@ fn nested_propositions_synthesize_with_small_frames_and_linear_work() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::constant(7)),
-                        right: Box::new(Bitvector32Term::constant(7)),
+                        left: Box::new(MachineTerm::constant(7)),
+                        right: Box::new(MachineTerm::constant(7)),
                     },
                     true,
                 )
@@ -1745,7 +1730,7 @@ fn load_defining_equation_round_trips() {
         "p",
         CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
     );
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(state.memory()),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -1755,7 +1740,7 @@ fn load_defining_equation_round_trips() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
+            left: Box::new(MachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -1786,18 +1771,18 @@ fn load_defining_equation_uses_entry_snapshot() {
             .with_block("load-definition-entry", 4)
             .store(pointer.clone(), int32(7)),
     );
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(entry.memory()),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
-    let entry = entry.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
+    let entry = entry.with_local("result", CValue::Int32(MachineTerm::Variable(variable)));
     let requirement = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
+            left: Box::new(MachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -1841,13 +1826,13 @@ fn load_defining_equation_uses_saved_snapshot() {
             "p",
             CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
         );
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(base.memory()),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
     let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
-    let snapshot = base.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
+    let snapshot = base.with_local("result", CValue::Int32(MachineTerm::Variable(variable)));
     let entry = snapshot.clone().with_memory(
         CMemory::new()
             .with_block("load-definition-saved", 4)
@@ -1862,7 +1847,7 @@ fn load_defining_equation_uses_saved_snapshot() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
+            left: Box::new(MachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -1924,7 +1909,7 @@ fn example_load_defining_requirement(
                 CType::Int32Pointer,
             ),
         );
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(state.memory()),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -1936,7 +1921,7 @@ fn example_load_defining_requirement(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
+                left: Box::new(MachineTerm::Variable(variable)),
                 right: Box::new(defining_load),
             },
             true,
@@ -1949,7 +1934,7 @@ fn example_load_defining_requirement(
 fn bounded_pool_load_equation_round_trips_without_internal_names() {
     let (state, requirement, variable) =
         example_load_defining_requirement("bounded-pool:pool", "pool", 4);
-    let state = state.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
+    let state = state.with_local("result", CValue::Int32(MachineTerm::Variable(variable)));
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("bounded-pool call load equation must be spellable");
     let ClickProposition::Comparison { left, right, .. } = &spelled else {
@@ -1968,7 +1953,7 @@ fn bounded_pool_load_equation_round_trips_without_internal_names() {
 fn owned_string_load_equation_round_trips_without_internal_names() {
     let (state, requirement, variable) =
         example_load_defining_requirement("owned-string:owner", "owner", 0);
-    let state = state.with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
+    let state = state.with_local("result", CValue::Int32(MachineTerm::Variable(variable)));
     let spelled = synthesize_surface_proposition(&requirement, ParameterBinding::default(), &state)
         .expect("owned-string call load equation must be spellable");
     let ClickProposition::Comparison { left, right, .. } = &spelled else {
@@ -2009,7 +1994,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: left.clone(),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            right: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(state.memory()),
                 Box::new(wrong_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -2031,7 +2016,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: left.clone(),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            right: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(&wrong_memory),
                 Box::new(Pointer {
                     block: PointerBlock::Concrete("owned-string:wrong-snapshot".into()),
@@ -2050,7 +2035,7 @@ fn load_equation_rejects_wrong_snapshot_and_unresolvable_variable() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(Variable(variable.0 + 1))),
+            left: Box::new(MachineTerm::Variable(Variable(variable.0 + 1))),
             right: left.clone(),
         },
         true,
@@ -2079,7 +2064,7 @@ fn actual_struct_field_load_equation(
     };
     let pointer = base.offset_by_bytes(field_offset as u32);
     let memory = CMemory::new().with_block(block, 16);
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&memory),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
@@ -2089,7 +2074,7 @@ fn actual_struct_field_load_equation(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
+            left: Box::new(MachineTerm::Variable(variable)),
             right: Box::new(defining_load),
         },
         true,
@@ -2100,7 +2085,7 @@ fn actual_struct_field_load_equation(
             parameter.name(),
             CValue::typed_pointer(base.clone(), CType::UInt8Pointer),
         )
-        .with_local("result", CValue::Int32(Bitvector32Term::Variable(variable)));
+        .with_local("result", CValue::Int32(MachineTerm::Variable(variable)));
     let parameters = [parameter];
     let arguments = [CExpression::Value(CValue::typed_pointer(
         base,
@@ -2149,8 +2134,8 @@ fn owned_string_actual_len_load_equation_round_trips() {
 #[test]
 fn signed_division_domain_propositions_round_trip_at_both_widths() {
     for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
-        let left = Bitvector32Term::Variable(Variable(972_001));
-        let right = Bitvector32Term::Variable(Variable(972_002));
+        let left = MachineTerm::Variable(Variable(972_001));
+        let right = MachineTerm::Variable(Variable(972_002));
         let wrap = |word| {
             if format == MachineIntegerType::Int32 {
                 CValue::Int32(word)
@@ -2179,8 +2164,8 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
             OverflowOperation::Subtract,
             OverflowOperation::Multiply,
         ] {
-            let left = Bitvector32Term::Variable(Variable(1));
-            let right = Bitvector32Term::Variable(Variable(2));
+            let left = MachineTerm::Variable(Variable(1));
+            let right = MachineTerm::Variable(Variable(2));
             let value = |term| match format {
                 MachineIntegerType::Int32 => CValue::Int32(term),
                 MachineIntegerType::Int64 => CValue::Int64(term),
@@ -2191,7 +2176,7 @@ fn arithmetic_definedness_requirements_round_trip_at_both_machine_widths() {
                 .with_local("right", value(right.clone()))
                 .with_local(
                     "result",
-                    value(Bitvector32Term::machine_binary(
+                    value(MachineTerm::machine_binary(
                         format,
                         match op {
                             OverflowOperation::Add => MachineBinaryOp::Add,
@@ -2257,8 +2242,8 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
     let increment = binary_node!(
         Int32,
         Add,
-        Box::new(Bitvector32Term::Variable(variable)),
-        Box::new(Bitvector32Term::constant(1)),
+        Box::new(MachineTerm::Variable(variable)),
+        Box::new(MachineTerm::constant(1)),
     );
     let requirement = Proposition::Exists {
         name: "len".to_string(),
@@ -2268,14 +2253,14 @@ fn strlen_existential_guard_round_trips_without_duplicate_guard() {
             Box::new(Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
-                &Bitvector32Term::Variable(variable),
-                &Bitvector32Term::constant(1),
+                &MachineTerm::Variable(variable),
+                &MachineTerm::constant(1),
             )),
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(Bitvector32Term::constant(0)),
+                    left: Box::new(MachineTerm::constant(0)),
                     right: Box::new(increment),
                 },
                 true,
@@ -2311,15 +2296,15 @@ fn strlen_guard_is_retained_when_the_sibling_does_not_regenerate_it() {
             Box::new(Proposition::signed_arithmetic_domain(
                 MachineIntegerType::Int32,
                 crate::kernel::MachineBinaryOp::Add,
-                &Bitvector32Term::Variable(variable),
-                &Bitvector32Term::constant(1),
+                &MachineTerm::Variable(variable),
+                &MachineTerm::constant(1),
             )),
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::GreaterEqual,
-                    left: Box::new(Bitvector32Term::Variable(variable)),
-                    right: Box::new(Bitvector32Term::constant(0)),
+                    left: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(MachineTerm::constant(0)),
                 },
                 true,
             )),
@@ -2351,8 +2336,8 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Add,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::constant(1)),
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::constant(1)),
             },
             false,
         );
@@ -2360,12 +2345,12 @@ fn strlen_guard_prefix_synthesis_scales_linearly_and_fails_closed() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::constant(0)),
                 right: Box::new(binary_node!(
                     Int32,
                     Add,
-                    Box::new(Bitvector32Term::Variable(variable)),
-                    Box::new(Bitvector32Term::constant(1)),
+                    Box::new(MachineTerm::Variable(variable)),
+                    Box::new(MachineTerm::constant(1)),
                 )),
             },
             true,
@@ -2431,8 +2416,8 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
     };
     let owner = CValue::typed_pointer(base.clone(), CType::VoidPointer);
     let field_pointer = base.offset_by_bytes(layout.fields()["selected"].offset_bytes());
-    let selected = PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(711)), 4);
-    let decoy = PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(712)), 4);
+    let selected = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(711)), 4);
+    let decoy = PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(712)), 4);
     let value = |offset| {
         CValue::typed_pointer(
             Pointer {
@@ -2506,7 +2491,7 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
 #[test]
 fn a_local_indexes_only_addresses_formed_from_it() {
     let scaled = |variable: u64| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+        value: Box::new(MachineTerm::Variable(Variable(variable))),
         byte_width: 4,
     };
     let external = |offset: PointerOffsetTerm| Pointer {
@@ -2559,15 +2544,15 @@ fn a_local_indexes_only_addresses_formed_from_it() {
 /// interpretation.
 #[test]
 fn unsigned_comparison_is_spelled_over_uint32_operands() {
-    let x = Bitvector32Term::Variable(Variable(300_000));
+    let x = MachineTerm::Variable(Variable(300_000));
     let state = CState::new().with_local("x", CValue::UInt32(x.clone()));
     for (condition, spelling) in [
         (
-            ConditionTerm::unsigned_less_than(x.clone(), Bitvector32Term::constant(4)),
+            ConditionTerm::unsigned_less_than(x.clone(), MachineTerm::constant(4)),
             "x < 4",
         ),
         (
-            ConditionTerm::unsigned_greater_equal(x.clone(), Bitvector32Term::constant(4)),
+            ConditionTerm::unsigned_greater_equal(x.clone(), MachineTerm::constant(4)),
             "x >= 4",
         ),
     ] {
@@ -2592,8 +2577,8 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
     // The signed local's unsigned reading is σ, a node of its own.
     let fact = Proposition::ConditionIs(
         ConditionTerm::unsigned_less_than(
-            Bitvector32Term::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, x),
-            Bitvector32Term::constant(4),
+            MachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, x),
+            MachineTerm::constant(4),
         ),
         true,
     );
@@ -2609,19 +2594,19 @@ fn unsigned_comparison_is_spelled_over_uint32_operands() {
 #[test]
 fn synthesized_unsigned_operations_and_computed_orders_relower_exactly() {
     let [x, divisor, result] =
-        [300_010, 300_011, 300_012].map(|id| Bitvector32Term::Variable(Variable(id)));
+        [300_010, 300_011, 300_012].map(|id| MachineTerm::Variable(Variable(id)));
     let state = CState::new()
         .with_local("x", CValue::Int32(x.clone()))
         .with_local("divisor", CValue::Int32(divisor.clone()))
         .with_local("result", CValue::Int32(result.clone()));
     // The signed locals' unsigned readings are σ, a node of its own.
     let unsigned = |value| {
-        Bitvector32Term::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, value)
+        MachineTerm::sign_cast32(MachineIntegerType::Int32, MachineIntegerType::UInt32, value)
     };
     let quotient = binary_node!(
         UInt32,
         Divide,
-        Box::new(Bitvector32Term::uint32_constant(u32::MAX)),
+        Box::new(MachineTerm::uint32_constant(u32::MAX)),
         Box::new(unsigned(divisor.clone())),
     );
     let remainder = binary_node!(
@@ -2671,7 +2656,7 @@ fn synthesized_uint32_cast_preserves_its_snapshot() {
         left: expression,
         operator: ComparisonOperator::Equal,
         right: ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-            Bitvector32Term::constant(u32::MAX),
+            MachineTerm::constant(u32::MAX),
         ))),
     };
     let before = CState::new().with_local("x", int32(u32::MAX));
@@ -2690,13 +2675,13 @@ fn wide_memory_selectors_preserve_width_and_signedness() {
             "int64",
             CType::Int64,
             CType::Int64Pointer,
-            CValue::Int64(Bitvector32Term::int64_constant(8589934592)),
+            CValue::Int64(MachineTerm::int64_constant(8589934592)),
         ),
         (
             "uint64",
             CType::UInt64,
             CType::UInt64Pointer,
-            CValue::UInt64(Bitvector32Term::uint64_constant(8589934592)),
+            CValue::UInt64(MachineTerm::uint64_constant(8589934592)),
         ),
     ] {
         let function = syntax::parse_function(&format!("void read({spelling} *p) {{ }}")).unwrap();
@@ -2762,7 +2747,7 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
     let arguments = [CExpression::Value(value)];
     let plain = synthesize_struct_loadable_segment(
         &pointer.offset_by_bytes(4),
-        &Bitvector32Term::constant(4),
+        &MachineTerm::constant(4),
         ParameterBinding::new(&[parameter], &arguments),
         &state,
     )
@@ -2785,7 +2770,7 @@ fn struct_loadable_spans_relower_without_widening_over_padding() {
         .with_pointee_struct_layout("item".into(), padded);
     let clipped = synthesize_struct_loadable_segment(
         &pointer.offset_by_bytes(4),
-        &Bitvector32Term::constant(4),
+        &MachineTerm::constant(4),
         ParameterBinding::new(&[parameter], &arguments),
         &state,
     )
@@ -2839,7 +2824,7 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
     crate::kernel::intern_c_memory_ref(before.memory());
     // The call leaves the cell's contents unknown; its contract says 5.
     let middle = blocks();
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&middle),
         Box::new(cell.clone()),
         crate::kernel::LoadKind::Int32,
@@ -2866,8 +2851,8 @@ fn a_load_made_between_recorded_points_is_read_at_the_next_one() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(variable)),
-            right: Box::new(Bitvector32Term::constant(5)),
+            left: Box::new(MachineTerm::Variable(variable)),
+            right: Box::new(MachineTerm::constant(5)),
         },
         true,
     );
@@ -3023,7 +3008,7 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
             "object".into(),
             vec![].into(),
             schema.clone(),
-            vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+            vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                 value,
             )))]
             .into(),
@@ -3060,8 +3045,8 @@ fn a_model_field_value_its_instance_no_longer_holds_is_spelled_where_it_was_intr
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(earlier)),
-            right: Box::new(Bitvector32Term::constant(5)),
+            left: Box::new(MachineTerm::Variable(earlier)),
+            right: Box::new(MachineTerm::constant(5)),
         },
         true,
     );
@@ -3101,7 +3086,7 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
         block: PointerBlock::Concrete("cell-introduced".into()),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let value = Bitvector32Term::Variable(Variable(940_001));
+    let value = MachineTerm::Variable(Variable(940_001));
     let point = |index| {
         SnapshotSelector::from(ProgramPointRef {
             region: CodeRegionRef::Region(index),
@@ -3122,14 +3107,14 @@ fn recorded_cells_offer_the_points_that_held_a_value_newest_first() {
     for (index, memory) in [entry, first, overwritten, again].into_iter().enumerate() {
         recorded_snapshots.insert(point(index), CState::new().with_memory(memory));
     }
-    let offered = |term: &Bitvector32Term| {
+    let offered = |term: &MachineTerm| {
         recorded_snapshots
             .points_holding_cell_integer(term)
             .map(|(selector, _)| selector.clone())
             .collect::<Vec<_>>()
     };
     assert_eq!(offered(&value), vec![point(3), point(1)]);
-    assert!(offered(&Bitvector32Term::Variable(Variable(940_002))).is_empty());
+    assert!(offered(&MachineTerm::Variable(Variable(940_002))).is_empty());
 }
 
 #[test]
@@ -3239,7 +3224,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
         MachineIntegerType::Int32,
         crate::kernel::MachineBinaryOp::Add,
         &term,
-        &Bitvector32Term::constant(1),
+        &MachineTerm::constant(1),
     );
     let mut owners = SynthesisStructOwners::default();
     owners
@@ -3280,7 +3265,7 @@ fn global_array_entry_value_keeps_its_exact_spelling_after_a_write() {
 #[test]
 fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
     let _session = crate::kernel::VerificationSession::enter();
-    let i = Bitvector32Term::Variable(Variable(989_971));
+    let i = MachineTerm::Variable(Variable(989_971));
     for (format, source_type) in [
         (MachineIntegerType::Int32, "int32"),
         (MachineIntegerType::UInt32, "uint32"),
@@ -3292,14 +3277,14 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                 MachineIntegerType::Int32,
                 4,
                 crate::kernel::LoadKind::Int32,
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             ),
             (
                 CType::Int64Pointer,
                 MachineIntegerType::Int64,
                 8,
                 crate::kernel::LoadKind::Bits64,
-                Bitvector32Term::int64_constant(0),
+                MachineTerm::int64_constant(0),
             ),
         ] {
             for increment in [false, true] {
@@ -3319,11 +3304,11 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     .with_local("i", value);
                 let index = if increment {
                     let one = match format {
-                        MachineIntegerType::Int32 => Bitvector32Term::constant(1),
-                        MachineIntegerType::UInt32 => Bitvector32Term::uint32_constant(1),
-                        _ => Bitvector32Term::uint64_constant(1),
+                        MachineIntegerType::Int32 => MachineTerm::constant(1),
+                        MachineIntegerType::UInt32 => MachineTerm::uint32_constant(1),
+                        _ => MachineTerm::uint64_constant(1),
                     };
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format,
                         op: crate::kernel::MachineBinaryOp::Add,
                         left: Box::new(i.clone()),
@@ -3338,7 +3323,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                         byte_width: width,
                     },
                     MachineIntegerType::UInt32 => PointerOffsetTerm::Int64Scaled {
-                        value: Box::new(Bitvector32Term::legacy_cast(
+                        value: Box::new(MachineTerm::legacy_cast(
                             MachineCastSpelling::UInt64From32,
                             Box::new(index),
                         )),
@@ -3351,7 +3336,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                         unsigned: true,
                     },
                 };
-                let load = Bitvector32Term::MemoryLoad(
+                let load = MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(state.memory()),
                     Box::new(Pointer {
                         block: base.block.clone(),
@@ -3441,7 +3426,7 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
 fn boolean_calls_conditionals_and_equalities_round_trip_in_both_polarities() {
     let file = parser::parse("function positive(x: int32) -> Bool { x > 0 } function choose(flag: Bool, x: int32) -> Bool { if flag { positive(x) } else { false } }").unwrap();
     let flag = ConditionTerm::Variable(Variable(9001));
-    let x = Bitvector32Term::Variable(Variable(9002));
+    let x = MachineTerm::Variable(Variable(9002));
     let state = CState::new()
         .with_local("flag", CValue::of_bool(flag.clone()))
         .with_local("x", CValue::Int32(x.clone()));
@@ -3492,13 +3477,11 @@ fn generic_call_spelling_reparses_to_the_same_concrete_and_nested_instance() {
             "{declarations} theorem probe(x: int32) {{ requires holds({arguments}); ensures true; }}"
         );
         let file = parser::parse(&source).unwrap();
-        let state = CState::new().with_local(
-            "x",
-            CValue::Int32(Bitvector32Term::Variable(Variable(99001))),
-        );
+        let state =
+            CState::new().with_local("x", CValue::Int32(MachineTerm::Variable(Variable(99001))));
         let values = BTreeMap::from([(
             "x".to_string(),
-            CValue::Int32(Bitvector32Term::Variable(Variable(99001))),
+            CValue::Int32(MachineTerm::Variable(Variable(99001))),
         )]);
         let lower = |proposition: &ClickProposition| {
             crate::surface::proof::fixed_state_proofs::lower_fixed_state_proposition_retaining_requirements(
@@ -3708,7 +3691,7 @@ fn unified_terms_round_trip_nested_calls_and_mixed_integer_arguments() {
             "{declarations} theorem probe(x: int32) {{ requires {expression} == 0; ensures true; }}"
         );
         let file = parser::parse(&source).unwrap();
-        let value = CValue::Int32(Bitvector32Term::Variable(Variable(99002)));
+        let value = CValue::Int32(MachineTerm::Variable(Variable(99002)));
         let state = CState::new().with_local("x", value.clone());
         let values = BTreeMap::from([("x".to_string(), value)]);
         let lower = |proposition: &ClickProposition| {

@@ -1,7 +1,7 @@
 use super::*;
 
-fn scalar(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn scalar(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 fn offset(id: u64) -> PointerOffsetTerm {
     PointerOffsetTerm::Variable(Variable(id))
@@ -53,7 +53,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
     for value in [0, 1, u32::MAX, i32::MIN as u32] {
         for early in [false, true] {
             let mut graph = EqualityGraph::default();
-            let literal = Bitvector32Term::constant(value);
+            let literal = MachineTerm::constant(value);
             if early {
                 graph.add_int32_equality(&scalar(1), &literal);
             }
@@ -71,7 +71,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
         }
     }
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&scalar(1), &Bitvector32Term::constant(2));
+    graph.add_int32_equality(&scalar(1), &MachineTerm::constant(2));
     assert!(!graph.are_offsets_equal(&scaled(1, i64::MAX), &PointerOffsetTerm::Constant(-2)));
 }
 

@@ -2,19 +2,19 @@ use super::*;
 use crate::kernel::VerificationSession;
 use crate::kernel::binary_node;
 
-fn var(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn var(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
-fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Bitvector32Term {
-    Bitvector32Term::ClickFunctionApplication {
+fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> MachineTerm {
+    MachineTerm::ClickFunctionApplication {
         name: name.into(),
         arguments,
     }
 }
-fn scalar(term: Bitvector32Term) -> PureFunctionArgument {
+fn scalar(term: MachineTerm) -> PureFunctionArgument {
     PureFunctionArgument::Value(CValue::Int32(term))
 }
-fn eq(a: Bitvector32Term, b: Bitvector32Term) -> Proposition {
+fn eq(a: MachineTerm, b: MachineTerm) -> Proposition {
     Proposition::ConditionIs(ConditionTerm::equal(a, b), true)
 }
 fn pointer(name: &str) -> Pointer {
@@ -421,15 +421,15 @@ fn pointer_comparison_preserves_base_evidence_through_aliases_and_scopes() {
 // Reduced from the expanded zlib cursor join: two symbolic loop values meet
 // a native C argument through signed prefix counts and a native length.
 fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
-    let total = Bitvector32Term::Variable(Variable(2));
-    let remaining = Bitvector32Term::Variable(Variable(1_000_002));
-    let after = Bitvector32Term::Binary {
+    let total = MachineTerm::Variable(Variable(2));
+    let remaining = MachineTerm::Variable(Variable(1_000_002));
+    let after = MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
         left: Box::new(remaining.clone()),
-        right: Box::new(Bitvector32Term::uint64_constant(5552)),
+        right: Box::new(MachineTerm::uint64_constant(5552)),
     };
-    let prefix = |remaining: Bitvector32Term| Bitvector32Term::ClickFunctionApplication {
+    let prefix = |remaining: MachineTerm| MachineTerm::ClickFunctionApplication {
         name: "prefix".into(),
         arguments: vec![
             PureFunctionArgument::Value(CValue::UInt64(total.clone())),
@@ -442,9 +442,9 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
         Int32,
         Add,
         Box::new(first.clone()),
-        Box::new(Bitvector32Term::constant(5552)),
+        Box::new(MachineTerm::constant(5552)),
     );
-    let difference = Bitvector32Term::Binary {
+    let difference = MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
         left: Box::new(total.clone()),
@@ -453,7 +453,7 @@ fn selected_cursor_chain() -> (Proposition, Vec<Proposition>) {
     let original = CPointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(100_001)), 1),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
         },
         CType::UInt8Pointer,
     );
@@ -614,7 +614,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let original = CPointerValue::new(
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(100_001)), 1),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(100_001)), 1),
         },
         CType::UInt8Pointer,
     );
@@ -623,8 +623,8 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
     let cursor = root
         .clone()
         .with_address(root.pointer().offset_by_bytes(16));
-    let first = Bitvector32Term::Variable(Variable(10));
-    let second = Bitvector32Term::Variable(Variable(11));
+    let first = MachineTerm::Variable(Variable(10));
+    let second = MachineTerm::Variable(Variable(11));
     let at_first = original.clone().with_address(Pointer {
         block: original.pointer().block.clone(),
         offset: PointerOffsetTerm::add(
@@ -648,7 +648,7 @@ fn selected_native_cursor_normalization_is_stable_across_context_orders() {
         offset: PointerOffsetTerm::add(
             original.pointer().offset.clone(),
             PointerOffsetTerm::scale_int64(
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(first),

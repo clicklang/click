@@ -61,7 +61,7 @@ fn checked_context_construction_attaches_address_candidates() {
 #[test]
 fn publication_in_one_branch_keeps_sibling_input_pairing() {
     for scaled in [false, true] {
-        let scalar = |id: u64| Bitvector32Term::Variable(Variable(859_100 + id));
+        let scalar = |id: u64| MachineTerm::Variable(Variable(859_100 + id));
         let at = |id: u64| Pointer {
             block: PointerBlock::ExternalArgument,
             offset: if scaled {
@@ -399,7 +399,7 @@ fn whole_cell_hits_remain_indexed_beside_other_read_shapes() {
             CMemoryRange::new_with_element_width(
                 at(3),
                 0u32.into(),
-                Bitvector32Term::Variable(Variable(857_100)),
+                MachineTerm::Variable(Variable(857_100)),
                 1,
             ),
         ));
@@ -433,7 +433,7 @@ fn cell_footprints_follow_merges_removals_and_normalization() {
             12u32.into(),
             1,
         )),
-        Box::new(Bitvector32Term::constant(0)),
+        Box::new(MachineTerm::constant(0)),
     );
     let resources = ResourceContext::new()
         .unchecked_with_fact(short.clone())
@@ -554,8 +554,8 @@ fn interval_candidates_ignore_unrelated_scalar_equalities() {
     let base = Pointer::symbolic(Variable(895_000));
     let facts = PureFactContext::new().assume_condition(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(895_001)),
-            Bitvector32Term::Variable(Variable(895_002)),
+            MachineTerm::Variable(Variable(895_001)),
+            MachineTerm::Variable(Variable(895_002)),
         ),
         true,
     );
@@ -751,8 +751,8 @@ fn unpublished_loaded_intervals_do_not_claim_complete_supplier_coverage() {
 fn sole_symbolic_write_owner_preserves_bounds_authority_and_forks() {
     let base = Pointer::symbolic(Variable(961_100));
     let alias = Pointer::symbolic(Variable(961_101));
-    let i = Bitvector32Term::Variable(Variable(961_102));
-    let n = Bitvector32Term::Variable(Variable(961_103));
+    let i = MachineTerm::Variable(Variable(961_102));
+    let n = MachineTerm::Variable(Variable(961_103));
     let empty = PureFactContext::new();
     let bounds = empty
         .clone()
@@ -1093,22 +1093,22 @@ fn typed_read_congruence_publishes_late_ownership_class_updates() {
 #[test]
 fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
     let base = Pointer::symbolic(Variable(989_000));
-    let split = Bitvector32Term::Variable(Variable(989_001));
+    let split = MachineTerm::Variable(Variable(989_001));
     let empty = PureFactContext::new();
     let facts = empty.clone().assume_condition(
-        ConditionTerm::uint64_less_than(split.clone(), Bitvector32Term::uint64_constant(32)),
+        ConditionTerm::uint64_less_than(split.clone(), MachineTerm::uint64_constant(32)),
         true,
     );
     let prefix = CMemoryRange::new_wide(
         base.clone(),
-        Bitvector32Term::uint64_constant(0),
+        MachineTerm::uint64_constant(0),
         split.clone(),
         1,
     );
     let suffix = CMemoryRange::new_wide(
         base.clone(),
         split.clone(),
-        Bitvector32Term::uint64_constant(32),
+        MachineTerm::uint64_constant(32),
         1,
     );
     let owner = CResourceFact::own_memory(suffix.clone());
@@ -1129,8 +1129,8 @@ fn symbolic_owned_suffix_start_checks_bounds_and_retained_authority() {
             .memory_write_range(
                 &CMemoryRange::new_wide(
                     base,
-                    Bitvector32Term::uint64_constant(32),
-                    Bitvector32Term::uint64_constant(33),
+                    MachineTerm::uint64_constant(32),
+                    MachineTerm::uint64_constant(33),
                     1
                 )
                 .start_pointer(),
@@ -1335,8 +1335,8 @@ fn native_fragment_consumption_preserves_large_bounds_and_residuals() {
     let own = |start, end| {
         CResourceFact::own_memory(CMemoryRange::new_wide(
             p.clone(),
-            Bitvector32Term::uint64_constant(start),
-            Bitvector32Term::uint64_constant(end),
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
             4,
         ))
     };
@@ -1369,8 +1369,8 @@ fn native_fragment_consumption_refuses_gaps_views_and_nonpositive_ownership() {
     let range = |start, end| {
         CMemoryRange::new_wide(
             p.clone(),
-            Bitvector32Term::uint64_constant(start),
-            Bitvector32Term::uint64_constant(end),
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
             4,
         )
     };
@@ -1412,8 +1412,8 @@ fn native_fragment_consumption_checks_each_typed_designation() {
     let range = |start, end| {
         CMemoryRange::new_wide(
             p.clone(),
-            Bitvector32Term::uint64_constant(start),
-            Bitvector32Term::uint64_constant(end),
+            MachineTerm::uint64_constant(start),
+            MachineTerm::uint64_constant(end),
             4,
         )
     };
@@ -1446,10 +1446,10 @@ fn symbolic_ownership_queries_preserve_authority_checks_and_branches() {
         for case in ["owned", "gap", "view", "zero", "negative", "designation"] {
             let _session = crate::kernel::VerificationSession::enter();
             let p = Pointer::symbolic(Variable(991_010));
-            let end = Bitvector32Term::Variable(Variable(991_011));
+            let end = MachineTerm::Variable(Variable(991_011));
             let c = |n: u32| {
                 if native {
-                    Bitvector32Term::uint64_constant(u64::from(n))
+                    MachineTerm::uint64_constant(u64::from(n))
                 } else {
                     n.into()
                 }

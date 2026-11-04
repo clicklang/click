@@ -11,28 +11,28 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 fn fold_copied_wide_word_preserves_scope_width_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
-    let word = Bitvector32Term::Variable(Variable(710_000));
-    let copied = Bitvector32Term::Variable(Variable(710_001));
-    let changed = Bitvector32Term::Variable(Variable(710_002));
-    let address = Bitvector32Term::PointerAddress(
+    let word = MachineTerm::Variable(Variable(710_000));
+    let copied = MachineTerm::Variable(Variable(710_001));
+    let changed = MachineTerm::Variable(Variable(710_002));
+    let address = MachineTerm::PointerAddress(
         Box::new(Pointer::symbolic(Variable(710_003))),
         crate::kernel::AddressObjectClass::NONE,
     );
-    let packed = |word: &Bitvector32Term| {
+    let packed = |word: &MachineTerm| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(word.clone()),
-                right: Box::new(Bitvector32Term::Binary {
+                right: Box::new(MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(address.clone()),
-                    right: Box::new(Bitvector32Term::Binary {
+                    right: Box::new(MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseAnd,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::uint64_constant(1)),
+                        right: Box::new(MachineTerm::uint64_constant(1)),
                     }),
                 }),
             },
@@ -77,8 +77,8 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Variable(Variable(720_000 + index))),
-                    right: Box::new(Bitvector32Term::uint64_constant(index)),
+                    left: Box::new(MachineTerm::Variable(Variable(720_000 + index))),
+                    right: Box::new(MachineTerm::uint64_constant(index)),
                 },
                 true,
             ));
@@ -105,27 +105,27 @@ fn fold_copied_wide_word_preserves_scope_width_and_scales() {
 )]
 fn a_narrow_equality_between_wide_words_is_not_an_alias() {
     let _session = crate::kernel::VerificationSession::enter();
-    let word = Bitvector32Term::Variable(Variable(730_000));
-    let copied = Bitvector32Term::Variable(Variable(730_001));
-    let address = Bitvector32Term::PointerAddress(
+    let word = MachineTerm::Variable(Variable(730_000));
+    let copied = MachineTerm::Variable(Variable(730_001));
+    let address = MachineTerm::PointerAddress(
         Box::new(Pointer::symbolic(Variable(730_003))),
         crate::kernel::AddressObjectClass::NONE,
     );
-    let packed = |word: &Bitvector32Term| {
+    let packed = |word: &MachineTerm| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
                 left: Box::new(word.clone()),
-                right: Box::new(Bitvector32Term::Binary {
+                right: Box::new(MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(address.clone()),
-                    right: Box::new(Bitvector32Term::Binary {
+                    right: Box::new(MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::BitwiseAnd,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::uint64_constant(1)),
+                        right: Box::new(MachineTerm::uint64_constant(1)),
                     }),
                 }),
             },
@@ -156,7 +156,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     let program = Pointer {
         block: PointerBlock::Symbolic(Variable(701)),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(702))),
+            value: Box::new(MachineTerm::Variable(Variable(702))),
             byte_width: 4,
         },
     };
@@ -185,14 +185,14 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::ClickFunctionApplication {
+                left: Box::new(MachineTerm::ClickFunctionApplication {
                     name: "parent_is".into(),
                     arguments: vec![PureFunctionArgument::Value(CValue::typed_pointer(
                         pointer.clone(),
                         CType::Int32Pointer,
                     ))],
                 }),
-                right: Box::new(Bitvector32Term::constant(value)),
+                right: Box::new(MachineTerm::constant(value)),
             },
             true,
         )
@@ -360,7 +360,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         let _session = crate::kernel::VerificationSession::enter();
         let input = |name| Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(name)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(name)), 4),
         };
         let word = input(719_100);
         let context = PureFactContext::new()
@@ -415,13 +415,11 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
         // Each query uses another unconstrained address in the same block,
         // so the canonical walk cannot be warmed by the preceding measurement.
         let (_, canonical_work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::kernel::memory_provenance::canonicalize_atomic_loads(
-                &Bitvector32Term::MemoryLoad(
-                    crate::kernel::intern_c_memory_ref(&memory),
-                    Box::new(input(719_104)),
-                    LoadKind::Bits64,
-                ),
-            )
+            crate::kernel::memory_provenance::canonicalize_atomic_loads(&MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(&memory),
+                Box::new(input(719_104)),
+                LoadKind::Bits64,
+            ))
         });
         let state = CState::new()
             .with_memory(memory)
@@ -445,7 +443,7 @@ fn numeric_resource_facts_do_not_repeat_the_canonical_read_walk() {
                 left: SpecExpression::CExpression(CExpression::Load(Box::new(c_variable("p")))),
                 operator: CComparisonOperator::Equal,
                 right: SpecExpression::CExpression(CExpression::Value(CValue::UInt64(
-                    Bitvector32Term::uint64_constant(0),
+                    MachineTerm::uint64_constant(0),
                 ))),
             }],
         };

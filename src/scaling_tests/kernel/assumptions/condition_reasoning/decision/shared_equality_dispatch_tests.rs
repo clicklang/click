@@ -12,7 +12,7 @@ fn growing_prefixes(unresolved: bool, cancel: bool) {
             base.clone()
         };
         let zero =
-            crate::kernel::KernelTermImport::default().machine(ty, &Bitvector32Term::constant(0));
+            crate::kernel::KernelTermImport::default().machine(ty, &MachineTerm::constant(0));
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
         let mut root = base.clone();
@@ -28,8 +28,8 @@ fn growing_prefixes(unresolved: bool, cancel: bool) {
                 };
                 context = context.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(982010 + n as u64)),
-                        Bitvector32Term::constant(n as u32),
+                        MachineTerm::Variable(Variable(982010 + n as u64)),
+                        MachineTerm::constant(n as u32),
                     ),
                     true,
                 );

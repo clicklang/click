@@ -33,7 +33,7 @@ fn branch_join_read_query_does_not_scan_unrelated_cached_cells() {
         let first = before.clone().store(at(block("global:h"), 0), one());
         let second = before.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(Bitvector32Term::constant(2)),
+            CValue::Int32(MachineTerm::constant(2)),
         );
         let joined = first
             .clone()
@@ -85,11 +85,11 @@ fn branch_join_nested_naming_work_tracks_new_branches() {
     for index in 0..32 {
         let left = memory.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(Bitvector32Term::constant(index * 2)),
+            CValue::Int32(MachineTerm::constant(index * 2)),
         );
         let right = memory.clone().store(
             at(block("global:h"), 0),
-            CValue::Int32(Bitvector32Term::constant(index * 2 + 1)),
+            CValue::Int32(MachineTerm::constant(index * 2 + 1)),
         );
         memory = left
             .clone()
@@ -173,7 +173,7 @@ fn retained_cell_stops_scale_with_new_steps_and_ignore_other_names() {
             for i in 0..size {
                 memory = memory.clone().store(
                     at(block("local:f:i"), 0),
-                    CValue::Int32(Bitvector32Term::constant(i)),
+                    CValue::Int32(MachineTerm::constant(i)),
                 );
                 let here = point(&memory);
                 assert_eq!(

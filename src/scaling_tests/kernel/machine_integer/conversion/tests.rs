@@ -12,7 +12,7 @@ fn conversion_root_queries_retain_shared_prefixes() {
         let mut term = KernelTerm::variable(KernelType::C(CType::Int32), Variable(982100));
         let narrow = IntegerTerm::from_machine(
             MachineIntegerType::Int8,
-            Bitvector32Term::Variable(Variable(982101)),
+            MachineTerm::Variable(Variable(982101)),
         )
         .unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -58,9 +58,9 @@ fn cast_rule_keeps_shared_operand_prefixes() {
             let mut term = KernelTerm::variable(KernelType::C(source.c_type()), Variable(982107));
             let opaque = IntegerTerm::from_machine(
                 source,
-                Bitvector32Term::PureFunctionApplication {
+                MachineTerm::PureFunctionApplication {
                     name: "cast_opaque_word".to_string(),
-                    arguments: vec![Bitvector32Term::Variable(Variable(982108))],
+                    arguments: vec![MachineTerm::Variable(Variable(982108))],
                 },
             )
             .unwrap();

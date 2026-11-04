@@ -9,7 +9,7 @@ fn empty_range_frames_ignore_related_and_unrelated_separation_candidates() {
             let _session = crate::kernel::VerificationSession::enter();
             let base = Pointer::symbolic(Variable(9_952_000));
             let read = Pointer::symbolic(Variable(9_952_001));
-            let bound = Bitvector32Term::Variable(Variable(9_952_002));
+            let bound = MachineTerm::Variable(Variable(9_952_002));
             let range = CMemoryRange::new(base.clone(), bound.clone(), bound);
             let mut context = PureFactContext::new();
             for index in 0..size {

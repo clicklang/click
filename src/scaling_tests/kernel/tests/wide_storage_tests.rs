@@ -21,7 +21,7 @@ fn wide_storage_exact_load_and_validation_work_ignore_unrelated_memory() {
                 .with_block(pointer.block.clone(), 4)
                 .store(pointer, literal(c_int32_literal(index)));
         }
-        let raw = Bitvector32Term::MemoryLoad(
+        let raw = MachineTerm::MemoryLoad(
             intern_c_memory(memory.clone()),
             Box::new(address(0)),
             LoadKind::UInt128,

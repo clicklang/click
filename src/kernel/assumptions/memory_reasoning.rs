@@ -1,7 +1,7 @@
 use super::*;
 use crate::kernel::binary_term;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
 #[cfg(test)]
@@ -99,7 +99,7 @@ use crate::kernel::scaled_extent_element_width;
 /// subtractive constants a range endpoint is written with. `hi - 1` is `hi`
 /// shifted by `-1`; anything else is itself shifted by `0`. One level, no
 /// facts, no recursion budget.
-fn endpoint_base_and_shift(term: &Bitvector32Term) -> (&Bitvector32Term, i64) {
+fn endpoint_base_and_shift(term: &MachineTerm) -> (&MachineTerm, i64) {
     match term {
         binary_term!(Int32, Add, left, right) => match (left.as_ref(), right.as_ref()) {
             (base, bits32_constant!(shift)) => (base, i64::from(constant_u32(*shift) as i32)),
@@ -130,10 +130,8 @@ fn endpoint_base_and_shift(term: &Bitvector32Term) -> (&Bitvector32Term, i64) {
 /// the same start for the same reason; sharing one reading keeps a range
 /// written from `0` — which is how a C contract usually writes one — from
 /// being a different kind of range to the rules than `p[a..b]` is.
-fn element_count_endpoints(
-    element_count: &Bitvector32Term,
-) -> (&Bitvector32Term, &Bitvector32Term) {
-    const ZERO: &Bitvector32Term = &Bitvector32Term::constant(0);
+fn element_count_endpoints(element_count: &MachineTerm) -> (&MachineTerm, &MachineTerm) {
+    const ZERO: &MachineTerm = &MachineTerm::constant(0);
     match element_count {
         binary_term!(Int32, Subtract, end, start) => (start.as_ref(), end.as_ref()),
         _ => (ZERO, element_count),
@@ -149,7 +147,7 @@ fn element_count_endpoints(
 /// reads the term and consults no facts, and the difference it reports is the
 /// term's own modular value: for a shared base the base cancels, so the count
 /// is exactly the shift difference.
-fn constant_element_count(element_count: &Bitvector32Term) -> Option<i64> {
+fn constant_element_count(element_count: &MachineTerm) -> Option<i64> {
     if let Some(value) = signed_bitvector_constant(element_count) {
         return Some(value);
     }
@@ -165,7 +163,7 @@ fn constant_element_count(element_count: &Bitvector32Term) -> Option<i64> {
 /// scaled once by an element width. Read only this expression, without facts
 /// or rewriting away the endpoints other range rules need. The cast and
 /// product use the extent's own modular 32-bit arithmetic.
-fn structural_constant_byte_extent(bytes: &Bitvector32Term) -> Option<u32> {
+fn structural_constant_byte_extent(bytes: &MachineTerm) -> Option<u32> {
     crate::instrumentation::record_deterministic_work(1);
     match bytes {
         binary_term!(Int32, Multiply, left, right) => match (left.as_ref(), right.as_ref()) {
@@ -184,12 +182,12 @@ fn structural_constant_byte_extent(bytes: &Bitvector32Term) -> Option<u32> {
 /// require both addends to be nonnegative and the sum to stay no smaller than
 /// the left addend, which rules out signed wrap.
 pub(in crate::kernel) fn signed_byte_sum_is_nonwrapping(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-    sum: &Bitvector32Term,
-    mut proves_signed_less_equal: impl FnMut(&Bitvector32Term, &Bitvector32Term) -> bool,
+    left: &MachineTerm,
+    right: &MachineTerm,
+    sum: &MachineTerm,
+    mut proves_signed_less_equal: impl FnMut(&MachineTerm, &MachineTerm) -> bool,
 ) -> bool {
-    let zero = Bitvector32Term::constant(0);
+    let zero = MachineTerm::constant(0);
     proves_signed_less_equal(&zero, left)
         && proves_signed_less_equal(&zero, right)
         && proves_signed_less_equal(left, sum)
@@ -351,7 +349,7 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        self.proves_memory_loadable(memory, pointer, &Bitvector32Term::constant(byte_width))
+        self.proves_memory_loadable(memory, pointer, &MachineTerm::constant(byte_width))
     }
 
     /// Carry a native liveness range, or a checked subrange, through
@@ -362,7 +360,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
@@ -409,9 +407,9 @@ impl PureFactContext {
                 .is_some_and(|count| count <= u64::from(held))
                 || self.decide(&ConditionTerm::uint64_less_equal(
                     bytes.clone(),
-                    Bitvector32Term::uint64_constant(u64::from(held)),
+                    MachineTerm::uint64_constant(u64::from(held)),
                 )) == Some(true))
-            && self.proves_memory_loadable(memory, base, &Bitvector32Term::constant(held))
+            && self.proves_memory_loadable(memory, base, &MachineTerm::constant(held))
         {
             return true;
         }
@@ -482,7 +480,7 @@ impl PureFactContext {
         fact: &Proposition,
         memory: &CMemory,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         let Proposition::CMemoryLoadable {
@@ -507,7 +505,7 @@ impl PureFactContext {
         // nonnegative byte offset, and subtraction must not underflow.
         self.decide(&ConditionTerm::uint64_less_equal(
             delta.clone(),
-            Bitvector32Term::uint64_constant(i64::MAX as u64),
+            MachineTerm::uint64_constant(i64::MAX as u64),
         )) == Some(true)
             && self.decide(&ConditionTerm::uint64_less_equal(
                 delta.clone(),
@@ -515,7 +513,7 @@ impl PureFactContext {
             )) == Some(true)
             && self.decide(&ConditionTerm::uint64_less_equal(
                 bytes.clone(),
-                Bitvector32Term::uint64_subtract(held.clone(), delta),
+                MachineTerm::uint64_subtract(held.clone(), delta),
             )) == Some(true)
             && before.read_region_identity(source) == memory.read_region_identity(source)
             && memory_range_still_available(before, memory, source, self)
@@ -525,7 +523,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         // The loadable prover is the one consumer of the extended DAG
         // bridging: a loadability fact carrying one memory snapshot must
@@ -553,7 +551,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
@@ -644,7 +642,7 @@ impl PureFactContext {
                 let Some(index) = self.wide_element_index_of_access(base, range_base, width) else {
                     return false;
                 };
-                let limit = Bitvector32Term::uint64_constant(i64::MAX as u64 / u64::from(width));
+                let limit = MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width));
                 memory_range_still_available(range_memory, memory, range_base, self)
                     && self.decide(&ConditionTerm::uint64_less_than(index, elements.clone()))
                         == Some(true)
@@ -700,7 +698,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> Option<Vec<Proposition>> {
         let compatible = |fact_memory: &CMemory, fact_base: &Pointer| {
             fact_memory == memory
@@ -716,7 +714,7 @@ impl PureFactContext {
                 || crate::kernel::api::c_memories_canonically_equal(fact_memory, memory)
                 || crate::kernel::api::c_memories_connected_by_effects(fact_memory, memory, self)
         };
-        let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
+        let equal = |left: &MachineTerm, right: &MachineTerm| {
             let left = self.simplify_bitvector_under_assumptions(left);
             let right = self.simplify_bitvector_under_assumptions(right);
             left == right
@@ -763,14 +761,7 @@ impl PureFactContext {
                 .cells
                 .contiguous_bytes_at(pointer)
                 .filter(|width| *width > 0)
-                .map(|width| {
-                    (
-                        None,
-                        pointer.clone(),
-                        Bitvector32Term::constant(width),
-                        true,
-                    )
-                })
+                .map(|width| (None, pointer.clone(), MachineTerm::constant(width), true))
         };
         regions.extend(cell_region(base));
         let base = crate::kernel::api::canonicalize_pointer_loads(base);
@@ -782,7 +773,7 @@ impl PureFactContext {
                     self,
                 )
                 || pointer_byte_offset_from_base(prefix_base, &base)
-                    .is_some_and(|offset| equal(&offset, &Bitvector32Term::constant(0)));
+                    .is_some_and(|offset| equal(&offset, &MachineTerm::constant(0)));
             if !prefix_starts_at_goal {
                 continue;
             }
@@ -854,7 +845,7 @@ impl PureFactContext {
                 let byte_concatenation = byte_adjacent
                     && equal(
                         bytes,
-                        &Bitvector32Term::add((*prefix_bytes).clone(), (*suffix_bytes).clone()),
+                        &MachineTerm::add((*prefix_bytes).clone(), (*suffix_bytes).clone()),
                     );
                 let element_concatenation = int32_element_count_from_bytes(prefix_bytes)
                     .zip(int32_element_count_from_bytes(suffix_bytes))
@@ -874,7 +865,7 @@ impl PureFactContext {
                             ))
                             && equal(
                                 &goal_count,
-                                &Bitvector32Term::add(prefix_count, suffix_count),
+                                &MachineTerm::add(prefix_count, suffix_count),
                             )
                     });
                 if byte_concatenation || element_concatenation {
@@ -895,7 +886,7 @@ impl PureFactContext {
         &self,
         memory: &CMemory,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         // Exact evidence is an indexed lookup even when its address holds
         // many other views. Choosing a different premise belongs to search.
@@ -951,7 +942,7 @@ impl PureFactContext {
                 pointer_in_range_for_memory_resolution(
                     base,
                     range_base,
-                    &Bitvector32Term::constant(0),
+                    &MachineTerm::constant(0),
                     &element_count,
                     byte_width,
                     self,
@@ -961,15 +952,13 @@ impl PureFactContext {
 
     fn nonwrapping_signed_byte_sum_end(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
-    ) -> Option<Bitvector32Term> {
+        left: &MachineTerm,
+        right: &MachineTerm,
+    ) -> Option<MachineTerm> {
         let left = self.simplify_bitvector_under_assumptions(left);
         let right = self.simplify_bitvector_under_assumptions(right);
-        let sum = self.simplify_bitvector_under_assumptions(&Bitvector32Term::add(
-            left.clone(),
-            right.clone(),
-        ));
+        let sum = self
+            .simplify_bitvector_under_assumptions(&MachineTerm::add(left.clone(), right.clone()));
         signed_byte_sum_is_nonwrapping(&left, &right, &sum, |lower, upper| {
             self.decide(&ConditionTerm::signed_less_equal(
                 lower.clone(),
@@ -1000,9 +989,9 @@ impl PureFactContext {
     fn same_base_and_loadable_extent_match(
         &self,
         range_base: &Pointer,
-        range_bytes: &Bitvector32Term,
+        range_bytes: &MachineTerm,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         range_base == base
             && (structural_constant_byte_extent(range_bytes)
@@ -1018,9 +1007,9 @@ impl PureFactContext {
     fn proves_loadable_region_from_structural_range(
         &self,
         range_base: &Pointer,
-        range_bytes: &Bitvector32Term,
+        range_bytes: &MachineTerm,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         if base.blocks_proven_distinct(range_base) {
             return false;
@@ -1051,8 +1040,7 @@ impl PureFactContext {
             // count claims, and the cell would come from nothing.
             && self.assumed_extent_covers_its_element_count(&element_count, byte_width)
         {
-            let lower =
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone());
+            let lower = ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone());
             let upper = ConditionTerm::signed_less_than(index.clone(), element_count.clone());
             if self.exact_condition_value(&lower) == Some(true)
                 && self.exact_condition_value(&upper) == Some(true)
@@ -1122,7 +1110,7 @@ impl PureFactContext {
     /// another rather than between two term shapes.
     ///
     /// Soundness, in the arithmetic the terms are actually written in. An
-    /// extent is a `Bitvector32Term`: `(b - a) * w` is modular, so reading the
+    /// extent is a `MachineTerm`: `(b - a) * w` is modular, so reading the
     /// fact as "the elements `a..b`" is only legitimate while that product is
     /// the true count of bytes. The rule therefore requires the assumed fact's
     /// own byte-count guards —
@@ -1160,9 +1148,9 @@ impl PureFactContext {
     fn proves_loadable_subrange_by_element_endpoints(
         &self,
         range_base: &Pointer,
-        range_bytes: &Bitvector32Term,
+        range_bytes: &MachineTerm,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         if crate::kernel::assumptions::reasoning_interrupted() {
             return false;
@@ -1198,8 +1186,7 @@ impl PureFactContext {
         // same folding constructor the endpoints are read back through, so
         // asking for the difference itself asks the one question in the one
         // spelling both sides already have.
-        let offset_agrees =
-            index == Bitvector32Term::subtract(goal_start.clone(), range_start.clone());
+        let offset_agrees = index == MachineTerm::subtract(goal_start.clone(), range_start.clone());
         offset_agrees
             && self.proves_element_endpoint_order(range_start, goal_start)
             && self.proves_element_endpoint_order(goal_start, goal_end)
@@ -1228,8 +1215,8 @@ impl PureFactContext {
     /// really `-1` and the extent has wrapped.
     fn assumed_range_is_a_valid_byte_extent(
         &self,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
         element_width: u32,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
@@ -1257,7 +1244,7 @@ impl PureFactContext {
                 if guards.iter().all(|guard| self.proves_exact(guard)) {
                     return true;
                 }
-                let element_count = Bitvector32Term::subtract(end.clone(), start.clone());
+                let element_count = MachineTerm::subtract(end.clone(), start.clone());
                 // A count the term itself decides needs no facts: the shared
                 // definition above only sees two symbolic endpoints, while
                 // `hi - (hi - 1)` is one element for every `hi`.
@@ -1302,7 +1289,7 @@ impl PureFactContext {
     /// facts a proof must supply are spelled over the count the user wrote.
     fn assumed_extent_covers_its_element_count(
         &self,
-        element_count: &Bitvector32Term,
+        element_count: &MachineTerm,
         element_width: u32,
     ) -> bool {
         // When the count still names both endpoints, ask about those: the
@@ -1314,7 +1301,7 @@ impl PureFactContext {
             return true;
         }
         self.assumed_range_is_a_valid_byte_extent(
-            &Bitvector32Term::constant(0),
+            &MachineTerm::constant(0),
             element_count,
             element_width,
         )
@@ -1325,7 +1312,7 @@ impl PureFactContext {
     ///
     /// This is what an affine constant difference needs before it may be read
     /// as an order. [`crate::kernel::assumptions::affine_bitvector_difference_constant`]
-    /// works in `i64` while the endpoints are modular `Bitvector32Term`s, so
+    /// works in `i64` while the endpoints are modular `MachineTerm`s, so
     /// its result is the true difference only modulo `2^32`; a residue is
     /// outside the range exactly when it is at least the range's element
     /// count, and that comparison needs the count bounded.
@@ -1338,12 +1325,12 @@ impl PureFactContext {
     /// count at all — for four-byte elements to `1073741823`.
     pub(super) fn established_range_element_count_bound(
         &self,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
         element_width: u32,
     ) -> Option<i64> {
         crate::instrumentation::record_deterministic_work(1);
-        let count = Bitvector32Term::subtract(end.clone(), start.clone());
+        let count = MachineTerm::subtract(end.clone(), start.clone());
         let guards = crate::kernel::memory_range_element_count_guards(count, element_width);
         guards
             .iter()
@@ -1373,8 +1360,8 @@ impl PureFactContext {
     /// path also answers the non-strict question.
     pub(super) fn proves_element_endpoint_order(
         &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
+        lower: &MachineTerm,
+        upper: &MachineTerm,
     ) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if lower == upper {
@@ -1418,15 +1405,15 @@ impl PureFactContext {
         else {
             return false;
         };
-        self.proves_element_endpoint_order(&Bitvector32Term::constant(shifted as u32), base)
+        self.proves_element_endpoint_order(&MachineTerm::constant(shifted as u32), base)
     }
 
     pub(in crate::kernel) fn proves_loadable_region_from_range(
         &self,
         range_base: &Pointer,
-        range_bytes: &Bitvector32Term,
+        range_bytes: &MachineTerm,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
     ) -> bool {
         if self.same_base_and_loadable_extent_match(range_base, range_bytes, base, bytes) {
             return true;
@@ -1473,7 +1460,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_loadable_cell_from_region_elements(
         &self,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
@@ -1494,7 +1481,7 @@ impl PureFactContext {
             && self.assumed_extent_covers_its_element_count(&element_count, byte_width)
         {
             let lower_condition =
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone());
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone());
             let upper_condition = ConditionTerm::signed_less_than(index, element_count);
             let lower = self
                 .exact_condition_value(&lower_condition)
@@ -1533,7 +1520,7 @@ impl PureFactContext {
     fn proves_cell_within_strided_region(
         &self,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
         pointer: &Pointer,
         byte_width: u32,
         holds: &dyn Fn(&ConditionTerm) -> bool,
@@ -1584,7 +1571,7 @@ impl PureFactContext {
             return false;
         }
         let lower_condition =
-            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), index.clone());
+            ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone());
         let upper_condition = ConditionTerm::signed_less_than(index, element_count);
         if !holds(&lower_condition) || !holds(&upper_condition) {
             return false;
@@ -1606,7 +1593,7 @@ impl PureFactContext {
         };
         self.proves_loadable_cell_from_region(
             &element,
-            &Bitvector32Term::constant(stride),
+            &MachineTerm::constant(stride),
             &within,
             byte_width,
         )
@@ -1615,7 +1602,7 @@ impl PureFactContext {
     pub(in crate::kernel) fn proves_loadable_cell_from_region(
         &self,
         base: &Pointer,
-        bytes: &Bitvector32Term,
+        bytes: &MachineTerm,
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
@@ -1636,7 +1623,7 @@ impl PureFactContext {
         }
 
         if let Some(byte_offset) = pointer_byte_offset_from_base(pointer, base) {
-            let byte_width = Bitvector32Term::constant(byte_width);
+            let byte_width = MachineTerm::constant(byte_width);
             let Some(access_end) = self.nonwrapping_signed_byte_sum_end(&byte_offset, &byte_width)
             else {
                 return false;
@@ -2070,7 +2057,7 @@ impl PureFactContext {
         if contains(pointer)
             && (elements == 1
                 || contains(
-                    &pointer.offset_by_elements(Bitvector32Term::constant(elements - 1), width),
+                    &pointer.offset_by_elements(MachineTerm::constant(elements - 1), width),
                 ))
         {
             return true;
@@ -2081,7 +2068,7 @@ impl PureFactContext {
         range.constant_start() == Some(0)
             && self.proves_cell_within_strided_region(
                 range.base(),
-                &Bitvector32Term::multiply(range.end().clone(), Bitvector32Term::constant(width)),
+                &MachineTerm::multiply(range.end().clone(), MachineTerm::constant(width)),
                 pointer,
                 bytes,
                 &|condition| self.proves_range_bound(condition.clone()),
@@ -2127,7 +2114,7 @@ impl PureFactContext {
         contains(pointer)
             && (elements == 1
                 || contains(
-                    &pointer.offset_by_elements(Bitvector32Term::constant(elements - 1), width),
+                    &pointer.offset_by_elements(MachineTerm::constant(elements - 1), width),
                 ))
     }
 
@@ -2194,8 +2181,8 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         base: &Pointer,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
         element_width: u32,
     ) -> bool {
         if pointer_in_range_shallow(pointer, base, start, end, element_width, Some(self)) {
@@ -2279,7 +2266,7 @@ impl PureFactContext {
                     element_index_from_offset(left, range.element_width())
                 }
                 _ if offset_matches(&pointer.offset, &range.base().offset) => {
-                    Some(Bitvector32Term::constant(0))
+                    Some(MachineTerm::constant(0))
                 }
                 _ => None,
             });
@@ -2700,7 +2687,7 @@ impl PureFactContext {
         pointer: &Pointer,
         base: &Pointer,
         byte_width: u32,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         let pointer = &self.pointer_in_block(pointer, &base.block)?;
         // Exact syntax and direct offset arithmetic are authoritative on
         // their own. Resolve them before snapshot-aware equality: generated
@@ -2736,16 +2723,16 @@ impl PureFactContext {
         if let PointerOffsetTerm::Add(left, right) = &base.offset {
             if offsets_equal(&pointer.offset, left) {
                 return element_index_from_offset_with_facts(right, byte_width, self)
-                    .map(|index| Bitvector32Term::subtract(Bitvector32Term::constant(0), index));
+                    .map(|index| MachineTerm::subtract(MachineTerm::constant(0), index));
             }
             if offsets_equal(&pointer.offset, right) {
                 return element_index_from_offset_with_facts(left, byte_width, self)
-                    .map(|index| Bitvector32Term::subtract(Bitvector32Term::constant(0), index));
+                    .map(|index| MachineTerm::subtract(MachineTerm::constant(0), index));
             }
         }
 
         if offsets_equal(&pointer.offset, &base.offset) {
-            return Some(Bitvector32Term::constant(0));
+            return Some(MachineTerm::constant(0));
         }
         None
     }
@@ -2755,7 +2742,7 @@ impl PureFactContext {
         pointer: &Pointer,
         base: &Pointer,
         byte_width: u32,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         #[cfg(test)]
         PROOF_AWARE_POINTER_INDEX_QUERIES.with(|queries| queries.set(queries.get() + 1));
         let pointer = &crate::kernel::reasoning::pointer_in_block_for_memory_resolution(
@@ -2764,7 +2751,7 @@ impl PureFactContext {
             self,
         )?;
         if pointer.offset == base.offset {
-            return Some(Bitvector32Term::constant(0));
+            return Some(MachineTerm::constant(0));
         }
         // A zero-offset object base leaves the pointer's scaled offset as
         // the exact element index. Preserve that symbolic index so the
@@ -2789,11 +2776,11 @@ impl PureFactContext {
         if let PointerOffsetTerm::Add(left, right) = &base.offset {
             if offsets_match_for_resolution(&pointer.offset, left) {
                 return element_index_from_offset_with_facts(right, byte_width, self)
-                    .map(|index| Bitvector32Term::subtract(Bitvector32Term::constant(0), index));
+                    .map(|index| MachineTerm::subtract(MachineTerm::constant(0), index));
             }
             if offsets_match_for_resolution(&pointer.offset, right) {
                 return element_index_from_offset_with_facts(left, byte_width, self)
-                    .map(|index| Bitvector32Term::subtract(Bitvector32Term::constant(0), index));
+                    .map(|index| MachineTerm::subtract(MachineTerm::constant(0), index));
             }
         }
         None
@@ -2812,8 +2799,8 @@ impl PureFactContext {
         &self,
         pointer: &Pointer,
         base: &Pointer,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
         element_width: u32,
     ) -> bool {
         // A loop invariant can establish that a havoced pointer local names
@@ -2839,9 +2826,9 @@ impl PureFactContext {
         if let Some(index) =
             self.pointer_element_index_from_base_with_width(pointer, &range_base, element_width)
         {
-            let range_length = Bitvector32Term::subtract(end.clone(), start.clone());
+            let range_length = MachineTerm::subtract(end.clone(), start.clone());
             if proves(ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
                 index.clone(),
             )) && proves(ConditionTerm::signed_less_than(index, range_length))
             {
@@ -2934,14 +2921,14 @@ impl PureFactContext {
         // index carries the raw load (or vice versa); try both forms.
         let mut forms = vec![term.as_ref().clone()];
         if let Some((variable, _)) = crate::kernel::eval::load_variable_for_term(term.as_ref()) {
-            let named = Bitvector32Term::Variable(variable);
+            let named = MachineTerm::Variable(variable);
             if !forms.contains(&named) {
                 forms.push(named);
             }
         }
         forms.iter().any(|form| {
             let nonnegative =
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), form.clone());
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), form.clone());
             (self.exact_condition_value(&nonnegative) == Some(true)
                 || self.exact_ordering_modulo_canonical_atoms(&nonnegative))
                 // A true `left < _` fact is an order fact filed under the
@@ -3014,8 +3001,8 @@ impl PureFactContext {
         // filed asks nothing.
         if self.equality_graph.has_wide_pointer_sources()
             && self.uint64_values_known_equal(
-                &Bitvector32Term::pointer_address(left.clone()),
-                &Bitvector32Term::pointer_address(right.clone()),
+                &MachineTerm::pointer_address(left.clone()),
+                &MachineTerm::pointer_address(right.clone()),
             )
         {
             return true;
@@ -3750,9 +3737,7 @@ impl PureFactContext {
         if parent.wide_bounds().is_some() || child.wide_bounds().is_some() {
             return crate::kernel::primitives::wide_memory_range_covers(parent, child, self);
         }
-        if Bitvector32Term::subtract(child.end().clone(), child.start().clone()).as_const()
-            == Some(1)
-        {
+        if MachineTerm::subtract(child.end().clone(), child.start().clone()).as_const() == Some(1) {
             let child_pointer = child
                 .base
                 .offset_by_elements(child.start().clone(), child.element_width());
@@ -3802,8 +3787,8 @@ impl PureFactContext {
 
     fn bitvector_terms_equal_for_fact_transport(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         // Snapshot-aware endpoints are valid only for bounded fact transport.
         // Keeping them out of the global equality graph avoids recursive
@@ -3916,8 +3901,8 @@ impl PureFactContext {
         &self,
         target: &CMemoryRange,
         base: &Pointer,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
     ) -> Option<(i64, i64)> {
         let base = &self.pointer_in_block(base, &target.base.block)?;
         let base_delta = self.pointer_element_index_from_base_with_width(
@@ -3925,8 +3910,8 @@ impl PureFactContext {
             &target.base,
             target.element_width(),
         )?;
-        let start = Bitvector32Term::add(base_delta.clone(), start.clone());
-        let end = Bitvector32Term::add(base_delta, end.clone());
+        let start = MachineTerm::add(base_delta.clone(), start.clone());
+        let end = MachineTerm::add(base_delta, end.clone());
         Some((
             signed_bitvector_constant(&start)?,
             signed_bitvector_constant(&end)?,
@@ -3987,7 +3972,7 @@ impl PureFactContext {
         pointer: &Pointer,
         base: &Pointer,
         element_width: u32,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         if let Some(index) = pointer.wide_element_index_from_base(base, element_width) {
             return Some(index);
         }
@@ -4002,12 +3987,11 @@ impl PureFactContext {
         {
             return Some(match *value {
                 int64_constant!(constant) => {
-                    Bitvector32Term::uint64_constant(constant_i64(constant) as u64)
+                    MachineTerm::uint64_constant(constant_i64(constant) as u64)
                 }
-                value => Bitvector32Term::legacy_cast(
-                    MachineCastSpelling::UInt64FromInt64,
-                    Box::new(value),
-                ),
+                value => {
+                    MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(value))
+                }
             });
         }
         // An index advanced by whole elements, `base[i]` then `+ k`: the
@@ -4043,26 +4027,26 @@ impl PureFactContext {
             if let Some((index, elements)) = stepped
                 && self.decide(&ConditionTerm::uint64_less_equal(
                     index.clone(),
-                    Bitvector32Term::uint64_constant(u64::MAX - elements),
+                    MachineTerm::uint64_constant(u64::MAX - elements),
                 )) == Some(true)
             {
-                return Some(Bitvector32Term::uint64_add(
+                return Some(MachineTerm::uint64_add(
                     index,
-                    Bitvector32Term::uint64_constant(elements),
+                    MachineTerm::uint64_constant(elements),
                 ));
             }
             // Two symbolic indices, `base[i]` then `[j]` from there: a chunk
             // of a chunk. The access is at index `i + j` when the sum does
             // not wrap, decided here as both being at most `i64::MAX`.
             if let (Some(outer), Some(inner)) = (symbolic_index(&first), symbolic_index(&second)) {
-                let small = |index: &Bitvector32Term| {
+                let small = |index: &MachineTerm| {
                     self.decide(&ConditionTerm::uint64_less_equal(
                         index.clone(),
-                        Bitvector32Term::uint64_constant(i64::MAX as u64),
+                        MachineTerm::uint64_constant(i64::MAX as u64),
                     )) == Some(true)
                 };
                 if small(&outer) && small(&inner) {
-                    return Some(Bitvector32Term::uint64_add(outer, inner));
+                    return Some(MachineTerm::uint64_add(outer, inner));
                 }
             }
         }
@@ -4079,7 +4063,7 @@ impl PureFactContext {
         // ([`crate::kernel::wide_range_bounds`]). A negative index becomes at
         // least 2^63, beyond every wide range's end, so no caller places it.
         crate::kernel::primitives::checked_native_range_endpoint(&value, self).or(Some(
-            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, value),
+            MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, value),
         ))
     }
 
@@ -4111,15 +4095,15 @@ impl PureFactContext {
         let Some(last_start) = limit.checked_sub(span) else {
             return false;
         };
-        let holds = |lower: Bitvector32Term, upper: Bitvector32Term| {
+        let holds = |lower: MachineTerm, upper: MachineTerm| {
             lower == upper
                 || self.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
         };
-        holds(end.clone(), Bitvector32Term::uint64_constant(limit))
-            && holds(index.clone(), Bitvector32Term::uint64_constant(last_start))
+        holds(end.clone(), MachineTerm::uint64_constant(limit))
+            && holds(index.clone(), MachineTerm::uint64_constant(last_start))
             && (holds(end.clone(), index.clone())
                 || holds(
-                    Bitvector32Term::uint64_add(index, Bitvector32Term::uint64_constant(span)),
+                    MachineTerm::uint64_add(index, MachineTerm::uint64_constant(span)),
                     start.clone(),
                 ))
     }
@@ -4186,8 +4170,8 @@ impl PureFactContext {
         // `x - c < end` where `x` is another spelling of `end`: a count a
         // call returned, held equal to the field that bounds the range. The
         // comparison is then `x - c < x`, which the order rules decide.
-        let below_equal_spelling = |index: &Bitvector32Term| {
-            let Bitvector32Term::Binary {
+        let below_equal_spelling = |index: &MachineTerm| {
+            let MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Subtract,
                 left: whole,
@@ -4196,15 +4180,15 @@ impl PureFactContext {
             else {
                 return false;
             };
-            let equal = |left: &Bitvector32Term, right: &Bitvector32Term| {
+            let equal = |left: &MachineTerm, right: &MachineTerm| {
                 self.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone())) == Some(true)
             };
             (equal(whole, end) || equal(end, whole))
                 && (holds(ConditionTerm::uint64_less_than(
-                    Bitvector32Term::uint64_subtract(end.clone(), taken.as_ref().clone()),
+                    MachineTerm::uint64_subtract(end.clone(), taken.as_ref().clone()),
                     end.clone(),
                 )) || (holds(ConditionTerm::uint64_less_equal(
-                    Bitvector32Term::uint64_constant(1),
+                    MachineTerm::uint64_constant(1),
                     taken.as_ref().clone(),
                 )) && holds(ConditionTerm::uint64_less_equal(
                     taken.as_ref().clone(),
@@ -4214,8 +4198,8 @@ impl PureFactContext {
         // `i < x + c` for a constant `c >= 1` whose sum does not wrap: an
         // index below `c`, at most `x`, or equal to `x` is below the end. A C string's
         // `[0..len + 1]` footprint has this end.
-        let below_unwrapped_successor = |index: &Bitvector32Term| {
-            let Bitvector32Term::Binary {
+        let below_unwrapped_successor = |index: &MachineTerm| {
+            let MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: whole,
@@ -4229,7 +4213,7 @@ impl PureFactContext {
             };
             holds(ConditionTerm::uint64_less_equal(
                 whole.as_ref().clone(),
-                Bitvector32Term::uint64_constant(u64::MAX - added),
+                MachineTerm::uint64_constant(u64::MAX - added),
             )) && (index.uint64_as_const().is_some_and(|value| value < added)
                 || holds(ConditionTerm::uint64_less_equal(
                     index.clone(),
@@ -4250,7 +4234,7 @@ impl PureFactContext {
                 || below_unwrapped_successor(&index))
             && holds(ConditionTerm::uint64_less_equal(
                 end.clone(),
-                Bitvector32Term::uint64_constant(limit),
+                MachineTerm::uint64_constant(limit),
             ))
     }
 
@@ -4315,7 +4299,7 @@ impl PureFactContext {
                                 position,
                                 bytes,
                                 &from,
-                                &Bitvector32Term::constant(0),
+                                &MachineTerm::constant(0),
                                 &count,
                                 width,
                             )
@@ -4325,7 +4309,7 @@ impl PureFactContext {
                                 || contains(value.pointer(), 0)
                                 || contains(position, 1)
                                 || self.decide(&ConditionTerm::signed_less_than(
-                                    Bitvector32Term::constant(0),
+                                    MachineTerm::constant(0),
                                     count,
                                 )) == Some(true))
                     })
@@ -4342,8 +4326,8 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
         base: &Pointer,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
         element_width: u32,
     ) -> bool {
         // An owned range keeps its own base spelling. Once the trusted graph
@@ -4382,7 +4366,7 @@ impl PureFactContext {
                 return true;
             }
         }
-        let proves_order = |left: &Bitvector32Term, right: &Bitvector32Term, strict: bool| {
+        let proves_order = |left: &MachineTerm, right: &MachineTerm, strict: bool| {
             let condition = if strict {
                 ConditionTerm::signed_less_than(left.clone(), right.clone())
             } else {
@@ -4416,8 +4400,8 @@ impl PureFactContext {
                 authorized_access_element_length(byte_width, element_width)
             }
         {
-            let access_length = Bitvector32Term::constant(logical_access_length);
-            let access_end = Bitvector32Term::add(index.clone(), access_length);
+            let access_length = MachineTerm::constant(logical_access_length);
+            let access_end = MachineTerm::add(index.clone(), access_length);
             let exact_within_range = match (
                 super::exact_signed_constant(&index, self),
                 super::exact_signed_constant(start, self),
@@ -4454,16 +4438,16 @@ impl PureFactContext {
         // Keep this fallback read-only; resource consumption still requires
         // matching logical range units so splitting ownership remains exact.
         let range_base = base.offset_by_elements(start.clone(), element_width);
-        let range_bytes = Bitvector32Term::multiply(
-            Bitvector32Term::subtract(end.clone(), start.clone()),
-            Bitvector32Term::constant(element_width),
+        let range_bytes = MachineTerm::multiply(
+            MachineTerm::subtract(end.clone(), start.clone()),
+            MachineTerm::constant(element_width),
         );
         if let Some(byte_offset) = pointer_byte_offset_from_base(pointer, &range_base) {
             let access_end =
-                Bitvector32Term::add(byte_offset.clone(), Bitvector32Term::constant(byte_width));
+                MachineTerm::add(byte_offset.clone(), MachineTerm::constant(byte_width));
             if self.decide(&ConditionTerm::signed_greater_equal(
                 byte_offset,
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             )) == Some(true)
                 && self.decide(&ConditionTerm::signed_less_equal(
                     access_end,
@@ -4502,19 +4486,19 @@ impl PureFactContext {
 
         if element_width > 0 && byte_width.is_multiple_of(element_width) {
             let range_base = base.offset_by_elements(start.clone(), element_width);
-            let access_length = Bitvector32Term::constant(byte_width / element_width);
+            let access_length = MachineTerm::constant(byte_width / element_width);
             if pointer == &range_base
-                && end == &Bitvector32Term::add(start.clone(), access_length.clone())
+                && end == &MachineTerm::add(start.clone(), access_length.clone())
             {
                 return true;
             }
             if let Some(index) =
                 self.pointer_element_index_from_base_with_width(pointer, &range_base, element_width)
             {
-                let range_length = Bitvector32Term::subtract(end.clone(), start.clone());
-                let access_end = Bitvector32Term::add(index.clone(), access_length);
+                let range_length = MachineTerm::subtract(end.clone(), start.clone());
+                let access_end = MachineTerm::add(index.clone(), access_length);
                 if self.decide(&ConditionTerm::signed_less_equal(
-                    Bitvector32Term::constant(0),
+                    MachineTerm::constant(0),
                     index,
                 )) == Some(true)
                     && self.decide(&ConditionTerm::signed_less_equal(access_end, range_length))
@@ -4733,10 +4717,10 @@ impl PureFactContext {
         pointer: &Pointer,
         base: &Pointer,
         element_width: u32,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         let pointer = &self.pointer_in_block(pointer, &base.block)?;
         if self.pointer_offsets_equal_from_facts(&pointer.offset, &base.offset) {
-            return Some(Bitvector32Term::constant(0));
+            return Some(MachineTerm::constant(0));
         }
         if let PointerOffsetTerm::Add(left, right) = &pointer.offset {
             if self.pointer_offsets_equal_from_facts(left, &base.offset) {
@@ -4913,7 +4897,7 @@ impl PureFactContext {
             // equality facts with per-load snapshot bridging, so a range
             // like data[split..split+1] with split provably 1 proves
             // disjoint from data[0].
-            let resolve = |term: &Bitvector32Term| {
+            let resolve = |term: &MachineTerm| {
                 signed_bitvector_constant(term)
                     .or_else(|| self.known_signed_constant_after_normalization(term))
             };
@@ -4958,8 +4942,8 @@ impl PureFactContext {
         }
         let pointer_range = CMemoryRange::new(
             pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         );
         if self.memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
             range,
@@ -4987,9 +4971,9 @@ impl PureFactContext {
                 None
             };
             if let Some(forward_offset) = forward_offset {
-                let range_start = Bitvector32Term::add(forward_offset, range.start().clone());
+                let range_start = MachineTerm::add(forward_offset, range.start().clone());
                 if self.decide(&ConditionTerm::signed_less_than(
-                    Bitvector32Term::constant(0),
+                    MachineTerm::constant(0),
                     range_start,
                 )) == Some(true)
                 {
@@ -5004,8 +4988,8 @@ impl PureFactContext {
         &self,
         range: &CMemoryRange,
         base: &Pointer,
-        start: &Bitvector32Term,
-        end: &Bitvector32Term,
+        start: &MachineTerm,
+        end: &MachineTerm,
     ) -> bool {
         if range.wide_bounds().is_some() {
             let available = CMemoryRange::new_with_element_width(
@@ -5023,20 +5007,19 @@ impl PureFactContext {
                 "fact range coverage: exact base",
             );
             let base_delta = relative_range_offset(range.start(), start);
-            let range_length =
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone());
-            let fact_length = Bitvector32Term::subtract(end.clone(), start.clone());
-            let end_is_covered = if range_length == Bitvector32Term::constant(1) {
+            let range_length = MachineTerm::subtract(range.end().clone(), range.start().clone());
+            let fact_length = MachineTerm::subtract(end.clone(), start.clone());
+            let end_is_covered = if range_length == MachineTerm::constant(1) {
                 self.decide(&ConditionTerm::signed_less_than(
                     base_delta.clone(),
                     fact_length.clone(),
                 )) == Some(true)
             } else {
-                let range_end = Bitvector32Term::add(base_delta.clone(), range_length);
+                let range_end = MachineTerm::add(base_delta.clone(), range_length);
                 self.decide(&ConditionTerm::signed_less_equal(range_end, fact_length)) == Some(true)
             };
             if self.decide(&ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
                 base_delta,
             )) == Some(true)
                 && end_is_covered
@@ -5063,17 +5046,16 @@ impl PureFactContext {
             },
         );
         if let Some(base_delta) = shifted_base_delta {
-            let range_length =
-                Bitvector32Term::subtract(range.end().clone(), range.start().clone());
-            let fact_length = Bitvector32Term::subtract(end.clone(), start.clone());
-            let range_end = Bitvector32Term::add(base_delta.clone(), range_length);
+            let range_length = MachineTerm::subtract(range.end().clone(), range.start().clone());
+            let fact_length = MachineTerm::subtract(end.clone(), start.clone());
+            let range_end = MachineTerm::add(base_delta.clone(), range_length);
             if crate::instrumentation::measure_operation(
                 "kernel",
                 "fact range coverage",
                 "fact range coverage: shifted bounds",
                 || {
                     self.decide(&ConditionTerm::signed_less_equal(
-                        Bitvector32Term::constant(0),
+                        MachineTerm::constant(0),
                         base_delta,
                     )) == Some(true)
                         && self.decide(&ConditionTerm::signed_less_equal(range_end, fact_length))
@@ -5099,8 +5081,8 @@ impl PureFactContext {
         let Some(base_delta) = base_delta else {
             return false;
         };
-        let range_start = Bitvector32Term::add(base_delta.clone(), range.start().clone());
-        let range_end = Bitvector32Term::add(base_delta, range.end().clone());
+        let range_start = MachineTerm::add(base_delta.clone(), range.start().clone());
+        let range_end = MachineTerm::add(base_delta, range.end().clone());
 
         crate::instrumentation::measure_operation(
             "kernel",
@@ -5141,7 +5123,7 @@ pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<
     let variable = match &base.offset {
         PointerOffsetTerm::Variable(variable) => variable,
         PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
-            let Bitvector32Term::Variable(variable) = value.as_ref() else {
+            let MachineTerm::Variable(variable) = value.as_ref() else {
                 return None;
             };
             variable
@@ -5195,13 +5177,13 @@ fn structural_element_index(
     base: &Pointer,
     element_width: u32,
     assumptions: &PureFactContext,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     crate::instrumentation::record_deterministic_work(1);
     if pointer.block != base.block {
         return None;
     }
     if pointer.offset == base.offset {
-        return Some(Bitvector32Term::constant(0));
+        return Some(MachineTerm::constant(0));
     }
     // From a base at offset zero, such as a loaded pointer's own read or a
     // symbolic pointer, the whole offset is the displacement.
@@ -5300,21 +5282,13 @@ mod seeded_interval_adjacency_tests {
         let context = PureFactContext::new();
         assert!(
             context
-                .adjacent_loadable_region_facts(
-                    &memory,
-                    &base,
-                    &Bitvector32Term::constant(0x8000_0001)
-                )
+                .adjacent_loadable_region_facts(&memory, &base, &MachineTerm::constant(0x8000_0001))
                 .is_none()
         );
         let memory = memory.store(base.offset_by_bytes(0x8000_0000), crate::kernel::uint8(9));
         assert!(
             context
-                .adjacent_loadable_region_facts(
-                    &memory,
-                    &base,
-                    &Bitvector32Term::constant(0x8000_0001)
-                )
+                .adjacent_loadable_region_facts(&memory, &base, &MachineTerm::constant(0x8000_0001))
                 .is_some()
         );
     }
@@ -5339,23 +5313,23 @@ mod nonnegative_successor_tests {
     /// scanned every condition fact, so a miss grew with unrelated facts.
     #[test]
     fn successor_rule_ignores_unrelated_condition_facts() {
-        let term = Bitvector32Term::Variable(Variable(96_000));
+        let term = MachineTerm::Variable(Variable(96_000));
         let goal = ConditionTerm::signed_less_equal(
-            Bitvector32Term::constant(0),
-            Bitvector32Term::add(term.clone(), Bitvector32Term::constant(1)),
+            MachineTerm::constant(0),
+            MachineTerm::add(term.clone(), MachineTerm::constant(1)),
         );
         let work = [16_u64, 64, 256]
             .into_iter()
             .map(|unrelated| {
                 let mut context = PureFactContext::new().assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), term.clone()),
+                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
                     true,
                 );
                 for index in 0..unrelated {
                     context = context.assume_condition(
                         ConditionTerm::signed_less_than(
-                            Bitvector32Term::Variable(Variable(96_100 + index)),
-                            Bitvector32Term::Variable(Variable(96_600 + index)),
+                            MachineTerm::Variable(Variable(96_100 + index)),
+                            MachineTerm::Variable(Variable(96_600 + index)),
                         ),
                         true,
                     );
@@ -5727,8 +5701,8 @@ mod wide_separation_index_tests {
         let wide = |base| {
             CMemoryRange::new_wide(
                 base,
-                Bitvector32Term::uint64_constant(0),
-                Bitvector32Term::uint64_constant(8),
+                MachineTerm::uint64_constant(0),
+                MachineTerm::uint64_constant(8),
                 4,
             )
         };

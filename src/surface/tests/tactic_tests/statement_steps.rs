@@ -268,7 +268,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let first_value = Bitvector32Term::MemoryLoad(
+    let first_value = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(base_memory.clone()),
         Box::new(first.clone()),
         crate::kernel::LoadKind::Int32,
@@ -278,7 +278,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .store(first.clone(), int32(first_value.clone()))
         .store(
             second.clone(),
-            int32(Bitvector32Term::MemoryLoad(
+            int32(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(base_memory.clone()),
                 Box::new(second.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -289,8 +289,8 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         .with_resource_context(ResourceContext::new().unchecked_with_fact(
             CResourceFact::own_memory(CMemoryRange::new(
                 first.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(2),
+                MachineTerm::constant(0),
+                MachineTerm::constant(2),
             )),
         ));
     let fact = Proposition::ConditionIs(
@@ -298,7 +298,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(first_value),
-            right: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -339,12 +339,12 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(post_state.memory().clone()),
                 Box::new(first),
                 crate::kernel::LoadKind::Int32,
             )),
-            right: Box::new(Bitvector32Term::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         },
         true,
     );
@@ -1088,14 +1088,14 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let owner = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(41))),
+            value: Box::new(MachineTerm::Variable(Variable(41))),
             byte_width: 4,
         },
     };
     let data = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(42))),
+            value: Box::new(MachineTerm::Variable(Variable(42))),
             byte_width: 4,
         },
     };
@@ -1144,7 +1144,7 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let passed = Pointer {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(43))),
+            value: Box::new(MachineTerm::Variable(Variable(43))),
             byte_width: 4,
         },
     };
@@ -1182,14 +1182,14 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 #[test]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let owner_offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(41))),
+        value: Box::new(MachineTerm::Variable(Variable(41))),
         byte_width: 4,
     };
     let data_offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(42))),
+        value: Box::new(MachineTerm::Variable(Variable(42))),
         byte_width: 4,
     };
-    let index = Bitvector32Term::Variable(Variable(43));
+    let index = MachineTerm::Variable(Variable(43));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::PointerOffsetEqual(
             Box::new(PointerOffsetTerm::Add(

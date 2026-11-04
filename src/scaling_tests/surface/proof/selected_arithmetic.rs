@@ -9,7 +9,7 @@ use crate::surface::proof::pure_theorems::PureTheoremContext;
 fn failed_integer_bridge_does_not_construct_unused_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
-        let value = Bitvector32Term::Variable(Variable(910_001));
+        let value = MachineTerm::Variable(Variable(910_001));
         let written = ContractExpression::CFragment(CExpression::Variable("x".into()));
         let mut facts = Vec::new();
         let mut surfaces = SurfacePropositionMap::default();
@@ -126,9 +126,9 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
     let mut samples = Vec::new();
     for size in [4, 16, 64] {
         let (k, j, y) = (
-            Bitvector32Term::Variable(Variable(911_001)),
-            Bitvector32Term::Variable(Variable(911_002)),
-            Bitvector32Term::Variable(Variable(911_003)),
+            MachineTerm::Variable(Variable(911_001)),
+            MachineTerm::Variable(Variable(911_002)),
+            MachineTerm::Variable(Variable(911_003)),
         );
         let written =
             |name: &str| ContractExpression::CFragment(CExpression::Variable(name.into()));

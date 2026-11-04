@@ -12,8 +12,8 @@ fn shared_bound_consumers_preserve_dag_operands() {
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(995000 + i)),
-                        Bitvector32Term::constant(7),
+                        MachineTerm::Variable(Variable(995000 + i)),
+                        MachineTerm::constant(7),
                     ),
                     true,
                 );
@@ -22,8 +22,8 @@ fn shared_bound_consumers_preserve_dag_operands() {
             let observe = |term| IntegerTerm::from_machine(ty, term).unwrap();
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 0..size {
-                    let x = Bitvector32Term::Variable(Variable(996000 + level * 2));
-                    let y = Bitvector32Term::Variable(Variable(996001 + level * 2));
+                    let x = MachineTerm::Variable(Variable(996000 + level * 2));
+                    let y = MachineTerm::Variable(Variable(996001 + level * 2));
                     root = KernelTerm::machine_binary_shared(
                         ty,
                         MachineBinaryOp::Add,
@@ -76,14 +76,14 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_equal(
-                        Bitvector32Term::Variable(Variable(997000 + i)),
-                        Bitvector32Term::constant(7),
+                        MachineTerm::Variable(Variable(997000 + i)),
+                        MachineTerm::constant(7),
                     ),
                     true,
                 );
             }
             let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(994401));
-            let right = Bitvector32Term::Variable(Variable(994402));
+            let right = MachineTerm::Variable(Variable(994402));
             let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
                 for level in 0..size {
                     root = KernelTerm::machine_binary_shared(
@@ -99,7 +99,7 @@ fn shared_comparison_class_queries_do_not_export_dag_prefixes() {
                     assert!(!facts.equality_graph.knows_condition(&query, true));
                     assert!(!facts.equality_graph.knows_condition(&query, false));
                     assert!(!operand.has_boxed_operand());
-                    let alias = Bitvector32Term::Variable(Variable(998000 + level));
+                    let alias = MachineTerm::Variable(Variable(998000 + level));
                     let child = facts
                         .clone()
                         .assume_condition(
@@ -160,8 +160,8 @@ fn shared_exact_order_walk_visits_dag_endpoints_once() {
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::signed_less_than(
-                        Bitvector32Term::Variable(Variable(998000 + i * 2)),
-                        Bitvector32Term::Variable(Variable(998001 + i * 2)),
+                        MachineTerm::Variable(Variable(998000 + i * 2)),
+                        MachineTerm::Variable(Variable(998001 + i * 2)),
                     ),
                     true,
                 );

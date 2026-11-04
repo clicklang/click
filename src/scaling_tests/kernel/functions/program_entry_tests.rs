@@ -301,7 +301,7 @@ fn a_symbolic_aggregate_array_at_function_entry_costs_the_same_whatever_its_leng
         assert!(
             loads.iter().all(|load| matches!(
                 load,
-                CExpressionOutcome::Value(CValue::Int32(Bitvector32Term::Variable(_)))
+                CExpressionOutcome::Value(CValue::Int32(MachineTerm::Variable(_)))
             )),
             "[{length}] a field reads as its load: {loads:?}"
         );

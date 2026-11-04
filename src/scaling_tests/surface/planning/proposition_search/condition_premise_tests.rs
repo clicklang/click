@@ -63,7 +63,7 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(terms.pop().unwrap()),
-            right: Box::new(Bitvector32Term::constant(0)),
+            right: Box::new(MachineTerm::constant(0)),
         };
         let ((context, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -114,7 +114,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term(20_000 + index as u64)),
-                right: Box::new(Bitvector32Term::MemoryLoad(
+                right: Box::new(MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(Pointer {
                         block: "other".into(),
@@ -162,7 +162,7 @@ fn snapshot_condition_index_builds_once_and_survives_scalar_updates() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term(90_000)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            right: Box::new(MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: "other".into(),
@@ -323,7 +323,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
         let mut context = PureFactContext::new();
         let mut reads = Vec::new();
         for index in 0..size {
-            let read = Bitvector32Term::MemoryLoad(
+            let read = MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: "buffer".into(),
@@ -336,7 +336,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Variable(variable)),
+                    left: Box::new(MachineTerm::Variable(variable)),
                     right: Box::new(load.clone()),
                 },
                 true,
@@ -349,7 +349,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(reads[0].0)),
+                left: Box::new(MachineTerm::Variable(reads[0].0)),
                 right: Box::new(reads[1].1.clone()),
             },
             true,
@@ -360,7 +360,7 @@ fn arithmetic_candidates_omit_registered_read_definitions() {
                 Int32,
                 Add,
                 Box::new(sum),
-                Box::new(Bitvector32Term::Variable(*variable)),
+                Box::new(MachineTerm::Variable(*variable)),
             )
         });
         let goal = Proposition::ConditionIs(

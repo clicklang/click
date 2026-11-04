@@ -17,15 +17,15 @@ fn compound_premise_and_goal_evidence_scales_with_expression_size() {
         }
         let premises = [
             le(
-                Bitvector32Term::add(a.clone(), b.clone()),
-                Bitvector32Term::add(constant(1000), b),
+                MachineTerm::add(a.clone(), b.clone()),
+                MachineTerm::add(constant(1000), b),
             ),
             le(constant(0), var(1)),
             le(var(1), constant(2000)),
             le(constant(1), var(2)),
             le(var(2), constant(1000)),
         ];
-        let goal = le(Bitvector32Term::add(a, constant(1)), constant(1001));
+        let goal = le(MachineTerm::add(a, constant(1)), constant(1001));
         let (plan, measured) =
             crate::instrumentation::measure_deterministic_work(|| check_plan(&goal, &premises));
         assert!(plan.nodes.len() <= 20 * depth + 64);

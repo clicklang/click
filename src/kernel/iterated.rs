@@ -41,11 +41,7 @@ fn proves(assumptions: &PureFactContext, condition: ConditionTerm) -> bool {
     decide(assumptions, condition) == Some(true)
 }
 
-fn terms_equal(
-    assumptions: &PureFactContext,
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-) -> bool {
+fn terms_equal(assumptions: &PureFactContext, left: &MachineTerm, right: &MachineTerm) -> bool {
     left == right
         // `2 * index` and `index * 2` are one element offset: their affine
         // forms agree, with no fact consulted.
@@ -56,11 +52,7 @@ fn terms_equal(
         )
 }
 
-fn terms_distinct(
-    assumptions: &PureFactContext,
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-) -> bool {
+fn terms_distinct(assumptions: &PureFactContext, left: &MachineTerm, right: &MachineTerm) -> bool {
     left != right
         && decide(
             assumptions,
@@ -83,7 +75,7 @@ fn pointers_equal(assumptions: &PureFactContext, left: &Pointer, right: &Pointer
 fn index_in_range(
     assumptions: &PureFactContext,
     iterated: &CIteratedMemory,
-    index: &Bitvector32Term,
+    index: &MachineTerm,
 ) -> bool {
     proves(
         assumptions,
@@ -103,7 +95,7 @@ fn index_in_range(
 fn index_out_of_range(
     assumptions: &PureFactContext,
     iterated: &CIteratedMemory,
-    index: &Bitvector32Term,
+    index: &MachineTerm,
 ) -> bool {
     proves(
         assumptions,
@@ -123,7 +115,7 @@ fn index_out_of_range(
 fn guard_holds_for(
     assumptions: &PureFactContext,
     iterated: &CIteratedMemory,
-    cell: &Bitvector32Term,
+    cell: &MachineTerm,
 ) -> Option<bool> {
     let equal = decide(
         assumptions,
@@ -144,9 +136,9 @@ fn guard_holds_for(
 fn guard_cell_value(
     state: &CState,
     iterated: &CIteratedMemory,
-    index: &Bitvector32Term,
+    index: &MachineTerm,
     assumptions: &PureFactContext,
-) -> Result<Bitvector32Term, String> {
+) -> Result<MachineTerm, String> {
     // A guard cell holding a value is that value (the read-over-write
     // authority); only an unknown cell is read as a named load.
     let cell = iterated.guard_cell(index);
@@ -189,7 +181,7 @@ fn guard_cell_value(
 pub(crate) fn iterated_guard_at(
     state: &CState,
     iterated: &CIteratedMemory,
-    index: &Bitvector32Term,
+    index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
     let cell = guard_cell_value(state, iterated, index, assumptions)?;
@@ -204,7 +196,7 @@ pub(crate) fn iterated_guard_at(
 pub(crate) fn iterated_holds_element(
     state: &CState,
     iterated: &CIteratedMemory,
-    index: &Bitvector32Term,
+    index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Option<bool> {
     if index_out_of_range(assumptions, iterated, index)
@@ -247,9 +239,9 @@ pub(crate) fn iterated_separate_from_range(
         // start to the last element's end.
         // CIteratedMemory::element_range always constructs signed int32 bounds.
         let first = iterated.element_range(iterated.lower());
-        let last = iterated.element_range(&Bitvector32Term::subtract(
+        let last = iterated.element_range(&MachineTerm::subtract(
             iterated.upper().clone(),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(1),
         ));
         Some(CMemoryRange::new_with_element_width(
             iterated.element_base().clone(),
@@ -312,13 +304,13 @@ fn iterated_fact_for_element<'a>(
 fn element_index(
     iterated: &CIteratedMemory,
     element: &CMemoryRange,
-) -> Result<Bitvector32Term, String> {
+) -> Result<MachineTerm, String> {
     let Some((start, _)) = element.int32_bounds() else {
         return Err("iterated ownership requires a signed 32-bit element range".into());
     };
-    let scaled = Bitvector32Term::subtract(
+    let scaled = MachineTerm::subtract(
         start.clone(),
-        Bitvector32Term::constant(iterated.start_offset as u32),
+        MachineTerm::constant(iterated.start_offset as u32),
     );
     if iterated.stride == 1 {
         return Ok(scaled);
@@ -339,7 +331,7 @@ fn element_index(
 fn check_element_at(
     iterated: &CIteratedMemory,
     element: &CMemoryRange,
-    index: &Bitvector32Term,
+    index: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Result<(), String> {
     if element.int32_bounds().is_none() {
@@ -569,7 +561,7 @@ fn every_guard(
     iterated: &CIteratedMemory,
     assumptions: &PureFactContext,
 ) -> Result<Option<bool>, String> {
-    let index = Bitvector32Term::Variable(ITERATED_GUARD_INDEX);
+    let index = MachineTerm::Variable(ITERATED_GUARD_INDEX);
     let hypotheses = assumptions
         .clone()
         .assume_proposition(Proposition::ConditionIs(
@@ -601,7 +593,7 @@ fn every_guard(
 fn instantiate_guard(
     hypotheses: &PureFactContext,
     iterated: &CIteratedMemory,
-    cell: &Bitvector32Term,
+    cell: &MachineTerm,
 ) -> PureFactContext {
     hypotheses
         .instantiated_universal_consequents(cell, iterated.guard().value())
@@ -730,8 +722,8 @@ pub(crate) fn plan_iterated_guard_store(
         // cannot be a guard cell another owned range holds.
         let written = CResource::Memory(CMemoryRange::new_with_element_width(
             pointer.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
             value.byte_width().max(1),
         ));
         if resources.proves_owned_resources_separate(
@@ -834,8 +826,8 @@ mod wide_range_reader_tests {
         .unwrap();
         let wide = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             4,
         );
         assert!(

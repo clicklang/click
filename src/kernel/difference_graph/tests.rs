@@ -3,8 +3,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{PureFactContext, Variable};
 use crate::kernel::{constant_u32, int32_constant};
 
@@ -18,15 +18,15 @@ fn graph_work<R>(operation: impl FnOnce() -> R) -> (R, usize) {
     (result, GRAPH_WORK.with(std::cell::Cell::get))
 }
 
-fn variable(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(91_000 + id))
+fn variable(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(91_000 + id))
 }
 
-fn constant(value: i32) -> Bitvector32Term {
-    Bitvector32Term::constant(value as u32)
+fn constant(value: i32) -> MachineTerm {
+    MachineTerm::constant(value as u32)
 }
 
-fn plus(term: &Bitvector32Term, value: i32) -> Bitvector32Term {
+fn plus(term: &MachineTerm, value: i32) -> MachineTerm {
     binary_node!(
         Int32,
         Add,
@@ -35,15 +35,15 @@ fn plus(term: &Bitvector32Term, value: i32) -> Bitvector32Term {
     )
 }
 
-fn lt(a: &Bitvector32Term, b: &Bitvector32Term) -> ConditionTerm {
+fn lt(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_than(a.clone(), b.clone())
 }
 
-fn le(a: &Bitvector32Term, b: &Bitvector32Term) -> ConditionTerm {
+fn le(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
     ConditionTerm::signed_less_equal(a.clone(), b.clone())
 }
 
-fn add_overflows(a: &Bitvector32Term, b: &Bitvector32Term) -> ConditionTerm {
+fn add_overflows(a: &MachineTerm, b: &MachineTerm) -> ConditionTerm {
     ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
@@ -128,7 +128,7 @@ fn overflow_is_decided_at_the_edges_of_the_range() {
 #[test]
 fn unsigned_conversion_keeps_a_nonnegative_value() {
     let i = variable(0);
-    let wide = Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(i.clone()));
+    let wide = MachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(i.clone()));
     let length = variable(1);
     let below = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
@@ -140,7 +140,7 @@ fn unsigned_conversion_keeps_a_nonnegative_value() {
     let length_positive = ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
-        left: Box::new(Bitvector32Term::uint64_constant(0)),
+        left: Box::new(MachineTerm::uint64_constant(0)),
         right: Box::new(length),
     };
     assert_eq!(graph.decide(&length_positive), Some(true));
@@ -180,7 +180,7 @@ fn decisions_hold_in_every_model_and_are_complete() {
     pool.push(plus(&variables[0], 1));
     pool.push(plus(&variables[1], -2));
     pool.extend([-2, 0, 3].map(constant));
-    let value = |term: &Bitvector32Term, model: &[i128]| -> i128 {
+    let value = |term: &MachineTerm, model: &[i128]| -> i128 {
         match term {
             int32_constant!(value) => i128::from(constant_u32(*value) as i32),
             binary_term!(Int32, Add, base, offset) => {
@@ -339,7 +339,7 @@ fn arithmetic_decisions_hold_in_every_model_over_every_case() {
 }
 
 fn check_arithmetic_decisions_in_every_model(cases: usize) {
-    fn value(term: &Bitvector32Term, variables: &[Bitvector32Term], model: &[i32]) -> i32 {
+    fn value(term: &MachineTerm, variables: &[MachineTerm], model: &[i32]) -> i32 {
         match term {
             int32_constant!(value) => constant_u32(*value) as i32,
             binary_term!(Int32, Add, a, b) => {
@@ -363,7 +363,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     }
     let values = [i32::MIN, i32::MIN + 1, -1, 0, 1, i32::MAX - 1, i32::MAX];
     let variables = (0..3).map(variable).collect::<Vec<_>>();
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let mut pool = variables.clone();
     pool.push(plus(&variables[0], 1));
     pool.push(binary_node!(
@@ -423,7 +423,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
     ));
     let constants = [i32::MIN, -1, 0, 1, i32::MAX].map(constant);
     let holds = |condition: &ConditionTerm, model: &[i32]| -> bool {
-        let v = |term: &Bitvector32Term| value(term, &variables, model);
+        let v = |term: &MachineTerm| value(term, &variables, model);
         match condition {
             ConditionTerm::Constant(value) => *value,
             ConditionTerm::Compare {
@@ -688,7 +688,7 @@ fn check_arithmetic_decisions_in_every_model(cases: usize) {
 #[test]
 fn a_disequality_at_a_range_end_tightens_it() {
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let divide = ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Divide,
@@ -736,7 +736,7 @@ fn a_disequality_at_a_range_end_tightens_it() {
 #[test]
 fn a_named_compound_term_keeps_its_operands_bounds() {
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let difference = binary_node!(Int32, Subtract, boxed(&y), boxed(&x));
     let less_one = binary_node!(Int32, Subtract, boxed(&difference), boxed(&constant(1)));
     let graph = graph(&[
@@ -761,7 +761,7 @@ fn a_named_compound_term_keeps_its_operands_bounds() {
 #[test]
 fn overflow_facts_shifts_and_products_are_read() {
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let recorded = graph(&[(
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -857,7 +857,7 @@ fn an_unsigned_order_bounds_both_readings() {
     );
 }
 
-fn graph_of_negative(term: &Bitvector32Term) -> DifferenceGraph {
+fn graph_of_negative(term: &MachineTerm) -> DifferenceGraph {
     graph(&[(lt(term, &constant(0)), true)])
 }
 
@@ -867,7 +867,7 @@ fn graph_of_negative(term: &Bitvector32Term) -> DifferenceGraph {
 #[test]
 fn a_remainder_by_a_constant_is_bounded() {
     let x = variable(0);
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let remainder = |k: i32| binary_node!(Int32, Remainder, boxed(&x), boxed(&constant(k)));
     let zero = graph(&[(ConditionTerm::equal(x.clone(), constant(0)), true)]);
     assert_eq!(
@@ -899,7 +899,7 @@ fn a_remainder_by_a_constant_is_bounded() {
 #[test]
 fn an_int64_division_guard_needs_a_nonzero_divisor() {
     let (n, d) = (variable(0), variable(1));
-    let int64 = Bitvector32Term::int64_constant;
+    let int64 = MachineTerm::int64_constant;
     let nonnegative = graph(&[(
         ConditionTerm::int64_signed_less_equal(int64(0), d.clone()),
         true,
@@ -949,7 +949,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
         offset: crate::kernel::PointerOffsetTerm::Constant(0),
     };
     let memory = crate::kernel::CMemory::new().with_block("difference-graph-cell", 4);
-    let load = Bitvector32Term::MemoryLoad(
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -975,7 +975,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
 fn pointer_offsets_of_int32_elements_compare_as_indices() {
     use crate::kernel::PointerOffsetTerm as O;
     let (i, j) = (variable(0), variable(1));
-    let scaled = |value: &Bitvector32Term| O::Int32Scaled {
+    let scaled = |value: &MachineTerm| O::Int32Scaled {
         value: Box::new(value.clone()),
         byte_width: 4,
     };
@@ -1015,19 +1015,19 @@ fn pointer_offsets_of_int32_elements_compare_as_indices() {
 /// operands' bounds, and it lies in `[0, 2^32)` whatever `x`'s sign.
 #[test]
 fn a_zero_extension_reads_its_operands_bounds() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let wide = |term: &Bitvector32Term| {
-        Bitvector32Term::legacy_cast(MachineCastSpelling::Int64FromUInt32, boxed(term))
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let wide = |term: &MachineTerm| {
+        MachineTerm::legacy_cast(MachineCastSpelling::Int64FromUInt32, boxed(term))
     };
-    let sum = |a: &Bitvector32Term, b: &Bitvector32Term| T::Binary {
+    let sum = |a: &MachineTerm, b: &MachineTerm| T::Binary {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Add,
         left: boxed(a),
         right: boxed(b),
     };
-    let at_most = |a: &Bitvector32Term, k: i64| ConditionTerm::Compare {
+    let at_most = |a: &MachineTerm, k: i64| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::LessEqual,
         left: boxed(a),
@@ -1072,9 +1072,9 @@ fn a_zero_extension_reads_its_operands_bounds() {
 /// intervals: Rust's checked `x * y` asks `x <= u64::MAX / y`.
 #[test]
 fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let quotient = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Divide,
@@ -1138,9 +1138,9 @@ fn an_unsigned_quotient_by_a_positive_divisor_is_bounded() {
 /// `(adler & 65535) >= 65521`.
 #[test]
 fn a_constant_mask_bounds_an_unsigned_value() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let x = variable(0);
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let low_half = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
@@ -1177,9 +1177,9 @@ fn a_constant_mask_bounds_an_unsigned_value() {
 #[test]
 fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
     use crate::kernel::MachineIntegerType as M;
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let x = variable(0);
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let all_ones = graph(&[(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int64,
@@ -1189,7 +1189,7 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
         },
         true,
     )]);
-    let increment_overflows = |value: &Bitvector32Term| ConditionTerm::Overflows {
+    let increment_overflows = |value: &MachineTerm| ConditionTerm::Overflows {
         format: MachineIntegerType::Int64,
         op: OverflowOperation::Add,
         left: Box::new(value.clone()),
@@ -1223,9 +1223,9 @@ fn signed_and_unsigned_readings_of_a_word_bound_each_other() {
 /// `n / d + 1` cannot overflow.
 #[test]
 fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let (n, d) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let pinned = graph(&[
         (
             ConditionTerm::Compare {
@@ -1246,8 +1246,8 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
             true,
         ),
     ]);
-    let divisor = Bitvector32Term::legacy_cast(MachineCastSpelling::Int64From32, boxed(&d));
-    let remainder = Bitvector32Term::legacy_cast(
+    let divisor = MachineTerm::legacy_cast(MachineCastSpelling::Int64From32, boxed(&d));
+    let remainder = MachineTerm::legacy_cast(
         MachineCastSpelling::UInt32From64,
         Box::new(T::Binary {
             format: MachineIntegerType::Int64,
@@ -1299,7 +1299,7 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
         format: MachineIntegerType::Int64,
         op: MachineBinaryOp::Divide,
         left: boxed(&n),
-        right: Box::new(Bitvector32Term::legacy_cast(
+        right: Box::new(MachineTerm::legacy_cast(
             MachineCastSpelling::Int64From32,
             boxed(&d),
         )),
@@ -1342,9 +1342,9 @@ fn quotients_remainders_and_conditionals_are_bounded_by_their_operands() {
 /// `x` down to a multiple of 4: with `x >= 4` it is at least 4.
 #[test]
 fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let x = variable(0);
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let remainder = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Remainder,
@@ -1367,7 +1367,7 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         }),
         Some(true)
     );
-    let at_least_four = |rounded: &Bitvector32Term| ConditionTerm::Compare {
+    let at_least_four = |rounded: &MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
         left: Box::new(T::uint64_constant(4)),
@@ -1401,9 +1401,9 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
 /// when `a - b >= 0`.
 #[test]
 fn a_sign_flip_of_known_sign_is_bounded() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let (a, b) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let flipped = binary_node!(
         Int32,
         BitwiseXor,
@@ -1445,10 +1445,10 @@ fn a_sign_flip_of_known_sign_is_bounded() {
 /// order of sign-flipped words.
 #[test]
 fn an_unsigned_quotient_of_words_is_bounded() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let (x, y) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let flip = |term: Bitvector32Term| {
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let flip = |term: MachineTerm| {
         binary_node!(
             Int32,
             BitwiseXor,
@@ -1643,7 +1643,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
     let mut decided = 0;
     for (source, destination) in [(M::UInt8, M::Int8), (M::Int8, M::UInt8), (M::Int8, M::Int8)] {
         let (low, high) = range(source);
-        let cast = Bitvector32Term::Cast {
+        let cast = MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(v.clone()),
             from: source,
@@ -1685,7 +1685,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
         (le(&v, &constant(255)), true),
         (
             ConditionTerm::equal(
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: Box::new(v.clone()),
                     from: M::UInt8,
@@ -1703,7 +1703,7 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
     // Without the operand's range, the cast says nothing about it.
     let unbounded = graph(&[(
         ConditionTerm::equal(
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value: Box::new(v.clone()),
                 from: M::UInt8,
@@ -1724,9 +1724,9 @@ fn a_narrow_cast_with_a_known_value_names_its_operand() {
 /// suffix `p + (n - k)` of `n` elements checks.
 #[test]
 fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let (a, b) = (variable(0), variable(1));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let difference = T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Subtract,
@@ -1790,9 +1790,9 @@ fn an_unsigned_difference_that_cannot_wrap_is_at_most_its_minuend() {
 #[test]
 fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     use crate::kernel::{Pointer, PointerOffsetTerm as O};
-    use Bitvector32Term as T;
+    use MachineTerm as T;
     let u = T::uint64_constant;
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
     let pointer = |offset| Pointer {
         block: crate::kernel::PointerBlock::ExternalArgument,
         offset,
@@ -1804,19 +1804,19 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
     let address = |pointer: Pointer| {
         T::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
     };
-    let and = |a: &Bitvector32Term, mask| T::Binary {
+    let and = |a: &MachineTerm, mask| T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::BitwiseAnd,
         left: boxed(a),
         right: Box::new(u(mask)),
     };
-    let add = |a: &Bitvector32Term, b: &Bitvector32Term| T::Binary {
+    let add = |a: &MachineTerm, b: &MachineTerm| T::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Add,
         left: boxed(a),
         right: boxed(b),
     };
-    let equal = |a: &Bitvector32Term, b: &Bitvector32Term| ConditionTerm::Compare {
+    let equal = |a: &MachineTerm, b: &MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::Int64,
         relation: CompareRelation::Equal,
         left: boxed(a),
@@ -1826,7 +1826,7 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
         address(pointer(scaled(0, 4))),
         address(pointer(scaled(1, 4))),
     );
-    let aligned = |a: &Bitvector32Term| (equal(&and(a, 7), &u(0)), true);
+    let aligned = |a: &MachineTerm| (equal(&and(a, 7), &u(0)), true);
     let graph = super::tests::graph(&[aligned(&p), aligned(&q)]);
     let tagged = add(&p, &u(1));
     assert_eq!(graph.decide(&equal(&and(&tagged, 3), &u(1))), Some(true));
@@ -1861,9 +1861,9 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
 #[test]
 fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let (l, r, v) = (variable(0), variable(1), variable(2));
-    let boxed = |term: &Bitvector32Term| Box::new(term.clone());
-    let one_more = |x: &Bitvector32Term| binary_node!(Int32, Add, boxed(&constant(1)), boxed(x));
-    let overflows = |x: &Bitvector32Term| ConditionTerm::Overflows {
+    let boxed = |term: &MachineTerm| Box::new(term.clone());
+    let one_more = |x: &MachineTerm| binary_node!(Int32, Add, boxed(&constant(1)), boxed(x));
+    let overflows = |x: &MachineTerm| ConditionTerm::Overflows {
         format: MachineIntegerType::Int32,
         op: OverflowOperation::Add,
         left: Box::new(one_more(x)),
@@ -1877,8 +1877,8 @@ fn a_no_overflow_fact_answers_its_operands_under_other_names() {
     let other = graph_of_other(&l, &r);
     assert_eq!(other.decide(&overflows(&v)), None);
 
-    fn graph_of_other(l: &Bitvector32Term, r: &Bitvector32Term) -> DifferenceGraph {
-        let boxed = |term: &Bitvector32Term| Box::new(term.clone());
+    fn graph_of_other(l: &MachineTerm, r: &MachineTerm) -> DifferenceGraph {
+        let boxed = |term: &MachineTerm| Box::new(term.clone());
         // `1 + l` with `l` unrelated to `v`.
         super::tests::graph(&[(
             ConditionTerm::Overflows {
@@ -1900,7 +1900,7 @@ mod scaling_tests {
 #[test]
 fn direct_order_fact_survives_a_high_degree_source() {
     let n = variable(0);
-    let less = |left: Bitvector32Term, right: Bitvector32Term| ConditionTerm::Compare {
+    let less = |left: MachineTerm, right: MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessThan,
         left: Box::new(left),
@@ -1936,7 +1936,7 @@ fn word_equality_uses_unsigned_strict_bounds_without_losing_signed_evidence() {
     ]);
     for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
         for reversed in [false, true] {
-            let equal_to = |other: Bitvector32Term| {
+            let equal_to = |other: MachineTerm| {
                 let (left, right) = if reversed {
                     (other, divisor.clone())
                 } else {
@@ -1967,7 +1967,7 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
     use crate::kernel::PointerOffsetTerm as O;
     let i = variable(989_980);
     for unsigned in [false, true] {
-        let scaled = |value: Bitvector32Term| O::Int64Scaled {
+        let scaled = |value: MachineTerm| O::Int64Scaled {
             value: Box::new(value),
             byte_width: 8,
             unsigned,
@@ -1978,12 +1978,12 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
             assert_eq!(
                 facts.decide(&ConditionTerm::int64_equal(
                     i.clone(),
-                    Bitvector32Term::uint64_constant(1)
+                    MachineTerm::uint64_constant(1)
                 )),
                 Some(polarity)
             );
         }
-        let high = Bitvector32Term::uint64_constant((1u64 << 32) + 1);
+        let high = MachineTerm::uint64_constant((1u64 << 32) + 1);
         let facts = graph(&[(ConditionTerm::int64_equal(i.clone(), high), true)]);
         assert_eq!(facts.decide(&equal), Some(false));
         assert_eq!(
@@ -1999,11 +1999,11 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
 #[test]
 fn excluding_one_masked_wide_table_slot_selects_the_other() {
     use crate::kernel::PointerOffsetTerm as O;
-    let index = Bitvector32Term::uint64_from_32(Bitvector32Term::Binary {
+    let index = MachineTerm::uint64_from_32(MachineTerm::Binary {
         format: MachineIntegerType::UInt32,
         op: MachineBinaryOp::BitwiseAnd,
         left: Box::new(variable(989_981)),
-        right: Box::new(Bitvector32Term::uint32_constant(1)),
+        right: Box::new(MachineTerm::uint32_constant(1)),
     });
     let offset = O::Int64Scaled {
         value: Box::new(index),

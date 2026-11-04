@@ -144,7 +144,7 @@ fn integer_binder_contexts_share_unrelated_machine_bindings() {
                 .map(|index| {
                     (
                         format!("unrelated{index}"),
-                        SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
+                        SpecExpression::Value(CValue::Int32(MachineTerm::Variable(Variable(
                             index,
                         )))),
                     )

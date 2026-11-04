@@ -30,8 +30,8 @@ fn heap_base(identity: u64) -> Pointer {
 fn owned_range(base: Pointer, start: u32, end: u32) -> CResourceFact {
     CResourceFact::own_memory(CMemoryRange::new(
         base,
-        Bitvector32Term::constant(start),
-        Bitvector32Term::constant(end),
+        MachineTerm::constant(start),
+        MachineTerm::constant(end),
     ))
 }
 
@@ -195,8 +195,8 @@ fn private_owner_projection_does_not_republish_discarded_pairings() {
         for index in 0..size {
             assumptions = assumptions.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(93_800 + index as u64)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(93_800 + index as u64)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -791,7 +791,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     // symbolic base, as the arena's descriptors do.
     let object = |identity: u64| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(identity)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     };
     let field = |identity: u64, bytes: i64| Pointer {
         block: PointerBlock::ExternalArgument,
@@ -821,7 +821,7 @@ fn a_kept_cell_is_placed_without_visiting_unrelated_ranges() {
     assert_constant_plus_log_growth("kept cell placement", &samples, 4.0);
 }
 
-fn variable_range(base: Pointer, start: Bitvector32Term, end: Bitvector32Term) -> CResourceFact {
+fn variable_range(base: Pointer, start: MachineTerm, end: MachineTerm) -> CResourceFact {
     CResourceFact::own_memory(CMemoryRange::new(base, start, end))
 }
 
@@ -829,8 +829,8 @@ fn int32_equal(left: u64, right: u64) -> ConditionTerm {
     ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(Bitvector32Term::Variable(Variable(left))),
-        right: Box::new(Bitvector32Term::Variable(Variable(right))),
+        left: Box::new(MachineTerm::Variable(Variable(left))),
+        right: Box::new(MachineTerm::Variable(Variable(right))),
     }
 }
 
@@ -845,13 +845,13 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
         let frame = ResourceContext::new().unchecked_with_facts([
             variable_range(
                 heap_base(TARGET_HEAP),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(Variable(end)),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(Variable(end)),
             ),
             variable_range(
                 heap_base(TARGET_HEAP),
-                Bitvector32Term::Variable(Variable(start)),
-                Bitvector32Term::constant(16),
+                MachineTerm::Variable(Variable(start)),
+                MachineTerm::constant(16),
             ),
         ]);
         let assumptions = (0..size as u64).fold(
@@ -871,19 +871,19 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
         let warm = ResourceContext::new().unchecked_with_facts([
             variable_range(
                 heap_base(TARGET_HEAP + 1),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(Variable(end)),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(Variable(end)),
             ),
             variable_range(
                 heap_base(TARGET_HEAP + 1),
-                Bitvector32Term::Variable(Variable(end)),
-                Bitvector32Term::constant(16),
+                MachineTerm::Variable(Variable(end)),
+                MachineTerm::constant(16),
             ),
         ]);
         assert_eq!(warm.normalized(&assumptions).facts().len(), 1);
         assert!(assumptions.int32_values_known_equal(
-            &Bitvector32Term::Variable(Variable(end)),
-            &Bitvector32Term::Variable(Variable(start)),
+            &MachineTerm::Variable(Variable(end)),
+            &MachineTerm::Variable(Variable(start)),
         ));
         let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
             frame.clone().normalized(&assumptions)
@@ -892,8 +892,8 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
             normalized.facts(),
             &[variable_range(
                 heap_base(TARGET_HEAP),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(16),
+                MachineTerm::constant(0),
+                MachineTerm::constant(16),
             )],
             "the two ranges join into one"
         );
@@ -910,7 +910,7 @@ fn joining_ranges_by_a_proved_endpoint_ignores_unrelated_equalities() {
 #[test]
 fn retirement_stale_check_ignores_unrelated_kept_resources() {
     let allocation = heap_base(TARGET_HEAP);
-    let bytes = Bitvector32Term::constant(16);
+    let bytes = MachineTerm::constant(16);
     let mut samples = Vec::new();
     for size in [4usize, 16, 64, 256] {
         let unrelated = (0..size).flat_map(|index| {
@@ -963,15 +963,15 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
 fn parameter_base(identity: u64) -> Pointer {
     Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(identity)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
 fn parameter_object(identity: u64) -> CResourceFact {
     CResourceFact::own_memory(CMemoryRange::new_with_element_width(
         parameter_base(identity),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(3),
+        MachineTerm::constant(0),
+        MachineTerm::constant(3),
         4,
     ))
 }
@@ -1103,9 +1103,9 @@ fn parameter_validity_still_refuses_related_overlaps() {
     );
 
     let field = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-        parameter_base(target).offset_by_elements(Bitvector32Term::constant(2), 4),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        parameter_base(target).offset_by_elements(MachineTerm::constant(2), 4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
         4,
     ));
     assert!(overlaps(&field, &none), "a field of an owned object");
@@ -1118,15 +1118,15 @@ fn parameter_validity_still_refuses_related_overlaps() {
     let pinned = PureFactContext::new()
         .assume_condition(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(other)),
-                Bitvector32Term::constant(7),
+                MachineTerm::Variable(Variable(other)),
+                MachineTerm::constant(7),
             ),
             true,
         )
         .assume_condition(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(target)),
-                Bitvector32Term::constant(7),
+                MachineTerm::Variable(Variable(target)),
+                MachineTerm::constant(7),
             ),
             true,
         );
@@ -1180,7 +1180,7 @@ fn one_parameter_separation_query_is_linear_in_the_owned_objects() {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, assumptions) = parameter_frame(size);
         let field = |identity: u64| {
-            parameter_base(identity).offset_by_elements(Bitvector32Term::constant(1), 4)
+            parameter_base(identity).offset_by_elements(MachineTerm::constant(1), 4)
         };
         let (left, right) = (
             field(FIRST_PARAMETER + size as u64 - 2),
@@ -1218,13 +1218,13 @@ fn a_proved_parameter_separation_reads_only_the_nominated_members() {
         let _session = crate::kernel::VerificationSession::enter();
         let (_, assumptions) = parameter_frame(size);
         let field = |identity: u64| {
-            parameter_base(identity).offset_by_elements(Bitvector32Term::constant(1), 4)
+            parameter_base(identity).offset_by_elements(MachineTerm::constant(1), 4)
         };
         let range = |identity: u64| {
             CResource::Memory(CMemoryRange::new_with_element_width(
                 parameter_base(identity),
-                Bitvector32Term::constant(1),
-                Bitvector32Term::constant(2),
+                MachineTerm::constant(1),
+                MachineTerm::constant(2),
                 4,
             ))
         };
@@ -1325,7 +1325,7 @@ fn normalizing_external_ranges_compares_only_related_bases() {
             let base = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(
-                    Bitvector32Term::Variable(Variable(9 * TARGET_HEAP + index)),
+                    MachineTerm::Variable(Variable(9 * TARGET_HEAP + index)),
                     4,
                 ),
             };
@@ -1484,8 +1484,8 @@ fn a_layered_footprint_is_linear_in_its_definitions() {
             ranges,
             vec![CMemoryRange::new(
                 heap_base(TARGET_HEAP),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )],
             "a {layers}-layer chain owns exactly the innermost cell"
         );
@@ -1615,7 +1615,7 @@ fn slot_definitions() -> Vec<CCompositeResourceDefinition> {
 fn external_descriptor(identity: u64) -> Pointer {
     Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(identity)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(identity)), 4),
     }
 }
 
@@ -1623,7 +1623,7 @@ fn external_descriptor(identity: u64) -> Pointer {
 /// it: the value named by that read.
 fn materialized_pointer(source: &CMemory, cell: &Pointer) -> CValue {
     CValue::Pointer(CPointerValue::from_read(
-        Pointer::loaded(&Bitvector32Term::MemoryLoad(
+        Pointer::loaded(&MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory_ref(source),
             Box::new(cell.clone()),
             crate::kernel::LoadKind::Int32,
@@ -1887,7 +1887,7 @@ fn a_store_forgets_a_folded_instance_cell_it_does_not_open() {
 fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
     let base = symbolic_base(TARGET_HEAP);
     let alias = symbolic_base(2 * TARGET_HEAP);
-    let index = Bitvector32Term::Variable(Variable(3 * TARGET_HEAP));
+    let index = MachineTerm::Variable(Variable(3 * TARGET_HEAP));
     let displaced = base.offset_by_elements(index.clone(), 1);
     let facts = PureFactContext::new()
         .assume_condition(pointer_equal(alias.clone(), displaced), true)
@@ -1896,10 +1896,7 @@ fn shared_view_offset_alias_lookup_is_indexed_and_preserves_occurrences() {
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(
-                Bitvector32Term::add(index, 4u32.into()),
-                16u32.into(),
-            ),
+            ConditionTerm::signed_less_equal(MachineTerm::add(index, 4u32.into()), 16u32.into()),
             true,
         );
     let view = |pointer, end| {
@@ -2203,7 +2200,7 @@ fn argument_base(variable: u64) -> Pointer {
     Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            value: Box::new(MachineTerm::Variable(Variable(variable))),
             byte_width: 4,
         },
     }
@@ -2230,8 +2227,8 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
         owned_range(argument_base(STRUCT), 4, 6),
         CResourceFact::own_memory(CMemoryRange::new(
             argument_base(ARRAY),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::Variable(Variable(LENGTH)),
+            MachineTerm::constant(0),
+            MachineTerm::Variable(Variable(LENGTH)),
         )),
     ];
     let mut samples = Vec::new();
@@ -2247,8 +2244,8 @@ fn footprint_composition_does_not_decide_every_alias_pair() {
             };
             facts.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(below)),
-                    Bitvector32Term::Variable(Variable(997_000 + index)),
+                    MachineTerm::Variable(Variable(below)),
+                    MachineTerm::Variable(Variable(997_000 + index)),
                 ),
                 true,
             )
@@ -2295,7 +2292,7 @@ fn with_live_allocation(
 ) -> (CMemory, ResourceContext) {
     let pending = symbolic_base(identity);
     let (memory, _, base) = memory
-        .with_pending_heap_allocation(pending.clone(), Bitvector32Term::constant(bytes), false)
+        .with_pending_heap_allocation(pending.clone(), MachineTerm::constant(bytes), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     assert_eq!(base, heap_base(identity));
@@ -2304,8 +2301,8 @@ fn with_live_allocation(
         CResourceFact::own_allocation(base.clone(), bytes),
         CResourceFact::own_memory(CMemoryRange::new_with_element_width(
             base,
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(bytes),
+            MachineTerm::constant(0),
+            MachineTerm::constant(bytes),
             1,
         )),
     ]);
@@ -2337,12 +2334,12 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
     // normalizes the caller's resources, dropping and restoring both.
     let written = CMemoryRange::new(
         heap_base(WRITTEN_INT_HEAP),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(4),
+        MachineTerm::constant(0),
+        MachineTerm::constant(4),
     );
     let pending = symbolic_base(WRITTEN_INT_HEAP);
     let (written_memory, _, _) = memory
-        .with_pending_heap_allocation(pending.clone(), Bitvector32Term::constant(4), false)
+        .with_pending_heap_allocation(pending.clone(), MachineTerm::constant(4), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     memory = written_memory.store(heap_base(WRITTEN_INT_HEAP), int32(7));
@@ -2578,8 +2575,8 @@ fn matched_input_argument_views_ignore_unrelated_definitions_and_owners() {
             views[0],
             CResourceFact::view_memory(CMemoryRange::new(
                 heap_base(TARGET_HEAP),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(2),
+                MachineTerm::constant(0),
+                MachineTerm::constant(2),
             )),
         );
         samples.push((size, work));

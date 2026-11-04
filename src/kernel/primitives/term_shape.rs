@@ -1,4 +1,4 @@
-//! The arithmetic shape of a [`Bitvector32Term`]: which operator a node
+//! The arithmetic shape of a [`MachineTerm`]: which operator a node
 //! applies and to which operands. Traversals that rebuild or describe every
 //! node keep their own arms for the variants they treat specially and handle
 //! the uniform arithmetic variants through this split and its rebuild.
@@ -8,21 +8,21 @@ use crate::kernel::unary_term;
 use crate::kernel::{CompareRelation, MachineBinaryOp, MachineUnaryOp, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};
 
-/// A two-operand arithmetic [`Bitvector32Term`] operator.
+/// A two-operand arithmetic [`MachineTerm`] operator.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorBinaryOp {
-    /// A format-carrying machine operator ([`Bitvector32Term::Binary`]).
+    /// A format-carrying machine operator ([`MachineTerm::Binary`]).
     Machine(MachineIntegerType, MachineBinaryOp),
     Float32(CFloatBinaryOperator),
     Float64(CFloatBinaryOperator),
 }
 
-/// A one-operand arithmetic [`Bitvector32Term`] operator or conversion.
+/// A one-operand arithmetic [`MachineTerm`] operator or conversion.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub(crate) enum BitvectorUnaryOp {
-    /// A format-carrying machine operator ([`Bitvector32Term::Unary`]).
+    /// A format-carrying machine operator ([`MachineTerm::Unary`]).
     Machine(MachineIntegerType, MachineUnaryOp),
-    /// A conversion ([`Bitvector32Term::Cast`]): its spelling and formats.
+    /// A conversion ([`MachineTerm::Cast`]): its spelling and formats.
     Cast {
         spelling: MachineCastSpelling,
         from: MachineIntegerType,
@@ -34,7 +34,7 @@ pub(crate) enum BitvectorUnaryOp {
 
 /// The operator and format of a machine operator node, or the spelling of a
 /// conversion, which its variant alone does not name
-/// ([`Bitvector32Term::machine_operator`]).
+/// ([`MachineTerm::machine_operator`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub(crate) enum MachineOperator {
     Binary(MachineBinaryOp, MachineIntegerType),
@@ -42,7 +42,7 @@ pub(crate) enum MachineOperator {
     Cast(MachineCastSpelling),
 }
 
-impl Bitvector32Term {
+impl MachineTerm {
     /// The operator and format of a `Binary` or `Unary` node and the
     /// spelling of a `Cast`, `None` for any other. Code that compares nodes
     /// by variant (a discriminant test, a shape hash) compares this too,
@@ -77,7 +77,7 @@ impl Bitvector32Term {
                 left,
                 right,
             } => Some((BitvectorBinaryOp::Float64(*operator), left, right)),
-            Bitvector32Term::Constant { .. }
+            MachineTerm::Constant { .. }
             | Self::Variable(_)
             | Self::If { .. }
             | Self::RangeFold { .. }
@@ -120,7 +120,7 @@ impl Bitvector32Term {
             )),
             Self::Float32Negate(value) => Some((BitvectorUnaryOp::Float32Negate, value)),
             Self::Float64Negate(value) => Some((BitvectorUnaryOp::Float64Negate, value)),
-            Bitvector32Term::Constant { .. }
+            MachineTerm::Constant { .. }
             | Self::Variable(_)
             | Self::If { .. }
             | Self::RangeFold { .. }
@@ -138,7 +138,7 @@ impl Bitvector32Term {
     }
 }
 
-impl Bitvector32Term {
+impl MachineTerm {
     /// The bare legacy-spelled conversion node of `value`, at the formats
     /// its spelling fixes ([`MachineCastSpelling::legacy_formats`]).
     pub(crate) fn legacy_cast(spelling: MachineCastSpelling, value: Box<Self>) -> Self {
@@ -213,21 +213,17 @@ impl BitvectorBinaryOp {
     }
 
     /// Applies the operator through its smart constructor.
-    pub(crate) fn build(self, left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+    pub(crate) fn build(self, left: MachineTerm, right: MachineTerm) -> MachineTerm {
         match self {
-            Self::Machine(format, op) => Bitvector32Term::machine_binary(format, op, left, right),
-            Self::Float32(operator) => Bitvector32Term::float32_binary(left, right, operator),
-            Self::Float64(operator) => Bitvector32Term::float64_binary(left, right, operator),
+            Self::Machine(format, op) => MachineTerm::machine_binary(format, op, left, right),
+            Self::Float32(operator) => MachineTerm::float32_binary(left, right, operator),
+            Self::Float64(operator) => MachineTerm::float64_binary(left, right, operator),
         }
     }
 
     /// Applies the operator as the bare node, without folding or
     /// normalization.
-    pub(crate) fn build_raw(
-        self,
-        left: Bitvector32Term,
-        right: Bitvector32Term,
-    ) -> Bitvector32Term {
+    pub(crate) fn build_raw(self, left: MachineTerm, right: MachineTerm) -> MachineTerm {
         // A 32-bit operator's constant operands are spelled in its format.
         let (left, right) = match self {
             Self::Machine(format @ (MachineIntegerType::Int32 | MachineIntegerType::UInt32), _) => {
@@ -237,18 +233,18 @@ impl BitvectorBinaryOp {
         };
         let (left, right) = (Box::new(left), Box::new(right));
         match self {
-            Self::Machine(format, op) => Bitvector32Term::Binary {
+            Self::Machine(format, op) => MachineTerm::Binary {
                 format,
                 op,
                 left,
                 right,
             },
-            Self::Float32(operator) => Bitvector32Term::Float32Binary {
+            Self::Float32(operator) => MachineTerm::Float32Binary {
                 operator,
                 left,
                 right,
             },
-            Self::Float64(operator) => Bitvector32Term::Float64Binary {
+            Self::Float64(operator) => MachineTerm::Float64Binary {
                 operator,
                 left,
                 right,
@@ -278,28 +274,26 @@ impl BitvectorUnaryOp {
     }
 
     /// Applies the operator through its smart constructor.
-    pub(crate) fn build(self, value: Bitvector32Term) -> Bitvector32Term {
+    pub(crate) fn build(self, value: MachineTerm) -> MachineTerm {
         match self {
-            Self::Machine(format, op) => Bitvector32Term::machine_unary(format, op, value),
+            Self::Machine(format, op) => MachineTerm::machine_unary(format, op, value),
             Self::Cast { spelling, from, to } => match spelling {
-                MachineCastSpelling::Generic => {
-                    Bitvector32Term::machine_integer_cast(from, to, value)
-                }
-                MachineCastSpelling::Int64From32 => Bitvector32Term::int64_from_32(value),
-                MachineCastSpelling::UInt64From32 => Bitvector32Term::uint64_from_32(value),
-                MachineCastSpelling::UInt32From64 => Bitvector32Term::uint32_from_64(value),
-                MachineCastSpelling::Int64FromUInt32 => Bitvector32Term::int64_from_uint32(value),
-                MachineCastSpelling::UInt64FromInt32 => Bitvector32Term::uint64_from_int32(value),
-                MachineCastSpelling::UInt64FromInt64 => Bitvector32Term::uint64_from_int64(value),
+                MachineCastSpelling::Generic => MachineTerm::machine_integer_cast(from, to, value),
+                MachineCastSpelling::Int64From32 => MachineTerm::int64_from_32(value),
+                MachineCastSpelling::UInt64From32 => MachineTerm::uint64_from_32(value),
+                MachineCastSpelling::UInt32From64 => MachineTerm::uint32_from_64(value),
+                MachineCastSpelling::Int64FromUInt32 => MachineTerm::int64_from_uint32(value),
+                MachineCastSpelling::UInt64FromInt32 => MachineTerm::uint64_from_int32(value),
+                MachineCastSpelling::UInt64FromInt64 => MachineTerm::uint64_from_int64(value),
             },
-            Self::Float32Negate => Bitvector32Term::float32_negate(value),
-            Self::Float64Negate => Bitvector32Term::float64_negate(value),
+            Self::Float32Negate => MachineTerm::float32_negate(value),
+            Self::Float64Negate => MachineTerm::float64_negate(value),
         }
     }
 
     /// Applies the operator as the bare node, without folding or
     /// normalization.
-    pub(crate) fn build_raw(self, value: Bitvector32Term) -> Bitvector32Term {
+    pub(crate) fn build_raw(self, value: MachineTerm) -> MachineTerm {
         let value = match self {
             Self::Machine(MachineIntegerType::Int32 | MachineIntegerType::UInt32, _)
             | cast_op!(Int64From32)
@@ -310,19 +304,19 @@ impl BitvectorUnaryOp {
         };
         let value = Box::new(value);
         match self {
-            Self::Machine(format, op) => Bitvector32Term::Unary {
+            Self::Machine(format, op) => MachineTerm::Unary {
                 format,
                 op,
                 operand: value,
             },
-            Self::Cast { spelling, from, to } => Bitvector32Term::Cast {
+            Self::Cast { spelling, from, to } => MachineTerm::Cast {
                 spelling,
                 value,
                 from,
                 to,
             },
-            Self::Float32Negate => Bitvector32Term::Float32Negate(value),
-            Self::Float64Negate => Bitvector32Term::Float64Negate(value),
+            Self::Float32Negate => MachineTerm::Float32Negate(value),
+            Self::Float64Negate => MachineTerm::Float64Negate(value),
         }
     }
 }
@@ -387,7 +381,7 @@ impl ConditionTerm {
     /// or `None` for every other condition.
     pub(crate) fn as_bitvector_comparison(
         &self,
-    ) -> Option<(BitvectorComparisonOp, &Bitvector32Term, &Bitvector32Term)> {
+    ) -> Option<(BitvectorComparisonOp, &MachineTerm, &MachineTerm)> {
         match self {
             Self::Compare {
                 format,
@@ -500,7 +494,7 @@ impl BitvectorComparisonOp {
     }
 
     /// Applies the comparison through its smart constructor.
-    pub(crate) fn build(self, left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+    pub(crate) fn build(self, left: MachineTerm, right: MachineTerm) -> ConditionTerm {
         match self {
             Self::Compare(format, relation) => {
                 ConditionTerm::machine_compare(format, relation, left, right)
@@ -513,7 +507,7 @@ impl BitvectorComparisonOp {
 
     /// Applies the comparison as the bare node, without folding or
     /// normalization.
-    pub(crate) fn build_raw(self, left: Bitvector32Term, right: Bitvector32Term) -> ConditionTerm {
+    pub(crate) fn build_raw(self, left: MachineTerm, right: MachineTerm) -> ConditionTerm {
         let (left, right) = (Box::new(left), Box::new(right));
         match self {
             Self::Compare(format, relation) => ConditionTerm::Compare {
@@ -649,8 +643,8 @@ mod tests {
         ]
     }
 
-    fn variable(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    fn variable(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
     #[test]
@@ -682,16 +676,16 @@ mod tests {
     #[test]
     fn the_split_covers_exactly_the_arithmetic_variants() {
         let others = [
-            Bitvector32Term::constant(1),
-            Bitvector32Term::int64_constant(1),
-            Bitvector32Term::uint64_constant(1),
+            MachineTerm::constant(1),
+            MachineTerm::int64_constant(1),
+            MachineTerm::uint64_constant(1),
             variable(1),
-            Bitvector32Term::If {
+            MachineTerm::If {
                 condition: Box::new(ConditionTerm::Constant(true)),
                 then_term: Box::new(variable(1)),
                 else_term: Box::new(variable(2)),
             },
-            Bitvector32Term::PureFunctionApplication {
+            MachineTerm::PureFunctionApplication {
                 name: "f".to_string(),
                 arguments: vec![variable(1)],
             },

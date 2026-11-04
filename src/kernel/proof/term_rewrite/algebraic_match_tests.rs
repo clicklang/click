@@ -219,8 +219,8 @@ fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
     let condition = ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::Equal,
-        left: Box::new(Bitvector32Term::Variable(Variable(7))),
-        right: Box::new(Bitvector32Term::constant(0)),
+        left: Box::new(MachineTerm::Variable(Variable(7))),
+        right: Box::new(MachineTerm::constant(0)),
     };
     // The smart constructor never builds a decided or branch-equal conditional.
     assert_eq!(
@@ -235,8 +235,8 @@ fn algebraic_conditional_is_one_branch_once_its_condition_is_decided() {
     assert!(matches!(conditional.node, AlgebraicTermNode::If { .. }));
     // Substituting the compared variable decides the condition, and the
     // rewrite leaves the selected branch.
-    let variable = Bitvector32Term::Variable(Variable(7));
-    let (zero_value, one_value) = (Bitvector32Term::constant(0), Bitvector32Term::constant(1));
+    let variable = MachineTerm::Variable(Variable(7));
+    let (zero_value, one_value) = (MachineTerm::constant(0), MachineTerm::constant(1));
     let mut zero = TermRewrite::for_bits(&variable, &zero_value);
     assert_eq!(zero.algebraic(&conditional), empty());
     let mut one = TermRewrite::for_bits(&variable, &one_value);

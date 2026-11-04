@@ -8,12 +8,12 @@ fn unsigned_production_and_single_export_are_linear_beside_unrelated_terms() {
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
             let mut expression =
-                SpecExpression::Value(CValue::UInt64(Bitvector32Term::Variable(Variable(981000))));
+                SpecExpression::Value(CValue::UInt64(MachineTerm::Variable(Variable(981000))));
             for _ in 0..size {
                 expression = SpecExpression::Add(
                     Box::new(expression),
                     Box::new(SpecExpression::Value(CValue::UInt64(
-                        Bitvector32Term::uint64_constant(1),
+                        MachineTerm::uint64_constant(1),
                     ))),
                 );
             }
@@ -65,19 +65,19 @@ fn signed_available_operand_production_is_linear_beside_unrelated_terms() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(984000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut operand = Bitvector32Term::Variable(Variable(985000));
+            let mut operand = MachineTerm::Variable(Variable(985000));
             for _ in 0..size {
-                operand = Bitvector32Term::Binary {
+                operand = MachineTerm::Binary {
                     format: MachineIntegerType::Int64,
                     op: MachineBinaryOp::Add,
                     left: Box::new(operand),
-                    right: Box::new(Bitvector32Term::int64_constant(1)),
+                    right: Box::new(MachineTerm::int64_constant(1)),
                 };
             }
             let expression = SpecExpression::Add(
                 Box::new(SpecExpression::Value(CValue::Int64(operand))),
                 Box::new(SpecExpression::Value(CValue::Int64(
-                    Bitvector32Term::int64_constant(1),
+                    MachineTerm::int64_constant(1),
                 ))),
             );
             let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -101,8 +101,7 @@ fn signed_available_operand_production_is_linear_beside_unrelated_terms() {
 #[test]
 fn nested_signed_preparation_rejects_before_importing_available_operands() {
     for size in [16, 64, 256] {
-        let leaf =
-            || SpecExpression::Value(CValue::Int64(Bitvector32Term::Variable(Variable(986000))));
+        let leaf = || SpecExpression::Value(CValue::Int64(MachineTerm::Variable(Variable(986000))));
         let mut expression = leaf();
         for _ in 0..size {
             expression = SpecExpression::Add(Box::new(expression), Box::new(leaf()));
@@ -122,12 +121,12 @@ fn nested_signed_preparation_rejects_before_importing_available_operands() {
 fn a_deferred_operand_rejects_one_preparation_without_importing_prefixes() {
     for size in [16, 64, 256] {
         let mut expression =
-            SpecExpression::Value(CValue::UInt64(Bitvector32Term::Variable(Variable(983000))));
+            SpecExpression::Value(CValue::UInt64(MachineTerm::Variable(Variable(983000))));
         for _ in 0..size {
             expression = SpecExpression::Add(
                 Box::new(expression),
                 Box::new(SpecExpression::Value(CValue::UInt64(
-                    Bitvector32Term::uint64_constant(1),
+                    MachineTerm::uint64_constant(1),
                 ))),
             );
         }

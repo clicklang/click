@@ -5,7 +5,7 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
     let external = |variable| Pointer {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(variable))),
+            value: Box::new(MachineTerm::Variable(Variable(variable))),
             byte_width: 4,
         },
     };
@@ -30,9 +30,9 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
     assert_eq!(paths.len(), 1);
     assert_eq!(
         paths[0].value,
-        int32(Bitvector32Term::subtract(
-            Bitvector32Term::Variable(Variable(32_001)),
-            Bitvector32Term::Variable(Variable(32_000)),
+        int32(MachineTerm::subtract(
+            MachineTerm::Variable(Variable(32_001)),
+            MachineTerm::Variable(Variable(32_000)),
         ))
     );
     assert!(paths[0].facts.contains(&ExecutionPureFact::condition(
@@ -51,8 +51,8 @@ fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
         Proposition::signed_arithmetic_domain(
             MachineIntegerType::Int32,
             MachineBinaryOp::Subtract,
-            &Bitvector32Term::Variable(Variable(32_001)),
-            &Bitvector32Term::Variable(Variable(32_000)),
+            &MachineTerm::Variable(Variable(32_001)),
+            &MachineTerm::Variable(Variable(32_000)),
         )
     )));
 }

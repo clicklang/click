@@ -127,8 +127,8 @@ fn a_call_keeps_argument_direct_composites_in_work_independent_of_their_number()
             .with_resource_context(residual.clone());
         let written = CMemoryRange::new(
             object(size + 1),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         );
         let (after, work) = crate::instrumentation::measure_deterministic_work(|| {
             let kept = call_kept_ownership(&residual, &[boxed_definition()], &state, &assumptions);
@@ -161,7 +161,7 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let object = |index: u64| Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::scale_int32(
-                Bitvector32Term::Variable(Variable(783_000 + index)),
+                MachineTerm::Variable(Variable(783_000 + index)),
                 4,
             ),
         };
@@ -174,8 +174,8 @@ fn a_transferred_flat_cell_does_not_open_unrelated_kept_composites() {
         let cell = object(size + 1);
         let written = CMemoryRange::new(
             cell.clone(),
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         );
         let original = residual
             .clone()

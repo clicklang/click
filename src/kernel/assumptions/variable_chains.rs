@@ -246,14 +246,14 @@ impl PureFactContext {
                 })
         };
         if let Some(span) = upper_span {
-            let first = Bitvector32Term::Variable(*span.members.front()?);
+            let first = MachineTerm::Variable(*span.members.front()?);
             if upper.variable() != V::Legacy(&first).variable() && direct(lower, V::Legacy(&first))
             {
                 return Some(true);
             }
         }
         if let Some(span) = lower_span {
-            let last = Bitvector32Term::Variable(*span.members.back()?);
+            let last = MachineTerm::Variable(*span.members.back()?);
             if lower.variable() != V::Legacy(&last).variable() && direct(V::Legacy(&last), upper) {
                 return Some(true);
             }
@@ -275,7 +275,7 @@ pub(in crate::kernel) fn array_index(
     let PointerOffsetTerm::Int32Scaled { value, byte_width } = index else {
         return None;
     };
-    let Bitvector32Term::Variable(variable) = value.as_ref() else {
+    let MachineTerm::Variable(variable) = value.as_ref() else {
         return None;
     };
     (*byte_width > 0 && !crate::kernel::is_load_variable(variable)).then_some((
@@ -307,8 +307,8 @@ mod tests {
             for pair in edges {
                 context = context.assume_condition(
                     ConditionTerm::signed_less_than(
-                        Bitvector32Term::Variable(pair[0]),
-                        Bitvector32Term::Variable(pair[1]),
+                        MachineTerm::Variable(pair[0]),
+                        MachineTerm::Variable(pair[1]),
                     ),
                     true,
                 );
@@ -321,14 +321,14 @@ mod tests {
                 assert_eq!(span.rank, position);
             }
             let query = ConditionTerm::signed_less_than(
-                Bitvector32Term::Variable(variables[0]),
-                Bitvector32Term::Variable(variables[4]),
+                MachineTerm::Variable(variables[0]),
+                MachineTerm::Variable(variables[4]),
             );
             assert_eq!(context.decide_from_variable_chain(&query), Some(true));
             context.forget_condition_fact(
                 &ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(variables[1]),
-                    Bitvector32Term::Variable(variables[2]),
+                    MachineTerm::Variable(variables[1]),
+                    MachineTerm::Variable(variables[2]),
                 ),
                 true,
             );
@@ -338,7 +338,7 @@ mod tests {
 
     #[test]
     fn branching_orders_do_not_order_siblings() {
-        let variable = |id| Bitvector32Term::Variable(Variable(id));
+        let variable = |id| MachineTerm::Variable(Variable(id));
         let context = PureFactContext::new()
             .assume_condition(
                 ConditionTerm::signed_less_than(variable(1), variable(3)),
@@ -386,8 +386,8 @@ mod memory_tests {
         for pair in variables.windows(2) {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(pair[0]),
-                    Bitvector32Term::Variable(pair[1]),
+                    MachineTerm::Variable(pair[0]),
+                    MachineTerm::Variable(pair[1]),
                 ),
                 true,
             );
@@ -395,15 +395,15 @@ mod memory_tests {
         for (index, variable) in variables.iter().enumerate() {
             context = context.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(*variable),
-                    Bitvector32Term::constant(index as u32 + 1),
+                    MachineTerm::Variable(*variable),
+                    MachineTerm::constant(index as u32 + 1),
                 ),
                 true,
             );
         }
         let pointer = |variable, stride| Pointer {
             block: PointerBlock::from("ordered"),
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(variable), stride),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), stride),
         };
         let mut memory = CMemory::new().with_block("ordered", 4096);
         for (index, variable) in variables.iter().enumerate() {
@@ -437,7 +437,7 @@ mod memory_tests {
             .without_possible_aliasing_cells(&near, 8, &context)
             .store(
                 near.clone(),
-                CValue::UInt64(Bitvector32Term::uint64_constant(7)),
+                CValue::UInt64(MachineTerm::uint64_constant(7)),
             );
         let after = wide.without_possible_aliasing_cells(&pointer(variables[4], 4), 4, &context);
         assert!(

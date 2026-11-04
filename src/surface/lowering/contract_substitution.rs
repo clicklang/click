@@ -4287,9 +4287,9 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
             Some(CExpression::Value(if value <= i32::MAX as u64 {
                 int32(value as u32)
             } else if value <= i64::MAX as u64 {
-                CValue::Int64(Bitvector32Term::int64_constant(value as i64))
+                CValue::Int64(MachineTerm::int64_constant(value as i64))
             } else {
-                CValue::UInt64(Bitvector32Term::uint64_constant(value))
+                CValue::UInt64(MachineTerm::uint64_constant(value))
             }))
         }
         ContractExpression::Negate(inner) => {

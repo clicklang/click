@@ -42,8 +42,8 @@ fn a_call_keeps_an_argument_direct_composites_memory_without_opening_it() {
     );
     let written = CMemoryRange::new(
         object(2),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
     );
     let after =
         memory.with_call_memory_havoc(Variable(781_100), &[written], &assumptions, Some(&kept));
@@ -68,7 +68,7 @@ fn caller_flat_exclusions_keep_new_composites_fragments_and_views() {
     let _session = VerificationSession::enter();
     let object = |index| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(index)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(index)), 4),
     };
     let cell = object(783_901);
     let other = object(783_902);
@@ -155,8 +155,8 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let range = |pointer: &Pointer| {
             CMemoryRange::new(
                 pointer.clone(),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )
         };
         let memory_spec = |name: &str| {
@@ -232,7 +232,7 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             .with_block("shared-counter", 4)
             .with_block("private-cell", 4);
         let load_in = |memory: &CMemory| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory_ref(memory),
                 Box::new(shared.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -242,14 +242,11 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         let before = base
             .store(
                 shared.clone(),
-                CValue::Int32(Bitvector32Term::Variable(old_name)),
+                CValue::Int32(MachineTerm::Variable(old_name)),
             )
             .store(private.clone(), int32(7));
         let assumptions = PureFactContext::new().assume_condition(
-            ConditionTerm::equal(
-                Bitvector32Term::Variable(old_name),
-                Bitvector32Term::constant(0),
-            ),
+            ConditionTerm::equal(MachineTerm::Variable(old_name), MachineTerm::constant(0)),
             true,
         );
         let state = CState::new()
@@ -268,12 +265,12 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
         );
         let same_load = |pointer: &Pointer| {
             checked_atomic_load_equality(
-                &Bitvector32Term::MemoryLoad(
+                &MachineTerm::MemoryLoad(
                     intern_c_memory_ref(&before),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 ),
-                &Bitvector32Term::MemoryLoad(
+                &MachineTerm::MemoryLoad(
                     intern_c_memory_ref(&after),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
@@ -294,16 +291,13 @@ fn retained_membership_does_not_preserve_the_shared_body_across_a_call() {
             "a population mutation must get a fresh load identity"
         );
         let post_facts = assumptions.assume_condition(
-            ConditionTerm::equal(
-                Bitvector32Term::Variable(new_name),
-                Bitvector32Term::constant(1),
-            ),
+            ConditionTerm::equal(MachineTerm::Variable(new_name), MachineTerm::constant(1)),
             true,
         );
         assert!(
             !post_facts
                 .equality_graph
-                .are_int32_equal(&Bitvector32Term::constant(0), &Bitvector32Term::constant(1),),
+                .are_int32_equal(&MachineTerm::constant(0), &MachineTerm::constant(1),),
             "the old and new invariants must not imply zero equals one"
         );
     }

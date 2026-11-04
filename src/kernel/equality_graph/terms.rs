@@ -209,13 +209,13 @@ pub(super) enum UInt64Binary {
 }
 
 pub(super) fn uint64_binary(
-    term: &crate::kernel::Bitvector32Term,
+    term: &crate::kernel::MachineTerm,
 ) -> Option<(
     UInt64Binary,
-    &crate::kernel::Bitvector32Term,
-    &crate::kernel::Bitvector32Term,
+    &crate::kernel::MachineTerm,
+    &crate::kernel::MachineTerm,
 )> {
-    use crate::kernel::Bitvector32Term as T;
+    use crate::kernel::MachineTerm as T;
     let (op, a, b) = match term {
         T::Binary {
             format: MachineIntegerType::UInt64,
@@ -273,9 +273,9 @@ pub(super) fn uint64_binary(
 /// The same registered four-byte read accepted by `enqueue_int32_load`.
 /// A scalar variable without this typed producer metadata stays opaque.
 pub(super) fn int32_read(
-    term: &crate::kernel::Bitvector32Term,
+    term: &crate::kernel::MachineTerm,
 ) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
-    let crate::kernel::Bitvector32Term::Variable(variable) = term else {
+    let crate::kernel::MachineTerm::Variable(variable) = term else {
         return None;
     };
     if !crate::kernel::registered_load_kind_for_variable(variable)
@@ -288,9 +288,9 @@ pub(super) fn int32_read(
 }
 
 pub(super) fn uint64_read(
-    term: &crate::kernel::Bitvector32Term,
+    term: &crate::kernel::MachineTerm,
 ) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
-    use crate::kernel::{Bitvector32Term as T, LoadKind};
+    use crate::kernel::{LoadKind, MachineTerm as T};
     match term {
         T::MemoryLoad(memory, pointer, LoadKind::Bits64) => {
             Some((memory.clone(), pointer.as_ref().clone()))
@@ -716,7 +716,7 @@ pub(super) struct TermClasses {
     // consumer that needs a recorded fact about a word (a pointer recovered
     // from `word == address(p)`) finds the facts of every word equal to it.
     // A merge moves the smaller set.
-    wide_equation_endpoints: PersistentMap<u64, PersistentSet<crate::kernel::Bitvector32Term>>,
+    wide_equation_endpoints: PersistentMap<u64, PersistentSet<crate::kernel::MachineTerm>>,
     // Reads that found no stored cell, by the root of their block class. A
     // later union of that class looks again, so the answer does not depend
     // on whether the read or the pointer equality came first. A read leaves
@@ -975,7 +975,7 @@ impl TermClasses {
             self.numeric_shifts = self.numeric_shifts.without_key(&address);
             let numeric_base = self.read_address(base);
             let displacement = self.intern_node(Node::UInt64(MachineAtom::uint64(
-                crate::kernel::Bitvector32Term::uint64_constant(bytes as u64),
+                crate::kernel::MachineTerm::uint64_constant(bytes as u64),
             )));
             let sum = self.intern_node(Node::UInt64Binary(
                 UInt64Binary::Add,
@@ -1747,7 +1747,7 @@ impl TermClasses {
             // application. One read interned, one σ node, one union.
             if let Some((unsigned, memory, pointer)) = self.pending_unsigned_word_reads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let signed = crate::kernel::Bitvector32Term::Variable(
+                let signed = crate::kernel::MachineTerm::Variable(
                     crate::kernel::eval::load_variable_for_exact_cell(
                         &memory,
                         &pointer,
@@ -1768,7 +1768,7 @@ impl TermClasses {
             }
             if let Some((signed, memory, pointer)) = self.pending_signed_byte_reads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let unsigned = crate::kernel::Bitvector32Term::Variable(
+                let unsigned = crate::kernel::MachineTerm::Variable(
                     crate::kernel::eval::load_variable_for_exact_cell(
                         &memory,
                         &pointer,
@@ -1921,7 +1921,7 @@ impl TermClasses {
                 // The `int32` read of a cell storing a `uint32` value is σ of
                 // that value (rule K5's reinterpretation, σ a node).
                 (Some(V::UInt32(value)), CellRead::Int32) => {
-                    Some(Ok(crate::kernel::Bitvector32Term::sign_cast32(
+                    Some(Ok(crate::kernel::MachineTerm::sign_cast32(
                         crate::kernel::MachineIntegerType::UInt32,
                         crate::kernel::MachineIntegerType::Int32,
                         value,
@@ -2019,7 +2019,7 @@ impl TermClasses {
         self.register_pending_loads();
     }
 
-    pub(super) fn record_wide_equation_endpoint(&mut self, term: &crate::kernel::Bitvector32Term) {
+    pub(super) fn record_wide_equation_endpoint(&mut self, term: &crate::kernel::MachineTerm) {
         let id = self.intern_uint64(term);
         self.register_pending_loads();
         let root = self.root(id);
@@ -2037,8 +2037,8 @@ impl TermClasses {
     /// The recorded equality endpoints in `term`'s class.
     pub(super) fn wide_equation_endpoints_equal_to(
         &mut self,
-        term: &crate::kernel::Bitvector32Term,
-    ) -> PersistentSet<crate::kernel::Bitvector32Term> {
+        term: &crate::kernel::MachineTerm,
+    ) -> PersistentSet<crate::kernel::MachineTerm> {
         let id = self.intern_uint64(term);
         self.register_pending_loads();
         let root = self.root(id);
@@ -2070,11 +2070,11 @@ impl TermClasses {
         self.wide_equation_endpoints.insert(kept, larger);
     }
 
-    fn intern_uint64(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
+    fn intern_uint64(&mut self, term: &crate::kernel::MachineTerm) -> u64 {
         self.intern_machine(term, true)
     }
 
-    pub(super) fn uint64_constant(&mut self, term: &crate::kernel::Bitvector32Term) -> Option<u64> {
+    pub(super) fn uint64_constant(&mut self, term: &crate::kernel::MachineTerm) -> Option<u64> {
         let id = self.intern_uint64(term);
         self.register_pending_loads();
         let root = self.root(id);
@@ -2100,8 +2100,8 @@ impl TermClasses {
 
     pub(super) fn are_uint64_equal(
         &mut self,
-        left: &crate::kernel::Bitvector32Term,
-        right: &crate::kernel::Bitvector32Term,
+        left: &crate::kernel::MachineTerm,
+        right: &crate::kernel::MachineTerm,
     ) -> bool {
         let left = self.intern_uint64(left);
         let right = self.intern_uint64(right);
@@ -2111,8 +2111,8 @@ impl TermClasses {
 
     pub(super) fn add_uint64_equality(
         &mut self,
-        left: &crate::kernel::Bitvector32Term,
-        right: &crate::kernel::Bitvector32Term,
+        left: &crate::kernel::MachineTerm,
+        right: &crate::kernel::MachineTerm,
     ) -> bool {
         let left = self.intern_uint64(left);
         let right = self.intern_uint64(right);
@@ -2124,14 +2124,14 @@ impl TermClasses {
         self.root(id)
     }
 
-    fn intern_int32(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
+    fn intern_int32(&mut self, term: &crate::kernel::MachineTerm) -> u64 {
         // This interner runs under the graph mutex. Memory canonicalization
         // can re-enter this graph through a cell-version walk; callers perform
         // it before locking, while raw reads here retain their own snapshot.
         self.intern_machine(term, false)
     }
 
-    pub(super) fn int32_class(&mut self, term: &crate::kernel::Bitvector32Term) -> u64 {
+    pub(super) fn int32_class(&mut self, term: &crate::kernel::MachineTerm) -> u64 {
         let node = self.intern_int32(term);
         self.register_pending_loads();
         self.root(node)
@@ -2145,7 +2145,7 @@ impl TermClasses {
 
     pub(super) fn existing_scalar_atom(
         &self,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> Option<Option<u64>> {
         let application = has_machine_operands(term);
         (!application).then(|| {
@@ -2191,7 +2191,7 @@ impl TermClasses {
     /// avoid registering fresh arithmetic just to discover that it is unbound.
     pub(super) fn existing_scalar_interval_node(
         &self,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> Option<Option<u64>> {
         if term.as_const().is_none() {
             let unary = if let unary_term!(Bits32, BitwiseNot, value) = term {
@@ -2244,10 +2244,10 @@ impl TermClasses {
 
     pub(super) fn are_int32_equal(
         &mut self,
-        left: &crate::kernel::Bitvector32Term,
-        right: &crate::kernel::Bitvector32Term,
+        left: &crate::kernel::MachineTerm,
+        right: &crate::kernel::MachineTerm,
     ) -> bool {
-        use crate::kernel::Bitvector32Term;
+        use crate::kernel::MachineTerm;
         if left == right {
             return true;
         }
@@ -2255,7 +2255,7 @@ impl TermClasses {
         // their existing nodes directly, avoiding registration of unrelated
         // order endpoints and unsupported expressions. Loads and addition
         // still need registration because their definitions can join classes.
-        let opaque = |term: &Bitvector32Term| {
+        let opaque = |term: &MachineTerm| {
             if has_machine_operands(term) {
                 return None;
             }
@@ -2305,8 +2305,8 @@ impl TermClasses {
 
     pub(super) fn add_int32_equality(
         &mut self,
-        left: &crate::kernel::Bitvector32Term,
-        right: &crate::kernel::Bitvector32Term,
+        left: &crate::kernel::MachineTerm,
+        right: &crate::kernel::MachineTerm,
     ) -> bool {
         let left = self.intern_int32(left);
         let right = self.intern_int32(right);
@@ -2655,9 +2655,9 @@ impl TermClasses {
     fn machine_literal_node(
         &mut self,
         ty: crate::kernel::MachineIntegerType,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> Option<u64> {
-        use crate::kernel::{Bitvector32Term as T, MachineIntegerType as M};
+        use crate::kernel::{MachineIntegerType as M, MachineTerm as T};
         let width = ty.format().bits();
         if width < 32 {
             let bits = term.narrow_constant_bits(ty)?;
@@ -2768,7 +2768,7 @@ impl TermClasses {
             }
         }
         // Kernel int32 values are bitvectors. Folding their sum wraps at 32
-        // bits, just like Bitvector32Term::as_const; C signed definedness is a
+        // bits, just like MachineTerm::as_const; C signed definedness is a
         // separate obligation and is not established by equality congruence.
         if let Application::Int32Add(left, right) = signature
             && let (Some(left), Some(right)) = (
@@ -2778,7 +2778,7 @@ impl TermClasses {
         {
             let value = left.wrapping_add(*right) as u32;
             let constant = self.intern_node(Node::Int32(MachineAtom::int32(
-                crate::kernel::Bitvector32Term::constant(value),
+                crate::kernel::MachineTerm::constant(value),
             )));
             pending.push((id, constant));
         }
@@ -2818,7 +2818,7 @@ impl TermClasses {
                 pending.push((id, other));
             } else if let Some(value) = constant {
                 let other = self.intern_node(Node::Int32(MachineAtom::int32(
-                    crate::kernel::Bitvector32Term::constant(value),
+                    crate::kernel::MachineTerm::constant(value),
                 )));
                 pending.push((id, other));
             }
@@ -2846,12 +2846,12 @@ impl TermClasses {
                 Int32Binary::Other(op) => op,
             };
             let term = op.build(
-                crate::kernel::Bitvector32Term::constant(a as u32),
-                crate::kernel::Bitvector32Term::constant(b as u32),
+                crate::kernel::MachineTerm::constant(a as u32),
+                crate::kernel::MachineTerm::constant(b as u32),
             );
             if let Some(value) = term.as_const() {
                 let literal = self.intern_node(Node::Int32(MachineAtom::int32(
-                    crate::kernel::Bitvector32Term::constant(value),
+                    crate::kernel::MachineTerm::constant(value),
                 )));
                 pending.push((id, literal));
             }
@@ -2862,7 +2862,7 @@ impl TermClasses {
         if let Application::Int32Unary(Int32Unary::Cast(source, destination), value) = signature
             && (source.format().bits() < 32 || destination.format().bits() < 32)
         {
-            use crate::kernel::Bitvector32Term as T;
+            use crate::kernel::MachineTerm as T;
             let operand = if source.format().bits() < 32 {
                 self.narrow_constants
                     .get(&value)
@@ -2881,7 +2881,7 @@ impl TermClasses {
         } else if let Application::Int32Unary(op, value) = signature
             && let Some(value) = self.int32_constants.get(&value).copied()
         {
-            use crate::kernel::Bitvector32Term as T;
+            use crate::kernel::MachineTerm as T;
             let value = T::constant(value as u32);
             let term = match op {
                 Int32Unary::Not => unary_node!(Int32, BitwiseNot, Box::new(value)),
@@ -2912,7 +2912,7 @@ impl TermClasses {
             };
             if let Some(value) = value {
                 let literal = self.intern_node(Node::UInt64(MachineAtom::uint64(
-                    crate::kernel::Bitvector32Term::uint64_constant(value),
+                    crate::kernel::MachineTerm::uint64_constant(value),
                 )));
                 pending.push((id, literal));
             }
@@ -3217,7 +3217,7 @@ fn function_contract_group(name: &str, values: &[crate::kernel::Term]) -> String
 mod tests {
     use super::super::EqualityGraph;
     use super::*;
-    use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, Proposition, PureFactContext};
+    use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, PureFactContext};
 
     fn var(id: u64) -> PointerOffsetTerm {
         PointerOffsetTerm::Variable(Variable(id))
@@ -3414,7 +3414,7 @@ mod tests {
 
     #[test]
     fn late_wide_constants_reconnect_offsets_without_using_low_words_or_wrapping() {
-        let value = Bitvector32Term::Variable(Variable(895_080));
+        let value = MachineTerm::Variable(Variable(895_080));
         let base = Pointer::symbolic(Variable(895_081));
         let scaled = |width, unsigned| Pointer {
             block: base.block.clone(),
@@ -3430,7 +3430,7 @@ mod tests {
                 let mut graph = EqualityGraph::default();
                 assert!(!graph.are_equal(&pointer, &base));
                 let sibling = graph.clone();
-                graph.add_uint64_equality(&value, &Bitvector32Term::uint64_constant(0));
+                graph.add_uint64_equality(&value, &MachineTerm::uint64_constant(0));
                 assert!(
                     graph.are_equal(&pointer, &base),
                     "late zero: {width}, {unsigned}"
@@ -3440,15 +3440,15 @@ mod tests {
         }
         let mut low_word_only = EqualityGraph::default();
         low_word_only.add_int32_equality(
-            &Bitvector32Term::legacy_cast(
+            &MachineTerm::legacy_cast(
                 crate::kernel::MachineCastSpelling::UInt32From64,
                 Box::new(value.clone()),
             ),
-            &Bitvector32Term::constant(0),
+            &MachineTerm::constant(0),
         );
         assert!(!low_word_only.are_equal(&scaled(1, true), &base));
         let mut high_word = EqualityGraph::default();
-        high_word.add_uint64_equality(&value, &Bitvector32Term::uint64_constant(1u64 << 32));
+        high_word.add_uint64_equality(&value, &MachineTerm::uint64_constant(1u64 << 32));
         assert!(high_word.are_equal(
             &scaled(4, true),
             &Pointer {
@@ -3458,7 +3458,7 @@ mod tests {
         ));
         assert!(!high_word.are_equal(&scaled(4, true), &base));
         let mut overflow = EqualityGraph::default();
-        overflow.add_uint64_equality(&value, &Bitvector32Term::uint64_constant(1u64 << 63));
+        overflow.add_uint64_equality(&value, &MachineTerm::uint64_constant(1u64 << 63));
         for unsigned in [false, true] {
             assert!(!overflow.are_equal(&scaled(2, unsigned), &base));
         }
@@ -3472,7 +3472,7 @@ mod tests {
             byte_width: width,
             unsigned,
         };
-        let value = Bitvector32Term::Variable(Variable(10));
+        let value = MachineTerm::Variable(Variable(10));
         let signed = scaled(value.clone(), 4, false);
         let target = var(11);
         let mut graph = EqualityGraph::default();
@@ -3484,10 +3484,10 @@ mod tests {
         let address = Pointer::symbolic(Variable(12));
         let after = crate::kernel::intern_c_memory(before.memory().clone().store(
             address.clone(),
-            crate::kernel::CValue::Int32(Bitvector32Term::constant(9)),
+            crate::kernel::CValue::Int32(MachineTerm::constant(9)),
         ));
         let load = |memory: &crate::kernel::SharedCMemory| {
-            Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+            MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
                 memory,
                 &address,
                 crate::kernel::LoadKind::Int32,
@@ -3564,7 +3564,7 @@ mod tests {
         use crate::kernel::{CPointerValue, CType, SubobjectExtent};
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer::symbolic(Variable(942_001));
-        let width = Bitvector32Term::Variable(Variable(942_002));
+        let width = MachineTerm::Variable(Variable(942_002));
         let bounded = |width| {
             CPointerValue::new(pointer.clone(), CType::Int32Pointer).with_extent(Some(
                 SubobjectExtent {
@@ -3578,7 +3578,7 @@ mod tests {
         let eight = bounded(8u32.into());
         let mut classes = TermClasses::default();
         assert!(!classes.pointer_values_equal(&dynamic, &four));
-        classes.add_int32_equality(&width, &Bitvector32Term::constant(4));
+        classes.add_int32_equality(&width, &MachineTerm::constant(4));
         assert!(classes.pointer_values_equal(&dynamic, &four));
         assert!(!classes.pointer_values_equal(&dynamic, &eight));
     }

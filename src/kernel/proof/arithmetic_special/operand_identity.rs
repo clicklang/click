@@ -134,11 +134,11 @@ mod tests {
                 MachineBinaryOp::BitwiseOr,
                 MachineBinaryOp::BitwiseXor,
             ] {
-                let native = Bitvector32Term::Binary {
+                let native = MachineTerm::Binary {
                     format,
                     op,
-                    left: Box::new(Bitvector32Term::Variable(Variable(997101))),
-                    right: Box::new(Bitvector32Term::Variable(Variable(997102))),
+                    left: Box::new(MachineTerm::Variable(Variable(997101))),
+                    right: Box::new(MachineTerm::Variable(Variable(997102))),
                 };
                 let Some(root) = KernelTermImport::default().machine_arithmetic(format, &native)
                 else {
@@ -289,7 +289,7 @@ mod condition_tests {
         IntegerTerm, KernelTermExport, KernelTermImport, SharedMachineIntegerTerm, Variable,
     };
 
-    fn shared(format: MachineIntegerType, native: &Bitvector32Term) -> SharedMachineIntegerTerm {
+    fn shared(format: MachineIntegerType, native: &MachineTerm) -> SharedMachineIntegerTerm {
         SharedMachineIntegerTerm::from_shared(
             format,
             KernelTermImport::default()
@@ -316,13 +316,13 @@ mod condition_tests {
                 MachineBinaryOp::BitwiseAnd,
                 MachineBinaryOp::BitwiseXor,
             ] {
-                let a = Bitvector32Term::Binary {
+                let a = MachineTerm::Binary {
                     format,
                     op,
-                    left: Box::new(Bitvector32Term::Variable(Variable(997111))),
-                    right: Box::new(Bitvector32Term::Variable(Variable(997112))),
+                    left: Box::new(MachineTerm::Variable(Variable(997111))),
+                    right: Box::new(MachineTerm::Variable(Variable(997112))),
                 };
-                let b = Bitvector32Term::Variable(Variable(997113));
+                let b = MachineTerm::Variable(Variable(997113));
                 let (sa, sb) = (shared(format, &a), shared(format, &b));
                 for relation in [
                     CompareRelation::Equal,
@@ -352,7 +352,7 @@ mod condition_tests {
                         format,
                         relation,
                         a.clone(),
-                        Bitvector32Term::Variable(Variable(997114)),
+                        MachineTerm::Variable(Variable(997114)),
                     );
                     assert!(!condition_equal(&observed, &wrong));
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
@@ -387,11 +387,11 @@ mod condition_tests {
     #[test]
     fn retained_cast_identity_preserves_encoding_and_narrow_comparisons() {
         let _session = crate::kernel::VerificationSession::enter();
-        let variable = Bitvector32Term::Variable(Variable(997141));
+        let variable = MachineTerm::Variable(Variable(997141));
         let casts = [
             (
                 MachineIntegerType::Int32,
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: MachineIntegerType::UInt8,
                     to: MachineIntegerType::Int32,
@@ -400,28 +400,28 @@ mod condition_tests {
             ),
             (
                 MachineIntegerType::Int64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::Int64FromUInt32,
                     Box::new(variable.clone()),
                 ),
             ),
             (
                 MachineIntegerType::Int64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::Int64From32,
                     Box::new(variable.clone()),
                 ),
             ),
             (
                 MachineIntegerType::UInt64,
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt64From32,
                     Box::new(variable.clone()),
                 ),
             ),
             (
                 MachineIntegerType::UInt32,
-                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(variable)),
+                MachineTerm::legacy_cast(MachineCastSpelling::UInt32From64, Box::new(variable)),
             ),
         ];
         for (format, native) in casts {
@@ -436,7 +436,7 @@ mod condition_tests {
                     format,
                     CompareRelation::LessEqual,
                     native,
-                    Bitvector32Term::constant_at32(MachineIntegerType::Int32, 1),
+                    MachineTerm::constant_at32(MachineIntegerType::Int32, 1),
                 );
                 let observed = ConditionTerm::integer_less_equal(
                     IntegerTerm::Machine(operand.clone()),
@@ -453,11 +453,11 @@ mod condition_tests {
     fn wide_reflexivity_keeps_the_native_constructor_rule() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int64;
-        let native = Bitvector32Term::Binary {
+        let native = MachineTerm::Binary {
             format,
             op: MachineBinaryOp::Multiply,
-            left: Box::new(Bitvector32Term::Variable(Variable(997121))),
-            right: Box::new(Bitvector32Term::Variable(Variable(997122))),
+            left: Box::new(MachineTerm::Variable(Variable(997121))),
+            right: Box::new(MachineTerm::Variable(Variable(997122))),
         };
         let operand = shared(format, &native);
         let observed = ConditionTerm::integer_equal(

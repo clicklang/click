@@ -405,8 +405,8 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
     };
     let xv = variable(&p);
     let yv = variable(&q);
-    let x = Pointer::loaded(&Bitvector32Term::Variable(xv)).unwrap();
-    let y = Pointer::loaded(&Bitvector32Term::Variable(yv)).unwrap();
+    let x = Pointer::loaded(&MachineTerm::Variable(xv)).unwrap();
+    let y = Pointer::loaded(&MachineTerm::Variable(yv)).unwrap();
     // A typed read is named by its defining snapshot and address, not by
     // its storage block or a scaled offset.
     for (value, address) in [(&x, &p), (&y, &q)] {
@@ -434,7 +434,7 @@ fn offset_queries_retain_typed_read_definitions_and_keep_blocks_distinct() {
         &x,
         &Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(yv), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(yv), 4),
         }
     ));
     // New unrelated definitions must not make rediscovery visit more than
@@ -487,7 +487,7 @@ fn load_congruence_work_ignores_classed_loads_of_other_snapshots() {
                     .with_block(symbolic(70_000 + index), 16)
                     .store(
                         at(symbolic(70_000 + index), 0),
-                        CValue::Int32(Bitvector32Term::constant(index as u32)),
+                        CValue::Int32(MachineTerm::constant(index as u32)),
                     ),
             );
             let loaded = name(&memory, at(symbolic(70_000 + index), 0));
@@ -578,7 +578,7 @@ fn late_typed_load_merges_scale_with_existing_storage_relative_bridges() {
                 let p = at(symbolic(810_000 + i), 0);
                 let q = at(symbolic(820_000 + i), 0);
                 let old_value = |address: &Pointer| {
-                    Pointer::loaded(&Bitvector32Term::Variable(
+                    Pointer::loaded(&MachineTerm::Variable(
                         crate::kernel::load_variable_for_cell_with_origin(
                             &memory,
                             address,
@@ -732,7 +732,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         graph.add_equality(&Pointer::loaded_value(&memory, &address), &model);
         let read = |pointer: &Pointer| {
-            Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
                 pointer,
                 crate::kernel::LoadKind::Int32,
@@ -741,7 +741,7 @@ fn shifted_raw_read_dependency_lookup_ignores_unrelated_definitions() {
         };
         let source = read(&raw.pointer().offset_by_bytes(24));
         let target = read(&model.offset_by_bytes(24));
-        let expected = Bitvector32Term::constant(7);
+        let expected = MachineTerm::constant(7);
         let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
             graph.add_int32_equality(&source, &expected);
             graph.are_int32_equal(&target, &expected)
@@ -770,8 +770,8 @@ fn pointer_fact_source_order_queries_ignore_unrelated_admissions() {
                 domain
                     .opaque_coverage_fact(&crate::kernel::CMemoryRange::new(
                         at(symbolic(987_100 + id), 0),
-                        Bitvector32Term::constant(0),
-                        Bitvector32Term::constant(1),
+                        MachineTerm::constant(0),
+                        MachineTerm::constant(1),
                     ))
                     .expect("coverage names the opaque domain"),
             ));

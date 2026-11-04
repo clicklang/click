@@ -235,7 +235,7 @@ mod tests {
                         f.address.clone(),
                         match ty {
                             CType::Int32 => CValue::Int32(9u32.into()),
-                            _ => CValue::UInt64(Bitvector32Term::uint64_constant(9)),
+                            _ => CValue::UInt64(MachineTerm::uint64_constant(9)),
                         },
                     ));
             let _scope = CallReadAliasScope::enter([&f.rewritten]);

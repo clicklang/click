@@ -13,7 +13,7 @@
 
 use super::{Operation, definedness, range, representation};
 #[cfg(test)]
-use crate::kernel::Bitvector32Term;
+use crate::kernel::MachineTerm;
 use crate::kernel::{
     ConditionTerm, IntegerTerm, MachineIntegerType, Proposition, SharedMachineIntegerTerm,
 };
@@ -234,14 +234,14 @@ fn explicit_operation_identity_keeps_its_read_operands() {
     use crate::kernel::{CMemory, CValue, LoadKind, Pointer, Variable};
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let x = Bitvector32Term::Variable(Variable(989_773));
-    let y = Bitvector32Term::Variable(Variable(989_774));
+    let x = MachineTerm::Variable(Variable(989_773));
+    let y = MachineTerm::Variable(Variable(989_774));
     let address = Pointer::symbolic(Variable(989_775));
-    let stored = Bitvector32Term::logical_machine_binary(
+    let stored = MachineTerm::logical_machine_binary(
         format,
         crate::kernel::MachineBinaryOp::Add,
         x.clone(),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(1),
     );
     let memory = CMemory::new().store(address.clone(), CValue::Int32(stored));
     let read = crate::kernel::canonical_form_of_load(
@@ -250,7 +250,7 @@ fn explicit_operation_identity_keeps_its_read_operands() {
         LoadKind::Int32,
     );
     let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
-    let sum = observe(Bitvector32Term::logical_machine_binary(
+    let sum = observe(MachineTerm::logical_machine_binary(
         format,
         crate::kernel::MachineBinaryOp::Add,
         read.clone(),
@@ -281,7 +281,7 @@ fn boxed_machine_operation_of_integer_value(
     // An operand's word is the one, as written or widened, whose
     // observation in `ty` gives the operand back; its range is its own
     // format's, or the constant itself.
-    let operand = |side: &IntegerTerm| -> Option<(Bitvector32Term, BigInt, BigInt)> {
+    let operand = |side: &IntegerTerm| -> Option<(MachineTerm, BigInt, BigInt)> {
         // An observation is read through its value relations (rule W): the
         // range of `to_integer(x as uint32)` is `x`'s own format's.
         match side.value_read() {
@@ -292,7 +292,7 @@ fn boxed_machine_operation_of_integer_value(
                 let widened = if super::conversion::extension_encoding(machine.ty(), ty).is_some() {
                     super::conversion::convert_term(machine.ty(), ty, word.clone())
                 } else {
-                    Bitvector32Term::Cast {
+                    MachineTerm::Cast {
                         spelling: crate::kernel::MachineCastSpelling::Generic,
                         value: Box::new(word.clone()),
                         from: machine.ty(),
@@ -357,7 +357,7 @@ fn inverse_operation_mapping_matches_boxed_conversion_routes() {
     let _session = crate::kernel::VerificationSession::enter();
     for source in super::FORMATS {
         let value =
-            IntegerTerm::from_machine(source, Bitvector32Term::Variable(Variable(989781))).unwrap();
+            IntegerTerm::from_machine(source, MachineTerm::Variable(Variable(989781))).unwrap();
         for target in super::FORMATS {
             for rhs in [
                 value.clone(),
@@ -365,7 +365,7 @@ fn inverse_operation_mapping_matches_boxed_conversion_routes() {
                 IntegerTerm::constant((-1).into()),
                 IntegerTerm::from_machine(
                     source,
-                    Bitvector32Term::IntegerToMachine {
+                    MachineTerm::IntegerToMachine {
                         value: IntegerTerm::Variable(Variable(989782)).into(),
                         destination: source,
                     },
@@ -451,11 +451,11 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
     };
     let _session = crate::kernel::VerificationSession::enter();
     let format = MachineIntegerType::Int32;
-    let written = Bitvector32Term::Binary {
+    let written = MachineTerm::Binary {
         format,
         op: MachineBinaryOp::Add,
-        left: Box::new(Bitvector32Term::Variable(Variable(989798))),
-        right: Box::new(Bitvector32Term::Variable(Variable(989799))),
+        left: Box::new(MachineTerm::Variable(Variable(989798))),
+        right: Box::new(MachineTerm::Variable(Variable(989799))),
     };
     let operand = SharedMachineIntegerTerm::from_shared(
         format,
@@ -477,7 +477,7 @@ fn shared_operation_bounds_keep_legacy_overflow_authority_without_export() {
             format,
             op: OverflowOperation::Add,
             left: Box::new(written),
-            right: Box::new(Bitvector32Term::constant(2)),
+            right: Box::new(MachineTerm::constant(2)),
         },
         false,
     );

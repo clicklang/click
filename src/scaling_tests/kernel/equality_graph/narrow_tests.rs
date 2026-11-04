@@ -39,7 +39,7 @@ fn narrow_equation_width_reads_are_root_bounded() {
         for depth in DEPTHS {
             let mut side = var(20_000);
             for index in 1..depth {
-                side = Bitvector32Term::machine_binary(format, Op::Add, side, var(20_000 + index));
+                side = MachineTerm::machine_binary(format, Op::Add, side, var(20_000 + index));
             }
             let equation = |right| ConditionTerm::Compare {
                 format: Ty::Int32,
@@ -87,8 +87,7 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
         let graph = EqualityGraph::default();
         let mut state = graph.state.lock().expect("equality graph");
         let operand = var(30_000);
-        let mut chain =
-            Bitvector32Term::machine_integer_cast(Ty::UInt32, formats[0], operand.clone());
+        let mut chain = MachineTerm::machine_integer_cast(Ty::UInt32, formats[0], operand.clone());
         let mut bits: u128 = 0x1f0 & 0xff;
         let mut last = formats[0];
         for index in 1..depth {
@@ -97,7 +96,7 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
             state
                 .terms
                 .add_typed_equality(W::of_machine_type(last), &link, &chain);
-            chain = Bitvector32Term::machine_integer_cast(last, next, link);
+            chain = MachineTerm::machine_integer_cast(last, next, link);
             // The cast's bits: the source's value at the destination's width.
             let source_bits = last.format().bits();
             let value = if last.format().is_signed() && bits >> (source_bits - 1) & 1 == 1 {
@@ -109,12 +108,12 @@ fn narrow_cast_chains_fold_a_late_constant_in_linear_work() {
             last = next;
         }
         let width = W::of_machine_type(last);
-        let expected = Bitvector32Term::narrow_constant(last, bits);
+        let expected = MachineTerm::narrow_constant(last, bits);
         assert!(!state.terms.are_typed_equal(width, &chain, &expected));
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
             state
                 .terms
-                .add_typed_equality(W::Bits32, &operand, &Bitvector32Term::constant(0x1f0));
+                .add_typed_equality(W::Bits32, &operand, &MachineTerm::constant(0x1f0));
             assert!(
                 state.terms.are_typed_equal(width, &chain, &expected),
                 "depth {depth}: {last:?} {bits:#x}"

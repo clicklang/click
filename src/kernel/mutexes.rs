@@ -2926,11 +2926,11 @@ mod tests {
             CResourceFact::View(fact.resource().clone()),
             CResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::Bitvector32Term::constant(0),
+                super::super::MachineTerm::constant(0),
             ),
             CResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::Bitvector32Term::constant(2),
+                super::super::MachineTerm::constant(2),
             ),
         ] {
             assert!(!resources.satisfies_fact(&invalid, &assumptions));
@@ -2992,11 +2992,11 @@ mod tests {
             CResourceFact::View(fact.resource().clone()),
             CResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::Bitvector32Term::constant(0),
+                super::super::MachineTerm::constant(0),
             ),
             CResourceFact::own_quantity(
                 fact.resource().clone(),
-                super::super::Bitvector32Term::constant(2),
+                super::super::MachineTerm::constant(2),
             ),
         ] {
             assert!(!resources.satisfies_fact(&invalid, &assumptions));
@@ -5277,8 +5277,8 @@ mod wide_range_reader_tests {
         );
         let wide = CMemoryRange::new_wide(
             base,
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::uint64_constant(1 << 33),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_constant(1 << 33),
             1,
         );
         assert!(

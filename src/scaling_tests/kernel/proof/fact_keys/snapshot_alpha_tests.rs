@@ -50,7 +50,7 @@ fn snapshot_alpha_registered_load_dags_scale_linearly() {
             Variable(321_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(load),
+                MachineTerm::Variable(load),
             )),
         );
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
@@ -78,7 +78,7 @@ fn snapshot_alpha_registered_load_branching_dags_stay_linear() {
             Variable(323_001),
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(load),
+                MachineTerm::Variable(load),
             )),
         );
         let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {

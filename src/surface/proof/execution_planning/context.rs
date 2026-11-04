@@ -692,10 +692,10 @@ pub(in crate::surface) enum StatementPrerequisitePolicy {
 /// snapshot transport is defined.
 const SOURCE_CAPABILITY_MAX_NODES: usize = 4096;
 
-fn is_one_byte_external_range(bytes: &Bitvector32Term) -> bool {
+fn is_one_byte_external_range(bytes: &MachineTerm) -> bool {
     matches!(bytes, bits32_constant!(1))
         || matches!(bytes, binary_term!(Int32, Subtract, end, start)
-            if end.as_ref() == &Bitvector32Term::add(start.as_ref().clone(), Bitvector32Term::constant(1)))
+            if end.as_ref() == &MachineTerm::add(start.as_ref().clone(), MachineTerm::constant(1)))
 }
 
 /// Recognize only the direct kernel carrier shapes.  The main iterative walk
@@ -724,8 +724,8 @@ fn source_range_capability_is_supported(proposition: &Proposition) -> Option<boo
         let guard = |p: &Proposition| {
             matches!(p,
             Proposition::ConditionIs(ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right }, false)
-                if left.as_ref() == &Bitvector32Term::Variable(*var)
-                    && right.as_ref() == &Bitvector32Term::constant(1))
+                if left.as_ref() == &MachineTerm::Variable(*var)
+                    && right.as_ref() == &MachineTerm::constant(1))
         };
         let range = if guard(left) {
             right
@@ -772,10 +772,7 @@ fn has_explicit_existential_byte_range(proposition: &Proposition) -> bool {
     else {
         return false;
     };
-    let width = Bitvector32Term::add(
-        Bitvector32Term::Variable(*var),
-        Bitvector32Term::constant(1),
-    );
+    let width = MachineTerm::add(MachineTerm::Variable(*var), MachineTerm::constant(1));
     let mut work = vec![body.as_ref()];
     let mut visited = 0;
     while let Some(part) = work.pop() {
@@ -853,7 +850,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
     enum Work<'a> {
         Proposition(&'a Proposition, usize),
         Condition(&'a ConditionTerm),
-        Bitvector(&'a Bitvector32Term),
+        Bitvector(&'a MachineTerm),
         PointerOffset(&'a PointerOffsetTerm),
     }
     let mut work = vec![Work::Proposition(proposition, 0)];
@@ -935,7 +932,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 if !crate::kernel::is_load_variable(variable) => {}
             Work::Condition(_) => return Ok(false),
             Work::Bitvector(bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)) => {}
-            Work::Bitvector(term @ Bitvector32Term::MemoryLoad(_, _, _))
+            Work::Bitvector(term @ MachineTerm::MemoryLoad(_, _, _))
                 if static_snapshot.is_some_and(|_| {
                     registered_static_memory_load_matches_snapshot(
                         term,
@@ -945,13 +942,13 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
             {
                 saw_static_load = true;
             }
-            Work::Bitvector(Bitvector32Term::Variable(variable))
+            Work::Bitvector(MachineTerm::Variable(variable))
                 if !crate::kernel::is_load_variable(variable) => {}
-            Work::Bitvector(Bitvector32Term::Variable(variable))
+            Work::Bitvector(MachineTerm::Variable(variable))
                 if quantified_external_range
                     && crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_some() => {}
-            Work::Bitvector(Bitvector32Term::Variable(variable))
+            Work::Bitvector(MachineTerm::Variable(variable))
                 if static_snapshot.is_some_and(|_| {
                     registered_static_load_matches_snapshot(
                         variable,
@@ -1029,7 +1026,7 @@ fn registered_static_load_matches_snapshot(
 }
 
 fn registered_static_memory_load_matches_snapshot(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     source_snapshot: crate::kernel::CMemorySnapshotIdentity,
 ) -> bool {
     let Some((variable, _)) = crate::kernel::load_variable_for_term(term) else {
@@ -1162,8 +1159,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::Variable(Variable(1 << 40))),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1202,8 +1199,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1221,12 +1218,12 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(pointer.clone()),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1255,8 +1252,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(dynamic_variable)),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::Variable(dynamic_variable)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1299,7 +1296,7 @@ mod tests {
         let range = Proposition::CMemoryLoadable {
             memory: crate::kernel::CMemory::new(),
             base: pointer,
-            bytes: Bitvector32Term::constant(1),
+            bytes: MachineTerm::constant(1),
             wide: false,
         };
         let quantified = Proposition::ForAll {
@@ -1328,8 +1325,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1362,8 +1359,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     true,
                 )),
@@ -1385,8 +1382,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        left: Box::new(MachineTerm::Variable(Variable(1 << 40))),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1418,7 +1415,7 @@ mod tests {
             && let Proposition::Implies(_, consequent) = body.as_mut()
             && let Proposition::CMemoryLoadable { bytes, .. } = consequent.as_mut()
         {
-            *bytes = Bitvector32Term::constant(2);
+            *bytes = MachineTerm::constant(2);
         }
         let wide_guarded = Proposition::Exists {
             name: "len".to_string(),
@@ -1429,8 +1426,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1447,7 +1444,7 @@ mod tests {
             && let Proposition::CMemoryLoadable { base, .. } = consequent.as_mut()
         {
             base.offset = PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(Variable(1 << 40))),
+                value: Box::new(MachineTerm::Variable(Variable(1 << 40))),
                 byte_width: 1,
             };
         }
@@ -1460,8 +1457,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),
@@ -1482,8 +1479,8 @@ mod tests {
                     ConditionTerm::Overflows {
                         format: MachineIntegerType::Int32,
                         op: OverflowOperation::Add,
-                        left: Box::new(Bitvector32Term::Variable(Variable(3_100_001))),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        left: Box::new(MachineTerm::Variable(Variable(3_100_001))),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     false,
                 )),

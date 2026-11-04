@@ -6,12 +6,12 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 fn outcome_constant_bounds_keep_a_compact_selected_context() {
     for size in [4u32, 32, 64, 256] {
-        let x = Bitvector32Term::Variable(Variable(786_001));
+        let x = MachineTerm::Variable(Variable(786_001));
         let lower = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
-                left: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::constant(0)),
                 right: Box::new(x.clone()),
             },
             true,
@@ -21,7 +21,7 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessEqual,
                 left: Box::new(x.clone()),
-                right: Box::new(Bitvector32Term::constant(1000)),
+                right: Box::new(MachineTerm::constant(1000)),
             },
             true,
         );
@@ -38,7 +38,7 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
                         Int32,
                         Subtract,
                         Box::new(x.clone()),
-                        Box::new(Bitvector32Term::constant(index)),
+                        Box::new(MachineTerm::constant(index)),
                     )),
                 },
                 true,
@@ -53,7 +53,7 @@ fn outcome_constant_bounds_keep_a_compact_selected_context() {
                     Int32,
                     Subtract,
                     Box::new(x),
-                    Box::new(Bitvector32Term::constant(size)),
+                    Box::new(MachineTerm::constant(size)),
                 )),
             },
             true,

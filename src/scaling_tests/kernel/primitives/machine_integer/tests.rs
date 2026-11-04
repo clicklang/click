@@ -10,13 +10,13 @@ use crate::kernel::{MachineBinaryOp, MachineIntegerType};
 fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
     use crate::kernel::Variable;
     for size in [16, 64, 256, 1024] {
-        let mut operand = Bitvector32Term::Variable(Variable(149_002));
+        let mut operand = MachineTerm::Variable(Variable(149_002));
         for _ in 0..size {
-            operand = Bitvector32Term::Binary {
+            operand = MachineTerm::Binary {
                 format: MachineIntegerType::Int64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(operand),
-                right: Box::new(Bitvector32Term::int64_constant(1)),
+                right: Box::new(MachineTerm::int64_constant(1)),
             };
         }
         let (converted, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -42,18 +42,18 @@ fn wide_cast_construction_and_validation_do_constant_work_on_large_operands() {
 fn symbolic_modulo_conversion_work_is_independent_of_operand_depth() {
     for right_nested in [false, true] {
         for size in [16, 64, 256, 1024] {
-            let mut term = Bitvector32Term::Variable(super::super::super::Variable(138_002));
+            let mut term = MachineTerm::Variable(super::super::super::Variable(138_002));
             for _ in 0..size {
-                let one = Bitvector32Term::uint64_constant(1);
+                let one = MachineTerm::uint64_constant(1);
                 term = if right_nested {
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Add,
                         left: Box::new(one),
                         right: Box::new(term),
                     }
                 } else {
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: MachineIntegerType::UInt64,
                         op: MachineBinaryOp::Add,
                         left: Box::new(term),
@@ -154,17 +154,17 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
     let mut observe_works = Vec::new();
     for size in [16, 64, 256, 1024] {
-        let mut operand = Bitvector32Term::Variable(Variable(149_003));
+        let mut operand = MachineTerm::Variable(Variable(149_003));
         for _ in 0..size {
             operand = binary_node!(
                 Int32,
                 Add,
                 Box::new(operand),
-                Box::new(Bitvector32Term::Variable(Variable(149_004))),
+                Box::new(MachineTerm::Variable(Variable(149_004))),
             );
         }
         let (cast, work) = crate::instrumentation::measure_deterministic_work(|| {
-            Bitvector32Term::sign_cast32(
+            MachineTerm::sign_cast32(
                 MachineIntegerType::Int32,
                 MachineIntegerType::UInt32,
                 operand.clone(),
@@ -183,7 +183,7 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
         assert_eq!(index, operand, "size {size}");
         assert_eq!(index_work, 0, "size {size}");
         let (back, work) = crate::instrumentation::measure_deterministic_work(|| {
-            Bitvector32Term::sign_cast32(
+            MachineTerm::sign_cast32(
                 MachineIntegerType::UInt32,
                 MachineIntegerType::Int32,
                 cast.clone(),
@@ -213,13 +213,13 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
             crate::instrumentation::measure_deterministic_work(|| observed.value_read().clone());
         assert_eq!(Some(reading), read, "σ(σ(x)) reads as x, size {size}");
         observe_works.push(observe_work);
-        let sum = Bitvector32Term::add_at(
+        let sum = MachineTerm::add_at(
             MachineIntegerType::UInt32,
             cast.clone(),
-            Bitvector32Term::uint32_constant(1),
+            MachineTerm::uint32_constant(1),
         );
         assert!(
-            matches!(&sum, Bitvector32Term::Binary { left, .. } if **left == cast),
+            matches!(&sum, MachineTerm::Binary { left, .. } if **left == cast),
             "size {size}"
         );
     }
@@ -238,17 +238,17 @@ fn sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands() {
 fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands() {
     use crate::kernel::Variable;
     for size in [16, 64, 256, 1024] {
-        let mut sum = Bitvector32Term::Variable(Variable(149_005));
+        let mut sum = MachineTerm::Variable(Variable(149_005));
         for _ in 0..size {
             sum = binary_node!(
                 Int32,
                 Add,
                 Box::new(sum),
-                Box::new(Bitvector32Term::Variable(Variable(149_006))),
+                Box::new(MachineTerm::Variable(Variable(149_006))),
             );
         }
         // A narrow value over a deep word: the C narrowing of the sum.
-        let operand = Bitvector32Term::machine_integer_cast(
+        let operand = MachineTerm::machine_integer_cast(
             MachineIntegerType::Int32,
             MachineIntegerType::UInt8,
             sum,
@@ -271,8 +271,8 @@ fn narrow_widening_construction_and_word_reads_do_constant_work_on_deep_operands
             });
             assert_eq!(read_work, 0, "size {size}");
             assert_ne!(
-                Bitvector32Term::add(cast.clone(), Bitvector32Term::constant(1)),
-                Bitvector32Term::add(operand.clone(), Bitvector32Term::constant(1)),
+                MachineTerm::add(cast.clone(), MachineTerm::constant(1)),
+                MachineTerm::add(operand.clone(), MachineTerm::constant(1)),
                 "size {size}"
             );
         }

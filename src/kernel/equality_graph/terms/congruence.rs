@@ -6,8 +6,8 @@ use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::machine_integer::representation;
 use crate::kernel::{
-    Bitvector32Term as T, BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W,
-    ConditionTerm as C, PureFunctionArgument as A, SharedPureApplication,
+    BitvectorUnaryOp as U, CType, CValue, CarrierWidth as W, ConditionTerm as C, MachineTerm as T,
+    PureFunctionArgument as A, SharedPureApplication,
 };
 use crate::kernel::{CompareRelation, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, cast_op};
@@ -1350,7 +1350,7 @@ impl TermClasses {
     /// this adds at most five nodes and one merge whatever the operand's
     /// size, and a nested narrow cast is interned once. Its nodes are the
     /// ones the constructors' spelling of the word interns
-    /// (`Bitvector32Term::bitwise_and`, `bitwise_xor`, `subtract`), so the
+    /// (`MachineTerm::bitwise_and`, `bitwise_xor`, `subtract`), so the
     /// written `x & 255u32` meets the cast's class.
     pub(super) fn narrow_cast_node(
         &mut self,

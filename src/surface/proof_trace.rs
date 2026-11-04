@@ -5,7 +5,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::ContractPathPreparationFailure;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::proof::BranchId;
-use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, Proposition, SharedCMemory};
+use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, SharedCMemory};
 use crate::source::SourcePosition;
 use crate::surface::proof_diagnostics::ProofDiagnosticState;
 use crate::surface::proof_diagnostics::render::{self, SnapshotLabels};
@@ -272,7 +272,7 @@ impl ChildArgumentTrace {
             view.render(labels)
         } else if pointer == &Pointer::null() {
             "0 (null pointer)".into()
-        } else if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) =
+        } else if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
             pointer_definition(pointer)
         {
             format!(
@@ -322,11 +322,11 @@ impl ChildArgumentTrace {
     }
 }
 
-pub(super) fn pointer_definition(pointer: &Pointer) -> Option<Bitvector32Term> {
+pub(super) fn pointer_definition(pointer: &Pointer) -> Option<MachineTerm> {
     crate::kernel::logical_pointer_read_term(pointer).or_else(|| {
         let read = pointer.as_loaded_value()?;
         (read.displacement == crate::kernel::PointerOffsetTerm::Constant(0)).then(|| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 read.defining_memory,
                 Box::new(read.defining_address),
                 crate::kernel::LoadKind::Int32,
@@ -362,14 +362,12 @@ impl CertificationTraceState {
     }
 }
 
-fn traced_read(term: &Bitvector32Term) -> Option<(SharedCMemory, Pointer)> {
+fn traced_read(term: &MachineTerm) -> Option<(SharedCMemory, Pointer)> {
     match term {
-        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
+        MachineTerm::MemoryLoad(memory, pointer, _) => {
             Some((memory.clone(), pointer.as_ref().clone()))
         }
-        Bitvector32Term::Variable(variable) => {
-            crate::kernel::registered_load_for_variable(variable)
-        }
+        MachineTerm::Variable(variable) => crate::kernel::registered_load_for_variable(variable),
         _ => None,
     }
 }
@@ -1333,7 +1331,7 @@ fn trace_text(text: &str, max_bytes: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, CMemory, Pointer, PointerBlock, PointerOffsetTerm};
+    use crate::kernel::{CMemory, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm};
 
     #[test]
     fn admitted_read_equalities_share_the_fact_printer_and_read_labels() {
@@ -1386,7 +1384,7 @@ mod tests {
         let first = crate::kernel::intern_c_memory(CMemory::new());
         let second = crate::kernel::intern_c_memory(CMemory::new().store(
             address.clone(),
-            crate::kernel::CValue::Int32(Bitvector32Term::constant(1)),
+            crate::kernel::CValue::Int32(MachineTerm::constant(1)),
         ));
         let a = Pointer::loaded_value(&first, &address);
         let b = Pointer::loaded_value(&second, &address);
@@ -1493,19 +1491,19 @@ mod tests {
         let first = CMemory::new();
         let second = first.clone().store(
             pointer.clone(),
-            CValue::UInt64(Bitvector32Term::uint64_constant(9)),
+            CValue::UInt64(MachineTerm::uint64_constant(9)),
         );
         let fact = |memory| {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int64,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::MemoryLoad(
+                    left: Box::new(MachineTerm::MemoryLoad(
                         crate::kernel::intern_c_memory(memory),
                         Box::new(pointer.clone()),
                         LoadKind::Bits64,
                     )),
-                    right: Box::new(Bitvector32Term::uint64_constant(3)),
+                    right: Box::new(MachineTerm::uint64_constant(3)),
                 },
                 true,
             )
@@ -1574,7 +1572,7 @@ mod tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             },
-            bytes: Bitvector32Term::constant(1),
+            bytes: MachineTerm::constant(1),
             wide: false,
         }
     }
@@ -1655,7 +1653,7 @@ mod tests {
                 ConditionTerm::integer_equal(
                     IntegerTerm::from_machine(
                         MachineIntegerType::UInt32,
-                        Bitvector32Term::Variable(Variable(981_702)),
+                        MachineTerm::Variable(Variable(981_702)),
                     )
                     .unwrap(),
                     IntegerTerm::constant_i64(17),
@@ -1732,7 +1730,7 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let Bitvector32Term::Variable(variable) = crate::kernel::canonical_form_of_load(
+        let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
             memory.clone(),
             pointer.clone(),
             crate::kernel::LoadKind::Int32,
@@ -1743,8 +1741,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::MemoryLoad(
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,

@@ -11,7 +11,7 @@ fn growing_order_paths_reuse_shared_prefixes() {
             let mut root = variable(988001);
             let zero = crate::kernel::KernelTermImport::default().machine(
                 ty,
-                &Bitvector32Term::machine_constant(
+                &MachineTerm::machine_constant(
                     crate::kernel::MachineIntegerConstant::from_signed(ty.format(), 0).unwrap(),
                 ),
             );

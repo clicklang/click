@@ -1,6 +1,6 @@
 //! Exact mathematical integer terms.
 //!
-//! `IntegerTerm` is deliberately separate from `Bitvector32Term`: the latter
+//! `IntegerTerm` is deliberately separate from `MachineTerm`: the latter
 //! is also the arena for C machine values and therefore carries machine-width
 //! and overflow semantics.  Mathematical integers have no C representation.
 
@@ -73,7 +73,7 @@ pub enum IntegerTerm {
         arms: Vec<AlgebraicIntegerMatchArm>,
     },
     /// A conditional Integer value, the counterpart of the machine
-    /// `Bitvector32Term::If`. Built by [`IntegerTerm::if_then_else`], so a
+    /// `MachineTerm::If`. Built by [`IntegerTerm::if_then_else`], so a
     /// constant condition or equal branches never stand.
     If {
         condition: Box<ConditionTerm>,
@@ -280,11 +280,7 @@ impl IntegerRangeFoldIndex {
     /// # Panics
     ///
     /// On a range of mathematical integers, which has no machine endpoint.
-    pub(crate) fn with_machine_endpoints(
-        &self,
-        start: Bitvector32Term,
-        end: Bitvector32Term,
-    ) -> Self {
+    pub(crate) fn with_machine_endpoints(&self, start: MachineTerm, end: MachineTerm) -> Self {
         let start = SharedIntegerRangeEndpoint::intern(start);
         let end = SharedIntegerRangeEndpoint::intern(end);
         match self {
@@ -337,7 +333,7 @@ impl Hash for SharedIntegerRangeEndpoint {
 }
 
 impl SharedIntegerRangeEndpoint {
-    pub fn intern(value: Bitvector32Term) -> Self {
+    pub fn intern(value: MachineTerm) -> Self {
         Self {
             node: SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, value),
         }
@@ -345,7 +341,7 @@ impl SharedIntegerRangeEndpoint {
     pub fn id(&self) -> u64 {
         self.node.id()
     }
-    pub fn value(&self) -> &Bitvector32Term {
+    pub fn value(&self) -> &MachineTerm {
         self.node.value()
     }
 }
@@ -415,7 +411,7 @@ pub enum MachineIntegerType {
 
 impl MachineIntegerType {
     pub fn symbolic_value(self, variable: Variable) -> CValue {
-        let term = Bitvector32Term::Variable(variable);
+        let term = MachineTerm::Variable(variable);
         match self {
             Self::Int8 => CValue::Int8(term),
             Self::Int16 => CValue::Int16(term),
@@ -504,9 +500,9 @@ struct SharedMachineIntegerNode {
 enum MachineIntegerOperand {
     Shared {
         term: KernelTerm,
-        boxed: OnceLock<Bitvector32Term>,
+        boxed: OnceLock<MachineTerm>,
     },
-    Legacy(Bitvector32Term),
+    Legacy(MachineTerm),
 }
 
 impl Clone for SharedMachineIntegerTerm {
@@ -542,7 +538,7 @@ pub(super) fn clear_machine_observation_memo() {
 impl SharedMachineIntegerTerm {
     /// An explicit native operand already imported in this verification.
     /// Read-only: a miss does not import syntax or retain an opaque payload.
-    pub(crate) fn retained_import(ty: MachineIntegerType, value: &Bitvector32Term) -> Option<Self> {
+    pub(crate) fn retained_import(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {
         let key = MachineIntegerKey::Legacy {
             ty,
             value: value.clone(),
@@ -557,7 +553,7 @@ impl SharedMachineIntegerTerm {
         .then_some(found)
     }
 
-    pub fn intern(ty: MachineIntegerType, value: Bitvector32Term) -> Self {
+    pub fn intern(ty: MachineIntegerType, value: MachineTerm) -> Self {
         // Legacy callers already supply a boxed tree. Reuse its existing
         // interned observation before importing, and retain that explicit tree
         // instead of exporting it again on the first checker read.
@@ -620,7 +616,7 @@ impl SharedMachineIntegerTerm {
     }
     /// The explicit legacy input, if one was already retained. Unlike
     /// `value`, this never exports a shared operand or fills its cache.
-    pub(crate) fn retained_written_operand(&self) -> Option<&Bitvector32Term> {
+    pub(crate) fn retained_written_operand(&self) -> Option<&MachineTerm> {
         match &self.0.operand {
             MachineIntegerOperand::Shared { boxed, .. } => boxed.get(),
             MachineIntegerOperand::Legacy(value) => Some(value),
@@ -641,7 +637,7 @@ impl SharedMachineIntegerTerm {
     pub fn ty(&self) -> MachineIntegerType {
         self.0.ty
     }
-    pub fn value(&self) -> &Bitvector32Term {
+    pub fn value(&self) -> &MachineTerm {
         match &self.0.operand {
             MachineIntegerOperand::Shared { term, boxed } => boxed
                 .get_or_init(|| KernelTermExport::machine(term).expect("shared machine operand")),
@@ -723,7 +719,7 @@ enum MachineIntegerKey {
     },
     Legacy {
         ty: MachineIntegerType,
-        value: Bitvector32Term,
+        value: MachineTerm,
     },
 }
 
@@ -1251,7 +1247,7 @@ impl IntegerTerm {
     }
 
     #[track_caller]
-    pub fn from_machine(ty: MachineIntegerType, value: Bitvector32Term) -> Option<Self> {
+    pub fn from_machine(ty: MachineIntegerType, value: MachineTerm) -> Option<Self> {
         if ty.format().bits() == 128 && !ty.accepts_wide_term(&value) {
             return None;
         }
@@ -1295,7 +1291,7 @@ impl IntegerTerm {
         // wider than the value's format is the caller's, not structure the
         // source wrote, and the conversion itself is retained).
         match &value {
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 to: destination,
                 ..
@@ -1357,11 +1353,11 @@ impl IntegerTerm {
 /// observation at `.0` of the operand `.1`, borrowed from the observed term.
 pub(crate) enum ValueReading<'a> {
     Constant(BigInt),
-    Observation(MachineIntegerType, &'a Bitvector32Term),
+    Observation(MachineIntegerType, &'a MachineTerm),
 }
 
-fn is_machine_constant(value: &Bitvector32Term) -> bool {
-    matches!(value, Bitvector32Term::Constant { .. })
+fn is_machine_constant(value: &MachineTerm) -> bool {
+    matches!(value, MachineTerm::Constant { .. })
 }
 
 /// The value relations of an Integer observation of a conversion (rule W),
@@ -1379,7 +1375,7 @@ fn is_machine_constant(value: &Bitvector32Term) -> bool {
 /// observed at a type that does not contain its destination).
 pub(crate) fn machine_value_reading(
     ty: MachineIntegerType,
-    value: &Bitvector32Term,
+    value: &MachineTerm,
 ) -> Option<ValueReading<'_>> {
     let mut value = value;
     if matches!(ty, MachineIntegerType::Int32 | MachineIntegerType::UInt32) {
@@ -1392,7 +1388,7 @@ pub(crate) fn machine_value_reading(
         }
     }
     match value {
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             to: destination,
             ..
@@ -1402,14 +1398,14 @@ pub(crate) fn machine_value_reading(
         {
             return machine_value_reading(*destination, value);
         }
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             to: destination,
             ..
         } if *destination != ty => {
             return None;
         }
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: source,
             value: operand,
@@ -1946,11 +1942,11 @@ mod tests {
 
     #[test]
     fn boxed_observation_imports_are_session_local_and_released_on_reset() {
-        let value = Bitvector32Term::Binary {
+        let value = MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
-            left: Box::new(Bitvector32Term::Variable(Variable(953000))),
-            right: Box::new(Bitvector32Term::int64_constant(1)),
+            left: Box::new(MachineTerm::Variable(Variable(953000))),
+            right: Box::new(MachineTerm::int64_constant(1)),
         };
         let mut costs = Vec::new();
         let mut previous = Weak::<SharedMachineIntegerNode>::new();
@@ -2117,8 +2113,8 @@ mod tests {
         let initial = IntegerTerm::constant_i64(4);
         for index in [
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(3)),
-                end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(3)),
+                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(3)),
+                end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(3)),
             },
             IntegerRangeFoldIndex::Integer {
                 start: SharedIntegerTerm::from(IntegerTerm::constant_i64(3)),
@@ -2144,8 +2140,8 @@ mod tests {
             ))
         );
         let reversed = IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(3)),
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
+            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(3)),
         };
         assert_eq!(
             IntegerTerm::range_fold_empty_or_step(&reversed, &initial, accumulator, item, &body,)
@@ -2227,20 +2223,20 @@ mod tests {
         let start = Variable(31_102);
         let end = Variable(31_103);
         let index = IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Variable(start)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::Variable(end)),
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(start)),
+            end: SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(end)),
         };
         let initial = IntegerTerm::constant_i64(0);
         let body = IntegerTerm::var(accumulator);
         let whole = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "counted".to_string(),
             vec![
-                crate::kernel::PureFunctionArgument::Value(CValue::Int32(
-                    Bitvector32Term::Variable(start),
-                )),
-                crate::kernel::PureFunctionArgument::Value(CValue::Int32(
-                    Bitvector32Term::Variable(end),
-                )),
+                crate::kernel::PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(
+                    start,
+                ))),
+                crate::kernel::PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(
+                    end,
+                ))),
             ],
         ));
 
@@ -2381,10 +2377,10 @@ mod tests {
 
     #[test]
     fn range_fold_append_theorem_evaluates_both_sides_for_both_carriers() {
-        fn eval_bits(term: &Bitvector32Term, bits: &BTreeMap<Variable, i64>) -> i64 {
+        fn eval_bits(term: &MachineTerm, bits: &BTreeMap<Variable, i64>) -> i64 {
             match term {
                 bits32_constant!(value) => constant_u32(*value) as i32 as i64,
-                Bitvector32Term::Variable(variable) => bits[variable],
+                MachineTerm::Variable(variable) => bits[variable],
                 binary_term!(Int32, Add, left, right) => {
                     eval_bits(left, bits) + eval_bits(right, bits)
                 }
@@ -2490,18 +2486,16 @@ mod tests {
         for start in [-2_i64, 0, 2] {
             let end = start + 2;
             let index = IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
+                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(
                     start as i32 as u32,
                 )),
-                end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(
-                    end as i32 as u32,
-                )),
+                end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(end as i32 as u32)),
             };
             let body = IntegerTerm::add(
                 IntegerTerm::var(accumulator),
                 IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(item),
+                    MachineTerm::Variable(item),
                 )),
             );
             let theorem = crate::kernel::prove_integer_range_fold_append(
@@ -2623,7 +2617,7 @@ mod tests {
 
     #[test]
     fn typed_machine_observations_are_canonical_but_signedness_is_distinct() {
-        let value = Bitvector32Term::Variable(Variable(77));
+        let value = MachineTerm::Variable(Variable(77));
         let signed = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, value.clone());
         let signed_again =
             SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, value.clone());
@@ -2636,12 +2630,12 @@ mod tests {
 
     #[test]
     fn range_endpoints_retain_machine_interner_identity_while_live() {
-        let first = SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(17));
+        let first = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(17));
         let first_id = first.id();
         for value in 0..32 {
-            let _ = SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(value));
+            let _ = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(value));
         }
-        let second = SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(17));
+        let second = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(17));
         assert_eq!(first_id, second.id());
         assert_eq!(first.value(), second.value());
     }
@@ -2649,37 +2643,31 @@ mod tests {
     #[test]
     fn machine_conversion_preserves_width_and_signedness_for_constants() {
         assert_eq!(
-            IntegerTerm::from_machine(
-                MachineIntegerType::Int32,
-                Bitvector32Term::constant(u32::MAX)
-            )
-            .and_then(|v| v.as_const().cloned()),
+            IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::constant(u32::MAX))
+                .and_then(|v| v.as_const().cloned()),
             Some(BigInt::from(-1))
         );
         assert_eq!(
-            IntegerTerm::from_machine(
-                MachineIntegerType::UInt32,
-                Bitvector32Term::constant(u32::MAX)
-            )
-            .and_then(|v| v.as_const().cloned()),
+            IntegerTerm::from_machine(MachineIntegerType::UInt32, MachineTerm::constant(u32::MAX))
+                .and_then(|v| v.as_const().cloned()),
             Some(BigInt::from(u32::MAX))
         );
         assert_eq!(
             IntegerTerm::from_machine(
                 MachineIntegerType::UInt64,
-                Bitvector32Term::uint64_constant(u64::MAX)
+                MachineTerm::uint64_constant(u64::MAX)
             )
             .and_then(|v| v.as_const().cloned()),
             Some(BigInt::from(u64::MAX))
         );
         assert!(
-            IntegerTerm::from_machine(MachineIntegerType::UInt8, Bitvector32Term::constant(256))
+            IntegerTerm::from_machine(MachineIntegerType::UInt8, MachineTerm::constant(256))
                 .is_none()
         );
         assert!(
             IntegerTerm::from_machine(
                 MachineIntegerType::Int32,
-                Bitvector32Term::int64_constant(i64::MAX)
+                MachineTerm::int64_constant(i64::MAX)
             )
             .is_none()
         );

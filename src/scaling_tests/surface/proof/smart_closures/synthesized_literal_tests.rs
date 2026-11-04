@@ -22,8 +22,8 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::constant(0)),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         ),
@@ -44,8 +44,8 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(8_179_000 + index))),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        left: Box::new(MachineTerm::Variable(Variable(8_179_000 + index))),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 )
@@ -141,14 +141,14 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
         SignedArithmeticNode, SignedArithmeticRelation, add_claim, signed_arithmetic_claim,
     };
     let function = syntax::parse_function("int32 noop(int32 x) { return x; }").unwrap();
-    let x = Bitvector32Term::Variable(Variable(8_172_000));
+    let x = MachineTerm::Variable(Variable(8_172_000));
     let arguments = [CExpression::Value(CValue::Int32(x.clone()))];
     let premise = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessEqual,
             left: Box::new(x),
-            right: Box::new(Bitvector32Term::constant(1)),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -195,8 +195,8 @@ fn native_signed_certificate_results_do_not_walk_ambient_facts() {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
-                        left: Box::new(Bitvector32Term::Variable(Variable(8_173_000 + i))),
-                        right: Box::new(Bitvector32Term::constant(0)),
+                        left: Box::new(MachineTerm::Variable(Variable(8_173_000 + i))),
+                        right: Box::new(MachineTerm::constant(0)),
                     },
                     true,
                 )

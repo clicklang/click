@@ -715,7 +715,7 @@ impl Ord for AddressObjectClass {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub enum Bitvector32Term {
+pub enum MachineTerm {
     /// A constant of `format`, its two's-complement bits in the low
     /// `format` bits of `bits` (`bits <= format`'s mask; every builder masks
     /// or checks). One node for every format (decision G9,
@@ -723,11 +723,11 @@ pub enum Bitvector32Term {
     /// kernel-internal constant (indices, counts, masks), and a C, C++ or
     /// Rust value keeps its own. A `uint32` constant's word is the `int32`
     /// constant of the same bits inside a 32-bit operator or comparison
-    /// ([`Bitvector32Term::into_word32`]). Build it with
-    /// [`Bitvector32Term::constant`], [`Bitvector32Term::uint32_constant`],
-    /// [`Bitvector32Term::int64_constant`],
-    /// [`Bitvector32Term::uint64_constant`] or
-    /// [`Bitvector32Term::machine_constant`]; match it with
+    /// ([`MachineTerm::into_word32`]). Build it with
+    /// [`MachineTerm::constant`], [`MachineTerm::uint32_constant`],
+    /// [`MachineTerm::int64_constant`],
+    /// [`MachineTerm::uint64_constant`] or
+    /// [`MachineTerm::machine_constant`]; match it with
     /// `int32_constant!`, `uint32_constant!`, `bits32_constant!`,
     /// `int64_constant!`, `uint64_constant!` or `constant_node!`. The derived
     /// order sorts constants by format, then bits.
@@ -749,34 +749,34 @@ pub enum Bitvector32Term {
     Binary {
         op: MachineBinaryOp,
         format: MachineIntegerType,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
+        left: Box<MachineTerm>,
+        right: Box<MachineTerm>,
     },
     /// `op operand`, the operand read at `format`, under the same format
     /// restriction as [`Self::Binary`]: the 32-bit complement is at `int32`.
     Unary {
         format: MachineIntegerType,
         op: MachineUnaryOp,
-        operand: Box<Bitvector32Term>,
+        operand: Box<MachineTerm>,
     },
     If {
         condition: Box<ConditionTerm>,
-        then_term: Box<Bitvector32Term>,
-        else_term: Box<Bitvector32Term>,
+        then_term: Box<MachineTerm>,
+        else_term: Box<MachineTerm>,
     },
     RangeFold {
-        start: Box<Bitvector32Term>,
-        end: Box<Bitvector32Term>,
-        initial: Box<Bitvector32Term>,
+        start: Box<MachineTerm>,
+        end: Box<MachineTerm>,
+        initial: Box<MachineTerm>,
         accumulator: Variable,
         item: Variable,
-        body: Box<Bitvector32Term>,
+        body: Box<MachineTerm>,
     },
     /// An opaque application retained across one-step unfolding of a total
     /// pure Click function at symbolic arguments.
     PureFunctionApplication {
         name: String,
-        arguments: Vec<Bitvector32Term>,
+        arguments: Vec<MachineTerm>,
     },
     /// A Click function application remains a logical term until a checked
     /// function-unfold step exposes its definition. Unlike the legacy
@@ -817,7 +817,7 @@ pub enum Bitvector32Term {
     /// spelling fixes its formats ([`MachineCastSpelling::legacy_formats`]):
     /// the low word ([`MachineCastSpelling::UInt32From64`]) reads its operand
     /// as the 64 bits of a `uint64`, whatever the operand's signedness.
-    /// Build it with [`Bitvector32Term::cast_node`] or the smart
+    /// Build it with [`MachineTerm::cast_node`] or the smart
     /// constructors (`machine_integer_cast`, `int64_from_32`,
     /// `uint32_from_64`, ...); match it with `cast_term!`. `spelling`
     /// precedes the formats so the derived order of the conversions is the
@@ -825,21 +825,21 @@ pub enum Bitvector32Term {
     /// "Stage 3").
     Cast {
         spelling: MachineCastSpelling,
-        value: Box<Bitvector32Term>,
+        value: Box<MachineTerm>,
         from: MachineIntegerType,
         to: MachineIntegerType,
     },
-    Float32Negate(Box<Bitvector32Term>),
+    Float32Negate(Box<MachineTerm>),
     Float32Binary {
         operator: CFloatBinaryOperator,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
+        left: Box<MachineTerm>,
+        right: Box<MachineTerm>,
     },
-    Float64Negate(Box<Bitvector32Term>),
+    Float64Negate(Box<MachineTerm>),
     Float64Binary {
         operator: CFloatBinaryOperator,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
+        left: Box<MachineTerm>,
+        right: Box<MachineTerm>,
     },
     /// Rule C1 (`design/machine-integers.md`, Stage 5): the integer value of
     /// the `Bool` `value` at the format `to`, `value as to`. It is 1 when
@@ -847,7 +847,7 @@ pub enum Bitvector32Term {
     /// nothing and its word is 1 or 0 at every width. A specification `Bool`
     /// travels in a `CValue::Bool` as its cast to `uint8`, the byte a `bool`
     /// cell holds; its truth is `value`. Built by
-    /// [`Bitvector32Term::bool_cast`], which folds a constant. It follows
+    /// [`MachineTerm::bool_cast`], which folds a constant. It follows
     /// every other variant, so the derived order of the terms before it is
     /// unchanged.
     BoolCast {
@@ -861,7 +861,7 @@ pub enum Bitvector32Term {
 /// (`Constant(7)`, `UInt32Constant(7)`, `Int64Constant(-1)`,
 /// `UInt64Constant(7)`, `MachineIntegerConstant(..)`): a diagnostic that
 /// prints a term with `{:?}` prints what it printed.
-impl std::fmt::Debug for Bitvector32Term {
+impl std::fmt::Debug for MachineTerm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             int32_constant!(bits) => f
@@ -1019,7 +1019,7 @@ pub enum PointerOffsetTerm {
     Variable(Variable),
     Add(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
     Int32Scaled {
-        value: Box<Bitvector32Term>,
+        value: Box<MachineTerm>,
         byte_width: i64,
     },
     /// A pointer displacement formed from a signed or unsigned 64-bit
@@ -1027,7 +1027,7 @@ pub enum PointerOffsetTerm {
     /// existing 32-bit form, but its numeric interpretation must not be
     /// truncated to `i32` while forming an address.
     Int64Scaled {
-        value: Box<Bitvector32Term>,
+        value: Box<MachineTerm>,
         byte_width: i64,
         unsigned: bool,
     },
@@ -1037,7 +1037,7 @@ impl PointerOffsetTerm {
     /// Maps scaled index values without changing the offset expression.
     pub(crate) fn map_scaled_values(
         &self,
-        mut map: impl FnMut(&Bitvector32Term) -> Bitvector32Term,
+        mut map: impl FnMut(&MachineTerm) -> MachineTerm,
     ) -> Self {
         enum Task<'a> {
             Visit(&'a PointerOffsetTerm),
@@ -1083,7 +1083,7 @@ impl PointerOffsetTerm {
 
     /// Every bitvector term nested in this offset, for traversals that must
     /// look through a pointer embedded in a term.
-    pub(crate) fn scaled_values(&self) -> Vec<&Bitvector32Term> {
+    pub(crate) fn scaled_values(&self) -> Vec<&MachineTerm> {
         let mut values = Vec::new();
         let mut pending = vec![self];
         while let Some(offset) = pending.pop() {
@@ -1102,7 +1102,7 @@ impl PointerOffsetTerm {
     }
 
     /// Visits each scaled index of this offset, left to right.
-    pub(crate) fn for_each_scaled_value(&self, mut visit: impl FnMut(&Bitvector32Term)) {
+    pub(crate) fn for_each_scaled_value(&self, mut visit: impl FnMut(&MachineTerm)) {
         self.any_scaled_value(|value| {
             visit(value);
             false
@@ -1111,11 +1111,8 @@ impl PointerOffsetTerm {
 
     /// Whether some scaled index of this offset satisfies `test`, asked left to
     /// right and stopping at the first that does.
-    pub(crate) fn any_scaled_value(&self, mut test: impl FnMut(&Bitvector32Term) -> bool) -> bool {
-        fn walk(
-            offset: &PointerOffsetTerm,
-            test: &mut impl FnMut(&Bitvector32Term) -> bool,
-        ) -> bool {
+    pub(crate) fn any_scaled_value(&self, mut test: impl FnMut(&MachineTerm) -> bool) -> bool {
+        fn walk(offset: &PointerOffsetTerm, test: &mut impl FnMut(&MachineTerm) -> bool) -> bool {
             match offset {
                 PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
                 PointerOffsetTerm::Add(left, right) => walk(left, test) || walk(right, test),
@@ -1127,7 +1124,7 @@ impl PointerOffsetTerm {
     }
 }
 
-/// The operator of a machine binary term ([`Bitvector32Term::Binary`]).
+/// The operator of a machine binary term ([`MachineTerm::Binary`]).
 /// Signedness comes from the term's format: `Divide`, `Remainder` and
 /// `ShiftRight` are signed (arithmetic) at a signed format and unsigned
 /// (logical) at an unsigned one.
@@ -1145,7 +1142,7 @@ pub enum MachineBinaryOp {
     BitwiseXor,
 }
 
-/// The operator of a machine unary term ([`Bitvector32Term::Unary`]).
+/// The operator of a machine unary term ([`MachineTerm::Unary`]).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum MachineUnaryOp {
     BitwiseNot,
@@ -1195,8 +1192,8 @@ pub enum ConditionTerm {
     Compare {
         format: MachineIntegerType,
         relation: CompareRelation,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
+        left: Box<MachineTerm>,
+        right: Box<MachineTerm>,
     },
     /// Whether the exact result of `left op right`, the operands read at
     /// `format`, lies outside `format`: a signed overflow test is C's
@@ -1205,8 +1202,8 @@ pub enum ConditionTerm {
     Overflows {
         format: MachineIntegerType,
         op: OverflowOperation,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
+        left: Box<MachineTerm>,
+        right: Box<MachineTerm>,
     },
     Float32(CFloatCondition),
     Float64(CFloatCondition),
@@ -1267,8 +1264,8 @@ enum ConditionIdentity<'a> {
     Overflows {
         format: MachineIntegerType,
         op: OverflowOperation,
-        left: &'a Bitvector32Term,
-        right: &'a Bitvector32Term,
+        left: &'a MachineTerm,
+        right: &'a MachineTerm,
     },
     Float32(&'a CFloatCondition),
     Float64(&'a CFloatCondition),
@@ -1297,20 +1294,20 @@ enum ConditionIdentity<'a> {
 /// `int32` for a 32-bit equality's constant of either spelling).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum ComparisonSide<'a> {
-    Term(&'a Bitvector32Term),
+    Term(&'a MachineTerm),
     Value(i128),
 }
 
 impl<'a> ComparisonSide<'a> {
     /// The side as a term of its comparison's identity `format`: a term as
     /// itself, a value as that format's native constant.
-    pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, Bitvector32Term> {
+    pub(crate) fn term(self, format: MachineIntegerType) -> std::borrow::Cow<'a, MachineTerm> {
         match self {
             Self::Term(term) => std::borrow::Cow::Borrowed(term),
             Self::Value(value) if format.format().bits() == 32 => {
-                std::borrow::Cow::Owned(Bitvector32Term::constant_at32(format, value as u32))
+                std::borrow::Cow::Owned(MachineTerm::constant_at32(format, value as u32))
             }
-            Self::Value(value) => std::borrow::Cow::Owned(Bitvector32Term::machine_constant(
+            Self::Value(value) => std::borrow::Cow::Owned(MachineTerm::machine_constant(
                 MachineIntegerConstant::from_signed(format.format(), value)
                     .expect("an identity value lies in its narrow format's range"),
             )),
@@ -1345,8 +1342,8 @@ thread_local! {
 fn comparison_identity<'a>(
     format: MachineIntegerType,
     relation: CompareRelation,
-    left: &'a Bitvector32Term,
-    right: &'a Bitvector32Term,
+    left: &'a MachineTerm,
+    right: &'a MachineTerm,
 ) -> (MachineIntegerType, ComparisonSide<'a>, ComparisonSide<'a>) {
     #[cfg(test)]
     COMPARISON_IDENTITY_VISITS.with(|visits| visits.set(visits.get() + 1));
@@ -1358,14 +1355,14 @@ fn comparison_identity<'a>(
         (left, right)
     };
     // A 32-bit equality's constant side, of either spelling, as its bits.
-    let side = |term: &'a Bitvector32Term| match term.constant32() {
+    let side = |term: &'a MachineTerm| match term.constant32() {
         Some(bits) if relation == CompareRelation::Equal && format == MachineIntegerType::Int32 => {
             ComparisonSide::Value(i128::from(bits as i32))
         }
         _ => ComparisonSide::Term(term),
     };
     if bits < 32 {
-        let side = |term: &'a Bitvector32Term| match term {
+        let side = |term: &'a MachineTerm| match term {
             native_constant!(constant_format, bits) if *constant_format == format => {
                 MachineIntegerConstant::from_term_bits(format.format(), *bits)
                     .to_i128()
@@ -1390,7 +1387,7 @@ fn comparison_identity<'a>(
                     (0, (1i128 << bits) - 1)
                 }
             };
-            let side = |term: &'a Bitvector32Term| match term {
+            let side = |term: &'a MachineTerm| match term {
                 bits32_constant!(value) if relation == CompareRelation::Equal => {
                     let value = i128::from(constant_u32(*value) as i32);
                     (low <= value && value <= high).then_some(ComparisonSide::Value(value))
@@ -1543,8 +1540,8 @@ impl ConditionTerm {
         &self,
     ) -> Option<(
         crate::kernel::primitives::BitvectorComparisonOp,
-        std::borrow::Cow<'_, Bitvector32Term>,
-        std::borrow::Cow<'_, Bitvector32Term>,
+        std::borrow::Cow<'_, MachineTerm>,
+        std::borrow::Cow<'_, MachineTerm>,
     )> {
         if let Some((format, relation, left, right)) = self.comparison_fact() {
             return Some((
@@ -1609,7 +1606,7 @@ pub(crate) use binary_bitvector_condition;
 /// Matches the machine operation `$left op $right` at one format, as
 /// `binary_term!(Int32, Add, left, right)`, or with `..` in place of the
 /// operands. The 32-bit sign-free operators are at `Int32`; see
-/// [`Bitvector32Term::Binary`].
+/// [`MachineTerm::Binary`].
 ///
 /// `Bits32` in place of the format matches the operation at either 32-bit
 /// format, for a rule that reads only the operation's bits; `Bits32 @ f`
@@ -1619,7 +1616,7 @@ pub(crate) use binary_bitvector_condition;
 /// format.
 macro_rules! binary_term {
     (Bits32, $op:ident, ..) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
@@ -1627,7 +1624,7 @@ macro_rules! binary_term {
         }
     };
     (Bits32, $op:ident, $left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
@@ -1636,7 +1633,7 @@ macro_rules! binary_term {
         }
     };
     (Bits32 @ $bound:ident, $op:ident, $left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format:
                 $bound @ ($crate::kernel::MachineIntegerType::Int32
@@ -1646,14 +1643,14 @@ macro_rules! binary_term {
         }
     };
     ($format:ident, $op:ident, ..) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::$format,
             ..
         }
     };
     ($format:ident, $op:ident, $left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::$format,
             left: $left,
@@ -1666,10 +1663,10 @@ pub(crate) use binary_term;
 /// Builds the bare machine node `$left op $right` at one format, unfolded,
 /// from boxed operands: `binary_node!(Int32, Add, left, right)`, or at a
 /// format value, `binary_node!(@ format, Add, left, right)`. The folding
-/// constructors (`Bitvector32Term::add`, `machine_binary`, ...) simplify.
+/// constructors (`MachineTerm::add`, `machine_binary`, ...) simplify.
 macro_rules! binary_node {
     (@ $format:expr, $op:ident, $left:expr, $right:expr $(,)?) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $format,
             left: $left,
@@ -1677,7 +1674,7 @@ macro_rules! binary_node {
         }
     };
     ($format:ident, $op:ident, $left:expr, $right:expr $(,)?) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             op: $crate::kernel::MachineBinaryOp::$op,
             format: $crate::kernel::MachineIntegerType::$format,
             left: $left,
@@ -1692,7 +1689,7 @@ pub(crate) use binary_node;
 /// as for [`binary_term`].
 macro_rules! unary_term {
     (Bits32, $op:ident, ..) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             op: $crate::kernel::MachineUnaryOp::$op,
@@ -1700,7 +1697,7 @@ macro_rules! unary_term {
         }
     };
     (Bits32, $op:ident, $operand:pat) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             op: $crate::kernel::MachineUnaryOp::$op,
@@ -1708,7 +1705,7 @@ macro_rules! unary_term {
         }
     };
     (Bits32 @ $bound:ident, $op:ident, $operand:pat) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format:
                 $bound @ ($crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32),
@@ -1717,14 +1714,14 @@ macro_rules! unary_term {
         }
     };
     ($format:ident, $op:ident, ..) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
             op: $crate::kernel::MachineUnaryOp::$op,
             ..
         }
     };
     ($format:ident, $op:ident, $operand:pat) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
             op: $crate::kernel::MachineUnaryOp::$op,
             operand: $operand,
@@ -1737,7 +1734,7 @@ pub(crate) use unary_term;
 /// operand: `unary_node!(Int32, BitwiseNot, operand)`.
 macro_rules! unary_node {
     ($format:ident, $op:ident, $operand:expr $(,)?) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::$format,
             op: $crate::kernel::MachineUnaryOp::$op,
             operand: $operand,
@@ -1764,10 +1761,10 @@ pub(crate) const fn constant_u64(bits: u128) -> u64 {
 
 /// Matches the `int32` constant whose bits match `$bits` (a `u128`
 /// pattern), as `int32_constant!(0)` or `int32_constant!(bits)`; see
-/// [`Bitvector32Term::Constant`].
+/// [`MachineTerm::Constant`].
 macro_rules! int32_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int32,
             bits: $bits,
         }
@@ -1778,7 +1775,7 @@ pub(crate) use int32_constant;
 /// Matches the `uint32` constant whose bits match `$bits`.
 macro_rules! uint32_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::UInt32,
             bits: $bits,
         }
@@ -1790,7 +1787,7 @@ pub(crate) use uint32_constant;
 /// `bits32_constant!(f @ bits)` also binds the format to `f`.
 macro_rules! bits32_constant {
     ($format:ident @ $bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format:
                 $format @ ($crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32),
@@ -1798,7 +1795,7 @@ macro_rules! bits32_constant {
         }
     };
     ($bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             bits: $bits,
@@ -1811,7 +1808,7 @@ pub(crate) use bits32_constant;
 /// value's two's complement in 64 bits; read the value with `as u64 as i64`.
 macro_rules! int64_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int64,
             bits: $bits,
         }
@@ -1822,7 +1819,7 @@ pub(crate) use int64_constant;
 /// Matches the `uint64` constant whose bits match `$bits`.
 macro_rules! uint64_constant {
     ($bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::UInt64,
             bits: $bits,
         }
@@ -1835,7 +1832,7 @@ pub(crate) use uint64_constant;
 /// format and bits.
 macro_rules! native_constant {
     (_, $bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format: $crate::kernel::MachineIntegerType::Int8
                 | $crate::kernel::MachineIntegerType::UInt8
                 | $crate::kernel::MachineIntegerType::Int16
@@ -1846,7 +1843,7 @@ macro_rules! native_constant {
         }
     };
     ($format:ident, $bits:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Constant {
+        $crate::kernel::MachineTerm::Constant {
             format:
                 $format @ ($crate::kernel::MachineIntegerType::Int8
                 | $crate::kernel::MachineIntegerType::UInt8
@@ -1860,11 +1857,11 @@ macro_rules! native_constant {
 }
 pub(crate) use native_constant;
 
-/// Matches every two-operand 32-bit [`Bitvector32Term`] operation, binding the operands to `$left`
+/// Matches every two-operand 32-bit [`MachineTerm`] operation, binding the operands to `$left`
 /// and `$right`.
 macro_rules! binary_bitvector32_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::Int32
                 | $crate::kernel::MachineIntegerType::UInt32,
             left: $left,
@@ -1875,11 +1872,11 @@ macro_rules! binary_bitvector32_term {
 }
 pub(crate) use binary_bitvector32_term;
 
-/// Matches every two-operand unsigned 64-bit [`Bitvector32Term`] operation, binding the operands to
+/// Matches every two-operand unsigned 64-bit [`MachineTerm`] operation, binding the operands to
 /// `$left` and `$right`.
 macro_rules! binary_uint64_term {
     ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::UInt64,
             op: _,
             left: $left,
@@ -1889,13 +1886,13 @@ macro_rules! binary_uint64_term {
 }
 pub(crate) use binary_uint64_term;
 
-/// Matches every two-operand [`Bitvector32Term`] operation that is not at a 32-bit format, binding
+/// Matches every two-operand [`MachineTerm`] operation that is not at a 32-bit format, binding
 /// the operands to `$left` and `$right`. Only the 64-bit formats, signed or unsigned, are built
-/// there (see [`Bitvector32Term::Binary`]); the others are listed so that this and
+/// there (see [`MachineTerm::Binary`]); the others are listed so that this and
 /// [`binary_bitvector32_term`] together match every `Binary` node.
 macro_rules! binary_wide_term {
     (..) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -1908,7 +1905,7 @@ macro_rules! binary_wide_term {
         }
     };
     ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -1925,12 +1922,12 @@ macro_rules! binary_wide_term {
 }
 pub(crate) use binary_wide_term;
 
-/// Matches every one-operand machine operator node ([`Bitvector32Term::Unary`]) that is not at a
+/// Matches every one-operand machine operator node ([`MachineTerm::Unary`]) that is not at a
 /// 32-bit format, binding its operand to `$operand`. Only the 64-bit complements are built there;
 /// with `unary_term!(Bits32, BitwiseNot, ..)` it matches every `Unary` node.
 macro_rules! unary_wide_term {
     (..) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -1943,7 +1940,7 @@ macro_rules! unary_wide_term {
         }
     };
     ($operand:pat) => {
-        $crate::kernel::Bitvector32Term::Unary {
+        $crate::kernel::MachineTerm::Unary {
             format: $crate::kernel::MachineIntegerType::Int64
                 | $crate::kernel::MachineIntegerType::UInt64
                 | $crate::kernel::MachineIntegerType::Int8
@@ -1959,14 +1956,14 @@ macro_rules! unary_wide_term {
 }
 pub(crate) use unary_wide_term;
 
-/// Matches every two-operand [`Bitvector32Term`] operation of any width, binding the operands to
+/// Matches every two-operand [`MachineTerm`] operation of any width, binding the operands to
 /// `$left` and `$right`.
 macro_rules! binary_machine_term {
     (..) => {
-        $crate::kernel::Bitvector32Term::Binary { .. }
+        $crate::kernel::MachineTerm::Binary { .. }
     };
     ($left:pat, $right:pat) => {
-        $crate::kernel::Bitvector32Term::Binary {
+        $crate::kernel::MachineTerm::Binary {
             left: $left,
             right: $right,
             ..
@@ -2151,7 +2148,7 @@ macro_rules! arithmetic_c_value {
 }
 pub(crate) use arithmetic_c_value;
 
-/// The constructor that spelled a [`Bitvector32Term::Cast`] (and a kernel
+/// The constructor that spelled a [`MachineTerm::Cast`] (and a kernel
 /// `MachineCast`): the generic conversion, or one of the six legacy
 /// per-pair conversions, each with fixed formats. Part of a conversion's
 /// identity, so the legacy and generic spellings of one pair of formats stay
@@ -2198,20 +2195,20 @@ impl MachineCastSpelling {
     }
 }
 
-/// Matches a legacy-spelled [`Bitvector32Term::Cast`], binding its boxed
+/// Matches a legacy-spelled [`MachineTerm::Cast`], binding its boxed
 /// operand: `cast_term!(Int64From32, value)`. A legacy spelling fixes its
 /// formats ([`MachineCastSpelling::legacy_formats`]); build one with
-/// [`Bitvector32Term::legacy_cast`]. A generic conversion is the struct
+/// [`MachineTerm::legacy_cast`]. A generic conversion is the struct
 /// `Cast { spelling: Generic, .. }`.
 macro_rules! cast_term {
     ($spelling:ident, _ $(,)?) => {
-        $crate::kernel::Bitvector32Term::Cast {
+        $crate::kernel::MachineTerm::Cast {
             spelling: $crate::kernel::MachineCastSpelling::$spelling,
             ..
         }
     };
     ($spelling:ident, $value:pat $(,)?) => {
-        $crate::kernel::Bitvector32Term::Cast {
+        $crate::kernel::MachineTerm::Cast {
             spelling: $crate::kernel::MachineCastSpelling::$spelling,
             value: $value,
             ..
@@ -2233,14 +2230,14 @@ macro_rules! cast_op {
 }
 pub(crate) use cast_op;
 
-/// Matches every one-operand [`Bitvector32Term`] operation and conversion, binding its operand to
+/// Matches every one-operand [`MachineTerm`] operation and conversion, binding its operand to
 /// `$term`.
 macro_rules! unary_machine_term {
     ($term:pat) => {
-        $crate::kernel::Bitvector32Term::Unary { operand: $term, .. }
-            | $crate::kernel::Bitvector32Term::Cast { value: $term, .. }
-            | $crate::kernel::Bitvector32Term::Float32Negate($term)
-            | $crate::kernel::Bitvector32Term::Float64Negate($term)
+        $crate::kernel::MachineTerm::Unary { operand: $term, .. }
+            | $crate::kernel::MachineTerm::Cast { value: $term, .. }
+            | $crate::kernel::MachineTerm::Float32Negate($term)
+            | $crate::kernel::MachineTerm::Float64Negate($term)
     };
 }
 pub(crate) use unary_machine_term;
@@ -2351,7 +2348,7 @@ struct CPointerQualifiers {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SubobjectExtent {
     pub(crate) start: Pointer,
-    pub(crate) width: Bitvector32Term,
+    pub(crate) width: MachineTerm,
 }
 
 impl SubobjectExtent {
@@ -2391,9 +2388,7 @@ impl SubobjectExtent {
 
     /// The range a coverage fact names: its first element's address, its
     /// element count and its element width.
-    pub(crate) fn covered_range(
-        proposition: &Proposition,
-    ) -> Option<(Pointer, Bitvector32Term, u32)> {
+    pub(crate) fn covered_range(proposition: &Proposition) -> Option<(Pointer, MachineTerm, u32)> {
         let Proposition::Predicate { name, arguments } = proposition else {
             return None;
         };
@@ -2446,7 +2441,7 @@ impl SubobjectExtent {
     pub(crate) fn constant(start: Pointer, width: u32) -> Self {
         Self {
             start,
-            width: Bitvector32Term::constant(width),
+            width: MachineTerm::constant(width),
         }
     }
 
@@ -2537,7 +2532,7 @@ impl CPointerValue {
         Some(
             SubobjectExtent {
                 start: origin.clone(),
-                width: Bitvector32Term::constant(0),
+                width: MachineTerm::constant(0),
             }
             .coverage_fact(range),
         )
@@ -3254,21 +3249,21 @@ pub enum CValue {
     /// C `_Bool` values are represented by a 32-bit term whose value is
     /// always normalized to zero or one.  The storage width remains the
     /// ABI-defined one byte width exposed by `CType::Bool`.
-    Bool(Bitvector32Term),
-    Int8(Bitvector32Term),
-    Int16(Bitvector32Term),
-    Int32(Bitvector32Term),
-    UInt8(Bitvector32Term),
-    UInt16(Bitvector32Term),
-    UInt32(Bitvector32Term),
-    Int64(Bitvector32Term),
-    UInt64(Bitvector32Term),
-    Int128(Bitvector32Term),
-    UInt128(Bitvector32Term),
+    Bool(MachineTerm),
+    Int8(MachineTerm),
+    Int16(MachineTerm),
+    Int32(MachineTerm),
+    UInt8(MachineTerm),
+    UInt16(MachineTerm),
+    UInt32(MachineTerm),
+    Int64(MachineTerm),
+    UInt64(MachineTerm),
+    Int128(MachineTerm),
+    UInt128(MachineTerm),
     /// IEEE-754 binary32 payload represented in the shared checked term arena.
-    Float32(Bitvector32Term),
+    Float32(MachineTerm),
     /// IEEE-754 binary64 payload represented in the shared checked term arena.
-    Float64(Bitvector32Term),
+    Float64(MachineTerm),
     Pointer(CPointerValue),
     /// A value of an abstract type parameter: the spec value of that rigid
     /// type it is.
@@ -3761,17 +3756,17 @@ pub enum CFloatClassification {
 pub enum CFloatCondition {
     Comparison {
         operator: CComparisonOperator,
-        left: Box<Bitvector32Term>,
-        right: Box<Bitvector32Term>,
+        left: Box<MachineTerm>,
+        right: Box<MachineTerm>,
     },
     Classification {
         classification: CFloatClassification,
-        value: Box<Bitvector32Term>,
+        value: Box<MachineTerm>,
     },
 }
 
 impl CFloatCondition {
-    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&Bitvector32Term)) {
+    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&MachineTerm)) {
         match self {
             Self::Comparison { left, right, .. } => {
                 visit(left);
@@ -3783,7 +3778,7 @@ impl CFloatCondition {
 
     pub(crate) fn map_bitvector_terms(
         &self,
-        mut map: impl FnMut(&Bitvector32Term) -> Bitvector32Term,
+        mut map: impl FnMut(&MachineTerm) -> MachineTerm,
     ) -> Self {
         match self {
             Self::Comparison {
@@ -3807,7 +3802,7 @@ impl CFloatCondition {
 
     pub(crate) fn try_map_bitvector_terms(
         &self,
-        mut map: impl FnMut(&Bitvector32Term) -> Option<Bitvector32Term>,
+        mut map: impl FnMut(&MachineTerm) -> Option<MachineTerm>,
     ) -> Option<Self> {
         Some(match self {
             Self::Comparison {
@@ -4456,7 +4451,7 @@ pub enum AlgebraicTermNode {
     },
     /// The value of an abstract type parameter that memory `memory` holds at
     /// `pointer`, a generic struct's field: the algebraic counterpart of a
-    /// [`Bitvector32Term::MemoryLoad`].
+    /// [`MachineTerm::MemoryLoad`].
     MemoryLoad {
         memory: SharedCMemory,
         pointer: Box<Pointer>,
@@ -4467,11 +4462,8 @@ impl AlgebraicTermNode {
     /// The scalar load term at the same memory and address as a
     /// [`AlgebraicTermNode::MemoryLoad`]: a walker reaches its memory and
     /// address as it reaches a scalar load's.
-    pub(crate) fn memory_load_carrier(
-        memory: &SharedCMemory,
-        pointer: &Pointer,
-    ) -> Bitvector32Term {
-        Bitvector32Term::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
+    pub(crate) fn memory_load_carrier(memory: &SharedCMemory, pointer: &Pointer) -> MachineTerm {
+        MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
     }
 
     /// The [`AlgebraicTermNode::MemoryLoad`] whose carrier a rewrite of
@@ -4479,7 +4471,7 @@ impl AlgebraicTermNode {
     /// address. `None` when the rewrite replaced the load.
     pub(crate) fn memory_load_from_carrier(carrier: &CValue) -> Option<Self> {
         match carrier {
-            CValue::UInt64(Bitvector32Term::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
+            CValue::UInt64(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Bits64)) => {
                 Some(Self::MemoryLoad {
                     memory: memory.clone(),
                     pointer: pointer.clone(),
@@ -4538,21 +4530,19 @@ pub enum PureFunctionArgument {
 /// constant it decided.
 pub(crate) fn rewrite_condition_through_bits(
     condition: &ConditionTerm,
-    rewrite: impl FnOnce(&Bitvector32Term) -> Bitvector32Term,
+    rewrite: impl FnOnce(&MachineTerm) -> MachineTerm,
 ) -> ConditionTerm {
-    let carrier = Bitvector32Term::If {
+    let carrier = MachineTerm::If {
         condition: Box::new(condition.clone()),
-        then_term: Box::new(Bitvector32Term::constant(1)),
-        else_term: Box::new(Bitvector32Term::constant(0)),
+        then_term: Box::new(MachineTerm::constant(1)),
+        else_term: Box::new(MachineTerm::constant(0)),
     };
     match rewrite(&carrier) {
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
-        } if *then_term == Bitvector32Term::constant(1)
-            && *else_term == Bitvector32Term::constant(0) =>
-        {
+        } if *then_term == MachineTerm::constant(1) && *else_term == MachineTerm::constant(0) => {
             *condition
         }
         bits32_constant!(1) => ConditionTerm::Constant(true),
@@ -4572,7 +4562,7 @@ pub enum AlgebraicValue {
 pub struct AlgebraicBitvectorMatchArm {
     pub variant: String,
     pub bindings: Vec<AlgebraicValue>,
-    pub body: Bitvector32Term,
+    pub body: MachineTerm,
     /// The written names of `bindings`, for printing only.
     pub binding_names: BindingNames,
 }
@@ -4589,7 +4579,7 @@ pub struct AlgebraicResultMatchArm {
 impl AlgebraicTerm {
     /// Visit scalar payload roots without expanding datatype schemas or copying
     /// terms. Callers decide how far to traverse each scalar expression.
-    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&Bitvector32Term)) {
+    pub(crate) fn for_each_bitvector_term(&self, mut visit: impl FnMut(&MachineTerm)) {
         enum Node<'a> {
             Algebraic(&'a AlgebraicTerm),
             Value(&'a CValue),
@@ -4647,10 +4637,10 @@ impl AlgebraicTerm {
                         // The condition's terms are visited as the scalar
                         // conditional that carries them, so a caller walks
                         // them as it walks any condition.
-                        visit(&Bitvector32Term::If {
+                        visit(&MachineTerm::If {
                             condition: condition.clone(),
-                            then_term: Box::new(Bitvector32Term::constant(0)),
-                            else_term: Box::new(Bitvector32Term::constant(0)),
+                            then_term: Box::new(MachineTerm::constant(0)),
+                            else_term: Box::new(MachineTerm::constant(0)),
                         });
                         pending.push(Node::Algebraic(then_term));
                         pending.push(Node::Algebraic(else_term));
@@ -5500,8 +5490,8 @@ pub struct CMemoryRange {
     /// and [`CMemoryRange::end`], which hold only for an `Int32` range, or
     /// through [`CMemoryRange::wide_bounds`]: a term carries no width, so a
     /// wide bound read as a signed 32-bit index is a different number.
-    start_bound: Bitvector32Term,
-    end_bound: Bitvector32Term,
+    start_bound: MachineTerm,
+    end_bound: MachineTerm,
     /// The size in bytes of one logical element in `start..end`.
     ///
     /// Resource ranges remain expressed in logical element coordinates, but
@@ -5525,8 +5515,8 @@ impl CMemoryRange {
         &Pointer,
         &Pointer,
         Option<&Pointer>,
-        &Bitvector32Term,
-        &Bitvector32Term,
+        &MachineTerm,
+        &MachineTerm,
         u32,
         RangeIndexKind,
     ) {
@@ -7031,17 +7021,17 @@ impl CRankingComponent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CRankingMeasureValue {
     /// A machine int32 quantity, ranked by signed comparison.
-    Machine(Bitvector32Term),
+    Machine(MachineTerm),
     /// A machine uint32 quantity, ranked by unsigned comparison of the value
     /// C computes, wraparound included. Every such value is a natural number
     /// below 2^32, so it is nonnegative by construction.
-    Unsigned32(Bitvector32Term),
+    Unsigned32(MachineTerm),
     /// A machine uint64 quantity, ranked by unsigned 64-bit comparison of the
     /// value C computes, wraparound included; nonnegative by construction.
-    Unsigned64(Bitvector32Term),
+    Unsigned64(MachineTerm),
     /// A machine int64 quantity, ranked by signed 64-bit comparison. Like an
     /// int32 it owes `0 <= m`.
-    Signed64(Bitvector32Term),
+    Signed64(MachineTerm),
     /// A mathematical Integer quantity, ranked by Integer comparison.
     Integer(IntegerTerm),
 }
@@ -8263,7 +8253,7 @@ impl CMemory {
 /// snapshot where its block is still live.
 #[derive(Clone)]
 pub(in crate::kernel) struct ReadRegionIdentity {
-    block_size: Option<Bitvector32Term>,
+    block_size: Option<MachineTerm>,
     local_lifetime_ended: bool,
     heap: Arc<CHeapMemory>,
 }
@@ -8441,11 +8431,11 @@ impl PartialOrd for CMemory {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct CPendingReallocation {
     pub(super) old_pointer: Pointer,
-    pub(super) old_bytes: Bitvector32Term,
+    pub(super) old_bytes: MachineTerm,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
-    pub(super) zeroed_prefix: Option<Bitvector32Term>,
+    pub(super) zeroed_prefix: Option<MachineTerm>,
     pub(super) copied_cells: Vec<(PointerOffsetTerm, CValue)>,
     /// The runs of constant byte offsets of the old block that were
     /// initialized and lie in the new allocation, cut at its size: a
@@ -8460,15 +8450,15 @@ pub(super) struct CPendingReallocation {
 pub(super) struct CHeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
-    pub(super) live_allocations: SnapshotMap<Pointer, Bitvector32Term>,
+    pub(super) live_allocations: SnapshotMap<Pointer, MachineTerm>,
     /// Heap identities are never reused within a proof. These are semantic
     /// tombstones for double-free and stale-pointer diagnostics, not
     /// resources or surviving allocation authority.
-    pub(super) deallocated_allocations: SnapshotMap<Pointer, Bitvector32Term>,
+    pub(super) deallocated_allocations: SnapshotMap<Pointer, MachineTerm>,
     /// A malloc result whose null/success outcome has not yet been refined by
     /// control flow or direct return. Pending allocations carry no authority
     /// until resolved.
-    pub(super) pending_allocations: SnapshotMap<Pointer, Bitvector32Term>,
+    pub(super) pending_allocations: SnapshotMap<Pointer, MachineTerm>,
     /// Object classes established by a fresh allocation's checked typed binding.
     pub(super) pending_object_classes:
         SnapshotMap<Pointer, crate::kernel::effective_type::CAccessClass>,
@@ -8494,7 +8484,7 @@ pub(super) struct CHeapMemory {
     pub(super) zeroed_allocations: SnapshotSet<Pointer>,
     /// Successful reallocations of zeroed storage may preserve only a prefix
     /// of the old block. The remainder of a grown block is uninitialized.
-    pub(super) zeroed_prefix_allocations: SnapshotMap<Pointer, Bitvector32Term>,
+    pub(super) zeroed_prefix_allocations: SnapshotMap<Pointer, MachineTerm>,
     /// Pending calloc results whose null/success outcome has not yet been
     /// refined.
     pub(super) zeroed_pending_allocations: SnapshotSet<Pointer>,
@@ -8638,7 +8628,7 @@ impl CHeapMemory {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CBlock {
-    pub(super) size: Bitvector32Term,
+    pub(super) size: MachineTerm,
     pub(super) read_only: bool,
     /// A complete automatic scalar's declared type, independent of whether
     /// its representation has been initialized. Untyped blocks and arrays
@@ -8990,7 +8980,7 @@ pub enum CMemoryDerivation {
     HeapAllocated {
         base: SharedCMemory,
         block: PointerBlock,
-        bytes: Bitvector32Term,
+        bytes: MachineTerm,
     },
     /// `base` with one unresolved allocation result registered. Pending
     /// metadata changes no program-observable memory, so every existing load
@@ -8998,7 +8988,7 @@ pub enum CMemoryDerivation {
     HeapAllocationPending {
         base: SharedCMemory,
         allocation_base: Pointer,
-        bytes: Bitvector32Term,
+        bytes: MachineTerm,
     },
     /// `base` with a failed pending allocation removed. No storage was
     /// allocated or written; existing reads retain their validity and value.
@@ -9015,7 +9005,7 @@ pub enum CMemoryDerivation {
     ContractAllocationRetired {
         base: SharedCMemory,
         allocation_base: Pointer,
-        bytes: Bitvector32Term,
+        bytes: MachineTerm,
     },
     /// `base` with one complete heap allocation lifetime ended.
     ///
@@ -9026,7 +9016,7 @@ pub enum CMemoryDerivation {
     HeapFreed {
         base: SharedCMemory,
         allocation_base: Pointer,
-        bytes: Bitvector32Term,
+        bytes: MachineTerm,
     },
     /// `base` with only the initialized-byte record extended. The writes
     /// establishing those bytes have their own earlier edges; recording this
@@ -10269,15 +10259,15 @@ pub(super) struct ResourceContextIndex {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(super) enum ConditionMatchKey {
     /// A 32-bit equality, sides in ascending order.
-    Equal(Bitvector32Term, Bitvector32Term),
+    Equal(MachineTerm, MachineTerm),
     /// An offset equality, sides in ascending order.
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
     /// A signed order: strict, then its lower and its upper side.
-    Order(bool, Bitvector32Term, Bitvector32Term),
+    Order(bool, MachineTerm, MachineTerm),
     /// An unsigned 32-bit order, separate from signed order facts.
-    UnsignedOrder(bool, Bitvector32Term, Bitvector32Term),
+    UnsignedOrder(bool, MachineTerm, MachineTerm),
     /// Signed addition overflow, with commutative operands ordered.
-    OverflowAdd(Bitvector32Term, Bitvector32Term),
+    OverflowAdd(MachineTerm, MachineTerm),
 }
 
 impl ConditionMatchKey {
@@ -10578,7 +10568,7 @@ fn compare_support_graph(left: &ResourceContext, right: &ResourceContext) -> std
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum CResourceFact {
-    Own(CResource, Box<Bitvector32Term>),
+    Own(CResource, Box<MachineTerm>),
     View(CResource),
 }
 
@@ -12149,7 +12139,7 @@ mod population_authority_spec_tests {
                 .try_compose_with_fact(
                     CResourceFact::Own(
                         CResource::PopulationAuthority(description.clone()),
-                        Box::new(Bitvector32Term::constant(2)),
+                        Box::new(MachineTerm::constant(2)),
                     ),
                     &assumptions,
                 )
@@ -12166,7 +12156,7 @@ mod population_authority_spec_tests {
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Term {
     Condition(ConditionTerm),
-    Bitvector32(Bitvector32Term),
+    Bitvector32(MachineTerm),
     Integer(IntegerTerm),
     PointerOffset(PointerOffsetTerm),
     CValue(CValue),
@@ -12349,7 +12339,7 @@ pub enum Proposition {
     CMemoryLoadable {
         memory: CMemory,
         base: Pointer,
-        bytes: Bitvector32Term,
+        bytes: MachineTerm,
         wide: bool,
     },
     /// A typed read is valid in this snapshot, including initialization.
@@ -12385,7 +12375,7 @@ pub enum Proposition {
         before: CMemory,
         after: CMemory,
         allocation_base: Pointer,
-        bytes: Bitvector32Term,
+        bytes: MachineTerm,
     },
     And(Box<Proposition>, Box<Proposition>),
     Or(Box<Proposition>, Box<Proposition>),
@@ -13095,8 +13085,8 @@ pub struct PropositionDerivation {
 /// instead of rediscovering it from an unordered premise set.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SignedOrderDerivationStep {
-    pub(super) lower: Bitvector32Term,
-    pub(super) upper: Bitvector32Term,
+    pub(super) lower: MachineTerm,
+    pub(super) upper: MachineTerm,
     pub(super) strict: bool,
     pub(super) premise: Proposition,
 }
@@ -13130,8 +13120,8 @@ pub struct PointerWordEvidence {
 /// source/target orientation may be the reverse of its written equality.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitvectorEqualityDerivationStep {
-    pub(super) source: Bitvector32Term,
-    pub(super) target: Bitvector32Term,
+    pub(super) source: MachineTerm,
+    pub(super) target: MachineTerm,
     pub(super) premise: Proposition,
 }
 
@@ -13179,8 +13169,8 @@ pub(super) enum PointerOffsetCongruenceEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DirectBitvectorEqualityEvidence {
     AdditiveCancellation {
-        left: Bitvector32Term,
-        right: Bitvector32Term,
+        left: MachineTerm,
+        right: MachineTerm,
         equality: Box<DirectBitvectorEqualityEvidence>,
     },
     EqualSignedConstants {
@@ -13206,8 +13196,8 @@ pub(crate) enum SignedConstantEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct IndexedSignedOrderBoundEvidence {
     pub(in crate::kernel) other_equality: Option<Box<Proposition>>,
-    pub(in crate::kernel) endpoint: Bitvector32Term,
-    pub(in crate::kernel) other: Bitvector32Term,
+    pub(in crate::kernel) endpoint: MachineTerm,
+    pub(in crate::kernel) other: MachineTerm,
     pub(in crate::kernel) strict: bool,
     pub(in crate::kernel) forward: bool,
     pub(in crate::kernel) source: Box<Proposition>,
@@ -13303,7 +13293,7 @@ pub(crate) enum PropositionDerivationRule {
     /// Prove an existential by selecting a free witness term and checking the
     /// substituted body against the current context.
     ExistsFromWitness {
-        witness: Bitvector32Term,
+        witness: MachineTerm,
         body: Box<PropositionDerivation>,
     },
     /// Prove an in-range one-byte loadability universal from one exact wider
@@ -13315,7 +13305,7 @@ pub(crate) enum PropositionDerivationRule {
     /// constant zero index from one exact wider range.
     ExistsLoadableRange {
         source: Box<Proposition>,
-        witness: Bitvector32Term,
+        witness: MachineTerm,
     },
     FiniteForAll {
         instances: Vec<PropositionDerivation>,
@@ -13379,7 +13369,7 @@ pub(crate) struct Int32LeAndNeqStrictEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ForallInt32InstantiationEvidence {
     pub(crate) quantified: Proposition,
-    pub(crate) argument: Bitvector32Term,
+    pub(crate) argument: MachineTerm,
     pub(crate) guard_premises: Vec<Proposition>,
 }
 
@@ -14070,7 +14060,7 @@ pub(crate) enum GeneratedLoadBinding {
         variable: Variable,
         snapshot: CMemorySnapshotIdentity,
         pointer: Pointer,
-        load: Bitvector32Term,
+        load: MachineTerm,
         /// The C value produced by a completed, nonvolatile pointer read.
         /// Scalar and volatile reads have no pointer bridge.
         typed_pointer_value: Option<Pointer>,

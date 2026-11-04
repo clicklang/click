@@ -10,8 +10,8 @@ fn call(name: &str, arguments: Vec<PureFunctionArgument>) -> Pointer {
         offset: PointerOffsetTerm::Constant(0),
     }
 }
-fn word(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn word(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 fn argument(id: u64) -> PureFunctionArgument {
     PureFunctionArgument::Value(CValue::Int32(word(id)))
@@ -112,13 +112,13 @@ fn nested_pointer_calls_feed_scalar_calls_and_checked_reads() {
         p
     };
     let (a, b) = (build(p.clone()), build(q.clone()));
-    let scalar = |p| Bitvector32Term::ClickFunctionApplication {
+    let scalar = |p| MachineTerm::ClickFunctionApplication {
         name: "count".into(),
         arguments: vec![pointer_argument(p)],
     };
     let memory = intern_c_memory(CMemory::new());
     let read = |p| {
-        Bitvector32Term::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+        MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
             &p,
             LoadKind::Int32,

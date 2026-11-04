@@ -8,13 +8,13 @@ use crate::kernel::{CompareRelation, MachineIntegerType};
 #[test]
 fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
     use crate::kernel::ConditionTerm;
-    let a = Bitvector32Term::Variable(Variable(200));
-    let b = Bitvector32Term::Variable(Variable(201));
-    let one = Bitvector32Term::constant(1);
+    let a = MachineTerm::Variable(Variable(200));
+    let b = MachineTerm::Variable(Variable(201));
+    let one = MachineTerm::constant(1);
     let goal = Proposition::ConditionIs(
         ConditionTerm::signed_add_overflows(
-            Bitvector32Term::add(a.clone(), one.clone()),
-            Bitvector32Term::subtract(b.clone(), one),
+            MachineTerm::add(a.clone(), one.clone()),
+            MachineTerm::subtract(b.clone(), one),
         ),
         false,
     );
@@ -26,21 +26,18 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
                 false,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(
-                    a.clone(),
-                    Bitvector32Term::constant(i32::MAX as u32),
-                ),
+                ConditionTerm::signed_less_than(a.clone(), MachineTerm::constant(i32::MAX as u32)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::constant(1)),
+                ConditionTerm::signed_greater_equal(b.clone(), MachineTerm::constant(1)),
                 true,
             );
         for i in 0..n {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_equal(
-                    Bitvector32Term::Variable(Variable(1000 + i)),
-                    Bitvector32Term::constant(100),
+                    MachineTerm::Variable(Variable(1000 + i)),
+                    MachineTerm::constant(100),
                 ),
                 true,
             );
@@ -50,7 +47,7 @@ fn balanced_unit_sum_domain_uses_only_indexed_related_bounds() {
         assert!(valid);
         // Removing the old domain must fail without searching the frame.
         let missing_old = PureFactContext::new().assume_condition(
-            ConditionTerm::signed_less_than(a.clone(), Bitvector32Term::constant(i32::MAX as u32)),
+            ConditionTerm::signed_less_than(a.clone(), MachineTerm::constant(i32::MAX as u32)),
             true,
         );
         assert!(!missing_old.settles_exactly(&goal));
@@ -80,7 +77,7 @@ fn named_cell_check_rejects_removals_and_ignores_unchanged_cells() {
                     block: PointerBlock::Heap(index),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::constant(7)),
+                CValue::Int32(MachineTerm::constant(7)),
             );
         }
         let name = crate::kernel::canonical_form_of_load(
@@ -298,7 +295,7 @@ fn cached_body_loadability_work_is_linear_in_cache_delta_and_selected_facts() {
                 block: "body".into(),
                 offset: crate::kernel::PointerOffsetTerm::Constant(i64::from(index) * 4),
             },
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         };
         let allowed = (0..size).map(|index| view(before.clone(), index)).collect();
@@ -338,7 +335,7 @@ fn return_materialized_reads_scale_with_the_selected_cells() {
             let fact = Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer,
-                bytes: Bitvector32Term::constant(4),
+                bytes: MachineTerm::constant(4),
                 wide: false,
             };
             let roots = base.with_fact(fact.clone());
@@ -368,8 +365,8 @@ fn return_proposition_context_validation_scales_with_introductions() {
             .map(|i| {
                 Proposition::ConditionIs(
                     crate::kernel::ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(i)),
-                        Bitvector32Term::constant(i as u32),
+                        MachineTerm::Variable(Variable(i)),
+                        MachineTerm::constant(i as u32),
                     ),
                     true,
                 )
@@ -566,8 +563,8 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
             .unwrap();
         let extra = Proposition::ConditionIs(
             crate::kernel::ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(1000)),
-                Bitvector32Term::constant(9),
+                MachineTerm::Variable(Variable(1000)),
+                MachineTerm::constant(9),
             ),
             true,
         );
@@ -849,13 +846,13 @@ fn interface_abstraction_work_scales_with_unrelated_locals_and_memory() {
 #[test]
 fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
     use crate::kernel::ConditionTerm;
-    let x = Bitvector32Term::Variable(Variable(910_000));
+    let x = MachineTerm::Variable(Variable(910_000));
     let strong = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(x.clone(), Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_than(x.clone(), MachineTerm::constant(0)),
         true,
     );
     let weak = Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(x.clone(), Bitvector32Term::constant(0)),
+        ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0)),
         true,
     );
     let reflexive = Proposition::ConditionIs(
@@ -873,8 +870,8 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
         for index in 0..size {
             facts = facts.with_fact(Proposition::ConditionIs(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(920_000 + index)),
-                    Bitvector32Term::constant(100),
+                    MachineTerm::Variable(Variable(920_000 + index)),
+                    MachineTerm::constant(100),
                 ),
                 true,
             ));
@@ -911,7 +908,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
     let _session = crate::kernel::VerificationSession::enter();
     let owner = Pointer::symbolic(Variable(951_000));
     let alias = Pointer::symbolic(Variable(951_001));
-    let value = Bitvector32Term::uint64_constant(0x1234_5678_9abc_def0);
+    let value = MachineTerm::uint64_constant(0x1234_5678_9abc_def0);
     let load = SpecExpression::MemoryLoad {
         memory: SpecMemory::Current,
         pointer: Box::new(SpecExpression::Value(CValue::Pointer(CPointerValue::new(
@@ -933,8 +930,8 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             memory = memory.store(owner.offset_by_bytes((index + 1) * 8), int32(index));
             parent = parent.with_fact(Proposition::ConditionIs(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(952_000 + u64::from(index))),
-                    Bitvector32Term::constant(index),
+                    MachineTerm::Variable(Variable(952_000 + u64::from(index))),
+                    MachineTerm::constant(index),
                 ),
                 true,
             ));
@@ -971,7 +968,7 @@ fn interface_aliased_wide_read_preserves_scope_history_and_scales() {
             "logical value evidence does not authorize a C read"
         );
         for (offset, overwrite) in [
-            (0, CValue::UInt64(Bitvector32Term::uint64_constant(7))),
+            (0, CValue::UInt64(MachineTerm::uint64_constant(7))),
             (4, int32(7)),
         ] {
             let address = owner.offset_by_bytes(offset);
@@ -1000,7 +997,7 @@ fn interface_read_premises_are_indexed_and_check_the_exact_range() {
             block: block.into(),
             offset: PointerOffsetTerm::Constant(0),
         },
-        bytes: Bitvector32Term::constant(width),
+        bytes: MachineTerm::constant(width),
         wide: false,
     };
     let goal = readable(memory.clone(), "selected".into(), 4);
@@ -1223,12 +1220,12 @@ fn taking_a_constructor_arm_reuses_its_constructed_fact_context() {
         value.node = crate::kernel::AlgebraicTermNode::Constructor {
             variant: "C0".into(),
             fields: vec![crate::kernel::AlgebraicValue::C(CValue::Int32(
-                Bitvector32Term::ClickFunctionApplication {
+                MachineTerm::ClickFunctionApplication {
                     name: "opaque_payload".into(),
                     arguments: (0..count)
                         .map(|i| {
                             crate::kernel::PureFunctionArgument::Value(CValue::Int32(
-                                Bitvector32Term::Variable(Variable(8_100_000 + i)),
+                                MachineTerm::Variable(Variable(8_100_000 + i)),
                             ))
                         })
                         .collect(),

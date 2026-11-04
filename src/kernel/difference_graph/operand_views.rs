@@ -16,9 +16,9 @@ fn format(domain: Domain) -> MachineIntegerType {
     }
 }
 
-fn atom(term: V<'_>) -> Option<Bitvector32Term> {
+fn atom(term: V<'_>) -> Option<MachineTerm> {
     term.literal()
-        .or_else(|| term.variable().copied().map(Bitvector32Term::Variable))
+        .or_else(|| term.variable().copied().map(MachineTerm::Variable))
 }
 fn constant_view(domain: Domain, term: V<'_>) -> Option<i128> {
     constant(domain, &term.literal()?)
@@ -92,13 +92,8 @@ struct Query<'a> {
 }
 
 impl DifferenceGraph {
-    pub(super) fn index_operand_node(
-        &mut self,
-        domain: Domain,
-        term: &Bitvector32Term,
-        node: NodeId,
-    ) {
-        if matches!(term, Bitvector32Term::Variable(_)) || V::Legacy(term).literal().is_some() {
+    pub(super) fn index_operand_node(&mut self, domain: Domain, term: &MachineTerm, node: NodeId) {
+        if matches!(term, MachineTerm::Variable(_)) || V::Legacy(term).literal().is_some() {
             self.shared_queries.invalidate(Read::Operand(
                 domain,
                 Key::for_format(format(domain), V::Legacy(term)),
@@ -361,7 +356,7 @@ impl<'a> Query<'a> {
     fn known_flip(&mut self, domain: Domain, base: Affine) -> Option<Affine> {
         DifferenceGraph::flip_reading(domain, base, |base| self.affine_interval(base))
     }
-    fn resolve_atom(&mut self, domain: Domain, atom: &Bitvector32Term) -> Option<Affine> {
+    fn resolve_atom(&mut self, domain: Domain, atom: &MachineTerm) -> Option<Affine> {
         if let Some(value) = constant(domain, atom) {
             return Some((None, value));
         }
@@ -729,14 +724,14 @@ mod tests {
         for ty in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
             let word = |value: i64| {
                 if ty == MachineIntegerType::Int32 {
-                    Bitvector32Term::constant(value as u32)
+                    MachineTerm::constant(value as u32)
                 } else {
-                    Bitvector32Term::int64_constant(value)
+                    MachineTerm::int64_constant(value)
                 }
             };
-            let x = Bitvector32Term::Variable(Variable(997801));
-            let n = Bitvector32Term::Variable(Variable(997802));
-            let native = |op, left, right| Bitvector32Term::Binary {
+            let x = MachineTerm::Variable(Variable(997801));
+            let n = MachineTerm::Variable(Variable(997802));
+            let native = |op, left, right| MachineTerm::Binary {
                 format: ty,
                 op,
                 left: Box::new(left),
@@ -771,7 +766,7 @@ mod tests {
                         )
                         .unwrap(),
                     );
-                    let shared = |term: &Bitvector32Term| {
+                    let shared = |term: &MachineTerm| {
                         SharedMachineIntegerTerm::from_shared(
                             ty,
                             KernelTermImport::default()
@@ -800,7 +795,7 @@ mod tests {
     #[test]
     fn graph_interval_views_match_native_operations_and_casts() {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = Bitvector32Term::Variable(Variable(997811));
+        let x = MachineTerm::Variable(Variable(997811));
         let mut graph = DifferenceGraph::new();
         graph.assume_condition(&ConditionTerm::signed_less_equal(2.into(), x.clone()), true);
         graph.assume_condition(&ConditionTerm::signed_less_equal(x.clone(), 4.into()), true);
@@ -818,11 +813,11 @@ mod tests {
                 cases.push((
                     Domain::Int32,
                     ty,
-                    Bitvector32Term::Binary {
+                    MachineTerm::Binary {
                         format: ty,
                         op,
                         left: Box::new(x.clone()),
-                        right: Box::new(Bitvector32Term::constant(3)),
+                        right: Box::new(MachineTerm::constant(3)),
                     },
                 ));
             }
@@ -831,17 +826,17 @@ mod tests {
             (
                 Domain::Int64,
                 MachineIntegerType::Int64,
-                Bitvector32Term::int64_from_32(x.clone()),
+                MachineTerm::int64_from_32(x.clone()),
             ),
             (
                 Domain::Int64,
                 MachineIntegerType::Int64,
-                Bitvector32Term::int64_from_uint32(x.clone()),
+                MachineTerm::int64_from_uint32(x.clone()),
             ),
             (
                 Domain::UInt64,
                 MachineIntegerType::UInt64,
-                Bitvector32Term::uint64_from_32(x.clone()),
+                MachineTerm::uint64_from_32(x.clone()),
             ),
         ]);
         for (domain, ty, term) in cases {
@@ -862,14 +857,14 @@ mod tests {
     fn graph_overflow_views_reuse_original_compound_nodes_in_one_branch() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
-        let x = Bitvector32Term::Variable(Variable(997821));
-        let y = Bitvector32Term::Variable(Variable(997822));
-        let product = Bitvector32Term::multiply(x, y.clone());
+        let x = MachineTerm::Variable(Variable(997821));
+        let y = MachineTerm::Variable(Variable(997822));
+        let product = MachineTerm::multiply(x, y.clone());
         let source = ConditionTerm::signed_add_overflows(product.clone(), y.clone());
         let parent = DifferenceGraph::new();
         let mut child = parent.clone();
         child.assume_condition(&source, false);
-        let shared = |term: &Bitvector32Term| {
+        let shared = |term: &MachineTerm| {
             SharedMachineIntegerTerm::from_shared(
                 ty,
                 KernelTermImport::default()
@@ -902,17 +897,17 @@ mod tests {
             MachineIntegerType::UInt64,
         ] {
             let two = match ty {
-                MachineIntegerType::Int64 => Bitvector32Term::int64_constant(2),
-                MachineIntegerType::UInt64 => Bitvector32Term::uint64_constant(2),
-                _ => Bitvector32Term::constant(2),
+                MachineIntegerType::Int64 => MachineTerm::int64_constant(2),
+                MachineIntegerType::UInt64 => MachineTerm::uint64_constant(2),
+                _ => MachineTerm::constant(2),
             };
-            let left = Bitvector32Term::Binary {
+            let left = MachineTerm::Binary {
                 format: ty,
                 op: MachineBinaryOp::Add,
-                left: Box::new(Bitvector32Term::Variable(Variable(997851))),
+                left: Box::new(MachineTerm::Variable(Variable(997851))),
                 right: Box::new(two),
             };
-            let right = Bitvector32Term::Variable(Variable(997852));
+            let right = MachineTerm::Variable(Variable(997852));
             let mut graph = DifferenceGraph::new();
             graph.assume_condition(
                 &ConditionTerm::machine_compare(

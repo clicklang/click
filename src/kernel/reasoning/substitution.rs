@@ -18,7 +18,7 @@ trait VariableSubstitution {
     const SUBSTITUTES_CONDITION_EVIDENCE: bool;
 
     fn from(&self) -> Variable;
-    fn bitvector(&self, term: &Bitvector32Term) -> Bitvector32Term;
+    fn bitvector(&self, term: &MachineTerm) -> MachineTerm;
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm;
     fn pointer(&self, pointer: &Pointer) -> Pointer;
     /// The address of a local's storage slot.
@@ -45,7 +45,7 @@ trait VariableSubstitution {
 
 struct BitvectorSubstitution<'a> {
     from: Variable,
-    to: &'a Bitvector32Term,
+    to: &'a MachineTerm,
 }
 
 impl VariableSubstitution for BitvectorSubstitution<'_> {
@@ -54,7 +54,7 @@ impl VariableSubstitution for BitvectorSubstitution<'_> {
     fn from(&self) -> Variable {
         self.from
     }
-    fn bitvector(&self, term: &Bitvector32Term) -> Bitvector32Term {
+    fn bitvector(&self, term: &MachineTerm) -> MachineTerm {
         substitute_bitvector_variable(term, self.from, self.to)
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
@@ -119,7 +119,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
     fn from(&self) -> Variable {
         self.from
     }
-    fn bitvector(&self, term: &Bitvector32Term) -> Bitvector32Term {
+    fn bitvector(&self, term: &MachineTerm) -> MachineTerm {
         term.clone()
     }
     fn integer(&self, term: &IntegerTerm) -> IntegerTerm {
@@ -176,7 +176,7 @@ impl VariableSubstitution for PointerSubstitution<'_> {
 pub(crate) fn substitute_bitvector_variable_in_proposition(
     proposition: &Proposition,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> Proposition {
     walk_proposition(proposition, &BitvectorSubstitution { from, to })
 }
@@ -184,7 +184,7 @@ pub(crate) fn substitute_bitvector_variable_in_proposition(
 fn substitute_bitvector_variable_in_algebraic_value(
     value: &AlgebraicValue,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> AlgebraicValue {
     walk_algebraic_value(value, &BitvectorSubstitution { from, to })
 }
@@ -192,7 +192,7 @@ fn substitute_bitvector_variable_in_algebraic_value(
 fn substitute_bitvector_variable_in_pure_function_argument(
     argument: &PureFunctionArgument,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> PureFunctionArgument {
     walk_pure_function_argument(argument, &BitvectorSubstitution { from, to })
 }
@@ -200,7 +200,7 @@ fn substitute_bitvector_variable_in_pure_function_argument(
 fn substitute_bitvector_variable_in_sequence(
     sequence: &SequenceTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> SequenceTerm {
     walk_sequence(sequence, &BitvectorSubstitution { from, to })
 }
@@ -209,7 +209,7 @@ fn substitute_bitvector_variable_in_sequence(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
     statement: &CStatement,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CStatement {
     walk_c_statement(statement, &BitvectorSubstitution { from, to })
 }
@@ -217,7 +217,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression_outcome(
     outcome: &CExpressionOutcome,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CExpressionOutcome {
     walk_c_expression_outcome(outcome, &BitvectorSubstitution { from, to })
 }
@@ -225,7 +225,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression_outcome(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
     outcome: &CStatementOutcome,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CStatementOutcome {
     walk_c_statement_outcome(outcome, &BitvectorSubstitution { from, to })
 }
@@ -233,7 +233,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_statement_outcome(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
     outcome: &CFunctionOutcome,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CFunctionOutcome {
     walk_c_function_outcome(outcome, &BitvectorSubstitution { from, to })
 }
@@ -241,7 +241,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function_outcome(
 fn substitute_bitvector_variable_in_c_state(
     state: &CState,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CState {
     walk_c_state(state, &BitvectorSubstitution { from, to })
 }
@@ -250,7 +250,7 @@ fn substitute_bitvector_variable_in_c_state(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
     resource: &CResource,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CResource {
     walk_c_resource(resource, &BitvectorSubstitution { from, to })
 }
@@ -259,7 +259,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_resource(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
     function: &CFunction,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CFunction {
     walk_c_function(function, &BitvectorSubstitution { from, to })
 }
@@ -268,7 +268,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_function(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_resource_spec(
     resource: &CResourceSpec,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CResourceSpec {
     walk_resource_spec(resource, &BitvectorSubstitution { from, to })
 }
@@ -1699,7 +1699,7 @@ mod resource_frame_substitution_tests {
         let address = Pointer {
             block: PointerBlock::Symbolic(variable),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(variable)),
+                value: Box::new(MachineTerm::Variable(variable)),
                 byte_width: 1,
             },
         };
@@ -1730,7 +1730,7 @@ mod resource_frame_substitution_tests {
             substitute_bitvector_variable_in_c_resource(
                 resource,
                 variable,
-                &Bitvector32Term::constant(4)
+                &MachineTerm::constant(4)
             ),
             *resource
         );
@@ -1744,7 +1744,7 @@ mod resource_frame_substitution_tests {
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Add(
                     Box::new(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(Bitvector32Term::Variable(Variable(100_000))),
+                        value: Box::new(MachineTerm::Variable(Variable(100_000))),
                         byte_width: 4,
                     }),
                     Box::new(PointerOffsetTerm::Constant(8)),
@@ -1753,12 +1753,12 @@ mod resource_frame_substitution_tests {
             ),
         };
         let snapshot = crate::kernel::intern_c_memory(
-            base.store(metadata, CValue::Int32(Bitvector32Term::constant(7))),
+            base.store(metadata, CValue::Int32(MachineTerm::constant(7))),
         );
         let rewritten = substitute_bitvector_variable_in_shared_memory(
             &snapshot,
             Variable(2_000_000),
-            &Bitvector32Term::Variable(Variable(3_200_000)),
+            &MachineTerm::Variable(Variable(3_200_000)),
         );
         assert_eq!(rewritten.arena_id(), snapshot.arena_id());
     }
@@ -1768,13 +1768,13 @@ mod resource_frame_substitution_tests {
         let ledger = crate::kernel::loans::LoanLedger::new();
         let participant = ledger.fresh_participant().expect("participant identity");
         let state = CState::new()
-            .with_local("x", int32(Bitvector32Term::Variable(Variable(71_100))))
+            .with_local("x", int32(MachineTerm::Variable(Variable(71_100))))
             .with_loan_ledger(Some(ledger))
             .with_loan_participant(Some(participant));
         let bitvector_substituted = substitute_bitvector_variable_in_c_state(
             &state,
             Variable(71_100),
-            &Bitvector32Term::constant(4),
+            &MachineTerm::constant(4),
         );
         let pointer_substituted = substitute_pointer_variable_in_c_state(
             &state,
@@ -1818,16 +1818,16 @@ mod resource_frame_substitution_tests {
             Pointer {
                 block: PointerBlock::Concrete("substitution:range".into()),
                 offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(from)),
+                    value: Box::new(MachineTerm::Variable(from)),
                     byte_width: 4,
                 },
             },
-            Bitvector32Term::Variable(from),
+            MachineTerm::Variable(from),
             binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Variable(from)),
-                Box::new(Bitvector32Term::constant(1)),
+                Box::new(MachineTerm::Variable(from)),
+                Box::new(MachineTerm::constant(1)),
             ),
         );
         let statement = CStatement::While {
@@ -1846,7 +1846,7 @@ mod resource_frame_substitution_tests {
         let substituted = substitute_bitvector_variable_in_c_statement(
             &statement,
             from,
-            &Bitvector32Term::constant(4),
+            &MachineTerm::constant(4),
         );
         let CStatement::While { effect_checks, .. } = substituted else {
             panic!("substitution changed the statement shape");
@@ -1854,8 +1854,8 @@ mod resource_frame_substitution_tests {
         let actual = effect_checks[0]
             .validated_ranges()
             .expect("validated carrier must be retained");
-        assert_eq!(actual[0].start(), &Bitvector32Term::constant(4));
-        assert_eq!(actual[0].end(), &Bitvector32Term::constant(5));
+        assert_eq!(actual[0].start(), &MachineTerm::constant(4));
+        assert_eq!(actual[0].end(), &MachineTerm::constant(5));
         assert_eq!(actual[0].base.offset, PointerOffsetTerm::Constant(16));
     }
 
@@ -1871,8 +1871,8 @@ mod resource_frame_substitution_tests {
                 block: PointerBlock::Symbolic(from),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(0),
+            MachineTerm::constant(1),
         );
         let statement = CStatement::While {
             condition: c_int32_literal(0),
@@ -1981,14 +1981,14 @@ pub(crate) fn try_resolve_load_variables_from_registry(
 fn substitute_surface_load_binding(
     proposition: &Proposition,
     from: Variable,
-    load: &Bitvector32Term,
+    load: &MachineTerm,
 ) -> Result<Proposition, IntegerPureSubstitutionError> {
     use crate::kernel::proof::term_rewrite::{TermRewrite, TypedCReplacement};
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::checked();
     collector.collect(proposition);
     collector.collect(&Proposition::ConditionIs(
-        ConditionTerm::equal(Bitvector32Term::Variable(from), load.clone()),
+        ConditionTerm::equal(MachineTerm::Variable(from), load.clone()),
         true,
     ));
     if collector.exhausted() {
@@ -2029,7 +2029,7 @@ pub fn resolve_minted_load_variables(
         else {
             continue;
         };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
+        let (MachineTerm::Variable(variable), load @ MachineTerm::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             continue;
@@ -2181,7 +2181,7 @@ fn capture_avoiding_algebraic_quantifier_body(
 /// quantifier boundary.
 pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
     proposition: &Proposition,
-    substitutions: &BTreeMap<Variable, Bitvector32Term>,
+    substitutions: &BTreeMap<Variable, MachineTerm>,
 ) -> Proposition {
     if substitutions.is_empty() {
         return proposition.clone();
@@ -2206,7 +2206,7 @@ pub(in crate::kernel) fn substitute_bitvector_variables_in_proposition(
         result = substitute_bitvector_variable_in_proposition(
             &result,
             *source,
-            &Bitvector32Term::Variable(*temporary),
+            &MachineTerm::Variable(*temporary),
         );
     }
     for (source, temporary) in staged {
@@ -2223,7 +2223,7 @@ fn capture_avoiding_quantifier_body(
     binder: Variable,
     body: &Proposition,
     substituted: Variable,
-    replacement: &Bitvector32Term,
+    replacement: &MachineTerm,
 ) -> (Variable, Proposition) {
     let mut replacement_variables = BTreeSet::new();
     collect_bitvector_variables(replacement, &mut replacement_variables);
@@ -2238,11 +2238,8 @@ fn capture_avoiding_quantifier_body(
     reserved.insert(substituted);
     let mut variables = KernelVariableGenerator::fresh_for(0, reserved);
     let fresh = variables.next();
-    let renamed = substitute_bitvector_variable_in_proposition(
-        body,
-        binder,
-        &Bitvector32Term::Variable(fresh),
-    );
+    let renamed =
+        substitute_bitvector_variable_in_proposition(body, binder, &MachineTerm::Variable(fresh));
     (fresh, renamed)
 }
 
@@ -3151,22 +3148,20 @@ fn collect_resource_bound_variables(resource: &CResource, variables: &mut BTreeS
 /// `collect_bitvector_variables` intentionally removes those identities from
 /// its result because they are not free; freshness construction needs the
 /// bound identities as well so a logical or fold binder cannot reuse one.
-fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTreeSet<Variable>) {
+fn collect_bitvector_bound_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
     match term {
-        bits32_constant!(_) | Bitvector32Term::Variable(_) => {}
+        bits32_constant!(_) | MachineTerm::Variable(_) => {}
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
         unary_term!(Int32, BitwiseNot, value)
-        | Bitvector32Term::Float32Negate(value)
-        | Bitvector32Term::Float64Negate(value) => {
+        | MachineTerm::Float32Negate(value)
+        | MachineTerm::Float64Negate(value) => {
             collect_bitvector_bound_variables(value, variables);
         }
-        Bitvector32Term::BoolCast { value, .. } => {
-            collect_condition_bound_variables(value, variables)
-        }
-        Bitvector32Term::If {
+        MachineTerm::BoolCast { value, .. } => collect_condition_bound_variables(value, variables),
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -3175,7 +3170,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
             collect_bitvector_bound_variables(then_term, variables);
             collect_bitvector_bound_variables(else_term, variables);
         }
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -3190,12 +3185,12 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
             variables.insert(*item);
             collect_bitvector_bound_variables(body, variables);
         }
-        Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+        MachineTerm::PureFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 collect_bitvector_bound_variables(argument, variables);
             }
         }
-        Bitvector32Term::ClickFunctionApplication { arguments, .. } => {
+        MachineTerm::ClickFunctionApplication { arguments, .. } => {
             for argument in arguments {
                 match argument {
                     PureFunctionArgument::Value(value) => {
@@ -3214,7 +3209,7 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
                 }
             }
         }
-        Bitvector32Term::AlgebraicMatch { scrutinee, arms } => {
+        MachineTerm::AlgebraicMatch { scrutinee, arms } => {
             collect_algebraic_bound_variables(scrutinee, variables);
             for arm in arms {
                 for binding in &arm.bindings {
@@ -3223,22 +3218,22 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
                 collect_bitvector_bound_variables(&arm.body, variables);
             }
         }
-        Bitvector32Term::MemoryLoad(memory, pointer, _) => {
+        MachineTerm::MemoryLoad(memory, pointer, _) => {
             // Memory snapshots are immutable kernel values; their free
             // variable collector remains the source of truth for snapshot
             // contents, while the pointer can contain nested fold terms.
             collect_memory_bitvector_variables(memory, variables);
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        Bitvector32Term::PointerAddress(pointer, _) => {
+        MachineTerm::PointerAddress(pointer, _) => {
             collect_pointer_offset_bound_variables(&pointer.offset, variables);
         }
-        Bitvector32Term::IntegerToMachine { value, .. } => {
+        MachineTerm::IntegerToMachine { value, .. } => {
             collect_integer_bound_variables(value, variables);
         }
         int64_constant!(_) | uint64_constant!(_) | native_constant!(_, _) => {}
         cast_term!(Int64From32, value)
-        | Bitvector32Term::Cast {
+        | MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             ..
@@ -3248,12 +3243,12 @@ fn collect_bitvector_bound_variables(term: &Bitvector32Term, variables: &mut BTr
         | cast_term!(Int64FromUInt32, value)
         | cast_term!(UInt64FromInt32, value)
         | cast_term!(UInt64FromInt64, value)
-        | Bitvector32Term::Unary { operand: value, .. } => {
+        | MachineTerm::Unary { operand: value, .. } => {
             collect_bitvector_bound_variables(value, variables)
         }
         crate::kernel::binary_wide_term!(left, right)
-        | Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
+        | MachineTerm::Float32Binary { left, right, .. }
+        | MachineTerm::Float64Binary { left, right, .. } => {
             collect_bitvector_bound_variables(left, variables);
             collect_bitvector_bound_variables(right, variables);
         }
@@ -3404,7 +3399,7 @@ fn collect_pointer_offset_bound_variables(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
     term: &Term,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> Term {
     match term {
         Term::Condition(condition) => Term::Condition(substitute_bitvector_variable_in_condition(
@@ -3529,7 +3524,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
 fn substitute_bitvector_variable_in_integer(
     term: &IntegerTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> IntegerTerm {
     match substitute_bitvector_variable_in_integer_checked(term, from, to) {
         Ok(result) => result,
@@ -3540,7 +3535,7 @@ fn substitute_bitvector_variable_in_integer(
 fn substitute_bitvector_variable_in_integer_checked(
     term: &IntegerTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
     substitute_bitvector_variable_in_integer_checked_with_mode(term, from, to, false)
 }
@@ -3548,7 +3543,7 @@ fn substitute_bitvector_variable_in_integer_checked(
 fn substitute_bitvector_variable_in_integer_checked_with_registered_loads(
     term: &IntegerTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
     substitute_bitvector_variable_in_integer_checked_with_mode(term, from, to, true)
 }
@@ -3556,10 +3551,10 @@ fn substitute_bitvector_variable_in_integer_checked_with_registered_loads(
 fn substitute_bitvector_variable_in_integer_checked_with_mode(
     term: &IntegerTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
     resolve_registered_loads: bool,
 ) -> Result<IntegerTerm, IntegerPureSubstitutionError> {
-    let source = Bitvector32Term::Variable(from);
+    let source = MachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     if resolve_registered_loads {
@@ -4422,7 +4417,7 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
         substitute_bitvector_variable_in_integer_checked_with_registered_loads(
             &with_temporary,
             item,
-            &Bitvector32Term::Variable(temporary_item),
+            &MachineTerm::Variable(temporary_item),
         )?
     } else {
         substitute_integer_pure_term(
@@ -4470,7 +4465,7 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
 fn integer_item_bitvector(
     value: &IntegerTerm,
     item_type: MachineIntegerType,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     match (value, item_type) {
         (IntegerTerm::Machine(machine), _) if machine.ty() == item_type => {
             Some(machine.value().clone())
@@ -4478,9 +4473,9 @@ fn integer_item_bitvector(
         (IntegerTerm::Constant(value), MachineIntegerType::Int32) => value
             .to_i64()
             .filter(|value| (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(value))
-            .map(|value| Bitvector32Term::constant(value as i32 as u32)),
+            .map(|value| MachineTerm::constant(value as i32 as u32)),
         (IntegerTerm::Constant(value), MachineIntegerType::UInt64) => {
-            value.to_u64().map(Bitvector32Term::uint64_constant)
+            value.to_u64().map(MachineTerm::uint64_constant)
         }
         _ => None,
     }
@@ -4489,7 +4484,7 @@ fn integer_item_bitvector(
 fn substitute_bitvector_variable_in_algebraic_term(
     term: &AlgebraicTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> AlgebraicTerm {
     let Term::Algebraic(term) =
         substitute_bitvector_variable_in_term(&Term::Algebraic(term.clone()), from, to)
@@ -4502,7 +4497,7 @@ fn substitute_bitvector_variable_in_algebraic_term(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
     expression: &CExpression,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CExpression {
     match expression {
         CExpression::Value(value) => {
@@ -4807,9 +4802,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_c_expression(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_expression(
     expression: &SpecExpression,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> SpecExpression {
-    let source = Bitvector32Term::Variable(from);
+    let source = MachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
@@ -4820,9 +4815,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_expression(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_proposition(
     proposition: &SpecProposition,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> SpecProposition {
-    let source = Bitvector32Term::Variable(from);
+    let source = MachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
@@ -4833,9 +4828,9 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_spec_proposition(
 fn substitute_bitvector_variable_in_spec_integer(
     expression: &SpecIntegerExpression,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> SpecIntegerExpression {
-    let source = Bitvector32Term::Variable(from);
+    let source = MachineTerm::Variable(from);
     let mut rewrite =
         crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(&source, to);
     rewrite
@@ -4848,7 +4843,7 @@ mod spec_carrier_substitution_binder_tests {
     use super::*;
 
     fn int32_value(variable: Variable) -> SpecExpression {
-        SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(variable)))
+        SpecExpression::Value(CValue::Int32(MachineTerm::Variable(variable)))
     }
 
     fn fold_body(item: Variable, source: Variable) -> SpecIntegerExpression {
@@ -4859,7 +4854,7 @@ mod spec_carrier_substitution_binder_tests {
             Box::new(SpecIntegerExpression::Term(IntegerTerm::Machine(
                 SharedMachineIntegerTerm::intern(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(source),
+                    MachineTerm::Variable(source),
                 ),
             ))),
         )
@@ -4870,9 +4865,9 @@ mod spec_carrier_substitution_binder_tests {
             value: Box::new(SpecIntegerExpression::RangeFold {
                 index: SpecIntegerRangeFoldIndex::Int32 {
                     start: Box::new(int32_value(source)),
-                    end: Box::new(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::constant(8),
-                    ))),
+                    end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                        8,
+                    )))),
                 },
                 initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
                 accumulator: Variable(330),
@@ -4890,7 +4885,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_expression(
             &int32_fold(item, source),
             source,
-            &Bitvector32Term::Variable(item),
+            &MachineTerm::Variable(item),
         );
         let SpecExpression::IntegerToMachine { value, .. } = rewritten else {
             panic!("the Integer fold was dropped")
@@ -4924,7 +4919,7 @@ mod spec_carrier_substitution_binder_tests {
         else {
             panic!("the source machine integer was silently dropped")
         };
-        assert_eq!(substituted_source.value(), &Bitvector32Term::Variable(item));
+        assert_eq!(substituted_source.value(), &MachineTerm::Variable(item));
     }
 
     #[test]
@@ -4933,7 +4928,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_expression(
             &int32_fold(source, source),
             source,
-            &Bitvector32Term::constant(5),
+            &MachineTerm::constant(5),
         );
         let SpecExpression::IntegerToMachine { value, .. } = rewritten else {
             panic!("the Integer fold was dropped")
@@ -4950,7 +4945,7 @@ mod spec_carrier_substitution_binder_tests {
         };
         assert_eq!(
             *start,
-            SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(5)))
+            SpecExpression::Value(CValue::Int32(MachineTerm::constant(5)))
         );
         let SpecIntegerExpression::Add(bound_item, machine_source) = *body else {
             panic!("the fold body changed shape")
@@ -4963,7 +4958,7 @@ mod spec_carrier_substitution_binder_tests {
             *machine_source,
             SpecIntegerExpression::Term(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(source),
+                MachineTerm::Variable(source),
             ),))
         );
     }
@@ -4984,7 +4979,7 @@ mod spec_carrier_substitution_binder_tests {
         let rewritten = substitute_bitvector_variable_in_spec_proposition(
             &proposition,
             source,
-            &Bitvector32Term::Variable(binder),
+            &MachineTerm::Variable(binder),
         );
         let SpecProposition::ForAllInt32 { variable, body, .. } = rewritten else {
             panic!("the quantifier was dropped")
@@ -5012,13 +5007,13 @@ mod spec_carrier_substitution_binder_tests {
             body: Box::new(SpecProposition::Comparison {
                 left: int32_value(source),
                 operator: CComparisonOperator::Equal,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(8))),
+                right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(8))),
             }),
         };
         let rewritten = substitute_bitvector_variable_in_spec_proposition(
             &proposition,
             source,
-            &Bitvector32Term::constant(5),
+            &MachineTerm::constant(5),
         );
         assert_eq!(rewritten, proposition);
     }
@@ -5048,7 +5043,7 @@ mod spec_carrier_substitution_binder_tests {
                     substitute_bitvector_variable_in_integer(
                         &IntegerTerm::var(Variable(340)),
                         Variable(340),
-                        &Bitvector32Term::constant(1),
+                        &MachineTerm::constant(1),
                     )
                 });
                 crate::instrumentation::emit(
@@ -5080,7 +5075,7 @@ mod machine_integer_substitution_tests {
 pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
     condition: &ConditionTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> ConditionTerm {
     match condition {
         ConditionTerm::Constant(value) => ConditionTerm::Constant(*value),
@@ -5207,8 +5202,8 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_condition(
 fn substitute_through_load_variable(
     variable: Variable,
     from: Variable,
-    to: &Bitvector32Term,
-) -> Option<Bitvector32Term> {
+    to: &MachineTerm,
+) -> Option<MachineTerm> {
     if !crate::kernel::is_load_variable(&variable) {
         return None;
     }
@@ -5259,19 +5254,19 @@ fn substitute_through_load_variable(
         );
     }
     Some(crate::kernel::eval::canonical_term(
-        &Bitvector32Term::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
+        &MachineTerm::MemoryLoad(substituted_memory, Box::new(substituted_pointer), kind),
     ))
 }
 
 pub(crate) fn substitute_bitvector_variable(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     from: Variable,
-    to: &Bitvector32Term,
-) -> Bitvector32Term {
+    to: &MachineTerm,
+) -> MachineTerm {
     match term {
-        Bitvector32Term::Constant { .. } => term.clone(),
-        Bitvector32Term::Variable(variable) if *variable == from => to.clone(),
-        Bitvector32Term::Variable(variable) => {
+        MachineTerm::Constant { .. } => term.clone(),
+        MachineTerm::Variable(variable) if *variable == from => to.clone(),
+        MachineTerm::Variable(variable) => {
             // A load variable can represent a load whose address mentions
             // the substituted variable (a universal's body contains `p[k]`
             // with the bound `k` inside the address). Substitution reaches
@@ -5279,22 +5274,22 @@ pub(crate) fn substitute_bitvector_variable(
             // form of the result, so instantiating a universal yields the
             // same load variable as a direct read of that cell.
             substitute_through_load_variable(*variable, from, to)
-                .unwrap_or(Bitvector32Term::Variable(*variable))
+                .unwrap_or(MachineTerm::Variable(*variable))
         }
-        Bitvector32Term::BoolCast { to: format, value } => Bitvector32Term::bool_cast(
+        MachineTerm::BoolCast { to: format, value } => MachineTerm::bool_cast(
             *format,
             substitute_bitvector_variable_in_condition(value, from, to),
         ),
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
-        } => Bitvector32Term::if_then_else(
+        } => MachineTerm::if_then_else(
             substitute_bitvector_variable_in_condition(condition, from, to),
             substitute_bitvector_variable(then_term, from, to),
             substitute_bitvector_variable(else_term, from, to),
         ),
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start,
             end,
             initial,
@@ -5328,7 +5323,7 @@ pub(crate) fn substitute_bitvector_variable(
                 body = substitute_bitvector_variable(
                     &body,
                     accumulator,
-                    &Bitvector32Term::Variable(renamed),
+                    &MachineTerm::Variable(renamed),
                 );
                 accumulator = renamed;
             }
@@ -5342,14 +5337,13 @@ pub(crate) fn substitute_bitvector_variable(
                 reserved.insert(item);
                 let mut fresh = KernelVariableGenerator::fresh_for(0, reserved);
                 let renamed = fresh.next();
-                body =
-                    substitute_bitvector_variable(&body, item, &Bitvector32Term::Variable(renamed));
+                body = substitute_bitvector_variable(&body, item, &MachineTerm::Variable(renamed));
                 item = renamed;
             }
             if original_accumulator != from && original_item != from {
                 body = substitute_bitvector_variable(&body, from, to);
             }
-            Bitvector32Term::range_fold(
+            MachineTerm::range_fold(
                 substitute_bitvector_variable(start, from, to),
                 substitute_bitvector_variable(end, from, to),
                 substitute_bitvector_variable(initial, from, to),
@@ -5358,8 +5352,8 @@ pub(crate) fn substitute_bitvector_variable(
                 body,
             )
         }
-        Bitvector32Term::PureFunctionApplication { name, arguments } => {
-            Bitvector32Term::PureFunctionApplication {
+        MachineTerm::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
@@ -5367,8 +5361,8 @@ pub(crate) fn substitute_bitvector_variable(
                     .collect(),
             }
         }
-        Bitvector32Term::ClickFunctionApplication { name, arguments } => {
-            Bitvector32Term::ClickFunctionApplication {
+        MachineTerm::ClickFunctionApplication { name, arguments } => {
+            MachineTerm::ClickFunctionApplication {
                 name: name.clone(),
                 arguments: arguments
                     .iter()
@@ -5378,7 +5372,7 @@ pub(crate) fn substitute_bitvector_variable(
                     .collect(),
             }
         }
-        Bitvector32Term::AlgebraicMatch { scrutinee, arms } => Bitvector32Term::AlgebraicMatch {
+        MachineTerm::AlgebraicMatch { scrutinee, arms } => MachineTerm::AlgebraicMatch {
             scrutinee: Box::new(substitute_bitvector_variable_in_algebraic_term(
                 scrutinee, from, to,
             )),
@@ -5398,21 +5392,19 @@ pub(crate) fn substitute_bitvector_variable(
                 })
                 .collect(),
         },
-        Bitvector32Term::MemoryLoad(memory, pointer, kind) => Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
             substitute_bitvector_variable_in_shared_memory(memory, from, to),
             Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
             *kind,
         ),
-        Bitvector32Term::PointerAddress(pointer, class) => Bitvector32Term::object_pointer_address(
+        MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
             class.class(),
         ),
-        Bitvector32Term::IntegerToMachine { value, destination } => {
-            Bitvector32Term::IntegerToMachine {
-                value: substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),
-                destination: *destination,
-            }
-        }
+        MachineTerm::IntegerToMachine { value, destination } => MachineTerm::IntegerToMachine {
+            value: substitute_bitvector_variable_in_integer(value.as_ref(), from, to).into(),
+            destination: *destination,
+        },
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => op.build(
                 substitute_bitvector_variable(left, from, to),
@@ -5427,7 +5419,7 @@ pub(crate) fn substitute_bitvector_variable(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
     offset: &PointerOffsetTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> PointerOffsetTerm {
     substitute_bitvector_variable_in_pointer_offset_cow(offset, from, to).into_owned()
 }
@@ -5439,7 +5431,7 @@ pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer_offset(
 fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
     offset: &'a PointerOffsetTerm,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> std::borrow::Cow<'a, PointerOffsetTerm> {
     use std::borrow::Cow;
     match offset {
@@ -5486,10 +5478,10 @@ fn substitute_bitvector_variable_in_pointer_offset_cow<'a>(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_pointer(
     pointer: &Pointer,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> Pointer {
     if matches!(pointer.block, PointerBlock::PureFunctionApplication(_)) {
-        let source = Bitvector32Term::Variable(from);
+        let source = MachineTerm::Variable(from);
         let term = Term::CValue(CValue::pointer(pointer.clone()));
         let Term::CValue(CValue::Pointer(result)) =
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&source, to).term(&term)
@@ -5551,8 +5543,8 @@ struct SubstitutedMemoryScope {
 }
 
 impl SubstitutedMemoryScope {
-    fn enter(from: Variable, to: &Bitvector32Term) -> Self {
-        let address = to as *const Bitvector32Term as usize;
+    fn enter(from: Variable, to: &MachineTerm) -> Self {
+        let address = to as *const MachineTerm as usize;
         let joined = SUBSTITUTED_MEMORIES.with(|frames| {
             frames
                 .borrow()
@@ -5588,7 +5580,7 @@ impl Drop for SubstitutedMemoryScope {
 fn substitute_bitvector_variable_in_shared_memory(
     memory: &SharedCMemory,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> SharedCMemory {
     let identity = memory.arena_id();
     if memory_lacks_variable(identity, from) {
@@ -5627,7 +5619,7 @@ fn substitute_bitvector_variable_in_shared_memory(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_memory(
     memory: &CMemory,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CMemory {
     // A snapshot carried by value (a loadability or effect proposition) is
     // interned only to consult and fill the absent-variable memo; interning
@@ -5688,7 +5680,7 @@ fn run_slot_named_by_load_variable(
     (index < run.count() && !run.holes().contains(index)).then_some(index)
 }
 
-fn rewrite_memory_snapshot(memory: &CMemory, from: Variable, to: &Bitvector32Term) -> CMemory {
+fn rewrite_memory_snapshot(memory: &CMemory, from: Variable, to: &MachineTerm) -> CMemory {
     crate::instrumentation::measure_operation(
         "kernel",
         "substitution",
@@ -5722,13 +5714,10 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
     let mut memory =
         CMemory::new().with_declared_scalar_block("local:word".into(), 4, CType::UInt32);
     let mut read_only = CBlock::read_only(4);
-    read_only.size = Bitvector32Term::Variable(from);
+    read_only.size = MachineTerm::Variable(from);
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
-    let rewritten = substitute_bitvector_variable_in_memory_contents(
-        &memory,
-        from,
-        &Bitvector32Term::constant(16),
-    );
+    let rewritten =
+        substitute_bitvector_variable_in_memory_contents(&memory, from, &MachineTerm::constant(16));
     assert_eq!(
         rewritten.blocks.get(&PointerBlock::from("local:word")),
         memory.blocks.get(&PointerBlock::from("local:word"))
@@ -5738,13 +5727,13 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
         .get(&PointerBlock::from("global:protected"))
         .unwrap();
     assert!(protected.read_only);
-    assert_eq!(protected.size, Bitvector32Term::constant(16));
+    assert_eq!(protected.size, MachineTerm::constant(16));
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
     memory: &CMemory,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CMemory {
     crate::instrumentation::record_deterministic_work(
         memory.cells.representation_len() + memory.union_cells.len() + memory.blocks.len(),
@@ -5927,7 +5916,7 @@ fn substitute_bitvector_variable_in_memory_contents(
         "substitute scalar variable",
         vec![memory.clone()],
         vec![
-            CValue::Int32(Bitvector32Term::Variable(from)),
+            CValue::Int32(MachineTerm::Variable(from)),
             CValue::Int32(to.clone()),
         ],
     );
@@ -5937,7 +5926,7 @@ fn substitute_bitvector_variable_in_memory_contents(
 pub(in crate::kernel) fn substitute_bitvector_variable_in_c_value(
     value: &CValue,
     from: Variable,
-    to: &Bitvector32Term,
+    to: &MachineTerm,
 ) -> CValue {
     match value {
         CValue::PointerInteger(record) => CValue::PointerInteger(PointerIntegerValue {
@@ -7446,7 +7435,7 @@ mod pointee_const_return_tests {
             substitute_bitvector_variable_in_c_value(
                 &value,
                 Variable(919),
-                &Bitvector32Term::constant(0)
+                &MachineTerm::constant(0)
             ),
             value
         );
@@ -7473,7 +7462,7 @@ mod pointee_const_return_tests {
             substitute_bitvector_variable_in_c_function(
                 &function,
                 Variable(914),
-                &Bitvector32Term::constant(0),
+                &MachineTerm::constant(0),
             )
             .return_pointee_is_constant()
         );
@@ -7497,37 +7486,37 @@ mod integer_to_machine_substitution_tests {
         let payload = crate::kernel::SharedIntegerTerm::from(IntegerTerm::Machine(
             crate::kernel::SharedMachineIntegerTerm::intern(
                 crate::kernel::MachineIntegerType::Int32,
-                Bitvector32Term::Variable(Variable(701)),
+                MachineTerm::Variable(Variable(701)),
             ),
         ));
-        let term = Bitvector32Term::IntegerToMachine {
+        let term = MachineTerm::IntegerToMachine {
             value: payload.clone(),
             destination: crate::kernel::MachineIntegerType::UInt32,
         };
         let replaced = substitute_bitvector_variable(
             &term,
             Variable(701),
-            &Bitvector32Term::Variable(Variable(702)),
+            &MachineTerm::Variable(Variable(702)),
         );
-        let Bitvector32Term::IntegerToMachine { value, destination } = replaced else {
+        let MachineTerm::IntegerToMachine { value, destination } = replaced else {
             panic!("substitution changed the carrier shape")
         };
         assert_eq!(destination, crate::kernel::MachineIntegerType::UInt32);
         assert!(matches!(value.as_ref(), IntegerTerm::Machine(machine)
             if machine.ty() == crate::kernel::MachineIntegerType::Int32
-                && machine.value() == &Bitvector32Term::Variable(Variable(702))));
+                && machine.value() == &MachineTerm::Variable(Variable(702))));
     }
 
     #[test]
     fn integer_to_machine_substitution_reuses_unchanged_shared_payload() {
         let payload = crate::kernel::SharedIntegerTerm::from(IntegerTerm::Variable(Variable(703)));
-        let term = Bitvector32Term::IntegerToMachine {
+        let term = MachineTerm::IntegerToMachine {
             value: payload.clone(),
             destination: crate::kernel::MachineIntegerType::Int32,
         };
         let replaced =
-            substitute_bitvector_variable(&term, Variable(704), &Bitvector32Term::constant(0));
-        let Bitvector32Term::IntegerToMachine { value, .. } = replaced else {
+            substitute_bitvector_variable(&term, Variable(704), &MachineTerm::constant(0));
+        let MachineTerm::IntegerToMachine { value, .. } = replaced else {
             panic!("substitution changed the carrier shape")
         };
         assert_eq!(value.id(), payload.id());
@@ -7553,10 +7542,8 @@ mod machine_integer_pointer_substitution_tests {
             block: replacement.block.clone(),
             offset: PointerOffsetTerm::Constant(12),
         };
-        let bits = Bitvector32Term::PointerAddress(
-            Box::new(source),
-            crate::kernel::AddressObjectClass::NONE,
-        );
+        let bits =
+            MachineTerm::PointerAddress(Box::new(source), crate::kernel::AddressObjectClass::NONE);
         let term =
             IntegerTerm::from_machine(crate::kernel::MachineIntegerType::UInt64, bits.clone())
                 .unwrap();
@@ -7574,7 +7561,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             observation.value(),
-            &Bitvector32Term::PointerAddress(
+            &MachineTerm::PointerAddress(
                 Box::new(expected.clone()),
                 crate::kernel::AddressObjectClass::NONE
             )
@@ -7598,7 +7585,7 @@ mod machine_integer_pointer_substitution_tests {
         };
         assert_eq!(
             *value,
-            SpecExpression::Value(CValue::UInt64(Bitvector32Term::PointerAddress(
+            SpecExpression::Value(CValue::UInt64(MachineTerm::PointerAddress(
                 Box::new(expected),
                 crate::kernel::AddressObjectClass::NONE,
             )))
@@ -7613,8 +7600,8 @@ mod integer_function_traversal_tests {
     #[test]
     fn integer_applications_rewrite_c_and_nested_integer_arguments() {
         let from = Variable(817);
-        let machine = Bitvector32Term::Variable(from);
-        let make = |machine: Bitvector32Term| {
+        let machine = MachineTerm::Variable(from);
+        let make = |machine: MachineTerm| {
             IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observed".into(),
                 vec![
@@ -7628,19 +7615,19 @@ mod integer_function_traversal_tests {
             ))
         };
         let original = make(machine);
-        let expected = make(Bitvector32Term::Variable(Variable(818)));
+        let expected = make(MachineTerm::Variable(Variable(818)));
         assert_eq!(
             substitute_bitvector_variable_in_integer(
                 &original,
                 from,
-                &Bitvector32Term::Variable(Variable(818))
+                &MachineTerm::Variable(Variable(818))
             ),
             expected
         );
         assert_eq!(
             crate::kernel::proof::term_rewrite::TermRewrite::for_bits(
-                &Bitvector32Term::Variable(from),
-                &Bitvector32Term::Variable(Variable(818))
+                &MachineTerm::Variable(from),
+                &MachineTerm::Variable(Variable(818))
             )
             .term(&Term::Integer(original)),
             Term::Integer(expected)
@@ -7662,7 +7649,7 @@ mod integer_match_substitution_scope_tests {
     fn symbolic_match(body: IntegerTerm, binding: Variable) -> IntegerTerm {
         symbolic_match_with_binding(
             body,
-            AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(binding))),
+            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(binding))),
         )
     }
 
@@ -7693,7 +7680,7 @@ mod integer_match_substitution_scope_tests {
                 AlgebraicIntegerMatchArm {
                     binding_names: Default::default(),
                     variant: "Left".into(),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                         binding,
                     )))],
                     body: body.clone().into(),
@@ -7701,7 +7688,7 @@ mod integer_match_substitution_scope_tests {
                 AlgebraicIntegerMatchArm {
                     binding_names: Default::default(),
                     variant: "Right".into(),
-                    bindings: vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                         binding,
                     )))],
                     body: body.into(),
@@ -7717,23 +7704,20 @@ mod integer_match_substitution_scope_tests {
         let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(y))),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(x))),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(Variable(
-                    9003,
-                )))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(y))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(x))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(Variable(9003)))),
             ],
         ));
         let rewritten = substitute_bitvector_variable_in_integer(
             &symbolic_match(body, y),
             x,
-            &Bitvector32Term::Variable(y),
+            &MachineTerm::Variable(y),
         );
         let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
             panic!("expected algebraic match")
         };
-        let AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(fresh))) =
-            arms[0].bindings[0]
+        let AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(fresh))) = arms[0].bindings[0]
         else {
             panic!("expected C binder")
         };
@@ -7742,9 +7726,9 @@ mod integer_match_substitution_scope_tests {
             panic!("expected application body")
         };
         let [
-            PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(first))),
-            PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(second))),
-            PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::Variable(free))),
+            PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(first))),
+            PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(second))),
+            PureFunctionArgument::Value(CValue::Int32(MachineTerm::Variable(free))),
         ] = application.arguments()
         else {
             panic!("expected two C arguments")
@@ -7812,20 +7796,20 @@ mod integer_match_substitution_scope_tests {
         let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "observe".into(),
             vec![PureFunctionArgument::Value(CValue::Int32(
-                Bitvector32Term::Variable(y),
+                MachineTerm::Variable(y),
             ))],
         ));
         let rewritten = substitute_bitvector_variable_in_integer(
             &symbolic_match(body, y),
             y,
-            &Bitvector32Term::Variable(z),
+            &MachineTerm::Variable(z),
         );
         let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
             panic!("expected algebraic match")
         };
         assert_eq!(
             arms[0].bindings[0],
-            AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(y),))
+            AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(y),))
         );
         let IntegerTerm::PureFunctionApplication(application) = arms[0].body.as_ref() else {
             panic!("expected application body")
@@ -7833,7 +7817,7 @@ mod integer_match_substitution_scope_tests {
         assert_eq!(
             application.arguments(),
             &[PureFunctionArgument::Value(CValue::Int32(
-                Bitvector32Term::Variable(y),
+                MachineTerm::Variable(y),
             ))]
         );
     }
@@ -7843,27 +7827,27 @@ mod integer_match_substitution_scope_tests {
         let source = Variable(9040);
         let replacement = Variable(9041);
         let carriers = [
-            CValue::Bool(Bitvector32Term::Variable(replacement)),
-            CValue::Int8(Bitvector32Term::Variable(replacement)),
-            CValue::Int16(Bitvector32Term::Variable(replacement)),
-            CValue::Int32(Bitvector32Term::Variable(replacement)),
-            CValue::UInt8(Bitvector32Term::Variable(replacement)),
-            CValue::UInt16(Bitvector32Term::Variable(replacement)),
-            CValue::UInt32(Bitvector32Term::Variable(replacement)),
-            CValue::Int64(Bitvector32Term::Variable(replacement)),
-            CValue::UInt64(Bitvector32Term::Variable(replacement)),
+            CValue::Bool(MachineTerm::Variable(replacement)),
+            CValue::Int8(MachineTerm::Variable(replacement)),
+            CValue::Int16(MachineTerm::Variable(replacement)),
+            CValue::Int32(MachineTerm::Variable(replacement)),
+            CValue::UInt8(MachineTerm::Variable(replacement)),
+            CValue::UInt16(MachineTerm::Variable(replacement)),
+            CValue::UInt32(MachineTerm::Variable(replacement)),
+            CValue::Int64(MachineTerm::Variable(replacement)),
+            CValue::UInt64(MachineTerm::Variable(replacement)),
         ];
         for carrier in carriers {
             let body = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
                 "observe".into(),
                 vec![PureFunctionArgument::Value(CValue::Int32(
-                    Bitvector32Term::Variable(source),
+                    MachineTerm::Variable(source),
                 ))],
             ));
             let rewritten = substitute_bitvector_variable_in_integer(
                 &symbolic_match_with_binding(body, AlgebraicValue::C(carrier.clone())),
                 source,
-                &Bitvector32Term::Variable(replacement),
+                &MachineTerm::Variable(replacement),
             );
             let IntegerTerm::AlgebraicMatch { arms, .. } = rewritten else {
                 panic!("expected algebraic match")
@@ -7905,7 +7889,7 @@ mod integer_match_substitution_scope_tests {
 mod integer_mixed_quantifier_tests {
     use super::*;
 
-    fn application(integer: IntegerTerm, machine: Bitvector32Term) -> IntegerTerm {
+    fn application(integer: IntegerTerm, machine: MachineTerm) -> IntegerTerm {
         IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
             "opaque".into(),
             vec![
@@ -7918,7 +7902,7 @@ mod integer_mixed_quantifier_tests {
     #[test]
     fn integer_substitution_descends_function_and_reverse_conversion_arguments() {
         let from = Variable(87);
-        let converted = Bitvector32Term::IntegerToMachine {
+        let converted = MachineTerm::IntegerToMachine {
             value: IntegerTerm::var(from).into(),
             destination: MachineIntegerType::Int32,
         };
@@ -7937,7 +7921,7 @@ mod integer_mixed_quantifier_tests {
             Proposition::Equal(
                 Term::Integer(application(
                     IntegerTerm::constant_i64(9),
-                    Bitvector32Term::IntegerToMachine {
+                    MachineTerm::IntegerToMachine {
                         value: IntegerTerm::constant_i64(9).into(),
                         destination: MachineIntegerType::Int32,
                     }
@@ -7958,7 +7942,7 @@ mod integer_mixed_quantifier_tests {
             body: Box::new(Proposition::Equal(
                 Term::Integer(application(
                     IntegerTerm::var(from),
-                    Bitvector32Term::Variable(bound),
+                    MachineTerm::Variable(bound),
                 )),
                 Term::Integer(IntegerTerm::var(bound)),
             )),
@@ -7981,7 +7965,7 @@ mod integer_mixed_quantifier_tests {
             Proposition::Equal(
                 Term::Integer(application(
                     IntegerTerm::var(bound),
-                    Bitvector32Term::Variable(bound)
+                    MachineTerm::Variable(bound)
                 )),
                 Term::Integer(IntegerTerm::var(fresh)),
             )
@@ -8003,7 +7987,7 @@ mod integer_mixed_quantifier_tests {
             &Pointer {
                 block: PointerBlock::Concrete("integer-witness-capture".into()),
                 offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::IntegerToMachine {
+                    value: Box::new(MachineTerm::IntegerToMachine {
                         value: IntegerTerm::var(free_index).into(),
                         destination: MachineIntegerType::Int32,
                     }),
@@ -8015,7 +7999,7 @@ mod integer_mixed_quantifier_tests {
         );
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(load),
+            MachineTerm::Variable(load),
         ));
         let proposition = Proposition::Exists {
             name: "nested".into(),
@@ -8047,7 +8031,7 @@ mod integer_mixed_quantifier_tests {
         let IntegerTerm::Machine(machine) = left else {
             panic!("witness replacement changed Integer carrier")
         };
-        let Bitvector32Term::Variable(rewritten_load) = machine.value() else {
+        let MachineTerm::Variable(rewritten_load) = machine.value() else {
             panic!("registered load was expanded into the memory snapshot")
         };
         let (rewritten_memory, rewritten_pointer) =
@@ -8057,7 +8041,7 @@ mod integer_mixed_quantifier_tests {
         assert!(matches!(
             rewritten_pointer.offset,
             PointerOffsetTerm::Int32Scaled { value, .. }
-                if matches!(value.as_ref(), Bitvector32Term::IntegerToMachine { value, .. }
+                if matches!(value.as_ref(), MachineTerm::IntegerToMachine { value, .. }
                     if matches!(value.as_ref(), IntegerTerm::Variable(variable)
                 if *variable == free_index))
         ));
@@ -8065,8 +8049,8 @@ mod integer_mixed_quantifier_tests {
 
     fn c_int_equality(left: Variable, right: Variable) -> Proposition {
         Proposition::Equal(
-            Term::Bitvector32(Bitvector32Term::Variable(left)),
-            Term::Bitvector32(Bitvector32Term::Variable(right)),
+            Term::Bitvector32(MachineTerm::Variable(left)),
+            Term::Bitvector32(MachineTerm::Variable(right)),
         )
     }
 
@@ -8076,7 +8060,7 @@ mod integer_mixed_quantifier_tests {
         let c_binder = Variable(9_201);
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(c_binder),
+            MachineTerm::Variable(c_binder),
         ));
         let proposition = Proposition::ForAll {
             name: Default::default(),
@@ -8159,7 +8143,7 @@ mod integer_mixed_quantifier_tests {
         let inner_pointer = Variable(9_222);
         let replacement = IntegerTerm::from_machine(
             MachineIntegerType::UInt64,
-            Bitvector32Term::PointerAddress(
+            MachineTerm::PointerAddress(
                 Box::new(Pointer::symbolic(inner_pointer)),
                 crate::kernel::AddressObjectClass::NONE,
             ),
@@ -8270,7 +8254,7 @@ mod integer_mixed_quantifier_tests {
 mod integer_range_fold_substitution_tests {
     use super::*;
 
-    fn int32_index(start: Bitvector32Term, end: Bitvector32Term) -> IntegerRangeFoldIndex {
+    fn int32_index(start: MachineTerm, end: MachineTerm) -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {
             start: SharedIntegerRangeEndpoint::intern(start),
             end: SharedIntegerRangeEndpoint::intern(end),
@@ -8280,11 +8264,11 @@ mod integer_range_fold_substitution_tests {
     fn c_item(value: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(value),
+            MachineTerm::Variable(value),
         ))
     }
 
-    fn c_item_value(value: Bitvector32Term) -> IntegerTerm {
+    fn c_item_value(value: MachineTerm) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
             value,
@@ -8306,18 +8290,15 @@ mod integer_range_fold_substitution_tests {
             c_item(free_zero),
         );
         let fold = IntegerTerm::range_fold(
-            int32_index(Bitvector32Term::constant(0), Bitvector32Term::constant(1)),
+            int32_index(MachineTerm::constant(0), MachineTerm::constant(1)),
             IntegerTerm::var(accumulator),
             accumulator,
             item,
             body,
         );
 
-        let replaced = substitute_bitvector_variable_in_integer(
-            &fold,
-            source,
-            &Bitvector32Term::Variable(item),
-        );
+        let replaced =
+            substitute_bitvector_variable_in_integer(&fold, source, &MachineTerm::Variable(item));
         let IntegerTerm::RangeFold {
             item: fresh_item,
             body,
@@ -8334,22 +8315,22 @@ mod integer_range_fold_substitution_tests {
         };
         assert!(
             matches!(free_zero_term.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(free_zero))
+            if machine.value() == &MachineTerm::Variable(free_zero))
         );
         let IntegerTerm::Add(prefix, free_item) = left.as_ref() else {
             panic!("missing free y+1 term")
         };
         assert!(matches!(free_item.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(free_y_plus_one)));
+            if machine.value() == &MachineTerm::Variable(free_y_plus_one)));
         let IntegerTerm::Add(replaced_source, bound_item) = prefix.as_ref() else {
             panic!("missing source and item terms")
         };
         assert!(
             matches!(replaced_source.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(item))
+            if machine.value() == &MachineTerm::Variable(item))
         );
         assert!(matches!(bound_item.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(fresh_item)));
+            if machine.value() == &MachineTerm::Variable(fresh_item)));
     }
 
     #[test]
@@ -8358,10 +8339,7 @@ mod integer_range_fold_substitution_tests {
         let accumulator = Variable(70_011);
         let body = c_item(source);
         let fold = IntegerTerm::range_fold(
-            int32_index(
-                Bitvector32Term::Variable(source),
-                Bitvector32Term::Variable(source),
-            ),
+            int32_index(MachineTerm::Variable(source), MachineTerm::Variable(source)),
             c_item(source),
             accumulator,
             source,
@@ -8369,7 +8347,7 @@ mod integer_range_fold_substitution_tests {
         );
 
         let replaced =
-            substitute_bitvector_variable_in_integer(&fold, source, &Bitvector32Term::constant(9));
+            substitute_bitvector_variable_in_integer(&fold, source, &MachineTerm::constant(9));
         let IntegerTerm::RangeFold {
             index,
             initial,
@@ -8384,15 +8362,15 @@ mod integer_range_fold_substitution_tests {
         let IntegerRangeFoldIndex::Int32 { start, end } = index else {
             panic!("substitution changed the index carrier")
         };
-        assert_eq!(start.value(), &Bitvector32Term::constant(9));
-        assert_eq!(end.value(), &Bitvector32Term::constant(9));
+        assert_eq!(start.value(), &MachineTerm::constant(9));
+        assert_eq!(end.value(), &MachineTerm::constant(9));
         // The initial value was `to_integer(source)`, so substituting a literal
         // decides that observation: it is the mathematical 9, the same Integer
         // an evaluation of `to_integer(9)` produces. The body's observation is
         // of the bound item and stays an observation.
         assert_eq!(initial.as_ref(), &IntegerTerm::constant_i64(9));
         assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-            if machine.value() == &Bitvector32Term::Variable(source)));
+            if machine.value() == &MachineTerm::Variable(source)));
     }
 
     #[test]
@@ -8414,7 +8392,7 @@ mod integer_range_fold_substitution_tests {
         let replaced = substitute_bitvector_variable_in_integer(
             &outer,
             Variable(70_022),
-            &Bitvector32Term::constant(9),
+            &MachineTerm::constant(9),
         );
         let IntegerTerm::Add(left, right) = replaced else {
             panic!("substitution changed the shared outer shape")
@@ -8493,7 +8471,7 @@ mod integer_range_fold_substitution_tests {
         let body = c_item(item);
         let malformed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::UInt32,
-            Bitvector32Term::Variable(Variable(70_054)),
+            MachineTerm::Variable(Variable(70_054)),
         ));
         let result = instantiate_integer_range_fold_step(
             &body,
@@ -8517,7 +8495,7 @@ mod integer_range_fold_substitution_tests {
             let binder = Variable(70_156 + u64::from(bytes));
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(binder), 4),
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
             };
             let original = crate::kernel::eval::load_variable_for_exact_cell(
                 &memory,
@@ -8526,11 +8504,11 @@ mod integer_range_fold_substitution_tests {
                 bytes,
             );
             let substituted = substitute_bitvector_variable(
-                &Bitvector32Term::Variable(original),
+                &MachineTerm::Variable(original),
                 binder,
-                &Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+                &MachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
             );
-            let Bitvector32Term::Variable(renamed) = substituted else {
+            let MachineTerm::Variable(renamed) = substituted else {
                 panic!("substituted read must retain a registered name");
             };
             assert_eq!(
@@ -8544,7 +8522,7 @@ mod integer_range_fold_substitution_tests {
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(
-                        Bitvector32Term::Variable(Variable(70_170 + u64::from(bytes))),
+                        MachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
                         4
                     )
                 }
@@ -8559,7 +8537,7 @@ mod integer_range_fold_substitution_tests {
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(item)),
+                value: Box::new(MachineTerm::Variable(item)),
                 byte_width: 4,
             },
         };
@@ -8573,21 +8551,21 @@ mod integer_range_fold_substitution_tests {
                 .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(load_variable),
+            MachineTerm::Variable(load_variable),
         ));
         let result = instantiate_integer_range_fold_step(
             &body,
             Variable(70_057),
             &IntegerTerm::constant_i64(0),
             item,
-            &c_item_value(Bitvector32Term::constant(0)),
+            &c_item_value(MachineTerm::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
         let IntegerTerm::Machine(machine) = result else {
             panic!("the machine load carrier was lost");
         };
-        let Bitvector32Term::Variable(rewritten_load) = machine.value() else {
+        let MachineTerm::Variable(rewritten_load) = machine.value() else {
             panic!("the registered load was not reminted");
         };
         assert_ne!(*rewritten_load, load_variable);
@@ -8606,7 +8584,7 @@ mod integer_range_fold_substitution_tests {
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Constant(4)),
                 Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(Bitvector32Term::Variable(item)),
+                    value: Box::new(MachineTerm::Variable(item)),
                     byte_width: 4,
                 }),
             ),
@@ -8621,21 +8599,21 @@ mod integer_range_fold_substitution_tests {
                 .expect("the source load must be registered");
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(load_variable),
+            MachineTerm::Variable(load_variable),
         ));
         let result = instantiate_integer_range_fold_step(
             &body,
             Variable(70_059),
             &IntegerTerm::constant_i64(0),
             item,
-            &c_item_value(Bitvector32Term::constant(0)),
+            &c_item_value(MachineTerm::constant(0)),
             Some(MachineIntegerType::Int32),
         )
         .expect("the checked fold step should preserve the registered load");
         let IntegerTerm::Machine(machine) = result else {
             panic!("the machine load carrier was lost");
         };
-        let Bitvector32Term::Variable(rewritten_load) = machine.value() else {
+        let MachineTerm::Variable(rewritten_load) = machine.value() else {
             panic!("the registered load was not reminted");
         };
         assert_ne!(*rewritten_load, load_variable);
@@ -8650,13 +8628,13 @@ mod integer_range_fold_substitution_tests {
         use crate::instrumentation::{self, TacticEvent, TacticWorkLimits, VerificationEvent};
 
         let source = Variable(70_060);
-        let mut payload = Bitvector32Term::Variable(source);
+        let mut payload = MachineTerm::Variable(source);
         for _ in 0..64 {
             payload = binary_node!(
                 Int32,
                 Add,
                 Box::new(payload),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             );
         }
         let term = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
@@ -8684,7 +8662,7 @@ mod integer_range_fold_substitution_tests {
                     let result = substitute_bitvector_variable_in_integer_checked(
                         &term,
                         source,
-                        &Bitvector32Term::constant(7),
+                        &MachineTerm::constant(7),
                     );
                     instrumentation::emit(VerificationEvent::TacticFailed(tactic));
                     result
@@ -8708,12 +8686,12 @@ mod resource_reference_substitution_tests {
             Variable(200),
             "cell".into(),
             vec![
-                AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(Variable(100)))),
+                AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(100)))),
                 AlgebraicValue::C(CValue::pointer(Pointer::symbolic(Variable(101)))),
             ]
             .into(),
             schema.clone(),
-            vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+            vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                 Variable(102),
             )))]
             .into(),
@@ -8747,7 +8725,7 @@ mod resource_reference_substitution_tests {
         let replaced = substitute_bitvector_variable_in_c_resource(
             &source,
             Variable(100),
-            &Bitvector32Term::constant(7),
+            &MachineTerm::constant(7),
         );
         let pointer = Pointer::symbolic(Variable(103));
         let replaced =
@@ -8804,7 +8782,7 @@ mod checked_singleton_substitution_tests {
     fn observed(variable: Variable) -> IntegerTerm {
         IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(variable),
+            MachineTerm::Variable(variable),
         ))
     }
 
@@ -8929,7 +8907,7 @@ mod checked_singleton_substitution_tests {
             name: "opaque".into(),
             arguments: vec![
                 Term::Integer(observed(variable)),
-                Term::Bitvector32(Bitvector32Term::Variable(variable)),
+                Term::Bitvector32(MachineTerm::Variable(variable)),
                 Term::Integer(IntegerTerm::var(variable)),
             ],
         };
@@ -8939,7 +8917,7 @@ mod checked_singleton_substitution_tests {
                 name: "opaque".into(),
                 arguments: vec![
                     Term::Integer(IntegerTerm::constant_i64(7)),
-                    Term::Bitvector32(Bitvector32Term::constant(7)),
+                    Term::Bitvector32(MachineTerm::constant(7)),
                     Term::Integer(IntegerTerm::var(variable)),
                 ],
             }),
@@ -9013,11 +8991,8 @@ mod checked_surface_load_resolution_tests {
     use super::*;
 
     fn observed(variable: Variable) -> IntegerTerm {
-        IntegerTerm::from_machine(
-            MachineIntegerType::Int32,
-            Bitvector32Term::Variable(variable),
-        )
-        .unwrap()
+        IntegerTerm::from_machine(MachineIntegerType::Int32, MachineTerm::Variable(variable))
+            .unwrap()
     }
 
     #[test]
@@ -9028,8 +9003,7 @@ mod checked_surface_load_resolution_tests {
             Term::Integer(IntegerTerm::var(variable)),
         );
         let result =
-            substitute_surface_load_binding(&source, variable, &Bitvector32Term::constant(7))
-                .unwrap();
+            substitute_surface_load_binding(&source, variable, &MachineTerm::constant(7)).unwrap();
         assert_eq!(
             result,
             Proposition::Equal(
@@ -9068,7 +9042,7 @@ mod checked_surface_load_resolution_tests {
                     let binding = substitute_surface_load_binding(
                         &source,
                         variable,
-                        &Bitvector32Term::constant(7),
+                        &MachineTerm::constant(7),
                     );
                     let registry = try_resolve_load_variables_from_registry(&source);
                     instrumentation::emit(VerificationEvent::TacticFailed(event));

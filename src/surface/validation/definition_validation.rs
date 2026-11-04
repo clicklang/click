@@ -2210,8 +2210,8 @@ fn quantified_index_interval(
 fn unsigned_binder_zero(binder_type: &ClickType) -> Option<CExpression> {
     let value = match binder_type.c_type()? {
         C0Type::UInt8 => crate::kernel::uint8(0),
-        C0Type::UInt32 => CValue::UInt32(Bitvector32Term::uint32_constant(0)),
-        C0Type::UInt64(_) => CValue::UInt64(Bitvector32Term::uint64_constant(0)),
+        C0Type::UInt32 => CValue::UInt32(MachineTerm::uint32_constant(0)),
+        C0Type::UInt64(_) => CValue::UInt64(MachineTerm::uint64_constant(0)),
         _ => return None,
     };
     Some(CExpression::Value(value))
@@ -2780,7 +2780,7 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: CExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                index: CExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                 expression: describe_c_expression(expression),
                 enclosing_range: None,
             });
@@ -2789,7 +2789,7 @@ fn collect_resource_fact_reads_from_c_expression(
             collect_resource_fact_reads_from_c_expression(pointer, reads);
             reads.push(ResourceFactRead {
                 base: pointer.as_ref().clone(),
-                index: CExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                index: CExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                 expression: describe_c_expression(expression),
                 enclosing_range: None,
             });
@@ -3307,14 +3307,14 @@ mod read_authority_tests {
             CExpression::Value(int32(0)),
             bound.clone(),
         ));
-        let index_value = Bitvector32Term::Variable(Variable(12_001));
-        let bound_value = Bitvector32Term::Variable(Variable(12_002));
+        let index_value = MachineTerm::Variable(Variable(12_001));
+        let bound_value = MachineTerm::Variable(Variable(12_002));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessEqual,
-                    left: Box::new(Bitvector32Term::constant(0)),
+                    left: Box::new(MachineTerm::constant(0)),
                     right: Box::new(index_value.clone()),
                 },
                 true,

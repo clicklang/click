@@ -3,19 +3,19 @@
 use super::*;
 use crate::kernel::{CarrierWidth as W, MachineBinaryOp as Op, MachineIntegerType as Ty};
 
-fn var(id: u64) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(id))
+fn var(id: u64) -> MachineTerm {
+    MachineTerm::Variable(Variable(id))
 }
 
-fn constant(format: Ty, bits: u128) -> Bitvector32Term {
-    Bitvector32Term::narrow_constant(format, bits)
+fn constant(format: Ty, bits: u128) -> MachineTerm {
+    MachineTerm::narrow_constant(format, bits)
 }
 
 #[test]
 fn narrow_constants_fold_modulo_their_width() {
     let _session = crate::kernel::VerificationSession::enter();
     let fold = |format, op, a, b| {
-        Bitvector32Term::machine_binary(format, op, constant(format, a), constant(format, b))
+        MachineTerm::machine_binary(format, op, constant(format, a), constant(format, b))
     };
     assert_eq!(fold(Ty::UInt8, Op::Add, 200, 100), constant(Ty::UInt8, 44));
     assert_eq!(fold(Ty::Int8, Op::Subtract, 0, 1), constant(Ty::Int8, 0xff));
@@ -34,10 +34,10 @@ fn narrow_constants_fold_modulo_their_width() {
     // A count at or past the width is not folded, as at 32 bits.
     assert!(matches!(
         fold(Ty::UInt8, Op::ShiftLeft, 1, 8),
-        Bitvector32Term::Binary { .. }
+        MachineTerm::Binary { .. }
     ));
     assert_eq!(
-        Bitvector32Term::machine_unary(
+        MachineTerm::machine_unary(
             Ty::UInt16,
             crate::kernel::MachineUnaryOp::BitwiseNot,
             constant(Ty::UInt16, 1)
@@ -57,22 +57,22 @@ fn a_narrow_operator_has_its_own_width() {
         (Ty::Int16, W::Bits16),
         (Ty::UInt16, W::Bits16),
     ] {
-        let sum = Bitvector32Term::machine_binary(format, Op::Add, var(1), constant(format, 1));
+        let sum = MachineTerm::machine_binary(format, Op::Add, var(1), constant(format, 1));
         assert_eq!(
             crate::kernel::term_width(&sum),
             Ok(Some(width)),
             "{format:?}"
         );
         // A 32-bit word is not a narrow operand.
-        let mixed = Bitvector32Term::Binary {
+        let mixed = MachineTerm::Binary {
             format,
             op: Op::Add,
-            left: Box::new(Bitvector32Term::constant(1)),
+            left: Box::new(MachineTerm::constant(1)),
             right: Box::new(var(1)),
         };
         assert!(crate::kernel::term_width(&mixed).is_err(), "{format:?}");
         // Division reads a sign and stays promoted.
-        let quotient = Bitvector32Term::Binary {
+        let quotient = MachineTerm::Binary {
             format,
             op: Op::Divide,
             left: Box::new(var(1)),
@@ -92,8 +92,7 @@ fn narrow_operators_are_congruent_by_their_bits() {
         let graph = EqualityGraph::default();
         let mut state = graph.state.lock().expect("equality graph");
         let terms = &mut state.terms;
-        let at =
-            |format, a| Bitvector32Term::machine_binary(format, Op::Add, a, constant(format, 1));
+        let at = |format, a| MachineTerm::machine_binary(format, Op::Add, a, constant(format, 1));
         assert!(!terms.are_typed_equal(width, &at(unsigned, var(1)), &at(unsigned, var(2))));
         terms.add_typed_equality(width, &var(1), &var(2));
         assert!(terms.are_typed_equal(width, &at(unsigned, var(1)), &at(unsigned, var(2))));
@@ -122,7 +121,7 @@ fn narrow_operator_chains_intern_with_constant_work_per_node() {
             crate::kernel::clear_integer_bridge_memo();
             let mut sum = var(10_000);
             for index in 1..size {
-                sum = Bitvector32Term::machine_binary(format, Op::Add, sum, var(10_000 + index));
+                sum = MachineTerm::machine_binary(format, Op::Add, sum, var(10_000 + index));
             }
             let graph = EqualityGraph::default();
             let mut state = graph.state.lock().expect("equality graph");

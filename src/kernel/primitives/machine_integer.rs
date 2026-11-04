@@ -5,7 +5,7 @@
 //! Checked conversions preserve the numeric value; modulo conversions are an
 //! explicit, separate policy for languages that specify them.
 
-use super::{Bitvector32Term, CValue, MachineIntegerType};
+use super::{CValue, MachineIntegerType, MachineTerm};
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::machine_integer::format_audit::{self, WordIdentity};
 use crate::kernel::{
@@ -183,7 +183,7 @@ impl MachineIntegerConstant {
         self.format
     }
 
-    /// The constant a term's [`Bitvector32Term::Constant`] node names,
+    /// The constant a term's [`MachineTerm::Constant`] node names,
     /// whose bits its builders already checked. Charges no work: reading the
     /// node's fields does not.
     pub(crate) const fn from_term_bits(format: MachineIntegerFormat, bits: u128) -> Self {
@@ -359,38 +359,38 @@ impl MachineIntegerType {
 
     /// The constant term of `value` at this format: an 8- or 16-bit value's
     /// own native constant, a 32- or 64-bit word, or a 128-bit constant.
-    pub(crate) fn constant_term(self, value: MachineIntegerConstant) -> Option<Bitvector32Term> {
+    pub(crate) fn constant_term(self, value: MachineIntegerConstant) -> Option<MachineTerm> {
         if value.format != self.format() {
             return None;
         }
         Some(match self {
             Self::Int8 | Self::UInt8 | Self::Int16 | Self::UInt16 => {
-                Bitvector32Term::machine_constant(value)
+                MachineTerm::machine_constant(value)
             }
-            Self::Int32 => Bitvector32Term::constant(value.to_i128()? as u32),
-            Self::UInt32 => Bitvector32Term::uint32_constant(value.to_u128()? as u32),
-            Self::Int64 => Bitvector32Term::int64_constant(value.to_i128()? as i64),
-            Self::UInt64 => Bitvector32Term::uint64_constant(value.to_u128()? as u64),
-            Self::Int128 | Self::UInt128 => Bitvector32Term::machine_constant(value),
+            Self::Int32 => MachineTerm::constant(value.to_i128()? as u32),
+            Self::UInt32 => MachineTerm::uint32_constant(value.to_u128()? as u32),
+            Self::Int64 => MachineTerm::int64_constant(value.to_i128()? as i64),
+            Self::UInt64 => MachineTerm::uint64_constant(value.to_u128()? as u64),
+            Self::Int128 | Self::UInt128 => MachineTerm::machine_constant(value),
         })
     }
 
     /// Root validation for the bounded wide runtime profile. The term arena
     /// is shared, but its legacy arithmetic nodes must not acquire a wide
     /// interpretation merely by changing a value wrapper.
-    pub(crate) fn accepts_wide_term(self, value: &Bitvector32Term) -> bool {
+    pub(crate) fn accepts_wide_term(self, value: &MachineTerm) -> bool {
         crate::instrumentation::record_deterministic_work(1);
         if self.format().bits() != 128 {
             return false;
         }
         match value {
-            Bitvector32Term::Constant { format, .. } => *format == self,
-            Bitvector32Term::Variable(_) => true,
-            Bitvector32Term::MemoryLoad(_, _, kind) => {
+            MachineTerm::Constant { format, .. } => *format == self,
+            MachineTerm::Variable(_) => true,
+            MachineTerm::MemoryLoad(_, _, kind) => {
                 crate::kernel::LoadKind::of_type(self.c_type()) == Some(*kind)
             }
-            Bitvector32Term::IntegerToMachine { destination, .. } => *destination == self,
-            Bitvector32Term::Cast {
+            MachineTerm::IntegerToMachine { destination, .. } => *destination == self,
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -400,20 +400,20 @@ impl MachineIntegerType {
         }
     }
 
-    pub(in crate::kernel) fn accepts_cast_operand(self, value: &Bitvector32Term) -> bool {
+    pub(in crate::kernel) fn accepts_cast_operand(self, value: &MachineTerm) -> bool {
         let (mut ty, mut value) = (self, value);
         loop {
             crate::instrumentation::record_deterministic_work(1);
             match value {
-                Bitvector32Term::Constant { .. } => {
+                MachineTerm::Constant { .. } => {
                     return ty.constant_from_term(value).is_some();
                 }
-                Bitvector32Term::Variable(_) => return true,
-                Bitvector32Term::MemoryLoad(_, _, kind) if ty.format().bits() == 128 => {
+                MachineTerm::Variable(_) => return true,
+                MachineTerm::MemoryLoad(_, _, kind) if ty.format().bits() == 128 => {
                     return crate::kernel::LoadKind::of_type(ty.c_type()) == Some(*kind);
                 }
-                Bitvector32Term::IntegerToMachine { destination, .. } => return *destination == ty,
-                Bitvector32Term::Cast {
+                MachineTerm::IntegerToMachine { destination, .. } => return *destination == ty,
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: operand,
                     from: source,
@@ -443,7 +443,7 @@ impl MachineIntegerType {
         Some(self.value_from_term(self.constant_term(value)?))
     }
 
-    pub(in crate::kernel) fn value_from_term(self, term: Bitvector32Term) -> CValue {
+    pub(in crate::kernel) fn value_from_term(self, term: MachineTerm) -> CValue {
         let term = term.in_format32(self).in_narrow_format(self);
         match self {
             Self::Int8 => CValue::Int8(term),
@@ -459,10 +459,7 @@ impl MachineIntegerType {
         }
     }
 
-    pub(crate) fn constant_from_term(
-        self,
-        value: &Bitvector32Term,
-    ) -> Option<MachineIntegerConstant> {
+    pub(crate) fn constant_from_term(self, value: &MachineTerm) -> Option<MachineIntegerConstant> {
         match (self, value) {
             (
                 Self::Int8
@@ -506,7 +503,7 @@ impl MachineIntegerType {
     }
 }
 
-impl Bitvector32Term {
+impl MachineTerm {
     /// The term a read of `kind` at `pointer` in `memory` denotes. This is
     /// the one place a symbolic read term is formed from a kind.
     ///
@@ -824,7 +821,7 @@ mod tests {
         use crate::kernel::{IntegerTerm, Variable};
         use MachineIntegerType as M;
         let _session = crate::kernel::VerificationSession::enter();
-        let x = Bitvector32Term::Variable(Variable(149_101));
+        let x = MachineTerm::Variable(Variable(149_101));
         for (source, destination, preserving) in [
             (M::Int32, M::Int64, true),
             (M::UInt32, M::Int64, true),
@@ -838,13 +835,13 @@ mod tests {
             );
             assert!(!matches!(
                 lowered,
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     ..
                 }
             ));
             assert_eq!(
-                Bitvector32Term::machine_integer_cast(source, destination, x.clone()),
+                MachineTerm::machine_integer_cast(source, destination, x.clone()),
                 lowered
             );
             let operand = IntegerTerm::from_machine(source, x.clone()).unwrap();
@@ -870,29 +867,29 @@ mod tests {
         use MachineIntegerType as M;
         let wide = MachineIntegerConstant::from_signed(M::Int8.format(), -56).unwrap();
         for (term, spelling) in [
-            (Bitvector32Term::constant(u32::MAX), "Constant(4294967295)"),
-            (Bitvector32Term::uint32_constant(3), "UInt32Constant(3)"),
-            (Bitvector32Term::int64_constant(-1), "Int64Constant(-1)"),
+            (MachineTerm::constant(u32::MAX), "Constant(4294967295)"),
+            (MachineTerm::uint32_constant(3), "UInt32Constant(3)"),
+            (MachineTerm::int64_constant(-1), "Int64Constant(-1)"),
             (
-                Bitvector32Term::uint64_constant(u64::MAX),
+                MachineTerm::uint64_constant(u64::MAX),
                 "UInt64Constant(18446744073709551615)",
             ),
             (
-                Bitvector32Term::machine_constant(wide),
+                MachineTerm::machine_constant(wide),
                 "MachineIntegerConstant(MachineIntegerConstant { format: MachineIntegerFormat { width: Bits8, signed: true }, bits: 200 })",
             ),
         ] {
             assert_eq!(format!("{term:?}"), spelling);
         }
         assert_eq!(
-            Bitvector32Term::int64_constant(-1),
-            Bitvector32Term::Constant {
+            MachineTerm::int64_constant(-1),
+            MachineTerm::Constant {
                 format: M::Int64,
                 bits: u128::from(u64::MAX)
             }
         );
         assert_eq!(
-            Bitvector32Term::machine_constant(wide).as_machine_constant(),
+            MachineTerm::machine_constant(wide).as_machine_constant(),
             Some(wide)
         );
     }
@@ -906,8 +903,8 @@ mod tests {
     fn a_32_bit_constant_takes_its_value_s_format() {
         use MachineIntegerType as M;
         for bits in [0u32, 1, 0x7FFF_FFFF, 0x8000_0000, 4_000_000_000, u32::MAX] {
-            let word = Bitvector32Term::constant(bits);
-            let formatted = Bitvector32Term::uint32_constant(bits);
+            let word = MachineTerm::constant(bits);
+            let formatted = MachineTerm::uint32_constant(bits);
             assert_eq!(word.clone().in_format32(M::UInt32), formatted);
             assert_eq!(formatted.clone().in_format32(M::UInt32), formatted);
             for ty in [M::Int8, M::Int16, M::Int32, M::UInt8, M::UInt16, M::Int64] {
@@ -923,16 +920,16 @@ mod tests {
             let signed = M::Int32.constant_from_term(&word).unwrap();
             assert_eq!(M::Int32.constant_term(signed), Some(word.clone()));
             assert_eq!(
-                Bitvector32Term::sign_cast32(M::Int32, M::UInt32, word.clone()),
+                MachineTerm::sign_cast32(M::Int32, M::UInt32, word.clone()),
                 formatted
             );
             assert_eq!(
-                Bitvector32Term::sign_cast32(M::UInt32, M::Int32, formatted.clone()),
+                MachineTerm::sign_cast32(M::UInt32, M::Int32, formatted.clone()),
                 word
             );
             assert_eq!(
-                Bitvector32Term::add(formatted.clone(), Bitvector32Term::constant(1)),
-                Bitvector32Term::constant(bits.wrapping_add(1))
+                MachineTerm::add(formatted.clone(), MachineTerm::constant(1)),
+                MachineTerm::constant(bits.wrapping_add(1))
             );
             assert_eq!(
                 M::UInt32.value_from_term(word.clone()),
@@ -945,11 +942,11 @@ mod tests {
         }
         // A narrow constant is a native constant of its own width, and a
         // 32-bit word is not one.
-        let native = Bitvector32Term::narrow_constant(M::UInt8, 200);
+        let native = MachineTerm::narrow_constant(M::UInt8, 200);
         let byte = M::UInt8.constant_from_term(&native).unwrap();
         assert_eq!(M::UInt8.constant_term(byte), Some(native));
         assert_eq!(
-            M::UInt8.constant_from_term(&Bitvector32Term::constant(200)),
+            M::UInt8.constant_from_term(&MachineTerm::constant(200)),
             None
         );
     }
@@ -991,7 +988,7 @@ mod tests {
                     continue;
                 }
                 let symbolic = crate::kernel::machine_integer::conversion::convert_value(
-                    source.value_from_term(Bitvector32Term::Variable(variable)),
+                    source.value_from_term(MachineTerm::Variable(variable)),
                     destination,
                 )
                 .unwrap();
@@ -1046,13 +1043,12 @@ mod tests {
             let (min, max) = source.format().bounds();
             for intermediate in types {
                 for destination in types {
-                    let inner = Bitvector32Term::machine_integer_cast(
+                    let inner = MachineTerm::machine_integer_cast(
                         source,
                         intermediate,
-                        Bitvector32Term::Variable(variable),
+                        MachineTerm::Variable(variable),
                     );
-                    let term =
-                        Bitvector32Term::machine_integer_cast(intermediate, destination, inner);
+                    let term = MachineTerm::machine_integer_cast(intermediate, destination, inner);
                     let extension = |from, to| {
                         crate::kernel::machine_integer::conversion::extension_encoding(from, to)
                             .is_some()
@@ -1067,10 +1063,10 @@ mod tests {
                             || destination.carrier_bytes() > 4)
                     {
                         assert!(
-                            matches!(&term, Bitvector32Term::Cast { spelling: MachineCastSpelling::Generic,
+                            matches!(&term, MachineTerm::Cast { spelling: MachineCastSpelling::Generic,
                             value, from: outer_source, to: outer_destination,
                         } if *outer_source == intermediate && *outer_destination == destination
-                            && matches!(value.as_ref(), Bitvector32Term::Cast { spelling: MachineCastSpelling::Generic, .. }))
+                            && matches!(value.as_ref(), MachineTerm::Cast { spelling: MachineCastSpelling::Generic, .. }))
                         );
                     }
                     for input in [min.clone(), max.clone(), 0.into(), 1.into()] {
@@ -1151,7 +1147,7 @@ mod tests {
             }
             for destination in types {
                 let symbolic = crate::kernel::machine_integer::conversion::convert_value(
-                    source.value_from_term(Bitvector32Term::Variable(variable)),
+                    source.value_from_term(MachineTerm::Variable(variable)),
                     destination,
                 )
                 .unwrap();
@@ -1479,23 +1475,20 @@ mod tests {
         let ty = MachineIntegerType::Int8;
         // A narrow signed constant is its own 8 bits; no 32-bit word is
         // one, whether or not its low bits are the value's.
+        assert!(ty.constant_from_term(&MachineTerm::constant(255)).is_none());
         assert!(
-            ty.constant_from_term(&Bitvector32Term::constant(255))
-                .is_none()
-        );
-        assert!(
-            ty.constant_from_term(&Bitvector32Term::constant(u32::MAX))
+            ty.constant_from_term(&MachineTerm::constant(u32::MAX))
                 .is_none()
         );
         assert_eq!(
-            ty.constant_from_term(&Bitvector32Term::narrow_constant(ty, 0xFF))
+            ty.constant_from_term(&MachineTerm::narrow_constant(ty, 0xFF))
                 .unwrap()
                 .to_i128(),
             Some(-1)
         );
         assert!(
             MachineIntegerType::Int64
-                .constant_from_term(&Bitvector32Term::uint64_constant(u64::MAX))
+                .constant_from_term(&MachineTerm::uint64_constant(u64::MAX))
                 .is_none()
         );
         for format in formats().filter(|format| format.bits() == 128) {
@@ -1511,7 +1504,7 @@ mod tests {
     #[test]
     fn a_rebuilt_32_bit_operator_keeps_its_format() {
         use crate::kernel::{binary_node, binary_term};
-        let rebuild = |term: &Bitvector32Term| match term {
+        let rebuild = |term: &MachineTerm| match term {
             binary_term!(Bits32 @ format, Add, left, right) => Some(binary_node!(
                 @ *format,
                 Add,
@@ -1521,8 +1514,8 @@ mod tests {
             _ => None,
         };
         let (a, b) = (
-            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(186_021))),
-            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(186_022))),
+            Box::new(MachineTerm::Variable(crate::kernel::Variable(186_021))),
+            Box::new(MachineTerm::Variable(crate::kernel::Variable(186_022))),
         );
         for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
             let sum = binary_node!(@ format, Add, a.clone(), b.clone());
@@ -1543,7 +1536,7 @@ mod tests {
     #[test]
     fn bit_readers_read_a_32_bit_operator_at_either_format() {
         use crate::kernel::{binary_node, unary_node};
-        let constant = |value| Box::new(Bitvector32Term::constant(value));
+        let constant = |value| Box::new(MachineTerm::constant(value));
         for (signed, unsigned) in [
             (
                 binary_node!(Int32, Add, constant(7), constant(u32::MAX)),

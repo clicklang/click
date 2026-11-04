@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
@@ -11,10 +11,10 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(960010));
     let class = CAccessClass::Scalar(CScalarClass::Int);
-    let word = Bitvector32Term::Variable(Variable(960011));
+    let word = MachineTerm::Variable(Variable(960011));
     let premise = ConditionTerm::uint64_equal(
         word.clone(),
-        Bitvector32Term::object_pointer_address(pointer.clone(), Some(class.clone())),
+        MachineTerm::object_pointer_address(pointer.clone(), Some(class.clone())),
     );
     let mut costs = Vec::new();
     for size in [4, 16, 64, 256] {
@@ -22,8 +22,8 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::Variable(Variable(970000 + index)),
-                    Bitvector32Term::uint64_constant(index),
+                    MachineTerm::Variable(Variable(970000 + index)),
+                    MachineTerm::uint64_constant(index),
                 ),
                 true,
             );
@@ -51,16 +51,16 @@ fn object_class_origin_lookup_is_independent_of_unrelated_facts() {
 fn compound_word_address_lookup_skips_unrelated_equalities() {
     let _session = crate::kernel::VerificationSession::enter();
     let pointer = Pointer::symbolic(Variable(960001));
-    let word = Bitvector32Term::Variable(Variable(960002));
+    let word = MachineTerm::Variable(Variable(960002));
     let expressions = [
-        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::uint64_constant(!3)),
-        Bitvector32Term::uint64_bitwise_or(word, Bitvector32Term::Variable(Variable(960003))),
+        MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(!3)),
+        MachineTerm::uint64_bitwise_or(word, MachineTerm::Variable(Variable(960003))),
     ];
     for expression in expressions {
         let fact = Proposition::ConditionIs(
             ConditionTerm::uint64_equal(
                 expression.clone(),
-                Bitvector32Term::PointerAddress(
+                MachineTerm::PointerAddress(
                     Box::new(pointer.clone()),
                     crate::kernel::AddressObjectClass::NONE,
                 ),
@@ -73,8 +73,8 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
             for index in 0..size {
                 assumptions = assumptions.assume_condition(
                     ConditionTerm::uint64_equal(
-                        Bitvector32Term::Variable(Variable(970000 + index)),
-                        Bitvector32Term::uint64_constant(index),
+                        MachineTerm::Variable(Variable(970000 + index)),
+                        MachineTerm::uint64_constant(index),
                     ),
                     true,
                 );
@@ -114,7 +114,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
 fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
     let costs = [4u64, 16, 64, 256].map(|size| {
         let _session = crate::kernel::VerificationSession::enter();
-        let tag = Bitvector32Term::Variable(Variable(980_021));
+        let tag = MachineTerm::Variable(Variable(980_021));
         let pointer = Pointer::symbolic(Variable(980_022));
         let mut context = PureFactContext::new()
             .assume_condition(
@@ -129,18 +129,18 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::Variable(Variable(990_000 + index)),
-                    Bitvector32Term::uint64_constant(index),
+                    MachineTerm::Variable(Variable(990_000 + index)),
+                    MachineTerm::uint64_constant(index),
                 ),
                 true,
             );
         }
-        let cleared = Bitvector32Term::uint64_bitwise_and(
-            Bitvector32Term::uint64_bitwise_or(
-                Bitvector32Term::pointer_address(pointer.clone()),
-                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag)),
+        let cleared = MachineTerm::uint64_bitwise_and(
+            MachineTerm::uint64_bitwise_or(
+                MachineTerm::pointer_address(pointer.clone()),
+                MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, Box::new(tag)),
             ),
-            Bitvector32Term::uint64_constant(!3),
+            MachineTerm::uint64_constant(!3),
         );
         let (form, work) = crate::instrumentation::measure_deterministic_work(|| {
             tagged_address_form(&cleared, &context, &mut UsedFacts::new())

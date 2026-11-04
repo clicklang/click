@@ -111,8 +111,8 @@ fn widened_and_read_sums(n: u32) -> (SharedIntegerTerm, SharedIntegerTerm) {
     let mut widened: Option<SharedIntegerTerm> = None;
     let mut read: Option<SharedIntegerTerm> = None;
     for k in 0..n {
-        let byte = Bitvector32Term::Variable(Variable(940_000 + u64::from(k)));
-        let widening = Bitvector32Term::Cast {
+        let byte = MachineTerm::Variable(Variable(940_000 + u64::from(k)));
+        let widening = MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value: Box::new(byte.clone()),
             from: MachineIntegerType::UInt8,

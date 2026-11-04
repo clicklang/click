@@ -15,8 +15,8 @@ use super::{
     ClickError, ClickProposition, ClickType, ContractExpression, SnapshotSelector,
     clone_click_proposition_iteratively, proof,
 };
-use crate::kernel::{Bitvector32Term, ConditionTerm, Pointer, Proposition, Sort, Variable};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{ConditionTerm, MachineTerm, Pointer, Proposition, Sort, Variable};
 use crate::persistent::{PersistentMap, PersistentSet};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -905,7 +905,7 @@ impl SurfacePropositionMap {
                     {
                         for (expression, term) in qualified.into_iter().zip([a, b]) {
                             if let Some(expression) = expression
-                                && let Bitvector32Term::MemoryLoad(_, pointer, _) = term.as_ref()
+                                && let MachineTerm::MemoryLoad(_, pointer, _) = term.as_ref()
                                 && !storage
                                     .qualified_load_sources
                                     .contains_key(pointer.as_ref())

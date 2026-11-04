@@ -1996,7 +1996,7 @@ mod tests {
                 destination: MachineIntegerType::Int32,
             },
             operator: CComparisonOperator::Equal,
-            right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(7))),
+            right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(7))),
         };
         let rewritten =
             rewrite_with_integer_replacement(source, IntegerTerm::constant_i64(7), &proposition)
@@ -2089,14 +2089,14 @@ mod tests {
             name: "q".into(),
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(source))),
+                left: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(source))),
                 operator: CComparisonOperator::Equal,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(free_source))),
+                right: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(free_source))),
             }),
         };
         let c_replacements = BTreeMap::from([(
             source,
-            TypedCReplacement::Bitvector(Bitvector32Term::Variable(binder)),
+            TypedCReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
@@ -2118,11 +2118,11 @@ mod tests {
         };
         assert_eq!(
             left,
-            SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(binder)))
+            SpecExpression::Value(CValue::Int32(MachineTerm::Variable(binder)))
         );
         assert_eq!(
             right,
-            SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(free_source)))
+            SpecExpression::Value(CValue::Int32(MachineTerm::Variable(free_source)))
         );
     }
 
@@ -2132,7 +2132,7 @@ mod tests {
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(101)),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::IntegerToMachine {
+                value: Box::new(MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(Variable(0)).into(),
                     destination: MachineIntegerType::Int32,
                 }),
@@ -2154,14 +2154,14 @@ mod tests {
             name: "q".into(),
             variable: binder,
             body: Box::new(SpecProposition::Comparison {
-                left: SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(source))),
+                left: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(source))),
                 operator: CComparisonOperator::Equal,
-                right: SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(load))),
+                right: SpecExpression::Value(CValue::Int32(MachineTerm::Variable(load))),
             }),
         };
         let c_replacements = BTreeMap::from([(
             source,
-            TypedCReplacement::Bitvector(Bitvector32Term::Variable(binder)),
+            TypedCReplacement::Bitvector(MachineTerm::Variable(binder)),
         )]);
         let integer_replacements = BTreeMap::new();
         let algebraic_replacements = BTreeMap::new();
@@ -2240,17 +2240,17 @@ mod tests {
         let fold_item = free_machine;
         let replacement = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(free_machine),
+            MachineTerm::Variable(free_machine),
         ));
         let proposition = SpecProposition::IntegerComparison {
             left: SpecIntegerExpression::RangeFold {
                 index: SpecIntegerRangeFoldIndex::Int32 {
-                    start: Box::new(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::constant(0),
-                    ))),
-                    end: Box::new(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::constant(1),
-                    ))),
+                    start: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                        0,
+                    )))),
+                    end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                        1,
+                    )))),
                 },
                 initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),
                 accumulator: Variable(46),
@@ -2258,7 +2258,7 @@ mod tests {
                 body: Box::new(SpecIntegerExpression::Add(
                     Box::new(SpecIntegerExpression::Term(IntegerTerm::var(source))),
                     Box::new(SpecIntegerExpression::FromMachine(Box::new(
-                        SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(fold_item))),
+                        SpecExpression::Value(CValue::Int32(MachineTerm::Variable(fold_item))),
                     ))),
                 )),
             },
@@ -2284,7 +2284,7 @@ mod tests {
             *initial,
             SpecIntegerExpression::Term(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(free_machine),
+                MachineTerm::Variable(free_machine),
             ),))
         );
         let SpecIntegerExpression::Add(left, right) = *body else {
@@ -2294,14 +2294,13 @@ mod tests {
             *left,
             SpecIntegerExpression::Term(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(free_machine),
+                MachineTerm::Variable(free_machine),
             ),))
         );
         let SpecIntegerExpression::FromMachine(value) = *right else {
             panic!("the Int32 item lost its machine carrier")
         };
-        let SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(rewritten_item))) =
-            *value
+        let SpecExpression::Value(CValue::Int32(MachineTerm::Variable(rewritten_item))) = *value
         else {
             panic!("the Int32 item was not rewritten as a C value")
         };

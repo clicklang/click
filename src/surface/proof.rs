@@ -204,7 +204,7 @@ mod certificate_tests {
             block: "data".into(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load = Bitvector32Term::MemoryLoad(
+        let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(CMemory::new()),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -213,26 +213,26 @@ mod certificate_tests {
         assert!(bitvector_term_is_load_free(&binary_node!(
             Int32,
             Add,
-            Box::new(Bitvector32Term::Variable(Variable(1))),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::Variable(Variable(1))),
+            Box::new(MachineTerm::constant(1)),
         )));
         assert!(!bitvector_term_is_load_free(&binary_node!(
             Int32,
             Add,
             Box::new(load),
-            Box::new(Bitvector32Term::constant(1)),
+            Box::new(MachineTerm::constant(1)),
         )));
     }
 
     #[test]
     fn surface_synthesis_rejects_too_deep_terms_with_a_bounded_reason() {
-        let mut term = Bitvector32Term::Variable(Variable(1));
+        let mut term = MachineTerm::Variable(Variable(1));
         for _ in 0..=SURFACE_SYNTHESIS_DEPTH_LIMIT {
             term = binary_node!(
                 Int32,
                 Add,
                 Box::new(term),
-                Box::new(Bitvector32Term::constant(1))
+                Box::new(MachineTerm::constant(1))
             );
         }
         let proposition = Proposition::ConditionIs(
@@ -240,7 +240,7 @@ mod certificate_tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(term),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -264,7 +264,7 @@ mod certificate_tests {
             left: ContractExpression::CBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             ))),
         };
         for _ in 0..=SNAPSHOT_ANNOTATION_DEPTH_LIMIT {
@@ -299,12 +299,12 @@ mod certificate_tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::MemoryLoad(
+                    left: Box::new(MachineTerm::MemoryLoad(
                         crate::kernel::intern_c_memory(target_memory.clone()),
                         Box::new(pointer),
                         crate::kernel::LoadKind::Int32,
                     )),
-                    right: Box::new(Bitvector32Term::Variable(Variable(7))),
+                    right: Box::new(MachineTerm::Variable(Variable(7))),
                 },
                 true,
             )),
@@ -343,12 +343,12 @@ mod certificate_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::MemoryLoad(
+                left: Box::new(MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory(target_memory),
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
                 )),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -390,7 +390,7 @@ mod certificate_tests {
             left: ContractExpression::CBinding("value".to_string()),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             ))),
         };
         let selectors = (0..20)
@@ -2726,20 +2726,20 @@ fn evaluate_entry_resource_context(
             };
             let range = match bytes {
                 binary_term!(Int32, Multiply, left, right)
-                    if **right == Bitvector32Term::constant(CType::Int32.byte_width()) =>
+                    if **right == MachineTerm::constant(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::constant(0),
+                        MachineTerm::constant(0),
                         left.as_ref().clone(),
                     )
                 }
                 binary_term!(Int32, Multiply, left, right)
-                    if **left == Bitvector32Term::constant(CType::Int32.byte_width()) =>
+                    if **left == MachineTerm::constant(CType::Int32.byte_width()) =>
                 {
                     CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::constant(0),
+                        MachineTerm::constant(0),
                         right.as_ref().clone(),
                     )
                 }
@@ -2748,13 +2748,13 @@ fn evaluate_entry_resource_context(
                 {
                     CMemoryRange::new(
                         base.clone(),
-                        Bitvector32Term::constant(0),
-                        Bitvector32Term::constant(constant_u32(*bytes) / CType::Int32.byte_width()),
+                        MachineTerm::constant(0),
+                        MachineTerm::constant(constant_u32(*bytes) / CType::Int32.byte_width()),
                     )
                 }
                 _ => CMemoryRange::new_with_element_width(
                     base.clone(),
-                    Bitvector32Term::constant(0),
+                    MachineTerm::constant(0),
                     bytes.clone(),
                     1,
                 ),

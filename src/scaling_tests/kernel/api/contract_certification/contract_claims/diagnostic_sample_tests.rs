@@ -8,8 +8,8 @@ fn contract_refusal_sample_ignores_unprinted_facts() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(650_000 + index)),
-                    Bitvector32Term::constant(1000),
+                    MachineTerm::Variable(Variable(650_000 + index)),
+                    MachineTerm::constant(1000),
                 ),
                 true,
             );

@@ -10,11 +10,11 @@ use crate::kernel::population_authority::c_creation::{
     CheckedPopulationAuthorityExchange, CheckedPopulationMemberExchange,
 };
 use crate::kernel::{
-    Bitvector32Term, CCompositeResourceDefinition, CConditionOutcome, CExpression, CFunction,
+    CCompositeResourceDefinition, CConditionOutcome, CExpression, CFunction,
     CFunctionExecutionCandidates, CFunctionOutcome, CMemory, CMemoryRange, CResource,
     CResourceFact, CResourceSpec, CRuntimeError, CState, CStatement, CStatementOutcome, CValue,
-    CVerifiedLoopRule, ExecutionBudget, ExecutionLimit, ExecutionPureFact, Pointer, Proposition,
-    PureFactContext, ResourceContext, SpecProposition, Theorem, Variable,
+    CVerifiedLoopRule, ExecutionBudget, ExecutionLimit, ExecutionPureFact, MachineTerm, Pointer,
+    Proposition, PureFactContext, ResourceContext, SpecProposition, Theorem, Variable,
 };
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
@@ -1150,7 +1150,7 @@ fn describe_unnamed_cell_addition(
     base: &crate::kernel::SharedCMemory,
     pointer: &crate::kernel::Pointer,
     value: &CValue,
-    load: &Bitvector32Term,
+    load: &MachineTerm,
 ) -> String {
     let held = truncate_debug(value, 240);
     let expected = truncate_debug(load, 240);
@@ -1228,7 +1228,7 @@ fn describe_changed_state_field(changed: &CState, original: &CState) -> &'static
 /// cell, in one of the representations resource projection writes: the scalar
 /// term itself, the `_Bool` normalization of it, or the complete typed pointer
 /// read (including its designation and extent).
-fn cell_value_is_exactly_load(value: &CValue, load: &Bitvector32Term) -> bool {
+fn cell_value_is_exactly_load(value: &CValue, load: &MachineTerm) -> bool {
     match value {
         CValue::Int8(term) => term == load,
         CValue::Int16(term)
@@ -1241,10 +1241,10 @@ fn cell_value_is_exactly_load(value: &CValue, load: &Bitvector32Term) -> bool {
         | CValue::Float32(term)
         | CValue::Float64(term) => term == load,
         CValue::Bool(term) => {
-            term == &Bitvector32Term::if_then_else(
-                crate::kernel::ConditionTerm::equal(load.clone(), Bitvector32Term::constant(0)),
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+            term == &MachineTerm::if_then_else(
+                crate::kernel::ConditionTerm::equal(load.clone(), MachineTerm::constant(0)),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )
         }
         CValue::Pointer(pointer) => {
@@ -1551,7 +1551,7 @@ impl CheckedResourceRewrite {
                     imported
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(Bitvector32Term::constant(imported.entry_owned_members)),
+                        .unwrap_or(MachineTerm::constant(imported.entry_owned_members)),
                 ),
                 true,
             );
@@ -2705,7 +2705,7 @@ impl CheckedResourceObservation {
                 .ok_or("count observation requires owned member quantity")?;
             let nonnegative = Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_less_equal(
-                    Bitvector32Term::constant(0),
+                    MachineTerm::constant(0),
                     quantity.clone(),
                 ),
                 true,
@@ -4614,8 +4614,8 @@ fn memory_diff_is_covered_by_writes(
                     &diff_pointer,
                     value.byte_width(),
                     changed_pointer,
-                    &Bitvector32Term::constant(0),
-                    &Bitvector32Term::constant(1),
+                    &MachineTerm::constant(0),
+                    &MachineTerm::constant(1),
                     *bytes,
                 )
             })
@@ -4924,8 +4924,8 @@ fn checked_interface_effect_facts_along(
         for (pointer, bytes) in writes {
             let range = CMemoryRange::new_with_element_width(
                 pointer,
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
                 bytes,
             );
             if !ranges.contains(&range) {
@@ -4945,7 +4945,7 @@ fn checked_interface_effect_facts_along(
 
 fn conditional_heap_frees(
     arm_effect_facts: [&(impl ExecutionFactSource + ?Sized); 2],
-) -> [Vec<(Pointer, Bitvector32Term)>; 2] {
+) -> [Vec<(Pointer, MachineTerm)>; 2] {
     std::array::from_fn(|arm_index| {
         arm_effect_facts[arm_index]
             .fact_iter()
@@ -4966,9 +4966,9 @@ fn interface_resources_guard_heap_frees(
     arm_resources: &[Vec<CResourceFact>; 2],
     arm_states: [&CState; 2],
     arm_facts: [&ProofFacts; 2],
-    heap_frees: &[Vec<(Pointer, Bitvector32Term)>; 2],
+    heap_frees: &[Vec<(Pointer, MachineTerm)>; 2],
 ) -> bool {
-    let has_allocation = |arm_index: usize, base: &Pointer, bytes: &Bitvector32Term| {
+    let has_allocation = |arm_index: usize, base: &Pointer, bytes: &MachineTerm| {
         arm_resources[arm_index].iter().any(|resource| {
             if resource
                 .allocation()
@@ -5373,7 +5373,7 @@ impl CheckedInterfaceLoadDefinition {
         else {
             return None;
         };
-        let (Bitvector32Term::Variable(variable), load @ Bitvector32Term::MemoryLoad(_, _, _)) =
+        let (MachineTerm::Variable(variable), load @ MachineTerm::MemoryLoad(_, _, _)) =
             (left.as_ref(), right.as_ref())
         else {
             return None;

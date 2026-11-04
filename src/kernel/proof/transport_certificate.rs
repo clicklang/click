@@ -192,7 +192,7 @@ fn preserve(effect: &Proposition, separation: &Proposition, kind: ReadType) -> O
     };
     let left_footprint = left.byte_footprint();
     let right_footprint = right.byte_footprint();
-    let is_write = |(address, bytes): &(Pointer, Bitvector32Term)| {
+    let is_write = |(address, bytes): &(Pointer, MachineTerm)| {
         address == written && bytes.as_const() == Some(*write_bytes)
     };
     let (address, bytes) = if is_write(&left_footprint) {
@@ -321,7 +321,7 @@ fn observation_equality(
         && narrow != MachineIntegerType::Int32
     {
         let widen =
-            |value| Bitvector32Term::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
+            |value| MachineTerm::machine_integer_cast(narrow, MachineIntegerType::Int32, value);
         return Some(Proposition::ConditionIs(
             ConditionTerm::equal(widen(integer_bits(after)?), widen(integer_bits(before)?)),
             true,
@@ -347,7 +347,7 @@ fn observation_equality(
     Some(Proposition::ConditionIs(condition, true))
 }
 
-fn integer_bits(value: CValue) -> Option<Bitvector32Term> {
+fn integer_bits(value: CValue) -> Option<MachineTerm> {
     match value {
         CValue::Int8(t)
         | CValue::UInt8(t)
@@ -363,8 +363,8 @@ fn integer_bits(value: CValue) -> Option<Bitvector32Term> {
 
 fn integer_equality(
     format: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
 ) -> Option<ConditionTerm> {
     Some(match format {
         MachineIntegerType::Int8
@@ -503,7 +503,7 @@ mod tests {
                 "model".into(),
                 vec![].into(),
                 schema.clone(),
-                vec![AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(
+                vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
                     Variable(value),
                 )))]
                 .into(),
@@ -540,8 +540,8 @@ mod tests {
         };
         let goal = Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(8_390_902)),
-                Bitvector32Term::Variable(Variable(8_390_901)),
+                MachineTerm::Variable(Variable(8_390_902)),
+                MachineTerm::Variable(Variable(8_390_901)),
             ),
             true,
         );
@@ -639,7 +639,7 @@ mod tests {
             unreachable!()
         };
         *result = Proposition::ConditionIs(
-            ConditionTerm::equal(Bitvector32Term::Variable(Variable(8_390_902)), 99u32.into()),
+            ConditionTerm::equal(MachineTerm::Variable(Variable(8_390_902)), 99u32.into()),
             true,
         );
         assert!(
@@ -673,7 +673,7 @@ mod tests {
         for i in 0..history {
             before = before.store(
                 Pointer::symbolic(Variable(8_320_000 + i)),
-                CValue::Int32(Bitvector32Term::constant(i as u32)),
+                CValue::Int32(MachineTerm::constant(i as u32)),
             );
         }
         if cached {
@@ -685,7 +685,7 @@ mod tests {
         let after = before
             .clone()
             .without_possible_aliasing_cells(&changed, 4, &PureFactContext::new())
-            .store(changed.clone(), CValue::Int32(Bitvector32Term::constant(1)));
+            .store(changed.clone(), CValue::Int32(MachineTerm::constant(1)));
         let resource = |p, bytes| {
             Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
                 p,

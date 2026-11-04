@@ -114,7 +114,7 @@ fn transport_certificate_scalar_names_do_not_walk_prior_memory_history() {
                 let bits =
                     integer_bits(tests::observe(memory.memory(), &address, value_type)).unwrap();
                 Box::new(if value_type == CType::UInt8 {
-                    Bitvector32Term::machine_integer_cast(
+                    MachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
                         MachineIntegerType::Int32,
                         bits,

@@ -28,8 +28,8 @@ fn exact_load(memory: &SharedCMemory, pointer: &Pointer) -> Variable {
 fn int32_fold(accumulator: Variable, item: Variable, body: IntegerTerm) -> IntegerTerm {
     IntegerTerm::range_fold(
         IntegerRangeFoldIndex::Int32 {
-            start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-            end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(1)),
+            start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+            end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(1)),
         },
         IntegerTerm::constant_i64(0),
         accumulator,
@@ -54,7 +54,7 @@ fn integer_fold(accumulator: Variable, item: Variable, body: IntegerTerm) -> Int
 fn machine_variable(variable: Variable) -> IntegerTerm {
     IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
         MachineIntegerType::Int32,
-        Bitvector32Term::Variable(variable),
+        MachineTerm::Variable(variable),
     ))
 }
 
@@ -69,7 +69,7 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         &Pointer {
             block: PointerBlock::Concrete("registered-load-capture".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::IntegerToMachine {
+                value: Box::new(MachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::Variable(free_integer)),
                     destination: MachineIntegerType::Int32,
                 }),
@@ -85,12 +85,12 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         },
     );
     let fold = integer_fold(accumulator, free_integer, machine_variable(source));
-    let source_term = Bitvector32Term::Variable(source);
+    let source_term = MachineTerm::Variable(source);
     let replacement_term = binary_node!(
         Int32,
         Add,
-        Box::new(Bitvector32Term::Variable(load)),
-        Box::new(Bitvector32Term::constant(1)),
+        Box::new(MachineTerm::Variable(load)),
+        Box::new(MachineTerm::constant(1)),
     );
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
@@ -111,7 +111,7 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         .expect("replacement load must retain its defining pointer");
     assert!(matches!(pointer.offset,
         PointerOffsetTerm::Int32Scaled { value, .. }
-            if matches!(value.as_ref(), Bitvector32Term::IntegerToMachine { value, .. }
+            if matches!(value.as_ref(), MachineTerm::IntegerToMachine { value, .. }
                 if matches!(value.as_ref(), IntegerTerm::Variable(variable)
                     if *variable == free_integer))));
 }
@@ -127,14 +127,14 @@ fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
         &Pointer {
             block: PointerBlock::Concrete("registered-load-capture".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(free_c)),
+                value: Box::new(MachineTerm::Variable(free_c)),
                 byte_width: 4,
             },
         },
     );
     let fold = int32_fold(accumulator, free_c, machine_variable(source));
-    let source_term = Bitvector32Term::Variable(source);
-    let replacement_term = Bitvector32Term::Variable(load);
+    let source_term = MachineTerm::Variable(source);
+    let replacement_term = MachineTerm::Variable(load);
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
     let output = rewrite.term(&Term::Integer(fold));
@@ -146,12 +146,12 @@ fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
     };
     assert_ne!(item, free_c, "free C pointer input was captured");
     assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-        if machine.value() == &Bitvector32Term::Variable(load)));
+        if machine.value() == &MachineTerm::Variable(load)));
     let (_, pointer) = crate::kernel::eval::registered_load_for_variable(&load)
         .expect("replacement load must retain its defining pointer");
     assert!(matches!(pointer.offset,
         PointerOffsetTerm::Int32Scaled { value, .. }
-            if matches!(value.as_ref(), Bitvector32Term::Variable(variable)
+            if matches!(value.as_ref(), MachineTerm::Variable(variable)
                 if *variable == free_c)));
 }
 
@@ -162,7 +162,7 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     let inner_pointer = Pointer {
         block: PointerBlock::Concrete("registered-load-capture".into()),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(source)),
+            value: Box::new(MachineTerm::Variable(source)),
             byte_width: 4,
         },
     };
@@ -175,8 +175,8 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
         },
     );
     let input = Term::Integer(machine_variable(outer));
-    let source_term = Bitvector32Term::Variable(source);
-    let replacement_term = Bitvector32Term::constant(9);
+    let source_term = MachineTerm::Variable(source);
+    let replacement_term = MachineTerm::constant(9);
     let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement_term);
     rewrite.enable_registered_load_resolution();
     let output = rewrite.term(&input);
@@ -186,7 +186,7 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     let Term::Integer(IntegerTerm::Machine(machine)) = output else {
         panic!("nested registered load changed the Integer carrier")
     };
-    let Bitvector32Term::Variable(rewritten_outer) = machine.value() else {
+    let MachineTerm::Variable(rewritten_outer) = machine.value() else {
         panic!("nested registered load expanded into a memory tree")
     };
     assert_ne!(*rewritten_outer, outer);
@@ -216,7 +216,7 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
     let pointer = Pointer {
         block: PointerBlock::Concrete("registered-load-capture".into()),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
+            value: Box::new(MachineTerm::IntegerToMachine {
                 value: SharedIntegerTerm::from(IntegerTerm::var(source)),
                 destination: MachineIntegerType::Int32,
             }),
@@ -241,7 +241,7 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
     let Term::Integer(IntegerTerm::Machine(machine)) = output else {
         panic!("the Integer machine observation changed carrier")
     };
-    let Bitvector32Term::Variable(rewritten_load) = machine.value() else {
+    let MachineTerm::Variable(rewritten_load) = machine.value() else {
         panic!("the checked rewrite expanded a registered load into a memory tree")
     };
     assert_ne!(*rewritten_load, load);

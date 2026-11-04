@@ -48,9 +48,9 @@ pub(super) fn prepare(
         }
     };
     let mut importer = KernelTermImport::default();
-    let operand = |value: &Bitvector32Term| {
+    let operand = |value: &MachineTerm| {
         wrap(if format == MachineIntegerType::Int32 {
-            Bitvector32Term::operand32(format, value.clone())
+            MachineTerm::operand32(format, value.clone())
         } else {
             value.clone()
         })
@@ -63,7 +63,7 @@ pub(super) fn prepare(
         // Literal evaluation belongs to the evaluator, not the structural
         // constructor. Even an overflowing result retains its domain above.
         importer.argument(&PureFunctionArgument::Value(wrap(
-            Bitvector32Term::logical_machine_binary(format, op, left.clone(), right.clone()),
+            MachineTerm::logical_machine_binary(format, op, left.clone(), right.clone()),
         )))
     } else {
         KernelTerm::arithmetic_binary(format, op, [a, b]).map_err(|_| ExecutionLimit::Paths)?

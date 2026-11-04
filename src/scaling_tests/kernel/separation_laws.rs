@@ -31,8 +31,8 @@ fn elements_law_does_not_walk_the_index_distance() {
             let costs = [4i32, 64, 4096, i32::MAX].map(|distance| {
                 let _session = crate::kernel::VerificationSession::enter();
                 let term = |n: i32| match format {
-                    MachineIntegerType::Int32 => Bitvector32Term::constant(n as u32),
-                    _ => Bitvector32Term::int64_constant(i64::from(n)),
+                    MachineIntegerType::Int32 => MachineTerm::constant(n as u32),
+                    _ => MachineTerm::int64_constant(i64::from(n)),
                 };
                 let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
                     crate::kernel::prove_separation_elements(
@@ -93,7 +93,7 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
                 CResource::Memory(CMemoryRange::new_with_element_width(
                     Pointer::symbolic(Variable(8_391_000)),
                     0u32.into(),
-                    Bitvector32Term::Variable(Variable(8_392_000 + i as u64)),
+                    MachineTerm::Variable(Variable(8_392_000 + i as u64)),
                     4,
                 ))
             } else {

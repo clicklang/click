@@ -3011,7 +3011,7 @@ fn verify_c0_sources_in_context(
             certification_facts.push(Proposition::CMemoryLoadable {
                 memory: certification_state.memory().clone(),
                 base: base.pointer().clone(),
-                bytes: Bitvector32Term::constant(*bytes),
+                bytes: MachineTerm::constant(*bytes),
                 wide: false,
             });
         }

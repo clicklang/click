@@ -68,7 +68,7 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = model_type("ConflictScale", AlgebraicValueType::C(CType::Int32));
     let (a, b) = (variable(&ty, 80), variable(&ty, 81));
-    let getter = |model| Bitvector32Term::ClickFunctionApplication {
+    let getter = |model| MachineTerm::ClickFunctionApplication {
         name: "pending".into(),
         arguments: vec![PureFunctionArgument::Algebraic(model)],
     };
@@ -78,19 +78,19 @@ fn scalar_conflict_queries_and_selected_merges_skip_ambient_facts() {
         for index in 0..size {
             base = base.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(1000 + index)),
-                    Bitvector32Term::constant(7),
+                    MachineTerm::Variable(Variable(1000 + index)),
+                    MachineTerm::constant(7),
                 ),
                 true,
             );
         }
         base = base
             .assume_condition(
-                ConditionTerm::equal(getter(a.clone()), Bitvector32Term::constant(1)),
+                ConditionTerm::equal(getter(a.clone()), MachineTerm::constant(1)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::equal(getter(b.clone()), Bitvector32Term::constant(0)),
+                ConditionTerm::equal(getter(b.clone()), MachineTerm::constant(0)),
                 true,
             );
         let (child, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -162,8 +162,8 @@ fn constructor_class_joins_skip_ambient_constructor_classes() {
             crate::instrumentation::measure_deterministic_work(|| {
                 graph.add_algebraic_equality(&variable(&ty, 100), &variable(&ty, 101));
                 assert!(graph.are_int32_equal(
-                    &Bitvector32Term::Variable(Variable(10000)),
-                    &Bitvector32Term::Variable(Variable(10001)),
+                    &MachineTerm::Variable(Variable(10000)),
+                    &MachineTerm::Variable(Variable(10001)),
                 ));
             })
         });
@@ -193,8 +193,8 @@ fn constructor_class_chains_join_fields_in_linear_work() {
             }
         });
         assert!(graph.are_int32_equal(
-            &Bitvector32Term::Variable(Variable(10000)),
-            &Bitvector32Term::Variable(Variable(10000 + size - 1)),
+            &MachineTerm::Variable(Variable(10000)),
+            &MachineTerm::Variable(Variable(10000 + size - 1)),
         ));
         work
     });

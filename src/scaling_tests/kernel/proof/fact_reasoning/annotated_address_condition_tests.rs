@@ -13,8 +13,8 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
         premises.extend((0..size).map(|index| {
             Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::Variable(Variable(982_000 + index)),
-                    Bitvector32Term::uint64_constant(index),
+                    MachineTerm::Variable(Variable(982_000 + index)),
+                    MachineTerm::uint64_constant(index),
                 ),
                 true,
             )
@@ -29,7 +29,7 @@ fn annotated_condition_lookup_and_selected_normalization_skip_unrelated_facts() 
             )
         };
         for index in 0..size {
-            let address = |id| Bitvector32Term::pointer_address(Pointer::symbolic(Variable(id)));
+            let address = |id| MachineTerm::pointer_address(Pointer::symbolic(Variable(id)));
             premises.push(wrapped(Proposition::ConditionIs(
                 ConditionTerm::uint64_equal(address(984_000 + index), address(985_000 + index)),
                 true,

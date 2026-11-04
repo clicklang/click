@@ -13,7 +13,7 @@ fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
         let base = constant(&PointerBlock::from("cell-store-source-99"), 0);
         let run = run(base.clone(), 4, count, &source);
         let first = run.value(0);
-        let CValue::Int32(crate::kernel::Bitvector32Term::Variable(variable)) = first else {
+        let CValue::Int32(crate::kernel::MachineTerm::Variable(variable)) = first else {
             panic!("a seeded scalar names its source load");
         };
         assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_some());

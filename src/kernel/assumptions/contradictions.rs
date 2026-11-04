@@ -31,11 +31,11 @@ use super::checked_scalar_facts::ScalarOperandKey as Key;
 use super::contradiction_endpoints::EndpointKeys;
 use super::proposition_reasoning::canonical_contradiction_condition;
 #[cfg(test)]
-use crate::kernel::Bitvector32Term;
-#[cfg(test)]
 use crate::kernel::CompareRelation;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::MachineOperandView as V;
+#[cfg(test)]
+use crate::kernel::MachineTerm;
 use crate::kernel::equality_graph::scalar_evidence_pair;
 use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
 use crate::kernel::{ConditionTerm, Variable};
@@ -505,8 +505,8 @@ mod tests {
     use super::*;
     use crate::kernel::PureFactContext;
 
-    fn var(index: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(986_100 + index))
+    fn var(index: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(986_100 + index))
     }
 
     /// A deterministic stream of facts over a few variables, constants, sums
@@ -520,12 +520,12 @@ mod tests {
                 .wrapping_add(1);
             self.0 >> 33
         }
-        fn term(&mut self) -> Bitvector32Term {
+        fn term(&mut self) -> MachineTerm {
             match self.next() % 6 {
                 0 | 1 => var(self.next() % 4),
-                2 => Bitvector32Term::constant((self.next() % 7) as u32),
-                3 => Bitvector32Term::constant(u32::MAX - (self.next() % 2) as u32),
-                4 => Bitvector32Term::add(var(self.next() % 4), Bitvector32Term::constant(1)),
+                2 => MachineTerm::constant((self.next() % 7) as u32),
+                3 => MachineTerm::constant(u32::MAX - (self.next() % 2) as u32),
+                4 => MachineTerm::add(var(self.next() % 4), MachineTerm::constant(1)),
                 _ => var(self.next() % 4),
             }
         }
@@ -566,7 +566,7 @@ mod tests {
                 _ => ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(Variable(
+                    left: Box::new(MachineTerm::Variable(Variable(
                         crate::kernel::eval::LOAD_VARIABLE_RANGE.start + self.next() % 2,
                     ))),
                     right,
@@ -640,7 +640,7 @@ mod tests {
         );
     }
 
-    fn less(left: Bitvector32Term, right: Bitvector32Term) -> (ConditionTerm, bool) {
+    fn less(left: MachineTerm, right: MachineTerm) -> (ConditionTerm, bool) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -652,7 +652,7 @@ mod tests {
         )
     }
 
-    fn equal(left: Bitvector32Term, right: Bitvector32Term) -> (ConditionTerm, bool) {
+    fn equal(left: MachineTerm, right: MachineTerm) -> (ConditionTerm, bool) {
         (
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -735,7 +735,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
                         left: Box::new(var(size + 1)),
-                        right: Box::new(Bitvector32Term::constant(7)),
+                        right: Box::new(MachineTerm::constant(7)),
                     },
                     true,
                 );

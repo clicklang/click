@@ -41,8 +41,8 @@ fn deferred_integer_multiply_precharges_product_work_without_active_tactic() {
 fn from_machine_requires_c_overflow_path_fact() {
     let left = Variable(31);
     let right = Variable(32);
-    let left_bits = Bitvector32Term::Variable(left);
-    let right_bits = Bitvector32Term::Variable(right);
+    let left_bits = MachineTerm::Variable(left);
+    let right_bits = MachineTerm::Variable(right);
     let state = CState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
@@ -96,8 +96,8 @@ fn integer_existential_scopes_definedness_with_its_witness() {
     let left = Variable(701);
     let right = Variable(702);
     let witness = Variable(703);
-    let left_bits = Bitvector32Term::Variable(left);
-    let right_bits = Bitvector32Term::Variable(right);
+    let left_bits = MachineTerm::Variable(left);
+    let right_bits = MachineTerm::Variable(right);
     let state = CState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
@@ -155,8 +155,8 @@ fn integer_existential_scopes_definedness_with_its_witness() {
                         binary_node!(
                             Int32,
                             Add,
-                            Box::new(Bitvector32Term::Variable(left)),
-                            Box::new(Bitvector32Term::Variable(right)),
+                            Box::new(MachineTerm::Variable(left)),
+                            Box::new(MachineTerm::Variable(right)),
                         ),
                     ))
                     .into(),
@@ -171,10 +171,10 @@ fn integer_existential_scopes_definedness_with_its_witness() {
 #[test]
 fn from_machine_keeps_signed_and_unsigned_values_distinct() {
     let signed = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::Int32(Bitvector32Term::constant(u32::MAX)),
+        CValue::Int32(MachineTerm::constant(u32::MAX)),
     )));
     let unsigned = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::UInt32(Bitvector32Term::constant(u32::MAX)),
+        CValue::UInt32(MachineTerm::constant(u32::MAX)),
     )));
     let evaluate = |expression| {
         evaluate_spec_integer_expression_paths_in(
@@ -203,7 +203,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
         ConditionTerm::integer_equal(
             IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
                 MachineIntegerType::Int32,
-                Bitvector32Term::Variable(variable),
+                MachineTerm::Variable(variable),
             )),
             IntegerTerm::constant_i64(7),
         ),
@@ -212,7 +212,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
         &proposition,
         variable,
-        &Bitvector32Term::constant(7),
+        &MachineTerm::constant(7),
     );
     // Substitution reached inside the machine-backed Integer term. The
     // observation it left behind is decided -- `to_integer(7)` is the
@@ -225,7 +225,7 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
     );
 
     let expression = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::Value(
-        CValue::Int32(Bitvector32Term::constant(7)),
+        CValue::Int32(MachineTerm::constant(7)),
     )));
     let paths = evaluate_spec_integer_expression_paths_in(
         SpecScope::unbound(&CState::default(), None),
@@ -241,10 +241,10 @@ fn bitvector_substitution_reaches_machine_integer_proposition() {
 fn integer_fold_loadable_obligation_keeps_carriers_separate() {
     let shared_id = Variable(71_100);
     let index = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
     };
-    let integer_address = Bitvector32Term::IntegerToMachine {
+    let integer_address = MachineTerm::IntegerToMachine {
         value: IntegerTerm::var(shared_id).into(),
         destination: MachineIntegerType::Int32,
     };
@@ -257,7 +257,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
                 byte_width: 4,
             },
         },
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let wrapped = integer_range_fold_body_obligation(
@@ -290,11 +290,11 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(shared_id)),
+                value: Box::new(MachineTerm::Variable(shared_id)),
                 byte_width: 4,
             },
         },
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let wrapped =
@@ -318,7 +318,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     let pointer = Pointer {
         block: PointerBlock::Concrete("array".into()),
         offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::IntegerToMachine {
+            value: Box::new(MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(accumulator).into(),
                 destination: MachineIntegerType::Int32,
             }),
@@ -335,16 +335,16 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(load)),
+                value: Box::new(MachineTerm::Variable(load)),
                 byte_width: 4,
             },
         },
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let index = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
     };
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
@@ -362,7 +362,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Variable(load),
         },
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let direct_wrapped =
@@ -387,7 +387,7 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         &Pointer {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::IntegerToMachine {
+                value: Box::new(MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(accumulator).into(),
                     destination: MachineIntegerType::Int32,
                 }),
@@ -413,12 +413,12 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Variable(outer),
         },
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let index = IntegerRangeFoldIndex::Int32 {
-        start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-        end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(4)),
+        start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+        end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(4)),
     };
     let wrapped = integer_range_fold_body_obligation(requirement, &index, accumulator, item);
     assert!(matches!(
@@ -450,8 +450,8 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(load)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::Variable(load)),
+            right: Box::new(MachineTerm::MemoryLoad(
                 registered_memory.clone(),
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -462,7 +462,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
     let loadable = Proposition::CMemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let exact = drop_verified_load_definition_conjuncts(Proposition::And(
@@ -481,8 +481,8 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(load)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::Variable(load)),
+            right: Box::new(MachineTerm::MemoryLoad(
                 registered_memory.clone(),
                 Box::new(Pointer {
                     offset: PointerOffsetTerm::Constant(4),
@@ -505,8 +505,8 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(load)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::Variable(load)),
+            right: Box::new(MachineTerm::MemoryLoad(
                 tampered_memory,
                 Box::new(registered_pointer.clone()),
                 crate::kernel::LoadKind::Int32,
@@ -519,7 +519,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::CMemoryLoadable {
             memory: registered_memory.as_ref().clone(),
             base: registered_pointer.clone(),
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         }),
     ))
@@ -531,8 +531,8 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(unknown)),
-            right: Box::new(Bitvector32Term::MemoryLoad(
+            left: Box::new(MachineTerm::Variable(unknown)),
+            right: Box::new(MachineTerm::MemoryLoad(
                 registered_memory,
                 Box::new(registered_pointer),
                 crate::kernel::LoadKind::Int32,
@@ -545,7 +545,7 @@ fn fold_body_drops_only_exact_registered_load_definition_conjuncts() {
         Box::new(Proposition::CMemoryLoadable {
             memory: memory.as_ref().clone(),
             base: pointer,
-            bytes: Bitvector32Term::constant(4),
+            bytes: MachineTerm::constant(4),
             wide: false,
         }),
     ))
@@ -628,8 +628,8 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(variable)),
-                right: Box::new(Bitvector32Term::MemoryLoad(
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::MemoryLoad(
                     memory,
                     Box::new(pointer),
                     crate::kernel::LoadKind::Int32,
@@ -642,7 +642,7 @@ fn integer_existential_branch_filters_exact_load_definitions_only() {
     let loadable = Proposition::CMemoryLoadable {
         memory: registered_memory.as_ref().clone(),
         base: registered_pointer.clone(),
-        bytes: Bitvector32Term::constant(4),
+        bytes: MachineTerm::constant(4),
         wide: false,
     };
     let marker = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
@@ -747,12 +747,12 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
     }));
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
-            start: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(4),
-            ))),
-            end: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(4),
-            ))),
+            start: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                4,
+            )))),
+            end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                4,
+            )))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(19))),
         accumulator: Variable(71_101),
@@ -774,8 +774,8 @@ fn empty_integer_fold_preserves_shape_without_live_load_obligation() {
         panic!("empty fold body lost its symbolic load")
     };
     let load_pointer = match machine.value() {
-        Bitvector32Term::MemoryLoad(_, pointer, _) => pointer.as_ref().clone(),
-        Bitvector32Term::Variable(load) => crate::kernel::eval::registered_load_for_variable(load)
+        MachineTerm::MemoryLoad(_, pointer, _) => pointer.as_ref().clone(),
+        MachineTerm::Variable(load) => crate::kernel::eval::registered_load_for_variable(load)
             .map(|(_, pointer)| pointer)
             .expect("registered symbolic load must retain its pointer"),
         _ => panic!("empty fold body lost its symbolic load"),
@@ -795,9 +795,9 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
             },
             CType::Int32Pointer,
         )))),
-        elements: Box::new(SpecExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(item),
-        ))),
+        elements: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
+            item,
+        )))),
         byte_width: 4,
     };
     let body = SpecIntegerExpression::FromMachine(Box::new(SpecExpression::MemoryLoad {
@@ -807,12 +807,12 @@ fn nonempty_integer_fold_is_logical_but_checked_reads_remain_scoped() {
     }));
     let expression = SpecIntegerExpression::RangeFold {
         index: SpecIntegerRangeFoldIndex::Int32 {
-            start: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(0),
-            ))),
-            end: Box::new(SpecExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(4),
-            ))),
+            start: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                0,
+            )))),
+            end: Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                4,
+            )))),
         },
         initial: Box::new(SpecIntegerExpression::Term(IntegerTerm::constant_i64(0))),
         accumulator: Variable(71_105),
@@ -859,7 +859,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::Int32,
             BigInt::from(i32::MIN),
-            CValue::Int32(Bitvector32Term::constant(i32::MIN as u32)),
+            CValue::Int32(MachineTerm::constant(i32::MIN as u32)),
         ),
         (
             MachineIntegerType::UInt8,
@@ -874,17 +874,17 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         (
             MachineIntegerType::UInt32,
             BigInt::from(u32::MAX),
-            CValue::UInt32(Bitvector32Term::uint32_constant(u32::MAX)),
+            CValue::UInt32(MachineTerm::uint32_constant(u32::MAX)),
         ),
         (
             MachineIntegerType::Int64,
             BigInt::from(i64::MIN),
-            CValue::Int64(Bitvector32Term::int64_constant(i64::MIN)),
+            CValue::Int64(MachineTerm::int64_constant(i64::MIN)),
         ),
         (
             MachineIntegerType::UInt64,
             BigInt::from(u64::MAX),
-            CValue::UInt64(Bitvector32Term::uint64_constant(u64::MAX)),
+            CValue::UInt64(MachineTerm::uint64_constant(u64::MAX)),
         ),
     ];
     for (destination, integer, expected) in cases {
@@ -997,13 +997,13 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         assert!(paths[0].facts.is_empty());
         assert!(matches!(
             &paths[0].value,
-            CValue::Int8(Bitvector32Term::IntegerToMachine { destination: d, .. }) | CValue::Int16(Bitvector32Term::IntegerToMachine { destination: d, .. })
-                | CValue::Int32(Bitvector32Term::IntegerToMachine { destination: d, .. })
-                | CValue::UInt8(Bitvector32Term::IntegerToMachine { destination: d, .. })
-                | CValue::UInt16(Bitvector32Term::IntegerToMachine { destination: d, .. })
-                | CValue::UInt32(Bitvector32Term::IntegerToMachine { destination: d, .. })
-                | CValue::Int64(Bitvector32Term::IntegerToMachine { destination: d, .. })
-                | CValue::UInt64(Bitvector32Term::IntegerToMachine { destination: d, .. })
+            CValue::Int8(MachineTerm::IntegerToMachine { destination: d, .. }) | CValue::Int16(MachineTerm::IntegerToMachine { destination: d, .. })
+                | CValue::Int32(MachineTerm::IntegerToMachine { destination: d, .. })
+                | CValue::UInt8(MachineTerm::IntegerToMachine { destination: d, .. })
+                | CValue::UInt16(MachineTerm::IntegerToMachine { destination: d, .. })
+                | CValue::UInt32(MachineTerm::IntegerToMachine { destination: d, .. })
+                | CValue::Int64(MachineTerm::IntegerToMachine { destination: d, .. })
+                | CValue::UInt64(MachineTerm::IntegerToMachine { destination: d, .. })
                 if *d == destination
         ));
         assert_eq!(paths[0].obligations.len(), 2);
@@ -1034,8 +1034,8 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
     let left = Variable(991);
     let right = Variable(992);
     let state = CState::new()
-        .with_local("left", int32(Bitvector32Term::Variable(left)))
-        .with_local("right", int32(Bitvector32Term::Variable(right)));
+        .with_local("left", int32(MachineTerm::Variable(left)))
+        .with_local("right", int32(MachineTerm::Variable(right)));
     let expression = SpecExpression::IntegerToMachine {
         value: Box::new(SpecIntegerExpression::FromMachine(Box::new(
             SpecExpression::CExpression(c_add(c_variable("left"), c_variable("right"))),
@@ -1055,8 +1055,8 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         Proposition::signed_arithmetic_domain(
             MachineIntegerType::Int32,
             MachineBinaryOp::Add,
-            &Bitvector32Term::Variable(left),
-            &Bitvector32Term::Variable(right),
+            &MachineTerm::Variable(left),
+            &MachineTerm::Variable(right),
         )
     )));
     assert_eq!(paths[0].obligations.len(), 3);
@@ -1074,8 +1074,8 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
                 == &Proposition::signed_arithmetic_domain(
                     MachineIntegerType::Int32,
                     MachineBinaryOp::Add,
-                    &Bitvector32Term::Variable(left),
-                    &Bitvector32Term::Variable(right),
+                    &MachineTerm::Variable(left),
+                    &MachineTerm::Variable(right),
                 ))
     );
 }

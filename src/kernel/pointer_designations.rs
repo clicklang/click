@@ -239,8 +239,8 @@ mod tests {
     }
     #[test]
     fn only_true_full_pointer_equalities_supply_numeric_index_equalities() {
-        let a = Bitvector32Term::Variable(Variable(809_998));
-        let b = Bitvector32Term::Variable(Variable(809_999));
+        let a = MachineTerm::Variable(Variable(809_998));
+        let b = MachineTerm::Variable(Variable(809_999));
         let pointer = |index| {
             CPointerValue::new(
                 Pointer {
@@ -459,7 +459,7 @@ mod tests {
     fn pointer_value_equality_combines_with_a_scalar_offset_equality() {
         let a = value(830_001);
         let b = value(830_002);
-        let offset = Bitvector32Term::Variable(Variable(830_003));
+        let offset = MachineTerm::Variable(Variable(830_003));
         let facts = [
             equality(&a, &b),
             Proposition::ConditionIs(ConditionTerm::equal(offset.clone(), 0u32.into()), true),

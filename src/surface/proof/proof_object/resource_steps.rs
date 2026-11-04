@@ -3083,12 +3083,12 @@ fn observes_machine_arithmetic(reading: &Proposition) -> bool {
                 binary_term!(Bits32, Add, ..)
                     | binary_term!(Bits32, Subtract, ..)
                     | binary_term!(Bits32, Multiply, ..)
-                    | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Add, .. }
-                    | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Subtract, .. }
-                    | Bitvector32Term::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Multiply, .. }
-                    | Bitvector32Term::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Add, .. }
-                    | Bitvector32Term::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Subtract, .. }
-                    | Bitvector32Term::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Multiply, .. }
+                    | MachineTerm::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Add, .. }
+                    | MachineTerm::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Subtract, .. }
+                    | MachineTerm::Binary { format: MachineIntegerType::Int64, op: MachineBinaryOp::Multiply, .. }
+                    | MachineTerm::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Add, .. }
+                    | MachineTerm::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Subtract, .. }
+                    | MachineTerm::Binary { format: MachineIntegerType::UInt64, op: MachineBinaryOp::Multiply, .. }
             )
         )
     })

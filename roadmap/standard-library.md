@@ -431,7 +431,7 @@ facts to choose a term). These three sites are integer design questions,
 so they wait for this work rather than being fixed one by one.
 
 - **Specification `/` and `%`.** The kernel quotient is total: a zero
-  divisor leaves an opaque term (`Bitvector32Term::divide`, the Integer
+  divisor leaves an opaque term (`MachineTerm::divide`, the Integer
   `TruncatingQuotient`), so `x / 0` is a fixed but unspecified value and
   `P(x / 0) or not P(x / 0)` holds. A specification `/` nevertheless owes
   C's definedness obligation (`b != 0`), so Click `/` behaves like the C

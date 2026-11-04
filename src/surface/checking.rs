@@ -559,9 +559,9 @@ pub(super) fn lower_ensure_proposition_goal(
 }
 
 pub(super) fn comparison_condition(
-    actual: Bitvector32Term,
+    actual: MachineTerm,
     operator: ComparisonOperator,
-    expected: Bitvector32Term,
+    expected: MachineTerm,
     unsigned: bool,
 ) -> Option<(ConditionTerm, bool)> {
     match operator {

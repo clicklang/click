@@ -1,8 +1,8 @@
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
 use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{bits32_constant, constant_i64, constant_u32, int32_constant, int64_constant};
 
 impl CParameter {
@@ -2283,7 +2283,7 @@ impl CMemorySegment {
 }
 
 impl CMemoryRange {
-    pub fn new(base: Pointer, start: Bitvector32Term, end: Bitvector32Term) -> Self {
+    pub fn new(base: Pointer, start: MachineTerm, end: MachineTerm) -> Self {
         Self::new_with_element_width(base, start, end, 4)
     }
 
@@ -2294,8 +2294,8 @@ impl CMemoryRange {
     /// should use this constructor instead.
     pub(crate) fn new_with_element_width(
         base: Pointer,
-        start: Bitvector32Term,
-        end: Bitvector32Term,
+        start: MachineTerm,
+        end: MachineTerm,
         element_width: u32,
     ) -> Self {
         assert!(element_width > 0, "memory element width must be positive");
@@ -2318,8 +2318,8 @@ impl CMemoryRange {
     /// whichever address spelling the resource algebra subsequently selects.
     pub(crate) fn from_pointer_value(
         value: &CPointerValue,
-        start: Bitvector32Term,
-        end: Bitvector32Term,
+        start: MachineTerm,
+        end: MachineTerm,
         element_width: u32,
     ) -> Self {
         Self::new_with_element_width(value.pointer().clone(), start, end, element_width)
@@ -2328,8 +2328,8 @@ impl CMemoryRange {
 
     pub(crate) fn from_pointer_value_wide(
         value: &CPointerValue,
-        start: Bitvector32Term,
-        end: Bitvector32Term,
+        start: MachineTerm,
+        end: MachineTerm,
         element_width: u32,
     ) -> Self {
         Self::new_wide(value.pointer().clone(), start, end, element_width)
@@ -2483,7 +2483,7 @@ impl CMemoryRange {
 
     /// The bounds as signed 32-bit indices, or nothing for a wide range: for
     /// a reader that answers "unknown" where it cannot read the bounds.
-    pub(crate) fn int32_bounds(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+    pub(crate) fn int32_bounds(&self) -> Option<(&MachineTerm, &MachineTerm)> {
         (self.kind == RangeIndexKind::Int32).then_some((&self.start_bound, &self.end_bound))
     }
 
@@ -2507,7 +2507,7 @@ impl CMemoryRange {
                 memory: memory.clone(),
                 base: self.start_pointer(),
                 bytes: wide_loadable_byte_count(
-                    Bitvector32Term::uint64_subtract(end.clone(), start.clone()),
+                    MachineTerm::uint64_subtract(end.clone(), start.clone()),
                     self.element_width,
                 ),
                 wide: true,
@@ -2518,12 +2518,12 @@ impl CMemoryRange {
     /// The bound terms themselves, in either kind: for a traversal that
     /// reads their structure (the variables in them, a substitution into
     /// them) and never the numbers they denote.
-    pub(crate) fn bound_terms(&self) -> (&Bitvector32Term, &Bitvector32Term) {
+    pub(crate) fn bound_terms(&self) -> (&MachineTerm, &MachineTerm) {
         (&self.start_bound, &self.end_bound)
     }
 
     /// The bounds of a wide range, which no signed 32-bit reader may take.
-    pub(crate) fn wide_bounds(&self) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+    pub(crate) fn wide_bounds(&self) -> Option<(&MachineTerm, &MachineTerm)> {
         (self.kind == RangeIndexKind::UInt64).then_some((&self.start_bound, &self.end_bound))
     }
 
@@ -2546,7 +2546,7 @@ impl CMemoryRange {
     /// use this bounded, derived view without introducing a second resource
     /// representation. The returned pointer is the first byte of the range;
     /// the second value is its byte length.
-    pub(crate) fn byte_footprint(&self) -> (Pointer, Bitvector32Term) {
+    pub(crate) fn byte_footprint(&self) -> (Pointer, MachineTerm) {
         (
             self.start_pointer(),
             memory_range_byte_count(self.start().clone(), self.end().clone(), self.element_width),
@@ -2567,12 +2567,7 @@ impl CMemoryRange {
 
     /// Rebuilds a range with different bounds while preserving its element
     /// coordinate system.
-    pub(crate) fn with_bounds(
-        &self,
-        base: Pointer,
-        start: Bitvector32Term,
-        end: Bitvector32Term,
-    ) -> Self {
+    pub(crate) fn with_bounds(&self, base: Pointer, start: MachineTerm, end: MachineTerm) -> Self {
         Self {
             kind: self.kind,
             formation_coverage: self.formation_coverage.clone(),
@@ -2606,7 +2601,8 @@ impl CMemoryRange {
         guard: &Proposition,
         element_width: u32,
     ) -> Option<Self> {
-        let is_variable = |term: &Bitvector32Term| matches!(term, Bitvector32Term::Variable(found) if *found == variable);
+        let is_variable =
+            |term: &MachineTerm| matches!(term, MachineTerm::Variable(found) if *found == variable);
         let (base_offset, scaled) = match &pointer.offset {
             PointerOffsetTerm::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
             scaled => (PointerOffsetTerm::Constant(0), scaled),
@@ -2626,7 +2622,7 @@ impl CMemoryRange {
             block: pointer.block.clone(),
             offset: base_offset,
         };
-        let index = Bitvector32Term::Variable(variable);
+        let index = MachineTerm::Variable(variable);
         let reconstructed = match kind {
             RangeIndexKind::Int32 => base.offset_by_elements(index, element_width),
             RangeIndexKind::UInt64 => {
@@ -2636,8 +2632,7 @@ impl CMemoryRange {
         if &reconstructed != pointer {
             return None;
         }
-        let mut lower =
-            (kind == RangeIndexKind::UInt64).then_some(Bitvector32Term::uint64_constant(0));
+        let mut lower = (kind == RangeIndexKind::UInt64).then_some(MachineTerm::uint64_constant(0));
         let mut upper = None;
         let mut pending = vec![guard];
         while let Some(conjunct) = pending.pop() {
@@ -2711,8 +2706,8 @@ impl CMemoryRange {
     /// A range whose bounds are unsigned 64-bit element indices.
     pub(crate) fn new_wide(
         base: Pointer,
-        start: Bitvector32Term,
-        end: Bitvector32Term,
+        start: MachineTerm,
+        end: MachineTerm,
         element_width: u32,
     ) -> Self {
         Self {
@@ -2726,13 +2721,13 @@ impl CMemoryRange {
     }
 
     #[track_caller]
-    pub fn start(&self) -> &Bitvector32Term {
+    pub fn start(&self) -> &MachineTerm {
         self.assert_int32();
         &self.start_bound
     }
 
     #[track_caller]
-    pub fn end(&self) -> &Bitvector32Term {
+    pub fn end(&self) -> &MachineTerm {
         self.assert_int32();
         &self.end_bound
     }
@@ -2759,11 +2754,11 @@ impl CMemoryRange {
                 block: super::PointerBlock::Symbolic(UNNAMED_FOOTPRINT_BLOCK),
                 offset: super::PointerOffsetTerm::Constant(0),
             },
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             // Endpoints are `int32` values: this is the largest extent whose
             // guards hold, so no consumer that assumes a held range's extent
             // guards can meet a false one here.
-            Bitvector32Term::constant(i32::MAX as u32),
+            MachineTerm::constant(i32::MAX as u32),
             1,
         )
     }
@@ -2790,22 +2785,22 @@ pub(crate) const UNNAMED_FOOTPRINT_BLOCK: super::Variable = super::Variable(u64:
 /// [`memory_range_byte_count_guards`] whenever the range is supplied by a
 /// contract or resource clause, since the arithmetic itself is modular.
 pub(crate) fn memory_range_byte_count(
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
     element_width: u32,
-) -> Bitvector32Term {
+) -> MachineTerm {
     assert!(element_width > 0, "memory element width must be positive");
     let element_count = canonical_subtract(end, start);
-    canonical_multiply(element_count, Bitvector32Term::constant(element_width))
+    canonical_multiply(element_count, MachineTerm::constant(element_width))
 }
 
-fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+fn canonical_subtract(left: MachineTerm, right: MachineTerm) -> MachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            Bitvector32Term::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
+            MachineTerm::constant(constant_u32(*left).wrapping_sub(constant_u32(*right)))
         }
         (_, bits32_constant!(0)) => left,
-        _ if left == right => Bitvector32Term::constant(0),
+        _ if left == right => MachineTerm::constant(0),
         (
             binary_term!(Int32, Add, left_base, left_addend),
             binary_term!(Int32, Add, right_base, right_addend),
@@ -2816,14 +2811,14 @@ fn canonical_subtract(left: Bitvector32Term, right: Bitvector32Term) -> Bitvecto
     }
 }
 
-fn canonical_multiply(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+fn canonical_multiply(left: MachineTerm, right: MachineTerm) -> MachineTerm {
     match (&left, &right) {
         (bits32_constant!(left), bits32_constant!(right)) => {
-            Bitvector32Term::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
+            MachineTerm::constant(constant_u32(*left).wrapping_mul(constant_u32(*right)))
         }
         (_, bits32_constant!(1)) => left,
         (int32_constant!(1), _) => right,
-        (_, bits32_constant!(0)) | (int32_constant!(0), _) => Bitvector32Term::constant(0),
+        (_, bits32_constant!(0)) | (int32_constant!(0), _) => MachineTerm::constant(0),
         _ => binary_node!(Int32, Multiply, Box::new(left), Box::new(right)),
     }
 }
@@ -2839,7 +2834,7 @@ pub(crate) fn memory_range_element_count_limit(element_width: u32) -> u32 {
 
 /// A range's element count as a term: the same difference
 /// [`memory_range_byte_count`] scales, unscaled.
-pub(crate) fn memory_range_element_count(range: &CMemoryRange) -> Bitvector32Term {
+pub(crate) fn memory_range_element_count(range: &CMemoryRange) -> MachineTerm {
     canonical_subtract(range.end().clone(), range.start().clone())
 }
 
@@ -2866,19 +2861,19 @@ pub(crate) fn element_count_limit_constrains_int32(element_width: u32) -> bool {
 /// of the condition a user can write down, and the form every diagnostic about
 /// a missing extent should print.
 pub(crate) fn memory_range_element_count_guards(
-    element_count: Bitvector32Term,
+    element_count: MachineTerm,
     element_width: u32,
 ) -> Vec<Proposition> {
     assert!(element_width > 0, "memory element width must be positive");
     let mut guards = vec![Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), element_count.clone()),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), element_count.clone()),
         true,
     )];
     if element_count_limit_constrains_int32(element_width) {
         guards.push(Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
                 element_count,
-                Bitvector32Term::constant(memory_range_element_count_limit(element_width)),
+                MachineTerm::constant(memory_range_element_count_limit(element_width)),
             ),
             true,
         ));
@@ -2908,8 +2903,8 @@ pub(crate) enum MemoryRangeExtent {
 /// a 32-bit physical byte extent. Ranges must be forward and fit in `u32`
 /// bytes after scaling by their element width.
 pub(crate) fn memory_range_byte_count_extent(
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
     element_width: u32,
 ) -> MemoryRangeExtent {
     assert!(element_width > 0, "memory element width must be positive");
@@ -2940,12 +2935,12 @@ pub(crate) fn memory_range_byte_count_extent(
     // the one-byte limit exceeds).
     let element_count = canonical_subtract(end, start);
     let fits = ConditionTerm::unsigned_less_equal(
-        Bitvector32Term::sign_cast32(
+        MachineTerm::sign_cast32(
             MachineIntegerType::Int32,
             MachineIntegerType::UInt32,
             element_count,
         ),
-        Bitvector32Term::constant(memory_range_element_count_limit(element_width)),
+        MachineTerm::constant(memory_range_element_count_limit(element_width)),
     );
     MemoryRangeExtent::Guards(vec![
         Proposition::ConditionIs(forward, true),
@@ -2959,7 +2954,7 @@ pub(crate) fn memory_range_byte_count_extent(
 /// read back at element granularity. The inverse of
 /// [`memory_range_byte_count`], on the term only: it neither simplifies nor
 /// consults facts.
-pub(crate) fn scaled_extent_element_width(bytes: &Bitvector32Term) -> Option<u32> {
+pub(crate) fn scaled_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
     let binary_term!(Int32, Multiply, left, right) = bytes else {
         return None;
     };
@@ -2980,7 +2975,7 @@ pub(crate) fn scaled_extent_element_width(bytes: &Bitvector32Term) -> Option<u32
 /// unscaled one is a byte range. A constant count is neither: a cell's width
 /// or a constant range's size is already a true count of bytes, and its
 /// validity is decided where it was lowered.
-pub(crate) fn stated_extent_element_width(bytes: &Bitvector32Term) -> Option<u32> {
+pub(crate) fn stated_extent_element_width(bytes: &MachineTerm) -> Option<u32> {
     scaled_extent_element_width(bytes).or_else(|| bytes.as_const().is_none().then_some(1))
 }
 
@@ -3051,7 +3046,7 @@ fn collect_stated_loadable_extent_guards(
                 return;
             }
             let (elements, width) = match bytes {
-                Bitvector32Term::Binary {
+                MachineTerm::Binary {
                     format: MachineIntegerType::UInt64,
                     op: MachineBinaryOp::Multiply,
                     left: elements,
@@ -3070,7 +3065,7 @@ fn collect_stated_loadable_extent_guards(
             let guard = Proposition::ConditionIs(
                 ConditionTerm::uint64_less_equal(
                     elements.clone(),
-                    Bitvector32Term::uint64_constant(i64::MAX as u64 / u64::from(width)),
+                    MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
                 ),
                 true,
             );
@@ -3089,7 +3084,7 @@ fn collect_stated_loadable_extent_guards(
             };
             let endpoints = if every_spelling {
                 memory_range_byte_count_guards(
-                    Bitvector32Term::constant(0),
+                    MachineTerm::constant(0),
                     element_count.clone(),
                     element_width,
                 )
@@ -3159,7 +3154,7 @@ pub(crate) fn memory_range_extent_guards(range: &CMemoryRange) -> Vec<Propositio
 /// A range bound's value as an `int32` index, when it is a constant that
 /// fits one: the only 64-bit bound a narrow range takes
 /// ([`wide_range_bounds`]).
-pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
+pub(crate) fn narrow_range_constant(value: &CValue) -> Option<MachineTerm> {
     let value = value.numeric_value();
     let constant = match value {
         CValue::Int32(bits32_constant!(bits)) => i64::from(constant_u32(*bits) as i32),
@@ -3168,38 +3163,39 @@ pub(crate) fn narrow_range_constant(value: &CValue) -> Option<Bitvector32Term> {
         _ => return None,
     };
     let constant = i32::try_from(constant).ok()?;
-    Some(Bitvector32Term::constant(constant as u32))
+    Some(MachineTerm::constant(constant as u32))
 }
 
 pub(crate) fn wide_range_bounds(
     start: &CValue,
     end: &CValue,
-) -> Option<(Bitvector32Term, Bitvector32Term)> {
+) -> Option<(MachineTerm, MachineTerm)> {
     let start = start.numeric_value();
     let end = end.numeric_value();
 
-    let widened = |value: &CValue| match value {
-        CValue::UInt64(term) => Some(term.clone()),
-        // A signed bound is read as its sign extension, the same bits as an
-        // unsigned 64-bit value. A negative one becomes larger than any
-        // extent the range's guards allow, so the range denotes memory only
-        // when its bounds are nonnegative.
-        CValue::Int32(bits32_constant!(bits)) => Some(Bitvector32Term::uint64_constant(
-            constant_u32(*bits) as i32 as i64 as u64,
-        )),
-        CValue::Int32(term) => Some(Bitvector32Term::legacy_cast(
-            MachineCastSpelling::UInt64FromInt32,
-            Box::new(term.clone()),
-        )),
-        CValue::Int64(int64_constant!(value)) => {
-            Some(Bitvector32Term::uint64_constant(constant_i64(*value) as u64))
-        }
-        CValue::Int64(term) => Some(Bitvector32Term::legacy_cast(
-            MachineCastSpelling::UInt64FromInt64,
-            Box::new(term.clone()),
-        )),
-        _ => None,
-    };
+    let widened =
+        |value: &CValue| match value {
+            CValue::UInt64(term) => Some(term.clone()),
+            // A signed bound is read as its sign extension, the same bits as an
+            // unsigned 64-bit value. A negative one becomes larger than any
+            // extent the range's guards allow, so the range denotes memory only
+            // when its bounds are nonnegative.
+            CValue::Int32(bits32_constant!(bits)) => Some(MachineTerm::uint64_constant(
+                constant_u32(*bits) as i32 as i64 as u64,
+            )),
+            CValue::Int32(term) => Some(MachineTerm::legacy_cast(
+                MachineCastSpelling::UInt64FromInt32,
+                Box::new(term.clone()),
+            )),
+            CValue::Int64(int64_constant!(value)) => {
+                Some(MachineTerm::uint64_constant(constant_i64(*value) as u64))
+            }
+            CValue::Int64(term) => Some(MachineTerm::legacy_cast(
+                MachineCastSpelling::UInt64FromInt64,
+                Box::new(term.clone()),
+            )),
+            _ => None,
+        };
     let wide_typed = |value: &CValue| matches!(value, CValue::UInt64(_) | CValue::Int64(_));
     if narrow_range_constant(start).is_some()
         && narrow_range_constant(end).is_some()
@@ -3216,29 +3212,26 @@ pub(crate) fn wide_range_bounds(
 /// The byte count of a wide liveness fact over `elements` elements of
 /// `width` bytes: the count itself at width one, and otherwise the product
 /// with the width on the right, so the two parts can be read back.
-pub(crate) fn wide_loadable_byte_count(elements: Bitvector32Term, width: u32) -> Bitvector32Term {
+pub(crate) fn wide_loadable_byte_count(elements: MachineTerm, width: u32) -> MachineTerm {
     if width == 1 {
         return elements;
     }
-    Bitvector32Term::Binary {
+    MachineTerm::Binary {
         format: MachineIntegerType::UInt64,
         op: MachineBinaryOp::Multiply,
         left: Box::new(elements),
-        right: Box::new(Bitvector32Term::uint64_constant(u64::from(width))),
+        right: Box::new(MachineTerm::uint64_constant(u64::from(width))),
     }
 }
 
 /// The element count of a wide liveness fact's byte count, for elements of
 /// `width` bytes; nothing when the count was not written for that width.
-pub(crate) fn wide_loadable_element_count(
-    bytes: &Bitvector32Term,
-    width: u32,
-) -> Option<&Bitvector32Term> {
+pub(crate) fn wide_loadable_element_count(bytes: &MachineTerm, width: u32) -> Option<&MachineTerm> {
     if width == 1 {
         return Some(bytes);
     }
     match bytes {
-        Bitvector32Term::Binary {
+        MachineTerm::Binary {
             format: MachineIntegerType::UInt64,
             op: MachineBinaryOp::Multiply,
             left: elements,
@@ -3263,7 +3256,7 @@ fn wide_memory_range_extent_guards(range: &CMemoryRange) -> Option<Vec<Propositi
             true,
         ),
         Proposition::ConditionIs(
-            ConditionTerm::uint64_less_equal(end.clone(), Bitvector32Term::uint64_constant(limit)),
+            ConditionTerm::uint64_less_equal(end.clone(), MachineTerm::uint64_constant(limit)),
             true,
         ),
     ])
@@ -3388,8 +3381,8 @@ fn collect_stated_separation_memory_ranges<'a>(
 /// constant range becomes the impossible guard, which refuses wherever the
 /// caller discharges guards.
 pub(crate) fn memory_range_byte_count_guards(
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
     element_width: u32,
 ) -> Vec<Proposition> {
     match memory_range_byte_count_extent(start, end, element_width) {
@@ -4123,26 +4116,26 @@ mod guarded_quantified_cell_tests {
         Proposition::ConditionIs(condition, true)
     }
 
-    fn variable(variable: Variable) -> Box<Bitvector32Term> {
-        Box::new(Bitvector32Term::Variable(variable))
+    fn variable(variable: Variable) -> Box<MachineTerm> {
+        Box::new(MachineTerm::Variable(variable))
     }
 
     /// `p + v` for a byte array `p`, indexed by an unsigned 64-bit `v`.
     fn wide_cell(base: &Pointer) -> Pointer {
-        base.offset_by_typed_elements(Bitvector32Term::Variable(index()), 1, true, true)
+        base.offset_by_typed_elements(MachineTerm::Variable(index()), 1, true, true)
     }
 
     fn parameter() -> Pointer {
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(7)), 1),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(7)), 1),
         }
     }
 
     #[test]
     fn an_unsigned_guard_names_the_range_from_zero() {
         let base = parameter();
-        let length = Bitvector32Term::Variable(Variable(8));
+        let length = MachineTerm::Variable(Variable(8));
         let guard = holds(ConditionTerm::Compare {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
@@ -4153,7 +4146,7 @@ mod guarded_quantified_cell_tests {
             CMemoryRange::guarded_quantified_cells(&wide_cell(&base), index(), &guard, 1),
             Some(CMemoryRange::new_wide(
                 base,
-                Bitvector32Term::uint64_constant(0),
+                MachineTerm::uint64_constant(0),
                 length,
                 1
             ))
@@ -4164,7 +4157,7 @@ mod guarded_quantified_cell_tests {
     fn a_guard_in_another_comparison_or_on_the_binder_names_nothing() {
         let base = parameter();
         let cell = wide_cell(&base);
-        let length = Box::new(Bitvector32Term::Variable(Variable(8)));
+        let length = Box::new(MachineTerm::Variable(Variable(8)));
         // A signed comparison does not bound an unsigned 64-bit index.
         let signed = holds(ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
@@ -4181,7 +4174,7 @@ mod guarded_quantified_cell_tests {
             format: MachineIntegerType::UInt64,
             relation: CompareRelation::LessThan,
             left: variable(index()),
-            right: Box::new(Bitvector32Term::Binary {
+            right: Box::new(MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: variable(index()),
@@ -4206,7 +4199,7 @@ mod guarded_quantified_cell_tests {
         // A base that moves with the binder is not one fixed range.
         let moving = wide_cell(&Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(index()), 1),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(index()), 1),
         });
         assert_eq!(
             CMemoryRange::guarded_quantified_cells(&moving, index(), &bound, 1),

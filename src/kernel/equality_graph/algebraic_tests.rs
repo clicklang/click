@@ -51,7 +51,7 @@ fn condition(a: &AlgebraicTerm, b: &AlgebraicTerm, truth: bool) -> Proposition {
     )
 }
 fn scalar(id: u64) -> AlgebraicValue {
-    AlgebraicValue::C(CValue::Int32(Bitvector32Term::Variable(Variable(id))))
+    AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(Variable(id))))
 }
 
 #[test]
@@ -126,7 +126,7 @@ fn algebraic_closure_preserves_types_constructors_payloads_and_argument_order() 
 fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
     let ty = model_type("Model", AlgebraicValueType::C(CType::Int32));
     let (a, b) = (variable(&ty, 20), variable(&ty, 21));
-    let call = |v| Bitvector32Term::ClickFunctionApplication {
+    let call = |v| MachineTerm::ClickFunctionApplication {
         name: "model_size".into(),
         arguments: vec![PureFunctionArgument::Algebraic(v)],
     };
@@ -138,8 +138,8 @@ fn algebraic_closure_propagates_late_model_and_scalar_merges_through_calls() {
     let rhs = constructor(&ty, "Node", vec![scalar(23)]);
     assert!(!graph.are_algebraic_equal(&lhs, &rhs));
     graph.add_int32_equality(
-        &Bitvector32Term::Variable(Variable(22)),
-        &Bitvector32Term::Variable(Variable(23)),
+        &MachineTerm::Variable(Variable(22)),
+        &MachineTerm::Variable(Variable(23)),
     );
     assert!(graph.are_algebraic_equal(&lhs, &rhs));
 }
@@ -266,13 +266,13 @@ fn scalar_conflicts_follow_model_congruence_and_withdrawn_support() {
     let _session = crate::kernel::VerificationSession::enter();
     let ty = model_type("ConflictModel", AlgebraicValueType::C(CType::Int32));
     let (a, b) = (variable(&ty, 900), variable(&ty, 901));
-    let getter = |v| Bitvector32Term::ClickFunctionApplication {
+    let getter = |v| MachineTerm::ClickFunctionApplication {
         name: "pending".into(),
         arguments: vec![PureFunctionArgument::Algebraic(v)],
     };
     let value = |v, n| {
         Proposition::ConditionIs(
-            ConditionTerm::equal(getter(v), Bitvector32Term::constant(n)),
+            ConditionTerm::equal(getter(v), MachineTerm::constant(n)),
             true,
         )
     };
@@ -322,14 +322,14 @@ fn scalar_conflicts_follow_model_congruence_and_withdrawn_support() {
 fn scalar_constant_conflicts_preserve_machine_widths() {
     let _session = crate::kernel::VerificationSession::enter();
     let mut graph = EqualityGraph::default();
-    let x = Bitvector32Term::Variable(Variable(700));
-    graph.add_int32_equality(&x, &Bitvector32Term::constant(0));
-    graph.add_uint64_equality(&x, &Bitvector32Term::uint64_constant(1));
+    let x = MachineTerm::Variable(Variable(700));
+    graph.add_int32_equality(&x, &MachineTerm::constant(0));
+    graph.add_uint64_equality(&x, &MachineTerm::uint64_constant(1));
     assert!(!graph.has_scalar_constant_conflict());
-    graph.add_uint64_equality(&x, &Bitvector32Term::uint64_constant(0));
+    graph.add_uint64_equality(&x, &MachineTerm::uint64_constant(0));
     assert!(graph.has_scalar_constant_conflict());
     let mut graph = EqualityGraph::default();
-    graph.add_int32_equality(&Bitvector32Term::constant(0), &Bitvector32Term::constant(1));
+    graph.add_int32_equality(&MachineTerm::constant(0), &MachineTerm::constant(1));
     assert!(graph.has_scalar_constant_conflict());
 }
 
@@ -342,16 +342,16 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
     };
     let before = CMemory::new().with_block("cell", 4).store(
         p.clone(),
-        CValue::Int32(Bitvector32Term::Variable(Variable(500))),
+        CValue::Int32(MachineTerm::Variable(Variable(500))),
     );
     let after = before.clone().store(
         p.clone(),
-        CValue::Int32(Bitvector32Term::Variable(Variable(501))),
+        CValue::Int32(MachineTerm::Variable(Variable(501))),
     );
     let memory = crate::kernel::intern_c_memory(before);
     let changed = crate::kernel::intern_c_memory(after);
     let read = |memory: crate::kernel::SharedCMemory| {
-        Bitvector32Term::Variable(crate::kernel::load_variable_for_cell_with_origin(
+        MachineTerm::Variable(crate::kernel::load_variable_for_cell_with_origin(
             &memory,
             &p,
             crate::kernel::LoadKind::Int32,
@@ -360,10 +360,7 @@ fn scalar_read_conflicts_require_the_same_snapshot() {
         ))
     };
     let value = |term, n| {
-        Proposition::ConditionIs(
-            ConditionTerm::equal(term, Bitvector32Term::constant(n)),
-            true,
-        )
+        Proposition::ConditionIs(ConditionTerm::equal(term, MachineTerm::constant(n)), true)
     };
     for (right_memory, conflict) in [(memory.clone(), true), (changed, false)] {
         let context = PureFactContext::new()
@@ -456,8 +453,8 @@ fn constructor_classes_join_fields_and_refute_distinct_variants() {
     let second = eq(&constructor(&ty, "Node", vec![scalar(93)]), &alias);
     let fields = Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(92)),
-            Bitvector32Term::Variable(Variable(93)),
+            MachineTerm::Variable(Variable(92)),
+            MachineTerm::Variable(Variable(93)),
         ),
         true,
     );

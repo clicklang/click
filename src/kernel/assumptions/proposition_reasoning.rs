@@ -31,8 +31,8 @@ fn domain_rule_conditions(
         .operands
         .each_ref()
         .map(|operand| operand.operand_view());
-    let zero = Bitvector32Term::constant(0);
-    let max = Bitvector32Term::constant(i32::MAX as u32);
+    let zero = MachineTerm::constant(0);
+    let max = MachineTerm::constant(i32::MAX as u32);
     let condition = |left, right, strict| {
         Proposition::ConditionIs(
             condition_for_operand_views(
@@ -58,7 +58,7 @@ fn domain_rule_conditions(
             let headroom = match amount {
                 V::Legacy(amount) => SharedMachineIntegerTerm::intern(
                     ty,
-                    Bitvector32Term::logical_machine_binary(
+                    MachineTerm::logical_machine_binary(
                         ty,
                         MachineBinaryOp::Subtract,
                         max,
@@ -146,20 +146,20 @@ pub(crate) fn forall_loadable_range_parts(
     matches!(conclusion, Proposition::CMemoryLoadable { .. }).then_some((premises, conclusion))
 }
 
-fn exact_predecessor_base(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+fn exact_predecessor_base(term: &MachineTerm) -> Option<MachineTerm> {
     let binary_term!(Int32, Subtract, value, amount) = term else {
         return None;
     };
-    (amount.as_ref() == &Bitvector32Term::constant(1)).then(|| value.as_ref().clone())
+    (amount.as_ref() == &MachineTerm::constant(1)).then(|| value.as_ref().clone())
 }
 
 fn exact_predecessor_equal_zero_base(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
-) -> Option<Bitvector32Term> {
-    if right == &Bitvector32Term::constant(0) {
+    left: &MachineTerm,
+    right: &MachineTerm,
+) -> Option<MachineTerm> {
+    if right == &MachineTerm::constant(0) {
         exact_predecessor_base(left)
-    } else if left == &Bitvector32Term::constant(0) {
+    } else if left == &MachineTerm::constant(0) {
         exact_predecessor_base(right)
     } else {
         None
@@ -438,7 +438,7 @@ impl PureFactContext {
         let Some((value, other)) = pair else {
             return false;
         };
-        let one = Bitvector32Term::constant(1);
+        let one = MachineTerm::constant(1);
         [
             (Operation::Add, [value, other]),
             (Operation::Add, [value, V::Legacy(&one)]),
@@ -797,7 +797,7 @@ impl PureFactContext {
         }
         let mut conjuncts = Vec::new();
         conjuncts_of(body, &mut conjuncts);
-        let bound = Bitvector32Term::Variable(var);
+        let bound = MachineTerm::Variable(var);
         let mut witnesses = Vec::new();
         for conjunct in &conjuncts {
             let (left, right) = match (sort, conjunct) {
@@ -837,8 +837,7 @@ impl PureFactContext {
             };
             for (side, other) in [(left, right), (right, left)] {
                 let mentions_var =
-                    substitute_bitvector_variable(other, var, &Bitvector32Term::constant(0))
-                        != **other;
+                    substitute_bitvector_variable(other, var, &MachineTerm::constant(0)) != **other;
                 if **side == bound && !mentions_var {
                     witnesses.push((**other).clone());
                 }
@@ -1057,12 +1056,12 @@ impl PureFactContext {
         let Some((a, b, c, d)) = operands else {
             return false;
         };
-        let le_holds = |x: &Bitvector32Term, y: &Bitvector32Term| {
+        let le_holds = |x: &MachineTerm, y: &MachineTerm| {
             let condition = ConditionTerm::signed_less_equal(x.clone(), y.clone());
             self.decide(&condition) == Some(true)
                 || self.condition_facts.get(&condition) == Some(&true)
         };
-        let terms_equal = |x: &Bitvector32Term, y: &Bitvector32Term| {
+        let terms_equal = |x: &MachineTerm, y: &MachineTerm| {
             x == y
                 || self.decide(&ConditionTerm::equal(x.clone(), y.clone())) == Some(true)
                 || self
@@ -1121,7 +1120,7 @@ impl SelectedFacts<'_> {
         let epoch_before = INCOMPLETE_REASONING_EPOCH.with(Cell::get);
         let memory_evidence = match proposition {
             // Both equality widths reach the history. An `int64` load is a
-            // `Bitvector32Term::MemoryLoad` under a 64-bit equality, and the
+            // `MachineTerm::MemoryLoad` under a 64-bit equality, and the
             // walk that decides whether two of them read one version of a
             // cell takes its byte width from the load registry, so it has
             // always been the same question. Only this arm was narrower than
@@ -1425,10 +1424,10 @@ impl SelectedFacts<'_> {
                 true,
             ) => match sum.as_ref() {
                 binary_term!(Int32, Add, left, right)
-                    if left.as_ref() == &Bitvector32Term::constant(1)
+                    if left.as_ref() == &MachineTerm::constant(1)
                         && right.as_ref() == value.as_ref() =>
                 {
-                    let int_max = Bitvector32Term::constant(i32::MAX as u32);
+                    let int_max = MachineTerm::constant(i32::MAX as u32);
                     self.exact_direct_order_step(value, &int_max, true)
                         .map(Box::new)
                         .map(AtomicPropositionDerivationEvidence::Int32OnePlusStrictlyIncreases)
@@ -1564,8 +1563,8 @@ impl SelectedFacts<'_> {
                     right: lower,
                 },
                 true,
-            ) if lower.as_ref() == &Bitvector32Term::constant(0) => self
-                .exact_direct_order_step(&Bitvector32Term::constant(0), value, true)
+            ) if lower.as_ref() == &MachineTerm::constant(0) => self
+                .exact_direct_order_step(&MachineTerm::constant(0), value, true)
                 .map(Box::new)
                 .map(AtomicPropositionDerivationEvidence::Int32PositiveIsNonnegative),
             _ => None,
@@ -1593,7 +1592,7 @@ impl SelectedFacts<'_> {
                     .checked_add(1)
                     .and_then(|successor| {
                         self.exact_direct_order_step(
-                            &Bitvector32Term::constant(successor as u32),
+                            &MachineTerm::constant(successor as u32),
                             value,
                             false,
                         )
@@ -1648,7 +1647,7 @@ impl SelectedFacts<'_> {
                 bits32_constant!(lower_bits) => (constant_u32(*lower_bits) as i32)
                     .checked_add(1)
                     .and_then(|upper| {
-                        let upper = Bitvector32Term::constant(upper as u32);
+                        let upper = MachineTerm::constant(upper as u32);
                         let premise = Proposition::ConditionIs(
                             ConditionTerm::signed_less_than(value.as_ref().clone(), upper.clone()),
                             false,
@@ -1677,13 +1676,12 @@ impl SelectedFacts<'_> {
                     right: predecessor,
                 },
                 true,
-            ) if lower.as_ref() == &Bitvector32Term::constant(0) => {
-                exact_predecessor_base(predecessor).and_then(|value| {
-                    self.exact_direct_order_step(&Bitvector32Term::constant(0), &value, true)
+            ) if lower.as_ref() == &MachineTerm::constant(0) => exact_predecessor_base(predecessor)
+                .and_then(|value| {
+                    self.exact_direct_order_step(&MachineTerm::constant(0), &value, true)
                     .map(Box::new)
                     .map(AtomicPropositionDerivationEvidence::Int32PositivePredecessorIsNonnegative)
-                })
-            }
+                }),
             _ => None,
         };
         let positive_predecessor_strictly_decreases_evidence = match proposition {
@@ -1694,7 +1692,7 @@ impl SelectedFacts<'_> {
                 .filter(|base| base == value.as_ref())
                 .and_then(|base| {
                     self.exact_direct_order_step(
-                        &Bitvector32Term::constant(0),
+                        &MachineTerm::constant(0),
                         &base,
                         true,
                     )
@@ -1713,7 +1711,7 @@ impl SelectedFacts<'_> {
                 true,
             ) => exact_predecessor_base(predecessor).and_then(|value| {
                 let nonnegative =
-                    self.exact_direct_order_step(&Bitvector32Term::constant(0), &value, false)?;
+                    self.exact_direct_order_step(&MachineTerm::constant(0), &value, false)?;
                 let upper_bound = self.exact_direct_order_step(&value, upper, false)?;
                 Some(
                     AtomicPropositionDerivationEvidence::Int32NonnegativePredecessorUpperBound(
@@ -1735,13 +1733,12 @@ impl SelectedFacts<'_> {
                     right: predecessor,
                 },
                 true,
-            ) if lower.as_ref() == &Bitvector32Term::constant(0) => {
-                exact_predecessor_base(predecessor).and_then(|value| {
+            ) if lower.as_ref() == &MachineTerm::constant(0) => exact_predecessor_base(predecessor)
+                .and_then(|value| {
                     self.exact_one_le_evidence(&value).map(
                         AtomicPropositionDerivationEvidence::Int32OneLePredecessorIsNonnegative,
                     )
-                })
-            }
+                }),
             _ => None,
         };
         let one_le_predecessor_strictly_decreases_evidence = match proposition {
@@ -1772,7 +1769,7 @@ impl SelectedFacts<'_> {
                 },
                 true,
             ) => exact_predecessor_equal_zero_base(left, right).and_then(|value| {
-                self.exact_bitvector_equality_path_evidence(&value, &Bitvector32Term::constant(1))
+                self.exact_bitvector_equality_path_evidence(&value, &MachineTerm::constant(1))
                     .map(AtomicPropositionDerivationEvidence::Int32EqualOnePredecessorIsZero)
             }),
             _ => None,
@@ -2228,8 +2225,8 @@ impl SelectedFacts<'_> {
             let binary_term!(Int32, Add, left, right) = sum.as_ref() else {
                 return false;
             };
-            let int_max = Bitvector32Term::constant(i32::MAX as u32);
-            return left.as_ref() == &Bitvector32Term::constant(1)
+            let int_max = MachineTerm::constant(i32::MAX as u32);
+            return left.as_ref() == &MachineTerm::constant(1)
                 && right.as_ref() == value.as_ref()
                 && step.lower == **value
                 && step.upper == int_max
@@ -2385,8 +2382,8 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            return lower.as_ref() == &Bitvector32Term::constant(0)
-                && step.lower == Bitvector32Term::constant(0)
+            return lower.as_ref() == &MachineTerm::constant(0)
+                && step.lower == MachineTerm::constant(0)
                 && step.upper == **value
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2419,7 +2416,7 @@ impl SelectedFacts<'_> {
             let Some(successor_bits) = (constant_u32(*lower_bits) as i32).checked_add(1) else {
                 return false;
             };
-            return step.lower == Bitvector32Term::constant(successor_bits as u32)
+            return step.lower == MachineTerm::constant(successor_bits as u32)
                 && step.upper == **value
                 && !step.strict
                 && self.checks_exact_order_step(step);
@@ -2470,7 +2467,7 @@ impl SelectedFacts<'_> {
             let Some(upper_bits) = (constant_u32(*lower_bits) as i32).checked_add(1) else {
                 return false;
             };
-            let upper = Bitvector32Term::constant(upper_bits as u32);
+            let upper = MachineTerm::constant(upper_bits as u32);
             return step.lower == upper
                 && step.upper == **value
                 && !step.strict
@@ -2502,8 +2499,8 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return lower.as_ref() == &Bitvector32Term::constant(0)
-                && step.lower == Bitvector32Term::constant(0)
+            return lower.as_ref() == &MachineTerm::constant(0)
+                && step.lower == MachineTerm::constant(0)
                 && step.upper == value
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2528,7 +2525,7 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return base == **value
-                && step.lower == Bitvector32Term::constant(0)
+                && step.lower == MachineTerm::constant(0)
                 && step.upper == base
                 && step.strict
                 && self.checks_exact_order_step(step);
@@ -2551,7 +2548,7 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return bounds.nonnegative.lower == Bitvector32Term::constant(0)
+            return bounds.nonnegative.lower == MachineTerm::constant(0)
                 && bounds.nonnegative.upper == value
                 && !bounds.nonnegative.strict
                 && bounds.upper_bound.lower == value
@@ -2578,7 +2575,7 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return lower.as_ref() == &Bitvector32Term::constant(0)
+            return lower.as_ref() == &MachineTerm::constant(0)
                 && self.checks_one_le_evidence(source, &value);
         }
         if let AtomicPropositionDerivationEvidence::Int32OneLePredecessorStrictlyDecreases(source) =
@@ -2621,7 +2618,7 @@ impl SelectedFacts<'_> {
             return self.checks_exact_bitvector_equality_path(
                 path,
                 &value,
-                &Bitvector32Term::constant(1),
+                &MachineTerm::constant(1),
             );
         }
         if let AtomicPropositionDerivationEvidence::Int32PinnedConstantEquality(evidence) = evidence
@@ -2734,8 +2731,8 @@ impl PureFactContext {
     /// even when the query reached it through the canonical form.
     pub(crate) fn signed_order_bound_entries(
         &self,
-        term: &Bitvector32Term,
-    ) -> impl Iterator<Item = (Bitvector32Term, Bitvector32Term, bool, bool)> + '_ {
+        term: &MachineTerm,
+    ) -> impl Iterator<Item = (MachineTerm, MachineTerm, bool, bool)> + '_ {
         self.signed_order_bound_views(MachineOperandView::Legacy(term))
             .map(|(endpoint, other, strict, forward)| {
                 (
@@ -2773,8 +2770,8 @@ impl PureFactContext {
     /// read from `uint32_order_bounds`.
     pub(crate) fn uint32_order_bound_entries(
         &self,
-        term: &Bitvector32Term,
-    ) -> impl Iterator<Item = (Bitvector32Term, Bitvector32Term, bool, bool)> + '_ {
+        term: &MachineTerm,
+    ) -> impl Iterator<Item = (MachineTerm, MachineTerm, bool, bool)> + '_ {
         let direct = self.uint32_order_bounds.get(term);
         let alias = {
             let canonical = crate::kernel::eval::canonical_term(term);
@@ -2804,7 +2801,7 @@ impl PureFactContext {
 
     fn exact_direct_strict_upper_bound_step(
         &self,
-        base: &Bitvector32Term,
+        base: &MachineTerm,
     ) -> Option<SignedOrderDerivationStep> {
         self.signed_order_bound_entries(base)
             .filter(|(_, _, strict, forward)| *strict && *forward)
@@ -2819,8 +2816,8 @@ impl PureFactContext {
     /// for range checks before any searching arm runs.
     pub(in crate::kernel) fn canonical_bound_holds(
         &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
+        lower: &MachineTerm,
+        upper: &MachineTerm,
         strict: bool,
     ) -> bool {
         self.canonical_bound_holds_views(
@@ -2879,8 +2876,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn exact_direct_order_step(
         &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
+        lower: &MachineTerm,
+        upper: &MachineTerm,
         strict: bool,
     ) -> Option<SignedOrderDerivationStep> {
         let candidates = if strict {
@@ -2956,11 +2953,11 @@ impl PureFactContext {
             })
     }
 
-    fn exact_one_le_evidence(&self, value: &Bitvector32Term) -> Option<Int32OneLeEvidence> {
-        self.exact_bitvector_equality_path_evidence(value, &Bitvector32Term::constant(1))
+    fn exact_one_le_evidence(&self, value: &MachineTerm) -> Option<Int32OneLeEvidence> {
+        self.exact_bitvector_equality_path_evidence(value, &MachineTerm::constant(1))
             .map(Int32OneLeEvidence::EqualOne)
             .or_else(|| {
-                self.exact_direct_order_step(&Bitvector32Term::constant(1), value, false)
+                self.exact_direct_order_step(&MachineTerm::constant(1), value, false)
                     .map(Box::new)
                     .map(Int32OneLeEvidence::Direct)
             })
@@ -2969,8 +2966,8 @@ impl PureFactContext {
     pub(in crate::kernel) fn checks_exact_bitvector_equality_path(
         &self,
         path: &[BitvectorEqualityDerivationStep],
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         let mut current = left;
         for step in path {
@@ -3001,26 +2998,24 @@ impl PureFactContext {
         current == right
     }
 
-    fn checks_one_le_evidence(&self, source: &Int32OneLeEvidence, value: &Bitvector32Term) -> bool {
+    fn checks_one_le_evidence(&self, source: &Int32OneLeEvidence, value: &MachineTerm) -> bool {
         match source {
             Int32OneLeEvidence::Direct(step) => {
-                step.lower == Bitvector32Term::constant(1)
+                step.lower == MachineTerm::constant(1)
                     && step.upper == *value
                     && !step.strict
                     && self.checks_exact_order_step(step)
             }
-            Int32OneLeEvidence::EqualOne(path) => self.checks_exact_bitvector_equality_path(
-                path,
-                value,
-                &Bitvector32Term::constant(1),
-            ),
+            Int32OneLeEvidence::EqualOne(path) => {
+                self.checks_exact_bitvector_equality_path(path, value, &MachineTerm::constant(1))
+            }
         }
     }
 
     fn exact_increment_bounds_evidence(
         &self,
-        lower: &Bitvector32Term,
-        value: &Bitvector32Term,
+        lower: &MachineTerm,
+        value: &MachineTerm,
     ) -> Option<Box<Int32IncrementBoundsEvidence>> {
         let lower_bound = self.exact_direct_order_step(lower, value, false)?;
         let upper_bound = self.exact_direct_strict_upper_bound_step(value)?;
@@ -3032,8 +3027,8 @@ impl PureFactContext {
 
     fn exact_strict_increment_bounds_evidence(
         &self,
-        lower: &Bitvector32Term,
-        value: &Bitvector32Term,
+        lower: &MachineTerm,
+        value: &MachineTerm,
     ) -> Option<Box<Int32IncrementBoundsEvidence>> {
         let lower_bound = self.exact_direct_order_step(lower, value, true)?;
         let upper_bound = self.exact_direct_strict_upper_bound_step(value)?;
@@ -3046,8 +3041,8 @@ impl PureFactContext {
     fn checks_increment_bounds(
         &self,
         bounds: &Int32IncrementBoundsEvidence,
-        lower: &Bitvector32Term,
-        value: &Bitvector32Term,
+        lower: &MachineTerm,
+        value: &MachineTerm,
     ) -> bool {
         bounds.lower_bound.lower == *lower
             && bounds.lower_bound.upper == *value
@@ -3061,8 +3056,8 @@ impl PureFactContext {
     fn checks_strict_increment_bounds(
         &self,
         bounds: &Int32IncrementBoundsEvidence,
-        lower: &Bitvector32Term,
-        value: &Bitvector32Term,
+        lower: &MachineTerm,
+        value: &MachineTerm,
     ) -> bool {
         bounds.lower_bound.lower == *lower
             && bounds.lower_bound.upper == *value
@@ -3092,8 +3087,8 @@ impl PureFactContext {
     pub(in crate::kernel) fn checks_exact_signed_order_path(
         &self,
         path: &[SignedOrderDerivationStep],
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
         require_strict: bool,
     ) -> bool {
         if path.is_empty() {
@@ -3152,7 +3147,7 @@ impl PureFactContext {
         &self,
         proposition: &Proposition,
         source: &Proposition,
-        witness: &Bitvector32Term,
+        witness: &MachineTerm,
     ) -> bool {
         let Proposition::Exists {
             var,
@@ -3163,7 +3158,7 @@ impl PureFactContext {
         else {
             return false;
         };
-        if witness != &Bitvector32Term::constant(0)
+        if witness != &MachineTerm::constant(0)
             || !self.proves_exact(source)
             || !matches!(source, Proposition::CMemoryLoadable { .. })
         {
@@ -3240,7 +3235,7 @@ impl SelectedFacts<'_> {
     pub(super) fn collect_quantified_order_facts_for_condition(
         &self,
         condition: &ConditionTerm,
-        order_facts: &mut Vec<(Bitvector32Term, Bitvector32Term, bool)>,
+        order_facts: &mut Vec<(MachineTerm, MachineTerm, bool)>,
     ) {
         // Only `solve` reaches this.
         for proposition in self
@@ -3314,8 +3309,8 @@ impl PureFactContext {
     /// concluding one.
     pub(in crate::kernel) fn instantiated_universal_consequents(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> Vec<Proposition> {
         use crate::kernel::assumptions::UniversalConclusionKey;
         let condition = ConditionTerm::Compare {
@@ -3358,20 +3353,20 @@ impl PureFactContext {
         var: Variable,
         body: &Proposition,
         condition: &ConditionTerm,
-    ) -> BTreeSet<Bitvector32Term> {
+    ) -> BTreeSet<MachineTerm> {
         fn collect_offset_candidates(
             pattern: &PointerOffsetTerm,
             target: &PointerOffsetTerm,
             bound: Variable,
-            candidates: &mut BTreeSet<Bitvector32Term>,
+            candidates: &mut BTreeSet<MachineTerm>,
         ) {
             if crate::kernel::reasoning::substitute_bitvector_variable_in_pointer_offset(
                 pattern,
                 bound,
-                &Bitvector32Term::constant(0),
+                &MachineTerm::constant(0),
             ) == *target
             {
-                candidates.insert(Bitvector32Term::constant(0));
+                candidates.insert(MachineTerm::constant(0));
             }
             match (pattern, target) {
                 (
@@ -3403,7 +3398,7 @@ impl PureFactContext {
                     let elements = bytes / byte_width;
                     collect_term_candidates(
                         left,
-                        &Bitvector32Term::constant((elements as i32) as u32),
+                        &MachineTerm::constant((elements as i32) as u32),
                         bound,
                         candidates,
                     );
@@ -3435,9 +3430,9 @@ impl PureFactContext {
                         let Ok(elements) = u64::try_from(elements) else {
                             return;
                         };
-                        Bitvector32Term::uint64_constant(elements)
+                        MachineTerm::uint64_constant(elements)
                     } else {
-                        Bitvector32Term::int64_constant(elements)
+                        MachineTerm::int64_constant(elements)
                     };
                     collect_term_candidates(left, &value, bound, candidates);
                 }
@@ -3448,19 +3443,19 @@ impl PureFactContext {
             pattern: &Pointer,
             target: &Pointer,
             bound: Variable,
-            candidates: &mut BTreeSet<Bitvector32Term>,
+            candidates: &mut BTreeSet<MachineTerm>,
         ) {
             if pattern.block == target.block {
                 collect_offset_candidates(&pattern.offset, &target.offset, bound, candidates);
             }
         }
         fn collect_term_candidates(
-            pattern: &Bitvector32Term,
-            target: &Bitvector32Term,
+            pattern: &MachineTerm,
+            target: &MachineTerm,
             bound: Variable,
-            candidates: &mut BTreeSet<Bitvector32Term>,
+            candidates: &mut BTreeSet<MachineTerm>,
         ) {
-            if matches!(pattern, Bitvector32Term::Variable(variable) if *variable == bound) {
+            if matches!(pattern, MachineTerm::Variable(variable) if *variable == bound) {
                 candidates.insert(target.clone());
                 return;
             }
@@ -3481,7 +3476,7 @@ impl PureFactContext {
             {
                 return;
             }
-            fn binary(term: &Bitvector32Term) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+            fn binary(term: &MachineTerm) -> Option<(&MachineTerm, &MachineTerm)> {
                 match term {
                     crate::kernel::binary_bitvector32_term!(left, right) => {
                         Some((left.as_ref(), right.as_ref()))
@@ -3497,8 +3492,8 @@ impl PureFactContext {
                     collect_term_candidates(left, right, bound, candidates);
                 }
                 (
-                    Bitvector32Term::MemoryLoad(_, left_pointer, left_kind),
-                    Bitvector32Term::MemoryLoad(_, right_pointer, right_kind),
+                    MachineTerm::MemoryLoad(_, left_pointer, left_kind),
+                    MachineTerm::MemoryLoad(_, right_pointer, right_kind),
                 ) if left_kind == right_kind => {
                     collect_pointer_candidates(left_pointer, right_pointer, bound, candidates)
                 }
@@ -3508,13 +3503,13 @@ impl PureFactContext {
                 // instantiates as the read itself does. Constant work per
                 // matched node.
                 (
-                    Bitvector32Term::Cast {
+                    MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value: left,
                         from: left_source,
                         to: left_destination,
                     },
-                    Bitvector32Term::Cast {
+                    MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         value: right,
                         from: right_source,
@@ -3537,7 +3532,7 @@ impl PureFactContext {
             pattern: &ConditionTerm,
             target: &ConditionTerm,
             bound: Variable,
-            candidates: &mut BTreeSet<Bitvector32Term>,
+            candidates: &mut BTreeSet<MachineTerm>,
         ) {
             match (pattern, target) {
                 (
@@ -3713,7 +3708,7 @@ impl PureFactContext {
             proposition: &Proposition,
             target: &ConditionTerm,
             bound: Variable,
-            candidates: &mut BTreeSet<Bitvector32Term>,
+            candidates: &mut BTreeSet<MachineTerm>,
         ) {
             match proposition {
                 Proposition::ConditionIs(pattern, _) => {
@@ -3754,7 +3749,7 @@ impl PureFactContext {
         ) {
             let mut variables = BTreeSet::new();
             collect_condition_bitvector_variables(condition, &mut variables);
-            candidates.extend(variables.into_iter().map(Bitvector32Term::Variable));
+            candidates.extend(variables.into_iter().map(MachineTerm::Variable));
         }
         let conclusion = match body {
             Proposition::Implies(_, conclusion) => conclusion.as_ref(),
@@ -4066,10 +4061,10 @@ impl PureFactContext {
 
     fn comparison_sides_equal_for_transport(
         &self,
-        fact_left: &Bitvector32Term,
-        fact_right: &Bitvector32Term,
-        target_left: &Bitvector32Term,
-        target_right: &Bitvector32Term,
+        fact_left: &MachineTerm,
+        fact_right: &MachineTerm,
+        target_left: &MachineTerm,
+        target_right: &MachineTerm,
     ) -> bool {
         // Check a literal bound before registering a possibly large model
         // getter on the other side. The equality judgments are unchanged;
@@ -4089,8 +4084,8 @@ impl PureFactContext {
     /// `int32_values_known_equal` without invoking these rules.
     pub(in crate::kernel) fn bitvector_terms_proven_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         left == right
             || self.bitvector_if_terms_proven_equal(left, right)
@@ -4111,8 +4106,8 @@ impl PureFactContext {
     /// only under an enclosing id scope, so no call pays a fact-set hash.
     pub(in crate::kernel) fn bitvector_terms_equal_for_transport(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         if left == right {
             return true;
@@ -4143,8 +4138,8 @@ impl PureFactContext {
 
     fn bitvector_terms_equal_for_transport_uncached(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         // Transport compares int32 values, so wrapping equality from the
         // trusted graph is sufficient here. Broader proof reasoning remains
@@ -4285,14 +4280,14 @@ impl PureFactContext {
 
     pub(super) fn bitvector_terms_snapshot_equivalent(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         if left == right {
             return true;
         }
         match (left, right) {
-            (Bitvector32Term::MemoryLoad(_, _, _), Bitvector32Term::MemoryLoad(_, _, _)) => {
+            (MachineTerm::MemoryLoad(_, _, _), MachineTerm::MemoryLoad(_, _, _)) => {
                 memory_load_terms_equal_for_fact_transport(left, right, self)
             }
             (
@@ -4316,16 +4311,16 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn bitvector_if_terms_proven_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         let (
-            Bitvector32Term::If {
+            MachineTerm::If {
                 condition: left_condition,
                 then_term: left_then,
                 else_term: left_else,
             },
-            Bitvector32Term::If {
+            MachineTerm::If {
                 condition: right_condition,
                 then_term: right_then,
                 else_term: right_else,
@@ -4344,8 +4339,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn bitvector_add_terms_proven_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         // Two sums, or a sum and a term, of one 32-bit format: the format
         // of whichever side is a sum.
@@ -4390,8 +4385,8 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn bitvector_addend_terms_proven_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         left == right
             || self.bitvector_if_terms_proven_equal(left, right)
@@ -4402,16 +4397,16 @@ impl PureFactContext {
 
     pub(in crate::kernel) fn count_fold_split_terms_proven_equal(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         count_fold_split_matches(left, right, self) || count_fold_split_matches(right, left, self)
     }
 
     pub(in crate::kernel) fn range_fold_terms_alpha_equivalent(
         &self,
-        left: &Bitvector32Term,
-        right: &Bitvector32Term,
+        left: &MachineTerm,
+        right: &MachineTerm,
     ) -> bool {
         range_fold_terms_alpha_equivalent(left, right, self)
     }
@@ -4495,7 +4490,7 @@ impl PureFactContext {
         let mut disequal_facts = Vec::new();
         let mut exact_equal_pairs = BTreeSet::new();
         let mut exact_disequal_pairs = BTreeSet::new();
-        let mut exact_order_pairs = BTreeMap::<(Bitvector32Term, Bitvector32Term), bool>::new();
+        let mut exact_order_pairs = BTreeMap::<(MachineTerm, MachineTerm), bool>::new();
         let mut condition_polarities = BTreeMap::new();
         for (condition, value) in self.condition_facts.iter() {
             crate::instrumentation::record_deterministic_work(1);
@@ -4661,9 +4656,9 @@ impl PureFactContext {
         /// own singleton, and a component no relevant term touches is never
         /// walked.
         fn key_component(
-            key: Bitvector32Term,
+            key: MachineTerm,
             equality_graph: &crate::kernel::equality_graph::EqualityGraph,
-            class_of_key: &mut BTreeMap<Bitvector32Term, usize>,
+            class_of_key: &mut BTreeMap<MachineTerm, usize>,
             next_class: &mut usize,
         ) -> usize {
             if let Some(class) = class_of_key.get(&key) {
@@ -4680,10 +4675,10 @@ impl PureFactContext {
         }
 
         let equality_index = &self.equality_graph;
-        let mut class_of_key = BTreeMap::<Bitvector32Term, usize>::new();
+        let mut class_of_key = BTreeMap::<MachineTerm, usize>::new();
         let mut next_class = 0usize;
         let mut merged = ClassMerge(Vec::new());
-        let mut registered = BTreeMap::<Bitvector32Term, usize>::new();
+        let mut registered = BTreeMap::<MachineTerm, usize>::new();
         {
             let order_endpoints = order_facts
                 .iter()
@@ -4771,8 +4766,8 @@ impl PureFactContext {
 /// A sum of the other 32-bit format is an addend of its own.
 pub(super) fn collect_order_index_add_terms(
     format: crate::kernel::MachineIntegerType,
-    term: &Bitvector32Term,
-    terms: &mut Vec<Bitvector32Term>,
+    term: &MachineTerm,
+    terms: &mut Vec<MachineTerm>,
     constant: &mut u32,
 ) {
     let mut pending = vec![term];
@@ -4800,9 +4795,9 @@ pub(super) fn collect_order_index_add_terms(
 /// equal in every context. It is an index key rather than global canonical
 /// form. The explicit worklist traverses every input node without a depth
 /// cutoff.
-pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
+pub(super) fn order_endpoint_key(term: &MachineTerm) -> MachineTerm {
     enum Task {
-        Visit(Bitvector32Term),
+        Visit(MachineTerm),
         RebuildAdd {
             format: crate::kernel::MachineIntegerType,
             count: usize,
@@ -4812,13 +4807,13 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
     }
 
     let mut tasks = vec![Task::Visit(term.clone())];
-    let mut results = Vec::<Bitvector32Term>::new();
+    let mut results = Vec::<MachineTerm>::new();
     while let Some(task) = tasks.pop() {
         match task {
             Task::Visit(term) => {
                 crate::instrumentation::record_deterministic_work(1);
                 match term {
-                    term @ Bitvector32Term::MemoryLoad(_, _, _) => {
+                    term @ MachineTerm::MemoryLoad(_, _, _) => {
                         results.push(equality_graph_term_key(&term));
                     }
                     // A sum keys at its own format: an `int32` and a
@@ -4835,7 +4830,7 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
                         });
                         tasks.extend(raw.into_iter().rev().map(Task::Visit));
                     }
-                    Bitvector32Term::If {
+                    MachineTerm::If {
                         condition,
                         then_term,
                         else_term,
@@ -4862,11 +4857,11 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
                 let mut written = if constant == 0 && !addends.is_empty() {
                     None
                 } else {
-                    Some(Bitvector32Term::constant_at32(format, constant))
+                    Some(MachineTerm::constant_at32(format, constant))
                 };
                 for addend in addends.into_iter().rev() {
                     written = Some(match written {
-                        Some(rest) => Bitvector32Term::add_at(format, addend, rest),
+                        Some(rest) => MachineTerm::add_at(format, addend, rest),
                         None => addend,
                     });
                 }
@@ -4875,7 +4870,7 @@ pub(super) fn order_endpoint_key(term: &Bitvector32Term) -> Bitvector32Term {
             Task::RebuildIf(condition) => {
                 let else_term = results.pop().expect("visited else endpoint");
                 let then_term = results.pop().expect("visited then endpoint");
-                results.push(Bitvector32Term::If {
+                results.push(MachineTerm::If {
                     condition: Box::new(condition),
                     then_term: Box::new(then_term),
                     else_term: Box::new(else_term),
@@ -4896,20 +4891,20 @@ mod constant_prefix_certificate_tests {
 
     #[test]
     fn order_path_checks_normalized_constant_prefix_and_live_premise() {
-        let upper = Bitvector32Term::Variable(Variable(999_481));
+        let upper = MachineTerm::Variable(Variable(999_481));
         let premise = ConditionTerm::signed_less_equal(2u32.into(), upper.clone());
         let context = PureFactContext::new().assume_condition(premise.clone(), true);
         let path = context
             .exact_signed_order_path_evidence(&1u32.into(), &upper, true)
             .unwrap();
-        assert_eq!(path[0].lower, Bitvector32Term::constant(2));
+        assert_eq!(path[0].lower, MachineTerm::constant(2));
         assert!(context.checks_exact_signed_order_path(&path, &1u32.into(), &upper, true));
         assert!(context.checks_exact_signed_order_path(&path, &2u32.into(), &upper, false));
         assert!(!context.checks_exact_signed_order_path(&path, &2u32.into(), &upper, true));
         assert!(!context.checks_exact_signed_order_path(&path, &3u32.into(), &upper, false));
         assert!(!context.checks_exact_signed_order_path(
             &path,
-            &Bitvector32Term::Variable(Variable(999_482)),
+            &MachineTerm::Variable(Variable(999_482)),
             &upper,
             false,
         ));
@@ -4951,12 +4946,12 @@ pub(crate) fn atomic_derivation_is_memoized(
 mod guided_condition_instantiation_tests {
     use super::*;
 
-    fn variable(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    fn variable(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
-    fn array_read(index: Bitvector32Term, kind: LoadKind) -> Bitvector32Term {
-        Bitvector32Term::MemoryLoad(
+    fn array_read(index: MachineTerm, kind: LoadKind) -> MachineTerm {
+        MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(CMemory::new()),
             Box::new(Pointer {
                 block: "quantified-cells".into(),
@@ -5017,11 +5012,11 @@ mod annotated_alignment_conflict_tests {
         );
         let aligned =
             Proposition::ConditionIs(ConditionTerm::pointer_aligned(pointer.clone(), 8), true);
-        let masked_address = Bitvector32Term::uint64_bitwise_and(
-            Bitvector32Term::object_pointer_address(pointer, Some(class)),
-            Bitvector32Term::uint64_constant(7),
+        let masked_address = MachineTerm::uint64_bitwise_and(
+            MachineTerm::object_pointer_address(pointer, Some(class)),
+            MachineTerm::uint64_constant(7),
         );
-        let zero = Bitvector32Term::uint64_constant(0);
+        let zero = MachineTerm::uint64_constant(0);
         assert_eq!(
             aligned,
             Proposition::ConditionIs(
@@ -5041,12 +5036,9 @@ mod annotated_alignment_conflict_tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int64,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::uint64_bitwise_and(
-                    Bitvector32Term::object_pointer_address(
-                        Pointer::symbolic(Variable(970_001)),
-                        None,
-                    ),
-                    Bitvector32Term::uint64_constant(7),
+                left: Box::new(MachineTerm::uint64_bitwise_and(
+                    MachineTerm::object_pointer_address(Pointer::symbolic(Variable(970_001)), None,),
+                    MachineTerm::uint64_constant(7),
                 )),
                 right: Box::new(zero.clone())
             },
@@ -5123,8 +5115,8 @@ mod congruent_condition_conflict_tests {
 mod comparison_operand_order_tests {
     use super::*;
 
-    fn getter(size: u64) -> Bitvector32Term {
-        Bitvector32Term::ClickFunctionApplication {
+    fn getter(size: u64) -> MachineTerm {
+        MachineTerm::ClickFunctionApplication {
             name: "selected_size".into(),
             arguments: (0..size)
                 .map(|index| {
@@ -5141,9 +5133,9 @@ mod comparison_operand_order_tests {
     fn comparison_matching_keeps_equal_bound_aliases_and_mirrored_orders() {
         let _session = crate::kernel::VerificationSession::enter();
         let value = getter(4);
-        let x = Bitvector32Term::Variable(Variable(9_991_001));
-        let bound = Bitvector32Term::Variable(Variable(9_991_002));
-        let limit = Bitvector32Term::constant(2147483646);
+        let x = MachineTerm::Variable(Variable(9_991_001));
+        let bound = MachineTerm::Variable(Variable(9_991_002));
+        let limit = MachineTerm::constant(2147483646);
         let value_alias =
             Proposition::ConditionIs(ConditionTerm::equal(value.clone(), x.clone()), true);
         let bound_alias =
@@ -5185,8 +5177,8 @@ mod order_endpoint_key_format_tests {
     use super::*;
     use crate::kernel::{Variable, binary_node};
 
-    fn var(id: u64) -> Box<Bitvector32Term> {
-        Box::new(Bitvector32Term::Variable(Variable(id)))
+    fn var(id: u64) -> Box<MachineTerm> {
+        Box::new(MachineTerm::Variable(Variable(id)))
     }
 
     /// A sum keys at its own format: two `uint32` sums that differ only in
@@ -5197,7 +5189,7 @@ mod order_endpoint_key_format_tests {
     fn a_sum_keys_by_its_addends_and_constants_at_its_own_format() {
         let (x, y) = (|| var(187_001), || var(187_002));
         let constant = |format: crate::kernel::MachineIntegerType, value: u32| {
-            Box::new(Bitvector32Term::constant_at32(format, value))
+            Box::new(MachineTerm::constant_at32(format, value))
         };
         let mut keys = Vec::new();
         for format in [
@@ -5270,7 +5262,7 @@ mod shared_domain_evidence_tests {
                         Op::Subtract,
                         [
                             crate::kernel::KernelTermImport::default()
-                                .machine(ty, &Bitvector32Term::constant(i32::MAX as u32)),
+                                .machine(ty, &MachineTerm::constant(i32::MAX as u32)),
                             amount.shared_operand().unwrap().clone(),
                         ],
                     );
@@ -5390,11 +5382,11 @@ mod shared_wide_order_evidence_tests {
             for mixed in [false, true] {
                 let _session = crate::kernel::VerificationSession::enter();
                 let native = |id| {
-                    Bitvector32Term::logical_machine_binary(
+                    MachineTerm::logical_machine_binary(
                         ty,
                         MachineBinaryOp::Multiply,
-                        Bitvector32Term::Variable(Variable(id)),
-                        Bitvector32Term::Variable(Variable(987000)),
+                        MachineTerm::Variable(Variable(id)),
+                        MachineTerm::Variable(Variable(987000)),
                     )
                 };
                 let term = |id| {
@@ -5498,7 +5490,7 @@ mod shared_wide_order_evidence_tests {
         let variable = |id| KernelTerm::variable(KernelType::C(CType::Int32), Variable(id));
         let observe =
             |root| IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
-        let measure = Bitvector32Term::Variable(Variable(987120));
+        let measure = MachineTerm::Variable(Variable(987120));
         let bound = KernelTerm::machine_binary_shared(
             ty,
             MachineBinaryOp::Multiply,
@@ -5548,7 +5540,7 @@ mod shared_wide_order_evidence_tests {
                 ),
                 true,
             );
-            let tail = Bitvector32Term::constant(limit as u32);
+            let tail = MachineTerm::constant(limit as u32);
             let path = context.exact_signed_order_source_path(
                 MachineOperandView::Shared(&root),
                 MachineOperandView::Legacy(&tail),
@@ -5576,7 +5568,7 @@ mod shared_wide_order_evidence_tests {
             let _session = crate::kernel::VerificationSession::enter();
             let memory = intern_c_memory(CMemory::new().with_block("wide-order", 16));
             let load = |offset| {
-                Bitvector32Term::MemoryLoad(
+                MachineTerm::MemoryLoad(
                     memory.clone(),
                     Box::new(Pointer {
                         block: "wide-order".into(),
@@ -5585,18 +5577,18 @@ mod shared_wide_order_evidence_tests {
                     LoadKind::Bits64,
                 )
             };
-            let native = Bitvector32Term::logical_machine_binary(
+            let native = MachineTerm::logical_machine_binary(
                 ty,
                 MachineBinaryOp::Multiply,
                 load(0),
-                Bitvector32Term::Variable(Variable(987010)),
+                MachineTerm::Variable(Variable(987010)),
             );
             let named = crate::kernel::eval::canonical_term(&native);
-            let observe = |term: &Bitvector32Term| {
+            let observe = |term: &MachineTerm| {
                 IntegerTerm::Machine(MachineOperandView::Legacy(term).retain(ty))
             };
-            let a = Bitvector32Term::Variable(Variable(987011));
-            let b = Bitvector32Term::Variable(Variable(987012));
+            let a = MachineTerm::Variable(Variable(987011));
+            let b = MachineTerm::Variable(Variable(987012));
             let first = Proposition::ConditionIs(
                 ConditionTerm::machine_compare(ty, CompareRelation::LessEqual, a.clone(), native),
                 true,
@@ -5618,11 +5610,11 @@ mod shared_wide_order_evidence_tests {
                 AtomicPropositionDerivationEvidence::WideOrderPath { .. }
             ));
             assert!(context.checks_atomic_derivation(&goal, false, id, &evidence));
-            let different = Bitvector32Term::logical_machine_binary(
+            let different = MachineTerm::logical_machine_binary(
                 ty,
                 MachineBinaryOp::Multiply,
                 load(8),
-                Bitvector32Term::Variable(Variable(987010)),
+                MachineTerm::Variable(Variable(987010)),
             );
             let different = crate::kernel::eval::canonical_term(&different);
             let unrelated = Proposition::ConditionIs(

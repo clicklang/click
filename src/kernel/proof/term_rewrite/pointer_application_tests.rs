@@ -71,7 +71,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
             variants,
         )]))),
     };
-    let input = Bitvector32Term::AlgebraicMatch {
+    let input = MachineTerm::AlgebraicMatch {
         scrutinee: Box::new(AlgebraicTerm {
             algebraic_type,
             node: AlgebraicTermNode::Variable(Variable(502)),
@@ -83,7 +83,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
                 Pointer::symbolic(bound),
                 CType::Int32Pointer,
             ))],
-            body: Bitvector32Term::ClickFunctionApplication {
+            body: MachineTerm::ClickFunctionApplication {
                 name: "observe".into(),
                 arguments: vec![argument(call(
                     "select",
@@ -97,7 +97,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
     };
     let replacement = call("replacement", vec![argument(Pointer::symbolic(bound))]);
     let mut rewrite = TermRewrite::for_pointer_variable(free, &replacement);
-    let Bitvector32Term::AlgebraicMatch { arms, .. } = rewrite.bits(&input) else {
+    let MachineTerm::AlgebraicMatch { arms, .. } = rewrite.bits(&input) else {
         panic!("lost match")
     };
     assert_eq!(rewrite.refusal(), None);
@@ -105,7 +105,7 @@ fn pure_pointer_arguments_respect_match_binders_and_avoid_capture() {
         panic!("lost binder")
     };
     assert_ne!(renamed.pointer(), &Pointer::symbolic(bound));
-    let expected = Bitvector32Term::ClickFunctionApplication {
+    let expected = MachineTerm::ClickFunctionApplication {
         name: "observe".into(),
         arguments: vec![argument(call(
             "select",
@@ -133,17 +133,17 @@ fn pure_pointer_capture_cache_does_not_hide_a_free_occurrence_after_a_fold() {
     let application = call(
         "select",
         vec![PureFunctionArgument::Value(CValue::Int32(
-            Bitvector32Term::Variable(item),
+            MachineTerm::Variable(item),
         ))],
     );
-    let observed = Bitvector32Term::ClickFunctionApplication {
+    let observed = MachineTerm::ClickFunctionApplication {
         name: "observe".into(),
         arguments: vec![argument(application)],
     };
-    let fold = Bitvector32Term::RangeFold {
-        start: Box::new(Bitvector32Term::constant(0)),
-        end: Box::new(Bitvector32Term::constant(4)),
-        initial: Box::new(Bitvector32Term::constant(0)),
+    let fold = MachineTerm::RangeFold {
+        start: Box::new(MachineTerm::constant(0)),
+        end: Box::new(MachineTerm::constant(4)),
+        initial: Box::new(MachineTerm::constant(0)),
         accumulator: Variable(611),
         item,
         body: Box::new(observed.clone()),
@@ -340,7 +340,7 @@ fn full_c_argument_pointer_rewrite_reaches_a_displaced_copy() {
         CPointerValue::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 1),
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 1),
             },
             CType::UInt8Pointer,
         )
@@ -432,7 +432,7 @@ fn displaced_c_argument_rewrite_inherits_known_replacement_bounds() {
         CPointerValue::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 1),
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 1),
             },
             CType::UInt8Pointer,
         )
@@ -519,14 +519,13 @@ fn displaced_copy_keeps_a_domain_not_named_by_the_full_equality() {
 
 #[test]
 fn rewriting_integer_address_zero_keeps_canonical_null_and_displacement() {
-    let word = Bitvector32Term::Variable(Variable(911));
-    let bits =
-        Bitvector32Term::uint64_bitwise_and(word.clone(), Bitvector32Term::uint64_constant(!3));
+    let word = MachineTerm::Variable(Variable(911));
+    let bits = MachineTerm::uint64_bitwise_and(word.clone(), MachineTerm::uint64_constant(!3));
     for value in [0, 1, 2, 3, 4, 5, u64::MAX] {
         for displacement in [0, 8] {
             let mut input = Pointer::integer_address(bits.clone());
             input.offset = PointerOffsetTerm::Constant(displacement);
-            let replacement = Bitvector32Term::uint64_constant(value);
+            let replacement = MachineTerm::uint64_constant(value);
             let mut rewrite = TermRewrite::for_bits(&word, &replacement);
             let output = rewrite.pointer(&input);
             assert_eq!(rewrite.refusal(), None);

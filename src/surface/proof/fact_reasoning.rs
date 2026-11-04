@@ -187,7 +187,7 @@ fn describe_access_bound_prerequisite(
         ParameterBinding::new(&parameters, &arguments),
     )?;
     let bound = crate::kernel::memory_access_element_bound(memory, pointer, byte_width)?;
-    let spell = |term: &Bitvector32Term| {
+    let spell = |term: &MachineTerm| {
         let spelled = crate::surface::diagnostics::describe_bitvector_with_context(
             term,
             ParameterBinding::new(&parameters, &arguments),

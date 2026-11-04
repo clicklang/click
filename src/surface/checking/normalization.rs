@@ -479,19 +479,19 @@ pub(in crate::surface) fn normalize_condition_without_assumptions(
     }
 }
 
-pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) -> Option<u32> {
+pub(in crate::surface) fn evaluate_bitvector_constant(term: &MachineTerm) -> Option<u32> {
     match term {
-        Bitvector32Term::Cast {
+        MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             ..
         } => None,
         // Rule C1: a decided `Bool` casts to 1 or 0.
-        Bitvector32Term::BoolCast { value, .. } => {
+        MachineTerm::BoolCast { value, .. } => {
             Some(u32::from(normalize_condition_without_assumptions(value)?))
         }
 
         bits32_constant!(value) => Some(constant_u32(*value)),
-        Bitvector32Term::Variable(_)
+        MachineTerm::Variable(_)
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _)
@@ -503,16 +503,16 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
         | cast_term!(UInt64FromInt64, _)
         | crate::kernel::binary_wide_term!(..)
         | crate::kernel::unary_wide_term!(..)
-        | Bitvector32Term::Float32Negate(_)
-        | Bitvector32Term::Float32Binary { .. }
-        | Bitvector32Term::Float64Negate(_)
-        | Bitvector32Term::Float64Binary { .. }
-        | Bitvector32Term::RangeFold { .. }
-        | Bitvector32Term::PureFunctionApplication { .. }
-        | Bitvector32Term::ClickFunctionApplication { .. }
-        | Bitvector32Term::AlgebraicMatch { .. }
-        | Bitvector32Term::PointerAddress(_, _)
-        | Bitvector32Term::MemoryLoad(_, _, _) => None,
+        | MachineTerm::Float32Negate(_)
+        | MachineTerm::Float32Binary { .. }
+        | MachineTerm::Float64Negate(_)
+        | MachineTerm::Float64Binary { .. }
+        | MachineTerm::RangeFold { .. }
+        | MachineTerm::PureFunctionApplication { .. }
+        | MachineTerm::ClickFunctionApplication { .. }
+        | MachineTerm::AlgebraicMatch { .. }
+        | MachineTerm::PointerAddress(_, _)
+        | MachineTerm::MemoryLoad(_, _, _) => None,
         binary_term!(Bits32, Add, left, right) => Some(
             evaluate_bitvector_constant(left)?.wrapping_add(evaluate_bitvector_constant(right)?),
         ),
@@ -580,7 +580,7 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
             Some(evaluate_bitvector_constant(left)? ^ evaluate_bitvector_constant(right)?)
         }
         unary_term!(Bits32, BitwiseNot, value) => Some(!evaluate_bitvector_constant(value)?),
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
@@ -588,17 +588,17 @@ pub(in crate::surface) fn evaluate_bitvector_constant(term: &Bitvector32Term) ->
             true => evaluate_bitvector_constant(then_term),
             false => evaluate_bitvector_constant(else_term),
         },
-        Bitvector32Term::IntegerToMachine { .. } => None,
+        MachineTerm::IntegerToMachine { .. } => None,
     }
 }
 
-pub(in crate::surface) fn normalize_bitvector(term: &Bitvector32Term) -> Bitvector32Term {
+pub(in crate::surface) fn normalize_bitvector(term: &MachineTerm) -> MachineTerm {
     match term {
-        Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => term.clone(),
-        Bitvector32Term::IntegerToMachine { .. } => term.clone(),
-        Bitvector32Term::BoolCast { value, .. } => {
+        MachineTerm::Constant { .. } | MachineTerm::Variable(_) => term.clone(),
+        MachineTerm::IntegerToMachine { .. } => term.clone(),
+        MachineTerm::BoolCast { value, .. } => {
             match normalize_condition_without_assumptions(value) {
-                Some(value) => Bitvector32Term::constant(u32::from(value)),
+                Some(value) => MachineTerm::constant(u32::from(value)),
                 None => term.clone(),
             }
         }
@@ -646,27 +646,27 @@ pub(in crate::surface) fn normalize_bitvector(term: &Bitvector32Term) -> Bitvect
             bitvector32_xor(normalize_bitvector(left), normalize_bitvector(right))
         }
         unary_term!(Int32, BitwiseNot, value) => bitvector32_not(normalize_bitvector(value)),
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition,
             then_term,
             else_term,
         } => match normalize_condition_without_assumptions(condition) {
             Some(true) => normalize_bitvector(then_term),
             Some(false) => normalize_bitvector(else_term),
-            None => Bitvector32Term::if_then_else(
+            None => MachineTerm::if_then_else(
                 condition.as_ref().clone(),
                 normalize_bitvector(then_term),
                 normalize_bitvector(else_term),
             ),
         },
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start,
             end,
             initial,
             accumulator,
             item,
             body,
-        } => Bitvector32Term::range_fold(
+        } => MachineTerm::range_fold(
             normalize_bitvector(start),
             normalize_bitvector(end),
             normalize_bitvector(initial),
@@ -674,18 +674,19 @@ pub(in crate::surface) fn normalize_bitvector(term: &Bitvector32Term) -> Bitvect
             *item,
             normalize_bitvector(body),
         ),
-        Bitvector32Term::PureFunctionApplication { name, arguments } => {
-            Bitvector32Term::PureFunctionApplication {
+        MachineTerm::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication {
                 name: name.clone(),
                 arguments: arguments.iter().map(normalize_bitvector).collect(),
             }
         }
-        Bitvector32Term::ClickFunctionApplication { .. }
-        | Bitvector32Term::AlgebraicMatch { .. } => term.clone(),
-        Bitvector32Term::MemoryLoad(memory, pointer, kind) => {
-            Bitvector32Term::MemoryLoad(memory.clone(), pointer.clone(), *kind)
+        MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {
+            term.clone()
         }
-        Bitvector32Term::PointerAddress(_, _) => term.clone(),
+        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            MachineTerm::MemoryLoad(memory.clone(), pointer.clone(), *kind)
+        }
+        MachineTerm::PointerAddress(_, _) => term.clone(),
         term => match (term.as_binary(), term.as_unary()) {
             (Some((op, left, right)), _) => {
                 op.build(normalize_bitvector(left), normalize_bitvector(right))
@@ -710,17 +711,17 @@ mod tests {
     #[test]
     #[ignore = "nightly: 1.8s in the parallel gate"]
     fn equality_rewrite_search_observes_the_deadline() {
-        let variable = |index: u64| Bitvector32Term::Variable(Variable(93_400 + index));
+        let variable = |index: u64| MachineTerm::Variable(Variable(93_400 + index));
         let count = 6;
         let sum = (1..count).fold(variable(0), |sum, index| {
-            Bitvector32Term::add(sum, variable(index))
+            MachineTerm::add(sum, variable(index))
         });
         let goal = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(sum),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -790,11 +791,8 @@ mod tests {
                 identity
                     .memory()
                     .clone()
-                    .store(target.clone(), CValue::Int32(Bitvector32Term::constant(17)))
-                    .store(
-                        target.clone(),
-                        CValue::Int32(Bitvector32Term::constant(stored)),
-                    ),
+                    .store(target.clone(), CValue::Int32(MachineTerm::constant(17)))
+                    .store(target.clone(), CValue::Int32(MachineTerm::constant(stored))),
             );
             let load = crate::kernel::load_variable_for_cell_with_origin(
                 &identity,
@@ -807,8 +805,8 @@ mod tests {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
-                    left: Box::new(Bitvector32Term::Variable(load)),
-                    right: Box::new(Bitvector32Term::constant(17)),
+                    left: Box::new(MachineTerm::Variable(load)),
+                    right: Box::new(MachineTerm::constant(17)),
                 },
                 true,
             );
@@ -828,11 +826,11 @@ mod tests {
             else {
                 panic!("the rewrite keeps the comparison: {rewritten:?}");
             };
-            assert_eq!(right.as_ref(), &Bitvector32Term::constant(17));
-            assert_ne!(left.as_ref(), &Bitvector32Term::Variable(load));
+            assert_eq!(right.as_ref(), &MachineTerm::constant(17));
+            assert_ne!(left.as_ref(), &MachineTerm::Variable(load));
             assert_eq!(
                 crate::kernel::read_over_write_value(left),
-                Some(Bitvector32Term::constant(stored))
+                Some(MachineTerm::constant(stored))
             );
         }
     }
@@ -857,15 +855,14 @@ mod tests {
             8,
             &memory,
         );
-        let (target_loaded, _) =
-            crate::kernel::load_variable_for_term(&Bitvector32Term::MemoryLoad(
-                memory.clone(),
-                Box::new(target.clone()),
-                crate::kernel::LoadKind::Int32,
-            ))
-            .expect("the target read has a name");
+        let (target_loaded, _) = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(target.clone()),
+            crate::kernel::LoadKind::Int32,
+        ))
+        .expect("the target read has a name");
         let read_through = |variable| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: PointerBlock::Symbolic(variable),
@@ -879,7 +876,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(read_through(loaded)),
-                right: Box::new(Bitvector32Term::constant(5)),
+                right: Box::new(MachineTerm::constant(5)),
             },
             true,
         );
@@ -897,7 +894,7 @@ mod tests {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::Equal,
                     left: Box::new(read_through(target_loaded)),
-                    right: Box::new(Bitvector32Term::constant(5))
+                    right: Box::new(MachineTerm::constant(5))
                 },
                 true,
             )
@@ -913,10 +910,10 @@ mod tests {
         };
         let target = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(92)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(92)), 4),
         };
         let field_load = |base: &Pointer, displacement| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: base.block.clone(),
@@ -989,11 +986,11 @@ mod tests {
     #[test]
     fn rewrite_uses_pointer_offset_equalities_inside_pointer_goals() {
         let left = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(41))),
+            value: Box::new(MachineTerm::Variable(Variable(41))),
             byte_width: 4,
         };
         let right = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(42))),
+            value: Box::new(MachineTerm::Variable(Variable(42))),
             byte_width: 4,
         };
         let equality = Proposition::ConditionIs(
@@ -1027,15 +1024,15 @@ mod tests {
     #[test]
     fn rewrite_substitutes_index_and_base_equalities_inside_load_addresses() {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
-        let data = Bitvector32Term::Variable(Variable(51));
-        let alias = Bitvector32Term::Variable(Variable(52));
-        let index = Bitvector32Term::Variable(Variable(53));
+        let data = MachineTerm::Variable(Variable(51));
+        let alias = MachineTerm::Variable(Variable(52));
+        let index = MachineTerm::Variable(Variable(53));
         let pointer = |offset| Pointer {
             block: PointerBlock::ExternalArgument,
             offset,
         };
         let load = |offset| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(pointer(offset)),
                 crate::kernel::LoadKind::Int32,
@@ -1061,7 +1058,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(index),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1080,25 +1077,25 @@ mod tests {
 
     #[test]
     fn rewrite_substitutes_length_and_base_equalities_inside_memory_resources() {
-        let source = Bitvector32Term::Variable(Variable(61));
-        let target = Bitvector32Term::Variable(Variable(62));
-        let source_len = Bitvector32Term::Variable(Variable(63));
-        let target_len = Bitvector32Term::Variable(Variable(64));
+        let source = MachineTerm::Variable(Variable(61));
+        let target = MachineTerm::Variable(Variable(62));
+        let source_len = MachineTerm::Variable(Variable(63));
+        let target_len = MachineTerm::Variable(Variable(64));
         let fixed = CResource::Memory(CMemoryRange::new(
             Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(65)), 4),
+                offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(65)), 4),
             },
-            Bitvector32Term::constant(0),
-            Bitvector32Term::constant(4),
+            MachineTerm::constant(0),
+            MachineTerm::constant(4),
         ));
-        let range = |base: Bitvector32Term, end: Bitvector32Term| {
+        let range = |base: MachineTerm, end: MachineTerm| {
             CResource::Memory(CMemoryRange::new(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::scale_int32(base, 4),
                 },
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
                 end,
             ))
         };
@@ -1175,7 +1172,7 @@ mod tests {
             offset: PointerOffsetTerm::Constant(0),
         };
         let load =
-            Bitvector32Term::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
+            MachineTerm::MemoryLoad(memory, Box::new(pointer), crate::kernel::LoadKind::Int32);
         let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, load.clone())
             .expect("a symbolic int32 load is a mathematical observation");
         let goal = Proposition::ConditionIs(
@@ -1187,7 +1184,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(load),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1199,12 +1196,12 @@ mod tests {
 
     #[test]
     fn integer_range_fold_rewrite_changes_only_int32_endpoints() {
-        let from = Bitvector32Term::Variable(Variable(71));
-        let to = Bitvector32Term::Variable(Variable(72));
+        let from = MachineTerm::Variable(Variable(71));
+        let to = MachineTerm::Variable(Variable(72));
         let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("fold", 4));
         let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
             MachineIntegerType::Int32,
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(Pointer {
                     block: "fold".into(),
@@ -1215,7 +1212,7 @@ mod tests {
         ));
         let fold = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
                 end: SharedIntegerRangeEndpoint::intern(from.clone()),
             },
             IntegerTerm::constant_i64(0),
@@ -1244,7 +1241,7 @@ mod tests {
         .expect("a checked endpoint equality should rewrite the Int32 fold bound");
         let expected = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Int32 {
-                start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
+                start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
                 end: SharedIntegerRangeEndpoint::intern(to),
             },
             IntegerTerm::constant_i64(0),
@@ -1263,8 +1260,8 @@ mod tests {
 
     #[test]
     fn integer_range_fold_rewrite_rejects_missing_or_integer_bound_equalities() {
-        let from = Bitvector32Term::Variable(Variable(81));
-        let to = Bitvector32Term::Variable(Variable(82));
+        let from = MachineTerm::Variable(Variable(81));
+        let to = MachineTerm::Variable(Variable(82));
         let fold = IntegerTerm::range_fold(
             IntegerRangeFoldIndex::Integer {
                 start: IntegerTerm::constant_i64(0).into(),
@@ -1312,20 +1309,20 @@ mod tests {
         let first_memory = crate::kernel::intern_c_memory(
             CMemory::new()
                 .with_block("rewrite-cell", 4)
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(0))),
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(0))),
         );
         let second_memory = crate::kernel::intern_c_memory(
             CMemory::new()
                 .with_block("rewrite-cell", 4)
-                .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7))),
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
         );
         assert_ne!(first_memory, second_memory);
-        let first_load = Bitvector32Term::MemoryLoad(
+        let first_load = MachineTerm::MemoryLoad(
             first_memory,
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
         );
-        let second_load = Bitvector32Term::MemoryLoad(
+        let second_load = MachineTerm::MemoryLoad(
             second_memory,
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
@@ -1341,7 +1338,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(first_load),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1380,11 +1377,11 @@ mod partial_arithmetic_tests {
                     }),
                 ),
             ] {
-                let term = Bitvector32Term::machine_binary(
+                let term = MachineTerm::machine_binary(
                     crate::kernel::MachineIntegerType::UInt32,
                     operator,
-                    Bitvector32Term::uint32_constant(5),
-                    Bitvector32Term::uint32_constant(divisor),
+                    MachineTerm::uint32_constant(5),
+                    MachineTerm::uint32_constant(divisor),
                 );
                 assert_eq!(evaluate_bitvector_constant(&term), expected);
             }

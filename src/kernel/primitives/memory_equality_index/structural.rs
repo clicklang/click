@@ -96,7 +96,7 @@ fn plain_origin(mut offset: &PointerOffsetTerm) -> bool {
             | PointerOffsetTerm::Int64Scaled { value, .. } => {
                 return matches!(
                     value.as_ref(),
-                    Bitvector32Term::Variable(_) | bits32_constant!(_) | int64_constant!(_)
+                    MachineTerm::Variable(_) | bits32_constant!(_) | int64_constant!(_)
                 );
             }
             PointerOffsetTerm::Add(left, right) => {

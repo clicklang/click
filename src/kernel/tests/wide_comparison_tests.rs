@@ -24,8 +24,8 @@ fn compare(operator: CComparisonOperator, a: CExpression, b: CExpression) -> CEx
 }
 
 fn condition(operator: CComparisonOperator, ty: MachineIntegerType) -> ConditionTerm {
-    let a = IntegerTerm::from_machine(ty, Bitvector32Term::Variable(LEFT)).unwrap();
-    let b = IntegerTerm::from_machine(ty, Bitvector32Term::Variable(RIGHT)).unwrap();
+    let a = IntegerTerm::from_machine(ty, MachineTerm::Variable(LEFT)).unwrap();
+    let b = IntegerTerm::from_machine(ty, MachineTerm::Variable(RIGHT)).unwrap();
     match operator {
         CComparisonOperator::Equal => ConditionTerm::integer_equal(a, b),
         CComparisonOperator::NotEqual => ConditionTerm::integer_not_equal(a, b),
@@ -50,8 +50,8 @@ fn complement(operator: CComparisonOperator) -> CComparisonOperator {
 fn symbolic(operator: CComparisonOperator, ty: MachineIntegerType) -> CExpression {
     let value = |variable| {
         CExpression::Value(match ty {
-            MachineIntegerType::Int128 => CValue::Int128(Bitvector32Term::Variable(variable)),
-            MachineIntegerType::UInt128 => CValue::UInt128(Bitvector32Term::Variable(variable)),
+            MachineIntegerType::Int128 => CValue::Int128(MachineTerm::Variable(variable)),
+            MachineIntegerType::UInt128 => CValue::UInt128(MachineTerm::Variable(variable)),
             _ => unreachable!(),
         })
     };

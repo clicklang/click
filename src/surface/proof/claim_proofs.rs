@@ -6047,8 +6047,8 @@ mod tests {
 
     #[test]
     fn inconsistent_context_is_not_sibling_path_evidence() {
-        let left = Bitvector32Term::Variable(Variable(1));
-        let right = Bitvector32Term::Variable(Variable(2));
+        let left = MachineTerm::Variable(Variable(1));
+        let right = MachineTerm::Variable(Variable(2));
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -6093,8 +6093,8 @@ mod tests {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
-                left: Box::new(Bitvector32Term::Variable(Variable(2))),
-                right: Box::new(Bitvector32Term::constant(10)),
+                left: Box::new(MachineTerm::Variable(Variable(2))),
+                right: Box::new(MachineTerm::constant(10)),
             },
             true,
         );
@@ -6109,8 +6109,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::LessThan,
-            left: Box::new(Bitvector32Term::Variable(Variable(1))),
-            right: Box::new(Bitvector32Term::constant(10)),
+            left: Box::new(MachineTerm::Variable(Variable(1))),
+            right: Box::new(MachineTerm::constant(10)),
         };
         let assumptions = PureFactContext::new()
             .assume_proposition(Proposition::ConditionIs(condition.clone(), false));

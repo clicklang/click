@@ -4,12 +4,12 @@ use super::*;
 
 pub(super) fn apply_nonzero(
     format: MachineIntegerType,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
+    left: MachineTerm,
+    right: MachineTerm,
     facts: ExecutionFacts,
     obligations: Vec<ProofObligation>,
     assumptions: &PureFactContext,
-    result: fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term,
+    result: fn(MachineTerm, MachineTerm) -> MachineTerm,
 ) -> Vec<CExpressionPath> {
     let [minimum, minus_one] =
         ConditionTerm::signed_division_exception_tests(format, &left, &right);
@@ -76,14 +76,14 @@ pub(super) fn apply_nonzero(
 mod tests {
     use super::*;
 
-    fn terms() -> (Bitvector32Term, Bitvector32Term) {
+    fn terms() -> (MachineTerm, MachineTerm) {
         (
-            Bitvector32Term::Variable(Variable(970_001)),
-            Bitvector32Term::Variable(Variable(970_002)),
+            MachineTerm::Variable(Variable(970_001)),
+            MachineTerm::Variable(Variable(970_002)),
         )
     }
-    fn result(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
-        Bitvector32Term::Binary {
+    fn result(left: MachineTerm, right: MachineTerm) -> MachineTerm {
+        MachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Divide,
             left: Box::new(left),

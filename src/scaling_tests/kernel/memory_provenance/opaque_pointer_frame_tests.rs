@@ -14,10 +14,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         };
         let possible_write = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(
-                Bitvector32Term::Variable(Variable(9_880_301)),
-                4,
-            ),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_880_301)), 4),
         };
         let stored = Pointer::symbolic(Variable(9_880_302));
         let mut memory = CMemory::new();
@@ -29,7 +26,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
                     block: PointerBlock::Concrete(block),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::constant(1)),
+                CValue::Int32(MachineTerm::constant(1)),
             );
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
@@ -59,10 +56,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         let wide_address = field.offset_by_bytes(32);
         let write_alias = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(
-                Bitvector32Term::Variable(Variable(9_880_303)),
-                4,
-            ),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(9_880_303)), 4),
         };
         context = context.assume_condition(
             ConditionTerm::pointer_equal(write_alias.clone(), wide_address.clone()),
@@ -74,11 +68,9 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
             ConditionTerm::pointer_equal(parent.clone(), parent_alias.clone()),
             true,
         );
-        let value = Bitvector32Term::PointerAddress(
-            Box::new(parent),
-            crate::kernel::AddressObjectClass::NONE,
-        );
-        let wanted = Bitvector32Term::PointerAddress(
+        let value =
+            MachineTerm::PointerAddress(Box::new(parent), crate::kernel::AddressObjectClass::NONE);
+        let wanted = MachineTerm::PointerAddress(
             Box::new(parent_alias),
             crate::kernel::AddressObjectClass::NONE,
         );
@@ -90,7 +82,7 @@ fn bounded_pointer_value_skips_unrelated_facts_cells_and_history() {
         );
         let projected = canonical_projected_load_memory(&source, &wide_address);
         let wide_read =
-            Bitvector32Term::MemoryLoad(projected, Box::new(wide_address), LoadKind::Bits64);
+            MachineTerm::MemoryLoad(projected, Box::new(wide_address), LoadKind::Bits64);
         let (holds, work) = crate::instrumentation::measure_deterministic_work(|| {
             wide_read_has_recorded_value(&wide_read, &wanted, &context)
         });
@@ -115,8 +107,8 @@ fn complete_read_domains_use_numeric_storage_classes_without_scanning_other_clas
         let mut facts = PureFactContext::new();
         let equal = |a: Pointer, b: Pointer| {
             ConditionTerm::uint64_equal(
-                Bitvector32Term::pointer_address(a),
-                Bitvector32Term::pointer_address(b),
+                MachineTerm::pointer_address(a),
+                MachineTerm::pointer_address(b),
             )
         };
         for index in 0..size {
@@ -221,11 +213,11 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
         }
         let left = intern_c_memory(memory.clone().store(
             field.offset_by_bytes(8),
-            CValue::UInt64(Bitvector32Term::uint64_constant(1)),
+            CValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
         let right = intern_c_memory(memory.store(
             field.offset_by_bytes(16),
-            CValue::UInt64(Bitvector32Term::uint64_constant(2)),
+            CValue::UInt64(MachineTerm::uint64_constant(2)),
         ));
         let producer = crate::kernel::equality_graph::EqualityGraph::default();
         for index in 0..size {
@@ -233,7 +225,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
                 &Pointer {
                     block: field.block.clone(),
                     offset: PointerOffsetTerm::scale_int32(
-                        Bitvector32Term::Variable(Variable(9_930_000 + index)),
+                        MachineTerm::Variable(Variable(9_930_000 + index)),
                         4,
                     ),
                 },
@@ -242,7 +234,7 @@ fn sibling_pointer_reads_stop_before_unrelated_shared_history() {
             );
         }
         let legacy = |memory: &SharedCMemory| {
-            Pointer::loaded(&Bitvector32Term::MemoryLoad(
+            Pointer::loaded(&MachineTerm::MemoryLoad(
                 memory.clone(),
                 Box::new(field.clone()),
                 LoadKind::Int32,
@@ -293,7 +285,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
                     block: name.into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::constant(index)),
+                CValue::Int32(MachineTerm::constant(index)),
             );
             context = context.assume_condition(
                 ConditionTerm::pointer_equal(
@@ -305,7 +297,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         }
         let before = intern_c_memory(memory);
         let bits =
-            Bitvector32Term::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits64);
+            MachineTerm::MemoryLoad(before.clone(), Box::new(field.clone()), LoadKind::Bits64);
         let value = CPointerValue::from_read(
             Pointer::integer_address(bits),
             CType::VoidPointer,
@@ -320,7 +312,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
         context = context.assume_proposition(source.clone());
         let one_write = before.memory().clone().store(
             field.offset_by_bytes(24),
-            CValue::Int32(Bitvector32Term::constant(1)),
+            CValue::Int32(MachineTerm::constant(1)),
         );
         let (one_theorem, unrelated_work) =
             crate::instrumentation::measure_deterministic_work(|| {
@@ -337,7 +329,7 @@ fn packed_word_transport_visits_only_the_selected_word_and_delta() {
             for index in 0..size {
                 after = after.store(
                     field.offset_by_bytes(24),
-                    CValue::Int32(Bitvector32Term::constant(index)),
+                    CValue::Int32(MachineTerm::constant(index)),
                 );
                 let theorem = prove_c_condition_fact_transport(&current, &after, &explicit_context)
                     .expect("the supplied adjacent transition preserves the packed pointer");
@@ -389,20 +381,17 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
             );
             facts = facts.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(9_891_000 + index)),
-                    Bitvector32Term::constant(3),
+                    MachineTerm::Variable(Variable(9_891_000 + index)),
+                    MachineTerm::constant(3),
                 ),
                 true,
             );
         }
-        let value = Bitvector32Term::narrow_constant(MachineIntegerType::UInt8, 129);
+        let value = MachineTerm::narrow_constant(MachineIntegerType::UInt8, 129);
         memory = memory.store(pointer.clone(), CValue::UInt8(value.clone()));
-        let load = Bitvector32Term::MemoryLoad(
-            intern_c_memory(memory),
-            Box::new(pointer),
-            LoadKind::UInt8,
-        );
-        let cast = |value| Bitvector32Term::Cast {
+        let load =
+            MachineTerm::MemoryLoad(intern_c_memory(memory), Box::new(pointer), LoadKind::UInt8);
+        let cast = |value| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt8,
             to: MachineIntegerType::Int8,
@@ -418,27 +407,20 @@ fn converted_narrow_read_value_uses_only_selected_terms_and_cells() {
         samples.push(work);
         assert!(!narrow_read_has_recorded_value(
             &left,
-            &cast(Bitvector32Term::narrow_constant(
-                MachineIntegerType::UInt8,
-                7
-            )),
+            &cast(MachineTerm::narrow_constant(MachineIntegerType::UInt8, 7)),
             &facts
         ));
-        let other_cast = Bitvector32Term::Cast {
+        let other_cast = MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             from: MachineIntegerType::UInt8,
             to: MachineIntegerType::UInt16,
             value: Box::new(value),
         };
         assert!(!narrow_read_has_recorded_value(&left, &other_cast, &facts));
-        let Bitvector32Term::MemoryLoad(memory, pointer, _) = load else {
+        let MachineTerm::MemoryLoad(memory, pointer, _) = load else {
             unreachable!()
         };
-        let wide = cast(Bitvector32Term::MemoryLoad(
-            memory,
-            pointer,
-            LoadKind::Int32,
-        ));
+        let wide = cast(MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32));
         assert!(!narrow_read_has_recorded_value(&wide, &right, &facts));
     }
     assert!(
@@ -468,9 +450,7 @@ fn complete_word_record_at_bounded_stop_has_flat_lookup_work() {
         }
         let target = Pointer::symbolic(Variable(9_887_001));
         let value = CValue::PointerInteger(PointerIntegerValue {
-            numeric: Box::new(CValue::UInt64(Bitvector32Term::pointer_address(
-                target.clone(),
-            ))),
+            numeric: Box::new(CValue::UInt64(MachineTerm::pointer_address(target.clone()))),
             pointer: Box::new(CPointerValue::new(target, CType::Int32Pointer)),
             kind: PointerIntegerKind::Exact,
         });
@@ -511,17 +491,17 @@ fn complete_word_frame_reuses_named_versions_across_observations() {
         // This is the actual read producer, not a warm-up of the query:
         // its designation names the pre-observation version of the word.
         let value = CPointerValue::from_read(
-            Pointer::integer_address(Bitvector32Term::uint64_constant(8)),
+            Pointer::integer_address(MachineTerm::uint64_constant(8)),
             CType::Int32Pointer,
             &before,
             &field,
         );
         let after = intern_c_memory(before.memory().clone().store(
             write.clone(),
-            CValue::UInt64(Bitvector32Term::uint64_constant(1)),
+            CValue::UInt64(MachineTerm::uint64_constant(1)),
         ));
         let target = CPointerValue::from_read(
-            Pointer::integer_address(Bitvector32Term::uint64_constant(8)),
+            Pointer::integer_address(MachineTerm::uint64_constant(8)),
             CType::Int32Pointer,
             &after,
             &field,

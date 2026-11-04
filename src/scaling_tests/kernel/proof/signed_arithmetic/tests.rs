@@ -3,7 +3,7 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn repeated_deep_term_equivalence_has_linear_work_scaling() {
@@ -15,10 +15,10 @@ fn repeated_deep_term_equivalence_has_linear_work_scaling() {
             let mut right = arena.atom(x()).unwrap();
             for index in 0..depth {
                 let left_atom = arena
-                    .atom(Bitvector32Term::Variable(Variable(1000 + index as u64)))
+                    .atom(MachineTerm::Variable(Variable(1000 + index as u64)))
                     .unwrap();
                 let right_atom = arena
-                    .atom(Bitvector32Term::Variable(Variable(1000 + index as u64)))
+                    .atom(MachineTerm::Variable(Variable(1000 + index as u64)))
                     .unwrap();
                 left = arena.binary(CheckedBinaryOperator::Add, left, left_atom);
                 right = arena.binary(CheckedBinaryOperator::Add, right, right_atom);
@@ -47,20 +47,20 @@ fn shared_subgraph_equivalence_is_cached_across_distinct_roots() {
             let mut right_shared = arena.atom(x()).unwrap();
             for index in 0..size {
                 let left_atom = arena
-                    .atom(Bitvector32Term::Variable(Variable(2000 + index as u64)))
+                    .atom(MachineTerm::Variable(Variable(2000 + index as u64)))
                     .unwrap();
                 let right_atom = arena
-                    .atom(Bitvector32Term::Variable(Variable(2000 + index as u64)))
+                    .atom(MachineTerm::Variable(Variable(2000 + index as u64)))
                     .unwrap();
                 left_shared = arena.binary(CheckedBinaryOperator::Add, left_shared, left_atom);
                 right_shared = arena.binary(CheckedBinaryOperator::Add, right_shared, right_atom);
             }
             for index in 0..size {
                 let left_atom = arena
-                    .atom(Bitvector32Term::Variable(Variable(3000 + index as u64)))
+                    .atom(MachineTerm::Variable(Variable(3000 + index as u64)))
                     .unwrap();
                 let right_atom = arena
-                    .atom(Bitvector32Term::Variable(Variable(3000 + index as u64)))
+                    .atom(MachineTerm::Variable(Variable(3000 + index as u64)))
                     .unwrap();
                 let left_root = arena.binary(CheckedBinaryOperator::Add, left_shared, left_atom);
                 let right_root = arena.binary(CheckedBinaryOperator::Add, right_shared, right_atom);
@@ -83,9 +83,9 @@ fn narrowed_variable_atom_identity_work_scales_linearly() {
     for size in [16usize, 64, 256, 1024] {
         let terms: Vec<_> = (0..size)
             .map(|index| {
-                Bitvector32Term::legacy_cast(
+                MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(Bitvector32Term::Variable(Variable(index as u64))),
+                    Box::new(MachineTerm::Variable(Variable(index as u64))),
                 )
             })
             .collect();
@@ -106,10 +106,10 @@ fn narrowed_variable_atom_identity_work_scales_linearly() {
 fn opaque_payload_work_scales_with_application_identity() {
     let mut measurements = Vec::new();
     for payload_size in [8usize, 16, 32, 64] {
-        let term = Bitvector32Term::PureFunctionApplication {
+        let term = MachineTerm::PureFunctionApplication {
             name: "opaque".repeat(payload_size),
             arguments: (0..payload_size)
-                .map(|index| Bitvector32Term::Variable(Variable(index as u64)))
+                .map(|index| MachineTerm::Variable(Variable(index as u64)))
                 .collect(),
         };
         let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -132,7 +132,7 @@ fn opaque_payload_work_scales_with_application_identity() {
 fn deep_opaque_payload_work_is_iterative_and_budgeted() {
     let mut term = x();
     for _ in 0..4096 {
-        term = Bitvector32Term::PureFunctionApplication {
+        term = MachineTerm::PureFunctionApplication {
             name: "f".to_string(),
             arguments: vec![term],
         };
@@ -150,12 +150,12 @@ fn deep_opaque_payload_work_is_iterative_and_budgeted() {
 fn deep_opaque_payload_certificate_check_is_iterative() {
     let mut term = x();
     for _ in 0..4096 {
-        term = Bitvector32Term::PureFunctionApplication {
+        term = MachineTerm::PureFunctionApplication {
             name: "f".to_string(),
             arguments: vec![term],
         };
     }
-    let premise = le(term, Bitvector32Term::constant(1));
+    let premise = le(term, MachineTerm::constant(1));
     let certificate = SignedArithmeticCertificate {
         nodes: vec![SignedArithmeticNode::Premise {
             index: 0,
@@ -172,7 +172,7 @@ fn deep_opaque_payload_certificate_check_is_iterative() {
 
 #[test]
 fn certificate_check_work_scales_with_node_count() {
-    let goal = le(x(), Bitvector32Term::constant(1));
+    let goal = le(x(), MachineTerm::constant(1));
     let premise = std::slice::from_ref(&goal);
     let mut measurements = Vec::new();
     for count in [8usize, 16, 32, 64, 128] {
@@ -205,12 +205,12 @@ fn deep_certificate_check_work_has_bounded_scaling() {
     for depth in [128usize, 256, 512, 1024, 2048] {
         let mut term = x();
         for _ in 0..depth {
-            term = Bitvector32Term::PureFunctionApplication {
+            term = MachineTerm::PureFunctionApplication {
                 name: "f".to_string(),
                 arguments: vec![term],
             };
         }
-        let premise = le(term, Bitvector32Term::constant(1));
+        let premise = le(term, MachineTerm::constant(1));
         let certificate = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::Premise {
                 index: 0,
@@ -236,12 +236,12 @@ fn deep_certificate_check_work_has_bounded_scaling() {
 fn deep_interval_proposition_conclusion_uses_bounded_identity() {
     let mut term = x();
     for _ in 0..1024 {
-        term = Bitvector32Term::PureFunctionApplication {
+        term = MachineTerm::PureFunctionApplication {
             name: "f".to_string(),
             arguments: vec![term],
         };
     }
-    let goal = le(term.clone(), Bitvector32Term::constant(0));
+    let goal = le(term.clone(), MachineTerm::constant(0));
     let premise_claim = claim(&goal);
     let certificate = SignedArithmeticCertificate {
         nodes: vec![
@@ -257,7 +257,7 @@ fn deep_interval_proposition_conclusion_uses_bounded_identity() {
             },
             SignedArithmeticNode::IntervalAtom {
                 carrier: SignedArithmeticCarrier::SignedInt32,
-                term: Bitvector32Term::constant(0),
+                term: MachineTerm::constant(0),
                 lower: 0,
                 upper: 0,
             },
@@ -279,7 +279,7 @@ fn deep_interval_proposition_conclusion_uses_bounded_identity() {
 
 #[test]
 fn scale_work_grows_with_coefficient_magnitude() {
-    let premise = le(Bitvector32Term::constant(0), Bitvector32Term::constant(0));
+    let premise = le(MachineTerm::constant(0), MachineTerm::constant(0));
     let mut measurements = Vec::new();
     for bits in [8usize, 16, 32, 64] {
         let coefficient = BigInt::one() << bits;
@@ -319,9 +319,9 @@ fn affine_multi_key_and_deep_atom_work_scales() {
     for size in [4usize, 8, 16, 32] {
         let mut terms = BTreeMap::new();
         for index in 0..size {
-            let mut atom = Bitvector32Term::Variable(Variable(index as u64));
+            let mut atom = MachineTerm::Variable(Variable(index as u64));
             for depth in 0..size {
-                atom = Bitvector32Term::PureFunctionApplication {
+                atom = MachineTerm::PureFunctionApplication {
                     name: format!("f{depth}"),
                     arguments: vec![atom],
                 };
@@ -357,7 +357,7 @@ fn mathematical_certificate_result_decoding_scales_with_explicit_atoms() {
             .map(|index| {
                 IntegerTerm::from_machine(
                     MachineIntegerType::Int32,
-                    Bitvector32Term::Variable(Variable(991_920 + index as u64)),
+                    MachineTerm::Variable(Variable(991_920 + index as u64)),
                 )
                 .unwrap()
             })
@@ -431,11 +431,11 @@ fn exact_definedness_refuses_small_mismatch_without_expanding_shared_guard() {
                         true,
                     )),
                 );
-                let small = Bitvector32Term::Binary {
+                let small = MachineTerm::Binary {
                     format,
                     op: MachineBinaryOp::Add,
                     left: Box::new(x()),
-                    right: Box::new(Bitvector32Term::constant(1)),
+                    right: Box::new(MachineTerm::constant(1)),
                 };
                 assert!(!is_exact_definedness(&guard, &small));
                 assert!(!observation.has_boxed_operand());
@@ -461,8 +461,8 @@ fn definedness_source_matching_reuses_shared_prefixes() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let mut import = KernelTermImport::default();
-        let mut left = import.machine(format, &Bitvector32Term::constant(1));
-        let mut right = import.machine(format, &Bitvector32Term::uint32_constant(1));
+        let mut left = import.machine(format, &MachineTerm::constant(1));
+        let mut right = import.machine(format, &MachineTerm::uint32_constant(1));
         let variable =
             KernelTerm::variable(KernelType::C(crate::kernel::CType::Int32), Variable(982500));
         left = KernelTerm::machine_binary_shared(

@@ -74,7 +74,7 @@ impl<'a> Proof<'a> {
     fn signed_operand_bound_premises(
         &self,
         width: SignedDefinedWidth,
-        operands: [(&Bitvector32Term, &ContractExpression); 2],
+        operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Vec<ClickProposition> {
         let assumptions = self.facts().assumptions();
         let mut premises = Vec::new();
@@ -100,7 +100,7 @@ impl<'a> Proof<'a> {
     fn try_signed_definedness_with_operand_definedness(
         &self,
         width: SignedDefinedWidth,
-        operands: [(&Bitvector32Term, &ContractExpression); 2],
+        operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Result<Option<Self>, ClickError> {
         let mut premises = self.signed_operand_bound_premises(width, operands);
         if premises.is_empty() {
@@ -138,7 +138,7 @@ impl<'a> Proof<'a> {
     fn try_signed_definedness_after_operand_substitution(
         &self,
         width: SignedDefinedWidth,
-        operands: [(&Bitvector32Term, &ContractExpression); 2],
+        operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Result<Option<Self>, ClickError> {
         let Some(ClickProposition::Defined { expression }) = self.surface_goal() else {
             return Ok(None);
@@ -211,7 +211,7 @@ impl<'a> Proof<'a> {
         proof.try_direct_logical_closure()
     }
 
-    fn synthesize_machine_term_here(&self, term: &Bitvector32Term) -> Option<ContractExpression> {
+    fn synthesize_machine_term_here(&self, term: &MachineTerm) -> Option<ContractExpression> {
         match self.context.as_ref() {
             ProofContext::Pure(_) => None,
             ProofContext::FixedState(context) => synthesize_surface_machine_expression(
@@ -303,7 +303,7 @@ impl<'a> Proof<'a> {
 fn spell_signed_bound(
     width: SignedDefinedWidth,
     fact: &Proposition,
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     surface: &ContractExpression,
 ) -> Option<ClickProposition> {
     let Proposition::ConditionIs(condition, value) = fact else {
@@ -371,7 +371,7 @@ fn signed_literal(value: i64) -> ContractExpression {
 fn exact_constant_of(
     width: SignedDefinedWidth,
     fact: &Proposition,
-    term: &Bitvector32Term,
+    term: &MachineTerm,
 ) -> Option<i64> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -404,10 +404,10 @@ fn exact_constant_of(
 /// fixes to zero removed, or `None` when no summand is removed.
 fn substitute_constant_summands(
     width: SignedDefinedWidth,
-    term: &Bitvector32Term,
-    constant: &dyn Fn(&Bitvector32Term) -> Option<i64>,
-) -> Option<Bitvector32Term> {
-    let zero = |summand: &Bitvector32Term| {
+    term: &MachineTerm,
+    constant: &dyn Fn(&MachineTerm) -> Option<i64>,
+) -> Option<MachineTerm> {
+    let zero = |summand: &MachineTerm| {
         signed_width_constant(width, summand).is_none() && constant(summand) == Some(0)
     };
     match term {
@@ -459,15 +459,10 @@ fn substitute_constant_summands(
 /// written expression's outermost operation.
 fn outermost_overflow_conjuncts(
     goal: &Proposition,
-) -> Vec<(SignedDefinedWidth, &Bitvector32Term, &Bitvector32Term)> {
+) -> Vec<(SignedDefinedWidth, &MachineTerm, &MachineTerm)> {
     fn collect<'a>(
         proposition: &'a Proposition,
-        out: &mut Vec<(
-            SignedDefinedWidth,
-            &'a Bitvector32Term,
-            &'a Bitvector32Term,
-            bool,
-        )>,
+        out: &mut Vec<(SignedDefinedWidth, &'a MachineTerm, &'a MachineTerm, bool)>,
     ) {
         match proposition {
             Proposition::And(left, right) => {
@@ -482,7 +477,7 @@ fn outermost_overflow_conjuncts(
     };
     let mut conjuncts = Vec::new();
     collect(goal, &mut conjuncts);
-    let operation = |left: &Bitvector32Term, right: &Bitvector32Term, subtract: bool| {
+    let operation = |left: &MachineTerm, right: &MachineTerm, subtract: bool| {
         let (left, right) = (Box::new(left.clone()), Box::new(right.clone()));
         if subtract {
             binary_node!(Int32, Subtract, left, right)

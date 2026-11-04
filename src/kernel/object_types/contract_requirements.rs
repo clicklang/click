@@ -491,7 +491,7 @@ mod tests {
         SpecProposition::Comparison {
             left: variable(C_CONTRACT_RESULT_NAME),
             operator,
-            right: SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+            right: SpecExpression::Value(CValue::Int32(MachineTerm::constant(0))),
         }
     }
     #[test]

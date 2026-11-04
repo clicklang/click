@@ -533,7 +533,7 @@ fn match_on_symbolic_algebraic_value_remains_one_expression_path() {
     assert_eq!(paths.len(), 1);
     assert!(paths[0].facts.is_empty());
     assert!(paths[0].obligations.is_empty());
-    let CValue::Int32(Bitvector32Term::AlgebraicMatch { scrutinee, arms }) = &paths[0].value else {
+    let CValue::Int32(MachineTerm::AlgebraicMatch { scrutinee, arms }) = &paths[0].value else {
         panic!("unknown match should lower to an algebraic-match term");
     };
     assert_eq!(
@@ -587,10 +587,10 @@ fn nested_match_binder_remains_symbolic_inside_its_arm() {
     .expect("a nested algebraic binder should remain available to the arm body");
 
     assert_eq!(paths.len(), 1);
-    let CValue::Int32(Bitvector32Term::AlgebraicMatch { arms, .. }) = &paths[0].value else {
+    let CValue::Int32(MachineTerm::AlgebraicMatch { arms, .. }) = &paths[0].value else {
         panic!("the outer match should remain symbolic");
     };
-    let Bitvector32Term::AlgebraicMatch { .. } = &arms[1].body else {
+    let MachineTerm::AlgebraicMatch { .. } = &arms[1].body else {
         panic!("the nested binder should lower to the inner symbolic match");
     };
 }
@@ -749,7 +749,7 @@ fn pure_function_application_is_not_eagerly_evaluated() {
     assert_eq!(paths.len(), 1);
     assert_eq!(
         paths[0].value,
-        CValue::Int32(Bitvector32Term::ClickFunctionApplication {
+        CValue::Int32(MachineTerm::ClickFunctionApplication {
             name: "increment".to_string(),
             arguments: vec![PureFunctionArgument::Value(int32(41))],
         })
@@ -781,8 +781,7 @@ fn pure_function_application_retains_symbolic_algebraic_argument() {
     .expect("an ADT argument should remain one typed term");
 
     assert_eq!(paths.len(), 1);
-    let CValue::Int32(Bitvector32Term::ClickFunctionApplication { arguments, .. }) =
-        &paths[0].value
+    let CValue::Int32(MachineTerm::ClickFunctionApplication { arguments, .. }) = &paths[0].value
     else {
         panic!("pure call should remain an application");
     };
@@ -959,9 +958,9 @@ fn model_argument_guard_query_does_not_materialize_stored_models() {
         node: SpecAlgebraicExpressionNode::Constructor {
             variant: "Some".into(),
             fields: vec![SpecAlgebraicValue::C(SpecExpression::Subtract(
-                Box::new(SpecExpression::Value(CValue::Int32(
-                    Bitvector32Term::Variable(Variable(90_001)),
-                ))),
+                Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::Variable(
+                    Variable(90_001),
+                )))),
                 Box::new(SpecExpression::Value(int32(1))),
             ))],
         },

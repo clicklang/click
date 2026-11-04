@@ -134,10 +134,7 @@ impl ObjectSuppliers {
         let suppliers = if read_extent(fact).is_some() {
             &mut self.nonempty
         } else if RangeSupports::symbolic(range)
-            && fact
-                .owned_quantity_term()
-                .and_then(Bitvector32Term::as_const)
-                != Some(0)
+            && fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(0)
         {
             &mut self.symbolic
         } else {
@@ -224,10 +221,7 @@ impl RangeSupports {
             if read_extent(fact).is_some() {
                 self.nonempty_objects.update(entry, insert, class, graph);
             } else if Self::symbolic(range)
-                && fact
-                    .owned_quantity_term()
-                    .and_then(Bitvector32Term::as_const)
-                    != Some(0)
+                && fact.owned_quantity_term().and_then(MachineTerm::as_const) != Some(0)
             {
                 self.symbolic_objects.update(entry, insert, class, graph);
             }
@@ -449,7 +443,7 @@ impl ResourceContext {
 mod tests {
     use super::*;
 
-    fn range(base: &Pointer, start: Bitvector32Term, end: Bitvector32Term) -> CMemoryRange {
+    fn range(base: &Pointer, start: MachineTerm, end: MachineTerm) -> CMemoryRange {
         CMemoryRange::new_with_element_width(base.clone(), start, end, 1)
     }
 
@@ -457,8 +451,8 @@ mod tests {
     fn symbolic_support_selects_exact_footprints_and_checks_selected_bounds() {
         let base = Pointer::symbolic(Variable(910_000));
         let alias = Pointer::symbolic(Variable(910_001));
-        let n = Bitvector32Term::Variable(Variable(910_002));
-        let k = Bitvector32Term::Variable(Variable(910_003));
+        let n = MachineTerm::Variable(Variable(910_002));
+        let k = MachineTerm::Variable(Variable(910_003));
         let empty = PureFactContext::new();
         let facts = empty
             .clone()
@@ -475,7 +469,7 @@ mod tests {
         let resources =
             ResourceContext::new_with_equalities(&empty).unchecked_with_fact(held.clone());
         let exact = range(&alias, 0u32.into(), n.clone());
-        let indexed = range(&alias, k.clone(), Bitvector32Term::add(k, 1u32.into()));
+        let indexed = range(&alias, k.clone(), MachineTerm::add(k, 1u32.into()));
         assert_eq!(
             resources.symbolic_range_read_supported(&exact, &facts, None),
             Some(true)
@@ -488,21 +482,14 @@ mod tests {
             resources.symbolic_range_read_supported(&exact, &empty, None),
             None
         );
-        let outside = range(
-            &alias,
-            n.clone(),
-            Bitvector32Term::add(n.clone(), 1u32.into()),
-        );
+        let outside = range(&alias, n.clone(), MachineTerm::add(n.clone(), 1u32.into()));
         assert_eq!(
             resources.symbolic_range_read_supported(&outside, &facts, None),
             Some(false)
         );
         // Distinct symbolic spans cannot be ordered by a hidden candidate scan.
-        let other = CResourceFact::view_memory(range(
-            &base,
-            0u32.into(),
-            Bitvector32Term::add(n, 8u32.into()),
-        ));
+        let other =
+            CResourceFact::view_memory(range(&base, 0u32.into(), MachineTerm::add(n, 8u32.into())));
         let split = resources.clone().unchecked_with_fact(other);
         assert_eq!(
             split.symbolic_range_read_supported(&exact, &facts, None),
@@ -534,8 +521,8 @@ mod tests {
     fn symbolic_byte_read_consumer_preserves_width_bounds_and_authority() {
         let base = Pointer::symbolic(Variable(962_000));
         let alias = Pointer::symbolic(Variable(962_001));
-        let n = Bitvector32Term::Variable(Variable(962_002));
-        let k = Bitvector32Term::Variable(Variable(962_003));
+        let n = MachineTerm::Variable(Variable(962_002));
+        let k = MachineTerm::Variable(Variable(962_003));
         let empty = PureFactContext::new();
         let equal = empty.clone().assume_condition(
             ConditionTerm::pointer_equal(base.clone(), alias.clone()),
@@ -599,7 +586,7 @@ mod tests {
     #[test]
     fn symbolic_supplier_access_modes_remain_separate() {
         let base = Pointer::symbolic(Variable(930_000));
-        let n = Bitvector32Term::Variable(Variable(930_001));
+        let n = MachineTerm::Variable(Variable(930_001));
         let facts = PureFactContext::new();
         let required = range(&base, 0u32.into(), n);
         let view = CResourceFact::view_memory(required.clone());
@@ -645,8 +632,8 @@ mod tests {
     fn symbolic_footprints_follow_endpoint_equalities_and_snapshot_origins() {
         let slot = Pointer::symbolic(Variable(940_000));
         let alias = Pointer::symbolic(Variable(940_001));
-        let n = Bitvector32Term::Variable(Variable(940_002));
-        let m = Bitvector32Term::Variable(Variable(940_003));
+        let n = MachineTerm::Variable(Variable(940_002));
+        let m = MachineTerm::Variable(Variable(940_003));
         let snapshot = crate::kernel::intern_c_memory(CMemory::new());
         let loaded = Pointer::loaded_value(&snapshot, &slot);
         let loaded_alias = Pointer::loaded_value(&snapshot, &alias);
@@ -662,7 +649,7 @@ mod tests {
         let other = CResourceFact::view_memory(range(
             &loaded,
             0u32.into(),
-            Bitvector32Term::Variable(Variable(940_004)),
+            MachineTerm::Variable(Variable(940_004)),
         ));
         let resources = ResourceContext::new_with_equalities(&empty)
             .unchecked_with_fact(held)
@@ -707,8 +694,8 @@ mod wide_range_reader_tests {
         let alias = Pointer::symbolic(Variable(985_201));
         let wide = CMemoryRange::new_wide(
             base.clone(),
-            Bitvector32Term::uint64_constant(0),
-            Bitvector32Term::Variable(Variable(985_202)),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::Variable(Variable(985_202)),
             1,
         );
         let facts = PureFactContext::new()

@@ -1,8 +1,8 @@
 use super::*;
 #[test]
 fn wide_multiply_integer_capture_requires_both_native_product_bounds() {
-    let left = CValue::Int128(Bitvector32Term::Variable(Variable(150_011)));
-    let right = CValue::Int128(Bitvector32Term::Variable(Variable(150_012)));
+    let left = CValue::Int128(MachineTerm::Variable(Variable(150_011)));
+    let right = CValue::Int128(MachineTerm::Variable(Variable(150_012)));
     let product = IntegerTerm::multiply(
         IntegerTerm::from_machine(
             MachineIntegerType::Int128,

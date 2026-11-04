@@ -70,17 +70,12 @@ fn other(format: Ty) -> Ty {
 }
 
 /// `left op right` at the 32-bit `format`, by its folding constructor.
-fn division_at(
-    format: Ty,
-    op: Op,
-    left: Bitvector32Term,
-    right: Bitvector32Term,
-) -> Bitvector32Term {
+fn division_at(format: Ty, op: Op, left: MachineTerm, right: MachineTerm) -> MachineTerm {
     match (format, op) {
-        (Ty::Int32, Op::Divide) => Bitvector32Term::divide(left, right),
-        (Ty::Int32, _) => Bitvector32Term::remainder(left, right),
-        (_, Op::Divide) => Bitvector32Term::unsigned_divide(left, right),
-        (_, _) => Bitvector32Term::unsigned_remainder(left, right),
+        (Ty::Int32, Op::Divide) => MachineTerm::divide(left, right),
+        (Ty::Int32, _) => MachineTerm::remainder(left, right),
+        (_, Op::Divide) => MachineTerm::unsigned_divide(left, right),
+        (_, _) => MachineTerm::unsigned_remainder(left, right),
     }
 }
 
@@ -106,7 +101,7 @@ fn division_operands(term: View<'_>) -> Option<(Ty, Op, [View<'_>; 2])> {
 
 fn cast_operand(source: Ty, destination: Ty, value: View<'_>) -> ComparisonOperand<'static> {
     match value {
-        View::Legacy(value) => ComparisonOperand::Constant(Bitvector32Term::sign_cast32(
+        View::Legacy(value) => ComparisonOperand::Constant(MachineTerm::sign_cast32(
             source,
             destination,
             value.clone(),
@@ -125,7 +120,7 @@ fn division_at_views(format: Ty, op: Op, operands: [View<'_>; 2]) -> ComparisonO
     let literal = |operand: View<'_>| {
         operand
             .literal()
-            .map(|term| Bitvector32Term::operand32(format, term))
+            .map(|term| MachineTerm::operand32(format, term))
     };
     if let [Some(left), Some(right)] = operands.map(literal) {
         return ComparisonOperand::Constant(division_at(format, op, left, right));
@@ -265,7 +260,7 @@ impl PureFactContext {
         } else {
             casted.each_ref().map(ComparisonOperand::operand_view)
         };
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         if self.decide(&condition_for_operand_views(
             Ty::Int32,
             CompareRelation::LessEqual,
@@ -292,20 +287,20 @@ mod tests {
     use super::*;
     use crate::kernel::Variable;
 
-    fn var(id: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(id))
+    fn var(id: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(id))
     }
 
-    fn sigma(source: Ty, value: Bitvector32Term) -> Bitvector32Term {
-        Bitvector32Term::sign_cast32(source, other(source), value)
+    fn sigma(source: Ty, value: MachineTerm) -> MachineTerm {
+        MachineTerm::sign_cast32(source, other(source), value)
     }
 
-    fn signed_nonnegative(value: Bitvector32Term) -> ConditionTerm {
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), value)
+    fn signed_nonnegative(value: MachineTerm) -> ConditionTerm {
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), value)
     }
 
-    fn signed_positive(value: Bitvector32Term) -> ConditionTerm {
-        ConditionTerm::signed_less_than(Bitvector32Term::constant(0), value)
+    fn signed_positive(value: MachineTerm) -> ConditionTerm {
+        ConditionTerm::signed_less_than(MachineTerm::constant(0), value)
     }
 
     #[test]
@@ -324,7 +319,7 @@ mod tests {
         };
         for source in [Ty::Int32, Ty::UInt32] {
             for op in [Op::Divide, Op::Remainder] {
-                let n = Bitvector32Term::add(var(189101), var(189102));
+                let n = MachineTerm::add(var(189101), var(189102));
                 let d = var(189103);
                 let signed_n = if source == Ty::Int32 {
                     n.clone()
@@ -410,7 +405,7 @@ mod tests {
         let prefix = KernelTerm::machine_binary_shared(Ty::UInt32, Op::Add, [x.clone(), x]);
         let literal = |format, value| {
             KernelTermImport::default()
-                .machine_arithmetic(format, &Bitvector32Term::constant_at32(format, value))
+                .machine_arithmetic(format, &MachineTerm::constant_at32(format, value))
                 .unwrap()
         };
         let n = KernelTerm::machine_binary_shared(
@@ -482,29 +477,26 @@ mod tests {
         for format in [Ty::Int32, Ty::UInt32] {
             for op in [Op::Divide, Op::Remainder] {
                 for (left, right) in [
-                    (var(189111), Bitvector32Term::constant(1)),
-                    (
-                        Bitvector32Term::constant(7),
-                        Bitvector32Term::uint32_constant(2),
-                    ),
-                    (Bitvector32Term::constant(7), Bitvector32Term::constant(0)),
+                    (var(189111), MachineTerm::constant(1)),
+                    (MachineTerm::constant(7), MachineTerm::uint32_constant(2)),
+                    (MachineTerm::constant(7), MachineTerm::constant(0)),
                     (var(189111), var(189112)),
                     (
-                        Bitvector32Term::Binary {
+                        MachineTerm::Binary {
                             format,
                             op: Op::Add,
-                            left: Box::new(Bitvector32Term::constant(1)),
-                            right: Box::new(Bitvector32Term::constant(1)),
+                            left: Box::new(MachineTerm::constant(1)),
+                            right: Box::new(MachineTerm::constant(1)),
                         },
-                        Bitvector32Term::constant(2),
+                        MachineTerm::constant(2),
                     ),
                     (
                         var(189111),
-                        Bitvector32Term::Binary {
+                        MachineTerm::Binary {
                             format,
                             op: Op::Add,
-                            left: Box::new(Bitvector32Term::constant(0)),
-                            right: Box::new(Bitvector32Term::constant(1)),
+                            left: Box::new(MachineTerm::constant(0)),
+                            right: Box::new(MachineTerm::constant(1)),
                         },
                     ),
                 ] {
@@ -533,14 +525,14 @@ mod tests {
         assert_eq!(
             context.decide(&ConditionTerm::uint32_equal(
                 d.clone(),
-                Bitvector32Term::uint32_constant(0)
+                MachineTerm::uint32_constant(0)
             )),
             Some(false)
         );
         assert_eq!(
             context.decide(&ConditionTerm::unsigned_less_equal(
                 d,
-                Bitvector32Term::uint32_constant(i32::MAX as u32)
+                MachineTerm::uint32_constant(i32::MAX as u32)
             )),
             Some(true)
         );
@@ -594,9 +586,9 @@ mod tests {
         let equality = ConditionTerm::equal(
             sigma(
                 Ty::UInt32,
-                Bitvector32Term::unsigned_divide(n.clone(), d.clone()),
+                MachineTerm::unsigned_divide(n.clone(), d.clone()),
             ),
-            Bitvector32Term::divide(sigma(Ty::UInt32, n), sigma(Ty::UInt32, d)),
+            MachineTerm::divide(sigma(Ty::UInt32, n), sigma(Ty::UInt32, d)),
         );
         assert_eq!(context.decide_by_sign_cast_division(&equality), None);
     }

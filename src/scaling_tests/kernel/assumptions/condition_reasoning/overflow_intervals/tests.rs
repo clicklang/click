@@ -3,25 +3,25 @@
 // tests" in `docs/internals/testing.md`.
 
 use super::*;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{MachineIntegerType, OverflowOperation};
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
 fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
-    let a = Bitvector32Term::Variable(Variable(97001));
-    let b = Bitvector32Term::Variable(Variable(97002));
-    let sum = Bitvector32Term::int64_add(
-        Bitvector32Term::int64_from_uint32(a.clone()),
-        Bitvector32Term::int64_from_uint32(b.clone()),
+    let a = MachineTerm::Variable(Variable(97001));
+    let b = MachineTerm::Variable(Variable(97002));
+    let sum = MachineTerm::int64_add(
+        MachineTerm::int64_from_uint32(a.clone()),
+        MachineTerm::int64_from_uint32(b.clone()),
     );
     let goal = ConditionTerm::int64_signed_less_equal(
         sum.clone(),
-        Bitvector32Term::int64_constant(u32::MAX as i64),
+        MachineTerm::int64_constant(u32::MAX as i64),
     );
     let too_small = ConditionTerm::int64_signed_less_equal(
         sum,
-        Bitvector32Term::int64_constant(u32::MAX as i64 - 1),
+        MachineTerm::int64_constant(u32::MAX as i64 - 1),
     );
     let mut works = Vec::new();
     for size in [8, 32, 128] {
@@ -29,8 +29,8 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::unsigned_less_equal(
-                    Bitvector32Term::Variable(Variable(98000 + index)),
-                    Bitvector32Term::constant(123),
+                    MachineTerm::Variable(Variable(98000 + index)),
+                    MachineTerm::constant(123),
                 ),
                 true,
             );
@@ -39,16 +39,16 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
             .assume_condition(
                 ConditionTerm::unsigned_less_equal(
                     a.clone(),
-                    Bitvector32Term::constant(u32::MAX - 255),
+                    MachineTerm::constant(u32::MAX - 255),
                 ),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_greater_equal(b.clone(), Bitvector32Term::constant(0)),
+                ConditionTerm::signed_greater_equal(b.clone(), MachineTerm::constant(0)),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_equal(b.clone(), Bitvector32Term::constant(255)),
+                ConditionTerm::signed_less_equal(b.clone(), MachineTerm::constant(255)),
                 true,
             );
         let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -91,11 +91,10 @@ fn widened_unsigned_sum_bounds_are_sound_and_flat_in_unrelated_facts() {
                 )
                 .is_err()
         );
-        let invalid =
-            ConditionTerm::unsigned_greater_equal(b.clone(), Bitvector32Term::constant(256));
+        let invalid = ConditionTerm::unsigned_greater_equal(b.clone(), MachineTerm::constant(256));
         // Query the native unsigned order using its indexed unsigned bound.
         let facts = facts.assume_condition(
-            ConditionTerm::unsigned_less_than(b.clone(), Bitvector32Term::constant(8)),
+            ConditionTerm::unsigned_less_than(b.clone(), MachineTerm::constant(8)),
             true,
         );
         let (answer, order_work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -120,8 +119,8 @@ fn signed_constant_bound_selection_is_flat_in_unrelated_bounds() {
     };
     for width in [SignedDefinedWidth::Int32, SignedDefinedWidth::Int64] {
         let constant = |value: i64| match width {
-            SignedDefinedWidth::Int32 => Bitvector32Term::constant(value as i32 as u32),
-            SignedDefinedWidth::Int64 => Bitvector32Term::int64_constant(value),
+            SignedDefinedWidth::Int32 => MachineTerm::constant(value as i32 as u32),
+            SignedDefinedWidth::Int64 => MachineTerm::int64_constant(value),
         };
         let less = |left, right| match width {
             SignedDefinedWidth::Int32 => ConditionTerm::signed_less_than(left, right),
@@ -135,8 +134,8 @@ fn signed_constant_bound_selection_is_flat_in_unrelated_bounds() {
             SignedDefinedWidth::Int32 => ConditionTerm::equal(left, right),
             SignedDefinedWidth::Int64 => ConditionTerm::int64_equal(left, right),
         };
-        let a = Bitvector32Term::Variable(Variable(94_001));
-        let b = Bitvector32Term::Variable(Variable(94_002));
+        let a = MachineTerm::Variable(Variable(94_001));
+        let b = MachineTerm::Variable(Variable(94_002));
         let goal = Proposition::ConditionIs(
             match width {
                 SignedDefinedWidth::Int32 => ConditionTerm::Overflows {
@@ -158,7 +157,7 @@ fn signed_constant_bound_selection_is_flat_in_unrelated_bounds() {
         for size in [8_u64, 16, 32, 64] {
             let mut assumptions = PureFactContext::new();
             for index in 0..size {
-                let unrelated = Bitvector32Term::Variable(Variable(95_000 + index));
+                let unrelated = MachineTerm::Variable(Variable(95_000 + index));
                 let fact = match index % 3 {
                     0 => less(unrelated, constant(1_000)),
                     1 => at_least(unrelated, constant(-1_000)),
@@ -199,7 +198,7 @@ fn equal_value_interval_queries_scale_with_delta_and_skip_unrelated_facts() {
     let mut works = Vec::new();
     for size in [32u64, 64, 128] {
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let root = Bitvector32Term::Variable(Variable(200_000 + size * 10));
+            let root = MachineTerm::Variable(Variable(200_000 + size * 10));
             let mut facts = PureFactContext::new()
                 .assume_condition(
                     ConditionTerm::signed_greater_equal(root.clone(), 0u32.into()),
@@ -211,8 +210,8 @@ fn equal_value_interval_queries_scale_with_delta_and_skip_unrelated_facts() {
                 );
             PureFactContext::reset_signed_interval_fallback_fact_visits();
             for index in 0..size {
-                let alias = Bitvector32Term::Variable(Variable(300_000 + size * 10 + index));
-                let unrelated = Bitvector32Term::Variable(Variable(400_000 + size * 10 + index));
+                let alias = MachineTerm::Variable(Variable(300_000 + size * 10 + index));
+                let unrelated = MachineTerm::Variable(Variable(400_000 + size * 10 + index));
                 facts = facts
                     .assume_condition(
                         ConditionTerm::signed_less_equal(unrelated, 1000u32.into()),
@@ -239,18 +238,18 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
     let chain_context = |length: u64, unrelated: u64| {
         let mut assumptions = PureFactContext::new();
         for index in 0..unrelated {
-            let a = Bitvector32Term::Variable(Variable(97_000 + 2 * index));
-            let b = Bitvector32Term::Variable(Variable(97_001 + 2 * index));
+            let a = MachineTerm::Variable(Variable(97_000 + 2 * index));
+            let b = MachineTerm::Variable(Variable(97_001 + 2 * index));
             assumptions = assumptions
                 .assume_condition(ConditionTerm::signed_less_equal(a, b.clone()), true)
                 .assume_condition(
-                    ConditionTerm::signed_less_than(b, Bitvector32Term::constant(50)),
+                    ConditionTerm::signed_less_than(b, MachineTerm::constant(50)),
                     true,
                 );
         }
-        let link = |index: u64| Bitvector32Term::Variable(Variable(98_000 + index));
+        let link = |index: u64| MachineTerm::Variable(Variable(98_000 + index));
         assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), link(0)),
+            ConditionTerm::signed_less_equal(MachineTerm::constant(0), link(0)),
             true,
         );
         for index in 0..length {
@@ -260,7 +259,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
             );
         }
         assumptions = assumptions.assume_condition(
-            ConditionTerm::signed_less_than(link(length), Bitvector32Term::constant(1000)),
+            ConditionTerm::signed_less_than(link(length), MachineTerm::constant(1000)),
             true,
         );
         (assumptions, link(0))
@@ -272,7 +271,7 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
         });
         assert_eq!(bound, Some((0, i64::from(i32::MAX))));
         let explicit = assumptions.assume_condition(
-            ConditionTerm::signed_less_than(start.clone(), Bitvector32Term::constant(1000)),
+            ConditionTerm::signed_less_than(start.clone(), MachineTerm::constant(1000)),
             true,
         );
         let (bound, explicit_work) =
@@ -291,16 +290,16 @@ fn order_chain_interval_requires_explicit_endpoint_bound() {
 
 #[test]
 fn int64_guard_work_is_independent_of_unrelated_facts() {
-    let n = Bitvector32Term::Variable(Variable(95_111));
-    let d = Bitvector32Term::Variable(Variable(95_112));
-    let constant = Bitvector32Term::int64_constant;
+    let n = MachineTerm::Variable(Variable(95_111));
+    let d = MachineTerm::Variable(Variable(95_112));
+    let constant = MachineTerm::int64_constant;
     let mut work_counts = Vec::new();
     for size in [8, 32, 128, 512] {
         let mut facts = PureFactContext::new();
         for index in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    Bitvector32Term::Variable(Variable(96_000 + index)),
+                    MachineTerm::Variable(Variable(96_000 + index)),
                     constant(123),
                 ),
                 true,
@@ -340,9 +339,9 @@ fn int64_guard_work_is_independent_of_unrelated_facts() {
 
 #[test]
 fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
-    let x = Bitvector32Term::Variable(Variable(96_001));
-    let zero = Bitvector32Term::Variable(Variable(96_002));
-    let constant = Bitvector32Term::int64_constant;
+    let x = MachineTerm::Variable(Variable(96_001));
+    let zero = MachineTerm::Variable(Variable(96_002));
+    let constant = MachineTerm::int64_constant;
     let mut baseline_work = None;
     for population in [8u64, 32, 128, 512] {
         let mut facts = PureFactContext::new()
@@ -350,7 +349,7 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
         for i in 0..population {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    Bitvector32Term::Variable(Variable(97_000 + i)),
+                    MachineTerm::Variable(Variable(97_000 + i)),
                     constant(100),
                 ),
                 true,
@@ -371,11 +370,11 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
                     zero.clone(),
                 )),
                 facts.decide(&ConditionTerm::int64_equal(
-                    Bitvector32Term::int64_add(x.clone(), zero.clone()),
+                    MachineTerm::int64_add(x.clone(), zero.clone()),
                     x.clone(),
                 )),
                 facts.decide(&ConditionTerm::int64_equal(
-                    Bitvector32Term::int64_subtract(x.clone(), zero.clone()),
+                    MachineTerm::int64_subtract(x.clone(), zero.clone()),
                     x.clone(),
                 )),
             ]
@@ -393,7 +392,7 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
         assert!(work > 0);
         assert_eq!(
             facts.decide(&ConditionTerm::int64_equal(
-                Bitvector32Term::int64_add(x.clone(), constant(1)),
+                MachineTerm::int64_add(x.clone(), constant(1)),
                 x.clone()
             )),
             None
@@ -448,17 +447,17 @@ fn int64_zero_alias_addition_and_subtraction_are_safe_and_indexed() {
 
 #[test]
 fn int64_zero_identity_chains_scale_with_the_queried_term() {
-    let x = Bitvector32Term::Variable(Variable(98_001));
-    let zero = Bitvector32Term::Variable(Variable(98_002));
+    let x = MachineTerm::Variable(Variable(98_001));
+    let zero = MachineTerm::Variable(Variable(98_002));
     let facts = PureFactContext::new().assume_condition(
-        ConditionTerm::int64_equal(zero.clone(), Bitvector32Term::int64_constant(0)),
+        ConditionTerm::int64_equal(zero.clone(), MachineTerm::int64_constant(0)),
         true,
     );
     let mut previous = None;
     for depth in [8usize, 32, 128, 512] {
         let mut term = x.clone();
         for _ in 0..depth {
-            term = Bitvector32Term::int64_add(term, zero.clone());
+            term = MachineTerm::int64_add(term, zero.clone());
         }
         let query = ConditionTerm::int64_equal(term, x.clone());
         let (answer, work) =
@@ -477,21 +476,21 @@ fn int64_zero_identity_chains_scale_with_the_queried_term() {
 
 #[test]
 fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
-    let value = Bitvector32Term::Variable(Variable(99_001));
+    let value = MachineTerm::Variable(Variable(99_001));
     let mut baseline = None;
     for population in [8u64, 32, 128] {
         let mut facts = PureFactContext::new();
         for index in 0..population {
             facts = facts.assume_condition(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::Variable(Variable(100_000 + index)),
-                    Bitvector32Term::uint64_constant(0),
+                    MachineTerm::Variable(Variable(100_000 + index)),
+                    MachineTerm::uint64_constant(0),
                 ),
                 true,
             );
         }
         let query = ConditionTerm::uint64_equal(
-            Bitvector32Term::legacy_cast(
+            MachineTerm::legacy_cast(
                 MachineCastSpelling::UInt64FromInt64,
                 Box::new(value.clone()),
             ),
@@ -511,8 +510,7 @@ fn bit_preserving_64_bit_conversion_equalities_are_indexed_and_scale() {
     for depth in [8usize, 32, 128, 512] {
         let mut term = value.clone();
         for _ in 0..depth {
-            term =
-                Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(term));
+            term = MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt64, Box::new(term));
         }
         let query = ConditionTerm::uint64_equal(term, value.clone());
         let (answer, work) =
@@ -533,12 +531,12 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
     let mut baseline = None;
     for size in [4, 16, 64] {
         let _session = crate::kernel::VerificationSession::enter();
-        let x = Bitvector32Term::Variable(Variable(982002));
+        let x = MachineTerm::Variable(Variable(982002));
         let mut facts = PureFactContext::new();
         for offset in 0..size {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
-                    Bitvector32Term::int64_constant(-1000 - offset),
+                    MachineTerm::int64_constant(-1000 - offset),
                     x.clone(),
                 ),
                 true,
@@ -546,7 +544,7 @@ fn signed_wide_interval_queries_ignore_bound_bucket_size() {
             facts = facts.assume_condition(
                 ConditionTerm::int64_signed_less_equal(
                     x.clone(),
-                    Bitvector32Term::int64_constant(1000 + offset),
+                    MachineTerm::int64_constant(1000 + offset),
                 ),
                 true,
             );
@@ -573,7 +571,7 @@ fn shared_masked_order_queries_do_not_export_growing_operands() {
         let ty = MachineIntegerType::Int32;
         let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(985302));
         let mask = KernelTermImport::default()
-            .machine_arithmetic(ty, &Bitvector32Term::constant(127))
+            .machine_arithmetic(ty, &MachineTerm::constant(127))
             .unwrap();
         let context = PureFactContext::new();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -698,7 +696,7 @@ fn widened_source_selection_is_bounded_in_related_bounds() {
     let mut samples = Vec::new();
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
-        let value = Bitvector32Term::Variable(Variable(986202));
+        let value = MachineTerm::Variable(Variable(986202));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
@@ -706,12 +704,11 @@ fn widened_source_selection_is_bounded_in_related_bounds() {
                 true,
             );
         }
-        let sum = Bitvector32Term::int64_add(
-            Bitvector32Term::int64_from_uint32(value.clone()),
-            Bitvector32Term::int64_from_uint32(value),
+        let sum = MachineTerm::int64_add(
+            MachineTerm::int64_from_uint32(value.clone()),
+            MachineTerm::int64_from_uint32(value),
         );
-        let query =
-            ConditionTerm::int64_signed_less_equal(sum, Bitvector32Term::int64_constant(200));
+        let query = ConditionTerm::int64_signed_less_equal(sum, MachineTerm::int64_constant(200));
         let (sources, work) = crate::instrumentation::measure_deterministic_work(|| {
             context.widened_unsigned_sum_bound_premises(&query).unwrap()
         });
@@ -786,21 +783,21 @@ fn signed_ranges_keep_shared_prefixes_and_memoize_refusals() {
         for ambient in [1, 64] {
             let _session = crate::kernel::VerificationSession::enter();
             let ty = MachineIntegerType::Int32;
-            let x = Bitvector32Term::Variable(Variable(994601));
+            let x = MachineTerm::Variable(Variable(994601));
             let mut facts = PureFactContext::new()
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), x.clone()),
+                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), x.clone()),
                     true,
                 )
                 .assume_condition(
-                    ConditionTerm::signed_less_equal(x.clone(), Bitvector32Term::constant(1)),
+                    ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(1)),
                     true,
                 );
             for i in 0..ambient {
                 facts = facts.assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(995600 + i)),
-                        Bitvector32Term::constant(3),
+                        MachineTerm::Variable(Variable(995600 + i)),
+                        MachineTerm::constant(3),
                     ),
                     true,
                 );
@@ -889,8 +886,8 @@ fn shared_overflow_queries_keep_prefixes_across_context_changes() {
                 );
                 context = context.clone().assume_condition(
                     ConditionTerm::equal(
-                        Bitvector32Term::Variable(Variable(996800 + index)),
-                        Bitvector32Term::constant(3),
+                        MachineTerm::Variable(Variable(996800 + index)),
+                        MachineTerm::constant(3),
                     ),
                     true,
                 );
@@ -916,7 +913,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
     for size in [8, 32, 96] {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
-        let written = Bitvector32Term::Variable(Variable(997701));
+        let written = MachineTerm::Variable(Variable(997701));
         let operand = SharedMachineIntegerTerm::from_shared(
             format,
             KernelTermImport::default()
@@ -929,7 +926,7 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                 format,
                 op: OverflowOperation::Multiply,
                 left: written.into(),
-                right: Bitvector32Term::constant(2).into(),
+                right: MachineTerm::constant(2).into(),
             },
             false,
         );
@@ -939,8 +936,8 @@ fn retained_overflow_source_lookup_ignores_unrelated_guards() {
                 ConditionTerm::Overflows {
                     format,
                     op: OverflowOperation::Multiply,
-                    left: Bitvector32Term::Variable(Variable(997800 + i)).into(),
-                    right: Bitvector32Term::constant(2).into(),
+                    left: MachineTerm::Variable(Variable(997800 + i)).into(),
+                    right: MachineTerm::constant(2).into(),
                 },
                 false,
             );

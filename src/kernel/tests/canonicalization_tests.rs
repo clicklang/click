@@ -3,8 +3,8 @@
 // calls it, so the tests import the planner explicitly.
 use super::*;
 use crate::kernel::binary_node;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling, cast_term};
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
+use crate::kernel::{MachineCastSpelling, MachineTerm, cast_term};
 use crate::surface::planning::proposition_search::PropositionSearch;
 
 // --- the canonicalization model's production invariants -------------------
@@ -41,7 +41,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         block: "float-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let float_value = CValue::Float32(Bitvector32Term::constant(0x8000_0000));
+    let float_value = CValue::Float32(MachineTerm::constant(0x8000_0000));
     let float_memory = CMemory::new()
         .with_block("float-storage", 4)
         .store(float_pointer.clone(), float_value.clone());
@@ -61,7 +61,7 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
         block: "double-storage".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
-    let double_value = CValue::Float64(Bitvector32Term::uint64_constant(0x7ff8_0000_0000_0001));
+    let double_value = CValue::Float64(MachineTerm::uint64_constant(0x7ff8_0000_0000_0001));
     let double_memory = CMemory::new()
         .with_block("double-storage", 8)
         .store(double_pointer.clone(), double_value.clone());
@@ -83,29 +83,28 @@ fn floating_values_keep_their_declared_width_and_opaque_payload() {
 /// Walks a term in value position: load atoms are legitimate here, but
 /// their pointers' offsets must satisfy the no-raw-load invariant.
 fn collect_offset_load_variables_from_term(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
-        Bitvector32Term::Constant { .. } | Bitvector32Term::Variable(_) => {}
-        Bitvector32Term::MemoryLoad(_, pointer, _)
-        | Bitvector32Term::PointerAddress(pointer, _) => {
+        MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
+        MachineTerm::MemoryLoad(_, pointer, _) | MachineTerm::PointerAddress(pointer, _) => {
             collect_offset_load_variables_from_offset(&pointer.offset, load_variables);
         }
         crate::kernel::binary_bitvector32_term!(left, right) => {
             collect_offset_load_variables_from_term(left, load_variables);
             collect_offset_load_variables_from_term(right, load_variables);
         }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
+        MachineTerm::Float32Binary { left, right, .. }
+        | MachineTerm::Float64Binary { left, right, .. } => {
             collect_offset_load_variables_from_term(left, load_variables);
             collect_offset_load_variables_from_term(right, load_variables);
         }
-        Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
+        MachineTerm::Float32Negate(value) | MachineTerm::Float64Negate(value) => {
             collect_offset_load_variables_from_term(value, load_variables);
         }
         cast_term!(Int64From32, value)
-        | Bitvector32Term::Cast {
+        | MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             ..
@@ -115,14 +114,14 @@ fn collect_offset_load_variables_from_term(
         | cast_term!(Int64FromUInt32, value)
         | cast_term!(UInt64FromInt32, value)
         | cast_term!(UInt64FromInt64, value)
-        | Bitvector32Term::Unary { operand: value, .. } => {
+        | MachineTerm::Unary { operand: value, .. } => {
             collect_offset_load_variables_from_term(value, load_variables);
         }
         crate::kernel::binary_wide_term!(left, right) => {
             collect_offset_load_variables_from_term(left, load_variables);
             collect_offset_load_variables_from_term(right, load_variables);
         }
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition: _,
             then_term,
             else_term,
@@ -130,12 +129,12 @@ fn collect_offset_load_variables_from_term(
             collect_offset_load_variables_from_term(then_term, load_variables);
             collect_offset_load_variables_from_term(else_term, load_variables);
         }
-        Bitvector32Term::RangeFold { .. }
-        | Bitvector32Term::PureFunctionApplication { .. }
-        | Bitvector32Term::ClickFunctionApplication { .. }
-        | Bitvector32Term::AlgebraicMatch { .. }
-        | Bitvector32Term::BoolCast { .. }
-        | Bitvector32Term::IntegerToMachine { .. } => {}
+        MachineTerm::RangeFold { .. }
+        | MachineTerm::PureFunctionApplication { .. }
+        | MachineTerm::ClickFunctionApplication { .. }
+        | MachineTerm::AlgebraicMatch { .. }
+        | MachineTerm::BoolCast { .. }
+        | MachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -159,20 +158,20 @@ fn collect_offset_load_variables_from_offset(
 /// Inside an `Int32Scaled` value no load term may appear; load variables
 /// are recorded for the defining-fact check.
 fn assert_scaled_index_free_of_raw_loads(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
     load_variables: &mut BTreeSet<Variable>,
 ) {
     match term {
-        Bitvector32Term::Constant { .. } => {}
-        Bitvector32Term::Variable(variable) => {
+        MachineTerm::Constant { .. } => {}
+        MachineTerm::Variable(variable) => {
             if crate::kernel::is_load_variable(variable) {
                 load_variables.insert(*variable);
             }
         }
-        Bitvector32Term::MemoryLoad(_, _, _) => {
+        MachineTerm::MemoryLoad(_, _, _) => {
             panic!("production pointer offset contains a raw memory load: {term:?}")
         }
-        Bitvector32Term::PointerAddress(pointer, _) => {
+        MachineTerm::PointerAddress(pointer, _) => {
             for value in pointer.offset.scaled_values() {
                 assert_scaled_index_free_of_raw_loads(value, load_variables);
             }
@@ -182,7 +181,7 @@ fn assert_scaled_index_free_of_raw_loads(
             assert_scaled_index_free_of_raw_loads(right, load_variables);
         }
         cast_term!(Int64From32, value)
-        | Bitvector32Term::Cast {
+        | MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
             value,
             ..
@@ -192,22 +191,22 @@ fn assert_scaled_index_free_of_raw_loads(
         | cast_term!(Int64FromUInt32, value)
         | cast_term!(UInt64FromInt32, value)
         | cast_term!(UInt64FromInt64, value)
-        | Bitvector32Term::Unary { operand: value, .. } => {
+        | MachineTerm::Unary { operand: value, .. } => {
             assert_scaled_index_free_of_raw_loads(value, load_variables);
         }
         crate::kernel::binary_wide_term!(left, right) => {
             assert_scaled_index_free_of_raw_loads(left, load_variables);
             assert_scaled_index_free_of_raw_loads(right, load_variables);
         }
-        Bitvector32Term::Float32Negate(value) | Bitvector32Term::Float64Negate(value) => {
+        MachineTerm::Float32Negate(value) | MachineTerm::Float64Negate(value) => {
             assert_scaled_index_free_of_raw_loads(value, load_variables)
         }
-        Bitvector32Term::Float32Binary { left, right, .. }
-        | Bitvector32Term::Float64Binary { left, right, .. } => {
+        MachineTerm::Float32Binary { left, right, .. }
+        | MachineTerm::Float64Binary { left, right, .. } => {
             assert_scaled_index_free_of_raw_loads(left, load_variables);
             assert_scaled_index_free_of_raw_loads(right, load_variables);
         }
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition: _,
             then_term,
             else_term,
@@ -215,12 +214,12 @@ fn assert_scaled_index_free_of_raw_loads(
             assert_scaled_index_free_of_raw_loads(then_term, load_variables);
             assert_scaled_index_free_of_raw_loads(else_term, load_variables);
         }
-        Bitvector32Term::RangeFold { .. }
-        | Bitvector32Term::PureFunctionApplication { .. }
-        | Bitvector32Term::ClickFunctionApplication { .. }
-        | Bitvector32Term::AlgebraicMatch { .. }
-        | Bitvector32Term::BoolCast { .. }
-        | Bitvector32Term::IntegerToMachine { .. } => {}
+        MachineTerm::RangeFold { .. }
+        | MachineTerm::PureFunctionApplication { .. }
+        | MachineTerm::ClickFunctionApplication { .. }
+        | MachineTerm::AlgebraicMatch { .. }
+        | MachineTerm::BoolCast { .. }
+        | MachineTerm::IntegerToMachine { .. } => {}
     }
 }
 
@@ -236,7 +235,7 @@ fn assert_load_variables_have_defining_facts(
                 && matches!(
                     &fact.proposition,
                     Proposition::ConditionIs(ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::Equal, left, right: _ }, true)
-                        if matches!(left.as_ref(), Bitvector32Term::Variable(variable) if variable == load_variable)
+                        if matches!(left.as_ref(), MachineTerm::Variable(variable) if variable == load_variable)
                 )
         });
         assert!(
@@ -348,9 +347,9 @@ fn pointer_loaded_from_an_opaque_cell_is_named_by_its_read() {
 
 // --- canonical form: determinism and idempotence --------------------------
 
-fn unresolved_canonicalization_test_load() -> Bitvector32Term {
+fn unresolved_canonicalization_test_load() -> MachineTerm {
     let memory = CMemory::new().with_block("canonical-shapes", 8);
-    Bitvector32Term::MemoryLoad(
+    MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(Pointer {
             block: "canonical-shapes".into(),
@@ -364,7 +363,7 @@ fn unresolved_canonicalization_test_load() -> Bitvector32Term {
 fn canonical_term_is_idempotent_for_every_term_shape() {
     macro_rules! machine_binary {
         ($format:ident, $op:ident, $left:expr, $right:expr) => {
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::$format,
                 op: MachineBinaryOp::$op,
                 left: Box::new($left),
@@ -374,7 +373,7 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
     }
     macro_rules! machine_unary {
         ($format:ident, $op:ident, $value:expr) => {
-            Bitvector32Term::Unary {
+            MachineTerm::Unary {
                 format: MachineIntegerType::$format,
                 op: MachineUnaryOp::$op,
                 operand: Box::new($value),
@@ -383,19 +382,19 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
     }
     macro_rules! unary {
         ($variant:ident, $value:expr) => {
-            Bitvector32Term::legacy_cast(MachineCastSpelling::$variant, Box::new($value))
+            MachineTerm::legacy_cast(MachineCastSpelling::$variant, Box::new($value))
         };
     }
 
     let load = unresolved_canonicalization_test_load();
-    let u32_value = Bitvector32Term::constant(3);
-    let i64_value = Bitvector32Term::int64_constant(3);
-    let u64_value = Bitvector32Term::uint64_constant(3);
+    let u32_value = MachineTerm::constant(3);
+    let i64_value = MachineTerm::int64_constant(3);
+    let u64_value = MachineTerm::uint64_constant(3);
     let terms = vec![
-        Bitvector32Term::constant(3),
-        Bitvector32Term::int64_constant(3),
-        Bitvector32Term::uint64_constant(3),
-        Bitvector32Term::Variable(Variable(30_001)),
+        MachineTerm::constant(3),
+        MachineTerm::int64_constant(3),
+        MachineTerm::uint64_constant(3),
+        MachineTerm::Variable(Variable(30_001)),
         machine_binary!(Int32, Add, load.clone(), u32_value.clone()),
         machine_binary!(Int32, Subtract, load.clone(), u32_value.clone()),
         machine_binary!(Int32, Multiply, load.clone(), u32_value.clone()),
@@ -410,7 +409,7 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
         machine_binary!(Int32, BitwiseOr, load.clone(), u32_value.clone()),
         machine_binary!(Int32, BitwiseXor, load.clone(), u32_value.clone()),
         machine_unary!(Int32, BitwiseNot, load.clone()),
-        Bitvector32Term::If {
+        MachineTerm::If {
             condition: Box::new(ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
@@ -420,7 +419,7 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
             then_term: Box::new(load.clone()),
             else_term: Box::new(u32_value.clone()),
         },
-        Bitvector32Term::RangeFold {
+        MachineTerm::RangeFold {
             start: Box::new(load.clone()),
             end: Box::new(u32_value.clone()),
             initial: Box::new(load.clone()),
@@ -428,7 +427,7 @@ fn canonical_term_is_idempotent_for_every_term_shape() {
             item: Variable(30_003),
             body: Box::new(load.clone()),
         },
-        Bitvector32Term::PureFunctionApplication {
+        MachineTerm::PureFunctionApplication {
             name: "canonical_shapes".to_string(),
             arguments: vec![load.clone(), u32_value.clone()],
         },
@@ -482,17 +481,17 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
             term = binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::If {
+                Box::new(MachineTerm::If {
                     condition: Box::new(ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(term),
-                        right: Box::new(Bitvector32Term::constant(depth as u32)),
+                        right: Box::new(MachineTerm::constant(depth as u32)),
                     }),
                     then_term: Box::new(unresolved_canonicalization_test_load()),
-                    else_term: Box::new(Bitvector32Term::constant(depth as u32 + 1)),
+                    else_term: Box::new(MachineTerm::constant(depth as u32 + 1)),
                 }),
-                Box::new(Bitvector32Term::constant(depth as u32 + 2)),
+                Box::new(MachineTerm::constant(depth as u32 + 2)),
             );
         }
 
@@ -517,14 +516,14 @@ fn canonical_term_is_idempotent_at_multiple_term_depths() {
 
 #[test]
 fn canonical_term_is_independent_of_contextual_equalities() {
-    let term = Bitvector32Term::Variable(Variable(30_004));
+    let term = MachineTerm::Variable(Variable(30_004));
     let canonical = crate::kernel::eval::canonical_term(&term);
     let equal_to_one = PureFactContext::new().assume_condition(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(Bitvector32Term::constant(1)),
+            right: Box::new(MachineTerm::constant(1)),
         },
         true,
     );
@@ -533,14 +532,14 @@ fn canonical_term_is_independent_of_contextual_equalities() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(term.clone()),
-            right: Box::new(Bitvector32Term::constant(2)),
+            right: Box::new(MachineTerm::constant(2)),
         },
         true,
     );
 
     let equals = |value| {
         Proposition::ConditionIs(
-            ConditionTerm::equal(term.clone(), Bitvector32Term::constant(value)),
+            ConditionTerm::equal(term.clone(), MachineTerm::constant(value)),
             true,
         )
     };
@@ -560,12 +559,12 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     // The same unresolved load, read from two snapshots that differ only by
     // a block this load cannot observe.
     let drifted = base.clone().with_block("unrelated", 4);
-    let load_at_base = Bitvector32Term::MemoryLoad(
+    let load_at_base = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(base.clone()),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let load_at_drifted = Bitvector32Term::MemoryLoad(
+    let load_at_drifted = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(drifted),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
@@ -577,7 +576,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
         crate::kernel::eval::canonical_term(&load_at_drifted),
         "representational snapshot drift must not change the canonical form"
     );
-    let Bitvector32Term::Variable(load_variable) = &canonical else {
+    let MachineTerm::Variable(load_variable) = &canonical else {
         panic!("an unresolved load's canonical form is its load variable: {canonical:?}");
     };
     assert!(crate::kernel::is_load_variable(load_variable));
@@ -585,15 +584,15 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
     assert_eq!(canonical, crate::kernel::eval::canonical_term(&canonical));
 
     // A load whose cell is materialized resolves to the stored value.
-    let stored = base.store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7)));
-    let resolved = Bitvector32Term::MemoryLoad(
+    let stored = base.store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+    let resolved = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(stored),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
     assert_eq!(
         crate::kernel::eval::canonical_term(&resolved),
-        Bitvector32Term::constant(7)
+        MachineTerm::constant(7)
     );
 }
 
@@ -605,23 +604,23 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     let memory = CMemory::new()
         .with_block("condition-cells", 4)
-        .store(pointer.clone(), CValue::Int32(Bitvector32Term::constant(7)));
-    let load = Bitvector32Term::MemoryLoad(
+        .store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
+    let load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
-    let overflow = Bitvector32Term::If {
+    let overflow = MachineTerm::If {
         condition: Box::new(ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
             op: OverflowOperation::Add,
             left: Box::new(load.clone()),
-            right: Box::new(Bitvector32Term::constant(1)),
+            right: Box::new(MachineTerm::constant(1)),
         }),
-        then_term: Box::new(Bitvector32Term::constant(2)),
-        else_term: Box::new(Bitvector32Term::constant(3)),
+        then_term: Box::new(MachineTerm::constant(2)),
+        else_term: Box::new(MachineTerm::constant(3)),
     };
-    let pointer_offset = Bitvector32Term::If {
+    let pointer_offset = MachineTerm::If {
         condition: Box::new(ConditionTerm::PointerOffsetEqual(
             Box::new(PointerOffsetTerm::Int32Scaled {
                 value: Box::new(load),
@@ -629,22 +628,22 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
             }),
             Box::new(PointerOffsetTerm::Constant(28)),
         )),
-        then_term: Box::new(Bitvector32Term::constant(4)),
-        else_term: Box::new(Bitvector32Term::constant(5)),
+        then_term: Box::new(MachineTerm::constant(4)),
+        else_term: Box::new(MachineTerm::constant(5)),
     };
 
     let canonical_overflow = crate::kernel::api::canonicalize_atomic_loads(&overflow);
-    let Bitvector32Term::If { condition, .. } = canonical_overflow else {
+    let MachineTerm::If { condition, .. } = canonical_overflow else {
         panic!("expected conditional term");
     };
     assert!(matches!(
         condition.as_ref(),
         ConditionTerm::Overflows { format: MachineIntegerType::Int32, op: OverflowOperation::Add, left, right: _ }
-            if left.as_ref() == &Bitvector32Term::constant(7)
+            if left.as_ref() == &MachineTerm::constant(7)
     ));
 
     let canonical_pointer_offset = crate::kernel::api::canonicalize_atomic_loads(&pointer_offset);
-    let Bitvector32Term::If { condition, .. } = canonical_pointer_offset else {
+    let MachineTerm::If { condition, .. } = canonical_pointer_offset else {
         panic!("expected conditional term");
     };
     assert!(matches!(
@@ -662,12 +661,12 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
     };
     let base = CMemory::new().with_block("deep-cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
-    let mut left = Bitvector32Term::MemoryLoad(
+    let mut left = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(base),
         Box::new(pointer.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let mut right = Bitvector32Term::MemoryLoad(
+    let mut right = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(drifted),
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
@@ -677,13 +676,13 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
             Int32,
             Add,
             Box::new(left),
-            Box::new(Bitvector32Term::constant(value))
+            Box::new(MachineTerm::constant(value))
         );
         right = binary_node!(
             Int32,
             Add,
             Box::new(right),
-            Box::new(Bitvector32Term::constant(value))
+            Box::new(MachineTerm::constant(value))
         );
     }
 
@@ -711,7 +710,7 @@ fn offsets_have_same_canonical_form_through_the_canonical_form() {
     let base = CMemory::new().with_block("cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
     let scaled = |memory: CMemory| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::MemoryLoad(
+        value: Box::new(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
@@ -735,7 +734,7 @@ fn offsets_have_same_canonical_form_through_the_canonical_form() {
         offset: PointerOffsetTerm::Constant(4),
     };
     let other_scaled = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::MemoryLoad(
+        value: Box::new(MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(base.clone()),
             Box::new(other),
             crate::kernel::LoadKind::Int32,
@@ -774,7 +773,7 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
             matches!(
                 leaf,
                 PointerOffsetTerm::Int32Scaled { value, .. }
-                    if matches!(value.as_ref(), Bitvector32Term::Variable(variable) if crate::kernel::is_load_variable(variable))
+                    if matches!(value.as_ref(), MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable))
             ),
             "the deepest scaled index should take its load variable at depth {depth}: {leaf:?}",
         );
@@ -784,7 +783,7 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
 #[test]
 fn pointer_offset_add_coalesces_nested_constant_displacements() {
     let base = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(Bitvector32Term::Variable(Variable(17))),
+        value: Box::new(MachineTerm::Variable(Variable(17))),
         byte_width: 4,
     };
     let nested = PointerOffsetTerm::add(
@@ -803,8 +802,8 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     // remain distinct in the ordinary equality graph; an explicit atomic
     // derivation retains the address-equality path.
     let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("data", 8));
-    let index = Bitvector32Term::Variable(Variable(7));
-    let indexed = Bitvector32Term::MemoryLoad(
+    let index = MachineTerm::Variable(Variable(7));
+    let indexed = MachineTerm::MemoryLoad(
         memory.clone(),
         Box::new(Pointer {
             block: "data".into(),
@@ -815,7 +814,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         }),
         crate::kernel::LoadKind::Int32,
     );
-    let first = Bitvector32Term::MemoryLoad(
+    let first = MachineTerm::MemoryLoad(
         memory.clone(),
         Box::new(Pointer {
             block: "data".into(),
@@ -835,10 +834,8 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         !without_index_fact.int32_values_known_equal(&indexed_load_variable, &first_load_variable)
     );
 
-    let with_index_fact = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(index, Bitvector32Term::constant(0)),
-        true,
-    );
+    let with_index_fact = PureFactContext::new()
+        .assume_condition(ConditionTerm::equal(index, MachineTerm::constant(0)), true);
     assert!(
         !with_index_fact.int32_values_known_equal(&indexed_load_variable, &first_load_variable)
     );
@@ -853,10 +850,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     assert!(derivation.check(&with_index_fact));
     // A different constant index selects a different cell.
     let other = PureFactContext::new().assume_condition(
-        ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(7)),
-            Bitvector32Term::constant(1),
-        ),
+        ConditionTerm::equal(MachineTerm::Variable(Variable(7)), MachineTerm::constant(1)),
         true,
     );
     assert!(other.derive_proposition(&goal).is_none());
@@ -869,13 +863,13 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
                     block: "data".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                Bitvector32Term::constant(0),
-                Bitvector32Term::constant(1),
+                MachineTerm::constant(0),
+                MachineTerm::constant(1),
             )],
             &PureFactContext::new(),
             None,
         ));
-    let other_epoch_load = crate::kernel::eval::canonical_term(&Bitvector32Term::MemoryLoad(
+    let other_epoch_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         other_epoch,
         Box::new(Pointer {
             block: "data".into(),
@@ -893,7 +887,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
             .is_none()
     );
 
-    let other_block_load = crate::kernel::eval::canonical_term(&Bitvector32Term::MemoryLoad(
+    let other_block_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         memory,
         Box::new(Pointer {
             block: "other-data".into(),
@@ -921,7 +915,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("p", 12));
     let bound = Variable(3_000_000);
     let cell = |offset: PointerOffsetTerm| {
-        Bitvector32Term::MemoryLoad(
+        MachineTerm::MemoryLoad(
             memory.clone(),
             Box::new(Pointer {
                 block: "p".into(),
@@ -932,17 +926,14 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     };
     let indexed_load_variable =
         crate::kernel::eval::canonical_term(&cell(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(bound)),
+            value: Box::new(MachineTerm::Variable(bound)),
             byte_width: 4,
         }));
-    assert!(matches!(
-        indexed_load_variable,
-        Bitvector32Term::Variable(_)
-    ));
+    assert!(matches!(indexed_load_variable, MachineTerm::Variable(_)));
     let instantiated = crate::kernel::reasoning::substitute_bitvector_variable(
         &indexed_load_variable,
         bound,
-        &Bitvector32Term::constant(0),
+        &MachineTerm::constant(0),
     );
     assert_eq!(
         instantiated,
@@ -953,7 +944,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
         crate::kernel::reasoning::substitute_bitvector_variable(
             &indexed_load_variable,
             Variable(3_000_001),
-            &Bitvector32Term::constant(0),
+            &MachineTerm::constant(0),
         ),
         indexed_load_variable
     );
@@ -965,9 +956,9 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
     // recorded equality mentions the index, so the comparison must view the
     // load variables as their loads and decide the addresses from bounds.
     let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("p", 12));
-    let j = Bitvector32Term::Variable(Variable(7));
+    let j = MachineTerm::Variable(Variable(7));
     let cell = |offset: PointerOffsetTerm| {
-        crate::kernel::eval::canonical_term(&Bitvector32Term::MemoryLoad(
+        crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
             memory.clone(),
             Box::new(Pointer {
                 block: "p".into(),
@@ -989,11 +980,11 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
 
     let pinned = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(j.clone(), Bitvector32Term::constant(2)),
+            ConditionTerm::signed_less_equal(j.clone(), MachineTerm::constant(2)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(j.clone(), Bitvector32Term::constant(2)),
+            ConditionTerm::signed_less_than(j.clone(), MachineTerm::constant(2)),
             false,
         );
     assert!(pinned.bitvector_terms_proven_equal(&indexed, &third));
@@ -1010,13 +1001,13 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
         Pointer {
             block: "p".into(),
             offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(Bitvector32Term::Variable(counter)),
+                value: Box::new(MachineTerm::Variable(counter)),
                 byte_width: 4,
             },
         },
-        CValue::Int32(Bitvector32Term::constant(5)),
+        CValue::Int32(MachineTerm::constant(5)),
     );
-    let load_variable = crate::kernel::eval::canonical_term(&Bitvector32Term::MemoryLoad(
+    let load_variable = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(written),
         Box::new(Pointer {
             block: "p".into(),
@@ -1024,7 +1015,7 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
         }),
         crate::kernel::LoadKind::Int32,
     ));
-    assert!(matches!(load_variable, Bitvector32Term::Variable(_)));
+    assert!(matches!(load_variable, MachineTerm::Variable(_)));
     let mut variables = BTreeSet::new();
     crate::kernel::reasoning::collect_bitvector_variables(&load_variable, &mut variables);
     assert!(variables.contains(&counter));
@@ -1038,7 +1029,7 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
         construction: None,
         blocks: std::sync::Arc::new(MemoryBlocks::from_iter([(
             block.clone(),
-            CBlock::with_symbolic_size(Bitvector32Term::Variable(size_variable)),
+            CBlock::with_symbolic_size(MachineTerm::Variable(size_variable)),
         )])),
         cells: std::sync::Arc::default(),
         union_cells: std::sync::Arc::default(),
@@ -1053,11 +1044,11 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
     let substituted = crate::kernel::reasoning::substitute_bitvector_variable_in_memory(
         &memory,
         size_variable,
-        &Bitvector32Term::constant(24),
+        &MachineTerm::constant(24),
     );
     assert_eq!(
         substituted.blocks.get(&block).map(CBlock::size),
-        Some(&Bitvector32Term::constant(24)),
+        Some(&MachineTerm::constant(24)),
     );
 }
 
@@ -1067,7 +1058,7 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
 /// DAG holds `depth` of them. This is the shape a proof builds when each
 /// `unfold` names the cells it exposes and the C then loads through them, one
 /// nesting level per unfolded child.
-fn nested_snapshot_load(depth: usize) -> Bitvector32Term {
+fn nested_snapshot_load(depth: usize) -> MachineTerm {
     nested_snapshot_load_named(depth, |load| load)
 }
 
@@ -1075,8 +1066,8 @@ fn nested_snapshot_load(depth: usize) -> Bitvector32Term {
 /// itself, or the load variable that names it.
 fn nested_snapshot_load_named(
     depth: usize,
-    name: impl Fn(Bitvector32Term) -> Bitvector32Term,
-) -> Bitvector32Term {
+    name: impl Fn(MachineTerm) -> MachineTerm,
+) -> MachineTerm {
     let block = PointerBlock::Concrete("snapshot-chain".to_string());
     let at = |offset: i64| Pointer {
         block: block.clone(),
@@ -1084,7 +1075,7 @@ fn nested_snapshot_load_named(
     };
     let blocks = std::sync::Arc::new(MemoryBlocks::from_iter([(
         block.clone(),
-        CBlock::with_symbolic_size(Bitvector32Term::constant(8 * depth as u32 + 16)),
+        CBlock::with_symbolic_size(MachineTerm::constant(8 * depth as u32 + 16)),
     )]));
     let level_memory = |cells| CMemory {
         construction: None,
@@ -1098,7 +1089,7 @@ fn nested_snapshot_load_named(
     let mut memory = level_memory(CellStore::new());
     for level in 0..depth {
         let offset = 8 * level as i64;
-        let load = Bitvector32Term::MemoryLoad(
+        let load = MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(memory),
             Box::new(at(offset)),
             crate::kernel::LoadKind::Int32,
@@ -1109,7 +1100,7 @@ fn nested_snapshot_load_named(
             (at(offset + 4), CValue::Int32(load)),
         ]));
     }
-    Bitvector32Term::MemoryLoad(
+    MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(memory),
         Box::new(at(8 * depth as i64)),
         crate::kernel::LoadKind::Int32,
@@ -1146,7 +1137,7 @@ fn a_scalar_load_handle_does_not_substitute_a_complete_pointer_array_read() {
             .expect("every element holds a cell")
     };
     let bits =
-        Bitvector32Term::MemoryLoad(source, Box::new(at(50 * i64::from(width))), LoadKind::Int32);
+        MachineTerm::MemoryLoad(source, Box::new(at(50 * i64::from(width))), LoadKind::Int32);
     let (named, _) = crate::kernel::load_variable_for_term(&bits).unwrap();
     let CValue::Pointer(observed) = element(&memory, 50) else {
         panic!("pointer cell")
@@ -1175,7 +1166,7 @@ fn a_live_memorys_counted_variables_are_its_walked_variables() {
             PointerOffsetTerm::Constant(offset),
         ),
     };
-    let value = |variable: u64| CValue::Int32(Bitvector32Term::Variable(Variable(variable)));
+    let value = |variable: u64| CValue::Int32(MachineTerm::Variable(Variable(variable)));
     let source = crate::kernel::intern_c_memory(CMemory::new().with_block("counted-source", 64));
     let mut memory = CMemory::new();
     let mut states = Vec::new();
@@ -1248,7 +1239,7 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(nested_snapshot_load(depth)),
-                right: Box::new(Bitvector32Term::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -1256,7 +1247,7 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
             crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
                 &goal,
                 Variable(770_001),
-                &Bitvector32Term::constant(1),
+                &MachineTerm::constant(1),
             )
         });
         // The rewritten variable occurs nowhere, so every visit is pure
@@ -1305,15 +1296,15 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         offset: PointerOffsetTerm::Constant(8),
     };
     let entry = CMemory::new().with_block("fields", 16);
-    let Bitvector32Term::Variable(loaded) = crate::kernel::canonical_form_of_load(
+    let MachineTerm::Variable(loaded) = crate::kernel::canonical_form_of_load(
         intern_c_memory(entry.clone()),
         field.clone(),
         crate::kernel::LoadKind::Int32,
     ) else {
         panic!("a load of an opaque cell is named by a load variable");
     };
-    let read = Pointer::loaded(&Bitvector32Term::Variable(loaded))
-        .expect("the cell's load names its read");
+    let read =
+        Pointer::loaded(&MachineTerm::Variable(loaded)).expect("the cell's load names its read");
     let pointer_at = |value: Pointer| CValue::typed_pointer(value, CType::Int32Pointer);
     let name_at = |memory: CMemory, cell: &Pointer| {
         crate::kernel::canonical_form_of_load(
@@ -1329,7 +1320,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         .store(field.clone(), pointer_at(read.clone()));
     assert_eq!(
         name_at(held, &field),
-        Bitvector32Term::Variable(loaded),
+        MachineTerm::Variable(loaded),
         "the cell holds the pointer its own load produced"
     );
 
@@ -1339,7 +1330,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         .store(other.clone(), pointer_at(read.clone()));
     assert_ne!(
         name_at(elsewhere, &other),
-        Bitvector32Term::Variable(loaded),
+        MachineTerm::Variable(loaded),
         "another cell holding that pointer is not a load of the first cell"
     );
 
@@ -1348,7 +1339,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         .store(field.clone(), pointer_at(read.offset_by_bytes(4)));
     assert_ne!(
         name_at(displaced, &field),
-        Bitvector32Term::Variable(loaded),
+        MachineTerm::Variable(loaded),
         "a pointer displaced from the cell's read is not what a typed load of the cell produces"
     );
 }
@@ -1361,8 +1352,8 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
 /// scaled index (at its signed value) or a `Constant` summand joins the shift.
 #[test]
 fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
-    let u = Bitvector32Term::Variable(Variable(7_960_000));
-    let scaled = |value: Bitvector32Term| PointerOffsetTerm::Int32Scaled {
+    let u = MachineTerm::Variable(Variable(7_960_000));
+    let scaled = |value: MachineTerm| PointerOffsetTerm::Int32Scaled {
         value: Box::new(value),
         byte_width: 4,
     };
@@ -1370,7 +1361,7 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
         Int32,
         Add,
         Box::new(u.clone()),
-        Box::new(Bitvector32Term::constant(0x8000_0000)),
+        Box::new(MachineTerm::constant(0x8000_0000)),
     ));
     let offset = PointerOffsetTerm::Add(
         Box::new(wrapping.clone()),
@@ -1382,7 +1373,7 @@ fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
         "the sum inside the scaled index stays one atom"
     );
     assert_eq!(
-        crate::kernel::reasoning::offset_atoms_and_constant(&scaled(Bitvector32Term::constant(
+        crate::kernel::reasoning::offset_atoms_and_constant(&scaled(MachineTerm::constant(
             (-3i32) as u32
         ))),
         (Vec::new(), -12),
@@ -1412,18 +1403,18 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
         .next()
         .expect("the seeded run")
         .clone();
-    let bounded = |word: &Bitvector32Term, low: u32| {
+    let bounded = |word: &MachineTerm, low: u32| {
         PureFactContext::new()
             .assume_condition(
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(low), word.clone()),
+                ConditionTerm::signed_less_equal(MachineTerm::constant(low), word.clone()),
                 true,
             )
             .assume_condition(
-                ConditionTerm::signed_less_than(word.clone(), Bitvector32Term::constant(8)),
+                ConditionTerm::signed_less_than(word.clone(), MachineTerm::constant(8)),
                 true,
             )
     };
-    let store_at = |word: &Bitvector32Term| Pointer {
+    let store_at = |word: &MachineTerm| Pointer {
         block: block.clone(),
         offset: PointerOffsetTerm::Int32Scaled {
             value: Box::new(word.clone()),
@@ -1434,8 +1425,8 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     let wrapping = binary_node!(
         Int32,
         Add,
-        Box::new(Bitvector32Term::Variable(Variable(7_960_101))),
-        Box::new(Bitvector32Term::constant(0x8000_0000)),
+        Box::new(MachineTerm::Variable(Variable(7_960_101))),
+        Box::new(MachineTerm::constant(0x8000_0000)),
     );
     let (kept, _) = crate::kernel::reasoning::run_slots_kept_by_store(
         &run,
@@ -1452,8 +1443,8 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     let neighbour = binary_node!(
         Int32,
         Add,
-        Box::new(Bitvector32Term::Variable(Variable(7_960_102))),
-        Box::new(Bitvector32Term::constant(1)),
+        Box::new(MachineTerm::Variable(Variable(7_960_102))),
+        Box::new(MachineTerm::constant(1)),
     );
     let (kept, _) = crate::kernel::reasoning::run_slots_kept_by_store(
         &run,

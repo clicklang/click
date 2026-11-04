@@ -116,15 +116,15 @@ impl Carrier {
                     Self::UInt64 => text
                         .parse::<u64>()
                         .ok()
-                        .map(|value| CValue::UInt64(Bitvector32Term::uint64_constant(value))),
+                        .map(|value| CValue::UInt64(MachineTerm::uint64_constant(value))),
                     Self::Int64 => text
                         .parse::<i64>()
                         .ok()
-                        .map(|value| CValue::Int64(Bitvector32Term::int64_constant(value))),
+                        .map(|value| CValue::Int64(MachineTerm::int64_constant(value))),
                     Self::UInt32 => text
                         .parse::<u32>()
                         .ok()
-                        .map(|value| CValue::UInt32(Bitvector32Term::uint32_constant(value))),
+                        .map(|value| CValue::UInt32(MachineTerm::uint32_constant(value))),
                 };
                 value
                     .map(|value| ContractExpression::CFragment(CExpression::Value(value)))

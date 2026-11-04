@@ -18,7 +18,7 @@ fn seeded(count: u32) -> CMemory {
             &pointer("local:array-source", 0),
             CType::UInt32,
             count,
-            CValue::UInt32(Bitvector32Term::Variable(Variable(912_345))),
+            CValue::UInt32(MachineTerm::Variable(Variable(912_345))),
             false,
         )
         .unwrap()
@@ -47,7 +47,7 @@ fn scalar_array_copy_after_partial_call_keeps_known_lanes_and_rejects_bad_storag
         .unwrap();
     assert_eq!(
         copied.load(&target),
-        CExpressionOutcome::Value(CValue::UInt32(Bitvector32Term::Variable(Variable(912_345)),))
+        CExpressionOutcome::Value(CValue::UInt32(MachineTerm::Variable(Variable(912_345)),))
     );
     assert_ne!(
         copied.load(&pointer("local:array-target", 4)),

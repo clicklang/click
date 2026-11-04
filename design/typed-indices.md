@@ -59,7 +59,7 @@ index already forms a wide offset.
 Three things are still 32-bit.
 
 - **Range bounds.** `CMemoryRange` holds `start` and `end` as untyped
-  `Bitvector32Term`s, and every reader takes them as signed 32-bit. A 64-bit
+  `MachineTerm`s, and every reader takes them as signed 32-bit. A 64-bit
   bound is refused where a range is lowered ("segment start did not evaluate
   to int32"), in eight checks across `src/surface/lowering`,
   `src/surface/checking` and `src/kernel/loops.rs`. About 230 sites build a
@@ -195,7 +195,7 @@ above `INT_MAX`, so `length as int32` is still inexact.
 **The representation.** `CMemoryRange` (`src/kernel/primitives.rs`) gets a
 last field, `kind: RangeIndexKind { Int32, UInt64 }`, part of its `Hash`,
 `Eq` and `Ord`, since `p[0..n]` in two kinds can share one untyped term.
-`Bitvector32Term::Variable` carries no width, so a reader that puts a
+`MachineTerm::Variable` carries no width, so a reader that puts a
 64-bit bound in a signed 32-bit comparison was accepted silently. Debug
 builds now refuse it: a fact context keeps each variable at one width
 (`src/kernel/primitives/term_width.rs`).
@@ -375,7 +375,7 @@ change how a place's index is parsed and lowered.
 [machine-integers.md](machine-integers.md) (proposed 2026-10-21) proposes
 reversing the first two rulings below; it measures their premises.
 
-`Bitvector32Term` stays the one term arena for every width, with the width
+`MachineTerm` stays the one term arena for every width, with the width
 implied by the operator family, the constant's shape, a load's kind or a
 cast's destination. On 2026-10-16 these were ruled **wontfix**, after the
 width invariant was made checkable instead:

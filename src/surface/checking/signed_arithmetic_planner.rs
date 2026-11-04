@@ -12,8 +12,8 @@ use crate::kernel::proof::signed_arithmetic::{
     SignedArithmeticClaim, SignedArithmeticComparison, SignedArithmeticInterval,
     SignedArithmeticNode, SignedArithmeticRelation, add_claim,
 };
-use crate::kernel::{Bitvector32Term, ConditionTerm, Proposition};
 use crate::kernel::{CompareRelation, OverflowOperation};
+use crate::kernel::{ConditionTerm, MachineTerm, Proposition};
 use crate::kernel::{MachineCastSpelling, cast_term};
 use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32, int64_constant, uint64_constant};
@@ -578,8 +578,8 @@ pub(in crate::surface) fn decomposed_signed_claim(
 }
 
 fn affine_difference(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let mut terms: BTreeMap<SignedArithmeticAtom, BigInt> = BTreeMap::new();
     let mut constant = BigInt::zero();
@@ -609,8 +609,8 @@ fn affine_difference(
 }
 
 fn decomposed_affine_difference(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let mut terms: BTreeMap<SignedArithmeticAtom, BigInt> = BTreeMap::new();
     let mut constant = BigInt::zero();
@@ -870,9 +870,9 @@ fn affine_conclusion(
 
 fn affine_operation_terms(
     proposition: &Proposition,
-) -> Option<(Option<&Bitvector32Term>, Option<&Bitvector32Term>)> {
+) -> Option<(Option<&MachineTerm>, Option<&MachineTerm>)> {
     let (left, right, _) = comparison_terms(proposition)?;
-    let is_affine_operation = |term: &Bitvector32Term| {
+    let is_affine_operation = |term: &MachineTerm| {
         matches!(
             term,
             binary_term!(Int32, Add, _, _)
@@ -888,11 +888,11 @@ fn affine_operation_terms(
 
 /// A goal side the affine planner may combine premises over as one opaque
 /// atom: a term with no machine operation.
-fn is_affine_planning_atom(term: &Bitvector32Term) -> bool {
+fn is_affine_planning_atom(term: &MachineTerm) -> bool {
     !contains_machine_operation(term)
 }
 
-fn contains_machine_operation(root: &Bitvector32Term) -> bool {
+fn contains_machine_operation(root: &MachineTerm) -> bool {
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
         match term {
@@ -911,7 +911,7 @@ fn contains_machine_operation(root: &Bitvector32Term) -> bool {
             }
             unary_term!(Int32, BitwiseNot, _) => return true,
             term if is_narrowed_word_cast(term) => return true,
-            Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+            MachineTerm::PureFunctionApplication { arguments, .. } => {
                 pending.extend(arguments.iter());
             }
             _ => {}
@@ -922,7 +922,7 @@ fn contains_machine_operation(root: &Bitvector32Term) -> bool {
 
 /// The 32-bit reading of a C conversion the checked `IntervalNarrowedCast`
 /// node can relate to its operand: its `int32` widening.
-fn is_narrowed_word_cast(term: &Bitvector32Term) -> bool {
+fn is_narrowed_word_cast(term: &MachineTerm) -> bool {
     crate::kernel::proof::signed_arithmetic::widened_narrowed_cast(term).is_some()
 }
 
@@ -1132,9 +1132,7 @@ struct DefinednessKey {
     right: u64,
 }
 
-fn definedness_parts_from_term(
-    term: &Bitvector32Term,
-) -> Option<(u8, &Bitvector32Term, &Bitvector32Term)> {
+fn definedness_parts_from_term(term: &MachineTerm) -> Option<(u8, &MachineTerm, &MachineTerm)> {
     Some(match term {
         binary_term!(Int32, Add, left, right) => (0, left, right),
         binary_term!(Int32, Subtract, left, right) => (1, left, right),
@@ -1147,7 +1145,7 @@ fn definedness_parts_from_term(
 
 fn definedness_parts_from_proposition(
     proposition: &Proposition,
-) -> Option<(u8, &Bitvector32Term, &Bitvector32Term)> {
+) -> Option<(u8, &MachineTerm, &MachineTerm)> {
     let Proposition::ConditionIs(condition, false) = proposition else {
         return None;
     };
@@ -1838,7 +1836,7 @@ impl<'a> Planner<'a> {
         Some(None)
     }
 
-    fn defined(&mut self, term: &Bitvector32Term) -> Option<usize> {
+    fn defined(&mut self, term: &MachineTerm) -> Option<usize> {
         let cache_key = self.definedness_key_from_term(term)?;
         if let Some(index) = self.defined_cache.get(&cache_key) {
             return index.and_then(|index| {
@@ -1868,7 +1866,7 @@ impl<'a> Planner<'a> {
         })
     }
 
-    fn definedness_key_from_term(&mut self, term: &Bitvector32Term) -> Option<DefinednessKey> {
+    fn definedness_key_from_term(&mut self, term: &MachineTerm) -> Option<DefinednessKey> {
         let (operator, left, right) = definedness_parts_from_term(term)?;
         Some(DefinednessKey {
             operator,
@@ -1877,21 +1875,21 @@ impl<'a> Planner<'a> {
         })
     }
 
-    fn term_hash(&mut self, root: &Bitvector32Term) -> Option<u64> {
-        let root_key = root as *const Bitvector32Term as usize;
+    fn term_hash(&mut self, root: &MachineTerm) -> Option<u64> {
+        let root_key = root as *const MachineTerm as usize;
         if let Some(hash) = self.term_hash_cache.get(&root_key) {
             return Some(*hash);
         }
         enum Task<'a> {
-            Visit(&'a Bitvector32Term),
-            Finish(&'a Bitvector32Term),
+            Visit(&'a MachineTerm),
+            Finish(&'a MachineTerm),
         }
         let mut tasks = vec![Task::Visit(root)];
         while let Some(task) = tasks.pop() {
             charge_work(1)?;
             match task {
                 Task::Visit(term) => {
-                    let key = term as *const Bitvector32Term as usize;
+                    let key = term as *const MachineTerm as usize;
                     if self.term_hash_cache.contains_key(&key) {
                         continue;
                     }
@@ -1899,13 +1897,13 @@ impl<'a> Planner<'a> {
                         bits32_constant!(_)
                         | int64_constant!(_)
                         | uint64_constant!(_)
-                        | Bitvector32Term::Variable(_) => {
+                        | MachineTerm::Variable(_) => {
                             let mut hasher = std::collections::hash_map::DefaultHasher::new();
                             std::mem::discriminant(term).hash(&mut hasher);
                             term.hash(&mut hasher);
                             self.term_hash_cache.insert(key, hasher.finish());
                         }
-                        Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+                        MachineTerm::PureFunctionApplication { arguments, .. } => {
                             tasks.push(Task::Finish(term));
                             tasks.extend(arguments.iter().rev().map(Task::Visit));
                         }
@@ -1928,7 +1926,7 @@ impl<'a> Planner<'a> {
                     }
                 }
                 Task::Finish(term) => {
-                    let key = term as *const Bitvector32Term as usize;
+                    let key = term as *const MachineTerm as usize;
                     if self.term_hash_cache.contains_key(&key) {
                         continue;
                     }
@@ -1936,21 +1934,21 @@ impl<'a> Planner<'a> {
                     std::mem::discriminant(term).hash(&mut hasher);
                     term.machine_operator().hash(&mut hasher);
                     match term {
-                        Bitvector32Term::PureFunctionApplication { name, arguments } => {
+                        MachineTerm::PureFunctionApplication { name, arguments } => {
                             name.hash(&mut hasher);
                             arguments.len().hash(&mut hasher);
                             for argument in arguments {
                                 self.term_hash_cache
-                                    .get(&(argument as *const Bitvector32Term as usize))?
+                                    .get(&(argument as *const MachineTerm as usize))?
                                     .hash(&mut hasher);
                             }
                         }
                         crate::kernel::binary_bitvector32_term!(left, right) => {
                             self.term_hash_cache
-                                .get(&(left.as_ref() as *const Bitvector32Term as usize))?
+                                .get(&(left.as_ref() as *const MachineTerm as usize))?
                                 .hash(&mut hasher);
                             self.term_hash_cache
-                                .get(&(right.as_ref() as *const Bitvector32Term as usize))?
+                                .get(&(right.as_ref() as *const MachineTerm as usize))?
                                 .hash(&mut hasher);
                         }
                         unary_term!(Int32, BitwiseNot, operand)
@@ -1961,7 +1959,7 @@ impl<'a> Planner<'a> {
                         | cast_term!(UInt64FromInt32, operand)
                         | cast_term!(UInt64FromInt64, operand) => {
                             self.term_hash_cache
-                                .get(&(operand.as_ref() as *const Bitvector32Term as usize))?
+                                .get(&(operand.as_ref() as *const MachineTerm as usize))?
                                 .hash(&mut hasher);
                         }
                         _ => return None,
@@ -2058,7 +2056,7 @@ impl<'a> Planner<'a> {
         Some(())
     }
 
-    fn interval_atom(&mut self, term: &Bitvector32Term) -> Option<usize> {
+    fn interval_atom(&mut self, term: &MachineTerm) -> Option<usize> {
         let cache_key = SignedArithmeticAtom::from_term(term)?;
         if let Some(index) = self.interval_cache.get(&cache_key) {
             return Some(*index);
@@ -2387,18 +2385,18 @@ impl<'a> Planner<'a> {
         )
     }
 
-    fn is_safe_interval_atom(term: &Bitvector32Term) -> bool {
+    fn is_safe_interval_atom(term: &MachineTerm) -> bool {
         let mut pending = vec![term];
         while let Some(term) = pending.pop() {
             match term {
-                Bitvector32Term::Variable(_) | bits32_constant!(_) => {}
+                MachineTerm::Variable(_) | bits32_constant!(_) => {}
                 cast_term!(UInt32From64, _) if SignedArithmeticAtom::from_term(term).is_some() => {}
-                Bitvector32Term::PureFunctionApplication { arguments, .. } => {
+                MachineTerm::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
                 }
                 // The `int32` widening of an 8- or 16-bit value, an opaque
                 // value as the checker reads it (`is_opaque_root`).
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value,
                     from: source,
@@ -2410,22 +2408,22 @@ impl<'a> Planner<'a> {
         true
     }
 
-    fn build_interval(&mut self, root: &Bitvector32Term) -> Option<usize> {
+    fn build_interval(&mut self, root: &MachineTerm) -> Option<usize> {
         self.build_interval_with_direct(root, true)
     }
 
-    fn build_interval_for_affine(&mut self, root: &Bitvector32Term) -> Option<usize> {
+    fn build_interval_for_affine(&mut self, root: &MachineTerm) -> Option<usize> {
         self.build_interval_with_direct(root, false)
     }
 
     fn build_interval_with_direct(
         &mut self,
-        root: &Bitvector32Term,
+        root: &MachineTerm,
         allow_direct: bool,
     ) -> Option<usize> {
         enum Task<'a> {
-            Visit(&'a Bitvector32Term, bool),
-            Build(&'a Bitvector32Term),
+            Visit(&'a MachineTerm, bool),
+            Build(&'a MachineTerm),
         }
         let mut tasks = vec![Task::Visit(root, allow_direct)];
         let mut results = Vec::new();
@@ -2509,11 +2507,7 @@ impl<'a> Planner<'a> {
     /// one-sided interval is what refuses it, so the extra work is one build
     /// of this operation's operands, and certificates that did not need it
     /// keep their single direct root.
-    fn tighten_one_sided_direct_interval(
-        &mut self,
-        term: &Bitvector32Term,
-        direct: usize,
-    ) -> usize {
+    fn tighten_one_sided_direct_interval(&mut self, term: &MachineTerm, direct: usize) -> usize {
         let Some(direct_interval) = self.interval_at(direct) else {
             return direct;
         };
@@ -2570,7 +2564,7 @@ impl<'a> Planner<'a> {
 
     fn build_operation(
         &mut self,
-        term: &Bitvector32Term,
+        term: &MachineTerm,
         left_index: Option<usize>,
         right_index: Option<usize>,
     ) -> Option<usize> {
@@ -2702,7 +2696,7 @@ impl<'a> Planner<'a> {
                         Int32,
                         Remainder,
                         base.clone(),
-                        Box::new(Bitvector32Term::constant(divisor as u32)),
+                        Box::new(MachineTerm::constant(divisor as u32)),
                     );
                     if let Some(remainder) = self.interval_atom(&original)
                         && let Some(op) = self.interval_at(operand)
@@ -2831,7 +2825,7 @@ impl<'a> Planner<'a> {
     }
 }
 
-fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
+fn exact_definedness(proposition: &Proposition, term: &MachineTerm) -> bool {
     let ordinary =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard(proposition)
             .map(|condition| Proposition::ConditionIs(condition, false));
@@ -2889,7 +2883,7 @@ fn exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool 
     }
 }
 
-fn terms_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
+fn terms_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     let (Some(left), Some(right)) = (
         SignedArithmeticAtom::from_term(left),
         SignedArithmeticAtom::from_term(right),
@@ -2928,7 +2922,7 @@ fn plan_interval_goal(
 }
 
 /// The operands of a held `uint32` order goal, as `(lower, upper, strict)`.
-fn unsigned_order_terms(goal: &Proposition) -> Option<(&Bitvector32Term, &Bitvector32Term, bool)> {
+fn unsigned_order_terms(goal: &Proposition) -> Option<(&MachineTerm, &MachineTerm, bool)> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
@@ -2988,7 +2982,7 @@ fn plan_unsigned_order_goal(
         })
         .collect::<Vec<_>>();
     let mut planner = Planner::new(premises, &claims, int32_range_fallback);
-    let mut side = |term: &Bitvector32Term| -> Option<(usize, (i64, i64))> {
+    let mut side = |term: &MachineTerm| -> Option<(usize, (i64, i64))> {
         let mut node = planner.build_interval(term)?;
         let mut interval = planner.interval_at(node)?;
         if (interval.lower == SIGNED_MIN || interval.upper == SIGNED_MAX)
@@ -3033,8 +3027,8 @@ fn plan_unsigned_order_goal(
 }
 
 fn term_interval_proves(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     comparison: Comparison,
     left_interval: &SignedArithmeticInterval,
 ) -> bool {
@@ -3047,9 +3041,7 @@ fn term_interval_proves(
     terms_equal(operand, right) && shift.as_const().is_some_and(|value| value <= 31)
 }
 
-fn comparison_terms(
-    proposition: &Proposition,
-) -> Option<(&Bitvector32Term, &Bitvector32Term, Comparison)> {
+fn comparison_terms(proposition: &Proposition) -> Option<(&MachineTerm, &MachineTerm, Comparison)> {
     let (condition, value) = match proposition {
         Proposition::ConditionIs(condition, value) => (condition, *value),
         _ => return None,
@@ -3266,7 +3258,7 @@ mod tests {
     // interval that proves `x - 1` defined and closes goals over it.
     #[test]
     fn equality_premise_bounds_its_atom_on_both_sides() {
-        let eq = |left: Bitvector32Term, right: Bitvector32Term| {
+        let eq = |left: MachineTerm, right: MachineTerm| {
             proposition(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
@@ -3292,7 +3284,7 @@ mod tests {
         );
     }
 
-    fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3304,7 +3296,7 @@ mod tests {
         )
     }
 
-    fn plus(left: Bitvector32Term, right: Bitvector32Term) -> Bitvector32Term {
+    fn plus(left: MachineTerm, right: MachineTerm) -> MachineTerm {
         binary_node!(Int32, Add, Box::new(left), Box::new(right))
     }
 
@@ -3392,19 +3384,19 @@ mod tests {
         );
     }
 
-    fn var(index: u64) -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(index))
+    fn var(index: u64) -> MachineTerm {
+        MachineTerm::Variable(Variable(index))
     }
 
-    fn constant(value: i32) -> Bitvector32Term {
-        Bitvector32Term::constant(value as u32)
+    fn constant(value: i32) -> MachineTerm {
+        MachineTerm::constant(value as u32)
     }
 
     fn proposition(condition: ConditionTerm, value: bool) -> Proposition {
         Proposition::ConditionIs(condition, value)
     }
 
-    fn le(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3416,7 +3408,7 @@ mod tests {
         )
     }
 
-    fn lt(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn lt(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3428,7 +3420,7 @@ mod tests {
         )
     }
 
-    fn ge(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn ge(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3440,7 +3432,7 @@ mod tests {
         )
     }
 
-    fn neq(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn neq(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -3452,7 +3444,7 @@ mod tests {
         )
     }
 
-    fn defined_add(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn defined_add(left: MachineTerm, right: MachineTerm) -> Proposition {
         proposition(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
@@ -3546,7 +3538,7 @@ mod tests {
         let cap = constant(i32::MAX - 1);
         let difference = binary_node!(Int32, Subtract, Box::new(cap.clone()), Box::new(var(2)));
         let goal = le(
-            Bitvector32Term::add(constant(1), var(1)),
+            MachineTerm::add(constant(1), var(1)),
             binary_node!(
                 Int32,
                 Subtract,
@@ -3588,7 +3580,7 @@ mod tests {
         assert!(plan.check(&goal, &unsafe_goal).is_err());
 
         let unsafe_premise_goal = le(
-            Bitvector32Term::add(constant(1), var(1)),
+            MachineTerm::add(constant(1), var(1)),
             binary_node!(
                 Int32,
                 Subtract,

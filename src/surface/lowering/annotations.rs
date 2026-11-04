@@ -4513,9 +4513,9 @@ impl AnnotationLowerer<'_> {
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
                 let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
                 let item_carrier = if wide {
-                    CValue::UInt64(Bitvector32Term::Variable(variable))
+                    CValue::UInt64(MachineTerm::Variable(variable))
                 } else {
-                    CValue::Int32(Bitvector32Term::Variable(variable))
+                    CValue::Int32(MachineTerm::Variable(variable))
                 };
                 let item_value = SpecExpression::Value(item_carrier.clone());
                 let mut body_environment = environment.clone();
@@ -4575,9 +4575,9 @@ impl AnnotationLowerer<'_> {
                 let end = self.lower_contract_expression_to_spec(end, environment)?;
                 let variable = allocate_quantifier_variable(&mut self.next_quantifier_variable)?;
                 let item_carrier = if wide {
-                    CValue::UInt64(Bitvector32Term::Variable(variable))
+                    CValue::UInt64(MachineTerm::Variable(variable))
                 } else {
-                    CValue::Int32(Bitvector32Term::Variable(variable))
+                    CValue::Int32(MachineTerm::Variable(variable))
                 };
                 let item_value = SpecExpression::Value(item_carrier.clone());
                 let mut body_environment = environment.clone();
@@ -5889,7 +5889,7 @@ impl AnnotationLowerer<'_> {
                     SpecExpression::Value(CValue::Int32(bits32_constant!(value)))
                         if constant_u32(*value) <= i32::MAX as u32 =>
                     {
-                        SpecExpression::Value(CValue::UInt64(Bitvector32Term::uint64_constant(
+                        SpecExpression::Value(CValue::UInt64(MachineTerm::uint64_constant(
                             u64::from(constant_u32(*value)),
                         )))
                     }
@@ -5902,7 +5902,7 @@ impl AnnotationLowerer<'_> {
                 } else {
                     (start, end, false)
                 };
-                let item_term = Bitvector32Term::Variable(item_variable);
+                let item_term = MachineTerm::Variable(item_variable);
                 body_environment.values.insert(
                     item.clone(),
                     SpecExpression::Value(if unsigned64 {
@@ -6161,11 +6161,11 @@ impl AnnotationLowerer<'_> {
                     "an arbitrary Integer literal requires Integer context".to_string()
                 })?;
                 let value = if value <= i32::MAX as u64 {
-                    CValue::Int32(Bitvector32Term::constant(value as u32))
+                    CValue::Int32(MachineTerm::constant(value as u32))
                 } else if value <= i64::MAX as u64 {
-                    CValue::Int64(Bitvector32Term::int64_constant(value as i64))
+                    CValue::Int64(MachineTerm::int64_constant(value as i64))
                 } else {
-                    CValue::UInt64(Bitvector32Term::uint64_constant(value))
+                    CValue::UInt64(MachineTerm::uint64_constant(value))
                 };
                 Ok(SpecExpression::Value(value))
             }
@@ -6503,9 +6503,9 @@ impl AnnotationLowerer<'_> {
                     && let Ok(value) = value.parse::<u64>()
                     && value <= (i32::MAX as u64) + 1
                 {
-                    return Ok(SpecExpression::Value(CValue::Int32(
-                        Bitvector32Term::constant(0u32.wrapping_sub(value as u32)),
-                    )));
+                    return Ok(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                        0u32.wrapping_sub(value as u32),
+                    ))));
                 }
                 Ok(SpecExpression::Subtract(
                     Box::new(SpecExpression::Value(int32(0))),
@@ -8617,9 +8617,9 @@ impl AnnotationLowerer<'_> {
                 if let Ok(array_ref) = self.lower_array_ref_to_spec(left, environment) {
                     let offset = self.lower_contract_expression_to_spec(right, environment)?;
                     let negative_offset = SpecExpression::Subtract(
-                        Box::new(SpecExpression::Value(CValue::Int32(
-                            Bitvector32Term::constant(0),
-                        ))),
+                        Box::new(SpecExpression::Value(CValue::Int32(MachineTerm::constant(
+                            0,
+                        )))),
                         Box::new(offset),
                     );
                     let element_type = array_ref.element_type;
@@ -9327,7 +9327,7 @@ mod integer_source_quantifier_tests {
     #[test]
     fn captured_integer_freshness_ignores_unrelated_heap_snapshot() {
         use crate::kernel::{
-            Bitvector32Term, CMemory, CType, CValue, Pointer, PointerBlock, PointerOffsetTerm,
+            CMemory, CType, CValue, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
             SpecExpression, SpecMemory, SpecPureFunctionArgument,
         };
 
@@ -9341,7 +9341,7 @@ mod integer_source_quantifier_tests {
             .with_block(heap_pointer.block.clone(), 4)
             .store(
                 heap_pointer,
-                CValue::Int32(Bitvector32Term::Variable(unrelated_heap_variable)),
+                CValue::Int32(MachineTerm::Variable(unrelated_heap_variable)),
             );
         let captured_array = SpecIntegerExpression::PureFunctionApplication {
             name: "captured_array_value".to_string(),

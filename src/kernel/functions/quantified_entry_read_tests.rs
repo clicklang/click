@@ -16,7 +16,7 @@ fn fixture(
     let state = CState::new()
         .with_local("pool", CValue::pointer(pointer.clone()))
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 8).store(
-            pointer.offset_by_int32_elements(Bitvector32Term::constant(1)),
+            pointer.offset_by_int32_elements(MachineTerm::constant(1)),
             int32(4),
         ));
     let slot = CResourceSpec::composite(
@@ -106,8 +106,8 @@ fn sample(unrelated: usize, quantities: usize) -> usize {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::GreaterEqual,
-                left: Box::new(Bitvector32Term::constant(4)),
-                right: Box::new(Bitvector32Term::constant(0))
+                left: Box::new(MachineTerm::constant(4)),
+                right: Box::new(MachineTerm::constant(0))
             },
             true
         )));
@@ -127,8 +127,8 @@ fn composite_read_projection_requires_positive_ownership() {
     };
     let target = CResourceFact::view_memory(CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::constant(1),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(1),
+        MachineTerm::constant(2),
     ));
     for quantity in [0, 1] {
         let supplied = CResourceFact::Own(
@@ -136,7 +136,7 @@ fn composite_read_projection_requires_positive_ownership() {
                 name: "zz_control".into(),
                 arguments: vec![CValue::pointer(pointer.clone()).into()].into(),
             },
-            Box::new(Bitvector32Term::constant(quantity)),
+            Box::new(MachineTerm::constant(quantity)),
         );
         let supply = resource_clause_section_supply(
             &state,

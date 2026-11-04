@@ -106,7 +106,7 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
     };
     let load_condition = |id: u64| {
         ConditionTerm::equal(
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(pointer(id)),
                 crate::kernel::LoadKind::Int32,

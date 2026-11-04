@@ -264,7 +264,7 @@ impl ObservationComparisons {
                     } => Some(ComparisonOperand::Written(value)),
                     PointerOffsetTerm::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
-                            ComparisonOperand::Constant(Bitvector32Term::constant(value as u32))
+                            ComparisonOperand::Constant(MachineTerm::constant(value as u32))
                         })
                     }
                     _ => None,
@@ -477,13 +477,13 @@ mod compound_observation_lookup_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
 
         let native = ConditionTerm::equal(
-            Bitvector32Term::logical_machine_binary(
+            MachineTerm::logical_machine_binary(
                 ty,
                 MachineBinaryOp::Multiply,
-                Bitvector32Term::Variable(Variable(989001)),
-                Bitvector32Term::Variable(Variable(989002)),
+                MachineTerm::Variable(Variable(989001)),
+                MachineTerm::Variable(Variable(989002)),
             ),
-            Bitvector32Term::constant(u32::MAX),
+            MachineTerm::constant(u32::MAX),
         );
         let native_guard = guard(native.clone(), false);
         let native_context = PureFactContext::new().assume_proposition(native_guard.clone());

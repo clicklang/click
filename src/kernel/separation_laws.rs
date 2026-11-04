@@ -8,8 +8,8 @@ pub(crate) fn prove_separation_elements(
     base: CPointerValue,
     width: u32,
     format: MachineIntegerType,
-    i: Bitvector32Term,
-    j: Bitvector32Term,
+    i: MachineTerm,
+    j: MachineTerm,
 ) -> Theorem {
     assert!(width > 0, "elements require a nonzero storage width");
     let (unsigned, wide) = match format {
@@ -19,7 +19,7 @@ pub(crate) fn prove_separation_elements(
         _ => panic!("elements indices require int32, int64, or uint64"),
     };
     crate::instrumentation::record_deterministic_work(1);
-    let element = |index: Bitvector32Term| {
+    let element = |index: MachineTerm| {
         let address = base
             .pointer()
             .offset_by_typed_elements(index, width, unsigned, wide);
@@ -80,10 +80,10 @@ pub(crate) fn prove_separation_restrict(
 pub(crate) fn prove_separation_subrange(
     base: CPointerValue,
     width: u32,
-    lo: Bitvector32Term,
-    hi: Bitvector32Term,
-    inner_lo: Bitvector32Term,
-    inner_hi: Bitvector32Term,
+    lo: MachineTerm,
+    hi: MachineTerm,
+    inner_lo: MachineTerm,
+    inner_hi: MachineTerm,
 ) -> Theorem {
     crate::instrumentation::record_deterministic_work(1);
     let premises = [

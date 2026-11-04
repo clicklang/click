@@ -7,7 +7,7 @@ use crate::kernel::CompareRelation;
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 use crate::kernel::binary_node;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
@@ -19,7 +19,7 @@ fn cast_identity_reads_interned_integer_operands_without_walking_their_dags() {
         for index in 0..size {
             value = IntegerTerm::add(value, IntegerTerm::Variable(Variable(893_000 + index)));
         }
-        let cast = Bitvector32Term::IntegerToMachine {
+        let cast = MachineTerm::IntegerToMachine {
             value: value.into(),
             destination: MachineIntegerType::Int64,
         };
@@ -43,16 +43,16 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
     for size in [2usize, 8, 32, 96] {
         let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
         let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
-        let mut index = Bitvector32Term::legacy_cast(
+        let mut index = MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(Bitvector32Term::Variable(crate::kernel::Variable(1))),
+            Box::new(MachineTerm::Variable(crate::kernel::Variable(1))),
         );
         for _ in 0..size {
             index = binary_node!(
                 Int32,
                 Subtract,
                 Box::new(index),
-                Box::new(Bitvector32Term::constant(0))
+                Box::new(MachineTerm::constant(0))
             );
         }
         let relation = pointer_eq(p.clone(), add(arr.clone(), scaled(index.clone())));
@@ -61,7 +61,7 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::LessThan,
                 left: Box::new(index.clone()),
-                right: Box::new(Bitvector32Term::constant(i32::MAX as u32)),
+                right: Box::new(MachineTerm::constant(i32::MAX as u32)),
             },
             true,
         );
@@ -73,7 +73,7 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
                     Int32,
                     Add,
                     Box::new(index),
-                    Box::new(Bitvector32Term::constant(1)),
+                    Box::new(MachineTerm::constant(1)),
                 )),
             ),
         );
@@ -114,14 +114,13 @@ fn computed_index_translation_checks_bounds_and_scales_with_payload() {
 fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
     let base = pointer(PointerOffsetTerm::Constant(0));
     let alignment = Proposition::ConditionIs(ConditionTerm::pointer_aligned(base.clone(), 8), true);
-    let address = Bitvector32Term::PointerAddress(
+    let address = MachineTerm::PointerAddress(
         Box::new(base.clone()),
         crate::kernel::AddressObjectClass::NONE,
     );
-    let value = Bitvector32Term::Variable(crate::kernel::Variable(71_001));
-    let mask = |term, bits| {
-        Bitvector32Term::uint64_bitwise_and(term, Bitvector32Term::uint64_constant(bits))
-    };
+    let value = MachineTerm::Variable(crate::kernel::Variable(71_001));
+    let mask =
+        |term, bits| MachineTerm::uint64_bitwise_and(term, MachineTerm::uint64_constant(bits));
     let equality =
         |left, right| Proposition::ConditionIs(ConditionTerm::uint64_equal(left, right), true);
     let check = |goal: &Proposition, premises: &[Proposition]| {
@@ -134,7 +133,7 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
         }
         .check(goal, premises)
     };
-    let tagged = Bitvector32Term::uint64_bitwise_or(mask(value.clone(), 7), address.clone());
+    let tagged = MachineTerm::uint64_bitwise_or(mask(value.clone(), 7), address.clone());
     let goal = equality(mask(tagged.clone(), 3), mask(value.clone(), 3));
     assert!(check(&goal, std::slice::from_ref(&alignment)).is_ok());
     assert!(check(&goal, &[]).is_err());
@@ -149,10 +148,10 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
     let changed_mask = equality(mask(tagged, 7), mask(value.clone(), 3));
     assert!(check(&changed_mask, std::slice::from_ref(&alignment)).is_err());
 
-    let word = Bitvector32Term::Variable(crate::kernel::Variable(71_002));
+    let word = MachineTerm::Variable(crate::kernel::Variable(71_002));
     let relation = equality(
         word.clone(),
-        Bitvector32Term::uint64_add(address.clone(), mask(value.clone(), 1)),
+        MachineTerm::uint64_add(address.clone(), mask(value.clone(), 1)),
     );
     let read = equality(mask(word, 1), mask(value, 1));
     SpecialArithmeticCertificate {
@@ -170,9 +169,9 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
     for size in [8, 16, 32, 64] {
         let mut word = address.clone();
         for _ in 0..size {
-            word = Bitvector32Term::uint64_add(word, Bitvector32Term::uint64_constant(2));
+            word = MachineTerm::uint64_add(word, MachineTerm::uint64_constant(2));
         }
-        let goal = equality(mask(word, 1), Bitvector32Term::uint64_constant(0));
+        let goal = equality(mask(word, 1), MachineTerm::uint64_constant(0));
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
             check(&goal, std::slice::from_ref(&alignment))
         });
@@ -188,26 +187,26 @@ fn pointer_tag_reads_require_alignment_and_scale_with_word_syntax() {
 #[test]
 fn tagged_word_alignment_index_scales_with_alignment_count() {
     let base_pointer = pointer(PointerOffsetTerm::Constant(0));
-    let address = Bitvector32Term::PointerAddress(
+    let address = MachineTerm::PointerAddress(
         Box::new(base_pointer.clone()),
         crate::kernel::AddressObjectClass::NONE,
     );
-    let word = Bitvector32Term::Variable(crate::kernel::Variable(12));
+    let word = MachineTerm::Variable(crate::kernel::Variable(12));
     let relation = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
             word.clone(),
-            Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
+            MachineTerm::uint64_add(address.clone(), MachineTerm::uint64_constant(1)),
         ),
         true,
     );
     let mut deep_word = word.clone();
     for _ in 0..64 {
-        deep_word = Bitvector32Term::uint64_add(deep_word, Bitvector32Term::uint64_constant(0));
+        deep_word = MachineTerm::uint64_add(deep_word, MachineTerm::uint64_constant(0));
     }
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
-            Bitvector32Term::uint64_bitwise_or(deep_word, Bitvector32Term::uint64_constant(2)),
-            Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
+            MachineTerm::uint64_bitwise_or(deep_word, MachineTerm::uint64_constant(2)),
+            MachineTerm::uint64_add(address, MachineTerm::uint64_constant(3)),
         ),
         true,
     );
@@ -243,17 +242,17 @@ fn tagged_word_alignment_index_scales_with_alignment_count() {
 #[test]
 fn direct_tagged_word_checker_does_not_scan_unrelated_alignments() {
     let base_pointer = pointer(PointerOffsetTerm::Constant(0));
-    let address = Bitvector32Term::PointerAddress(
+    let address = MachineTerm::PointerAddress(
         Box::new(base_pointer.clone()),
         crate::kernel::AddressObjectClass::NONE,
     );
     let goal = Proposition::ConditionIs(
         ConditionTerm::uint64_equal(
-            Bitvector32Term::uint64_bitwise_or(
-                Bitvector32Term::uint64_add(address.clone(), Bitvector32Term::uint64_constant(1)),
-                Bitvector32Term::uint64_constant(2),
+            MachineTerm::uint64_bitwise_or(
+                MachineTerm::uint64_add(address.clone(), MachineTerm::uint64_constant(1)),
+                MachineTerm::uint64_constant(2),
             ),
-            Bitvector32Term::uint64_add(address, Bitvector32Term::uint64_constant(3)),
+            MachineTerm::uint64_add(address, MachineTerm::uint64_constant(3)),
         ),
         true,
     );
@@ -299,8 +298,8 @@ fn translation_work_scales_with_explicit_payload() {
     for size in [4, 8, 16, 32, 64] {
         let p = PointerOffsetTerm::Variable(crate::kernel::Variable(100));
         let arr = PointerOffsetTerm::Variable(crate::kernel::Variable(101));
-        let i = Bitvector32Term::Variable(crate::kernel::Variable(1));
-        let n = Bitvector32Term::Variable(crate::kernel::Variable(2));
+        let i = MachineTerm::Variable(crate::kernel::Variable(1));
+        let n = MachineTerm::Variable(crate::kernel::Variable(2));
         let mut left = p.clone();
         let mut right = add(arr.clone(), scaled(i.clone()));
         let mut premises = vec![Proposition::ConditionIs(
@@ -320,10 +319,8 @@ fn translation_work_scales_with_explicit_payload() {
                 ConditionTerm::Compare {
                     format: MachineIntegerType::Int32,
                     relation: CompareRelation::LessThan,
-                    left: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
-                        2000 + index,
-                    ))),
-                    right: Box::new(Bitvector32Term::constant(100)),
+                    left: Box::new(MachineTerm::Variable(crate::kernel::Variable(2000 + index))),
+                    right: Box::new(MachineTerm::constant(100)),
                 },
                 true,
             ));
@@ -354,18 +351,18 @@ fn translation_work_scales_with_explicit_payload() {
 fn tagged_word_traversal_scales_with_tagged_depth() {
     let mut previous = None;
     for depth in [4, 8, 16, 32, 64] {
-        let address = Bitvector32Term::PointerAddress(
+        let address = MachineTerm::PointerAddress(
             Box::new(pointer(PointerOffsetTerm::Constant(0))),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let variable = Bitvector32Term::Variable(crate::kernel::Variable(94));
+        let variable = MachineTerm::Variable(crate::kernel::Variable(94));
         let mut tagged = address;
         for _ in 0..depth {
-            tagged = Bitvector32Term::Binary {
+            tagged = MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(tagged),
-                right: Box::new(Bitvector32Term::uint64_constant(1)),
+                right: Box::new(MachineTerm::uint64_constant(1)),
             };
         }
         let relation = Proposition::ConditionIs(
@@ -411,20 +408,18 @@ fn tagged_word_traversal_scales_with_tagged_depth() {
 fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
     let mut previous = None;
     for depth in [4, 8, 16, 32, 64] {
-        let address = Bitvector32Term::PointerAddress(
+        let address = MachineTerm::PointerAddress(
             Box::new(pointer(PointerOffsetTerm::Constant(0))),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let variable = Bitvector32Term::Variable(crate::kernel::Variable(194));
+        let variable = MachineTerm::Variable(crate::kernel::Variable(194));
         let mut tagged = address;
         for index in 0..depth {
-            tagged = Bitvector32Term::Binary {
+            tagged = MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(tagged),
-                right: Box::new(Bitvector32Term::Variable(crate::kernel::Variable(
-                    200 + index,
-                ))),
+                right: Box::new(MachineTerm::Variable(crate::kernel::Variable(200 + index))),
             };
         }
         let relation = Proposition::ConditionIs(
@@ -468,7 +463,7 @@ fn tagged_word_symbolic_tag_chains_scale_without_rewalking_tags() {
 
 #[test]
 fn checker_validates_unselected_nodes_and_scales_without_cloning_results() {
-    let value = Bitvector32Term::Variable(crate::kernel::Variable(91));
+    let value = MachineTerm::Variable(crate::kernel::Variable(91));
     let finite = Proposition::ConditionIs(
         ConditionTerm::float32_classification(value.clone(), CFloatClassification::Finite),
         true,
@@ -523,17 +518,16 @@ fn checker_validates_unselected_nodes_and_scales_without_cloning_results() {
 fn unsigned_widening_identity_work_scales_with_operand_payload() {
     let mut samples = Vec::new();
     for size in [4, 16, 64, 96] {
-        let mut value = Bitvector32Term::Variable(crate::kernel::Variable(994_111));
+        let mut value = MachineTerm::Variable(crate::kernel::Variable(994_111));
         for _ in 0..size {
             value = binary_node!(
                 Int32,
                 Add,
                 Box::new(value),
-                Box::new(Bitvector32Term::constant(0))
+                Box::new(MachineTerm::constant(0))
             );
         }
-        let widened =
-            Bitvector32Term::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value));
+        let widened = MachineTerm::legacy_cast(MachineCastSpelling::UInt64From32, Box::new(value));
         let (same, work) = crate::instrumentation::measure_deterministic_work(|| {
             bitvector_equal(&widened, &widened)
         });

@@ -1,5 +1,5 @@
 use super::*;
-use crate::kernel::{Bitvector32Term, MachineCastSpelling};
+use crate::kernel::{MachineCastSpelling, MachineTerm};
 
 #[test]
 fn shared_term_bridges_visit_nodes_once_beside_unrelated_terms() {
@@ -35,9 +35,9 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(920_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut bits = Bitvector32Term::Variable(Variable(921_000));
+            let mut bits = MachineTerm::Variable(Variable(921_000));
             for i in 0..size {
-                bits = Bitvector32Term::Binary {
+                bits = MachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: match i % 3 {
                         0 => MachineBinaryOp::Add,
@@ -45,7 +45,7 @@ fn machine_term_bridge_is_linear_in_explicit_tree_size() {
                         _ => MachineBinaryOp::ShiftRight,
                     },
                     left: Box::new(bits),
-                    right: Box::new(Bitvector32Term::constant(1)),
+                    right: Box::new(MachineTerm::constant(1)),
                 };
             }
             let source = PureFunctionArgument::Value(CValue::Int32(bits));
@@ -69,11 +69,11 @@ fn specialized_cast_bridge_is_linear_beside_unrelated_terms() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(930_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut bits = Bitvector32Term::Variable(Variable(931_000));
+            let mut bits = MachineTerm::Variable(Variable(931_000));
             for _ in 0..size {
-                bits = Bitvector32Term::legacy_cast(
+                bits = MachineTerm::legacy_cast(
                     MachineCastSpelling::UInt32From64,
-                    Box::new(Bitvector32Term::legacy_cast(
+                    Box::new(MachineTerm::legacy_cast(
                         MachineCastSpelling::UInt64From32,
                         Box::new(bits),
                     )),
@@ -102,13 +102,13 @@ fn machine_observation_bridge_scales_with_its_explicit_operand() {
             .map(|i| KernelTerm::variable(KernelType::Integer, Variable(940_000 + i)))
             .collect::<Vec<_>>();
         for size in [16, 64, 256] {
-            let mut bits = Bitvector32Term::Variable(Variable(941_000));
+            let mut bits = MachineTerm::Variable(Variable(941_000));
             for _ in 0..size {
-                bits = Bitvector32Term::Binary {
+                bits = MachineTerm::Binary {
                     format: MachineIntegerType::Int32,
                     op: MachineBinaryOp::Add,
                     left: Box::new(bits),
-                    right: Box::new(Bitvector32Term::constant(1)),
+                    right: Box::new(MachineTerm::constant(1)),
                 };
             }
             let machine = SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, bits);
@@ -141,7 +141,7 @@ fn integer_conversion_bridge_scales_with_shared_operand() {
                 value = IntegerTerm::Add(value.clone(), value).into();
             }
             let source =
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::IntegerToMachine {
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 }));
@@ -173,7 +173,7 @@ fn boolean_conversion_bridge_is_linear_in_explicit_conditions() {
                     else_condition: Box::new(ConditionTerm::Constant(false)),
                 };
             }
-            let source = PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::BoolCast {
+            let source = PureFunctionArgument::Value(CValue::Int32(MachineTerm::BoolCast {
                 to: MachineIntegerType::Int32,
                 value: Box::new(condition),
             }));
@@ -312,7 +312,7 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
                             arguments: [
                                 term.clone(),
                                 KernelTermImport::default()
-                                    .machine(format, &Bitvector32Term::int64_constant(2)),
+                                    .machine(format, &MachineTerm::int64_constant(2)),
                             ],
                         },
                     );

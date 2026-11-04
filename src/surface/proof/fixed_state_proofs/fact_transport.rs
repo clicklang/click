@@ -950,9 +950,9 @@ const TRANSPORT_SEARCH_MISS: &str = "\n  this is a search miss, not a refusal; i
 pub(in crate::surface::proof) fn memory_erased_comparison(
     proposition: &Proposition,
 ) -> Option<Proposition> {
-    fn erase_term(term: &Bitvector32Term) -> Bitvector32Term {
+    fn erase_term(term: &MachineTerm) -> MachineTerm {
         match term {
-            Bitvector32Term::MemoryLoad(_, pointer, kind) => Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(_, pointer, kind) => MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::default()),
                 Box::new(Pointer {
                     block: pointer.block.clone(),
@@ -1400,15 +1400,15 @@ mod path_condition_tests {
         let source = Proposition::CMemoryLoadable {
             memory: memory.clone(),
             base: base.clone(),
-            bytes: Bitvector32Term::constant(1),
+            bytes: MachineTerm::constant(1),
             wide: false,
         };
         let guard = Proposition::ConditionIs(
             ConditionTerm::Overflows {
                 format: MachineIntegerType::Int32,
                 op: OverflowOperation::Subtract,
-                left: Box::new(Bitvector32Term::Variable(Variable(7))),
-                right: Box::new(Bitvector32Term::constant(1)),
+                left: Box::new(MachineTerm::Variable(Variable(7))),
+                right: Box::new(MachineTerm::constant(1)),
             },
             false,
         );
@@ -1424,7 +1424,7 @@ mod path_condition_tests {
         let wider = Proposition::CMemoryLoadable {
             memory,
             base,
-            bytes: Bitvector32Term::constant(2),
+            bytes: MachineTerm::constant(2),
             wide: false,
         };
         let invalid = Proposition::And(Box::new(guard), Box::new(wider));
@@ -1436,11 +1436,11 @@ mod path_condition_tests {
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {
         let left = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(41))),
+            value: Box::new(MachineTerm::Variable(Variable(41))),
             byte_width: 4,
         };
         let right = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(Bitvector32Term::Variable(Variable(42))),
+            value: Box::new(MachineTerm::Variable(Variable(42))),
             byte_width: 4,
         };
         let forward = Proposition::ConditionIs(

@@ -911,7 +911,7 @@ impl<L: Clone, P: Clone, S: Clone, E: Clone>
                     crate::kernel::substitute_int32_variable_in_proposition(
                         &body,
                         var,
-                        crate::kernel::Bitvector32Term::Variable(chosen),
+                        crate::kernel::MachineTerm::Variable(chosen),
                     )
                 }
                 Sort::CPointer(c_type) | Sort::CObjectPointer(c_type, _) => {
@@ -2557,7 +2557,7 @@ fn condition_is_disequality(condition: &crate::kernel::ConditionTerm, value: boo
 mod tests {
     use super::*;
     use crate::kernel::proof::PropositionObligation;
-    use crate::kernel::{Bitvector32Term, Sort, Term, Variable};
+    use crate::kernel::{MachineTerm, Sort, Term, Variable};
 
     fn integer_choice_proof(
         source: Proposition,
@@ -2799,8 +2799,8 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::ConditionIs(
             crate::kernel::ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(bound),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(bound),
             ),
             true,
         );
@@ -2830,8 +2830,8 @@ mod tests {
         let second = facts
             .with_fact(Proposition::ConditionIs(
                 crate::kernel::ConditionTerm::signed_less_equal(
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::Variable(witness),
+                    MachineTerm::constant(0),
+                    MachineTerm::Variable(witness),
                 ),
                 true,
             ))
@@ -2852,7 +2852,7 @@ mod tests {
         let bound = Variable(2_000_000);
         let body = Proposition::Predicate {
             name: "witness_body".into(),
-            arguments: vec![Term::Bitvector32(Bitvector32Term::constant(0))],
+            arguments: vec![Term::Bitvector32(MachineTerm::constant(0))],
         };
         let reserving = Proposition::ForAll {
             name: Default::default(),
@@ -2918,8 +2918,8 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(Bitvector32Term::constant(0)),
-                            right: Box::new(Bitvector32Term::Variable(variable)),
+                            left: Box::new(MachineTerm::constant(0)),
+                            right: Box::new(MachineTerm::Variable(variable)),
                         },
                         true,
                     )),
@@ -2927,8 +2927,8 @@ mod tests {
                         ConditionTerm::Compare {
                             format: MachineIntegerType::Int32,
                             relation: CompareRelation::LessEqual,
-                            left: Box::new(Bitvector32Term::Variable(variable)),
-                            right: Box::new(Bitvector32Term::constant(16)),
+                            left: Box::new(MachineTerm::Variable(variable)),
+                            right: Box::new(MachineTerm::constant(16)),
                         },
                         true,
                     )),
@@ -2939,7 +2939,7 @@ mod tests {
                         block: "alpha".into(),
                         offset: PointerOffsetTerm::Constant(0),
                     },
-                    bytes: Bitvector32Term::Variable(variable),
+                    bytes: MachineTerm::Variable(variable),
                     wide: false,
                 }),
             )),
@@ -2963,8 +2963,8 @@ mod tests {
         let fold = |accumulator, item| {
             IntegerTerm::range_fold(
                 IntegerRangeFoldIndex::Int32 {
-                    start: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(0)),
-                    end: SharedIntegerRangeEndpoint::intern(Bitvector32Term::constant(2)),
+                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
                 },
                 IntegerTerm::constant_i64(0),
                 accumulator,
@@ -2973,7 +2973,7 @@ mod tests {
                     IntegerTerm::var(accumulator),
                     IntegerTerm::from_machine(
                         MachineIntegerType::Int32,
-                        Bitvector32Term::Variable(item),
+                        MachineTerm::Variable(item),
                     )
                     .unwrap(),
                 ),
@@ -3012,7 +3012,7 @@ mod tests {
                 block: "alpha".into(),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            CValue::Int32(Bitvector32Term::constant(7)),
+            CValue::Int32(MachineTerm::constant(7)),
         );
         assert!(
             root(
@@ -3165,7 +3165,7 @@ mod tests {
         let variable = Variable(186);
         let domain = Proposition::Predicate {
             name: "defined".into(),
-            arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(variable))],
+            arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
         };
         let truth = Proposition::ConditionIs(crate::kernel::ConditionTerm::Constant(true), true);
         let body = Proposition::And(Box::new(domain), Box::new(truth));
@@ -3217,7 +3217,7 @@ mod tests {
         let binder = Variable(186);
         let body = Proposition::Predicate {
             name: "holds".to_string(),
-            arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(binder))],
+            arguments: vec![Term::Bitvector32(MachineTerm::Variable(binder))],
         };
         let goal = Proposition::ForAll {
             name: Default::default(),
@@ -3260,7 +3260,7 @@ mod tests {
             obligation.proposition(),
             &Proposition::Predicate {
                 name: "holds".to_string(),
-                arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(introduced))],
+                arguments: vec![Term::Bitvector32(MachineTerm::Variable(introduced))],
             }
         );
     }

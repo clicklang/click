@@ -14,11 +14,11 @@ fn name(text: &str) -> SpecExpression {
 }
 
 fn int(value: u32) -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(Bitvector32Term::constant(value)))
+    SpecExpression::Value(CValue::Int32(MachineTerm::constant(value)))
 }
 
 fn item() -> SpecExpression {
-    SpecExpression::Value(CValue::Int32(Bitvector32Term::Variable(ITEM)))
+    SpecExpression::Value(CValue::Int32(MachineTerm::Variable(ITEM)))
 }
 
 fn read_at(elements: SpecExpression) -> SpecExpression {
@@ -373,8 +373,8 @@ fn a_changed_body_under_one_name_poisons_the_session_and_a_new_session_rechecks(
 // Framing
 // ---------------------------------------------------------------------------
 
-fn bv(variable: u32) -> Bitvector32Term {
-    Bitvector32Term::Variable(Variable(u64::from(variable)))
+fn bv(variable: u32) -> MachineTerm {
+    MachineTerm::Variable(Variable(u64::from(variable)))
 }
 
 /// An `int32` array parameter's base, spelled as the kernel spells one.
@@ -385,7 +385,7 @@ fn parameter_base(variable: u32) -> Pointer {
     }
 }
 
-fn element(base: &Pointer, index: Bitvector32Term) -> Pointer {
+fn element(base: &Pointer, index: MachineTerm) -> Pointer {
     Pointer {
         block: base.block.clone(),
         offset: PointerOffsetTerm::add(
@@ -403,14 +403,14 @@ fn byte_offset(pointer: &Pointer, bytes: i64) -> Pointer {
 }
 
 fn one() -> CValue {
-    CValue::Int32(Bitvector32Term::constant(1))
+    CValue::Int32(MachineTerm::constant(1))
 }
 
 fn application(
     memory: &CMemory,
     base: &Pointer,
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
 ) -> SharedPureApplication {
     SharedPureApplication::intern(
         "unmarked".into(),
@@ -430,7 +430,7 @@ fn fact(condition: ConditionTerm) -> Proposition {
     Proposition::ConditionIs(condition, true)
 }
 
-fn le(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
     fact(ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessEqual,
@@ -439,7 +439,7 @@ fn le(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
     })
 }
 
-fn lt(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+fn lt(left: MachineTerm, right: MachineTerm) -> Proposition {
     fact(ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
         relation: CompareRelation::LessThan,
@@ -488,8 +488,8 @@ fn a_store_at_the_exact_upper_endpoint_misses_the_prefix() {
     let v = parameter_base(V);
     let before = CMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
-    let old = application(&before, &v, Bitvector32Term::constant(0), bv(HI));
-    let new = application(&after, &v, Bitvector32Term::constant(0), bv(HI));
+    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
     assert_eq!(frame(&old, &new, &[]), Ok(1));
     // Symmetric: the rule proves an equality.
     assert_eq!(frame(&new, &old, &[]), Ok(1));
@@ -502,7 +502,7 @@ fn a_store_inside_the_range_is_refused() {
     let v = parameter_base(V);
     let before = CMemory::new();
     // `v[hi - 1]`, the last cell of `[lo, hi)`.
-    let last = Bitvector32Term::subtract(bv(HI), Bitvector32Term::constant(1));
+    let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
     let after = before.clone().store(element(&v, last.clone()), one());
     let old = application(&before, &v, bv(LO), bv(HI));
     let new = application(&after, &v, bv(LO), bv(HI));
@@ -538,8 +538,8 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let v = parameter_base(V);
     let before = CMemory::new();
     let old = application(&before, &v, bv(LO), bv(HI));
-    let last = Bitvector32Term::subtract(bv(HI), Bitvector32Term::constant(1));
-    let wide = CValue::Int64(Bitvector32Term::int64_constant(0));
+    let last = MachineTerm::subtract(bv(HI), MachineTerm::constant(1));
+    let wide = CValue::Int64(MachineTerm::int64_constant(0));
     // An eight-byte store at `v + 4*(hi - 1)` covers the last cell and the
     // endpoint cell. Nothing may separate it, even with `hi - 1 >= lo`.
     let after = before
@@ -568,7 +568,7 @@ fn byte_widths_decide_partial_overlap_of_the_boundary_cells() {
     let new = application(&after, &v, bv(LO), bv(HI));
     assert!(is_store_refusal(&frame(&old, &new, &[lt(bv(J), bv(LO))])));
     // A two-byte store in the top half of the cell below the start misses it.
-    let below = Bitvector32Term::subtract(bv(LO), Bitvector32Term::constant(1));
+    let below = MachineTerm::subtract(bv(LO), MachineTerm::constant(1));
     let after = before.clone().store(
         byte_offset(&element(&v, below.clone()), 2),
         crate::kernel::int16(7),
@@ -585,24 +585,24 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
     let b = parameter_base(W);
     let before = CMemory::new();
     let after = before.clone().store(element(&b, bv(J)), one());
-    let old = application(&before, &a, Bitvector32Term::constant(0), bv(N));
-    let new = application(&after, &a, Bitvector32Term::constant(0), bv(N));
+    let old = application(&before, &a, MachineTerm::constant(0), bv(N));
+    let new = application(&after, &a, MachineTerm::constant(0), bv(N));
     // Distinct parameter names establish nothing: `a` and `b` may be one
     // object.
     assert!(is_store_refusal(&frame(&old, &new, &[])));
     let separate = Proposition::CResourceSeparate {
         left: Box::new(CResource::Memory(CMemoryRange::new(
             a.clone(),
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             bv(N),
         ))),
         right: Box::new(CResource::Memory(CMemoryRange::new(
             b.clone(),
-            Bitvector32Term::constant(0),
+            MachineTerm::constant(0),
             bv(N),
         ))),
     };
-    let in_b = [le(Bitvector32Term::constant(0), bv(J)), lt(bv(J), bv(N))];
+    let in_b = [le(MachineTerm::constant(0), bv(J)), lt(bv(J), bv(N))];
     let mut facts = vec![separate.clone()];
     facts.extend(in_b.iter().cloned());
     assert_eq!(frame(&old, &new, &facts), Ok(1));
@@ -613,9 +613,9 @@ fn an_alias_needs_a_stated_separation_with_checked_membership() {
         std::slice::from_ref(&separate)
     )));
     // And the interval inside the other: `[0, n + 1)` is not inside `[0, n)`.
-    let longer = Bitvector32Term::add(bv(N), Bitvector32Term::constant(1));
-    let old_longer = application(&before, &a, Bitvector32Term::constant(0), longer.clone());
-    let new_longer = application(&after, &a, Bitvector32Term::constant(0), longer);
+    let longer = MachineTerm::add(bv(N), MachineTerm::constant(1));
+    let old_longer = application(&before, &a, MachineTerm::constant(0), longer.clone());
+    let new_longer = application(&after, &a, MachineTerm::constant(0), longer);
     assert!(is_store_refusal(&frame(&old_longer, &new_longer, &facts)));
 }
 
@@ -626,19 +626,14 @@ fn changed_endpoints_or_base_pointers_are_not_framed() {
     let v = parameter_base(V);
     let before = CMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
-    let old = application(&before, &v, Bitvector32Term::constant(0), bv(HI));
-    let longer = Bitvector32Term::add(bv(HI), Bitvector32Term::constant(1));
-    let changed_end = application(&after, &v, Bitvector32Term::constant(0), longer);
+    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
+    let longer = MachineTerm::add(bv(HI), MachineTerm::constant(1));
+    let changed_end = application(&after, &v, MachineTerm::constant(0), longer);
     assert!(matches!(
         frame(&old, &changed_end, &[]),
         Err(FoldFrameRefusal::ApplicationsDiffer { .. })
     ));
-    let changed_base = application(
-        &after,
-        &parameter_base(W),
-        Bitvector32Term::constant(0),
-        bv(HI),
-    );
+    let changed_base = application(&after, &parameter_base(W), MachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &changed_base, &[]),
         Err(FoldFrameRefusal::ApplicationsDiffer { .. })
@@ -675,14 +670,14 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
     let old = application(
         &declared,
         &base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(0),
+        MachineTerm::constant(0),
+        MachineTerm::constant(0),
     );
     let new = application(
         &ended,
         &base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(0),
+        MachineTerm::constant(0),
+        MachineTerm::constant(0),
     );
     // Even an empty fold keeps the conservative lifetime rule.
     assert!(matches!(
@@ -699,14 +694,14 @@ fn a_lifetime_end_of_the_array_is_never_crossed() {
     let old = application(
         &both,
         &base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(0),
+        MachineTerm::constant(2),
     );
     let new = application(
         &other_ended,
         &base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(0),
+        MachineTerm::constant(2),
     );
     assert_eq!(frame(&old, &new, &[]), Ok(1));
 }
@@ -717,7 +712,7 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
     register_unmarked();
     let v = parameter_base(V);
     let before = CMemory::new();
-    let havoc = |start: Bitvector32Term, end: Bitvector32Term| {
+    let havoc = |start: MachineTerm, end: MachineTerm| {
         before.clone().with_call_memory_havoc(
             Variable(2_000),
             &[CMemoryRange::new(v.clone(), start, end)],
@@ -725,10 +720,10 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
             None,
         )
     };
-    let old = application(&before, &v, Bitvector32Term::constant(0), bv(HI));
+    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
     // The callee may write `[hi, n)`: outside the prefix, once `hi <= n`.
     let after = havoc(bv(HI), bv(N));
-    let new = application(&after, &v, Bitvector32Term::constant(0), bv(HI));
+    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
     assert_eq!(frame(&old, &new, &[le(bv(HI), bv(N))]), Ok(1));
     // A reversed write set is not read as empty.
     assert!(matches!(
@@ -737,10 +732,10 @@ fn a_call_is_framed_only_by_its_checked_write_set() {
     ));
     // `[hi - 1, n)` writes the last cell.
     let after = havoc(
-        Bitvector32Term::subtract(bv(HI), Bitvector32Term::constant(1)),
+        MachineTerm::subtract(bv(HI), MachineTerm::constant(1)),
         bv(N),
     );
-    let new = application(&after, &v, Bitvector32Term::constant(0), bv(HI));
+    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &new, &[le(bv(HI), bv(N))]),
         Err(FoldFrameRefusal::StepNotShownOutside { step: "call", .. })
@@ -753,10 +748,7 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     // A snapshot built in an earlier session carries no derivation here.
     let foreign = {
         let _session = VerificationSession::enter();
-        CMemory::new().store(
-            element(&v, bv(HI)),
-            CValue::Int32(Bitvector32Term::constant(2)),
-        )
+        CMemory::new().store(element(&v, bv(HI)), CValue::Int32(MachineTerm::constant(2)))
     };
     let _session = VerificationSession::enter();
     let base = CMemory::new();
@@ -768,8 +760,8 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
         },
         one(),
     );
-    let old = application(&left, &v, Bitvector32Term::constant(0), bv(HI));
-    let new = application(&right, &v, Bitvector32Term::constant(0), bv(HI));
+    let old = application(&left, &v, MachineTerm::constant(0), bv(HI));
+    let new = application(&right, &v, MachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &new, &[]),
         Err(FoldFrameRefusal::NoSummary {
@@ -784,15 +776,15 @@ fn sibling_and_unrelated_histories_and_unsummarized_functions() {
     // A sibling that wrote inside the prefix does not.
     let inside = base
         .clone()
-        .store(element(&v, Bitvector32Term::constant(0)), one());
-    let inside = application(&inside, &v, Bitvector32Term::constant(0), bv(HI));
+        .store(element(&v, MachineTerm::constant(0)), one());
+    let inside = application(&inside, &v, MachineTerm::constant(0), bv(HI));
     assert!(is_store_refusal(&frame(
         &old,
         &inside,
-        &[lt(Bitvector32Term::constant(0), bv(HI))]
+        &[lt(MachineTerm::constant(0), bv(HI))]
     )));
     // A snapshot with no recorded history reaches no common snapshot.
-    let foreign = application(&foreign, &v, Bitvector32Term::constant(0), bv(HI));
+    let foreign = application(&foreign, &v, MachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &foreign, &[]),
         Err(FoldFrameRefusal::UnrelatedSnapshots { .. })
@@ -814,8 +806,8 @@ fn a_declined_definition_frames_nothing_even_across_an_unrelated_store() {
     let v = parameter_base(V);
     let before = CMemory::new();
     let after = before.clone().store(element(&v, bv(HI)), one());
-    let old = application(&before, &v, Bitvector32Term::constant(0), bv(HI));
-    let new = application(&after, &v, Bitvector32Term::constant(0), bv(HI));
+    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
     assert!(matches!(
         frame(&old, &new, &[]),
         Err(FoldFrameRefusal::NoSummary {
@@ -835,13 +827,13 @@ fn a_transport_rewrites_only_fold_application_snapshots() {
     let old = IntegerTerm::PureFunctionApplication(application(
         &before,
         &v,
-        Bitvector32Term::constant(0),
+        MachineTerm::constant(0),
         bv(HI),
     ));
     let new = IntegerTerm::PureFunctionApplication(application(
         &after,
         &v,
-        Bitvector32Term::constant(0),
+        MachineTerm::constant(0),
         bv(HI),
     ));
     let equals = |term: &IntegerTerm, value: i64| {
@@ -904,11 +896,11 @@ fn an_offset_pointer_is_read_by_its_exact_byte_offset() {
     // `w = v + 1`, so `w[i - 2]` is `v + 4 + 4*(i - 2)`: the last cell of
     // `[0, i)`. The offset is read exactly, constant included.
     let w = byte_offset(&v, 4);
-    let index = Bitvector32Term::subtract(bv(HI), Bitvector32Term::constant(2));
+    let index = MachineTerm::subtract(bv(HI), MachineTerm::constant(2));
     let before = CMemory::new();
     let after = before.clone().store(element(&w, index.clone()), one());
-    let old = application(&before, &v, Bitvector32Term::constant(0), bv(HI));
-    let new = application(&after, &v, Bitvector32Term::constant(0), bv(HI));
+    let old = application(&before, &v, MachineTerm::constant(0), bv(HI));
+    let new = application(&after, &v, MachineTerm::constant(0), bv(HI));
     // With the index at or past the end, the write starts past the range.
     assert_eq!(frame(&old, &new, &[le(bv(HI), index.clone())]), Ok(1));
     // Without a fact the write is not placed at all.
@@ -996,8 +988,8 @@ fn byte_fold_framing_refuses_overlap_and_counts_byte_endpoints() {
                     pointer: CValue::typed_pointer(base.clone(), CType::UInt8Pointer),
                     element_type,
                 },
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::constant(0))),
-                PureFunctionArgument::Value(CValue::Int32(Bitvector32Term::constant(2))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(0))),
+                PureFunctionArgument::Value(CValue::Int32(MachineTerm::constant(2))),
             ],
         )
     };
@@ -1061,8 +1053,8 @@ fn wide_ranges_refuse_signed_fold_framing_rules() {
     let base = Pointer::symbolic(Variable(984_100));
     let wide = CMemoryRange::new_wide(
         base.clone(),
-        Bitvector32Term::uint64_constant(0),
-        Bitvector32Term::uint64_constant(1 << 33),
+        MachineTerm::uint64_constant(0),
+        MachineTerm::uint64_constant(1 << 33),
         4,
     );
     let narrow = CMemoryRange::new(base.clone(), 0u32.into(), 1u32.into());

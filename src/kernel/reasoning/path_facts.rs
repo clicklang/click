@@ -371,7 +371,7 @@ fn sequence_terms_definitely_distinct(left: &SequenceTerm, right: &SequenceTerm)
 }
 
 fn c_values_definitely_distinct(left: &CValue, right: &CValue) -> bool {
-    fn constant(bits: &Bitvector32Term) -> Option<u64> {
+    fn constant(bits: &MachineTerm) -> Option<u64> {
         match bits {
             bits32_constant!(value) => Some(u64::from(constant_u32(*value))),
             int64_constant!(value) => Some(constant_i64(*value) as u64),
@@ -415,7 +415,7 @@ fn c_values_definitely_distinct(left: &CValue, right: &CValue) -> bool {
 pub(in crate::kernel) fn element_index_from_offset(
     offset: &PointerOffsetTerm,
     element_width: u32,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     if element_width == 0 {
         return None;
     }
@@ -428,7 +428,7 @@ pub(in crate::kernel) fn element_index_from_offset(
         {
             element_index_from_offset(left, element_width)
         }
-        PointerOffsetTerm::Add(left, right) => Some(Bitvector32Term::add(
+        PointerOffsetTerm::Add(left, right) => Some(MachineTerm::add(
             element_index_from_offset(left, element_width)?,
             element_index_from_offset(right, element_width)?,
         )),
@@ -447,7 +447,7 @@ pub(in crate::kernel) fn element_index_from_offset(
             let index = offset / i64::from(element_width);
             (i32::MIN as i64..=i32::MAX as i64)
                 .contains(&index)
-                .then_some(Bitvector32Term::constant((index as i32) as u32))
+                .then_some(MachineTerm::constant((index as i32) as u32))
         }
         _ => None,
     }
@@ -455,7 +455,7 @@ pub(in crate::kernel) fn element_index_from_offset(
 
 pub(in crate::kernel) fn int32_element_index_from_offset(
     offset: &PointerOffsetTerm,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     element_index_from_offset(offset, 4)
 }
 
@@ -472,7 +472,7 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
     offset: &PointerOffsetTerm,
     element_width: u32,
     assumptions: &PureFactContext,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     if element_width == 0 {
         return None;
     }
@@ -480,7 +480,7 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
         return Some(index);
     }
     match offset {
-        PointerOffsetTerm::Add(left, right) => Some(Bitvector32Term::add(
+        PointerOffsetTerm::Add(left, right) => Some(MachineTerm::add(
             element_index_from_offset_with_facts(left, element_width, assumptions)?,
             element_index_from_offset_with_facts(right, element_width, assumptions)?,
         )),
@@ -501,18 +501,17 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
             ) {
                 return i32::try_from(index)
                     .ok()
-                    .map(|index| Bitvector32Term::constant(index as u32));
+                    .map(|index| MachineTerm::constant(index as u32));
             }
             if !*unsigned {
                 // A signed index in `0..=INT_MAX` is its own low word.
                 return assumptions
                     .int64_index_fits_int32(value)
-                    .then(|| Bitvector32Term::uint32_from_64(value.as_ref().clone()));
+                    .then(|| MachineTerm::uint32_from_64(value.as_ref().clone()));
             }
-            let bounded =
-                |candidate: &Bitvector32Term| assumptions.uint64_index_fits_int32(candidate);
+            let bounded = |candidate: &MachineTerm| assumptions.uint64_index_fits_int32(candidate);
             if bounded(value) {
-                return Some(Bitvector32Term::uint32_from_64(value.as_ref().clone()));
+                return Some(MachineTerm::uint32_from_64(value.as_ref().clone()));
             }
             // Modular calls can name an unchanged native index through a
             // checked scalar-result equality. Transport the bound through
@@ -524,13 +523,13 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
                         assumptions,
                         &Proposition::ConditionIs(fact.clone(), true),
                     );
-                    return Some(Bitvector32Term::uint32_from_64(alias.clone()));
+                    return Some(MachineTerm::uint32_from_64(alias.clone()));
                 }
             }
             // A constant subtraction retains equality of the full-width
             // operands. Its bound must still be proved explicitly; this does
             // not infer nonemptiness or arithmetic ranges from a low word.
-            if let Bitvector32Term::Binary {
+            if let MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Subtract,
                 left,
@@ -541,13 +540,13 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
                 for (alias, fact) in assumptions.exact_uint64_equalities(left) {
                     crate::instrumentation::record_deterministic_work(1);
                     let candidate =
-                        Bitvector32Term::uint64_subtract(alias.clone(), right.as_ref().clone());
+                        MachineTerm::uint64_subtract(alias.clone(), right.as_ref().clone());
                     if bounded(&candidate) {
                         crate::kernel::assumptions::record_implicit_reasoning_provenance(
                             assumptions,
                             &Proposition::ConditionIs(fact.clone(), true),
                         );
-                        return Some(Bitvector32Term::uint32_from_64(candidate));
+                        return Some(MachineTerm::uint32_from_64(candidate));
                     }
                 }
             }
@@ -560,11 +559,11 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
 /// An element delta split so that it is *exact*: the true delta in `i64` is
 /// `sext(index) + constant`.
 ///
-/// [`element_index_from_offset`] answers with one `Bitvector32Term`, and that
+/// [`element_index_from_offset`] answers with one `MachineTerm`, and that
 /// is a lossy answer for anything but an equality. A byte offset is
 /// mathematical `i64` — [`PointerOffsetTerm::scale_int32`] sign-extends its
-/// index before scaling, and `Add` adds exactly — while a `Bitvector32Term` is
-/// modular, so collapsing a sum of offsets into [`Bitvector32Term::add`] keeps
+/// index before scaling, and `Add` adds exactly — while a `MachineTerm` is
+/// modular, so collapsing a sum of offsets into [`MachineTerm::add`] keeps
 /// the delta only *modulo* `2^32`. A membership or order conclusion drawn from
 /// such a term would be reading a residue as a number.
 ///
@@ -576,7 +575,7 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
 pub(in crate::kernel) struct ExactElementDelta {
     /// The one symbolic element index in the delta, or `Constant(0)` when the
     /// delta is wholly constant. Its *signed* value is part of the delta.
-    pub(in crate::kernel) index: Bitvector32Term,
+    pub(in crate::kernel) index: MachineTerm,
     /// The exact constant part, in elements. Not reduced to `i32`: a delta far
     /// outside `i32` is still an exact delta, and refusing it here would be a
     /// silent truncation.
@@ -587,7 +586,7 @@ impl ExactElementDelta {
     /// The delta of a wholly constant number of elements.
     fn constant(constant: i64) -> Self {
         Self {
-            index: Bitvector32Term::constant(0),
+            index: MachineTerm::constant(0),
             constant,
         }
     }
@@ -597,11 +596,11 @@ impl ExactElementDelta {
         Self::constant(0)
     }
 
-    /// This delta as one `Bitvector32Term` whose *signed* value is the delta,
+    /// This delta as one `MachineTerm` whose *signed* value is the delta,
     /// for a caller that states it as an ordinary index bound. `None` when the
     /// two parts cannot be joined without a modular add, which a symbolic index
     /// beside a nonzero constant cannot.
-    pub(in crate::kernel) fn as_index_term(&self) -> Option<Bitvector32Term> {
+    pub(in crate::kernel) fn as_index_term(&self) -> Option<MachineTerm> {
         if self.constant == 0 {
             return Some(self.index.clone());
         }
@@ -610,13 +609,13 @@ impl ExactElementDelta {
         }
         i32::try_from(self.constant)
             .ok()
-            .map(|constant| Bitvector32Term::constant(constant as u32))
+            .map(|constant| MachineTerm::constant(constant as u32))
     }
 
     /// Whether this delta names no symbolic index, so its `i64` value is the
     /// whole of it.
     pub(in crate::kernel) fn is_constant(&self) -> bool {
-        self.index == Bitvector32Term::constant(0)
+        self.index == MachineTerm::constant(0)
     }
 
     /// The two deltas added, when at most one of them is symbolic. Two
@@ -671,7 +670,7 @@ impl ExactElementDelta {
         (crate::kernel::assumptions::element_index_is_nonnegative(&self.index, assumptions)
             && crate::kernel::assumptions::element_index_is_nonnegative(&other.index, assumptions))
         .then(|| Self {
-            index: Bitvector32Term::subtract(self.index, other.index),
+            index: MachineTerm::subtract(self.index, other.index),
             constant,
         })
     }
@@ -745,12 +744,12 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
 pub(in crate::kernel) fn pointer_byte_offset_from_base(
     pointer: &Pointer,
     base: &Pointer,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     if pointer.block != base.block {
         return None;
     }
     if pointer.offset == base.offset {
-        return Some(Bitvector32Term::constant(0));
+        return Some(MachineTerm::constant(0));
     }
     if base.offset == PointerOffsetTerm::Constant(0) {
         return byte_offset_from_pointer_offset(&pointer.offset);
@@ -766,9 +765,9 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
     fn offset_from_nested_base(
         offset: &PointerOffsetTerm,
         base: &PointerOffsetTerm,
-    ) -> Option<Bitvector32Term> {
+    ) -> Option<MachineTerm> {
         if offset == base {
-            return Some(Bitvector32Term::constant(0));
+            return Some(MachineTerm::constant(0));
         }
         let PointerOffsetTerm::Add(left, right) = offset else {
             return None;
@@ -780,13 +779,13 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
             return byte_offset_from_pointer_offset(left);
         }
         if let Some(left_offset) = offset_from_nested_base(left, base) {
-            return Some(Bitvector32Term::add(
+            return Some(MachineTerm::add(
                 left_offset,
                 byte_offset_from_pointer_offset(right)?,
             ));
         }
         if let Some(right_offset) = offset_from_nested_base(right, base) {
-            return Some(Bitvector32Term::add(
+            return Some(MachineTerm::add(
                 byte_offset_from_pointer_offset(left)?,
                 right_offset,
             ));
@@ -797,35 +796,35 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
     offset_from_nested_base(&pointer.offset, &base.offset).or_else(|| {
         let pointer_offset = byte_offset_from_pointer_offset(&pointer.offset)?;
         let base_offset = byte_offset_from_pointer_offset(&base.offset)?;
-        Some(Bitvector32Term::subtract(pointer_offset, base_offset))
+        Some(MachineTerm::subtract(pointer_offset, base_offset))
     })
 }
 
 pub(in crate::kernel) fn byte_offset_from_pointer_offset(
     offset: &PointerOffsetTerm,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     match offset {
         PointerOffsetTerm::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
             .contains(offset)
-            .then_some(Bitvector32Term::constant((*offset as i32) as u32)),
-        PointerOffsetTerm::Add(left, right) => Some(Bitvector32Term::add(
+            .then_some(MachineTerm::constant((*offset as i32) as u32)),
+        PointerOffsetTerm::Add(left, right) => Some(MachineTerm::add(
             byte_offset_from_pointer_offset(left)?,
             byte_offset_from_pointer_offset(right)?,
         )),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok()?;
             match width {
-                0 => Some(Bitvector32Term::constant(0)),
+                0 => Some(MachineTerm::constant(0)),
                 1 => Some(value.as_ref().clone()),
                 _ => Some(binary_node!(
                     Int32,
                     Multiply,
                     Box::new(value.as_ref().clone()),
-                    Box::new(Bitvector32Term::constant(width)),
+                    Box::new(MachineTerm::constant(width)),
                 )),
             }
         }
-        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(Bitvector32Term::constant(0)),
+        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(MachineTerm::constant(0)),
         // A 64-bit index is not a 32-bit byte residue, even when its stride
         // is one. Callers that need its numeric value must use a 64-bit bound.
         PointerOffsetTerm::Int64Scaled { .. } | PointerOffsetTerm::Variable(_) => None,
@@ -833,16 +832,16 @@ pub(in crate::kernel) fn byte_offset_from_pointer_offset(
 }
 
 pub(in crate::kernel) fn element_count_from_bytes(
-    bytes: &Bitvector32Term,
+    bytes: &MachineTerm,
     element_width: u32,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     if element_width == 0 {
         return None;
     }
     if element_width == 1 {
         return Some(bytes.clone());
     }
-    let element_width = Bitvector32Term::constant(element_width);
+    let element_width = MachineTerm::constant(element_width);
     match bytes {
         binary_term!(Int32, Multiply, left, right) if right.as_ref() == &element_width => {
             Some(left.as_ref().clone())
@@ -853,7 +852,7 @@ pub(in crate::kernel) fn element_count_from_bytes(
         bits32_constant!(bytes)
             if constant_u32(*bytes).is_multiple_of(element_width.as_const()?) =>
         {
-            Some(Bitvector32Term::constant(
+            Some(MachineTerm::constant(
                 constant_u32(*bytes) / element_width.as_const()?,
             ))
         }
@@ -862,8 +861,8 @@ pub(in crate::kernel) fn element_count_from_bytes(
 }
 
 pub(in crate::kernel) fn int32_element_count_from_bytes(
-    bytes: &Bitvector32Term,
-) -> Option<Bitvector32Term> {
+    bytes: &MachineTerm,
+) -> Option<MachineTerm> {
     element_count_from_bytes(bytes, 4)
 }
 
@@ -1033,13 +1032,10 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         Some(if *unsigned {
             ConditionTerm::uint64_equal(
                 index.as_ref().clone(),
-                Bitvector32Term::uint64_constant(u64::try_from(element).ok()?),
+                MachineTerm::uint64_constant(u64::try_from(element).ok()?),
             )
         } else {
-            ConditionTerm::int64_equal(
-                index.as_ref().clone(),
-                Bitvector32Term::int64_constant(element),
-            )
+            ConditionTerm::int64_equal(index.as_ref().clone(), MachineTerm::int64_constant(element))
         })
     };
     if let Some(condition) =
@@ -1050,7 +1046,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
 
     // The element index a byte offset folds to is that offset divided by the
     // element width, *modulo* `2^32`: every leaf contributes a whole multiple
-    // of the width, but `Bitvector32Term::add` folds the pieces modularly.
+    // of the width, but `MachineTerm::add` folds the pieces modularly.
     //
     // That makes the two directions different statements. Equal offsets have
     // equal residues, so the affirmative half is arithmetic and needs no
@@ -1085,7 +1081,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         add_condition_path_fact(
             facts,
             assumptions,
-            ConditionTerm::equal(index.clone(), Bitvector32Term::constant(element as u32)),
+            ConditionTerm::equal(index.clone(), MachineTerm::constant(element as u32)),
             value,
         )?;
     }
@@ -1102,7 +1098,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
 pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
     scaled: &'term PointerOffsetTerm,
     constant: &PointerOffsetTerm,
-) -> Option<(&'term Bitvector32Term, i32)> {
+) -> Option<(&'term MachineTerm, i32)> {
     let target = constant.as_const()?;
     let (leaves, offset) = scaled.int32_scaled_linear_form()?;
     let [(index, stride)] = leaves.as_slice() else {
@@ -2218,8 +2214,8 @@ mod mandatory_integer_obligation_tests {
     #[test]
     fn prepared_path_effect_fragment_keeps_fresh_rebuild_ordering() {
         let condition = ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(912_347)),
-            Bitvector32Term::constant(3),
+            MachineTerm::Variable(Variable(912_347)),
+            MachineTerm::constant(3),
         );
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
@@ -2262,8 +2258,8 @@ mod mandatory_integer_obligation_tests {
     #[test]
     fn prepared_path_delta_rejects_a_conflicting_pure_successor() {
         let condition = ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(912_345)),
-            Bitvector32Term::constant(3),
+            MachineTerm::Variable(Variable(912_345)),
+            MachineTerm::constant(3),
         );
         let base = PureFactContext::new();
         let left = vec![ProofObligation::condition(condition.clone(), true)];
@@ -2315,16 +2311,16 @@ mod native_observation_guard_tests {
     use super::*;
 
     fn equalities(ty: MachineIntegerType) -> (ConditionTerm, ConditionTerm) {
-        let value = Bitvector32Term::Variable(Variable(912_801));
+        let value = MachineTerm::Variable(Variable(912_801));
         let native = match ty {
             MachineIntegerType::Int32 | MachineIntegerType::UInt32 => {
-                ConditionTerm::equal(value.clone(), Bitvector32Term::constant(0))
+                ConditionTerm::equal(value.clone(), MachineTerm::constant(0))
             }
             MachineIntegerType::Int64 => {
-                ConditionTerm::int64_equal(value.clone(), Bitvector32Term::int64_constant(0))
+                ConditionTerm::int64_equal(value.clone(), MachineTerm::int64_constant(0))
             }
             MachineIntegerType::UInt64 => {
-                ConditionTerm::uint64_equal(value.clone(), Bitvector32Term::uint64_constant(0))
+                ConditionTerm::uint64_equal(value.clone(), MachineTerm::uint64_constant(0))
             }
             _ => unreachable!(),
         };
@@ -2354,8 +2350,7 @@ mod native_observation_guard_tests {
             let not_equal =
                 ConditionTerm::integer_not_equal(left.as_ref().clone(), right.as_ref().clone());
             let other = ConditionTerm::integer_equal(
-                IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(912_802)))
-                    .unwrap(),
+                IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(912_802))).unwrap(),
                 IntegerTerm::constant_i64(0),
             );
             for truth in [false, true] {
@@ -2400,13 +2395,13 @@ mod native_observation_guard_tests {
             let source = ConditionTerm::machine_compare(
                 ty,
                 CompareRelation::Equal,
-                Bitvector32Term::logical_machine_binary(
+                MachineTerm::logical_machine_binary(
                     ty,
                     MachineBinaryOp::Multiply,
-                    Bitvector32Term::Variable(Variable(984001)),
-                    Bitvector32Term::Variable(Variable(984002)),
+                    MachineTerm::Variable(Variable(984001)),
+                    MachineTerm::Variable(Variable(984002)),
                 ),
-                Bitvector32Term::Variable(Variable(984003)),
+                MachineTerm::Variable(Variable(984003)),
             );
             let exports = KernelTermExport::machine_export_count();
             let empty = PureFactContext::new().defer_non_exact_condition_reasoning();

@@ -6,8 +6,8 @@ fn range(block: &str) -> CMemoryRange {
             block: PointerBlock::Concrete(block.to_string()),
             offset: PointerOffsetTerm::Constant(0),
         },
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(1),
+        MachineTerm::constant(0),
+        MachineTerm::constant(1),
         4,
     )
 }
@@ -26,7 +26,7 @@ fn token(quantity: u32) -> CResourceFact {
             name: "ticket".to_string(),
             arguments: Vec::new().into(),
         },
-        Box::new(Bitvector32Term::constant(quantity)),
+        Box::new(MachineTerm::constant(quantity)),
     )
 }
 

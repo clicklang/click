@@ -151,7 +151,7 @@ impl MutexLedger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::kernel::{Bitvector32Term, PointerOffsetTerm, Variable};
+    use crate::kernel::{MachineTerm, PointerOffsetTerm, Variable};
 
     fn mutex(index: usize) -> Pointer {
         Pointer {
@@ -226,7 +226,7 @@ mod tests {
         let address = mutex(0);
         let concrete = initialized(&address);
         let condition =
-            ConditionTerm::signed_less_than(Bitvector32Term::Variable(Variable(999)), 0u32.into());
+            ConditionTerm::signed_less_than(MachineTerm::Variable(Variable(999)), 0u32.into());
         let head =
             MutexContext::new(abstract_loop_mutex(concrete.state(), &address, condition).unwrap());
         let assumptions = PureFactContext::new();

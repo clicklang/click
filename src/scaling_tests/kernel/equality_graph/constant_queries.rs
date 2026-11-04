@@ -22,8 +22,8 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
             for i in 0..unrelated {
                 parent = parent.assume_condition(
                     ConditionTerm::int64_equal(
-                        Bitvector32Term::Variable(Variable(998800 + i)),
-                        Bitvector32Term::int64_constant(3),
+                        MachineTerm::Variable(Variable(998800 + i)),
+                        MachineTerm::int64_constant(3),
                     ),
                     true,
                 );

@@ -59,7 +59,7 @@ pub(in crate::kernel) struct OrderBoundIndex {
     endpoints: PersistentMap<Key, Bounds>,
 }
 impl OrderBoundIndex {
-    pub(in crate::kernel) fn get(&self, term: &Bitvector32Term) -> Option<&Bounds> {
+    pub(in crate::kernel) fn get(&self, term: &MachineTerm) -> Option<&Bounds> {
         self.get_operand(V::Legacy(term))
     }
     pub(in crate::kernel) fn get_operand(&self, term: V<'_>) -> Option<&Bounds> {

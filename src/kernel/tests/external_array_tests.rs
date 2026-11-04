@@ -4,7 +4,7 @@ use super::*;
 fn external(id: u64) -> Pointer {
     Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
     }
 }
 fn copy(memory: CMemory, target: &Pointer, source: &Pointer, count: u32) -> CMemory {
@@ -96,7 +96,7 @@ fn external_array_load_substitution_changes_only_the_copied_lane() {
     let source = external(932_000);
     let target = external(932_001);
     let memory = copy(CMemory::new(), &target, &source, 1_000_000);
-    let CValue::UInt32(Bitvector32Term::Variable(variable)) =
+    let CValue::UInt32(MachineTerm::Variable(variable)) =
         typed_load(&memory, &target.offset_by_bytes(4))
     else {
         panic!()

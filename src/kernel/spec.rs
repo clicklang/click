@@ -2468,7 +2468,7 @@ pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition)
     else {
         return false;
     };
-    let Bitvector32Term::Variable(variable) = left.as_ref() else {
+    let MachineTerm::Variable(variable) = left.as_ref() else {
         return false;
     };
     if !crate::kernel::is_load_variable(variable) {
@@ -2480,8 +2480,8 @@ pub(crate) fn is_verified_load_variable_defining_fact(proposition: &Proposition)
     // A produced definition uses the registered read handle on both sides.
     // Retained raw definitions must still name its exact snapshot and kind.
     match right.as_ref() {
-        Bitvector32Term::Variable(read) => read == variable,
-        raw @ Bitvector32Term::MemoryLoad(_, _, _) => descriptor == *raw,
+        MachineTerm::Variable(read) => read == variable,
+        raw @ MachineTerm::MemoryLoad(_, _, _) => descriptor == *raw,
         _ => false,
     }
 }
@@ -2563,7 +2563,7 @@ fn integer_range_fold_item_domain(
 ) -> (Sort, Proposition) {
     let (item_sort, guard) = match index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
-            let item_term = Bitvector32Term::Variable(item);
+            let item_term = MachineTerm::Variable(item);
             let guard = Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::signed_greater_equal(item_term.clone(), start.value().clone()),
@@ -2577,7 +2577,7 @@ fn integer_range_fold_item_domain(
             (Sort::CInt32, guard)
         }
         IntegerRangeFoldIndex::UInt64 { start, end } => {
-            let item_term = Bitvector32Term::Variable(item);
+            let item_term = MachineTerm::Variable(item);
             let guard = Proposition::And(
                 Box::new(Proposition::ConditionIs(
                     ConditionTerm::uint64_less_equal(start.value().clone(), item_term.clone()),
@@ -2651,7 +2651,7 @@ fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Varia
     match offset {
         PointerOffsetTerm::Constant(_) => false,
         PointerOffsetTerm::Variable(load) => {
-            integer_carrier_in_bitvector(&Bitvector32Term::Variable(*load), variable)
+            integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
         }
         PointerOffsetTerm::Add(left, right) => {
             integer_carrier_in_pointer_offset(left, variable)
@@ -2686,18 +2686,18 @@ fn pointer_offset_contains_registered_load(offset: &PointerOffsetTerm) -> bool {
 /// inspect only a registered load's selected pointer.  The memory snapshot is
 /// deliberately never traversed.  Unknown registry entries are treated as a
 /// dependency so a missing pointer cannot drop an accumulator quantifier.
-fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> bool {
+fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool {
     let mut variables = BTreeSet::new();
     collect_bitvector_integer_variables(term, &mut variables);
     if variables.contains(&variable) {
         return true;
     }
-    let Bitvector32Term::Variable(load) = term else {
+    let MachineTerm::Variable(load) = term else {
         // The shared collector covers known Integer-to-machine payloads.  A
         // composite machine expression can still hide a registered load
         // whose pointer carries an Integer, so retain the scope rather than
         // returning an unsound negative for that opaque case.
-        return !matches!(term, Bitvector32Term::Constant { .. });
+        return !matches!(term, MachineTerm::Constant { .. });
     };
     if !crate::kernel::is_load_variable(load) {
         return false;
@@ -2713,8 +2713,8 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
         .scaled_values()
         .iter()
         .any(|value| match value {
-            Bitvector32Term::Variable(variable) => crate::kernel::is_load_variable(variable),
-            Bitvector32Term::Constant { .. } => false,
+            MachineTerm::Variable(variable) => crate::kernel::is_load_variable(variable),
+            MachineTerm::Constant { .. } => false,
             _ => true,
         })
     {
@@ -2726,7 +2726,7 @@ fn integer_carrier_in_bitvector(term: &Bitvector32Term, variable: Variable) -> b
     let Some(kind) = crate::kernel::eval::registered_load_kind_for_variable(load) else {
         return true;
     };
-    let selected_load = Bitvector32Term::MemoryLoad(memory, Box::new(pointer), kind);
+    let selected_load = MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
     let mut pointer_variables = BTreeSet::new();
     collect_bitvector_integer_variables(&selected_load, &mut pointer_variables);
     if pointer_variables.contains(&variable) {
@@ -3293,7 +3293,7 @@ fn rewrite_integer_match_typed_fields(
                 (CValue::Void, CValue::Void) => {}
                 (from, to) if c_value_bitvector_term(from).is_some() => {
                     let from = c_value_bitvector_term(from)?;
-                    let Bitvector32Term::Variable(from) = from else {
+                    let MachineTerm::Variable(from) = from else {
                         return None;
                     };
                     if !ExecutionBudget::is_match_binder_variable(from) {
@@ -4892,7 +4892,7 @@ fn evaluate_spec_resource_at_state_in(
                         Some(CResource::Memory(CMemoryRange::from_pointer_value(
                             base,
                             start.clone(),
-                            Bitvector32Term::constant(end as u32),
+                            MachineTerm::constant(end as u32),
                             element_width,
                         )))
                     }
@@ -5086,7 +5086,7 @@ fn lower_spec_memory_loadable_at_state_in(
                     block: base.block.clone(),
                     offset: crate::kernel::eval::canonical_offset_term(&base.offset),
                 },
-                Bitvector32Term::uint64_constant(0),
+                MachineTerm::uint64_constant(0),
                 crate::kernel::eval::canonical_term(end),
                 element_width,
             );
@@ -5293,7 +5293,7 @@ fn evaluate_spec_integer_pure_function_application_paths_in(
 }
 
 /// An element index scaled to bytes, folded when the index is a constant.
-fn canonical_scaled_offset(value: Bitvector32Term, byte_width: i64) -> PointerOffsetTerm {
+fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> PointerOffsetTerm {
     match value {
         bits32_constant!(value) => {
             PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
@@ -6101,7 +6101,7 @@ fn evaluate_resource_count_paths(
                 // does not restore ownership or permission to change members.
                 if creation.checked_empty_population(&description) {
                     return Ok(SpecExpressionPath {
-                        value: CValue::Int32(Bitvector32Term::constant(0)),
+                        value: CValue::Int32(MachineTerm::constant(0)),
                         facts,
                         obligations,
                     });
@@ -6162,7 +6162,7 @@ fn evaluate_resource_count_paths(
                     let entry_owned = symbolic
                         .entry_symbolic_members
                         .clone()
-                        .unwrap_or(Bitvector32Term::constant(symbolic.entry_owned_members));
+                        .unwrap_or(MachineTerm::constant(symbolic.entry_owned_members));
                     let minimum = Proposition::ConditionIs(
                         ConditionTerm::signed_greater_equal(entry.clone(), entry_owned),
                         true,
@@ -6175,13 +6175,13 @@ fn evaluate_resource_count_paths(
                     {
                         let overflow = ConditionTerm::signed_add_overflows(
                             quantity.clone(),
-                            Bitvector32Term::constant(symbolic.delta as u32),
+                            MachineTerm::constant(symbolic.delta as u32),
                         );
                         let no_overflow = Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
                             &quantity,
-                            &Bitvector32Term::constant(symbolic.delta as u32),
+                            &MachineTerm::constant(symbolic.delta as u32),
                         );
                         if !path_assumptions.proves_exact(&no_overflow)
                             && PureFactContext::decide_intrinsically(&overflow) != Some(false)
@@ -6221,7 +6221,7 @@ fn evaluate_resource_count_paths(
                                         .with_context("count(reference) fits in int32"),
                                 );
                             }
-                            Bitvector32Term::add(entry, quantity)
+                            MachineTerm::add(entry, quantity)
                         }
                         Some((false, quantity)) => {
                             let within = Proposition::ConditionIs(
@@ -6243,7 +6243,7 @@ fn evaluate_resource_count_paths(
                                         .with_context("count(reference) contains consumed members"),
                                 );
                             }
-                            Bitvector32Term::subtract(entry, quantity)
+                            MachineTerm::subtract(entry, quantity)
                         }
                     };
                     return Ok(SpecExpressionPath {
@@ -6268,7 +6268,7 @@ fn evaluate_resource_count_paths(
                         Proposition::signed_arithmetic_domain(
                             MachineIntegerType::Int32,
                             MachineBinaryOp::Add,
-                            &Bitvector32Term::constant(base),
+                            &MachineTerm::constant(base),
                             &quantity,
                         ),
                     ));
@@ -6374,7 +6374,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 retain_required_integer_obligation(&mut obligations, assumptions, upper_bound);
                 let value = c_value_from_bitvector_term(
                     destination.c_type(),
-                    Bitvector32Term::IntegerToMachine {
+                    MachineTerm::IntegerToMachine {
                         value: path.value.into(),
                         destination: *destination,
                     },
@@ -6550,7 +6550,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                     } else {
                         c_value_from_bitvector_term(
                             result_type,
-                            Bitvector32Term::AlgebraicMatch {
+                            MachineTerm::AlgebraicMatch {
                                 scrutinee: Box::new(scrutinee_path.value),
                                 arms: lowered_arms,
                             },
@@ -6926,7 +6926,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                         && let Some(format) = MachineIntegerType::from_c_type(*target_type)
                         && let Some(cast) = c_value_from_bitvector_term(
                             *target_type,
-                            Bitvector32Term::bool_cast(format, condition.clone()),
+                            MachineTerm::bool_cast(format, condition.clone()),
                         )
                     {
                         return vec![CExpressionPath {
@@ -7374,14 +7374,14 @@ fn evaluate_spec_pure_function_application_paths_in(
         } else if result_type == CType::Bool {
             // A `-> Bool` application is a `Bool` term of the kernel sort
             // (Stage 5), carried as its cast to `uint8` (rule C1).
-            CValue::Bool(Bitvector32Term::bool_cast(
+            CValue::Bool(MachineTerm::bool_cast(
                 MachineIntegerType::UInt8,
                 ConditionTerm::bool_application(name, arguments),
             ))
         } else {
             c_value_from_bitvector_term(
                 result_type,
-                Bitvector32Term::ClickFunctionApplication {
+                MachineTerm::ClickFunctionApplication {
                     name: name.to_string(),
                     arguments,
                 },
@@ -7660,7 +7660,7 @@ fn array_ref_argument_memory(memory: &CMemory, pointer: &CValue) -> CMemory {
     .unwrap_or_else(|| memory.clone())
 }
 
-pub(in crate::kernel) fn c_value_bitvector_term(value: &CValue) -> Option<Bitvector32Term> {
+pub(in crate::kernel) fn c_value_bitvector_term(value: &CValue) -> Option<MachineTerm> {
     let value = value.numeric_value();
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -7696,7 +7696,7 @@ pub(super) fn integer_machine_bounds(
     (IntegerTerm::constant(lower), IntegerTerm::constant(upper))
 }
 
-fn c_value_from_bitvector_term(c_type: CType, term: Bitvector32Term) -> Option<CValue> {
+fn c_value_from_bitvector_term(c_type: CType, term: MachineTerm) -> Option<CValue> {
     CValue::from_bitvector_term(c_type, term)
 }
 
@@ -8439,8 +8439,8 @@ fn evaluate_spec_range_fold_paths_in(
 
 fn evaluate_spec_range_fold_body_path_in(
     scope: SpecScope<'_>,
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
     initial: CValue,
     accumulator: &str,
     item: &str,
@@ -8503,14 +8503,14 @@ fn evaluate_spec_range_fold_body_path_in(
             let mut body_state = state.clone();
             body_state.locals.set(
                 accumulator.to_string(),
-                int32(Bitvector32Term::Variable(spec_fold_bound_variable(
+                int32(MachineTerm::Variable(spec_fold_bound_variable(
                     accumulator,
                     0,
                 ))),
             );
             body_state.locals.set(
                 item.to_string(),
-                int32(Bitvector32Term::Variable(spec_fold_bound_variable(item, 1))),
+                int32(MachineTerm::Variable(spec_fold_bound_variable(item, 1))),
             );
             let body_assumptions = assumptions_with_path_context(assumptions, &facts, &obligations);
             let mut body_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
@@ -8582,8 +8582,8 @@ pub(super) fn spec_fold_bound_variable(name: &str, salt: u64) -> Variable {
 }
 
 pub(super) fn symbolic_spec_range_fold_value(
-    start: Bitvector32Term,
-    end: Bitvector32Term,
+    start: MachineTerm,
+    end: MachineTerm,
     initial: CValue,
     accumulator: &str,
     item: &str,
@@ -8595,7 +8595,7 @@ pub(super) fn symbolic_spec_range_fold_value(
     let CValue::Int32(body) = body_value else {
         return None;
     };
-    Some(CValue::Int32(Bitvector32Term::range_fold(
+    Some(CValue::Int32(MachineTerm::range_fold(
         start,
         end,
         initial,
@@ -8621,22 +8621,19 @@ fn compound_spec_value_condition(proposition: &Proposition) -> Option<(Condition
     };
     let (left, left_expected) = compound_spec_value_condition(left)?;
     let (right, right_expected) = compound_spec_value_condition(right)?;
-    let right_value = Bitvector32Term::if_then_else(
+    let right_value = MachineTerm::if_then_else(
         right,
-        Bitvector32Term::constant(u32::from(right_expected)),
-        Bitvector32Term::constant(u32::from(!right_expected)),
+        MachineTerm::constant(u32::from(right_expected)),
+        MachineTerm::constant(u32::from(!right_expected)),
     );
-    let constant = Bitvector32Term::constant(u32::from(!conjunction));
+    let constant = MachineTerm::constant(u32::from(!conjunction));
     let (then_term, else_term) = if conjunction == left_expected {
         (right_value, constant)
     } else {
         (constant, right_value)
     };
-    let value = Bitvector32Term::if_then_else(left, then_term, else_term);
-    Some((
-        ConditionTerm::equal(value, Bitvector32Term::constant(1)),
-        true,
-    ))
+    let value = MachineTerm::if_then_else(left, then_term, else_term);
+    Some((ConditionTerm::equal(value, MachineTerm::constant(1)), true))
 }
 
 pub(super) fn conditional_spec_value(
@@ -8651,7 +8648,7 @@ pub(super) fn conditional_spec_value(
         .or_else(|| compound_spec_value_condition(proposition))?;
     // A `bool` conditional of two `bool` values selects one of them, so its
     // leaves stay exactly `0` or `1`.
-    let (then_term, else_term, rebuild): (_, _, fn(Bitvector32Term) -> CValue) =
+    let (then_term, else_term, rebuild): (_, _, fn(MachineTerm) -> CValue) =
         match (then_value, else_value) {
             (CValue::Int32(then_term), CValue::Int32(else_term)) => {
                 (then_term, else_term, CValue::Int32)
@@ -8663,7 +8660,7 @@ pub(super) fn conditional_spec_value(
                 } else {
                     (else_term, then_term)
                 };
-                return Some(CValue::Bool(Bitvector32Term::bool_cast(
+                return Some(CValue::Bool(MachineTerm::bool_cast(
                     MachineIntegerType::UInt8,
                     ConditionTerm::bool_if(
                         condition,
@@ -8714,7 +8711,7 @@ pub(super) fn conditional_spec_value(
     } else {
         (else_term, then_term)
     };
-    Some(rebuild(Bitvector32Term::if_then_else(
+    Some(rebuild(MachineTerm::if_then_else(
         condition, then_term, else_term,
     )))
 }
@@ -8826,7 +8823,7 @@ fn bool_comparison_proposition(
     let (CValue::Bool(left_term), CValue::Bool(right_term)) = (left, right) else {
         unreachable!("both operands are `bool`");
     };
-    let literal = Bitvector32Term::bool_constant_value;
+    let literal = MachineTerm::bool_constant_value;
     match (literal(left_term), literal(right_term)) {
         (Some(left), Some(right)) => {
             return Some(Ok(Proposition::ConditionIs(
@@ -9123,7 +9120,7 @@ pub(super) fn c_value_comparison_proposition(
 fn native_narrow_comparison_operands(
     left: &CValue,
     right: &CValue,
-) -> Option<(MachineIntegerType, Bitvector32Term, Bitvector32Term)> {
+) -> Option<(MachineIntegerType, MachineTerm, MachineTerm)> {
     let narrow = |value: &CValue| match value {
         CValue::Int8(term) | CValue::UInt8(term) | CValue::Int16(term) | CValue::UInt16(term) => {
             Some((
@@ -9138,7 +9135,7 @@ fn native_narrow_comparison_operands(
             let value = i128::from(constant_u32(*bits) as i32);
             let (low, high) = format.format().bounds();
             (num_bigint::BigInt::from(value) >= low && num_bigint::BigInt::from(value) <= high)
-                .then(|| Bitvector32Term::narrow_constant(format, value as u128))
+                .then(|| MachineTerm::narrow_constant(format, value as u128))
         }
         _ => None,
     };
@@ -9156,7 +9153,7 @@ fn native_narrow_comparison_operands(
 pub(crate) fn c_value_word32_term(
     value: &CValue,
     format: MachineIntegerType,
-) -> Option<Bitvector32Term> {
+) -> Option<MachineTerm> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         value @ (CValue::Bool(_)
@@ -9180,12 +9177,12 @@ pub(crate) fn c_value_word32_term(
 
 /// The word an integer operand has at `int64`: its own word, a 32-bit
 /// word's extension, or a narrow value's or `Bool`'s conversion.
-fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
+fn c_value_int64_term(value: &CValue) -> Option<MachineTerm> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Int64(value) => Some(value.clone()),
-        CValue::Int32(value) => Some(Bitvector32Term::int64_from_32(value.clone())),
-        CValue::UInt32(value) => Some(Bitvector32Term::int64_from_uint32(value.clone())),
+        CValue::Int32(value) => Some(MachineTerm::int64_from_32(value.clone())),
+        CValue::UInt32(value) => Some(MachineTerm::int64_from_uint32(value.clone())),
         value @ (CValue::Bool(_)
         | CValue::Int8(_)
         | CValue::Int16(_)
@@ -9206,21 +9203,18 @@ fn c_value_int64_term(value: &CValue) -> Option<Bitvector32Term> {
 
 /// The word an integer operand has at `uint64`, modulo 2^64: its own word,
 /// a 32-bit word's conversion, or a narrow value's or `Bool`'s.
-fn c_value_uint64_term(value: &CValue) -> Option<Bitvector32Term> {
+fn c_value_uint64_term(value: &CValue) -> Option<MachineTerm> {
     match value.numeric_value() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::UInt64(value) => Some(value.clone()),
-        CValue::Int64(value) => Some(Bitvector32Term::uint64_from_int64(value.clone())),
-        CValue::Int32(value) => Some(Bitvector32Term::uint64_from_int32(value.clone())),
-        CValue::UInt32(value) => Some(Bitvector32Term::uint64_from_32(value.clone())),
-        CValue::Bool(word) => Some(Bitvector32Term::bool_word_as(
-            MachineIntegerType::UInt64,
-            word,
-        )),
+        CValue::Int64(value) => Some(MachineTerm::uint64_from_int64(value.clone())),
+        CValue::Int32(value) => Some(MachineTerm::uint64_from_int32(value.clone())),
+        CValue::UInt32(value) => Some(MachineTerm::uint64_from_32(value.clone())),
+        CValue::Bool(word) => Some(MachineTerm::bool_word_as(MachineIntegerType::UInt64, word)),
         value @ (CValue::Int8(word)
         | CValue::Int16(word)
         | CValue::UInt8(word)
-        | CValue::UInt16(word)) => Some(Bitvector32Term::machine_integer_cast(
+        | CValue::UInt16(word)) => Some(MachineTerm::machine_integer_cast(
             MachineIntegerType::from_c_type(value.c_type())?,
             MachineIntegerType::UInt64,
             word.clone(),
@@ -9318,9 +9312,8 @@ mod certificate_observation_tests {
             MachineIntegerType::Int64,
             MachineIntegerType::UInt64,
         ] {
-            let observe = |id| {
-                IntegerTerm::from_machine(ty, Bitvector32Term::Variable(Variable(id))).unwrap()
-            };
+            let observe =
+                |id| IntegerTerm::from_machine(ty, MachineTerm::Variable(Variable(id))).unwrap();
             let left = observe(994_011);
             let right = observe(994_012);
             let written = SpecProposition::IntegerComparison {
@@ -9371,8 +9364,8 @@ mod assumed_arithmetic_domain_tests {
         let evaluate = |assumptions: &PureFactContext| {
             apply_spec_arithmetic(
                 crate::kernel::MachineBinaryOp::Multiply,
-                CValue::Int32(Bitvector32Term::Variable(Variable(994_020))),
-                CValue::Int32(Bitvector32Term::constant(4)),
+                CValue::Int32(MachineTerm::Variable(Variable(994_020))),
+                CValue::Int32(MachineTerm::constant(4)),
                 ExecutionFacts::default(),
                 vec![inherited.clone()],
                 assumptions,

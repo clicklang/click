@@ -25,8 +25,8 @@ fn completed_candidate_forks_share_source_state_and_all_path_storage() {
                     .map(|index| {
                         ExecutionPureFact::new(Proposition::ConditionIs(
                             ConditionTerm::signed_less_than(
-                                Bitvector32Term::Variable(Variable(950_000 + index)),
-                                Bitvector32Term::constant(0),
+                                MachineTerm::Variable(Variable(950_000 + index)),
+                                MachineTerm::constant(0),
                             ),
                             true,
                         ))
@@ -87,8 +87,8 @@ fn terminal_candidate_publications_retain_records_and_payloads() {
         );
         let proposition = Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::Variable(Variable(970_000)),
-                Bitvector32Term::constant(0),
+                MachineTerm::Variable(Variable(970_000)),
+                MachineTerm::constant(0),
             ),
             true,
         );
@@ -154,8 +154,8 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let state = CState::new();
     let public = ExecutionPureFact::certified(Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(971_000)),
-            Bitvector32Term::constant(0),
+            MachineTerm::Variable(Variable(971_000)),
+            MachineTerm::constant(0),
         ),
         true,
     ));
@@ -186,8 +186,8 @@ fn extending_a_candidate_retains_payload_and_classifies_only_new_facts() {
     let source = &original.paths()[0];
     let new_public = ExecutionPureFact::new(Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(971_001)),
-            Bitvector32Term::constant(1),
+            MachineTerm::Variable(Variable(971_001)),
+            MachineTerm::constant(1),
         ),
         false,
     ));
@@ -276,9 +276,9 @@ fn early_return_paths_share_guard_fact_storage() {
         let execution = prove_symbolic_c_function_execution_paths(
             CState::new(),
             function,
-            vec![CExpression::Value(int32(Bitvector32Term::Variable(
-                Variable(960_000),
-            )))],
+            vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
+                960_000,
+            ))))],
             PureFactContext::new(),
         );
         assert!(
@@ -413,13 +413,13 @@ fn borrowed_contract_input_refuses_an_owned_clause_inside_a_viewed_range() {
     };
     let viewed = CResourceFact::view_memory(CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(0),
+        MachineTerm::constant(2),
     ));
     let owned = CResourceFact::own_memory(CMemoryRange::new(
         pointer.clone(),
-        Bitvector32Term::constant(1),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(1),
+        MachineTerm::constant(2),
     ));
     let state = CState::new()
         .with_memory(CMemory::new().with_block(pointer.block.clone(), 8))
@@ -874,8 +874,8 @@ fn symbolic_execution_stops_without_needed_overflow_fact() {
     let left = Variable(20);
     let right = Variable(21);
     let state = CState::new()
-        .with_local("left", int32(Bitvector32Term::Variable(left)))
-        .with_local("right", int32(Bitvector32Term::Variable(right)));
+        .with_local("left", int32(MachineTerm::Variable(left)))
+        .with_local("right", int32(MachineTerm::Variable(right)));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
 
     assert!(prove_symbolic_c_execution(state, statement, PureFactContext::new()).is_none());
@@ -885,8 +885,8 @@ fn symbolic_execution_stops_without_needed_overflow_fact() {
 fn symbolic_execution_reports_branch_facts() {
     let a = Variable(24);
     let b = Variable(25);
-    let a_bits = Bitvector32Term::Variable(a);
-    let b_bits = Bitvector32Term::Variable(b);
+    let a_bits = MachineTerm::Variable(a);
+    let b_bits = MachineTerm::Variable(b);
     let condition = c_max_lt_condition(a_bits.clone(), b_bits.clone());
     let state = c_max_state(int32(a_bits), int32(b_bits));
     let execution =
@@ -909,7 +909,7 @@ fn symbolic_execution_reports_branch_facts() {
                 state: Box::new(state.clone()),
                 statement: Box::new(c_max_body()),
                 outcome: CStatementOutcome::Return {
-                    value: int32(Bitvector32Term::Variable(b)),
+                    value: int32(MachineTerm::Variable(b)),
                     state: Box::new(state.clone()),
                 },
             }),
@@ -932,7 +932,7 @@ fn symbolic_execution_reports_branch_facts() {
                 state: Box::new(state.clone()),
                 statement: Box::new(c_max_body()),
                 outcome: CStatementOutcome::Return {
-                    value: int32(Bitvector32Term::Variable(a)),
+                    value: int32(MachineTerm::Variable(a)),
                     state: Box::new(state),
                 },
             }),
@@ -944,8 +944,8 @@ fn symbolic_execution_reports_branch_facts() {
 fn symbolic_execution_reports_overflow_facts() {
     let left = Variable(26);
     let right = Variable(27);
-    let left_bits = Bitvector32Term::Variable(left);
-    let right_bits = Bitvector32Term::Variable(right);
+    let left_bits = MachineTerm::Variable(left);
+    let right_bits = MachineTerm::Variable(right);
     let state = CState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
@@ -1015,8 +1015,8 @@ fn symbolic_execution_reports_overflow_facts() {
 fn symbolic_execution_uses_no_overflow_fact() {
     let left = Variable(22);
     let right = Variable(23);
-    let left_bits = Bitvector32Term::Variable(left);
-    let right_bits = Bitvector32Term::Variable(right);
+    let left_bits = MachineTerm::Variable(left);
+    let right_bits = MachineTerm::Variable(right);
     let state = CState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
@@ -1051,27 +1051,27 @@ fn symbolic_execution_uses_no_overflow_fact() {
 fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
     let left = Variable(24);
     let right = Variable(25);
-    let left_bits = Bitvector32Term::Variable(left);
-    let right_bits = Bitvector32Term::Variable(right);
+    let left_bits = MachineTerm::Variable(left);
+    let right_bits = MachineTerm::Variable(right);
     let state = CState::new()
         .with_local("left", int32(left_bits.clone()))
         .with_local("right", int32(right_bits.clone()));
     let statement = c_return(c_add(c_variable("left"), c_variable("right")));
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::equal(left_bits, Bitvector32Term::constant(1)),
+            ConditionTerm::equal(left_bits, MachineTerm::constant(1)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_greater_equal(right_bits.clone(), Bitvector32Term::constant(0)),
+            ConditionTerm::signed_greater_equal(right_bits.clone(), MachineTerm::constant(0)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(right_bits.clone(), Bitvector32Term::constant(1)),
+            ConditionTerm::signed_less_equal(right_bits.clone(), MachineTerm::constant(1)),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_than(right_bits, Bitvector32Term::constant(1)),
+            ConditionTerm::signed_less_than(right_bits, MachineTerm::constant(1)),
             false,
         );
 
@@ -1080,10 +1080,10 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
             binary_node!(
                 Int32,
                 Add,
-                Box::new(Bitvector32Term::Variable(left)),
-                Box::new(Bitvector32Term::Variable(right)),
+                Box::new(MachineTerm::Variable(left)),
+                Box::new(MachineTerm::Variable(right)),
             ),
-            Bitvector32Term::constant(2),
+            MachineTerm::constant(2),
         ),
         true,
     )));
@@ -1095,11 +1095,11 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
 #[test]
 fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
     let x = Variable(65);
-    let x_bits = Bitvector32Term::Variable(x);
+    let x_bits = MachineTerm::Variable(x);
     let state = CState::new().with_local("x", int32(x_bits.clone()));
     let statement = c_return(c_add(c_variable("x"), c_int32_literal(1)));
     let x_lt_int_max =
-        ConditionTerm::signed_less_than(x_bits.clone(), Bitvector32Term::constant(i32::MAX as u32));
+        ConditionTerm::signed_less_than(x_bits.clone(), MachineTerm::constant(i32::MAX as u32));
     let assumptions = PureFactContext::new().assume_condition(x_lt_int_max.clone(), true);
     let theorem = prove_symbolic_c_execution(state.clone(), statement.clone(), assumptions)
         .expect("x < INT_MAX should prove x + 1 does not overflow");
@@ -1116,7 +1116,7 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
                         Int32,
                         Add,
                         Box::new(x_bits),
-                        Box::new(Bitvector32Term::constant(1)),
+                        Box::new(MachineTerm::constant(1)),
                     )),
                     state: Box::new(state),
                 },
@@ -1127,15 +1127,15 @@ fn symbolic_increment_uses_int_max_bound_to_rule_out_overflow() {
 
 #[test]
 fn symbolic_increment_uses_any_strict_upper_bound_to_rule_out_overflow() {
-    let x_bits = Bitvector32Term::Variable(Variable(651));
-    let upper_bits = Bitvector32Term::Variable(Variable(652));
+    let x_bits = MachineTerm::Variable(Variable(651));
+    let upper_bits = MachineTerm::Variable(Variable(652));
     let assumption = ConditionTerm::signed_less_than(x_bits.clone(), upper_bits);
     let assumptions = PureFactContext::new().assume_condition(assumption, true);
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_add_overflows(
             x_bits,
-            Bitvector32Term::constant(1),
+            MachineTerm::constant(1),
         )),
         Some(false)
     );
@@ -1143,12 +1143,12 @@ fn symbolic_increment_uses_any_strict_upper_bound_to_rule_out_overflow() {
 
 #[test]
 fn signed_addition_uses_both_operand_intervals_to_rule_out_overflow() {
-    let left = Bitvector32Term::Variable(Variable(653));
-    let right = Bitvector32Term::Variable(Variable(654));
-    let million = Bitvector32Term::constant(1_000_000);
+    let left = MachineTerm::Variable(Variable(653));
+    let right = MachineTerm::Variable(Variable(654));
+    let million = MachineTerm::constant(1_000_000);
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), left.clone()),
+            ConditionTerm::signed_less_equal(MachineTerm::constant(0), left.clone()),
             true,
         )
         .assume_condition(
@@ -1156,7 +1156,7 @@ fn signed_addition_uses_both_operand_intervals_to_rule_out_overflow() {
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), right.clone()),
+            ConditionTerm::signed_less_equal(MachineTerm::constant(0), right.clone()),
             true,
         )
         .assume_condition(
@@ -1172,10 +1172,10 @@ fn signed_addition_uses_both_operand_intervals_to_rule_out_overflow() {
 
 #[test]
 fn signed_addition_uses_negative_operand_intervals_to_rule_out_overflow() {
-    let left = Bitvector32Term::Variable(Variable(655));
-    let right = Bitvector32Term::Variable(Variable(656));
-    let negative_million = Bitvector32Term::constant((-1_000_000i32) as u32);
-    let zero = Bitvector32Term::constant(0);
+    let left = MachineTerm::Variable(Variable(655));
+    let right = MachineTerm::Variable(Variable(656));
+    let negative_million = MachineTerm::constant((-1_000_000i32) as u32);
+    let zero = MachineTerm::constant(0);
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::signed_less_equal(negative_million.clone(), left.clone()),
@@ -1199,15 +1199,15 @@ fn signed_addition_uses_negative_operand_intervals_to_rule_out_overflow() {
 
 #[test]
 fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
-    let left = Bitvector32Term::Variable(Variable(657));
-    let middle = Bitvector32Term::Variable(Variable(658));
-    let right = Bitvector32Term::Variable(Variable(659));
-    let upper = Bitvector32Term::constant(700_000_000);
+    let left = MachineTerm::Variable(Variable(657));
+    let middle = MachineTerm::Variable(Variable(658));
+    let right = MachineTerm::Variable(Variable(659));
+    let upper = MachineTerm::constant(700_000_000);
     let mut assumptions = PureFactContext::new();
     for term in [&left, &middle, &right] {
         assumptions = assumptions
             .assume_condition(
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), term.clone()),
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone()),
                 true,
             )
             .assume_condition(
@@ -1215,7 +1215,7 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
                 true,
             );
     }
-    let partial = Bitvector32Term::add(left, middle);
+    let partial = MachineTerm::add(left, middle);
 
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_add_overflows(partial.clone(), right)),
@@ -1224,7 +1224,7 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
     assert_eq!(
         assumptions.decide(&ConditionTerm::signed_add_overflows(
             partial,
-            Bitvector32Term::constant(800_000_000),
+            MachineTerm::constant(800_000_000),
         )),
         None
     );
@@ -1234,27 +1234,27 @@ fn signed_addition_ranges_nested_additions_only_when_each_level_is_safe() {
 fn signed_addition_matches_interval_facts_across_unchanged_snapshots() {
     let cell = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(660)), 4),
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(660)), 4),
     };
     let before = CMemory::new();
     let after = before.clone().with_block("local:temporary", 4);
-    let before_load = Bitvector32Term::MemoryLoad(
+    let before_load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(before),
         Box::new(cell.clone()),
         crate::kernel::LoadKind::Int32,
     );
-    let after_load = Bitvector32Term::MemoryLoad(
+    let after_load = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory(after),
         Box::new(cell),
         crate::kernel::LoadKind::Int32,
     );
     let assumptions = PureFactContext::new()
         .assume_condition(
-            ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), before_load.clone()),
+            ConditionTerm::signed_less_equal(MachineTerm::constant(0), before_load.clone()),
             true,
         )
         .assume_condition(
-            ConditionTerm::signed_less_equal(before_load, Bitvector32Term::constant(1_000_000)),
+            ConditionTerm::signed_less_equal(before_load, MachineTerm::constant(1_000_000)),
             true,
         );
 
@@ -1576,7 +1576,7 @@ fn verified_function_rule_applies_contract_without_executing_body() {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
             left: Box::new(result.clone()),
-            right: Box::new(Bitvector32Term::constant(5))
+            right: Box::new(MachineTerm::constant(5))
         },
         true,
     )));
@@ -2193,9 +2193,9 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
     let execution = certify_contract_with_kernel_artifacts(
         CState::new().with_population_creation_tracking(),
         function.clone(),
-        vec![CExpression::Value(CValue::Int32(
-            Bitvector32Term::Variable(Variable(700_001)),
-        ))],
+        vec![CExpression::Value(CValue::Int32(MachineTerm::Variable(
+            Variable(700_001),
+        )))],
         Vec::new(),
         CExecutionEnvironment::new(),
         CExecutionSemantics::EXECUTE_BODIES,
@@ -2333,7 +2333,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(value.clone()),
-                        right: Box::new(Bitvector32Term::constant(5))
+                        right: Box::new(MachineTerm::constant(5))
                     },
                     true,
                 )));
@@ -2342,7 +2342,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(value.clone()),
-                        right: Box::new(Bitvector32Term::constant(7))
+                        right: Box::new(MachineTerm::constant(7))
                     },
                     true,
                 )));
@@ -2362,7 +2362,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(value.clone()),
-                        right: Box::new(Bitvector32Term::constant(7))
+                        right: Box::new(MachineTerm::constant(7))
                     },
                     true,
                 )));
@@ -2371,7 +2371,7 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::Equal,
                         left: Box::new(value.clone()),
-                        right: Box::new(Bitvector32Term::constant(5))
+                        right: Box::new(MachineTerm::constant(5))
                     },
                     true,
                 )));
@@ -2479,7 +2479,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value.clone()),
-                right: Box::new(Bitvector32Term::constant(7))
+                right: Box::new(MachineTerm::constant(7))
             },
             true,
         )));
@@ -2488,7 +2488,7 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(value.clone()),
-                right: Box::new(Bitvector32Term::constant(99))
+                right: Box::new(MachineTerm::constant(99))
             },
             true,
         )));
@@ -2813,9 +2813,7 @@ fn contract_certification_does_not_accept_injected_opaque_predicate_facts() {
         sort: Sort::CInt32,
         body: Box::new(Proposition::Predicate {
             name: "positive".to_string(),
-            arguments: vec![Term::Bitvector32(Bitvector32Term::Variable(Variable(
-                991_001,
-            )))],
+            arguments: vec![Term::Bitvector32(MachineTerm::Variable(Variable(991_001)))],
         }),
     };
     let execution = certify_contract_with_kernel_artifacts(
@@ -2880,7 +2878,7 @@ fn contract_effect_claim_rejects_an_undecidable_guard() {
         function.clone(),
         vec![
             c_pointer_value(base),
-            CExpression::Value(CValue::Int32(Bitvector32Term::Variable(flag))),
+            CExpression::Value(CValue::Int32(MachineTerm::Variable(flag))),
         ],
         Vec::new(),
         CExecutionEnvironment::new(),
@@ -2943,7 +2941,7 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
     let caller_state = CState::new()
         .with_memory(
             CMemory::new()
-                .with_heap_allocation_claim(allocation_base.clone(), Bitvector32Term::constant(16))
+                .with_heap_allocation_claim(allocation_base.clone(), MachineTerm::constant(16))
                 .expect("the entry allocation should be live"),
         )
         .with_resource_context(own_memory_context(interior, 0, 1));
@@ -3024,8 +3022,8 @@ fn contract_certification_reuses_a_matching_kernel_checked_execution() {
 
     let extra_assumption = PureFactContext::new().assume_condition(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(919_000)),
-            Bitvector32Term::constant(0),
+            MachineTerm::Variable(Variable(919_000)),
+            MachineTerm::constant(0),
         ),
         true,
     );
@@ -3121,8 +3119,8 @@ fn checked_view_certificate_initializes_a_pristine_loan_authority() {
 
 #[test]
 fn contract_certification_refuses_split_entry_artifacts() {
-    let input = Bitvector32Term::Variable(Variable(919_100));
-    let branch = ConditionTerm::signed_less_than(input.clone(), Bitvector32Term::constant(0));
+    let input = MachineTerm::Variable(Variable(919_100));
+    let branch = ConditionTerm::signed_less_than(input.clone(), MachineTerm::constant(0));
     let function = c_function(
         CType::Int32,
         "checked_partition",
@@ -3477,8 +3475,8 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
     };
     let unproved = ProofObligation::verification_condition(Proposition::ConditionIs(
         ConditionTerm::signed_less_than(
-            Bitvector32Term::Variable(Variable(91_200)),
-            Bitvector32Term::constant(8),
+            MachineTerm::Variable(Variable(91_200)),
+            MachineTerm::constant(8),
         ),
         true,
     ));
@@ -3580,8 +3578,8 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
     let state = CState::new();
     let guard = Proposition::ConditionIs(
         ConditionTerm::signed_less_than(
-            Bitvector32Term::Variable(Variable(91_000)),
-            Bitvector32Term::constant(8),
+            MachineTerm::Variable(Variable(91_000)),
+            MachineTerm::constant(8),
         ),
         true,
     );
@@ -3683,7 +3681,7 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
     let before = CMemory::new();
     let after = before
         .clone()
-        .with_heap_allocation_claim(allocation, Bitvector32Term::constant(16))
+        .with_heap_allocation_claim(allocation, MachineTerm::constant(16))
         .expect("a fresh symbolic allocation claim should be registerable");
 
     assert!(
@@ -3699,10 +3697,10 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
 #[test]
 fn bool_cast_range_is_rule_c1_of_the_cast() {
     let flag = ConditionTerm::Variable(Variable(1));
-    let cast = Bitvector32Term::bool_cast(MachineIntegerType::Int32, flag.clone());
+    let cast = MachineTerm::bool_cast(MachineIntegerType::Int32, flag.clone());
     let equals = |constant| {
         Proposition::ConditionIs(
-            ConditionTerm::equal(cast.clone(), Bitvector32Term::constant(constant)),
+            ConditionTerm::equal(cast.clone(), MachineTerm::constant(constant)),
             true,
         )
     };
@@ -3720,11 +3718,11 @@ fn bool_cast_range_is_rule_c1_of_the_cast() {
     );
     assert_eq!(c_bool_cast_range_facts(&bool_value(5)), None);
     assert_eq!(
-        c_bool_cast_range_facts(&CValue::Bool(Bitvector32Term::Variable(Variable(2)))),
+        c_bool_cast_range_facts(&CValue::Bool(MachineTerm::Variable(Variable(2)))),
         None
     );
     assert_eq!(
-        c_bool_cast_range_facts(&int32(Bitvector32Term::Variable(Variable(2)))),
+        c_bool_cast_range_facts(&int32(MachineTerm::Variable(Variable(2)))),
         None
     );
 }
@@ -3778,8 +3776,8 @@ fn decision_memo_distinguishes_equal_shaped_fact_sets_by_content() {
     // entry, no matter how the objects are allocated or reused, and asking
     // one right after the other (in both orders) must not leak either
     // answer to the other.
-    let x = Bitvector32Term::Variable(Variable(1));
-    let below = ConditionTerm::signed_less_than(x.clone(), Bitvector32Term::constant(10));
+    let x = MachineTerm::Variable(Variable(1));
+    let below = ConditionTerm::signed_less_than(x.clone(), MachineTerm::constant(10));
     let assumes_true = PureFactContext::new().assume_condition(below.clone(), true);
     let assumes_false = PureFactContext::new().assume_condition(below.clone(), false);
 
@@ -3793,8 +3791,8 @@ fn decision_memo_distinguishes_equal_shaped_fact_sets_by_content() {
 #[test]
 fn assumptions_clones_share_facts_and_cache_keys_are_content_stable() {
     let condition = ConditionTerm::signed_less_than(
-        Bitvector32Term::Variable(Variable(9)),
-        Bitvector32Term::constant(10),
+        MachineTerm::Variable(Variable(9)),
+        MachineTerm::constant(10),
     );
     let first = PureFactContext::new().assume_condition(condition.clone(), true);
     let clone = first.clone();
@@ -4102,8 +4100,8 @@ fn completion_accepts_a_case_arm_recorded_after_the_return() {
     let root = crate::kernel::proof::ProofFacts::default();
     let then_fact = Proposition::ConditionIs(
         ConditionTerm::equal(
-            Bitvector32Term::Variable(Variable(1_000_050)),
-            Bitvector32Term::constant(5),
+            MachineTerm::Variable(Variable(1_000_050)),
+            MachineTerm::constant(5),
         ),
         true,
     );
@@ -4763,10 +4761,10 @@ fn a_completed_proof_object_yields_its_checked_execution() {
 #[test]
 fn completion_key_folds_trivial_conditions_the_proof_lowering_folds() {
     use crate::kernel::api::completion_key;
-    let x = Bitvector32Term::Variable(Variable(1));
-    let y = Bitvector32Term::Variable(Variable(2));
+    let x = MachineTerm::Variable(Variable(1));
+    let y = MachineTerm::Variable(Variable(2));
     let truth = |value: bool| Proposition::ConditionIs(ConditionTerm::Constant(value), true);
-    let equal = |left: &Bitvector32Term, right: &Bitvector32Term, value: bool| {
+    let equal = |left: &MachineTerm, right: &MachineTerm, value: bool| {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -4898,7 +4896,7 @@ fn call_requirement_obligations_carry_their_lowering_record() {
         });
     let state = CState::new()
         .with_population_creation_tracking()
-        .with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))));
+        .with_local("n", int32(MachineTerm::Variable(Variable(31_000))));
     let execution = prove_symbolic_c_execution_paths_with_environment(
         state,
         c_call_assign("result", "successor_is_positive", vec![c_variable("n")]),
@@ -4927,8 +4925,8 @@ fn call_requirement_obligations_carry_their_lowering_record() {
     let domain = Proposition::signed_arithmetic_domain(
         MachineIntegerType::Int32,
         MachineBinaryOp::Add,
-        &Bitvector32Term::Variable(Variable(31_000)),
-        &Bitvector32Term::constant(1),
+        &MachineTerm::Variable(Variable(31_000)),
+        &MachineTerm::constant(1),
     );
     assert!(
         path.obligations()
@@ -4978,15 +4976,15 @@ fn opaque_rule_environment(function: CFunction) -> CExecutionEnvironment {
 fn symbolic_caller_state() -> CState {
     CState::new()
         .with_population_creation_tracking()
-        .with_local("n", int32(Bitvector32Term::Variable(Variable(31_000))))
+        .with_local("n", int32(MachineTerm::Variable(Variable(31_000))))
 }
 
 /// The entry `drain` is anchored at: its parameter bound to the same symbolic
 /// value the caller state holds, which is what makes M0 that value.
 fn symbolic_entry_arguments() -> Vec<CExpression> {
-    vec![CExpression::Value(int32(Bitvector32Term::Variable(
-        Variable(31_000),
-    )))]
+    vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
+        31_000,
+    ))))]
 }
 
 /// The contexts of the ranking members a call step emitted, in order.
@@ -5253,7 +5251,7 @@ fn an_if_arms_local_stops_existing_when_the_arm_is_left() {
             ),
         ),
     );
-    let state = CState::new().with_local("c", CValue::Int32(Bitvector32Term::constant(1)));
+    let state = CState::new().with_local("c", CValue::Int32(MachineTerm::constant(1)));
     let theorem = prove_symbolic_c_execution(state, statement, PureFactContext::new())
         .expect("the taken arm is the only path");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
@@ -5435,7 +5433,7 @@ fn an_outer_locals_address_survives_an_inner_scope() {
             ),
         ),
     );
-    let state = CState::new().with_local("c", CValue::Int32(Bitvector32Term::constant(1)));
+    let state = CState::new().with_local("c", CValue::Int32(MachineTerm::constant(1)));
     let theorem = prove_symbolic_c_execution(state, statement, PureFactContext::new())
         .expect("the taken arm is the only path");
     let Proposition::CStatementExecutes { outcome, .. } = theorem.proposition() else {
@@ -5444,7 +5442,7 @@ fn an_outer_locals_address_survives_an_inner_scope() {
     let CStatementOutcome::Return { value, .. } = outcome else {
         panic!("expected a return: {outcome:?}");
     };
-    assert_eq!(value, &CValue::Int32(Bitvector32Term::constant(5)));
+    assert_eq!(value, &CValue::Int32(MachineTerm::constant(5)));
 }
 
 fn path_exists_at_snapshot(
@@ -5460,7 +5458,7 @@ fn path_exists_at_snapshot(
         sort: Sort::Algebraic(ty.clone()),
         body: Box::new(Proposition::ConditionIs(
             ConditionTerm::equal(
-                Bitvector32Term::ClickFunctionApplication {
+                MachineTerm::ClickFunctionApplication {
                     name: "walk".into(),
                     arguments: vec![
                         PureFunctionArgument::ArrayRef {
@@ -5550,8 +5548,8 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::Variable(would_be_witness)),
-            right: Box::new(Bitvector32Term::constant(0)),
+            left: Box::new(MachineTerm::Variable(would_be_witness)),
+            right: Box::new(MachineTerm::constant(0)),
         },
         true,
     );
@@ -5563,8 +5561,8 @@ fn certification_generalization_cannot_borrow_a_preexisting_witness_id() {
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::Variable(binder)),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::Variable(binder)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         )),
@@ -5604,7 +5602,7 @@ fn conditional_path_universal(
             var: Variable(binder + 1),
             sort: Sort::CInt32,
             body: Box::new(Proposition::ConditionIs(
-                ConditionTerm::equal(Bitvector32Term::Variable(Variable(binder + 1)), 0.into()),
+                ConditionTerm::equal(MachineTerm::Variable(Variable(binder + 1)), 0.into()),
                 true,
             )),
         }),
@@ -5800,9 +5798,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let execution = certify_contract_with_kernel_artifacts(
         proof_state.clone(),
         function.clone(),
-        vec![CExpression::Value(int32(Bitvector32Term::Variable(
-            Variable(873_002),
-        )))],
+        vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
+            873_002,
+        ))))],
         vec![],
         CExecutionEnvironment::new(),
         CExecutionSemantics::EXECUTE_BODIES,
@@ -5848,9 +5846,9 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
             function.contract_claims().to_vec(),
             true,
         );
-        let arguments = vec![CExpression::Value(int32(Bitvector32Term::Variable(
-            Variable(873_002),
-        )))];
+        let arguments = vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
+            873_002,
+        ))))];
         let artifact = prove_checked_c_function_execution_with_environment(
             proof_state.clone(),
             forward.clone(),
@@ -6101,7 +6099,7 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
         function.clone(),
         vec![
             c_pointer_value(at.clone()),
-            CExpression::Value(int32(Bitvector32Term::Variable(Variable(873_012)))),
+            CExpression::Value(int32(MachineTerm::Variable(Variable(873_012)))),
         ],
         vec![],
         CExecutionEnvironment::new(),
@@ -6161,9 +6159,9 @@ fn construction_parameter_summary_initializes_only_checked_fields() {
     let execution = certify_contract_with_kernel_artifacts(
         entry.with_aggregate_return_destination(at, layout.clone()),
         factory.clone(),
-        vec![CExpression::Value(int32(Bitvector32Term::Variable(
-            Variable(873_012),
-        )))],
+        vec![CExpression::Value(int32(MachineTerm::Variable(Variable(
+            873_012,
+        ))))],
         vec![],
         environment.clone(),
         CExecutionSemantics::APPLY_VERIFIED_RULES,
@@ -6293,7 +6291,7 @@ fn subobject_constructor_summary_preserves_parent_extent_and_siblings() {
         function.clone(),
         vec![
             c_pointer_value(at),
-            CExpression::Value(uint64(Bitvector32Term::Variable(Variable(873_022)))),
+            CExpression::Value(uint64(MachineTerm::Variable(Variable(873_022)))),
         ],
         vec![live],
         CExecutionEnvironment::new(),

@@ -16,7 +16,7 @@ fn local_initialization_havoc_checks_scale_with_changed_cells() {
     for count in [16, 64, 256, 1024] {
         let mut before = CMemory::new()
             .with_block(target.block.clone(), 8)
-            .store(target.clone(), CValue::Int32(Bitvector32Term::constant(7)));
+            .store(target.clone(), CValue::Int32(MachineTerm::constant(7)));
         for index in 0..count {
             let pointer = Pointer {
                 block: format!("local:ambient-{index}").into(),

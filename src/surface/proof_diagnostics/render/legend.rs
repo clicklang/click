@@ -41,12 +41,12 @@ impl SnapshotLabels {
             .clone()
     }
 
-    fn legend_bits(&mut self, value: &Bitvector32Term) -> String {
+    fn legend_bits(&mut self, value: &MachineTerm) -> String {
         match value {
             bits32_constant!(value) => constant_u32(*value).to_string(),
             int64_constant!(value) => constant_i64(*value).to_string(),
             uint64_constant!(value) => constant_u64(*value).to_string(),
-            Bitvector32Term::Variable(variable) => {
+            MachineTerm::Variable(variable) => {
                 if let Some((memory, address)) =
                     crate::kernel::registered_load_for_variable(variable)
                 {
@@ -61,7 +61,7 @@ impl SnapshotLabels {
                     self.legend_symbol(*variable)
                 )
             }
-            Bitvector32Term::MemoryLoad(memory, address, kind) => format!(
+            MachineTerm::MemoryLoad(memory, address, kind) => format!(
                 "{}-byte read({}, address {})",
                 kind.byte_width(),
                 self.snapshot_name(memory.memory()),
@@ -95,7 +95,7 @@ impl SnapshotLabels {
             PointerOffsetTerm::Variable(variable) => {
                 format!(
                     "({}) bytes",
-                    self.legend_bits(&Bitvector32Term::Variable(*variable))
+                    self.legend_bits(&MachineTerm::Variable(*variable))
                 )
             }
             PointerOffsetTerm::Add(left, right) => format!(
@@ -127,7 +127,7 @@ impl SnapshotLabels {
             let displacement = self.legend_offset(&read.displacement, 4);
             return format!("pointer read at {snapshot}, address {address}, plus {displacement}");
         }
-        if let Some(Bitvector32Term::MemoryLoad(memory, address, _)) =
+        if let Some(MachineTerm::MemoryLoad(memory, address, _)) =
             crate::surface::proof_trace::pointer_definition(pointer)
         {
             return format!(
@@ -675,7 +675,7 @@ mod tests {
                     block: "local:origin-test".into(),
                     offset: PointerOffsetTerm::Constant(0),
                 },
-                CValue::Int32(Bitvector32Term::constant(9)),
+                CValue::Int32(MachineTerm::constant(9)),
             )
         })
         .join()
@@ -723,8 +723,7 @@ mod tests {
     #[test]
     fn legend_shows_recorded_store_and_its_base() {
         let address = Pointer::symbolic(Variable(986_402));
-        let memory =
-            CMemory::new().store(address.clone(), CValue::Int32(Bitvector32Term::constant(7)));
+        let memory = CMemory::new().store(address.clone(), CValue::Int32(MachineTerm::constant(7)));
         let mut labels = SnapshotLabels::default();
         labels.immutable_pointer_name(&address, "p");
         labels.snapshot_name(&memory);
@@ -744,8 +743,8 @@ mod tests {
                 CResourceFact::own(CResource::Memory(
                     crate::kernel::CMemoryRange::new_with_element_width(
                         pointer.clone(),
-                        Bitvector32Term::constant(index),
-                        Bitvector32Term::constant(index + 1),
+                        MachineTerm::constant(index),
+                        MachineTerm::constant(index + 1),
                         8,
                     ),
                 ))
@@ -753,8 +752,8 @@ mod tests {
         let condition = ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(Bitvector32Term::constant(7)),
-            right: Box::new(Bitvector32Term::constant(7)),
+            left: Box::new(MachineTerm::constant(7)),
+            right: Box::new(MachineTerm::constant(7)),
         };
         let premises = vec![(condition.clone(), true)];
         let mut labels = SnapshotLabels::default();

@@ -191,7 +191,7 @@ pub(super) fn shared_value_reading(
 #[derive(Clone, Copy)]
 pub(crate) enum MachineOperandView<'a> {
     Shared(&'a KernelTerm),
-    Legacy(&'a Bitvector32Term),
+    Legacy(&'a MachineTerm),
 }
 
 impl SharedMachineIntegerTerm {
@@ -201,7 +201,7 @@ impl SharedMachineIntegerTerm {
         let Some(root) = self.shared_operand() else {
             return Self::intern(
                 destination,
-                Bitvector32Term::machine_integer_cast(self.ty(), destination, self.value().clone()),
+                MachineTerm::machine_integer_cast(self.ty(), destination, self.value().clone()),
             );
         };
         Self::from_shared(
@@ -240,7 +240,7 @@ impl SharedMachineIntegerTerm {
         } else {
             Self::intern(
                 destination,
-                Bitvector32Term::Cast {
+                MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: Box::new(self.value().clone()),
                     from: self.ty(),
@@ -332,7 +332,7 @@ impl<'a> MachineOperandView<'a> {
                 KernelTermNode::Variable(variable) => Some(variable),
                 _ => None,
             },
-            Self::Legacy(Bitvector32Term::Variable(variable)) => Some(variable),
+            Self::Legacy(MachineTerm::Variable(variable)) => Some(variable),
             Self::Legacy(_) => None,
         }
     }
@@ -351,7 +351,7 @@ impl<'a> MachineOperandView<'a> {
                 )),
                 _ => None,
             },
-            Self::Legacy(Bitvector32Term::Binary {
+            Self::Legacy(MachineTerm::Binary {
                 format,
                 op,
                 left,
@@ -371,7 +371,7 @@ impl<'a> MachineOperandView<'a> {
                 } => Some((*format, *operator, Self::Shared(operand))),
                 _ => None,
             },
-            Self::Legacy(Bitvector32Term::Unary {
+            Self::Legacy(MachineTerm::Unary {
                 format,
                 op,
                 operand,
@@ -387,9 +387,9 @@ impl<'a> MachineOperandView<'a> {
         else {
             return None;
         };
-        if right.literal() == Some(Bitvector32Term::constant(value)) {
+        if right.literal() == Some(MachineTerm::constant(value)) {
             Some(left)
-        } else if left.literal() == Some(Bitvector32Term::constant(value)) {
+        } else if left.literal() == Some(MachineTerm::constant(value)) {
             Some(right)
         } else {
             None
@@ -424,7 +424,7 @@ impl<'a> MachineOperandView<'a> {
     }
 
     /// Literal payload only, without descending through an operation.
-    pub(crate) fn literal(self) -> Option<Bitvector32Term> {
+    pub(crate) fn literal(self) -> Option<MachineTerm> {
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineLiteral(value) => {
@@ -557,13 +557,13 @@ impl<'a> MachineOperandView<'a> {
     /// Legacy leaves retain the existing read-over-write adapter. A shared
     /// variable can also name a read, but constructing that leaf costs O(1).
     /// Explicit shared operators are never recursively resolved here.
-    pub(crate) fn read_source(self) -> Option<std::borrow::Cow<'a, Bitvector32Term>> {
+    pub(crate) fn read_source(self) -> Option<std::borrow::Cow<'a, MachineTerm>> {
         match self {
             Self::Legacy(value) => Some(std::borrow::Cow::Borrowed(value)),
             Self::Shared(term) => match term.node() {
-                KernelTermNode::Variable(variable) => Some(std::borrow::Cow::Owned(
-                    Bitvector32Term::Variable(*variable),
-                )),
+                KernelTermNode::Variable(variable) => {
+                    Some(std::borrow::Cow::Owned(MachineTerm::Variable(*variable)))
+                }
                 _ => None,
             },
         }
@@ -578,11 +578,11 @@ mod tests {
     fn checking_casts_preserve_native_composition_without_exporting() {
         use crate::kernel::{KernelTermExport, KernelTermImport, MachineBinaryOp};
         let _session = crate::kernel::VerificationSession::enter();
-        let value = Bitvector32Term::Binary {
+        let value = MachineTerm::Binary {
             format: MachineIntegerType::Int32,
             op: MachineBinaryOp::Add,
-            left: Box::new(Bitvector32Term::Variable(Variable(990301))),
-            right: Box::new(Bitvector32Term::Variable(Variable(990302))),
+            left: Box::new(MachineTerm::Variable(Variable(990301))),
+            right: Box::new(MachineTerm::Variable(Variable(990302))),
         };
         for original in [
             MachineIntegerType::Int16,
@@ -602,9 +602,9 @@ mod tests {
                     ) {
                         value.clone()
                     } else {
-                        Bitvector32Term::Variable(Variable(990303))
+                        MachineTerm::Variable(Variable(990303))
                     };
-                    let value = Bitvector32Term::Cast {
+                    let value = MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         from: original,
                         to: source,
@@ -619,7 +619,7 @@ mod tests {
                     assert_eq!(KernelTermExport::machine_export_count(), exports);
                     assert_eq!(
                         *result.value(),
-                        Bitvector32Term::machine_integer_cast(source, destination, value)
+                        MachineTerm::machine_integer_cast(source, destination, value)
                     );
                 }
             }
@@ -641,7 +641,7 @@ mod tests {
                 )
                 .unwrap()
             };
-            let check = |boxed: Bitvector32Term| {
+            let check = |boxed: MachineTerm| {
                 let shared = KernelTermImport::default().machine(ty, &boxed);
                 let cached = shared.machine_constant_reading().map(|v| v.legacy_term());
                 assert_eq!(
@@ -673,7 +673,7 @@ mod tests {
                 i64::MIN,
                 i64::MAX,
             ] {
-                check(Bitvector32Term::Unary {
+                check(MachineTerm::Unary {
                     format: ty,
                     op: MachineUnaryOp::BitwiseNot,
                     operand: Box::new(literal(a)),
@@ -683,20 +683,20 @@ mod tests {
                         Add, Subtract, Multiply, Divide, Remainder, ShiftLeft, ShiftRight,
                         BitwiseAnd, BitwiseOr, BitwiseXor,
                     ] {
-                        let inner = Bitvector32Term::Binary {
+                        let inner = MachineTerm::Binary {
                             format: ty,
                             op,
                             left: Box::new(literal(a)),
                             right: Box::new(literal(b)),
                         };
                         check(inner.clone());
-                        check(Bitvector32Term::Binary {
+                        check(MachineTerm::Binary {
                             format: ty,
                             op: ShiftRight,
                             left: Box::new(literal(a)),
                             right: Box::new(inner.clone()),
                         });
-                        check(Bitvector32Term::Binary {
+                        check(MachineTerm::Binary {
                             format: ty,
                             op: Add,
                             left: Box::new(inner),
@@ -726,13 +726,13 @@ mod tests {
                 MachineBinaryOp::Remainder,
                 MachineBinaryOp::ShiftRight,
             ] {
-                let left = Bitvector32Term::Variable(Variable(956100));
+                let left = MachineTerm::Variable(Variable(956100));
                 let right = ty
                     .constant_term(
                         MachineIntegerConstant::from_integer(ty.format(), &2.into()).unwrap(),
                     )
                     .unwrap();
-                let boxed = Bitvector32Term::Binary {
+                let boxed = MachineTerm::Binary {
                     format: ty,
                     op,
                     left: Box::new(left.clone()),
@@ -780,11 +780,11 @@ mod tests {
     fn operand_view_observation_preserves_format_admission() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::UInt32;
-        let boxed = Bitvector32Term::Binary {
+        let boxed = MachineTerm::Binary {
             format: ty,
             op: MachineBinaryOp::Add,
-            left: Box::new(Bitvector32Term::Variable(Variable(956101))),
-            right: Box::new(Bitvector32Term::uint32_constant(0)),
+            left: Box::new(MachineTerm::Variable(Variable(956101))),
+            right: Box::new(MachineTerm::uint32_constant(0)),
         };
         let shared = KernelTermImport::default().machine(ty, &boxed);
         for observed_ty in [
@@ -826,12 +826,12 @@ mod cast_tests {
     fn a_sign_cast_of_a_sign_cast_is_observed_through_both() {
         use MachineIntegerType::{Int32, UInt32};
         let _session = crate::kernel::VerificationSession::enter();
-        let a = Bitvector32Term::Variable(Variable(985006));
+        let a = MachineTerm::Variable(Variable(985006));
         for (outer, inner) in [(Int32, UInt32), (UInt32, Int32)] {
-            let twice = Bitvector32Term::sign_cast32(
+            let twice = MachineTerm::sign_cast32(
                 inner,
                 outer,
-                Bitvector32Term::sign_cast32(outer, inner, a.clone()),
+                MachineTerm::sign_cast32(outer, inner, a.clone()),
             );
             assert!(twice.sign_cast32_operand().is_some(), "kept as written");
             let observed = IntegerTerm::from_machine(outer, twice.clone())
@@ -852,7 +852,7 @@ mod cast_tests {
                     Int32,
                     MachineBinaryOp::Add,
                     &twice,
-                    &Bitvector32Term::constant(0),
+                    &MachineTerm::constant(0),
                 );
             }
         }
@@ -928,7 +928,7 @@ mod cast_tests {
             assert!(!machine.has_boxed_operand());
             let explicit = encoding
                 .unary(source, destination)
-                .build_raw(Bitvector32Term::Variable(Variable(985005)));
+                .build_raw(MachineTerm::Variable(Variable(985005)));
             assert_eq!(explicit.int64_width_interval(), expected);
         }
     }
@@ -980,8 +980,8 @@ mod cast_tests {
         let _session = crate::kernel::VerificationSession::enter();
         for source in FORMATS {
             for destination in FORMATS {
-                let base = Bitvector32Term::Variable(Variable(985001));
-                let inner = Bitvector32Term::Cast {
+                let base = MachineTerm::Variable(Variable(985001));
+                let inner = MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     from: destination,
                     to: source,
@@ -1000,7 +1000,7 @@ mod cast_tests {
                         )
                         .unwrap(),
                 ] {
-                    let boxed = Bitvector32Term::Cast {
+                    let boxed = MachineTerm::Cast {
                         spelling: MachineCastSpelling::Generic,
                         from: source,
                         to: destination,
@@ -1047,7 +1047,7 @@ mod cast_tests {
                 }
             }
         }
-        let base = Bitvector32Term::Variable(Variable(985002));
+        let base = MachineTerm::Variable(Variable(985002));
         for op in [
             BitvectorUnaryOp::legacy_cast(MachineCastSpelling::Int64From32),
             BitvectorUnaryOp::legacy_cast(MachineCastSpelling::UInt64From32),

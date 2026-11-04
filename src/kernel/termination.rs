@@ -403,7 +403,7 @@ fn branch_establishes_structural_guard(
             expression => {
                 let (left, right) = ordered(
                     expression,
-                    &CExpression::Value(CValue::Int32(Bitvector32Term::constant(0))),
+                    &CExpression::Value(CValue::Int32(MachineTerm::constant(0))),
                 );
                 (ConditionAtom::Equal(left, right), !value)
             }
@@ -739,7 +739,7 @@ fn call_passes_witness_child(
             CValue::typed_pointer(
                 Pointer {
                     block: PointerBlock::ExternalArgument,
-                    offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(variable), 1),
+                    offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(variable), 1),
                 },
                 parameter.c_type(),
             )
@@ -2290,13 +2290,12 @@ pub(super) fn ranking_nonnegative_proposition(value: &CRankingMeasureValue) -> P
     Proposition::ConditionIs(
         match value {
             CRankingMeasureValue::Machine(term) => {
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), term.clone())
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), term.clone())
             }
             // A signed 64-bit reading owes its lower bound as an int32 does.
-            CRankingMeasureValue::Signed64(term) => ConditionTerm::int64_signed_less_equal(
-                Bitvector32Term::int64_constant(0),
-                term.clone(),
-            ),
+            CRankingMeasureValue::Signed64(term) => {
+                ConditionTerm::int64_signed_less_equal(MachineTerm::int64_constant(0), term.clone())
+            }
             CRankingMeasureValue::Unsigned32(_) | CRankingMeasureValue::Unsigned64(_) => {
                 ConditionTerm::Constant(true)
             }
@@ -2496,7 +2495,7 @@ enum RankingMachineType {
 /// comparison take the signedness of that common type.
 struct RankingMachineTerm {
     machine_type: RankingMachineType,
-    term: Bitvector32Term,
+    term: MachineTerm,
 }
 
 impl RankingMachineTerm {
@@ -2507,14 +2506,14 @@ impl RankingMachineTerm {
             CValue::PointerInteger(_) => unreachable!("numeric projection"),
             CValue::Bool(term) => (
                 RankingMachineType::Int32,
-                Bitvector32Term::bool_word_as(MachineIntegerType::Int32, term),
+                MachineTerm::bool_word_as(MachineIntegerType::Int32, term),
             ),
             narrow @ (CValue::Int8(term)
             | CValue::Int16(term)
             | CValue::UInt8(term)
             | CValue::UInt16(term)) => (
                 RankingMachineType::Int32,
-                Bitvector32Term::machine_integer_cast(
+                MachineTerm::machine_integer_cast(
                     MachineIntegerType::from_c_type(narrow.c_type())?,
                     MachineIntegerType::Int32,
                     term.clone(),
@@ -2536,20 +2535,20 @@ impl RankingMachineTerm {
     }
 
     /// This value converted to `target`, as C converts an integer.
-    fn convert(self, target: RankingMachineType) -> Bitvector32Term {
+    fn convert(self, target: RankingMachineType) -> MachineTerm {
         use RankingMachineType::*;
         match (self.machine_type, target) {
             (Int32 | UInt32, Int32 | UInt32) | (UInt64, UInt64) | (Int64, Int64) => self.term,
-            (Int32, UInt64) => Bitvector32Term::uint64_from_int32(self.term),
-            (UInt32, UInt64) => Bitvector32Term::uint64_from_32(self.term),
+            (Int32, UInt64) => MachineTerm::uint64_from_int32(self.term),
+            (UInt32, UInt64) => MachineTerm::uint64_from_32(self.term),
             // Widening to the signed type keeps the value: a signed word is
             // sign-extended and an unsigned one zero-extended.
-            (Int32, Int64) => Bitvector32Term::int64_from_32(self.term),
-            (UInt32, Int64) => Bitvector32Term::int64_from_uint32(self.term),
+            (Int32, Int64) => MachineTerm::int64_from_32(self.term),
+            (UInt32, Int64) => MachineTerm::int64_from_uint32(self.term),
             // Between the two 64-bit types C keeps the bits.
-            (Int64, UInt64) => Bitvector32Term::uint64_from_int64(self.term),
-            (UInt64, Int64) => Bitvector32Term::int64_from_uint64_bits(self.term),
-            (UInt64 | Int64, Int32 | UInt32) => Bitvector32Term::uint32_from_64(self.term),
+            (Int64, UInt64) => MachineTerm::uint64_from_int64(self.term),
+            (UInt64, Int64) => MachineTerm::int64_from_uint64_bits(self.term),
+            (UInt64 | Int64, Int32 | UInt32) => MachineTerm::uint32_from_64(self.term),
         }
     }
 
@@ -2627,7 +2626,7 @@ fn c_ranking_measure_term_unfolded(
 ) -> Result<RankingMachineTerm, String> {
     use CExpression::*;
     use RankingMachineType::*;
-    type Operation = fn(Bitvector32Term, Bitvector32Term) -> Bitvector32Term;
+    type Operation = fn(MachineTerm, MachineTerm) -> MachineTerm;
     /// One arithmetic operator, as C applies it at each common type.
     fn binary(
         left: &CExpression,
@@ -2748,7 +2747,7 @@ fn c_ranking_measure_term_unfolded(
             };
             Ok(RankingMachineTerm {
                 machine_type,
-                term: Bitvector32Term::If {
+                term: MachineTerm::If {
                     condition: Box::new(condition),
                     then_term: Box::new(then_term),
                     else_term: Box::new(else_term),
@@ -2761,10 +2760,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::add,
-                Bitvector32Term::add,
-                Bitvector32Term::uint64_add,
-                Bitvector32Term::int64_add,
+                MachineTerm::add,
+                MachineTerm::add,
+                MachineTerm::uint64_add,
+                MachineTerm::int64_add,
             ),
         ),
         Subtract(left, right) => binary(
@@ -2773,10 +2772,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::subtract,
-                Bitvector32Term::subtract,
-                Bitvector32Term::uint64_subtract,
-                Bitvector32Term::int64_subtract,
+                MachineTerm::subtract,
+                MachineTerm::subtract,
+                MachineTerm::uint64_subtract,
+                MachineTerm::int64_subtract,
             ),
         ),
         Multiply(left, right) => binary(
@@ -2785,10 +2784,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::multiply,
-                Bitvector32Term::multiply,
-                Bitvector32Term::uint64_multiply,
-                Bitvector32Term::int64_multiply,
+                MachineTerm::multiply,
+                MachineTerm::multiply,
+                MachineTerm::uint64_multiply,
+                MachineTerm::int64_multiply,
             ),
         ),
         Divide(left, right) => binary(
@@ -2797,10 +2796,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::divide,
-                Bitvector32Term::unsigned_divide,
-                Bitvector32Term::uint64_divide,
-                Bitvector32Term::int64_divide,
+                MachineTerm::divide,
+                MachineTerm::unsigned_divide,
+                MachineTerm::uint64_divide,
+                MachineTerm::int64_divide,
             ),
         ),
         Remainder(left, right) => binary(
@@ -2809,10 +2808,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::remainder,
-                Bitvector32Term::unsigned_remainder,
-                Bitvector32Term::uint64_remainder,
-                Bitvector32Term::int64_remainder,
+                MachineTerm::remainder,
+                MachineTerm::unsigned_remainder,
+                MachineTerm::uint64_remainder,
+                MachineTerm::int64_remainder,
             ),
         ),
         RustShiftLeft(..) | RustShiftRight(..) => c_ranking_measure_read(expression, state, reader),
@@ -2821,7 +2820,7 @@ fn c_ranking_measure_term_unfolded(
             right,
             state,
             reader,
-            (Bitvector32Term::shift_left, Bitvector32Term::shift_left),
+            (MachineTerm::shift_left, MachineTerm::shift_left),
         ),
         ShiftRight(left, right) => shift(
             left,
@@ -2829,8 +2828,8 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::arithmetic_shift_right,
-                Bitvector32Term::logical_shift_right,
+                MachineTerm::arithmetic_shift_right,
+                MachineTerm::logical_shift_right,
             ),
         ),
         BitwiseAnd(left, right) => binary(
@@ -2839,10 +2838,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::bitwise_and,
-                Bitvector32Term::bitwise_and,
-                Bitvector32Term::uint64_bitwise_and,
-                Bitvector32Term::uint64_bitwise_and,
+                MachineTerm::bitwise_and,
+                MachineTerm::bitwise_and,
+                MachineTerm::uint64_bitwise_and,
+                MachineTerm::uint64_bitwise_and,
             ),
         ),
         BitwiseOr(left, right) => binary(
@@ -2851,10 +2850,10 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::bitwise_or,
-                Bitvector32Term::bitwise_or,
-                Bitvector32Term::uint64_bitwise_or,
-                Bitvector32Term::uint64_bitwise_or,
+                MachineTerm::bitwise_or,
+                MachineTerm::bitwise_or,
+                MachineTerm::uint64_bitwise_or,
+                MachineTerm::uint64_bitwise_or,
             ),
         ),
         BitwiseXor(left, right) => binary(
@@ -2863,19 +2862,19 @@ fn c_ranking_measure_term_unfolded(
             state,
             reader,
             (
-                Bitvector32Term::bitwise_xor,
-                Bitvector32Term::bitwise_xor,
-                Bitvector32Term::uint64_bitwise_xor,
-                Bitvector32Term::uint64_bitwise_xor,
+                MachineTerm::bitwise_xor,
+                MachineTerm::bitwise_xor,
+                MachineTerm::uint64_bitwise_xor,
+                MachineTerm::uint64_bitwise_xor,
             ),
         ),
         BitwiseNot(value) => {
             let value = c_ranking_measure_term_unfolded(value, state, reader)?;
             let machine_type = value.machine_type;
             let term = if matches!(machine_type, UInt64 | Int64) {
-                Bitvector32Term::uint64_bitwise_not(value.term)
+                MachineTerm::uint64_bitwise_not(value.term)
             } else {
-                Bitvector32Term::bitwise_not(value.term)
+                MachineTerm::bitwise_not(value.term)
             };
             Ok(RankingMachineTerm { machine_type, term })
         }
@@ -2983,9 +2982,9 @@ fn c_ranking_measure_condition_term(
             let value = c_ranking_measure_term_unfolded(expression, state, reader)?;
             Ok((
                 if matches!(value.machine_type, UInt64 | Int64) {
-                    ConditionTerm::uint64_equal(value.term, Bitvector32Term::uint64_constant(0))
+                    ConditionTerm::uint64_equal(value.term, MachineTerm::uint64_constant(0))
                 } else {
-                    ConditionTerm::equal(value.term, Bitvector32Term::constant(0))
+                    ConditionTerm::equal(value.term, MachineTerm::constant(0))
                 },
                 false,
             ))
@@ -3528,7 +3527,7 @@ fn verified_loop_ranking_measures(
     Ok((certified, unranked))
 }
 
-fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64>, i64) {
+fn ranking_affine_form(term: &MachineTerm) -> (BTreeMap<MachineTerm, i64>, i64) {
     match term {
         bits32_constant!(value) => (BTreeMap::new(), i64::from(constant_u32(*value) as i32)),
         binary_term!(Int32, Add, left, right) => {
@@ -3604,29 +3603,29 @@ fn ranking_affine_form(term: &Bitvector32Term) -> (BTreeMap<Bitvector32Term, i64
     }
 }
 
-fn canonical_ranking_term(term: &Bitvector32Term) -> Bitvector32Term {
+fn canonical_ranking_term(term: &MachineTerm) -> MachineTerm {
     let (terms, constant) = ranking_affine_form(term);
-    let mut result = Bitvector32Term::constant(0);
+    let mut result = MachineTerm::constant(0);
     for (term, coefficient) in terms {
         let magnitude = coefficient.unsigned_abs();
         let factor = if magnitude == 1 {
             term
         } else {
-            Bitvector32Term::multiply(Bitvector32Term::constant(magnitude as u32), term)
+            MachineTerm::multiply(MachineTerm::constant(magnitude as u32), term)
         };
         result = if coefficient < 0 {
-            Bitvector32Term::subtract(result, factor)
+            MachineTerm::subtract(result, factor)
         } else {
-            Bitvector32Term::add(result, factor)
+            MachineTerm::add(result, factor)
         };
     }
     if constant < 0 {
-        Bitvector32Term::subtract(
+        MachineTerm::subtract(
             result,
-            Bitvector32Term::constant(constant.unsigned_abs() as u32),
+            MachineTerm::constant(constant.unsigned_abs() as u32),
         )
     } else {
-        Bitvector32Term::add(result, Bitvector32Term::constant(constant as u32))
+        MachineTerm::add(result, MachineTerm::constant(constant as u32))
     }
 }
 
@@ -5461,7 +5460,7 @@ mod address_escape_tests {
 mod ranking_member_tests {
     use super::*;
 
-    fn scalar_state(bindings: &[(&str, Bitvector32Term)]) -> CState {
+    fn scalar_state(bindings: &[(&str, MachineTerm)]) -> CState {
         let mut state = CState::new();
         for (name, value) in bindings {
             state.locals.set_typed(
@@ -5482,7 +5481,7 @@ mod ranking_member_tests {
     /// cannot be read from it, and the refusal says so.
     #[test]
     fn a_measure_may_not_read_a_volatile_object() {
-        let state = scalar_state(&[("i", Bitvector32Term::Variable(Variable(1)))]);
+        let state = scalar_state(&[("i", MachineTerm::Variable(Variable(1)))]);
         let volatile_read = CExpression::TypedLoad {
             pointer: Box::new(CExpression::Variable("device".to_string())),
             value_type: CType::Int32,
@@ -5509,11 +5508,11 @@ mod ranking_member_tests {
 
     #[test]
     fn ranking_members_are_ordered_and_right_nested() {
-        let outer = Bitvector32Term::Variable(Variable(1));
-        let inner = Bitvector32Term::Variable(Variable(2));
+        let outer = MachineTerm::Variable(Variable(1));
+        let inner = MachineTerm::Variable(Variable(2));
         let entry = scalar_state(&[("i", outer.clone()), ("j", inner.clone())]);
-        let post_outer = Bitvector32Term::subtract(outer.clone(), Bitvector32Term::constant(1));
-        let post_inner = Bitvector32Term::add(inner.clone(), Bitvector32Term::constant(1));
+        let post_outer = MachineTerm::subtract(outer.clone(), MachineTerm::constant(1));
+        let post_inner = MachineTerm::add(inner.clone(), MachineTerm::constant(1));
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("j", post_inner.clone())]);
         let measures = vec![
             CRankingComponent::CExpression(CExpression::Variable("i".to_string())),
@@ -5537,7 +5536,7 @@ mod ranking_member_tests {
             assert_eq!(
                 obligation.proposition(),
                 &Proposition::ConditionIs(
-                    ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), post),
+                    ConditionTerm::signed_less_equal(MachineTerm::constant(0), post),
                     true,
                 )
             );
@@ -5574,9 +5573,9 @@ mod ranking_member_tests {
     /// and no equality prefix to choose between.
     #[test]
     fn one_component_takes_a_bare_decrease_member() {
-        let value = Bitvector32Term::Variable(Variable(7));
+        let value = MachineTerm::Variable(Variable(7));
         let entry = scalar_state(&[("n", value.clone())]);
-        let post = Bitvector32Term::subtract(value.clone(), Bitvector32Term::constant(1));
+        let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let back_edge = scalar_state(&[("n", post.clone())]);
         let measures = vec![CRankingComponent::CExpression(CExpression::Variable(
             "n".to_string(),
@@ -5624,8 +5623,8 @@ mod ranking_member_tests {
     #[test]
     fn a_pure_component_is_read_at_both_states() {
         let cell = int32_cell("counter");
-        let value = Bitvector32Term::Variable(Variable(11));
-        let post = Bitvector32Term::subtract(value.clone(), Bitvector32Term::constant(1));
+        let value = MachineTerm::Variable(Variable(11));
+        let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let mut entry = CState::new();
         entry.memory = CMemory::new().store(cell.clone(), CValue::Int32(value.clone()));
         let mut back_edge = CState::new();
@@ -5654,7 +5653,7 @@ mod ranking_member_tests {
         assert_eq!(
             resolved(obligations[0].proposition()),
             Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), post.clone()),
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post.clone()),
                 true,
             ),
             "the nonnegativity member reads the back-edge state"
@@ -5688,8 +5687,8 @@ mod ranking_member_tests {
     /// native form.
     #[test]
     fn an_integer_component_builds_integer_members() {
-        let value = Bitvector32Term::Variable(Variable(13));
-        let post = Bitvector32Term::subtract(value.clone(), Bitvector32Term::constant(1));
+        let value = MachineTerm::Variable(Variable(13));
+        let post = MachineTerm::subtract(value.clone(), MachineTerm::constant(1));
         let entry = scalar_state(&[("n", value.clone())]);
         let back_edge = scalar_state(&[("n", post.clone())]);
         let measures = vec![CRankingComponent::PureInteger {
@@ -5711,7 +5710,7 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), post.clone()),
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post.clone()),
                 true,
             ),
             "the nonnegativity member is the native comparison at the back edge"
@@ -5739,10 +5738,10 @@ mod ranking_member_tests {
     /// int32 observation is stated in its native form.
     #[test]
     fn a_mixed_tuple_builds_each_member_in_its_own_carrier() {
-        let outer = Bitvector32Term::Variable(Variable(17));
-        let inner = Bitvector32Term::Variable(Variable(19));
-        let post_outer = Bitvector32Term::subtract(outer.clone(), Bitvector32Term::constant(1));
-        let post_inner = Bitvector32Term::subtract(inner.clone(), Bitvector32Term::constant(1));
+        let outer = MachineTerm::Variable(Variable(17));
+        let inner = MachineTerm::Variable(Variable(19));
+        let post_outer = MachineTerm::subtract(outer.clone(), MachineTerm::constant(1));
+        let post_inner = MachineTerm::subtract(inner.clone(), MachineTerm::constant(1));
         let entry = scalar_state(&[("i", outer.clone()), ("n", inner.clone())]);
         let back_edge = scalar_state(&[("i", post_outer.clone()), ("n", post_inner.clone())]);
         let measures = vec![
@@ -5767,14 +5766,14 @@ mod ranking_member_tests {
         assert_eq!(
             obligations[0].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), post_outer.clone()),
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post_outer.clone()),
                 true,
             )
         );
         assert_eq!(
             obligations[1].proposition(),
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), post_inner.clone()),
+                ConditionTerm::signed_less_equal(MachineTerm::constant(0), post_inner.clone()),
                 true,
             )
         );
@@ -5864,15 +5863,13 @@ mod ranking_member_tests {
         })
     }
 
-    fn uint32_state(value: Bitvector32Term) -> CState {
+    fn uint32_state(value: MachineTerm) -> CState {
         typed_state("x", CValue::UInt32(value), CType::UInt32)
     }
 
     fn four_minus_x() -> CExpression {
         CExpression::Subtract(
-            Box::new(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(4),
-            ))),
+            Box::new(CExpression::Value(CValue::Int32(MachineTerm::constant(4)))),
             Box::new(CExpression::Variable("x".to_string())),
         )
     }
@@ -5883,12 +5880,9 @@ mod ranking_member_tests {
     /// comparison of the two wrapped differences.
     #[test]
     fn an_unsigned_component_ranks_by_unsigned_order() {
-        let value = Bitvector32Term::Variable(Variable(21));
+        let value = MachineTerm::Variable(Variable(21));
         let entry = uint32_state(value.clone());
-        let back_edge = uint32_state(Bitvector32Term::add(
-            value.clone(),
-            Bitvector32Term::constant(1),
-        ));
+        let back_edge = uint32_state(MachineTerm::add(value.clone(), MachineTerm::constant(1)));
         let members = ranking_members(&back_edge, &entry, four_minus_x())
             .expect("a uint32 measure reads at both ends");
         assert_eq!(
@@ -5897,12 +5891,12 @@ mod ranking_member_tests {
                 Proposition::ConditionIs(ConditionTerm::Constant(true), true),
                 Proposition::ConditionIs(
                     ConditionTerm::unsigned_less_than(
-                        canonical_ranking_term(&Bitvector32Term::subtract(
-                            Bitvector32Term::constant(3),
+                        canonical_ranking_term(&MachineTerm::subtract(
+                            MachineTerm::constant(3),
                             value.clone(),
                         )),
-                        canonical_ranking_term(&Bitvector32Term::subtract(
-                            Bitvector32Term::constant(4),
+                        canonical_ranking_term(&MachineTerm::subtract(
+                            MachineTerm::constant(4),
                             value,
                         )),
                     ),
@@ -5921,8 +5915,8 @@ mod ranking_member_tests {
     fn an_unsigned_component_that_wraps_upward_does_not_descend() {
         let decrease = |before: u32, after: u32| {
             ranking_members(
-                &uint32_state(Bitvector32Term::constant(after)),
-                &uint32_state(Bitvector32Term::constant(before)),
+                &uint32_state(MachineTerm::constant(after)),
+                &uint32_state(MachineTerm::constant(before)),
                 four_minus_x(),
             )
             .expect("a uint32 measure reads at both ends")
@@ -5946,7 +5940,7 @@ mod ranking_member_tests {
         let state = |value: u64| {
             typed_state(
                 "x",
-                CValue::UInt64(Bitvector32Term::uint64_constant(value)),
+                CValue::UInt64(MachineTerm::uint64_constant(value)),
                 CType::UInt64,
             )
         };
@@ -5971,7 +5965,7 @@ mod ranking_member_tests {
     /// widening and owes the signed members.
     #[test]
     fn a_narrow_unsigned_component_is_promoted_to_int32() {
-        let value = Bitvector32Term::Variable(Variable(22));
+        let value = MachineTerm::Variable(Variable(22));
         let state = typed_state("x", CValue::UInt8(value.clone()), CType::UInt8);
         let members = ranking_members(&state, &state, CExpression::Variable("x".to_string()))
             .expect("a uint8 measure reads at both ends");
@@ -5979,8 +5973,8 @@ mod ranking_member_tests {
             members[0],
             Proposition::ConditionIs(
                 ConditionTerm::signed_less_equal(
-                    Bitvector32Term::constant(0),
-                    Bitvector32Term::machine_integer_cast(
+                    MachineTerm::constant(0),
+                    MachineTerm::machine_integer_cast(
                         MachineIntegerType::UInt8,
                         MachineIntegerType::Int32,
                         value
@@ -5996,7 +5990,7 @@ mod ranking_member_tests {
     /// value read from a C expression does.
     #[test]
     fn a_pure_uint32_component_ranks_by_unsigned_order() {
-        let value = Bitvector32Term::Variable(Variable(23));
+        let value = MachineTerm::Variable(Variable(23));
         let state = CState::new();
         let obligations = collect_loop_ranking_obligations(
             &state,
@@ -6031,7 +6025,7 @@ mod ranking_member_tests {
         let state = |value: i64| {
             typed_state(
                 "x",
-                CValue::Int64(Bitvector32Term::int64_constant(value)),
+                CValue::Int64(MachineTerm::int64_constant(value)),
                 CType::Int64,
             )
         };
@@ -6057,15 +6051,15 @@ mod ranking_member_tests {
     fn structural_path_refuses_an_obligation_no_exact_route_settles() {
         let left = Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(Variable(1)),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(Variable(1)),
             ),
             true,
         );
         let right = Proposition::ConditionIs(
             ConditionTerm::signed_less_equal(
-                Bitvector32Term::constant(0),
-                Bitvector32Term::Variable(Variable(2)),
+                MachineTerm::constant(0),
+                MachineTerm::Variable(Variable(2)),
             ),
             true,
         );
@@ -7174,7 +7168,7 @@ mod local_descent_tests {
             components: vec![declared_component()],
             peers: Vec::new(),
             structural_entry: None,
-            measure: vec![CRankingMeasureValue::Machine(Bitvector32Term::constant(7))],
+            measure: vec![CRankingMeasureValue::Machine(MachineTerm::constant(7))],
             entry_obligations: Vec::new(),
         }
     }

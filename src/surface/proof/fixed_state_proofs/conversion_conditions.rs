@@ -137,7 +137,7 @@ impl<'a> StatedSite<'a> {
     }
 
     /// One kernel machine term in the user's spelling.
-    fn spell_term(&self, term: &Bitvector32Term) -> Option<String> {
+    fn spell_term(&self, term: &MachineTerm) -> Option<String> {
         let (parameters, arguments) = self.naming();
         synthesize_surface_machine_expression(
             term,
@@ -250,7 +250,7 @@ fn spell_condition(
             site.spell_proposition(&Proposition::CMemoryLoadable {
                 memory: site.state.memory().clone(),
                 base: pointer.clone(),
-                bytes: Bitvector32Term::constant(4),
+                bytes: MachineTerm::constant(4),
                 wide: false,
             })
             .as_ref(),
@@ -360,7 +360,7 @@ fn conversion_bound(
 }
 
 /// The machine operation a signed-overflow guard is about.
-fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
+fn overflowing_operation(condition: &ConditionTerm) -> Option<MachineTerm> {
     match condition {
         ConditionTerm::Overflows {
             format: MachineIntegerType::Int32,
@@ -385,7 +385,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
             op: OverflowOperation::Add,
             left,
             right,
-        } => Some(Bitvector32Term::Binary {
+        } => Some(MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Add,
             left: left.clone(),
@@ -396,7 +396,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
             op: OverflowOperation::Subtract,
             left,
             right,
-        } => Some(Bitvector32Term::Binary {
+        } => Some(MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Subtract,
             left: left.clone(),
@@ -407,7 +407,7 @@ fn overflowing_operation(condition: &ConditionTerm) -> Option<Bitvector32Term> {
             op: OverflowOperation::Multiply,
             left,
             right,
-        } => Some(Bitvector32Term::Binary {
+        } => Some(MachineTerm::Binary {
             format: MachineIntegerType::Int64,
             op: MachineBinaryOp::Multiply,
             left: left.clone(),
@@ -433,10 +433,8 @@ fn load_definition_cell(condition: &Proposition) -> Option<&Pointer> {
         return None;
     };
     match (left.as_ref(), right.as_ref()) {
-        (Bitvector32Term::Variable(_), Bitvector32Term::MemoryLoad(_, pointer, _))
-        | (Bitvector32Term::MemoryLoad(_, pointer, _), Bitvector32Term::Variable(_)) => {
-            Some(pointer)
-        }
+        (MachineTerm::Variable(_), MachineTerm::MemoryLoad(_, pointer, _))
+        | (MachineTerm::MemoryLoad(_, pointer, _), MachineTerm::Variable(_)) => Some(pointer),
         _ => None,
     }
 }

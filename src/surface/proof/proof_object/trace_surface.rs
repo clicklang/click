@@ -72,7 +72,7 @@ impl Proof<'_> {
                     snapshot: None,
                 });
             }
-            let Some(Bitvector32Term::MemoryLoad(memory, address, _)) = pointer_definition(pointer)
+            let Some(MachineTerm::MemoryLoad(memory, address, _)) = pointer_definition(pointer)
             else {
                 return None;
             };

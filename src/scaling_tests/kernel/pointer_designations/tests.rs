@@ -95,8 +95,8 @@ fn pointer_integer_round_trips_ignore_unrelated_facts() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::uint64_equal(
-                    Bitvector32Term::Variable(Variable(993_000 + index)),
-                    Bitvector32Term::uint64_constant(index),
+                    MachineTerm::Variable(Variable(993_000 + index)),
+                    MachineTerm::uint64_constant(index),
                 ),
                 true,
             );
@@ -141,7 +141,7 @@ fn packed_word_contract_lookup_and_scope_ignore_unrelated_words() {
         )
     };
     let reconstructed = |id| {
-        let word = CValue::UInt64(Bitvector32Term::Variable(Variable(id)))
+        let word = CValue::UInt64(MachineTerm::Variable(Variable(id)))
             .complete_word(Pointer::symbolic(Variable(id + 1)));
         let value = crate::kernel::eval::cast_c_value_to_type(
             word,

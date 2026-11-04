@@ -45,7 +45,7 @@ fn indexed_constant_arithmetic_premises(
     for variable in crate::kernel::proposition_variables(&canonical) {
         selected.extend(assumptions.signed_constant_bound_facts(
             crate::kernel::SignedDefinedWidth::Int32,
-            &Bitvector32Term::Variable(variable),
+            &MachineTerm::Variable(variable),
         ));
     }
     selected.into_iter().collect()
@@ -59,7 +59,7 @@ fn incompatible_machine_offsets(
     right: &crate::kernel::IntegerTerm,
 ) -> bool {
     use crate::kernel::IntegerTerm;
-    fn offset(term: &IntegerTerm) -> Option<(MachineIntegerType, Bitvector32Term, BigInt)> {
+    fn offset(term: &IntegerTerm) -> Option<(MachineIntegerType, MachineTerm, BigInt)> {
         match term {
             IntegerTerm::Add(base, delta) | IntegerTerm::Subtract(base, delta)
                 if delta.as_const().is_some() =>
@@ -84,7 +84,7 @@ fn incompatible_machine_offsets(
                 let format = machine.ty();
                 let mut base = machine.value();
                 let mut delta = BigInt::zero();
-                while let Bitvector32Term::Binary {
+                while let MachineTerm::Binary {
                     format: operation_format,
                     op,
                     left,
@@ -338,8 +338,8 @@ fn collect_signed_surface_proposition_terms<'a>(
 /// expansion must recover the original source spelling for operation nodes;
 /// leaf-atom comparison alone would silently decline deep but valid plans.
 fn signed_surface_terms_equal(
-    left: &crate::kernel::Bitvector32Term,
-    right: &crate::kernel::Bitvector32Term,
+    left: &crate::kernel::MachineTerm,
+    right: &crate::kernel::MachineTerm,
 ) -> bool {
     let left = crate::kernel::canonical_term(left);
     let right = crate::kernel::canonical_term(right);
@@ -358,8 +358,8 @@ fn signed_surface_terms_equal(
             (uint64_constant!(left), uint64_constant!(right))
                 if constant_u64(*left) == constant_u64(*right) => {}
             (
-                crate::kernel::Bitvector32Term::Variable(left),
-                crate::kernel::Bitvector32Term::Variable(right),
+                crate::kernel::MachineTerm::Variable(left),
+                crate::kernel::MachineTerm::Variable(right),
             ) if left == right => {}
             (cast_term!(UInt32From64, left), cast_term!(UInt32From64, right)) => {
                 pending.push((left, right))
@@ -367,13 +367,13 @@ fn signed_surface_terms_equal(
             // A conversion, such as an 8- or 16-bit value's `int32`
             // widening, is the same term when its formats and operand are.
             (
-                crate::kernel::Bitvector32Term::Cast {
+                crate::kernel::MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: left,
                     from: left_source,
                     to: left_destination,
                 },
-                crate::kernel::Bitvector32Term::Cast {
+                crate::kernel::MachineTerm::Cast {
                     spelling: MachineCastSpelling::Generic,
                     value: right,
                     from: right_source,
@@ -429,12 +429,12 @@ fn signed_surface_terms_equal(
 /// re-lower at its own width, not as the certificate's `int32` arithmetic.
 /// An expression that already is a cast to `int32` is kept.
 fn int32_widening_spelling(
-    term: &crate::kernel::Bitvector32Term,
+    term: &crate::kernel::MachineTerm,
     candidate: ContractExpression,
 ) -> ContractExpression {
     let widening = matches!(
         term,
-        crate::kernel::Bitvector32Term::Cast { spelling: MachineCastSpelling::Generic,
+        crate::kernel::MachineTerm::Cast { spelling: MachineCastSpelling::Generic,
             from: source,
             to: crate::kernel::MachineIntegerType::Int32,
             ..
@@ -1604,7 +1604,7 @@ fn integer_surface_trivial(claim: &IntegerAffineClaim) -> Option<ClickPropositio
 
 fn kernel_upper_bound_split_candidate(
     proposition: &Proposition,
-) -> Option<(Variable, Bitvector32Term)> {
+) -> Option<(Variable, MachineTerm)> {
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
@@ -1623,7 +1623,7 @@ fn kernel_upper_bound_split_candidate(
         } => (left, right, false),
         _ => return None,
     };
-    let Bitvector32Term::Variable(variable) = left.as_ref() else {
+    let MachineTerm::Variable(variable) = left.as_ref() else {
         return None;
     };
     if !plus_one {
@@ -1632,7 +1632,7 @@ fn kernel_upper_bound_split_candidate(
     let binary_term!(Int32, Add, pivot, one) = right.as_ref() else {
         return None;
     };
-    (**one == Bitvector32Term::constant(1)).then(|| (*variable, pivot.as_ref().clone()))
+    (**one == MachineTerm::constant(1)).then(|| (*variable, pivot.as_ref().clone()))
 }
 
 // These split conditions come from a native int32 bound. Shield their pivot
@@ -1851,7 +1851,7 @@ fn script_arm_with_continuation<'a>(
 impl<'a> Proof<'a> {
     fn signed_surface_term(
         &self,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
         candidates: &[&ContractExpression],
     ) -> Option<ContractExpression> {
         if let Some(value) = term.as_const() {
@@ -1920,7 +1920,7 @@ impl<'a> Proof<'a> {
     fn signed_surface_term_is_int32(
         &self,
         candidate: &ContractExpression,
-        term: &crate::kernel::Bitvector32Term,
+        term: &crate::kernel::MachineTerm,
     ) -> bool {
         let probe = ClickProposition::Comparison {
             left: candidate.clone(),
@@ -2109,7 +2109,7 @@ impl<'a> Proof<'a> {
         for surface in &rendered_premises {
             collect_signed_surface_proposition_terms(surface, &mut terms);
         }
-        let term = |term: &crate::kernel::Bitvector32Term| self.signed_surface_term(term, &terms);
+        let term = |term: &crate::kernel::MachineTerm| self.signed_surface_term(term, &terms);
         let interval =
             |value: crate::kernel::proof::signed_arithmetic::SignedArithmeticInterval| {
                 SignedInt32Interval {
@@ -2273,9 +2273,7 @@ impl<'a> Proof<'a> {
                 SignedArithmeticNode::Trivial { result } => claim_surface(result),
                 SignedArithmeticNode::Int32Range { result } => {
                     let (atom, coefficient) = result.terms.iter().next()?;
-                    let atom = term(&crate::kernel::Bitvector32Term::Variable(
-                        atom.as_variable()?,
-                    ))?;
+                    let atom = term(&crate::kernel::MachineTerm::Variable(atom.as_variable()?))?;
                     Some(observe_comparison(if coefficient.is_positive() {
                         ClickProposition::Comparison {
                             left: atom,
@@ -3293,7 +3291,7 @@ impl<'a> Proof<'a> {
             // Adding or subtracting a nonzero word has no fixed point,
             // including at unsigned wraparound. A retained equality names
             // the same base without spelling unrelated historical premises.
-            fn offset_base(term: &Bitvector32Term) -> Option<&Bitvector32Term> {
+            fn offset_base(term: &MachineTerm) -> Option<&MachineTerm> {
                 match term {
                     binary_term!(Int32, Add, base, delta)
                     | binary_term!(Int32, Subtract, base, delta)
@@ -3304,7 +3302,7 @@ impl<'a> Proof<'a> {
                     _ => None,
                 }
             }
-            let same_value = |left: &Bitvector32Term, right: &Bitvector32Term| {
+            let same_value = |left: &MachineTerm, right: &MachineTerm| {
                 left == right
                     || self.facts().contains(&Proposition::ConditionIs(
                         ConditionTerm::Compare {
@@ -3357,8 +3355,7 @@ impl<'a> Proof<'a> {
             _ => return false,
         };
         let assumptions = self.facts().assumptions();
-        let literal =
-            |term: &Bitvector32Term| matches!(term, bits32_constant!(_) | int64_constant!(_));
+        let literal = |term: &MachineTerm| matches!(term, bits32_constant!(_) | int64_constant!(_));
         if !literal(left) && !literal(right) {
             return false;
         }
@@ -4531,7 +4528,7 @@ impl<'a> Proof<'a> {
                 bits32_constant!(value),
             ))) if unsigned && constant_u32(*value) == bound => {
                 ContractExpression::CFragment(CExpression::Value(CValue::UInt32(
-                    Bitvector32Term::uint32_constant(constant_u32(*value) + 1),
+                    MachineTerm::uint32_constant(constant_u32(*value) + 1),
                 )))
             }
             ContractExpression::IntegerLiteral(literal)
@@ -5184,9 +5181,8 @@ impl<'a> Proof<'a> {
         // Each candidate is the two opposite orders, each with whether it
         // holds of every value: `0 <= x` in an unsigned order, which no
         // fact states and the step's own range reasoning supplies.
-        let zero = |term: &Bitvector32Term| {
-            term.as_const() == Some(0) || term.uint64_as_const() == Some(0)
-        };
+        let zero =
+            |term: &MachineTerm| term.as_const() == Some(0) || term.uint64_as_const() == Some(0);
         let pairs = match self.goal()? {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
@@ -5327,7 +5323,7 @@ impl<'a> Proof<'a> {
                 continue;
             }
             let assumptions = self.facts().assumptions();
-            let term = Bitvector32Term::Variable(variable);
+            let term = MachineTerm::Variable(variable);
             // A `uint32` goal's bounds are `uint32` orders, filed in their
             // own index.
             let entries = assumptions
@@ -5958,7 +5954,7 @@ impl<'a> Proof<'a> {
                 for (endpoint, other, strict, forward) in self
                     .facts()
                     .assumptions()
-                    .signed_order_bound_entries(&Bitvector32Term::Variable(*variable))
+                    .signed_order_bound_entries(&MachineTerm::Variable(*variable))
                 {
                     let (left, right) = if forward {
                         (endpoint, other)
@@ -6013,7 +6009,7 @@ impl<'a> Proof<'a> {
                     ConditionTerm::Compare {
                         format: MachineIntegerType::Int32,
                         relation: CompareRelation::LessThan,
-                        left: Box::new(Bitvector32Term::Variable(variable)),
+                        left: Box::new(MachineTerm::Variable(variable)),
                         right: Box::new(pivot.clone()),
                     },
                     true,
@@ -6558,16 +6554,16 @@ impl<'a> Proof<'a> {
         else {
             return Ok(None);
         };
-        let load = |term: &Bitvector32Term| match term {
-            Bitvector32Term::Variable(variable) => {
+        let load = |term: &MachineTerm| match term {
+            MachineTerm::Variable(variable) => {
                 crate::kernel::registered_load_term_for_variable(variable)
             }
-            Bitvector32Term::MemoryLoad(..) => Some(term.clone()),
+            MachineTerm::MemoryLoad(..) => Some(term.clone()),
             _ => None,
         };
         let (
-            Some(Bitvector32Term::MemoryLoad(left_memory, left_pointer, left_kind)),
-            Some(Bitvector32Term::MemoryLoad(right_memory, right_pointer, right_kind)),
+            Some(MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind)),
+            Some(MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind)),
         ) = (load(left), load(right))
         else {
             return Ok(None);
@@ -6890,7 +6886,7 @@ impl<'a> Proof<'a> {
                 | CValue::Int64(term)
                 | CValue::UInt64(term)
                 | CValue::Bool(term),
-            ) => *term == Bitvector32Term::Variable(var),
+            ) => *term == MachineTerm::Variable(var),
             _ => false,
         };
         // The written pattern and the value it describes, in either order.
@@ -6956,7 +6952,7 @@ impl<'a> Proof<'a> {
             | CValue::Int64(term)
             | CValue::UInt64(term)
             | CValue::Bool(term) => match term {
-                Bitvector32Term::Variable(variable) => Some(*variable),
+                MachineTerm::Variable(variable) => Some(*variable),
                 _ => None,
             },
             _ => None,
@@ -7030,7 +7026,7 @@ impl<'a> Proof<'a> {
         // source-backed existential requirements without searching ambient
         // facts.
         candidates.push(ContractExpression::CFragment(CExpression::Value(
-            CValue::Int32(Bitvector32Term::constant(0)),
+            CValue::Int32(MachineTerm::constant(0)),
         )));
         for value in candidates {
             check_verification_deadline()?;
@@ -7595,7 +7591,7 @@ impl<'a> Proof<'a> {
     /// [`MAX_INCREMENT_HEADROOM_PREMISES`] of them.
     fn increment_headroom_premises(
         &self,
-        pivot: &Bitvector32Term,
+        pivot: &MachineTerm,
         surface_facts: &SurfacePropositionMap,
         premise_anchor: Option<&ProgramPointRef>,
     ) -> Vec<ClickProposition> {
@@ -8296,7 +8292,7 @@ impl<'a> Proof<'a> {
                 left: source.clone(),
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                    Bitvector32Term::constant(constant_u32(*value)),
+                    MachineTerm::constant(constant_u32(*value)),
                 ))),
             };
             let scope = self.begin_have(surface.clone()).ok()?;
@@ -8747,8 +8743,8 @@ impl<'a> Proof<'a> {
     /// Integer arithmetic. Both lookups are exact: no fact is scanned.
     fn unsigned_strict_fact(
         &self,
-        lower: &Bitvector32Term,
-        upper: &Bitvector32Term,
+        lower: &MachineTerm,
+        upper: &MachineTerm,
         surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
     ) -> Option<(
         Self,
@@ -8871,7 +8867,7 @@ impl<'a> Proof<'a> {
         reversals: bool,
     ) -> Option<Self> {
         let (order, left, right) = unsigned_order_parts(self.goal()?)?;
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         // The goal from one comparison read the other way round, by
         // Integer arithmetic: the premise's operands, compared the goal's
         // way. `arithmetic() using` reads such a premise itself.
@@ -8943,7 +8939,7 @@ impl<'a> Proof<'a> {
                         };
                         let positive = ClickProposition::Comparison {
                             left: ContractExpression::CFragment(CExpression::Value(
-                                CValue::UInt32(Bitvector32Term::uint32_constant(0)),
+                                CValue::UInt32(MachineTerm::uint32_constant(0)),
                             )),
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
@@ -9046,7 +9042,7 @@ impl<'a> Proof<'a> {
         let binary_term!(Int32, Subtract, value, amount) = predecessor.as_ref() else {
             return None;
         };
-        if amount.as_ref() != &Bitvector32Term::constant(1) {
+        if amount.as_ref() != &MachineTerm::constant(1) {
             return None;
         }
         let upper_kernel = Proposition::ConditionIs(
@@ -9388,7 +9384,7 @@ impl<'a> Proof<'a> {
                 .iter()
                 .filter_map(|(name, binding)| match binding {
                     ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                        Bitvector32Term::Variable(variable),
+                        MachineTerm::Variable(variable),
                     ))) => Some((*variable, name.clone())),
                     _ => None,
                 })
@@ -9611,7 +9607,7 @@ impl<'a> Proof<'a> {
                     let argument = match value {
                         bits32_constant!(bits) => {
                             Some(ContractExpression::CFragment(CExpression::Value(
-                                CValue::Int32(Bitvector32Term::constant(constant_u32(*bits))),
+                                CValue::Int32(MachineTerm::constant(constant_u32(*bits))),
                             )))
                         }
                         uint64_constant!(_) => Some(ContractExpression::CFragment(
@@ -9620,7 +9616,7 @@ impl<'a> Proof<'a> {
                         int64_constant!(_) => Some(ContractExpression::CFragment(
                             CExpression::Value(CValue::Int64(value.clone())),
                         )),
-                        Bitvector32Term::Variable(variable) => {
+                        MachineTerm::Variable(variable) => {
                             let Some(goal) = self.proposition_obligation() else {
                                 continue;
                             };
@@ -9628,7 +9624,7 @@ impl<'a> Proof<'a> {
                                 matches!(
                                     binding,
                                     ContractExpression::CFragment(CExpression::Value(
-                                        CValue::Int32(Bitvector32Term::Variable(bound))
+                                        CValue::Int32(MachineTerm::Variable(bound))
                                     )) if bound == variable
                                 )
                                 .then(|| {
@@ -13483,7 +13479,7 @@ enum UnsignedOrder {
 /// A held `uint32` order and its operands.
 fn unsigned_order_parts(
     proposition: &Proposition,
-) -> Option<(UnsignedOrder, Bitvector32Term, Bitvector32Term)> {
+) -> Option<(UnsignedOrder, MachineTerm, MachineTerm)> {
     let Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::UInt32,
@@ -13537,7 +13533,7 @@ pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
         attempt::candidate_outcome(have.apply_step(ProofStep::Witness(ProofWitness::single(
             written_name.as_ref().unwrap_or(name).clone(),
             ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                Bitvector32Term::constant(0),
+                MachineTerm::constant(0),
             ))),
         ))))?;
     match witnessed {
@@ -13598,7 +13594,7 @@ mod scaling_tests {
 /// The sides of a native machine equality fact a smart `rewrite` can cite:
 /// a 32- or 64-bit equality, or an 8- or 16-bit one, which is the same fact
 /// as the `int32` equality of its widenings (rule K8).
-fn rewrite_equality_sides(equality: &Proposition) -> Option<(&Bitvector32Term, &Bitvector32Term)> {
+fn rewrite_equality_sides(equality: &Proposition) -> Option<(&MachineTerm, &MachineTerm)> {
     match equality {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
@@ -13622,8 +13618,8 @@ fn rewrite_equality_sides(equality: &Proposition) -> Option<(&Bitvector32Term, &
 
 /// A machine literal: a smart `rewrite` reduces operands to literals and
 /// never expands one.
-fn is_rewrite_literal(term: &Bitvector32Term) -> bool {
-    matches!(term, Bitvector32Term::Constant { .. })
+fn is_rewrite_literal(term: &MachineTerm) -> bool {
+    matches!(term, MachineTerm::Constant { .. })
 }
 
 #[test]
@@ -13635,11 +13631,11 @@ fn machine_offset_refusal_respects_wraparound_and_word_width() {
         MachineIntegerType::Int64,
         MachineIntegerType::UInt64,
     ] {
-        let base = Bitvector32Term::Variable(Variable(981_772));
+        let base = MachineTerm::Variable(Variable(981_772));
         let observe = |value| IntegerTerm::from_machine(format, value).unwrap();
         let three =
             crate::kernel::machine_integer::range::constant_word(format, &3.into()).unwrap();
-        let plus_three = observe(Bitvector32Term::logical_machine_binary(
+        let plus_three = observe(MachineTerm::logical_machine_binary(
             format,
             MachineBinaryOp::Add,
             base.clone(),
@@ -13664,17 +13660,17 @@ fn machine_offset_refusal_respects_wraparound_and_word_width() {
 fn operation_identities_order_dependencies_with_multiple_roots() {
     use crate::kernel::IntegerTerm;
     let format = MachineIntegerType::Int32;
-    let inner = Bitvector32Term::logical_machine_binary(
+    let inner = MachineTerm::logical_machine_binary(
         format,
         MachineBinaryOp::Add,
-        Bitvector32Term::Variable(Variable(989_776)),
-        Bitvector32Term::constant(1),
+        MachineTerm::Variable(Variable(989_776)),
+        MachineTerm::constant(1),
     );
-    let outer = Bitvector32Term::logical_machine_binary(
+    let outer = MachineTerm::logical_machine_binary(
         format,
         MachineBinaryOp::Add,
         inner.clone(),
-        Bitvector32Term::constant(2),
+        MachineTerm::constant(2),
     );
     let inner = IntegerTerm::from_machine(format, inner).unwrap();
     let outer = IntegerTerm::from_machine(format, outer).unwrap();

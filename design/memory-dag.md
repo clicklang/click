@@ -15,7 +15,7 @@ to demand one, stop that thread and record it under "For the owner".
 
 ## The problem
 
-`Bitvector32Term::MemoryLoad(SharedCMemory, Pointer)` embeds a whole
+`MachineTerm::MemoryLoad(SharedCMemory, Pointer)` embeds a whole
 memory *value* in the term, so two spellings of one location at two
 program points are structurally different terms whenever anything
 unrelated was stored in between. Every prover relating them bridges

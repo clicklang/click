@@ -7,9 +7,9 @@ use super::*;
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_facts() {
-    let i = Bitvector32Term::Variable(Variable(980001));
-    let n = Bitvector32Term::Variable(Variable(980002));
-    let next = Bitvector32Term::uint64_add(i.clone(), Bitvector32Term::uint64_constant(1));
+    let i = MachineTerm::Variable(Variable(980001));
+    let n = MachineTerm::Variable(Variable(980002));
+    let next = MachineTerm::uint64_add(i.clone(), MachineTerm::uint64_constant(1));
     let guard =
         Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
     let successor = Proposition::ConditionIs(
@@ -18,8 +18,8 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
     );
     let descent = Proposition::ConditionIs(
         ConditionTerm::uint64_less_than(
-            Bitvector32Term::uint64_subtract(n.clone(), next),
-            Bitvector32Term::uint64_subtract(n.clone(), i.clone()),
+            MachineTerm::uint64_subtract(n.clone(), next),
+            MachineTerm::uint64_subtract(n.clone(), i.clone()),
         ),
         true,
     );
@@ -29,8 +29,8 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
         premises.extend((0..size).map(|k| {
             Proposition::ConditionIs(
                 ConditionTerm::uint64_less_than(
-                    Bitvector32Term::Variable(Variable(990000 + k)),
-                    Bitvector32Term::uint64_constant(17),
+                    MachineTerm::Variable(Variable(990000 + k)),
+                    MachineTerm::uint64_constant(17),
                 ),
                 true,
             )
@@ -67,17 +67,14 @@ fn uint64_successor_certificates_require_the_strict_guard_and_ignore_unrelated_f
 #[test]
 #[ignore = "nightly: 0.6s in the parallel gate"]
 fn uint64_truncation_certificates_require_full_width_bounds() {
-    let i = Bitvector32Term::Variable(Variable(981011));
-    let n = Bitvector32Term::Variable(Variable(981012));
-    let low_i = Bitvector32Term::uint32_from_64(i.clone());
-    let low_n = Bitvector32Term::uint32_from_64(n.clone());
+    let i = MachineTerm::Variable(Variable(981011));
+    let n = MachineTerm::Variable(Variable(981012));
+    let low_i = MachineTerm::uint32_from_64(i.clone());
+    let low_n = MachineTerm::uint32_from_64(n.clone());
     let guard =
         Proposition::ConditionIs(ConditionTerm::uint64_less_than(i.clone(), n.clone()), true);
     let bound = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(
-            n.clone(),
-            Bitvector32Term::uint64_constant(i32::MAX as u64),
-        ),
+        ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(i32::MAX as u64)),
         true,
     );
     let goal = Proposition::ConditionIs(
@@ -90,8 +87,8 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         available.extend((0..size).map(|k| {
             Proposition::ConditionIs(
                 ConditionTerm::uint64_less_equal(
-                    Bitvector32Term::Variable(Variable(982000 + k)),
-                    Bitvector32Term::uint64_constant(1000),
+                    MachineTerm::Variable(Variable(982000 + k)),
+                    MachineTerm::uint64_constant(1000),
                 ),
                 true,
             )
@@ -117,7 +114,7 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
         "{samples:?}"
     );
     let too_wide = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(n.clone(), Bitvector32Term::uint64_constant(1u64 << 32)),
+        ConditionTerm::uint64_less_equal(n.clone(), MachineTerm::uint64_constant(1u64 << 32)),
         true,
     );
     let facts = crate::kernel::proof::ProofFacts::from_ordered(&[guard.clone(), too_wide.clone()]);
@@ -128,19 +125,19 @@ fn uint64_truncation_certificates_require_full_width_bounds() {
     let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&full_equal));
     normalize_using_conditions(&low_equal, &[full_equal], &facts).unwrap();
     let bound = Proposition::ConditionIs(
-        ConditionTerm::uint64_less_equal(i.clone(), Bitvector32Term::uint64_constant(1000)),
+        ConditionTerm::uint64_less_equal(i.clone(), MachineTerm::uint64_constant(1000)),
         true,
     );
     let facts = crate::kernel::proof::ProofFacts::from_ordered(std::slice::from_ref(&bound));
     for goal in [
-        ConditionTerm::signed_less_equal(Bitvector32Term::constant(0), low_i.clone()),
-        ConditionTerm::signed_less_equal(low_i, Bitvector32Term::constant(1000)),
+        ConditionTerm::signed_less_equal(MachineTerm::constant(0), low_i.clone()),
+        ConditionTerm::signed_less_equal(low_i, MachineTerm::constant(1000)),
     ] {
         // Lower-bound certificates need the explicit signed-range guard.
         let signed_bound = Proposition::ConditionIs(
             ConditionTerm::uint64_less_equal(
                 i.clone(),
-                Bitvector32Term::uint64_constant(i32::MAX as u64),
+                MachineTerm::uint64_constant(i32::MAX as u64),
             ),
             true,
         );

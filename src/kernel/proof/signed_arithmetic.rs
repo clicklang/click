@@ -6,7 +6,7 @@
 //! `fact_reasoning` decision procedure remains in place while the surface
 //! migration is in progress.
 
-use super::super::{Bitvector32Term, BitvectorBinaryOp, ConditionTerm, Proposition, Variable};
+use super::super::{BitvectorBinaryOp, ConditionTerm, MachineTerm, Proposition, Variable};
 use crate::kernel::MachineBinaryOp;
 use crate::kernel::MachineIntegerType;
 #[cfg(test)]
@@ -84,7 +84,7 @@ impl SignedArithmeticAtom {
     /// Build the bounded identity used by claims and checked term arenas.
     /// Unsupported payload families fail closed until their own flat token
     /// encoding is added here.
-    pub(crate) fn from_term(term: &Bitvector32Term) -> Option<Self> {
+    pub(crate) fn from_term(term: &MachineTerm) -> Option<Self> {
         signed_arithmetic_atom_key(term)
     }
 
@@ -136,7 +136,7 @@ impl SignedArithmeticAtom {
     }
 }
 
-fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmeticAtom> {
+fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom> {
     let mut tokens = Vec::new();
     let mut pending = vec![root];
     macro_rules! push_token {
@@ -157,8 +157,8 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             bits32_constant!(value) => {
                 (u32::BITS - constant_u32(*value).leading_zeros()) as usize + 2
             }
-            Bitvector32Term::Variable(_) => 2,
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
+            MachineTerm::Variable(_) => 2,
+            MachineTerm::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(3)
             }
             unary_term!(Int32, BitwiseNot, _) => 2,
@@ -172,11 +172,11 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             bits32_constant!(value) => {
                 push_token!(SignedArithmeticAtomToken::Constant(constant_u32(*value)));
             }
-            Bitvector32Term::Variable(variable) => {
+            MachineTerm::Variable(variable) => {
                 push_token!(SignedArithmeticAtomToken::Variable(*variable));
             }
             cast_term!(UInt32From64, value) => {
-                if let Bitvector32Term::Variable(variable) = value.as_ref() {
+                if let MachineTerm::Variable(variable) = value.as_ref() {
                     push_token!(SignedArithmeticAtomToken::Narrow64Variable(*variable));
                     continue;
                 }
@@ -191,7 +191,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
                         return None;
                     }
                     let (operator, left, right) = match native {
-                        Bitvector32Term::Variable(variable) => {
+                        MachineTerm::Variable(variable) => {
                             push_token!(SignedArithmeticAtomToken::Variable(*variable));
                             continue;
                         }
@@ -224,7 +224,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
                     native_pending.push(left);
                 }
             }
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication { name, arguments } => {
                 push_token!(SignedArithmeticAtomToken::PureFunction {
                     name: name.clone(),
                     arity: arguments.len(),
@@ -244,7 +244,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             }
             // The `int32` widening of an 8- or 16-bit value is that value: an
             // opaque observation of its operand, as a 32-bit variable is.
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -258,7 +258,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
             }
             // σ, the 32-bit sign cast, is a node of its own: `u as int32` is
             // an opaque observation of its operand, as a variable is.
-            Bitvector32Term::Cast {
+            MachineTerm::Cast {
                 spelling: MachineCastSpelling::Generic,
                 value,
                 from: source,
@@ -288,9 +288,7 @@ fn signed_arithmetic_atom_key(root: &Bitvector32Term) -> Option<SignedArithmetic
 /// `int32` value, which a `uint32` one is only through σ (decision G7,
 /// `design/machine-integers.md`; such a certificate is refused, and its
 /// author writes the `int32` value).
-fn signed_binary(
-    term: &Bitvector32Term,
-) -> Option<(BitvectorBinaryOp, &Bitvector32Term, &Bitvector32Term)> {
+fn signed_binary(term: &MachineTerm) -> Option<(BitvectorBinaryOp, &MachineTerm, &MachineTerm)> {
     term.as_binary().filter(|(operator, _, _)| {
         matches!(
             operator,
@@ -354,7 +352,7 @@ enum CheckedValue {
     },
     Defined {
         carrier: SignedArithmeticCarrier,
-        term: Bitvector32Term,
+        term: MachineTerm,
     },
     Proposition(Proposition),
 }
@@ -396,7 +394,7 @@ fn pair_is_equivalent(cache: &HashMap<(usize, usize), bool>, left: usize, right:
 }
 
 impl TermArena {
-    fn atom(&mut self, term: Bitvector32Term) -> Option<usize> {
+    fn atom(&mut self, term: MachineTerm) -> Option<usize> {
         let term = SignedArithmeticAtom::from_term(&term)?;
         Some(self.atom_key(term))
     }
@@ -546,7 +544,7 @@ impl TermArena {
         true
     }
 
-    fn equivalent_explicit(&self, reference: usize, explicit: &Bitvector32Term) -> bool {
+    fn equivalent_explicit(&self, reference: usize, explicit: &MachineTerm) -> bool {
         // Source propositions can retain a read where the checked arena
         // names its registered load variable. They share one canonical atom.
         let Some(explicit) = canonical_term_budgeted(explicit) else {
@@ -601,7 +599,7 @@ impl TermArena {
                     // The operand's `int32` reading: an 8- or 16-bit source
                     // value is read through its widening.
                     if source.format().bits() < 32 {
-                        let widened = Bitvector32Term::machine_integer_cast(
+                        let widened = MachineTerm::machine_integer_cast(
                             *source,
                             MachineIntegerType::Int32,
                             value.clone(),
@@ -627,13 +625,13 @@ impl TermArena {
 /// observation is its widening, which every one- and two-byte value keeps.
 /// One match on the root.
 pub(crate) fn widened_narrowed_cast(
-    term: &Bitvector32Term,
+    term: &MachineTerm,
 ) -> Option<(
-    &Bitvector32Term,
+    &MachineTerm,
     crate::kernel::MachineIntegerType,
     crate::kernel::MachineIntegerType,
 )> {
-    let Bitvector32Term::Cast {
+    let MachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value: narrowed,
         from: widened_from,
@@ -642,7 +640,7 @@ pub(crate) fn widened_narrowed_cast(
     else {
         return None;
     };
-    let Bitvector32Term::Cast {
+    let MachineTerm::Cast {
         spelling: MachineCastSpelling::Generic,
         value,
         from: source,
@@ -667,7 +665,7 @@ pub(crate) fn narrowed_word_cast(
 ) -> bool {
     source.format().bits() <= 32
         && crate::kernel::assumptions::narrowed_cast_identity(
-            &Bitvector32Term::constant(0),
+            &MachineTerm::constant(0),
             source,
             destination,
         )
@@ -676,8 +674,8 @@ pub(crate) fn narrowed_word_cast(
 
 fn explicit_binary(
     operator: CheckedBinaryOperator,
-    term: &Bitvector32Term,
-) -> Option<(CheckedBinaryOperator, &Bitvector32Term, &Bitvector32Term)> {
+    term: &MachineTerm,
+) -> Option<(CheckedBinaryOperator, &MachineTerm, &MachineTerm)> {
     let (actual_operator, left, right) = match (operator, term) {
         (CheckedBinaryOperator::Add, binary_term!(Int32, Add, left, right)) => {
             (CheckedBinaryOperator::Add, left, right)
@@ -755,7 +753,7 @@ pub(crate) enum SignedArithmeticNode {
     /// Obtain an interval for an exact one-atom affine bound.
     IntervalFromAffine {
         source: usize,
-        term: Bitvector32Term,
+        term: MachineTerm,
         lower: i64,
         upper: i64,
     },
@@ -765,7 +763,7 @@ pub(crate) enum SignedArithmeticNode {
     /// that exact term identity.
     IntervalFromAffineDirect {
         source: usize,
-        term: Bitvector32Term,
+        term: MachineTerm,
         lower: i64,
         upper: i64,
     },
@@ -777,14 +775,14 @@ pub(crate) enum SignedArithmeticNode {
     /// An opaque atom has the complete signed-int32 interval.
     IntervalAtom {
         carrier: SignedArithmeticCarrier,
-        term: Bitvector32Term,
+        term: MachineTerm,
         lower: i64,
         upper: i64,
     },
     DefinedPremise {
         index: usize,
         carrier: SignedArithmeticCarrier,
-        term: Bitvector32Term,
+        term: MachineTerm,
     },
     IntervalAdd {
         left: usize,
@@ -1285,7 +1283,7 @@ impl SignedArithmeticCertificate {
                     let (rem, remainder_term) = interval_at(&checked, *remainder)?;
                     let expected = interval_remainder_add(op, rem, *addend, *divisor, node_index)?;
                     let divisor_term = terms
-                        .atom(Bitvector32Term::constant(*divisor as u32))
+                        .atom(MachineTerm::constant(*divisor as u32))
                         .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
                     let expected_remainder =
                         terms.binary(CheckedBinaryOperator::Remainder, operand_term, divisor_term);
@@ -1310,7 +1308,7 @@ impl SignedArithmeticCertificate {
                         return Err(SignedArithmeticCheckError::InvalidOperator(node_index));
                     }
                     let addend_term = terms
-                        .atom(Bitvector32Term::constant(*addend as u32))
+                        .atom(MachineTerm::constant(*addend as u32))
                         .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
                     let sum = terms.binary(CheckedBinaryOperator::Add, operand_term, addend_term);
                     let term = terms.binary(CheckedBinaryOperator::Remainder, sum, divisor_term);
@@ -1328,7 +1326,7 @@ impl SignedArithmeticCertificate {
                 } => {
                     let (operand, operand_term) = interval_at(&checked, *operand)?;
                     let divisor_term = terms
-                        .atom(Bitvector32Term::constant(*divisor as u32))
+                        .atom(MachineTerm::constant(*divisor as u32))
                         .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
                     let term =
                         terms.binary(CheckedBinaryOperator::Remainder, operand_term, divisor_term);
@@ -1363,7 +1361,7 @@ impl SignedArithmeticCertificate {
                 } => {
                     let (operand, operand_term) = interval_at(&checked, *operand)?;
                     let shift_term = terms
-                        .atom(Bitvector32Term::constant(*shift as u32))
+                        .atom(MachineTerm::constant(*shift as u32))
                         .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
                     let term =
                         terms.binary(CheckedBinaryOperator::ShiftLeft, operand_term, shift_term);
@@ -1398,7 +1396,7 @@ impl SignedArithmeticCertificate {
                         return Err(SignedArithmeticCheckError::InvalidOperator(node_index));
                     }
                     let shift_term = terms
-                        .atom(Bitvector32Term::constant(*shift as u32))
+                        .atom(MachineTerm::constant(*shift as u32))
                         .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
                     let term = terms.binary(
                         CheckedBinaryOperator::ArithmeticShiftRight,
@@ -1426,7 +1424,7 @@ impl SignedArithmeticCertificate {
                         return Err(SignedArithmeticCheckError::InvalidOperator(node_index));
                     }
                     let mask_term = terms
-                        .atom(Bitvector32Term::constant(*mask))
+                        .atom(MachineTerm::constant(*mask))
                         .ok_or(SignedArithmeticCheckError::InvalidOperator(node_index))?;
                     let term =
                         terms.binary(CheckedBinaryOperator::BitwiseAnd, operand_term, mask_term);
@@ -1678,15 +1676,15 @@ fn charge_bigint_binary_work(left: &BigInt, right: &BigInt) -> bool {
     !crate::instrumentation::deadline_exceeded_with_work(units.max(1))
 }
 
-fn charge_term_work(root: &Bitvector32Term) -> bool {
+fn charge_term_work(root: &MachineTerm) -> bool {
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
         let units = match term {
             bits32_constant!(value) => {
                 (u32::BITS - constant_u32(*value).leading_zeros()) as usize + 2
             }
-            Bitvector32Term::Variable(_) => 2,
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
+            MachineTerm::Variable(_) => 2,
+            MachineTerm::PureFunctionApplication { name, arguments } => {
                 name.len().saturating_add(arguments.len()).saturating_add(2)
             }
             binary_term!(Int32, Add, left, right)
@@ -1717,7 +1715,7 @@ fn charge_term_work(root: &Bitvector32Term) -> bool {
     true
 }
 
-fn canonical_term_budgeted(term: &Bitvector32Term) -> Option<Bitvector32Term> {
+fn canonical_term_budgeted(term: &MachineTerm) -> Option<MachineTerm> {
     if !charge_term_work(term) {
         return None;
     }
@@ -1791,7 +1789,7 @@ fn signed_atom_work(atom: &SignedArithmeticAtom) -> usize {
 }
 
 #[cfg(test)]
-fn signed_term_work(root: &Bitvector32Term) -> usize {
+fn signed_term_work(root: &MachineTerm) -> usize {
     let mut units = 0usize;
     let mut pending = vec![root];
     while let Some(term) = pending.pop() {
@@ -1802,7 +1800,7 @@ fn signed_term_work(root: &Bitvector32Term) -> usize {
                     (u32::BITS - constant_u32(*value).leading_zeros()) as usize + 1,
                 );
             }
-            Bitvector32Term::Variable(_) => {}
+            MachineTerm::Variable(_) => {}
             binary_term!(Int32, Add, left, right)
             | binary_term!(Int32, Subtract, left, right)
             | binary_term!(Int32, Multiply, left, right)
@@ -1818,7 +1816,7 @@ fn signed_term_work(root: &Bitvector32Term) -> usize {
                 pending.push(right);
             }
             unary_term!(Int32, BitwiseNot, operand) => pending.push(operand),
-            Bitvector32Term::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication { name, arguments } => {
                 // Function application identity compares the name and every
                 // argument. Arguments are restricted to this same safe
                 // machine-term fragment, so an iterative walk charges the
@@ -2304,14 +2302,14 @@ fn affine_claim_from_interval_evidence_refs(
 }
 
 fn affine_difference_from_evidence_refs(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
     terms: &mut TermArena,
     left_evidence: Option<&(usize, (BTreeMap<SignedArithmeticAtom, BigInt>, BigInt))>,
     right_evidence: Option<&(usize, (BTreeMap<SignedArithmeticAtom, BigInt>, BigInt))>,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let difference =
-        |term: &Bitvector32Term,
+        |term: &MachineTerm,
          coefficient: i8,
          evidence: Option<&(usize, (BTreeMap<SignedArithmeticAtom, BigInt>, BigInt))>| {
             if crate::instrumentation::deadline_exceeded_with_work(1) {
@@ -2535,7 +2533,7 @@ fn interval_affine_evidence(
     Some((term_reference, affine))
 }
 
-fn affine_leaf(term: &Bitvector32Term) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
+fn affine_leaf(term: &MachineTerm) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     if let Some(value) = term.as_const().map(|value| i64::from(value as i32)) {
         return Some((BTreeMap::new(), BigInt::from(value)));
     }
@@ -2547,7 +2545,7 @@ fn affine_leaf(term: &Bitvector32Term) -> Option<(BTreeMap<SignedArithmeticAtom,
     Some((BTreeMap::from([(atom, BigInt::one())]), BigInt::zero()))
 }
 
-fn contains_affine_machine_operation(root: &Bitvector32Term) -> bool {
+fn contains_affine_machine_operation(root: &MachineTerm) -> bool {
     matches!(
         root,
         binary_term!(Int32, Add, _, _)
@@ -2557,7 +2555,7 @@ fn contains_affine_machine_operation(root: &Bitvector32Term) -> bool {
 }
 
 #[cfg(test)]
-fn is_opaque_atom(term: &Bitvector32Term) -> bool {
+fn is_opaque_atom(term: &MachineTerm) -> bool {
     SignedArithmeticAtom::from_term(term).is_some_and(|atom| atom.is_opaque_root())
 }
 
@@ -2696,13 +2694,13 @@ fn interval_remainder(
     interval_checked(i128::from(lower), i128::from(upper), node)
 }
 
-fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bool {
+fn is_exact_definedness(proposition: &Proposition, term: &MachineTerm) -> bool {
     if let Some(query) =
         crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
     {
         if !matches!(
             term,
-            Bitvector32Term::Binary {
+            MachineTerm::Binary {
                 format: MachineIntegerType::Int32,
                 ..
             }
@@ -2780,7 +2778,7 @@ fn is_exact_definedness(proposition: &Proposition, term: &Bitvector32Term) -> bo
 /// preserves the signed atom fragment (including the two 32-bit literal tags).
 fn signed_operand_matches(
     operand: crate::kernel::MachineOperandView<'_>,
-    written: &Bitvector32Term,
+    written: &MachineTerm,
 ) -> bool {
     use crate::kernel::{KernelTermNode, MachineOperandView, MachineUnaryOp};
     let root = match operand {
@@ -2793,7 +2791,7 @@ fn signed_operand_matches(
             return false;
         }
         match (shared.node(), written) {
-            (KernelTermNode::Variable(a), Bitvector32Term::Variable(b)) if a == b => {}
+            (KernelTermNode::Variable(a), MachineTerm::Variable(b)) if a == b => {}
             (KernelTermNode::MachineLiteral(_), bits32_constant!(b)) => {
                 if MachineOperandView::Shared(shared)
                     .literal()
@@ -2836,7 +2834,7 @@ fn signed_operand_matches(
     true
 }
 
-fn signed_arithmetic_terms_equal(left: &Bitvector32Term, right: &Bitvector32Term) -> bool {
+fn signed_arithmetic_terms_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     match (
         SignedArithmeticAtom::from_term(left),
         SignedArithmeticAtom::from_term(right),
@@ -2874,14 +2872,14 @@ fn comparison_proposition_matches(
         // `int32` term the certificate names (σ is a node of its own), or a
         // `uint32` term the certificate names through σ (`u as int32`); a
         // constant is its bits.
-        let reads = |index: usize, term: &Bitvector32Term| match term.sign_cast32_operand() {
+        let reads = |index: usize, term: &MachineTerm| match term.sign_cast32_operand() {
             Some((MachineIntegerType::Int32, operand)) => terms.equivalent_explicit(index, operand),
             _ => {
                 terms.equivalent_explicit(index, term)
                     || term.as_const().is_none()
                         && terms.equivalent_explicit(
                             index,
-                            &Bitvector32Term::sign_cast32(
+                            &MachineTerm::sign_cast32(
                                 MachineIntegerType::UInt32,
                                 MachineIntegerType::Int32,
                                 term.clone(),
@@ -3238,7 +3236,7 @@ pub(crate) fn signed_arithmetic_integer_result(
         let term = match machine.ty() {
             MachineIntegerType::Int32 => canonical_term_budgeted(machine.value())?,
             narrow if narrow.format().bits() < 32 => {
-                canonical_term_budgeted(&Bitvector32Term::machine_integer_cast(
+                canonical_term_budgeted(&MachineTerm::machine_integer_cast(
                     narrow,
                     MachineIntegerType::Int32,
                     machine.value().clone(),
@@ -3346,8 +3344,8 @@ fn exact_definedness_parts(
 }
 
 fn affine_difference(
-    left: &Bitvector32Term,
-    right: &Bitvector32Term,
+    left: &MachineTerm,
+    right: &MachineTerm,
 ) -> Option<(BTreeMap<SignedArithmeticAtom, BigInt>, BigInt)> {
     let mut terms: BTreeMap<SignedArithmeticAtom, BigInt> = BTreeMap::new();
     let mut constant = BigInt::zero();
@@ -3465,9 +3463,9 @@ mod tests {
         use crate::kernel::{KernelTermImport, MachineOperandView};
         let _session = crate::kernel::VerificationSession::enter();
         let mut words = vec![
-            Bitvector32Term::constant(1),
-            Bitvector32Term::uint32_constant(1),
-            Bitvector32Term::constant(2),
+            MachineTerm::constant(1),
+            MachineTerm::uint32_constant(1),
+            MachineTerm::constant(2),
             x(),
             y(),
         ];
@@ -3483,7 +3481,7 @@ mod tests {
                 MachineBinaryOp::Multiply,
                 MachineBinaryOp::ShiftRight,
             ] {
-                words.push(Bitvector32Term::Binary {
+                words.push(MachineTerm::Binary {
                     format,
                     op,
                     left: Box::new(x()),
@@ -3491,7 +3489,7 @@ mod tests {
                 });
             }
         }
-        words.push(Bitvector32Term::Unary {
+        words.push(MachineTerm::Unary {
             format: MachineIntegerType::Int32,
             op: crate::kernel::MachineUnaryOp::BitwiseNot,
             operand: Box::new(x()),
@@ -3507,7 +3505,7 @@ mod tests {
                         format: MachineIntegerType::Int32,
                         op: overflow_op,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::constant(1)),
+                        right: Box::new(MachineTerm::constant(1)),
                     },
                     false,
                 );
@@ -3518,11 +3516,11 @@ mod tests {
                 let guard =
                     Proposition::And(Box::new(bounds[0].clone()), Box::new(bounds[1].clone()));
                 for format in [MachineIntegerType::Int32, MachineIntegerType::UInt32] {
-                    let expression = Bitvector32Term::Binary {
+                    let expression = MachineTerm::Binary {
                         format,
                         op,
                         left: Box::new(word.clone()),
-                        right: Box::new(Bitvector32Term::uint32_constant(1)),
+                        right: Box::new(MachineTerm::uint32_constant(1)),
                     };
                     assert_eq!(
                         is_exact_definedness(&guard, &expression),
@@ -3577,9 +3575,9 @@ mod tests {
             ] {
                 for operand in [
                     x(),
-                    Bitvector32Term::constant(1),
-                    Bitvector32Term::uint32_constant(1),
-                    Bitvector32Term::logical_machine_binary(
+                    MachineTerm::constant(1),
+                    MachineTerm::uint32_constant(1),
+                    MachineTerm::logical_machine_binary(
                         MachineIntegerType::Int32,
                         MachineBinaryOp::Add,
                         x(),
@@ -3656,8 +3654,8 @@ mod tests {
     #[test]
     fn mathematical_certificate_results_keep_machine_sums_opaque() {
         use crate::kernel::{IntegerTerm, MachineBinaryOp};
-        let x = Bitvector32Term::Variable(Variable(991_910));
-        let y = Bitvector32Term::Variable(Variable(991_911));
+        let x = MachineTerm::Variable(Variable(991_910));
+        let y = MachineTerm::Variable(Variable(991_911));
         let observe = |format, term| IntegerTerm::from_machine(format, term).unwrap();
         let result = |term| {
             Proposition::ConditionIs(
@@ -3671,7 +3669,7 @@ mod tests {
         ));
         let machine = result(observe(
             MachineIntegerType::Int32,
-            Bitvector32Term::machine_binary(
+            MachineTerm::machine_binary(
                 MachineIntegerType::Int32,
                 MachineBinaryOp::Add,
                 x.clone(),
@@ -3691,8 +3689,8 @@ mod tests {
 
     #[test]
     fn interval_comparisons_accept_direction_and_truth_equivalents() {
-        let a = Box::new(Bitvector32Term::constant(10));
-        let b = Box::new(Bitvector32Term::constant(11));
+        let a = Box::new(MachineTerm::constant(10));
+        let b = Box::new(MachineTerm::constant(11));
         for (condition, truth, comparison) in [
             (
                 ConditionTerm::Compare {
@@ -3823,8 +3821,8 @@ mod tests {
     /// one, and an interval of both signs decides nothing.
     #[test]
     fn unsigned_interval_comparisons_read_intervals_of_known_sign() {
-        let word = |value: i32| Bitvector32Term::constant(value as u32);
-        let atom = |term: &Bitvector32Term| {
+        let word = |value: i32| MachineTerm::constant(value as u32);
+        let atom = |term: &MachineTerm| {
             let (lower, upper) = match term.as_const() {
                 Some(value) => (i64::from(value as i32), i64::from(value as i32)),
                 None => (SIGNED_MIN, SIGNED_MAX),
@@ -3836,7 +3834,7 @@ mod tests {
                 upper,
             }
         };
-        let order = |relation, left: &Bitvector32Term, right: &Bitvector32Term, value| {
+        let order = |relation, left: &MachineTerm, right: &MachineTerm, value| {
             Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format: MachineIntegerType::UInt32,
@@ -3847,26 +3845,25 @@ mod tests {
                 value,
             )
         };
-        let check =
-            |left: &Bitvector32Term, right: &Bitvector32Term, comparison, goal: &Proposition| {
-                SignedArithmeticCertificate {
-                    nodes: vec![
-                        atom(left),
-                        atom(right),
-                        SignedArithmeticNode::IntervalCompare {
-                            left: 0,
-                            right: 1,
-                            comparison,
-                            result: goal.clone(),
-                        },
-                    ],
-                    conclusion: 2,
-                }
-                .check(goal, &[])
-            };
+        let check = |left: &MachineTerm, right: &MachineTerm, comparison, goal: &Proposition| {
+            SignedArithmeticCertificate {
+                nodes: vec![
+                    atom(left),
+                    atom(right),
+                    SignedArithmeticNode::IntervalCompare {
+                        left: 0,
+                        right: 1,
+                        comparison,
+                        result: goal.clone(),
+                    },
+                ],
+                conclusion: 2,
+            }
+            .check(goal, &[])
+        };
         let ult = SignedArithmeticComparison::UnsignedLessThan;
         let ule = SignedArithmeticComparison::UnsignedLessEqual;
-        let x = Bitvector32Term::Variable(Variable(41));
+        let x = MachineTerm::Variable(Variable(41));
         for (left, right, holds) in [
             (word(10), word(20), true),
             // `-1` is `UINT32_MAX`: above every non-negative word.
@@ -3938,7 +3935,7 @@ mod tests {
     #[test]
     fn checked_atom_matches_its_explicit_read_but_not_another_cell() {
         let read = |offset| {
-            Bitvector32Term::MemoryLoad(
+            MachineTerm::MemoryLoad(
                 crate::kernel::CMemory::new().into(),
                 Box::new(crate::kernel::Pointer {
                     block: "arithmetic-read-identity".into(),
@@ -3955,12 +3952,12 @@ mod tests {
         assert!(!terms.equivalent_explicit(atom, &read(4)));
     }
 
-    fn x() -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(1))
+    fn x() -> MachineTerm {
+        MachineTerm::Variable(Variable(1))
     }
 
-    fn y() -> Bitvector32Term {
-        Bitvector32Term::Variable(Variable(2))
+    fn y() -> MachineTerm {
+        MachineTerm::Variable(Variable(2))
     }
 
     fn prop(condition: ConditionTerm) -> Proposition {
@@ -3971,11 +3968,11 @@ mod tests {
         affine_claim(proposition).unwrap()
     }
 
-    fn le(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn le(left: MachineTerm, right: MachineTerm) -> Proposition {
         prop(ConditionTerm::signed_less_equal(left, right))
     }
 
-    fn equal(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn equal(left: MachineTerm, right: MachineTerm) -> Proposition {
         prop(ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
@@ -3984,11 +3981,11 @@ mod tests {
         })
     }
 
-    fn lt(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn lt(left: MachineTerm, right: MachineTerm) -> Proposition {
         prop(ConditionTerm::signed_less_than(left, right))
     }
 
-    fn disequal(left: Bitvector32Term, right: Bitvector32Term) -> Proposition {
+    fn disequal(left: MachineTerm, right: MachineTerm) -> Proposition {
         Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
@@ -4028,9 +4025,9 @@ mod tests {
 
     #[test]
     fn affine_claims_use_one_zero_centered_constant_convention() {
-        let premise = equal(x(), Bitvector32Term::constant(5));
-        let good_goal = le(x(), Bitvector32Term::constant(5));
-        let bad_goal = le(x(), Bitvector32Term::constant((-5_i32) as u32));
+        let premise = equal(x(), MachineTerm::constant(5));
+        let good_goal = le(x(), MachineTerm::constant(5));
+        let bad_goal = le(x(), MachineTerm::constant((-5_i32) as u32));
         let equality_claim = claim(&premise);
         assert_eq!(equality_claim.constant, BigInt::from(-5));
         let certificate = SignedArithmeticCertificate {
@@ -4062,17 +4059,17 @@ mod tests {
             Int32,
             Add,
             Box::new(x()),
-            Box::new(Bitvector32Term::constant(0))
+            Box::new(MachineTerm::constant(0))
         );
         let right = binary_node!(
             Int32,
             Add,
             Box::new(x()),
-            Box::new(Bitvector32Term::constant(0))
+            Box::new(MachineTerm::constant(0))
         );
         let goal = equal(left.clone(), right.clone());
-        let lower = le(Bitvector32Term::constant(0), x());
-        let upper = le(x(), Bitvector32Term::constant(1));
+        let lower = le(MachineTerm::constant(0), x());
+        let upper = le(x(), MachineTerm::constant(1));
         let interval = SignedArithmeticInterval {
             carrier: SignedArithmeticCarrier::SignedInt32,
             lower: 0,
@@ -4107,7 +4104,7 @@ mod tests {
                 },
                 SignedArithmeticNode::IntervalAtom {
                     carrier: SignedArithmeticCarrier::SignedInt32,
-                    term: Bitvector32Term::constant(0),
+                    term: MachineTerm::constant(0),
                     lower: 0,
                     upper: 0,
                 },
@@ -4122,10 +4119,7 @@ mod tests {
                     result: interval,
                 },
                 SignedArithmeticNode::Trivial {
-                    result: claim(&le(
-                        Bitvector32Term::constant(0),
-                        Bitvector32Term::constant(0),
-                    )),
+                    result: claim(&le(MachineTerm::constant(0), MachineTerm::constant(0))),
                 },
                 SignedArithmeticNode::AffineConclusionWithEvidence {
                     source: 8,
@@ -4159,9 +4153,9 @@ mod tests {
             Int32,
             Add,
             Box::new(x()),
-            Box::new(Bitvector32Term::constant(1))
+            Box::new(MachineTerm::constant(1))
         );
-        let premise = le(operation.clone(), Bitvector32Term::constant(0));
+        let premise = le(operation.clone(), MachineTerm::constant(0));
         let goal = premise.clone();
         let certificate = SignedArithmeticCertificate {
             nodes: vec![
@@ -4177,7 +4171,7 @@ mod tests {
                 },
                 SignedArithmeticNode::IntervalAtom {
                     carrier: SignedArithmeticCarrier::SignedInt32,
-                    term: Bitvector32Term::constant(0),
+                    term: MachineTerm::constant(0),
                     lower: 0,
                     upper: 0,
                 },
@@ -4201,7 +4195,7 @@ mod tests {
                 Int32,
                 Add,
                 Box::new(x()),
-                Box::new(Bitvector32Term::constant(2))
+                Box::new(MachineTerm::constant(2))
             ),
             lower: SIGNED_MIN,
             upper: 0,
@@ -4250,7 +4244,7 @@ mod tests {
 
     #[test]
     fn strict_from_disequal_accepts_either_disequality_orientation() {
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let goal = lt(zero.clone(), x());
         for disequality in [disequal(x(), zero.clone()), disequal(zero.clone(), x())] {
             let premises = [le(zero.clone(), x()), disequality];
@@ -4261,9 +4255,9 @@ mod tests {
 
     #[test]
     fn strict_from_disequal_rejects_a_disequality_on_another_affine_form() {
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let goal = lt(zero.clone(), x());
-        let premises = [le(zero, x()), disequal(x(), Bitvector32Term::constant(1))];
+        let premises = [le(zero, x()), disequal(x(), MachineTerm::constant(1))];
         let certificate = strict_from_disequal_certificate(&premises, claim(&goal));
         assert_eq!(
             certificate.check(&goal, &premises),
@@ -4273,7 +4267,7 @@ mod tests {
 
     #[test]
     fn strict_from_disequal_rejects_a_bound_that_is_not_a_non_strict_bound() {
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let goal = lt(zero.clone(), x());
         for bound in [equal(x(), zero.clone()), disequal(x(), zero.clone())] {
             let premises = [bound, disequal(x(), zero.clone())];
@@ -4287,7 +4281,7 @@ mod tests {
 
     #[test]
     fn strict_from_disequal_rejects_a_bound_cited_as_the_disequality() {
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let goal = lt(zero.clone(), x());
         let premises = [le(zero.clone(), x()), le(zero, x())];
         let certificate = strict_from_disequal_certificate(&premises, claim(&goal));
@@ -4299,10 +4293,10 @@ mod tests {
 
     #[test]
     fn strict_from_disequal_rejects_a_result_sharpened_by_more_than_one() {
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let goal = lt(zero.clone(), x());
-        let premises = [le(zero, x()), disequal(x(), Bitvector32Term::constant(0))];
-        let overshot = claim(&lt(Bitvector32Term::constant(1), x()));
+        let premises = [le(zero, x()), disequal(x(), MachineTerm::constant(0))];
+        let overshot = claim(&lt(MachineTerm::constant(1), x()));
         let certificate = strict_from_disequal_certificate(&premises, overshot);
         assert_eq!(
             certificate.check(&goal, &premises),
@@ -4316,17 +4310,17 @@ mod tests {
             Int32,
             Add,
             Box::new(x()),
-            Box::new(Bitvector32Term::constant(0))
+            Box::new(MachineTerm::constant(0))
         );
         let right = binary_node!(
             Int32,
             Add,
             Box::new(y()),
-            Box::new(Bitvector32Term::constant(0))
+            Box::new(MachineTerm::constant(0))
         );
         let goal = equal(left.clone(), right.clone());
         let source = equal(x(), y());
-        let zero = Bitvector32Term::constant(0);
+        let zero = MachineTerm::constant(0);
         let full = SignedArithmeticInterval {
             carrier: SignedArithmeticCarrier::SignedInt32,
             lower: SIGNED_MIN,
@@ -4428,10 +4422,10 @@ mod tests {
             Int32,
             Add,
             Box::new(x()),
-            Box::new(Bitvector32Term::constant(1))
+            Box::new(MachineTerm::constant(1))
         );
-        let operation_premise = le(operation, Bitvector32Term::constant(0));
-        let unrelated_goal = le(x(), Bitvector32Term::constant(0));
+        let operation_premise = le(operation, MachineTerm::constant(0));
+        let unrelated_goal = le(x(), MachineTerm::constant(0));
         let operation_certificate = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::Premise {
                 index: 0,
@@ -4444,11 +4438,11 @@ mod tests {
             Err(SignedArithmeticCheckError::DoesNotFollow)
         );
 
-        let pointer = Bitvector32Term::PointerAddress(
+        let pointer = MachineTerm::PointerAddress(
             Box::new(Pointer::symbolic(Variable(3))),
             crate::kernel::AddressObjectClass::NONE,
         );
-        let pointer_premise = le(pointer.clone(), Bitvector32Term::constant(0));
+        let pointer_premise = le(pointer.clone(), MachineTerm::constant(0));
         let pointer_certificate = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::Premise {
                 index: 0,
@@ -4499,7 +4493,7 @@ mod tests {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
                 left: Box::new(x()),
-                right: Box::new(Bitvector32Term::constant(5)),
+                right: Box::new(MachineTerm::constant(5)),
             },
             false,
         );
@@ -4549,13 +4543,13 @@ mod tests {
 
     #[test]
     fn trivially_true_constant_spellings_match_across_relations() {
-        let le_zero = le(Bitvector32Term::constant(0), Bitvector32Term::constant(0));
+        let le_zero = le(MachineTerm::constant(0), MachineTerm::constant(0));
         let eq_zero = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,
                 relation: CompareRelation::Equal,
-                left: Box::new(Bitvector32Term::constant(0)),
-                right: Box::new(Bitvector32Term::constant(0)),
+                left: Box::new(MachineTerm::constant(0)),
+                right: Box::new(MachineTerm::constant(0)),
             },
             true,
         );
@@ -4576,14 +4570,14 @@ mod tests {
         };
         eq_certificate.check(&le_zero, &[]).unwrap();
         // A false constant goal still fails, even against a true conclusion.
-        let one_le_zero = le(Bitvector32Term::constant(1), Bitvector32Term::constant(0));
+        let one_le_zero = le(MachineTerm::constant(1), MachineTerm::constant(0));
         assert_eq!(
             le_certificate.check(&one_le_zero, &[]),
             Err(SignedArithmeticCheckError::DoesNotFollow)
         );
         // A conclusion with variables still requires an exact claim match,
         // even against a trivially true goal.
-        let var_le_five = le(x(), Bitvector32Term::constant(5));
+        let var_le_five = le(x(), MachineTerm::constant(5));
         assert_eq!(
             eq_certificate.check(&var_le_five, &[]),
             Err(SignedArithmeticCheckError::DoesNotFollow)
@@ -4592,12 +4586,12 @@ mod tests {
 
     #[test]
     fn certificate_checks_scaled_affine_interval_and_definedness_derivation() {
-        let lower_premise = le(Bitvector32Term::constant(0), x());
-        let upper_premise = le(x(), Bitvector32Term::constant(100));
+        let lower_premise = le(MachineTerm::constant(0), x());
+        let upper_premise = le(x(), MachineTerm::constant(100));
         let add_term = binary_node!(Int32, Add, Box::new(x()), Box::new(x()));
         let defined =
             Proposition::ConditionIs(ConditionTerm::signed_add_overflows(x(), x()), false);
-        let goal = le(add_term.clone(), Bitvector32Term::constant(200));
+        let goal = le(add_term.clone(), MachineTerm::constant(200));
         let mut doubled = claim(&upper_premise);
         doubled.terms.values_mut().for_each(|value| *value *= 2);
         doubled.constant *= 2;
@@ -4654,7 +4648,7 @@ mod tests {
                 },
                 SignedArithmeticNode::IntervalAtom {
                     carrier: SignedArithmeticCarrier::SignedInt32,
-                    term: Bitvector32Term::constant(200),
+                    term: MachineTerm::constant(200),
                     lower: 200,
                     upper: 200,
                 },
@@ -4673,8 +4667,8 @@ mod tests {
 
     #[test]
     fn bitwise_and_is_total_after_checked_compound_operand() {
-        let lower_premise = le(Bitvector32Term::constant(0), x());
-        let upper_premise = le(x(), Bitvector32Term::constant(100));
+        let lower_premise = le(MachineTerm::constant(0), x());
+        let upper_premise = le(x(), MachineTerm::constant(100));
         let add_term = binary_node!(Int32, Add, Box::new(x()), Box::new(x()));
         let defined =
             Proposition::ConditionIs(ConditionTerm::signed_add_overflows(x(), x()), false);
@@ -4682,9 +4676,9 @@ mod tests {
             Int32,
             BitwiseAnd,
             Box::new(add_term.clone()),
-            Box::new(Bitvector32Term::constant(255)),
+            Box::new(MachineTerm::constant(255)),
         );
-        let goal = le(masked_term.clone(), Bitvector32Term::constant(255));
+        let goal = le(masked_term.clone(), MachineTerm::constant(255));
         let certificate = SignedArithmeticCertificate {
             nodes: vec![
                 SignedArithmeticNode::Premise {
@@ -4742,7 +4736,7 @@ mod tests {
                 },
                 SignedArithmeticNode::IntervalAtom {
                     carrier: SignedArithmeticCarrier::SignedInt32,
-                    term: Bitvector32Term::constant(255),
+                    term: MachineTerm::constant(255),
                     lower: 255,
                     upper: 255,
                 },
@@ -4765,9 +4759,9 @@ mod tests {
             Int32,
             BitwiseAnd,
             Box::new(x()),
-            Box::new(Bitvector32Term::constant(255))
+            Box::new(MachineTerm::constant(255))
         );
-        let goal = le(masked_term.clone(), Bitvector32Term::constant(255));
+        let goal = le(masked_term.clone(), MachineTerm::constant(255));
         let certificate = SignedArithmeticCertificate {
             nodes: vec![
                 SignedArithmeticNode::IntervalAtom {
@@ -4787,7 +4781,7 @@ mod tests {
                 },
                 SignedArithmeticNode::IntervalAtom {
                     carrier: SignedArithmeticCarrier::SignedInt32,
-                    term: Bitvector32Term::constant(255),
+                    term: MachineTerm::constant(255),
                     lower: 255,
                     upper: 255,
                 },
@@ -4807,7 +4801,7 @@ mod tests {
             nodes: vec![
                 SignedArithmeticNode::Premise {
                     index: 0,
-                    result: claim(&le(compound.clone(), Bitvector32Term::constant(200))),
+                    result: claim(&le(compound.clone(), MachineTerm::constant(200))),
                 },
                 SignedArithmeticNode::IntervalFromAffine {
                     source: 0,
@@ -4820,7 +4814,7 @@ mod tests {
         };
         let premise = le(
             binary_node!(Int32, Add, Box::new(x()), Box::new(x())),
-            Bitvector32Term::constant(200),
+            MachineTerm::constant(200),
         );
         assert_eq!(
             unsafe_reuse.check(&premise, std::slice::from_ref(&premise)),
@@ -4831,7 +4825,7 @@ mod tests {
             Int32,
             BitwiseAnd,
             Box::new(compound.clone()),
-            Box::new(Bitvector32Term::constant(255)),
+            Box::new(MachineTerm::constant(255)),
         );
         let unsafe_operand = SignedArithmeticCertificate {
             nodes: vec![
@@ -4854,15 +4848,15 @@ mod tests {
             conclusion: 1,
         };
         assert_eq!(
-            unsafe_operand.check(&le(masked_compound, Bitvector32Term::constant(255)), &[]),
+            unsafe_operand.check(&le(masked_compound, MachineTerm::constant(255)), &[]),
             Err(SignedArithmeticCheckError::InvalidOperator(0))
         );
     }
 
     #[test]
     fn narrowed_native_variable_is_an_opaque_distinct_signed_atom() {
-        let variable = Bitvector32Term::Variable(Variable(42));
-        let narrowed = Bitvector32Term::legacy_cast(
+        let variable = MachineTerm::Variable(Variable(42));
+        let narrowed = MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
             Box::new(variable.clone()),
         );
@@ -4871,21 +4865,21 @@ mod tests {
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&variable)
         );
-        let changed = Bitvector32Term::legacy_cast(
+        let changed = MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(Bitvector32Term::Variable(Variable(43))),
+            Box::new(MachineTerm::Variable(Variable(43))),
         );
         assert_ne!(
             SignedArithmeticAtom::from_term(&narrowed),
             SignedArithmeticAtom::from_term(&changed)
         );
-        let computed = Bitvector32Term::legacy_cast(
+        let computed = MachineTerm::legacy_cast(
             MachineCastSpelling::UInt32From64,
-            Box::new(Bitvector32Term::Binary {
+            Box::new(MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Add,
                 left: Box::new(variable),
-                right: Box::new(Bitvector32Term::uint64_constant(2)),
+                right: Box::new(MachineTerm::uint64_constant(2)),
             }),
         );
         assert!(is_opaque_atom(&computed));
@@ -4901,7 +4895,7 @@ mod tests {
 
     #[test]
     fn rejects_forward_and_out_of_range_references() {
-        let goal = le(x(), Bitvector32Term::constant(1));
+        let goal = le(x(), MachineTerm::constant(1));
         let certificate = SignedArithmeticCertificate {
             nodes: vec![SignedArithmeticNode::Scale {
                 source: 1,
@@ -4926,8 +4920,8 @@ mod tests {
 
     #[test]
     fn rejects_changed_terms_carriers_operators_endpoints_and_coefficients() {
-        let premise = le(x(), Bitvector32Term::constant(10));
-        let goal = le(x(), Bitvector32Term::constant(20));
+        let premise = le(x(), MachineTerm::constant(10));
+        let goal = le(x(), MachineTerm::constant(20));
         let mut result = claim(&premise);
         result.constant = BigInt::from(20);
         let bad_premise = SignedArithmeticCertificate {
@@ -5006,8 +5000,8 @@ mod tests {
 
     #[test]
     fn rejects_overflow_and_wrong_definedness_locally() {
-        let left_term = Bitvector32Term::constant(i32::MAX as u32);
-        let right_term = Bitvector32Term::constant(1);
+        let left_term = MachineTerm::constant(i32::MAX as u32);
+        let right_term = MachineTerm::constant(1);
         let left = SignedArithmeticNode::IntervalAtom {
             carrier: SignedArithmeticCarrier::SignedInt32,
             term: left_term.clone(),
@@ -5048,7 +5042,7 @@ mod tests {
             conclusion: 3,
         };
         let wrong_defined = Proposition::ConditionIs(
-            ConditionTerm::signed_add_overflows(left_term.clone(), Bitvector32Term::constant(2)),
+            ConditionTerm::signed_add_overflows(left_term.clone(), MachineTerm::constant(2)),
             false,
         );
         assert_eq!(
@@ -5060,7 +5054,7 @@ mod tests {
                         Box::new(left_term.clone()),
                         Box::new(right_term.clone()),
                     ),
-                    Bitvector32Term::constant(i32::MAX as u32),
+                    MachineTerm::constant(i32::MAX as u32),
                 ),
                 &[wrong_defined],
             ),
@@ -5070,9 +5064,9 @@ mod tests {
 
     /// The value a narrowed-cast test converts: the 32-bit `x`, or for an
     /// 8- or 16-bit source a variable of that width.
-    fn narrowed_cast_value(source: crate::kernel::MachineIntegerType) -> Bitvector32Term {
+    fn narrowed_cast_value(source: crate::kernel::MachineIntegerType) -> MachineTerm {
         if source.format().bits() < 32 {
-            Bitvector32Term::Variable(Variable(7_116))
+            MachineTerm::Variable(Variable(7_116))
         } else {
             x()
         }
@@ -5080,9 +5074,9 @@ mod tests {
 
     /// The `int32` reading of [`narrowed_cast_value`]: the value, or its
     /// widening.
-    fn narrowed_cast_operand(source: crate::kernel::MachineIntegerType) -> Bitvector32Term {
+    fn narrowed_cast_operand(source: crate::kernel::MachineIntegerType) -> MachineTerm {
         if source.format().bits() < 32 {
-            Bitvector32Term::machine_integer_cast(
+            MachineTerm::machine_integer_cast(
                 source,
                 crate::kernel::MachineIntegerType::Int32,
                 narrowed_cast_value(source),
@@ -5108,11 +5102,11 @@ mod tests {
         let mut nodes = vec![
             SignedArithmeticNode::Premise {
                 index: 0,
-                result: claim(&le(Bitvector32Term::constant(0), x())),
+                result: claim(&le(MachineTerm::constant(0), x())),
             },
             SignedArithmeticNode::Premise {
                 index: 1,
-                result: claim(&le(x(), Bitvector32Term::constant(upper as u32))),
+                result: claim(&le(x(), MachineTerm::constant(upper as u32))),
             },
             SignedArithmeticNode::IntervalFromAffine {
                 source: 0,
@@ -5155,7 +5149,7 @@ mod tests {
         } else {
             nodes.push(SignedArithmeticNode::IntervalAtom {
                 carrier: SignedArithmeticCarrier::SignedInt32,
-                term: Bitvector32Term::constant(upper as u32),
+                term: MachineTerm::constant(upper as u32),
                 lower: upper,
                 upper,
             });
@@ -5182,10 +5176,10 @@ mod tests {
         // 8- or 16-bit value's is its widening, read in the 32-bit
         // arithmetic).
         let cast = |source, destination| {
-            Bitvector32Term::machine_integer_cast(source, destination, narrowed_cast_value(source))
+            MachineTerm::machine_integer_cast(source, destination, narrowed_cast_value(source))
         };
         let widened = |source, destination| {
-            Bitvector32Term::machine_integer_cast(destination, Ty::Int32, cast(source, destination))
+            MachineTerm::machine_integer_cast(destination, Ty::Int32, cast(source, destination))
         };
         for (source, destination, upper) in [
             (Ty::Int32, Ty::UInt8, 255),
@@ -5196,13 +5190,13 @@ mod tests {
             let x = || narrowed_cast_operand(source);
             let premises = |upper: u32| {
                 vec![
-                    le(Bitvector32Term::constant(0), x()),
-                    le(x(), Bitvector32Term::constant(upper)),
+                    le(MachineTerm::constant(0), x()),
+                    le(x(), MachineTerm::constant(upper)),
                 ]
             };
             let byte = widened(source, destination);
             // The interval of the conversion bounds it.
-            let bound = le(byte.clone(), Bitvector32Term::constant(upper));
+            let bound = le(byte.clone(), MachineTerm::constant(upper));
             narrowed_cast_certificate(i64::from(upper), source, destination, &bound, false)
                 .check(&bound, &premises(upper))
                 .unwrap();
@@ -5219,10 +5213,7 @@ mod tests {
                 Err(SignedArithmeticCheckError::InvalidEndpoint(5))
             );
             // A false identity does not follow from the true one.
-            let off = equal(
-                byte,
-                Bitvector32Term::add(x(), Bitvector32Term::constant(1)),
-            );
+            let off = equal(byte, MachineTerm::add(x(), MachineTerm::constant(1)));
             assert!(
                 narrowed_cast_certificate(i64::from(upper), source, destination, &off, true)
                     .check(&off, &premises(upper))
@@ -5233,8 +5224,8 @@ mod tests {
         // a 64-bit source, is not this node's to relate.
         let premises = |upper: u32| {
             vec![
-                le(Bitvector32Term::constant(0), x()),
-                le(x(), Bitvector32Term::constant(upper)),
+                le(MachineTerm::constant(0), x()),
+                le(x(), MachineTerm::constant(upper)),
             ]
         };
         for (source, destination) in [(Ty::UInt8, Ty::Int32), (Ty::Int64, Ty::UInt8)] {
@@ -5259,16 +5250,16 @@ mod narrowed_expression_tests {
 
     #[test]
     fn narrowed_native_expression_atom_preserves_structure_and_width() {
-        let n = Bitvector32Term::Variable(Variable(100));
-        let native = Bitvector32Term::uint64_subtract(
+        let n = MachineTerm::Variable(Variable(100));
+        let native = MachineTerm::uint64_subtract(
             n.clone(),
-            Bitvector32Term::uint64_remainder(n.clone(), Bitvector32Term::uint64_constant(4)),
+            MachineTerm::uint64_remainder(n.clone(), MachineTerm::uint64_constant(4)),
         );
-        let narrow = Bitvector32Term::uint32_from_64(native);
+        let narrow = MachineTerm::uint32_from_64(native);
         assert!(is_opaque_atom(&narrow));
-        let other = Bitvector32Term::uint32_from_64(Bitvector32Term::uint64_subtract(
+        let other = MachineTerm::uint32_from_64(MachineTerm::uint64_subtract(
             n.clone(),
-            Bitvector32Term::uint64_remainder(n.clone(), Bitvector32Term::uint64_constant(3)),
+            MachineTerm::uint64_remainder(n.clone(), MachineTerm::uint64_constant(3)),
         ));
         assert_ne!(
             SignedArithmeticAtom::from_term(&narrow),
@@ -5278,10 +5269,8 @@ mod narrowed_expression_tests {
             SignedArithmeticAtom::from_term(&narrow),
             SignedArithmeticAtom::from_term(&n)
         );
-        let unsupported = Bitvector32Term::uint32_from_64(Bitvector32Term::int64_add(
-            n,
-            Bitvector32Term::int64_constant(1),
-        ));
+        let unsupported =
+            MachineTerm::uint32_from_64(MachineTerm::int64_add(n, MachineTerm::int64_constant(1)));
         assert!(SignedArithmeticAtom::from_term(&unsupported).is_none());
     }
 
@@ -5301,7 +5290,7 @@ mod format_tests {
     /// would read as an `int32` one (decision G7).
     #[test]
     fn the_signed_fragment_refuses_a_uint32_sign_free_operator() {
-        let operand = || Box::new(Bitvector32Term::Variable(Variable(186_001)));
+        let operand = || Box::new(MachineTerm::Variable(Variable(186_001)));
         assert!(signed_binary(&binary_node!(Int32, Add, operand(), operand())).is_some());
         assert!(signed_binary(&binary_node!(Int32, Divide, operand(), operand())).is_some());
         assert!(signed_binary(&binary_node!(UInt32, ShiftRight, operand(), operand())).is_some());

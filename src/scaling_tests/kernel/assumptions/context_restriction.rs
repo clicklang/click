@@ -40,14 +40,14 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
         let memory = CMemory::new();
         let pointer = |id| Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::scale_int32(Bitvector32Term::Variable(Variable(id)), 4),
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(Variable(id)), 4),
         };
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_proposition(Proposition::CMemoryLoadable {
                 memory: memory.clone(),
                 base: pointer(720_000 + index),
-                bytes: Bitvector32Term::constant(4),
+                bytes: MachineTerm::constant(4),
                 wide: false,
             });
         }
@@ -56,7 +56,7 @@ fn memory_view_miss_does_not_scan_other_bases_in_one_block() {
                 assert!(!context.proves_memory_loadable(
                     &memory,
                     &pointer(730_000),
-                    &Bitvector32Term::constant(4)
+                    &MachineTerm::constant(4)
                 ));
             }
         });
@@ -74,12 +74,12 @@ fn atom_memory_condition_miss_does_not_scan_open_fact_family() {
     let mut samples = Vec::new();
     for size in [8u64, 32, 128] {
         let _session = crate::kernel::VerificationSession::enter();
-        let term = |id| Bitvector32Term::Variable(Variable(id));
+        let term = |id| MachineTerm::Variable(Variable(id));
         let mut context = PureFactContext::new();
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::add(term(740_000 + index * 2), Bitvector32Term::constant(1)),
+                    MachineTerm::add(term(740_000 + index * 2), MachineTerm::constant(1)),
                     term(740_001 + index * 2),
                 ),
                 true,
@@ -237,9 +237,9 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                 let base = Pointer::symbolic(Variable(790_000));
                 let extent = |n: u32| {
                     if wide {
-                        Bitvector32Term::uint64_constant(u64::from(n))
+                        MachineTerm::uint64_constant(u64::from(n))
                     } else {
-                        Bitvector32Term::constant(n)
+                        MachineTerm::constant(n)
                     }
                 };
                 let mut context = PureFactContext::new();
@@ -265,7 +265,7 @@ fn ambiguous_view_buckets_keep_exact_and_selected_evidence() {
                     context = context.assume_proposition(fact);
                 }
                 let selected = selected.unwrap();
-                let proves = |context: &PureFactContext, bytes: &Bitvector32Term| {
+                let proves = |context: &PureFactContext, bytes: &MachineTerm| {
                     if wide {
                         context.proves_native_memory_loadable(&memory, &base, bytes)
                     } else {
@@ -373,8 +373,8 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
         let view = Proposition::Or(
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(880000)),
-                    Bitvector32Term::constant(i32::MIN as u32),
+                    MachineTerm::Variable(Variable(880000)),
+                    MachineTerm::constant(i32::MIN as u32),
                 ),
                 false,
             )),
@@ -394,7 +394,7 @@ fn numeric_comparison_view_queries_do_not_scan_supports() {
                     ConditionTerm::IntegerNotEqual(
                         I::from_machine(
                             MachineIntegerType::Int32,
-                            Bitvector32Term::Variable(Variable(880000)),
+                            MachineTerm::Variable(Variable(880000)),
                         )
                         .unwrap()
                         .into(),

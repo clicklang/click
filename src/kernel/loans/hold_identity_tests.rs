@@ -10,8 +10,8 @@ fn holding_a_scope_mints_a_distinct_ledger_identity() {
     };
     let fact = CResourceFact::own_memory(CMemoryRange::new(
         base,
-        Bitvector32Term::constant(0),
-        Bitvector32Term::constant(8),
+        MachineTerm::constant(0),
+        MachineTerm::constant(8),
     ));
     let context = ResourceContext::new().unchecked_with_fact(fact.clone());
     let ledger = LoanLedger::new();

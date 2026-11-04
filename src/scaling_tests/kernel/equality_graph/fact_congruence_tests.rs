@@ -196,8 +196,8 @@ fn full_pointer_alias_queries_do_not_walk_unrelated_conditions() {
         for index in 0..size {
             context = context.assume_condition(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(9_000_000 + index)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(9_000_000 + index)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             );
@@ -223,8 +223,8 @@ fn cited_pointer_context_construction_scales_with_selected_conditions() {
         for index in 0..size {
             selected.push(Proposition::ConditionIs(
                 ConditionTerm::equal(
-                    Bitvector32Term::Variable(Variable(9_100_000 + index)),
-                    Bitvector32Term::constant(index as u32),
+                    MachineTerm::Variable(Variable(9_100_000 + index)),
+                    MachineTerm::constant(index as u32),
                 ),
                 true,
             ));
@@ -360,7 +360,7 @@ fn complete_pointer_read_registration_scales_with_new_definitions() {
         for i in 0..unrelated {
             facts = facts.assume_condition(
                 ConditionTerm::signed_less_than(
-                    Bitvector32Term::Variable(Variable(988_100 + i)),
+                    MachineTerm::Variable(Variable(988_100 + i)),
                     1000u32.into(),
                 ),
                 true,

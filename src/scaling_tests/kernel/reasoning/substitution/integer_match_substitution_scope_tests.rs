@@ -10,7 +10,7 @@ fn match_substitution_shared_function_dag_scales_linearly() {
     for depth in [8usize, 16, 32, 64] {
         let mut body = IntegerTerm::from_machine(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(Variable(9050)),
+            MachineTerm::Variable(Variable(9050)),
         )
         .unwrap();
         for _ in 0..depth {
@@ -26,7 +26,7 @@ fn match_substitution_shared_function_dag_scales_linearly() {
             substitute_bitvector_variable_in_integer(
                 &symbolic_match(body, Variable(9051)),
                 Variable(9050),
-                &Bitvector32Term::Variable(Variable(9052)),
+                &MachineTerm::Variable(Variable(9052)),
             )
         });
         work.push(measured);
@@ -42,7 +42,7 @@ fn match_substitution_shared_bodies_scale_linearly() {
     for depth in [8usize, 16, 32, 64] {
         let mut body = IntegerTerm::from_machine(
             MachineIntegerType::Int32,
-            Bitvector32Term::Variable(Variable(9020)),
+            MachineTerm::Variable(Variable(9020)),
         )
         .unwrap();
         for _ in 0..depth {
@@ -52,7 +52,7 @@ fn match_substitution_shared_bodies_scale_linearly() {
             substitute_bitvector_variable_in_integer(
                 &symbolic_match(body, Variable(9021)),
                 Variable(9020),
-                &Bitvector32Term::Variable(Variable(9022)),
+                &MachineTerm::Variable(Variable(9022)),
             )
         });
         work.push(measured);

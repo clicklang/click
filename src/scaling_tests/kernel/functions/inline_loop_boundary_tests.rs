@@ -12,7 +12,7 @@ fn symbolic_inline_loop_refusal_work_is_independent_of_unroll_allowance() {
         let mut budget = ExecutionBudget::new();
         budget.loop_unrolls = limit;
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            call(int32(Bitvector32Term::Variable(Variable(7))), &mut budget)
+            call(int32(MachineTerm::Variable(Variable(7))), &mut budget)
         });
         let paths = result.unwrap();
         assert!(matches!(paths.as_slice(), [CFunctionPath {
