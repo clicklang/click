@@ -88,7 +88,6 @@ fn sign_flip_view(domain: Domain, term: V<'_>) -> Option<V<'_>> {
 
 struct Query<'a> {
     graph: &'a DifferenceGraph,
-    cache: std::sync::MutexGuard<'a, cache::Cache>,
     frames: Vec<(Vec<Read>, bool)>,
 }
 
@@ -140,6 +139,46 @@ impl DifferenceGraph {
     }
 
     /// The existing order decision, with retained comparison operands.
+    /// Word equality has the same truth in either signedness reading. Keep
+    /// the native rule's exclusions, difference bounds and singleton ranges,
+    /// but resolve selected shared operands without exporting their trees.
+    pub(crate) fn decide_word_equality_views(&self, a: V<'_>, b: V<'_>) -> Option<bool> {
+        if self.contradictory {
+            return None;
+        }
+        let mut query = Query::new(self);
+        for domain in [Domain::Int32, Domain::UInt32] {
+            if let (Some(a), Some(b)) = (query.resolve(domain, a), query.resolve(domain, b)) {
+                match (a, b) {
+                    ((Some(node), offset), (None, value))
+                    | ((None, value), (Some(node), offset))
+                        if self.excludes(node, value - offset) =>
+                    {
+                        return Some(false);
+                    }
+                    _ => {}
+                }
+                let ab = self.difference_bound(a, b);
+                let ba = self.difference_bound(b, a);
+                if ab <= 0 && ba <= 0 {
+                    return Some(true);
+                }
+                if ab < 0 || ba < 0 {
+                    return Some(false);
+                }
+            }
+            let (a_low, a_high) = query.interval(domain, a);
+            let (b_low, b_high) = query.interval(domain, b);
+            if a_low == a_high && (a_low, a_high) == (b_low, b_high) {
+                return Some(true);
+            }
+            if a_high < b_low || b_high < a_low {
+                return Some(false);
+            }
+        }
+        None
+    }
+
     pub(crate) fn decide_shared_order(
         &self,
         view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
@@ -260,7 +299,6 @@ impl<'a> Query<'a> {
     fn new(graph: &'a DifferenceGraph) -> Self {
         Self {
             graph,
-            cache: graph.shared_queries.lock(),
             frames: Vec::new(),
         }
     }
@@ -276,7 +314,10 @@ impl<'a> Query<'a> {
     }
     fn begin(&mut self, key: QueryKey) -> Option<Answer> {
         self.depend(Read::Query(key));
-        let hit = self.cache.get(&key);
+        // A native conditional can re-enter graph decisions while resolving
+        // an operand. Hold the cache lock only for lookup or insertion, never
+        // across that recursive work.
+        let hit = self.graph.shared_queries.lock().get(&key);
         if hit.is_none() {
             self.frames.push((Vec::new(), true));
         }
@@ -285,7 +326,10 @@ impl<'a> Query<'a> {
     fn finish(&mut self, key: QueryKey, root: &crate::kernel::KernelTerm, answer: Answer) {
         let (reads, cacheable) = self.frames.pop().expect("range query frame");
         if cacheable {
-            self.cache.insert(key, root, answer, reads);
+            self.graph
+                .shared_queries
+                .lock()
+                .insert(key, root, answer, reads);
         } else {
             self.uncacheable();
         }
