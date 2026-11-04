@@ -1335,14 +1335,15 @@ impl<'a> Proof<'a> {
             "this step"
         };
         let (probe, recorded) = probe_open_obligations(|| self.apply_fast_simple_step(&step));
-        // A rejected call can still expose the preconditions its recovery
-        // needs proved first. As for a bare step, discard that probe, prove
-        // its recorded requirements at the pre-state, and retry below. The
-        // retry must succeed before any successor or certificate is kept.
+        // A successful preparation is conditional on every recorded requirement.
+        // Keep it private while those requirements are proved at `self`, never
+        // in the candidate's post-state. A failed preparation needs recovery.
         if recorded.recorded.is_empty() {
-            probe?;
+            probe.as_ref().map_err(Clone::clone)?;
         }
-        let open = distinct_requirements(recorded.recorded);
+        let refusals = recorded.refusals;
+        let recorded_requirements = recorded.recorded;
+        let open = distinct_requirements(recorded_requirements.clone());
         let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
             Ok(match self.requirement_surface(requirement, &step)? {
                 Some(spelling) => {
@@ -1445,21 +1446,46 @@ impl<'a> Proof<'a> {
                     .zip(&claimed)
                     .filter(|(_, claimed)| claimed.is_none())
                     .map(|(requirement, _)| requirement)
+                    // A written entry can also establish another slot as an
+                    // exact fact (for example by proving a conjunction).
+                    .filter(|requirement| {
+                        !current
+                            .facts()
+                            .assumptions()
+                            .states_required_goal(&requirement.proposition)
+                    })
                     .collect::<Vec<_>>();
-                if let Some((proved_by_auto, entries)) = (!implicit_auto_disabled())
-                    .then(|| current.prove_obligations_by_auto(&step, &unwritten))
-                    .transpose()?
-                    .flatten()
-                {
-                    current = proved_by_auto;
-                    proved.extend(entries);
+                if !unwritten.is_empty() {
+                    let result = if implicit_auto_disabled() {
+                        Err(0)
+                    } else {
+                        current
+                            .prove_obligations_by_auto_or_name_the_first_missed(&step, &unwritten)?
+                    };
+                    match result {
+                        Ok((proved_by_auto, entries)) => {
+                            current = proved_by_auto;
+                            proved.extend(entries);
+                        }
+                        Err(missed) => {
+                            let position = recorded_requirements
+                                .iter()
+                                .position(|requirement| {
+                                    crate::kernel::proof::propositions_are_alpha_equal(
+                                        &requirement.proposition,
+                                        &unwritten[missed].proposition,
+                                    )
+                                })
+                                .expect("an open requirement came from preparation");
+                            return Err(refusals[position].clone());
+                        }
+                    }
                 }
                 StepProofCertificate::Requires(proved)
             }
         };
-        // Every open obligation is now proved, so the fast path closes the
-        // step; one the implicit `auto` could not prove refuses it there.
-        let stepped = current.apply_fast_simple_step(&step)?;
+        // Both written and unwritten obligation slots have been discharged.
+        let stepped = self.finish_prepared_step(probe, &current, &step)?;
         Ok(self.step_proved_successor(stepped, step, proof))
     }
 
@@ -1529,13 +1555,140 @@ impl<'a> Proof<'a> {
                 });
             }
         };
-        let stepped = proved.apply_fast_simple_step(&step)?;
+        let stepped = self.finish_prepared_step(probe, &proved, &step)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
         } else {
             StepProofCertificate::Requires(entries)
         };
         Ok(self.step_proved_successor(stepped, step, proof))
+    }
+
+    /// Publish a completed conditional statement after its caller has proved
+    /// every recorded obligation at this original frontier. The candidate must
+    /// never be used as the context for those proofs. A failed preparation (for
+    /// example pending loan recovery) has no successor and still needs retry.
+    fn finish_prepared_step(
+        &self,
+        prepared: Result<Self, ClickError>,
+        proved: &Self,
+        step: &ProofStep,
+    ) -> Result<Self, ClickError> {
+        // Folds also use obligation probing, but have their own resource-scope
+        // publication rather than a statement frontier.
+        if matches!(step, ProofStep::FoldResource(_)) {
+            return proved.apply_fast_simple_step(step);
+        }
+        let mut candidate = match prepared {
+            Ok(candidate) => candidate,
+            Err(_) => return proved.apply_fast_simple_step(step),
+        };
+        let introduced = proved
+            .facts()
+            .introduced_since(self.facts())
+            .expect("obligation proofs extend their original fact context");
+        let mut facts = candidate.facts().clone();
+        for fact in &introduced {
+            facts = facts.with_kernel_checked_fact(fact.clone());
+        }
+        let original = self
+            .execution()
+            .expect("statement preparation has a frontier");
+        let proven = proved
+            .execution()
+            .expect("obligation proofs retain the frontier");
+        let mut execution = candidate
+            .execution()
+            .expect("prepared statement has a successor")
+            .clone();
+        // `have` publication keeps its source spelling and certificate facts
+        // beside the logical context. Carry only the appended suffix, preserving
+        // the candidate's new call bindings, snapshots, and typed read evidence.
+        let retained = proven
+            .presentation
+            .surface_record
+            .retained_have_facts
+            .introduced_since(&original.presentation.surface_record.retained_have_facts)
+            .expect("obligation proofs append retained facts");
+        for fact in retained {
+            execution
+                .presentation
+                .surface_propositions
+                .record_lowering(
+                    proven.presentation.surface_propositions.surface(&fact)?,
+                    &fact,
+                )?;
+            execution.presentation.surface_record.retained_have_facts = execution
+                .presentation
+                .surface_record
+                .retained_have_facts
+                .with_kernel_checked_fact(fact);
+        }
+        // A completing statement also saved its conditional obligations in
+        // the function outcome. Publish the proved input delta on those new
+        // outcomes so contract certification sees the evidence too. Earlier
+        // loop returns belong to their own paths, not this frontier.
+        if let Some(completed) = execution.core.frontier.execution() {
+            let additional = introduced
+                .iter()
+                .cloned()
+                .map(ExecutionPureFact::new)
+                .collect::<crate::kernel::ExecutionFacts>();
+            let paths = completed
+                .paths()
+                .iter()
+                .enumerate()
+                .map(|(index, path)| {
+                    if execution
+                        .provenance_for_outcome(index)
+                        .loop_return
+                        .is_some()
+                    {
+                        path.clone()
+                    } else {
+                        crate::kernel::c_function_execution_candidate_with_additional_facts(
+                            path,
+                            &additional,
+                        )
+                    }
+                })
+                .collect();
+            let completed = crate::kernel::c_function_execution_candidates_from_retained_paths(
+                completed.state().clone(),
+                completed.function().clone(),
+                completed.arguments().to_vec(),
+                paths,
+            );
+            if let Some(leaf) = &mut execution.presentation.checked_leaf_facts {
+                Arc::make_mut(leaf).0 = completed
+                    .candidate_at(0)
+                    .expect("one checked outcome")
+                    .clone();
+            }
+            execution.core.frontier.position = FrontierPosition::FunctionExit {
+                execution: completed,
+            };
+        }
+        // A terminal statement has already captured its facts for contract
+        // certification. Extend that retained context by the checked input
+        // delta too; otherwise it still describes the conditional probe.
+        if let Some(leaf) = &mut execution.presentation.checked_leaf_facts {
+            let (_, leaf_facts, _) = Arc::make_mut(leaf);
+            for fact in &introduced {
+                *leaf_facts = leaf_facts.with_kernel_checked_fact(fact.clone());
+            }
+        }
+        let state = candidate
+            .state
+            .publish_checked_frontier_transition(
+                facts,
+                execution,
+                candidate.state().added_facts().to_vec(),
+                candidate.state().checked_facts().to_vec(),
+            )
+            .map_err(|error| self.execution_update_error("prepared step", error))?;
+        candidate.state = state;
+        Ok(candidate)
     }
 
     /// Closes an `open(resource)` scope by `close`, its closing fold, with a
@@ -1730,21 +1883,8 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// Proves each requirement by the implicit `auto` at this pre-state, as a
-    /// `have` of its Surface spelling. `None` when one has no spelling or
-    /// `auto` does not prove it.
-    pub(in crate::surface::proof) fn prove_obligations_by_auto(
-        &self,
-        step: &ProofStep,
-        requirements: &[&UnresolvedRequirement],
-    ) -> Result<Option<(Self, Vec<StepRequirementCertificate>)>, ClickError> {
-        Ok(self
-            .prove_obligations_by_auto_or_name_the_first_missed(step, requirements)?
-            .ok())
-    }
-
-    /// [`Self::prove_obligations_by_auto`], or the index of the first
-    /// requirement it could not spell or prove.
+    /// Proves each requirement at this pre-state, or returns the index of
+    /// the first requirement it could not spell or prove.
     fn prove_obligations_by_auto_or_name_the_first_missed(
         &self,
         step: &ProofStep,
