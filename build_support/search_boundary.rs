@@ -150,6 +150,7 @@ impl Boundary<'_> {
                 "directly_supporting_memory_fact"
                     | "constant_relative_byte_endpoints"
                     | "constant_memory_coordinates"
+                    | "constant_owned_neighbors_at_exact_alias"
                     | "consume_unit_owned_memory"
                     | "consume_symbolic_partition"
                     | "memory_range_definitely_shorter"

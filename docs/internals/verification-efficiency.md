@@ -437,8 +437,14 @@ disjointness, so two ranges at unrelated roots need no comparison, and every
 resource in a composition comes from a transfer rule that never duplicates
 ownership (`validity_of_parameter_objects_is_linear`). Rebasing through
 aliases asks only alias pairs a constant number of bytes apart
-(`footprint_composition_does_not_decide_every_alias_pair`). Open and related
-bases still retain the full block: a known violation of the fast-part rule
+(`footprint_composition_does_not_decide_every_alias_pair`). For constant
+intervals, incremental validity selects neighboring owners from the ordered
+coordinate index, provided its cached count covers every owner in the queried
+block or root. An exact cross-block alias rebases the query before that same
+selection; a merely related root must not discard its displacement. This
+selection adds no separation facts and still uses the ordinary pair-overlap
+rule. Symbolic bounds, incompletely indexed roots, and other related bases
+still enumerate candidates: a known violation of the fast-part rule
 (see "Fast-part scans" in
 [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
 

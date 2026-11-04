@@ -7194,3 +7194,124 @@ fn owned_root_neighbors_require_complete_coordinate_coverage() {
         );
     }
 }
+
+#[test]
+fn exact_alias_owned_neighbors_preserve_translations_and_branch_isolation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(995_650));
+    let q = Pointer::symbolic(Variable(995_651));
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    let owned = |base, start: u32, end: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            start.into(),
+            end.into(),
+            4,
+        ))
+    };
+    let translated = Pointer {
+        block: q.block.clone(),
+        offset: PointerOffsetTerm::add(q.offset.clone(), PointerOffsetTerm::Constant(8)),
+    };
+    let held = owned(translated, 0, 1);
+    let context = ResourceContext::new_with_equalities(&assumptions)
+        .unchecked_with_facts([held.clone(), owned(q.clone(), 5, 6)]);
+    assert!(context.is_valid(&assumptions));
+    for (start, end, accepted) in [(0, 2, true), (2, 3, false), (3, 5, true), (5, 6, false)] {
+        assert_eq!(
+            context
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [owned(p.clone(), start, end)],
+                    &assumptions,
+                )
+                .is_ok(),
+            accepted
+        );
+    }
+    let child = context.clone().without_exact_representation(&held).unwrap();
+    assert!(
+        child
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(p.clone(), 2, 3)],
+                &assumptions,
+            )
+            .is_ok()
+    );
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization([owned(p, 2, 3)], &assumptions,)
+            .is_err()
+    );
+}
+
+#[test]
+fn exact_alias_owned_neighbors_retain_symbolic_ranges() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(995_660));
+    let q = Pointer::symbolic(Variable(995_661));
+    let index = MachineTerm::var(Variable(995_662));
+    let end = MachineTerm::add(index.clone(), 1u32.into());
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true)
+        .assume_condition(
+            ConditionTerm::signed_less_than(index.clone(), 6u32.into()),
+            true,
+        )
+        .assume_condition(
+            ConditionTerm::signed_less_than(5u32.into(), end.clone()),
+            true,
+        );
+    let owned = |base, start, end| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(base, start, end, 4))
+    };
+    let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+        owned(q.clone(), 0u32.into(), 1u32.into()),
+        owned(q, index, end),
+    ]);
+    assert!(context.is_valid(&assumptions));
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization(
+                [owned(p, 5u32.into(), 6u32.into())],
+                &assumptions,
+            )
+            .is_err()
+    );
+}
+
+#[test]
+fn exact_alias_owned_neighbors_keep_nonzero_displacements() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = |id| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(MachineTerm::var(Variable(id)), 4),
+    };
+    let p = pointer(995_670);
+    let q = pointer(995_671);
+    let displaced = Pointer {
+        block: q.block.clone(),
+        offset: PointerOffsetTerm::add(q.offset.clone(), PointerOffsetTerm::Constant(8)),
+    };
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), displaced), true);
+    let owned = |base, start: u32| {
+        CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            base,
+            start.into(),
+            (start + 1).into(),
+            4,
+        ))
+    };
+    let context = ResourceContext::new_with_equalities(&assumptions)
+        .unchecked_with_facts((0..3).map(|i| owned(q.clone(), i)));
+    assert!(context.is_valid(&assumptions));
+    // p[0] is q[2], not q[0]. The owner at q[1] makes neighbours of
+    // a query rebased to q instead of the exact alias q + 8 miss q[2].
+    assert!(
+        context
+            .try_compose_into_valid_context_delaying_normalization([owned(p, 0)], &assumptions,)
+            .is_err()
+    );
+}

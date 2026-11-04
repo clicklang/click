@@ -1511,6 +1511,51 @@ fn translated_owner_insertion_uses_interval_neighbors() {
 }
 
 #[test]
+fn exact_pointer_alias_ownership_checks_select_interval_neighbors() {
+    for native in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(995_600));
+            let q = Pointer::symbolic(Variable(995_601));
+            let assumptions = PureFactContext::new().assume_condition(
+                ConditionTerm::pointer_equal(p.clone(), q.clone()), true,
+            );
+            let owned = |base: Pointer, start: u32| {
+                CResourceFact::own_memory(if native {
+                    CMemoryRange::new_wide(base,
+                        MachineTerm::uint64_constant(u64::from(start)),
+                        MachineTerm::uint64_constant(u64::from(start + 1)), 4)
+                } else {
+                    CMemoryRange::new_with_element_width(base, start.into(), (start + 1).into(), 4)
+                })
+            };
+            let context = ResourceContext::new_with_equalities(&assumptions)
+                .unchecked_with_facts((0..size).map(|i| owned(q.clone(), 4 + 4 * i as u32)));
+            context.synchronize_memory_equalities(&assumptions);
+            let mut work = Vec::new();
+            for (start, accepted) in [(0, true), (4, false), (4 * size as u32, false)] {
+                for _ in 0..3 {
+                    let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
+                        context.clone().try_compose_into_valid_context_delaying_normalization(
+                            [owned(p.clone(), start)], &assumptions,
+                        )
+                    });
+                    assert_eq!(result.is_ok(), accepted);
+                    assert_eq!(context.facts().len(), size);
+                    work.push(units);
+                }
+            }
+            samples.push((size, work));
+        }
+        eprintln!("exact alias owner checks, native={native}: {samples:?}");
+        assert!(samples.windows(2).all(|pair| pair[0].1.iter().zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 48)),
+            "exact pointer aliases scan owned fragments: {samples:?}");
+    }
+}
+
+#[test]
 fn unrelated_origin_does_not_disable_owned_interval_neighbors() {
     for native in [false, true] {
         let mut samples = Vec::new();

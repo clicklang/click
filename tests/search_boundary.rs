@@ -820,3 +820,20 @@ fn owned_neighbor_selection_rejects_candidate_enumeration() {
         );
     }
 }
+
+#[test]
+fn exact_alias_owner_neighbors_reject_supplier_scans() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "normalized_memory_suppliers",
+        "with_coalesced_owned_memory",
+    ] {
+        let source = format!("fn constant_owned_neighbors_at_exact_alias(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}
