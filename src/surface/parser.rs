@@ -14633,7 +14633,7 @@ impl Parser {
                 return Ok(expression);
             }
             return Err(self.error(format!(
-                "`loop({index}).iter` is read through a method: `loop({index}).iter.len()`"
+                "`loop({index}).iter` is read through one of Rust's accessors, such as `loop({index}).iter.len()`"
             )));
         }
         self.position = start;

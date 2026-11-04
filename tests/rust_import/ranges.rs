@@ -5,7 +5,7 @@ const SIDECAR: &str = include_str!("../../design/charon-trial/ranges/ranges.clic
 /// A `for` over an integer range holds the range as its two bounds and
 /// yields `start` while `start < end`; loops at every checked width, a slice
 /// indexed by the loop variable, and nested ranges verify from invariants
-/// over `iter_start` and `iter_end`.
+/// over the range's fields, `iter.start` and `iter.end`.
 #[test]
 fn charon_range_loops_verify_from_their_bounds() {
     let p = Project::from_fixture("design/charon-trial/ranges");
@@ -16,8 +16,8 @@ fn charon_range_loops_verify_from_their_bounds() {
     for (before, after, expected) in [
         // The count trails the yielded value, it does not lead it.
         (
-            "        invariant total == iter_start;\n",
-            "        invariant total == iter_start + 1u32;\n",
+            "        invariant total == iter.start;\n",
+            "        invariant total == iter.start + 1u32;\n",
             "count_to",
         ),
         // The last iteration reads the final byte, not the first.
@@ -28,8 +28,8 @@ fn charon_range_loops_verify_from_their_bounds() {
         ),
         // The count starts at zero, so it trails the yielded value by `a`.
         (
-            "        invariant count == iter_start - a;\n",
-            "        invariant count == iter_start;\n",
+            "        invariant count == iter.start - a;\n",
+            "        invariant count == iter.start;\n",
             "span",
         ),
     ] {

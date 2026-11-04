@@ -460,53 +460,67 @@ pub(crate) fn loop_iterations_spelling(index: usize) -> String {
     format!("loop({index}).{LOOP_ITERATIONS_NAME}")
 }
 
-/// A method a proof reads a loop's iterator through.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum IterMethod {
-    /// `iter.len()`: the elements it has left.
-    Len,
-    /// `iter.as_slice()`: the slice of them, which reads as a slice
-    /// parameter does, its data.
-    AsSlice,
-}
+/// The Rust accessors a proof reads a loop's iterator through, as written
+/// after `iter.`: a call such as `len()` or a public field such as `start`.
+pub(crate) const RUST_ITERATOR_ACCESSORS: [&str; 6] =
+    ["len()", "as_slice()", "start", "end", "start()", "end()"];
 
-impl IterMethod {
-    const ALL: [IterMethod; 2] = [IterMethod::Len, IterMethod::AsSlice];
-
-    /// The binding a `loop` block's `iter.<method>()` reads, which the loop
-    /// phase binds to that loop's iterator.
-    pub(crate) fn binding(self) -> &'static str {
-        match self {
-            IterMethod::Len => "iter.len()",
-            IterMethod::AsSlice => "iter.as_slice()",
-        }
+/// The accessors of an iterator of `kind`, which are Rust's own:
+/// `ExactSizeIterator::len`, `slice::Iter::as_slice`, a `Range`'s `start`
+/// and `end` fields, and a `RangeInclusive`'s `start()` and `end()`.
+pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'static [&'static str] {
+    match kind {
+        syntax::RustIteratorKind::Slice => &["len()", "as_slice()"],
+        syntax::RustIteratorKind::Enumerate => &["len()"],
+        syntax::RustIteratorKind::Range => &["start", "end", "len()"],
+        syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
+        syntax::RustIteratorKind::Chunks => &[],
     }
 }
 
-/// `iter.<method>()` of `iterator`, read from the state the importer keeps
-/// for it.
+/// `iter.<accessor>` of `iterator`, read from the state the importer keeps
+/// for it. `iter.as_slice()` reads as a slice parameter does, its data.
 pub(crate) fn rust_iterator_method(
     iterator: &syntax::RustLoopIterator,
-    method: IterMethod,
+    accessor: &str,
 ) -> Result<ContractExpression, String> {
-    let suffix = match method {
-        IterMethod::Len => "remaining",
-        IterMethod::AsSlice => "cursor",
-    };
-    match iterator.kind {
-        syntax::RustIteratorKind::Slice | syntax::RustIteratorKind::Enumerate => {
-            Ok(ContractExpression::CFragment(CExpression::Variable(
-                format!("{}_{suffix}", iterator.local),
-            )))
+    use syntax::RustIteratorKind as K;
+    let variable = |suffix: &str| CExpression::Variable(format!("{}_{suffix}", iterator.local));
+    let expression = match (iterator.kind, accessor) {
+        (K::Slice | K::Enumerate, "len()") => variable("remaining"),
+        (K::Slice, "as_slice()") => variable("cursor"),
+        (K::Range, "start") => variable("start"),
+        (K::Range, "end") => variable("end"),
+        (K::RangeInclusive, "start()") => variable("start"),
+        (K::RangeInclusive, "end()") => variable("end"),
+        (K::Range, "len()") => {
+            CExpression::Subtract(Box::new(variable("end")), Box::new(variable("start")))
         }
-        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::Range => Err(format!(
-            "this method of a {} iterator is not supported yet",
-            match iterator.kind {
-                syntax::RustIteratorKind::Chunks => "`chunks_exact`",
-                _ => "range",
-            }
-        )),
-    }
+        _ => {
+            return Err(format!(
+                "`iter.{accessor}` is not an accessor of this loop's {} iterator{}",
+                match iterator.kind {
+                    K::Slice => "slice",
+                    K::Enumerate => "enumerated",
+                    K::Range => "range",
+                    K::RangeInclusive => "inclusive range",
+                    K::Chunks => "`chunks_exact`",
+                },
+                match rust_iterator_accessors(iterator.kind) {
+                    [] => " (it has none yet)".to_string(),
+                    accessors => format!(
+                        "; it has {}",
+                        accessors
+                            .iter()
+                            .map(|accessor| format!("`iter.{accessor}`"))
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                }
+            ));
+        }
+    };
+    Ok(ContractExpression::CFragment(expression))
 }
 
 /// The Rust spelling of the importer's iterator state variable `name` in a
@@ -521,17 +535,19 @@ pub(crate) fn rust_iterator_spelling(
 ) -> Option<String> {
     iterators.iter().enumerate().find_map(|(index, iterator)| {
         let iterator = iterator.as_ref()?;
-        IterMethod::ALL.into_iter().find_map(|method| {
-            (rust_iterator_method(iterator, method).ok()?
-                == ContractExpression::CFragment(CExpression::Variable(name.to_string())))
-            .then(|| {
-                if current == Some(index) {
-                    method.binding().to_string()
-                } else {
-                    format!("loop({index}).{}", method.binding())
-                }
+        rust_iterator_accessors(iterator.kind)
+            .iter()
+            .find_map(|accessor| {
+                (rust_iterator_method(iterator, accessor).ok()?
+                    == ContractExpression::CFragment(CExpression::Variable(name.to_string())))
+                .then(|| {
+                    if current == Some(index) {
+                        format!("iter.{accessor}")
+                    } else {
+                        format!("loop({index}).iter.{accessor}")
+                    }
+                })
             })
-        })
     })
 }
 
@@ -550,12 +566,12 @@ pub(crate) fn loop_iterator_bindings(
     else {
         return Vec::new();
     };
-    IterMethod::ALL
-        .into_iter()
-        .filter_map(|method| {
+    rust_iterator_accessors(iterator.kind)
+        .iter()
+        .filter_map(|accessor| {
             Some((
-                method.binding().to_string(),
-                rust_iterator_method(&iterator, method).ok()?,
+                format!("iter.{accessor}"),
+                rust_iterator_method(&iterator, accessor).ok()?,
             ))
         })
         .collect()
