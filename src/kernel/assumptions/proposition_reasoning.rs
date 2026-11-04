@@ -1367,9 +1367,10 @@ impl SelectedFacts<'_> {
                     let bits32_constant!(goal_bits) = goal_upper.as_ref() else {
                         return None;
                     };
-                    self.signed_order_bound_entries(&base).find_map(
-                        |(fact_endpoint, candidate, strict, forward)| {
-                            let bits32_constant!(candidate_bits) = &candidate else {
+                    self.signed_order_bound_views(MachineOperandView::Legacy(&base))
+                        .find_map(|(fact_endpoint, candidate, strict, forward)| {
+                            let candidate_literal = candidate.literal()?;
+                            let bits32_constant!(candidate_bits) = &candidate_literal else {
                                 return None;
                             };
                             (!strict
@@ -1377,11 +1378,14 @@ impl SelectedFacts<'_> {
                                 && (constant_u32(*candidate_bits) as i32)
                                     < (constant_u32(*goal_bits) as i32))
                                 .then(|| {
-                                    self.exact_direct_order_step(&fact_endpoint, &candidate, false)
+                                    self.exact_direct_operand_order_step(
+                                        fact_endpoint,
+                                        candidate,
+                                        false,
+                                    )
                                 })
                                 .flatten()
-                        },
-                    )
+                        })
                 })
                 .map(Box::new)
                 .map(AtomicPropositionDerivationEvidence::Int32IncrementConstantUpperBound),
@@ -1614,9 +1618,10 @@ impl SelectedFacts<'_> {
                 true,
             ) => match goal_lower.as_ref() {
                 bits32_constant!(goal_bits) => self
-                    .signed_order_bound_entries(value.as_ref())
+                    .signed_order_bound_views(MachineOperandView::Legacy(value))
                     .find_map(|(fact_endpoint, candidate, strict, forward)| {
-                        let bits32_constant!(candidate_bits) = &candidate else {
+                        let candidate_literal = candidate.literal()?;
+                        let bits32_constant!(candidate_bits) = &candidate_literal else {
                             return None;
                         };
                         (!strict
@@ -1624,7 +1629,11 @@ impl SelectedFacts<'_> {
                             && (constant_u32(*goal_bits) as i32)
                                 < (constant_u32(*candidate_bits) as i32))
                             .then(|| {
-                                self.exact_direct_order_step(&candidate, &fact_endpoint, false)
+                                self.exact_direct_operand_order_step(
+                                    candidate,
+                                    fact_endpoint,
+                                    false,
+                                )
                             })
                             .flatten()
                     })
@@ -1654,12 +1663,12 @@ impl SelectedFacts<'_> {
                         );
                         self.contains_assumed_exact(&premise).then(|| {
                             AtomicPropositionDerivationEvidence::Int32NegatedStrictSuccessorBound(
-                                Box::new(SignedOrderDerivationStep {
-                                    lower: upper,
-                                    upper: value.as_ref().clone(),
-                                    strict: false,
+                                Box::new(SignedOrderDerivationStep::from_views(
+                                    MachineOperandView::Legacy(&upper),
+                                    MachineOperandView::Legacy(value),
+                                    false,
                                     premise,
-                                }),
+                                )),
                             )
                         })
                     }),
@@ -2137,16 +2146,10 @@ impl SelectedFacts<'_> {
             let Some(base) = incremented.add_const_base(1) else {
                 return false;
             };
-            return step.lower == base
-                && step.upper == **upper
+            return step.lower_is(&base)
+                && step.upper_is(&**upper)
                 && step.strict
-                && matches!(
-                    &step.premise,
-                    Proposition::ConditionIs(condition, value)
-                        if self.exact_condition_value(condition) == Some(*value)
-                            && condition_as_order_fact(condition, *value)
-                                == Some((step.lower.clone(), step.upper.clone(), true))
-                );
+                && self.checks_exact_order_step(step);
         }
         if let AtomicPropositionDerivationEvidence::Int32IncrementConstantUpperBound(step) =
             evidence
@@ -2166,12 +2169,13 @@ impl SelectedFacts<'_> {
             let Some(base) = incremented.add_const_base(1) else {
                 return false;
             };
-            let (int32_constant!(premise_bits), bits32_constant!(goal_bits)) =
-                (&step.upper, goal_upper.as_ref())
+            let premise_upper = step.upper_view().literal();
+            let (Some(int32_constant!(premise_bits)), bits32_constant!(goal_bits)) =
+                (premise_upper.as_ref(), goal_upper.as_ref())
             else {
                 return false;
             };
-            return step.lower == base
+            return step.lower_is(&base)
                 && (constant_u32(*premise_bits) as i32) < (constant_u32(*goal_bits) as i32)
                 && !step.strict
                 && self.checks_exact_order_step(step);
@@ -2199,15 +2203,15 @@ impl SelectedFacts<'_> {
                 .is_some_and(|increment_base| {
                     crate::kernel::eval::terms_have_same_canonical_form(increment_base, base)
                 })
-                && crate::kernel::eval::terms_have_same_canonical_form(&step.lower, base)
+                && super::checked_scalar_facts::ScalarOperandKey::canonical(
+                    MachineIntegerType::Int32,
+                    step.lower_view(),
+                ) == super::checked_scalar_facts::ScalarOperandKey::canonical(
+                    MachineIntegerType::Int32,
+                    MachineOperandView::Legacy(base),
+                )
                 && step.strict
-                && matches!(
-                    &step.premise,
-                    Proposition::ConditionIs(condition, value)
-                        if self.exact_condition_value(condition) == Some(*value)
-                            && condition_as_order_fact(condition, *value)
-                                == Some((step.lower.clone(), step.upper.clone(), true))
-                );
+                && self.checks_exact_order_step(step);
         }
         if let AtomicPropositionDerivationEvidence::Int32OnePlusStrictlyIncreases(step) = evidence {
             let Proposition::ConditionIs(
@@ -2228,8 +2232,8 @@ impl SelectedFacts<'_> {
             let int_max = MachineTerm::constant(i32::MAX as u32);
             return left.as_ref() == &MachineTerm::constant(1)
                 && right.as_ref() == value.as_ref()
-                && step.lower == **value
-                && step.upper == int_max
+                && step.lower_is(&**value)
+                && step.upper_is(&int_max)
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2383,8 +2387,8 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return lower.as_ref() == &MachineTerm::constant(0)
-                && step.lower == MachineTerm::constant(0)
-                && step.upper == **value
+                && step.lower_is(&MachineTerm::constant(0))
+                && step.upper_is(&**value)
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2416,8 +2420,8 @@ impl SelectedFacts<'_> {
             let Some(successor_bits) = (constant_u32(*lower_bits) as i32).checked_add(1) else {
                 return false;
             };
-            return step.lower == MachineTerm::constant(successor_bits as u32)
-                && step.upper == **value
+            return step.lower_is(&MachineTerm::constant(successor_bits as u32))
+                && step.upper_is(&**value)
                 && !step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2436,13 +2440,14 @@ impl SelectedFacts<'_> {
             else {
                 return false;
             };
-            let (int32_constant!(goal_bits), bits32_constant!(premise_bits)) =
-                (goal_lower.as_ref(), &step.lower)
+            let premise_lower = step.lower_view().literal();
+            let (int32_constant!(goal_bits), Some(bits32_constant!(premise_bits))) =
+                (goal_lower.as_ref(), premise_lower.as_ref())
             else {
                 return false;
             };
             return (constant_u32(*goal_bits) as i32) < (constant_u32(*premise_bits) as i32)
-                && step.upper == **value
+                && step.upper_is(&**value)
                 && !step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2468,8 +2473,8 @@ impl SelectedFacts<'_> {
                 return false;
             };
             let upper = MachineTerm::constant(upper_bits as u32);
-            return step.lower == upper
-                && step.upper == **value
+            return step.lower_is(&upper)
+                && step.upper_is(&**value)
                 && !step.strict
                 && matches!(
                     &step.premise,
@@ -2477,7 +2482,7 @@ impl SelectedFacts<'_> {
                         ConditionTerm::Compare { format: MachineIntegerType::Int32, relation: CompareRelation::LessThan, left: premise_value, right: premise_upper },
                         false,
                     ) if premise_value.as_ref() == value.as_ref()
-                        && premise_upper.as_ref() == &step.lower
+                        && step.lower_is(premise_upper.as_ref())
                 )
                 && self.checks_exact_order_step(step);
         }
@@ -2500,8 +2505,8 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return lower.as_ref() == &MachineTerm::constant(0)
-                && step.lower == MachineTerm::constant(0)
-                && step.upper == value
+                && step.lower_is(&MachineTerm::constant(0))
+                && step.upper_is(&value)
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2525,8 +2530,8 @@ impl SelectedFacts<'_> {
                 return false;
             };
             return base == **value
-                && step.lower == MachineTerm::constant(0)
-                && step.upper == base
+                && step.lower_is(&MachineTerm::constant(0))
+                && step.upper_is(&base)
                 && step.strict
                 && self.checks_exact_order_step(step);
         }
@@ -2548,11 +2553,11 @@ impl SelectedFacts<'_> {
             let Some(value) = exact_predecessor_base(predecessor) else {
                 return false;
             };
-            return bounds.nonnegative.lower == MachineTerm::constant(0)
-                && bounds.nonnegative.upper == value
+            return bounds.nonnegative.lower_is(&MachineTerm::constant(0))
+                && bounds.nonnegative.upper_is(&value)
                 && !bounds.nonnegative.strict
-                && bounds.upper_bound.lower == value
-                && bounds.upper_bound.upper == **upper
+                && bounds.upper_bound.lower_is(&value)
+                && bounds.upper_bound.upper_is(&**upper)
                 && !bounds.upper_bound.strict
                 && self.checks_exact_order_step(&bounds.nonnegative)
                 && self.checks_exact_order_step(&bounds.upper_bound);
@@ -2803,10 +2808,10 @@ impl PureFactContext {
         &self,
         base: &MachineTerm,
     ) -> Option<SignedOrderDerivationStep> {
-        self.signed_order_bound_entries(base)
+        self.signed_order_bound_views(MachineOperandView::Legacy(base))
             .filter(|(_, _, strict, forward)| *strict && *forward)
             .find_map(|(fact_endpoint, upper, _, _)| {
-                self.exact_direct_order_step(&fact_endpoint, &upper, true)
+                self.exact_direct_operand_order_step(fact_endpoint, upper, true)
             })
     }
 
@@ -2947,6 +2952,21 @@ impl PureFactContext {
             && (!require_strict || strict || tail == Some(true))
     }
 
+    fn exact_direct_operand_order_step(
+        &self,
+        lower: MachineOperandView<'_>,
+        upper: MachineOperandView<'_>,
+        strict: bool,
+    ) -> Option<SignedOrderDerivationStep> {
+        let source = self.exact_direct_order_source_step(lower, upper, strict)?;
+        Some(SignedOrderDerivationStep::from_views(
+            lower,
+            upper,
+            strict,
+            source.premise,
+        ))
+    }
+
     pub(in crate::kernel) fn exact_direct_order_step(
         &self,
         lower: &MachineTerm,
@@ -3018,11 +3038,13 @@ impl PureFactContext {
                 crate::instrumentation::record_deterministic_work(1);
                 self.condition_facts.get(condition) == Some(truth)
             })
-            .map(|(condition, truth)| SignedOrderDerivationStep {
-                lower: lower.clone(),
-                upper: upper.clone(),
-                strict,
-                premise: Proposition::ConditionIs(condition, truth),
+            .map(|(condition, truth)| {
+                SignedOrderDerivationStep::from_views(
+                    MachineOperandView::Legacy(lower),
+                    MachineOperandView::Legacy(upper),
+                    strict,
+                    Proposition::ConditionIs(condition, truth),
+                )
             })
     }
 
@@ -3074,8 +3096,8 @@ impl PureFactContext {
     fn checks_one_le_evidence(&self, source: &Int32OneLeEvidence, value: &MachineTerm) -> bool {
         match source {
             Int32OneLeEvidence::Direct(step) => {
-                step.lower == MachineTerm::constant(1)
-                    && step.upper == *value
+                step.lower_is(&MachineTerm::constant(1))
+                    && step.upper_is(&*value)
                     && !step.strict
                     && self.checks_exact_order_step(step)
             }
@@ -3117,10 +3139,10 @@ impl PureFactContext {
         lower: &MachineTerm,
         value: &MachineTerm,
     ) -> bool {
-        bounds.lower_bound.lower == *lower
-            && bounds.lower_bound.upper == *value
+        bounds.lower_bound.lower_is(&*lower)
+            && bounds.lower_bound.upper_is(&*value)
             && !bounds.lower_bound.strict
-            && bounds.upper_bound.lower == *value
+            && bounds.upper_bound.lower_is(&*value)
             && bounds.upper_bound.strict
             && self.checks_exact_order_step(&bounds.lower_bound)
             && self.checks_exact_order_step(&bounds.upper_bound)
@@ -3132,10 +3154,10 @@ impl PureFactContext {
         lower: &MachineTerm,
         value: &MachineTerm,
     ) -> bool {
-        bounds.lower_bound.lower == *lower
-            && bounds.lower_bound.upper == *value
+        bounds.lower_bound.lower_is(&*lower)
+            && bounds.lower_bound.upper_is(&*value)
             && bounds.lower_bound.strict
-            && bounds.upper_bound.lower == *value
+            && bounds.upper_bound.lower_is(&*value)
             && bounds.upper_bound.strict
             && self.checks_exact_order_step(&bounds.lower_bound)
             && self.checks_exact_order_step(&bounds.upper_bound)
@@ -3145,13 +3167,25 @@ impl PureFactContext {
         &self,
         step: &SignedOrderDerivationStep,
     ) -> bool {
-        matches!(
-            &step.premise,
-            Proposition::ConditionIs(condition, truth)
-                if self.exact_condition_value(condition) == Some(*truth)
-                    && condition_as_order_fact(condition, *truth)
-                        == Some((step.lower.clone(), step.upper.clone(), step.strict))
-        )
+        use crate::kernel::machine_integer::{Relation, comparison::comparison_view};
+        let Proposition::ConditionIs(condition, truth) = &step.premise else {
+            return false;
+        };
+        if self.exact_condition_value(condition) != Some(*truth) {
+            return false;
+        }
+        let Some(view) = comparison_view(condition, *truth) else {
+            return false;
+        };
+        view.format == MachineIntegerType::Int32
+            && view.relation
+                == (if step.strict {
+                    Relation::Less
+                } else {
+                    Relation::LessEqual
+                })
+            && step.lower_matches_view(view.operands[0].operand_view())
+            && step.upper_matches_view(view.operands[1].operand_view())
     }
 
     /// Checks one retained signed-order path using only its exact named
@@ -3171,12 +3205,12 @@ impl PureFactContext {
         let mut current = left;
         let mut strict = false;
         for step in path {
-            if current != &step.lower {
+            if current != step.lower() {
                 // A normalized direct premise can start at a successor
                 // literal (1 < n becomes 2 <= n). Retain that intrinsic
                 // connection just as the final literal connection below.
                 let Some(connection) = signed_bitvector_constant(current)
-                    .zip(signed_bitvector_constant(&step.lower))
+                    .zip(signed_bitvector_constant(step.lower()))
                     .and_then(|(current, next)| (current <= next).then_some(current < next))
                 else {
                     return false;
@@ -3186,7 +3220,7 @@ impl PureFactContext {
             if !self.checks_exact_order_step(step) {
                 return false;
             }
-            current = &step.upper;
+            current = step.upper();
             strict |= step.strict;
         }
         let constant_connection = signed_bitvector_constant(current)
@@ -4976,7 +5010,7 @@ mod constant_prefix_certificate_tests {
         let path = context
             .exact_signed_order_path_evidence(&1u32.into(), &upper, true)
             .unwrap();
-        assert_eq!(path[0].lower, MachineTerm::constant(2));
+        assert_eq!(path[0].lower(), &MachineTerm::constant(2));
         assert!(context.checks_exact_signed_order_path(&path, &1u32.into(), &upper, true));
         assert!(context.checks_exact_signed_order_path(&path, &2u32.into(), &upper, false));
         assert!(!context.checks_exact_signed_order_path(&path, &2u32.into(), &upper, true));
@@ -5708,6 +5742,77 @@ mod shared_wide_order_evidence_tests {
     mod scaling_tests {
         include!(
             "../../scaling_tests/kernel/assumptions/proposition_reasoning/shared_wide_order_evidence_tests.rs"
+        );
+    }
+}
+
+#[cfg(test)]
+mod retained_individual_order_tests {
+    use super::*;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm};
+
+    fn observed(root: KernelTerm) -> IntegerTerm {
+        IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+        )
+    }
+
+    #[test]
+    fn individual_order_steps_retain_exact_sources_and_branch_authority() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = KernelTerm::variable(KernelType::C(CType::Int32), Variable(995201));
+        let value =
+            KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Multiply, [x.clone(), x]);
+        let upper = MachineTerm::constant(100);
+        for truth in [false, true] {
+            let condition = if truth {
+                ConditionTerm::integer_less_than(
+                    observed(value.clone()),
+                    IntegerTerm::constant_i64(100),
+                )
+            } else {
+                ConditionTerm::integer_greater_equal(
+                    observed(value.clone()),
+                    IntegerTerm::constant_i64(100),
+                )
+            };
+            let source = Proposition::ConditionIs(condition, truth);
+            let parent = PureFactContext::new();
+            let child = parent.clone().assume_proposition(source.clone());
+            let exports = KernelTermExport::machine_export_count();
+            let step = child
+                .exact_direct_operand_order_step(
+                    MachineOperandView::Shared(&value),
+                    MachineOperandView::Legacy(&upper),
+                    true,
+                )
+                .unwrap();
+            assert_eq!(step.premise(), &source);
+            assert!(child.checks_exact_order_step(&step));
+            assert!(!parent.checks_exact_order_step(&step));
+            assert!(
+                !child
+                    .without_exact_fact(&source)
+                    .checks_exact_order_step(&step)
+            );
+            assert!(
+                child
+                    .exact_direct_operand_order_step(
+                        MachineOperandView::Legacy(&upper),
+                        MachineOperandView::Shared(&value),
+                        true,
+                    )
+                    .is_none()
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../scaling_tests/kernel/assumptions/proposition_reasoning/individual_order_steps.rs"
         );
     }
 }

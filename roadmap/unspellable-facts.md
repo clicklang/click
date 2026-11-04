@@ -207,8 +207,13 @@ Remaining groups to audit and migrate:
   connection rules without exporting shared arithmetic. The signed collector
   retains constant connections and selected memory bridging. Range-membership
   and memory-frame path consumers now retain those original sources too; boxed
-  path adapters remain only as test references. Individual native domain steps
-  still retain boxed endpoints. Canonical range-bound lookup and
+  path adapters remain only as test references. Individual signed-order domain
+  steps also retain shared endpoints and exact source propositions; legacy
+  inputs retain their written forms for existing canonical memory comparisons.
+  Their source selection and checks no longer export shared arithmetic.
+  Symbolic conjunction-cycle checks also use retained endpoint identities,
+  preserving strictness, mirrored polarity and the separate finite-range rule
+  for cycles through constants. Canonical range-bound lookup and
   nonnegative induction-domain admission read indexed endpoint views directly;
   the native bound-entry exporter remains for the other evidence and output
   callers.

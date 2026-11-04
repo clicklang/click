@@ -1202,12 +1202,83 @@ impl OrderDerivationStep {
 }
 
 impl SignedOrderDerivationStep {
+    pub(in crate::kernel) fn from_views(
+        lower: MachineOperandView<'_>,
+        upper: MachineOperandView<'_>,
+        strict: bool,
+        premise: Proposition,
+    ) -> Self {
+        use super::super::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        let retain = |operand| match operand {
+            MachineOperandView::Legacy(term) => Key::Written(term.clone()),
+            MachineOperandView::Shared(_) => Key::for_format(MachineIntegerType::Int32, operand),
+        };
+        Self {
+            lower: retain(lower),
+            upper: retain(upper),
+            strict,
+            premise,
+        }
+    }
+
+    pub(in crate::kernel) fn lower_view(&self) -> MachineOperandView<'_> {
+        self.lower.operand_view()
+    }
+
+    pub(in crate::kernel) fn upper_view(&self) -> MachineOperandView<'_> {
+        self.upper.operand_view()
+    }
+
+    fn endpoint_matches(
+        endpoint: &super::super::assumptions::checked_scalar_facts::ScalarOperandKey,
+        value: MachineOperandView<'_>,
+    ) -> bool {
+        use super::super::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+        if let (Key::Written(left), MachineOperandView::Legacy(right)) = (endpoint, value) {
+            left == right
+        } else {
+            Key::for_format(MachineIntegerType::Int32, endpoint.operand_view())
+                == Key::for_format(MachineIntegerType::Int32, value)
+        }
+    }
+
+    pub(in crate::kernel) fn lower_matches_view(&self, value: MachineOperandView<'_>) -> bool {
+        Self::endpoint_matches(&self.lower, value)
+    }
+
+    pub(in crate::kernel) fn upper_matches_view(&self, value: MachineOperandView<'_>) -> bool {
+        Self::endpoint_matches(&self.upper, value)
+    }
+
+    pub(in crate::kernel) fn lower_is(&self, value: &MachineTerm) -> bool {
+        self.lower_matches_view(MachineOperandView::Legacy(value))
+    }
+
+    pub(in crate::kernel) fn upper_is(&self, value: &MachineTerm) -> bool {
+        self.upper_matches_view(MachineOperandView::Legacy(value))
+    }
+
+    /// Explicit compatibility output; checker consumers use `lower_view`.
     pub fn lower(&self) -> &MachineTerm {
-        &self.lower
+        match &self.lower {
+            super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Shared(term) => {
+                term.value()
+            }
+            super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Written(term) => {
+                term
+            }
+        }
     }
 
     pub fn upper(&self) -> &MachineTerm {
-        &self.upper
+        match &self.upper {
+            super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Shared(term) => {
+                term.value()
+            }
+            super::super::assumptions::checked_scalar_facts::ScalarOperandKey::Written(term) => {
+                term
+            }
+        }
     }
 
     pub fn is_strict(&self) -> bool {
