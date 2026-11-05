@@ -370,6 +370,7 @@ impl VerificationSession {
             // Structural operand identities read no registry or proof state;
             // retain them across function epochs and state restores.
             proof::signed_arithmetic::clear_shared_operand_keys();
+            proof::clear_selected_atom_cache();
             primitives::clear_shared_machine_variable_cache();
             reasoning::order_reasoning::clear_fold_affine_bases();
             VERIFICATION_SESSION_GENERATION

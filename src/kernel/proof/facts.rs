@@ -1,5 +1,8 @@
 //! Persistent semantic fact state for checked proofs.
 
+mod selected_atoms;
+pub(in crate::kernel) use selected_atoms::clear_selected_atom_cache;
+
 use super::fact_keys::{IntegerConditionAlphaKey, integer_condition_alpha_key};
 use super::fact_reasoning::*;
 use super::{
@@ -3180,7 +3183,7 @@ fn collect_integer_bitvector_atoms(
         return;
     }
     match &**term {
-        IntegerTerm::Machine(machine) => collect_bitvector_atoms(machine.value(), atoms),
+        IntegerTerm::Machine(machine) => selected_atoms::collect(machine, atoms),
         IntegerTerm::Negate(inner) => collect_integer_bitvector_atoms(inner, atoms, visited),
         crate::kernel::binary_integer_term!(left, right) => {
             collect_integer_bitvector_atoms(left, atoms, visited);
