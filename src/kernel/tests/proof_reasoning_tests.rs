@@ -6635,7 +6635,7 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
     let mut premises_true = 0usize;
     for left in BOUNDARIES {
         for right in BOUNDARIES {
-            let pair: [(&str, Theorem); 3] = [
+            let pair: [(&str, Theorem); 2] = [
                 (
                     "lt reversed",
                     prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
@@ -6643,13 +6643,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
                 (
                     "ge reversed",
                     prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
-                ),
-                (
-                    "difference decreases",
-                    prove_uint32_difference_decreases_after_increment(
-                        constant(left),
-                        constant(right),
-                    ),
                 ),
             ];
             for last in BOUNDARIES {
@@ -6695,7 +6688,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         for theorem in [
             prove_uint32_lt_implies_reversed_gt(constant(left), constant(right)),
             prove_uint32_ge_implies_reversed_le(constant(left), constant(right)),
-            prove_uint32_difference_decreases_after_increment(constant(left), constant(right)),
             prove_uint32_le_lt_transitive(
                 constant(left),
                 constant(right),
@@ -6723,9 +6715,6 @@ fn uint32_order_axioms_hold_at_the_wrapping_boundaries() {
         PureFactContext::decide_intrinsically(condition)
             .expect("a condition over constants is decided")
     };
-    assert!(!conclusion_holds(
-        &prove_uint32_difference_decreases_after_increment(constant(7), constant(7))
-    ));
     assert!(!conclusion_holds(&prove_uint32_le_lt_transitive(
         constant(9),
         constant(3),
@@ -6850,254 +6839,6 @@ fn int32_remainder_bridge_matches_independent_signed_boundary_models() {
 }
 
 #[test]
-fn uint32_mul_bridge_agrees_with_checked_unsigned_boundary_models() {
-    fn machine(term: &MachineTerm, a: u32, b: u32) -> u32 {
-        match term {
-            MachineTerm::Variable(v) if *v == Variable(910) => a,
-            MachineTerm::Variable(v) if *v == Variable(911) => b,
-            bits32_constant!(v) => constant_u32(*v),
-            binary_term!(Bits32, Multiply, left, right) => {
-                machine(left, a, b).wrapping_mul(machine(right, a, b))
-            }
-            binary_term!(UInt32, Divide, left, right) => machine(left, a, b) / machine(right, a, b),
-            binary_term!(Bits32, BitwiseXor, left, right) => {
-                machine(left, a, b) ^ machine(right, a, b)
-            }
-            _ => panic!("unexpected unsigned multiplication term {term:?}"),
-        }
-    }
-    fn integer(term: &IntegerTerm, a: u32, b: u32) -> num_bigint::BigInt {
-        match term {
-            IntegerTerm::Constant(value) => value.clone(),
-            IntegerTerm::Machine(value) => {
-                assert_eq!(value.ty(), MachineIntegerType::UInt32);
-                machine(value.value(), a, b).into()
-            }
-            IntegerTerm::Multiply(left, right) => integer(left, a, b) * integer(right, a, b),
-            _ => panic!("unexpected product observation {term:?}"),
-        }
-    }
-    fn holds(p: &Proposition, a: u32, b: u32) -> bool {
-        match p {
-            // Short-circuiting is essential for the zero-factor branch.
-            Proposition::Or(left, right) => holds(left, a, b) || holds(right, a, b),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left,
-                    right,
-                },
-                true,
-            ) => machine(left, a, b) == machine(right, a, b),
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::UInt32,
-                    relation: CompareRelation::LessEqual,
-                    left,
-                    right,
-                },
-                true,
-            ) => machine(left, a, b) <= machine(right, a, b),
-            Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
-                integer(left, a, b) == integer(right, a, b)
-            }
-            Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(left, right), true) => {
-                integer(left, a, b) <= integer(right, a, b)
-            }
-            _ => panic!("unexpected multiplication bridge proposition {p:?}"),
-        }
-    }
-    let theorem = prove_uint32_mul_to_integer(
-        MachineTerm::Variable(Variable(910)),
-        MachineTerm::Variable(Variable(911)),
-    );
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("missing no-wrap guard")
-    };
-    let guard_theorem = prove_uint32_mul_guard_by_integer_bound(
-        MachineTerm::Variable(Variable(910)),
-        MachineTerm::Variable(Variable(911)),
-    );
-    let Proposition::Implies(product_bound, native_guard) = guard_theorem.proposition() else {
-        panic!("missing mathematical product bound")
-    };
-    let samples = [
-        0,
-        1,
-        2,
-        3,
-        4,
-        255,
-        65520,
-        65535,
-        65536,
-        0x7fff_ffff,
-        0x8000_0000,
-        u32::MAX,
-    ];
-    for a in samples {
-        for b in samples {
-            let safe = u64::from(a) * u64::from(b) <= u64::from(u32::MAX);
-            assert_eq!(holds(premise, a, b), safe, "guard for {a} * {b}");
-            assert_eq!(holds(conclusion, a, b), safe, "observation for {a} * {b}");
-            assert_eq!(holds(product_bound, a, b), safe, "bound for {a} * {b}");
-            assert_eq!(
-                holds(native_guard, a, b),
-                safe,
-                "derived guard for {a} * {b}"
-            );
-        }
-    }
-    for b in samples.into_iter().filter(|b| *b > 1) {
-        let last_safe = u32::MAX / b;
-        for a in [last_safe, last_safe + 1] {
-            let safe = a == last_safe;
-            assert_eq!(holds(premise, a, b), safe, "quotient boundary {a} * {b}");
-            assert_eq!(holds(conclusion, a, b), safe, "product boundary {a} * {b}");
-            assert_eq!(holds(product_bound, a, b), safe, "bound boundary {a} * {b}");
-            assert_eq!(
-                holds(native_guard, a, b),
-                safe,
-                "derived boundary {a} * {b}"
-            );
-        }
-    }
-}
-
-#[test]
-fn uint32_small_remainder_agrees_with_full_width_models() {
-    let value = MachineTerm::Variable(Variable(920));
-    let divisor = MachineTerm::Variable(Variable(921));
-    let theorem = prove_uint32_remainder_of_lt(value.clone(), divisor.clone());
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("missing strict unsigned guard")
-    };
-    assert_eq!(
-        premise.as_ref(),
-        &Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
-            true,
-        )
-    );
-    assert_eq!(
-        conclusion.as_ref(),
-        &Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::unsigned_remainder(value, divisor),
-                MachineTerm::Variable(Variable(920)),
-            ),
-            true,
-        )
-    );
-    // Includes equality, zero divisors, and values on both sides of the sign bit.
-    let samples = [
-        0u32,
-        1,
-        2,
-        255,
-        65520,
-        65521,
-        0x7fff_ffff,
-        0x8000_0000,
-        u32::MAX - 1,
-        u32::MAX,
-    ];
-    for value in samples {
-        for divisor in samples {
-            if value < divisor {
-                assert_ne!(divisor, 0);
-                assert_eq!(value % divisor, value);
-            }
-            if value == divisor && divisor != 0 {
-                assert_ne!(value % divisor, value);
-            }
-        }
-    }
-}
-
-#[test]
-fn uint32_remainder_bound_agrees_with_full_width_models() {
-    fn machine(term: &MachineTerm, value: u32, divisor: u32) -> u32 {
-        match term {
-            MachineTerm::Variable(v) if *v == Variable(920) => value,
-            MachineTerm::Variable(v) if *v == Variable(921) => divisor,
-            int32_constant!(v) => constant_u32(*v),
-            binary_term!(Int32, BitwiseXor, a, b) => {
-                machine(a, value, divisor) ^ machine(b, value, divisor)
-            }
-            binary_term!(UInt32, Remainder, a, b) => {
-                machine(a, value, divisor) % machine(b, value, divisor)
-            }
-            _ => panic!("unexpected unsigned remainder term {term:?}"),
-        }
-    }
-    let theorem = prove_uint32_remainder_less_than_divisor(
-        MachineTerm::Variable(Variable(920)),
-        MachineTerm::Variable(Variable(921)),
-    );
-    let Proposition::Implies(premise, conclusion) = theorem.proposition() else {
-        panic!("missing nonzero guard")
-    };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: a,
-            right: b,
-        },
-        false,
-    ) = premise.as_ref()
-    else {
-        panic!("wrong guard")
-    };
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::UInt32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        },
-        true,
-    ) = conclusion.as_ref()
-    else {
-        panic!("wrong unsigned order")
-    };
-    for value in [
-        0,
-        1,
-        65520,
-        65521,
-        0x7fff_ffff,
-        0x8000_0000,
-        0x8000_0001,
-        u32::MAX - 1,
-        u32::MAX,
-    ] {
-        for divisor in [
-            0,
-            1,
-            2,
-            4,
-            65521,
-            0x7fff_ffff,
-            0x8000_0000,
-            0x8000_0001,
-            u32::MAX,
-        ] {
-            let guarded = machine(a, value, divisor) != machine(b, value, divisor);
-            assert_eq!(guarded, divisor != 0);
-            if guarded {
-                assert!(u64::from(value) % u64::from(divisor) < u64::from(divisor));
-                assert!(machine(left, value, divisor) < machine(right, value, divisor));
-            }
-        }
-    }
-}
-
-// Guarded bridges must agree with ordinary unsigned division at the sign
-// boundary and maximum word, and must retain a false guard at zero divisors.
-#[test]
 fn uint32_division_integer_bridges_match_unsigned_boundary_models() {
     use num_bigint::BigInt;
     fn integer(term: &IntegerTerm) -> BigInt {
@@ -7198,7 +6939,6 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
         actual == *expected
     }
     for name in [
-        "click::integer::uint64_multiply_to_integer",
         "click::integer::uint64_divide_to_integer",
         "click::integer::uint64_remainder_to_integer",
     ] {
@@ -7231,12 +6971,7 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                 let Proposition::Implies(guard, conclusion) = theorem.proposition() else {
                     panic!("missing guard");
                 };
-                let allowed = match name {
-                    "click::integer::uint64_multiply_to_integer" => a.checked_mul(b).is_some(),
-                    "click::integer::uint64_divide_to_integer"
-                    | "click::integer::uint64_remainder_to_integer" => b != 0,
-                    _ => unreachable!(),
-                };
+                let allowed = b != 0;
                 assert_eq!(truth(guard), allowed, "{name}/{a}/{b}");
                 let conclusion =
                     if let Proposition::Implies(integer_guard, body) = conclusion.as_ref() {
@@ -7251,15 +6986,6 @@ fn uint64_integer_bridges_match_full_width_wrap_and_division_boundary_models() {
                     };
                 if allowed {
                     assert!(truth(conclusion), "{name}/{a}/{b}");
-                } else if !matches!(
-                    name,
-                    "click::integer::uint64_divide_to_integer"
-                        | "click::integer::uint64_remainder_to_integer"
-                ) {
-                    assert!(
-                        !truth(conclusion),
-                        "{name} must not erase wrapping or reverse order"
-                    );
                 }
             }
         }

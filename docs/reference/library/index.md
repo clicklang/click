@@ -1206,7 +1206,151 @@ Unsigned remainder agrees with Integer truncating remainder when both evaluation
 ```click
 theorem uint32_multiply_to_integer(left: uint32, right: uint32) {
     requires right == 0u32 or left <= 4294967295u32 / right;
-    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by {
+        have 0 <= to_integer(left) by {
+            normalize();
+        }
+        have to_integer(left) <= 4294967295 by {
+            normalize();
+        }
+        have 0 <= to_integer(right) by {
+            normalize();
+        }
+        have to_integer(right) <= 4294967295 by {
+            normalize();
+        }
+        have 0 <= to_integer(left) * to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) => 0 <= to_integer(left);
+                premise 1: to_integer(left) <= 4294967295 => to_integer(left) <= 4294967295;
+                premise 2: 0 <= to_integer(right) => 0 <= to_integer(right);
+                premise 3: to_integer(right) <= 4294967295 => to_integer(right) <= 4294967295;
+                integer_product_bounds bounds [0, 1, 2, 3] => 0 <= to_integer(left) * to_integer(right);
+                conclusion 0;
+            }
+        }
+        if right == 0u32 {
+            have to_integer(right) <= 0 by {
+                normalize() using { right == 0u32; };
+            }
+            have to_integer(left) * to_integer(right) <= 0 by {
+                arithmetic_certificate rules {
+                    premise 0: 0 <= to_integer(left) => 0 <= to_integer(left);
+                    premise 1: to_integer(left) <= 4294967295 => to_integer(left) <= 4294967295;
+                    premise 2: 0 <= to_integer(right) => 0 <= to_integer(right);
+                    premise 3: to_integer(right) <= 0 => to_integer(right) <= 0;
+                    integer_product_bounds bounds [0, 1, 2, 3] => to_integer(left) * to_integer(right) <= 0;
+                    conclusion 0;
+                }
+            }
+            have to_integer(left) * to_integer(right) <= 4294967295 by {
+                arithmetic_certificate {
+                    premise 0: to_integer(left) * to_integer(right) <= 0 => to_integer(left) * to_integer(right) <= 0;
+                    trivial => -4294967295 <= 0;
+                    add 0, 1 => to_integer(left) * to_integer(right) + -4294967295 <= 0 + 0;
+                    conclusion 2;
+                }
+            }
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) * to_integer(right) => 0 <= to_integer(left) * to_integer(right);
+                premise 1: to_integer(left) * to_integer(right) <= 4294967295 => to_integer(left) * to_integer(right) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(left * right) == to_integer(left) * to_integer(right);
+                conclusion 0;
+            }
+        } else {
+            have left <= 4294967295u32 / right by {
+                cases {
+                    right == 0u32 => {
+                        contradiction(right == 0u32);
+                    }
+                    left <= 4294967295u32 / right => {
+                        assumption();
+                    }
+                }
+            }
+            have right != 0u32 by {
+                normalize() using { not right == 0u32; };
+            }
+            have 1 <= to_integer(right) by {
+                arithmetic_certificate {
+                    excluded_bound 0: to_integer(right) != 0 => 1 <= to_integer(right);
+                    conclusion 0;
+                }
+            }
+            apply(integer::uint32_divide_to_integer(4294967295u32, right)) using {
+                right != 0u32;
+                to_integer(right) != 0;
+            };
+            apply(integer::truncation_identity(4294967295, to_integer(right))) using {
+                to_integer(right) != 0;
+            };
+            apply(integer::nonnegative_dividend_remainder(4294967295, to_integer(right))) using {
+                to_integer(right) != 0;
+            };
+            have 0 <= truncating_quotient(4294967295, to_integer(right)) - to_integer(left) by {
+                arithmetic_certificate {
+                    negated_goal => truncating_quotient(4294967295, to_integer(right)) - to_integer(left) < 0;
+                    premise 0: to_integer(left) <= to_integer(4294967295u32 / right) => to_integer(left) <= to_integer(4294967295u32 / right);
+                    premise 1: to_integer(4294967295u32 / right) == truncating_quotient(4294967295, to_integer(right)) => to_integer(4294967295u32 / right) == truncating_quotient(4294967295, to_integer(right));
+                    less_equal_from_equal 2 => to_integer(4294967295u32 / right) <= truncating_quotient(4294967295, to_integer(right));
+                    add 0, 1 => truncating_quotient(4294967295, to_integer(right)) - to_integer(left) + to_integer(left) < 0 + to_integer(4294967295u32 / right);
+                    add 4, 3 => truncating_quotient(4294967295, to_integer(right)) - to_integer(left) + to_integer(left) + to_integer(4294967295u32 / right) < 0 + to_integer(4294967295u32 / right) + truncating_quotient(4294967295, to_integer(right));
+                    conclusion 5;
+                }
+            }
+            have truncating_quotient(4294967295, to_integer(right)) - to_integer(left) <= 4294967295 by {
+                arithmetic_certificate {
+                    negated_goal => 4294967295 < truncating_quotient(4294967295, to_integer(right)) - to_integer(left);
+                    premise 0: to_integer(4294967295u32 / right) == truncating_quotient(4294967295, to_integer(right)) => to_integer(4294967295u32 / right) == truncating_quotient(4294967295, to_integer(right));
+                    less_equal_from_equal 1 reverse => truncating_quotient(4294967295, to_integer(right)) <= to_integer(4294967295u32 / right);
+                    type_range => to_integer(4294967295u32 / right) <= 4294967295;
+                    type_range => 0 <= to_integer(left);
+                    add 0, 2 => 4294967295 + truncating_quotient(4294967295, to_integer(right)) < truncating_quotient(4294967295, to_integer(right)) - to_integer(left) + to_integer(4294967295u32 / right);
+                    add 5, 3 => 4294967295 + truncating_quotient(4294967295, to_integer(right)) + to_integer(4294967295u32 / right) < truncating_quotient(4294967295, to_integer(right)) - to_integer(left) + to_integer(4294967295u32 / right) + 4294967295;
+                    add 6, 4 => 4294967295 + truncating_quotient(4294967295, to_integer(right)) + to_integer(4294967295u32 / right) + 0 < truncating_quotient(4294967295, to_integer(right)) - to_integer(left) + to_integer(4294967295u32 / right) + 4294967295 + to_integer(left);
+                    conclusion 7;
+                }
+            }
+            have 0 <= (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) by {
+                arithmetic_certificate rules {
+                    premise 0: 0 <= truncating_quotient(4294967295, to_integer(right)) - to_integer(left) => 0 <= truncating_quotient(4294967295, to_integer(right)) - to_integer(left);
+                    premise 1: truncating_quotient(4294967295, to_integer(right)) - to_integer(left) <= 4294967295 => truncating_quotient(4294967295, to_integer(right)) - to_integer(left) <= 4294967295;
+                    premise 2: 0 <= to_integer(right) => 0 <= to_integer(right);
+                    premise 3: to_integer(right) <= 4294967295 => to_integer(right) <= 4294967295;
+                    integer_product_bounds bounds [0, 1, 2, 3] => 0 <= (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right);
+                    conclusion 0;
+                }
+            }
+            have (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) == truncating_quotient(4294967295, to_integer(right)) * to_integer(right) - to_integer(left) * to_integer(right) by {
+                arithmetic_certificate rules {
+                    integer_polynomial_identity bounds [] => (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) == truncating_quotient(4294967295, to_integer(right)) * to_integer(right) - to_integer(left) * to_integer(right);
+                    conclusion 0;
+                }
+            }
+            have to_integer(left) * to_integer(right) <= 4294967295 by {
+                arithmetic_certificate {
+                    negated_goal => 4294967295 < to_integer(left) * to_integer(right);
+                    premise 0: 0 <= truncating_remainder(4294967295, to_integer(right)) => 0 <= truncating_remainder(4294967295, to_integer(right));
+                    premise 1: 0 <= (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) => 0 <= (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right);
+                    premise 2: 4294967295 == truncating_quotient(4294967295, to_integer(right)) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) => 4294967295 == truncating_quotient(4294967295, to_integer(right)) * to_integer(right) + truncating_remainder(4294967295, to_integer(right));
+                    less_equal_from_equal 3 reverse => truncating_quotient(4294967295, to_integer(right)) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) <= 4294967295;
+                    premise 3: (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) == truncating_quotient(4294967295, to_integer(right)) * to_integer(right) - to_integer(left) * to_integer(right) => (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) == truncating_quotient(4294967295, to_integer(right)) * to_integer(right) - to_integer(left) * to_integer(right);
+                    less_equal_from_equal 5 => (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) <= truncating_quotient(4294967295, to_integer(right)) * to_integer(right) - to_integer(left) * to_integer(right);
+                    add 0, 1 => 4294967295 + 0 < to_integer(left) * to_integer(right) + truncating_remainder(4294967295, to_integer(right));
+                    add 7, 2 => 4294967295 + 0 + 0 < to_integer(left) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) + (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right);
+                    add 8, 4 => 4294967295 + 0 + 0 + truncating_quotient(4294967295, to_integer(right)) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) < to_integer(left) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) + (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) + 4294967295;
+                    add 9, 6 => 4294967295 + 0 + 0 + truncating_quotient(4294967295, to_integer(right)) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) + (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) < to_integer(left) * to_integer(right) + truncating_remainder(4294967295, to_integer(right)) + (truncating_quotient(4294967295, to_integer(right)) - to_integer(left)) * to_integer(right) + 4294967295 + truncating_quotient(4294967295, to_integer(right)) * to_integer(right) - to_integer(left) * to_integer(right);
+                    conclusion 10;
+                }
+            }
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) * to_integer(right) => 0 <= to_integer(left) * to_integer(right);
+                premise 1: to_integer(left) * to_integer(right) <= 4294967295 => to_integer(left) * to_integer(right) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(left * right) == to_integer(left) * to_integer(right);
+                conclusion 0;
+            }
+        }
+    }
 }
 ```
 
@@ -1219,7 +1363,37 @@ Unsigned multiplication agrees with Integer multiplication under the native no-o
 ```click
 theorem uint32_multiply_guard_by_integer_bound(left: uint32, right: uint32) {
     requires to_integer(left) * to_integer(right) <= 4294967295;
-    ensures right == 0u32 or left <= 4294967295u32 / right;
+    ensures right == 0u32 or left <= 4294967295u32 / right by {
+        if right == 0u32 {
+            assumption();
+        } else {
+            have right != 0u32 by {
+                normalize() using { not right == 0u32; };
+            }
+            have 1 <= to_integer(right) by {
+                arithmetic_certificate {
+                    excluded_bound 0: to_integer(right) != 0 => 1 <= to_integer(right);
+                    conclusion 0;
+                }
+            }
+            apply(integer::positive_divisor_quotient_lower(4294967295, to_integer(right), to_integer(left))) using {
+                to_integer(right) != 0;
+                1 <= to_integer(right);
+                to_integer(left) * to_integer(right) <= 4294967295;
+            };
+            apply(integer::uint32_divide_to_integer(4294967295u32, right)) using {
+                right != 0u32;
+                to_integer(right) != 0;
+            };
+            have to_integer(left) <= to_integer(4294967295u32 / right) by {
+                assumption();
+            }
+            have left <= 4294967295u32 / right by {
+                normalize() using { to_integer(left) <= to_integer(4294967295u32 / right); };
+            }
+            assumption();
+        }
+    }
 }
 ```
 
@@ -1268,7 +1442,48 @@ Unsigned addition agrees with Integer addition when the sum fits uint64. Native 
 ```click
 theorem uint64_multiply_to_integer(left: uint64, right: uint64) {
     requires to_integer(left) * to_integer(right) <= 18446744073709551615;
-    ensures to_integer(left * right) == to_integer(left) * to_integer(right);
+    ensures to_integer(left * right) == to_integer(left) * to_integer(right) by {
+        have 0 <= to_integer(left) by {
+            arithmetic_certificate {
+                type_range => 0 <= to_integer(left);
+                conclusion 0;
+            }
+        }
+        have to_integer(left) <= 18446744073709551615 by {
+            arithmetic_certificate {
+                type_range => to_integer(left) <= 18446744073709551615;
+                conclusion 0;
+            }
+        }
+        have 0 <= to_integer(right) by {
+            arithmetic_certificate {
+                type_range => 0 <= to_integer(right);
+                conclusion 0;
+            }
+        }
+        have to_integer(right) <= 18446744073709551615 by {
+            arithmetic_certificate {
+                type_range => to_integer(right) <= 18446744073709551615;
+                conclusion 0;
+            }
+        }
+        have 0 <= to_integer(left) * to_integer(right) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(left) => 0 <= to_integer(left);
+                premise 1: to_integer(left) <= 18446744073709551615 => to_integer(left) <= 18446744073709551615;
+                premise 2: 0 <= to_integer(right) => 0 <= to_integer(right);
+                premise 3: to_integer(right) <= 18446744073709551615 => to_integer(right) <= 18446744073709551615;
+                integer_product_bounds bounds [0, 1, 2, 3] => 0 <= to_integer(left) * to_integer(right);
+                conclusion 0;
+            }
+        }
+        arithmetic_certificate rules {
+            premise 0: 0 <= to_integer(left) * to_integer(right) => 0 <= to_integer(left) * to_integer(right);
+            premise 1: to_integer(left) * to_integer(right) <= 18446744073709551615 => to_integer(left) * to_integer(right) <= 18446744073709551615;
+            integer_operation_identity bounds [0, 1] => to_integer(left * right) == to_integer(left) * to_integer(right);
+            conclusion 0;
+        }
+    }
 }
 ```
 
@@ -1612,7 +1827,44 @@ Integer value, so the observation is injective.
 ```click
 theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) {
     requires divisor != 0u32;
-    ensures value % divisor < divisor;
+    ensures value % divisor < divisor by {
+        have 1 <= to_integer(divisor) by {
+            arithmetic_certificate {
+                excluded_bound 0: to_integer(divisor) != 0 => 1 <= to_integer(divisor);
+                conclusion 0;
+            }
+        }
+        have to_integer(divisor) != 0 by {
+            arithmetic_certificate rules {
+                premise 0: 1 <= to_integer(divisor) => 1 <= to_integer(divisor);
+                integer_bound_exclusion bounds [0] => to_integer(divisor) != 0;
+                conclusion 0;
+            }
+        }
+        have 0 < to_integer(divisor) by {
+            arithmetic_certificate {
+                premise 0: 1 <= to_integer(divisor) => 1 <= to_integer(divisor);
+                conclusion 0;
+            }
+        }
+        apply(integer::uint32_remainder_to_integer(value, divisor)) using {
+            divisor != 0u32;
+            to_integer(divisor) != 0;
+        };
+        apply(integer::positive_divisor_remainder_upper(to_integer(value), to_integer(divisor))) using {
+            to_integer(divisor) != 0;
+            0 < to_integer(divisor);
+        };
+        arithmetic_certificate {
+            negated_goal => to_integer(divisor) <= to_integer(value % divisor);
+            premise 0: to_integer(value % divisor) == truncating_remainder(to_integer(value), to_integer(divisor)) => to_integer(value % divisor) == truncating_remainder(to_integer(value), to_integer(divisor));
+            premise 1: truncating_remainder(to_integer(value), to_integer(divisor)) <= to_integer(divisor) - 1 => truncating_remainder(to_integer(value), to_integer(divisor)) <= to_integer(divisor) - 1;
+            less_equal_from_equal 1 => to_integer(value % divisor) <= truncating_remainder(to_integer(value), to_integer(divisor));
+            add 0, 3 => to_integer(divisor) + to_integer(value % divisor) <= to_integer(value % divisor) + truncating_remainder(to_integer(value), to_integer(divisor));
+            add 4, 2 => to_integer(divisor) + to_integer(value % divisor) + truncating_remainder(to_integer(value), to_integer(divisor)) <= to_integer(value % divisor) + truncating_remainder(to_integer(value), to_integer(divisor)) + to_integer(divisor) - 1;
+            conclusion 5;
+        }
+    }
 }
 ```
 
@@ -1625,7 +1877,86 @@ The unsigned remainder is below its divisor for any dividend. The nonzero diviso
 ```click
 theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) {
     requires value < divisor;
-    ensures value % divisor == value;
+    ensures value % divisor == value by {
+        have to_integer(value) < to_integer(divisor) by {
+            normalize() using { value < divisor; };
+        }
+        have 0 <= to_integer(value) by {
+            normalize();
+        }
+        have 1 <= to_integer(divisor) by {
+            arithmetic_certificate {
+                premise 0: to_integer(value) < to_integer(divisor) => to_integer(value) < to_integer(divisor);
+                type_range => 0 <= to_integer(value);
+                add 0, 1 => to_integer(value) + 0 < to_integer(divisor) + to_integer(value);
+                conclusion 2;
+            }
+        }
+        have to_integer(divisor) != 0 by {
+            normalize() using { 1 <= to_integer(divisor); };
+        }
+        have divisor != 0u32 by {
+            normalize() using { to_integer(divisor) != 0; };
+        }
+        apply(integer::uint32_remainder_to_integer(value, divisor)) using {
+            divisor != 0u32;
+            to_integer(divisor) != 0;
+        };
+        have 0 * to_integer(divisor) <= to_integer(value) by {
+            arithmetic_certificate {
+                premise 0: 0 <= to_integer(value) => 0 <= to_integer(value);
+                conclusion 0;
+            }
+        }
+        apply(integer::positive_divisor_quotient_lower(to_integer(value), to_integer(divisor), 0)) using {
+            to_integer(divisor) != 0;
+            1 <= to_integer(divisor);
+            0 * to_integer(divisor) <= to_integer(value);
+        };
+        have to_integer(value) < 1 * to_integer(divisor) by {
+            arithmetic_certificate {
+                premise 0: to_integer(value) < to_integer(divisor) => to_integer(value) < to_integer(divisor);
+                conclusion 0;
+            }
+        }
+        have 0 < 1 by {
+            normalize();
+        }
+        apply(integer::positive_divisor_quotient_strict_upper(to_integer(value), to_integer(divisor), 1)) using {
+            to_integer(divisor) != 0;
+            1 <= to_integer(divisor);
+            0 < 1;
+            to_integer(value) < 1 * to_integer(divisor);
+        };
+        have truncating_quotient(to_integer(value), to_integer(divisor)) == 0 by {
+            arithmetic_certificate {
+                premise 0: truncating_quotient(to_integer(value), to_integer(divisor)) < 1 => truncating_quotient(to_integer(value), to_integer(divisor)) <= 0;
+                premise 1: 0 <= truncating_quotient(to_integer(value), to_integer(divisor)) => 0 <= truncating_quotient(to_integer(value), to_integer(divisor));
+                equal_from_bounds 0, 1 => truncating_quotient(to_integer(value), to_integer(divisor)) == 0;
+                conclusion 2;
+            }
+        }
+        apply(integer::truncation_identity(to_integer(value), to_integer(divisor))) using {
+            to_integer(divisor) != 0;
+        };
+        have truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) == 0 by {
+            rewrite(truncating_quotient(to_integer(value), to_integer(divisor)) == 0);
+            normalize();
+        }
+        have to_integer(value % divisor) == to_integer(value) by {
+            arithmetic_certificate {
+                premise 0: to_integer(value % divisor) == truncating_remainder(to_integer(value), to_integer(divisor)) => to_integer(value % divisor) == truncating_remainder(to_integer(value), to_integer(divisor));
+                premise 1: to_integer(value) == truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)) => to_integer(value) == truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor));
+                premise 2: truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) == 0 => truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) == 0;
+                scale 1 by -1 => -1 * to_integer(value) == -1 * (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)));
+                add 0, 3 => to_integer(value % divisor) + -1 * to_integer(value) == truncating_remainder(to_integer(value), to_integer(divisor)) + -1 * (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor)));
+                scale 2 by -1 => -1 * (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) == -1 * 0;
+                add 4, 5 => to_integer(value % divisor) + -1 * to_integer(value) + -1 * (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor)) == truncating_remainder(to_integer(value), to_integer(divisor)) + -1 * (truncating_quotient(to_integer(value), to_integer(divisor)) * to_integer(divisor) + truncating_remainder(to_integer(value), to_integer(divisor))) + -1 * 0;
+                conclusion 6;
+            }
+        }
+        assumption();
+    }
 }
 ```
 
@@ -2085,7 +2416,123 @@ theorem uint32_less_than_implies_positive_difference(value: uint32, upper: uint3
 theorem uint32_difference_decreases_after_increment(value: uint32, bound: uint32) {
     requires value < bound;
 
-    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound);
+    ensures to_integer((0u32 - value) + (bound - 1u32)) < to_integer((0u32 - value) + bound) by {
+        have (0u32 - value) + (bound - 1u32) == (bound - 1u32) - value by {
+            normalize();
+        }
+        have (0u32 - value) + bound == bound - value by {
+            normalize();
+        }
+        have to_integer((0u32 - value) + (bound - 1u32)) == to_integer((bound - 1u32) - value) by {
+            assumption();
+        }
+        have to_integer((0u32 - value) + bound) == to_integer(bound - value) by {
+            assumption();
+        }
+        have to_integer(value) < to_integer(bound) by {
+            normalize() using { value < bound; };
+        }
+        have 0 <= to_integer(bound) - 1 by {
+            arithmetic_certificate {
+                negated_goal => to_integer(bound) - 1 < 0;
+                premise 0: to_integer(value) < to_integer(bound) => to_integer(value) < to_integer(bound);
+                type_range => 0 <= to_integer(value);
+                add 0, 1 => to_integer(bound) - 1 + 1 + (to_integer(value) + 1) <= 0 + to_integer(bound);
+                add 3, 2 => to_integer(bound) - 1 + 1 + (to_integer(value) + 1) + 0 <= 0 + to_integer(bound) + to_integer(value);
+                conclusion 4;
+            }
+        }
+        have to_integer(bound) - 1 <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(bound) - 1;
+                type_range => to_integer(bound) <= 4294967295;
+                add 0, 1 => 4294967295 + to_integer(bound) < to_integer(bound) - 1 + 4294967295;
+                conclusion 2;
+            }
+        }
+        have to_integer(bound - 1u32) == to_integer(bound) - 1 by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(bound) - 1 => 0 <= to_integer(bound) - 1;
+                premise 1: to_integer(bound) - 1 <= 4294967295 => to_integer(bound) - 1 <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(bound - 1u32) == to_integer(bound) - 1;
+                conclusion 0;
+            }
+        }
+        have 0 <= to_integer(bound - 1u32) - to_integer(value) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(bound - 1u32) - to_integer(value) < 0;
+                premise 0: to_integer(bound - 1u32) == to_integer(bound) - 1 => to_integer(bound - 1u32) == to_integer(bound) - 1;
+                less_equal_from_equal 1 reverse => to_integer(bound) - 1 <= to_integer(bound - 1u32);
+                premise 1: to_integer(value) < to_integer(bound) => to_integer(value) < to_integer(bound);
+                add 0, 2 => to_integer(bound - 1u32) - to_integer(value) + (to_integer(bound) - 1) < 0 + to_integer(bound - 1u32);
+                add 4, 3 => to_integer(bound - 1u32) - to_integer(value) + (to_integer(bound) - 1) + 1 + (to_integer(value) + 1) <= 0 + to_integer(bound - 1u32) + to_integer(bound);
+                conclusion 5;
+            }
+        }
+        have to_integer(bound - 1u32) - to_integer(value) <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(bound - 1u32) - to_integer(value);
+                type_range => to_integer(bound - 1u32) <= 4294967295;
+                type_range => 0 <= to_integer(value);
+                add 0, 1 => 4294967295 + to_integer(bound - 1u32) < to_integer(bound - 1u32) - to_integer(value) + 4294967295;
+                add 3, 2 => 4294967295 + to_integer(bound - 1u32) + 0 < to_integer(bound - 1u32) - to_integer(value) + 4294967295 + to_integer(value);
+                conclusion 4;
+            }
+        }
+        have to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(bound - 1u32) - to_integer(value) => 0 <= to_integer(bound - 1u32) - to_integer(value);
+                premise 1: to_integer(bound - 1u32) - to_integer(value) <= 4294967295 => to_integer(bound - 1u32) - to_integer(value) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value);
+                conclusion 0;
+            }
+        }
+        have 0 <= to_integer(bound) - to_integer(value) by {
+            arithmetic_certificate {
+                negated_goal => to_integer(bound) - to_integer(value) < 0;
+                premise 0: to_integer(value) < to_integer(bound) => to_integer(value) < to_integer(bound);
+                add 0, 1 => to_integer(bound) - to_integer(value) + 1 + (to_integer(value) + 1) <= 0 + to_integer(bound);
+                conclusion 2;
+            }
+        }
+        have to_integer(bound) - to_integer(value) <= 4294967295 by {
+            arithmetic_certificate {
+                negated_goal => 4294967295 < to_integer(bound) - to_integer(value);
+                type_range => to_integer(bound) <= 4294967295;
+                type_range => 0 <= to_integer(value);
+                add 0, 1 => 4294967295 + to_integer(bound) < to_integer(bound) - to_integer(value) + 4294967295;
+                add 3, 2 => 4294967295 + to_integer(bound) + 0 < to_integer(bound) - to_integer(value) + 4294967295 + to_integer(value);
+                conclusion 4;
+            }
+        }
+        have to_integer(bound - value) == to_integer(bound) - to_integer(value) by {
+            arithmetic_certificate rules {
+                premise 0: 0 <= to_integer(bound) - to_integer(value) => 0 <= to_integer(bound) - to_integer(value);
+                premise 1: to_integer(bound) - to_integer(value) <= 4294967295 => to_integer(bound) - to_integer(value) <= 4294967295;
+                integer_operation_identity bounds [0, 1] => to_integer(bound - value) == to_integer(bound) - to_integer(value);
+                conclusion 0;
+            }
+        }
+        arithmetic_certificate {
+            negated_goal => to_integer((0u32 - value) + bound) <= to_integer((0u32 - value) + (bound - 1u32));
+            premise 0: to_integer((0u32 - value) + (bound - 1u32)) == to_integer((bound - 1u32) - value) => to_integer((0u32 - value) + (bound - 1u32)) == to_integer((bound - 1u32) - value);
+            less_equal_from_equal 1 => to_integer((0u32 - value) + (bound - 1u32)) <= to_integer((bound - 1u32) - value);
+            premise 1: to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value) => to_integer((bound - 1u32) - value) == to_integer(bound - 1u32) - to_integer(value);
+            less_equal_from_equal 3 => to_integer((bound - 1u32) - value) <= to_integer(bound - 1u32) - to_integer(value);
+            premise 2: to_integer(bound - 1u32) == to_integer(bound) - 1 => to_integer(bound - 1u32) == to_integer(bound) - 1;
+            less_equal_from_equal 5 => to_integer(bound - 1u32) <= to_integer(bound) - 1;
+            premise 3: to_integer((0u32 - value) + bound) == to_integer(bound - value) => to_integer((0u32 - value) + bound) == to_integer(bound - value);
+            less_equal_from_equal 7 reverse => to_integer(bound - value) <= to_integer((0u32 - value) + bound);
+            premise 4: to_integer(bound - value) == to_integer(bound) - to_integer(value) => to_integer(bound - value) == to_integer(bound) - to_integer(value);
+            less_equal_from_equal 9 reverse => to_integer(bound) - to_integer(value) <= to_integer(bound - value);
+            add 0, 2 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value);
+            add 11, 4 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value);
+            add 12, 6 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value) + to_integer(bound) - 1;
+            add 13, 8 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) + to_integer(bound - value) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value) + to_integer(bound) - 1 + to_integer((0u32 - value) + bound);
+            add 14, 10 => to_integer((0u32 - value) + bound) + to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) + to_integer(bound - value) + to_integer(bound) - to_integer(value) <= to_integer((0u32 - value) + (bound - 1u32)) + to_integer((bound - 1u32) - value) + to_integer(bound - 1u32) - to_integer(value) + to_integer(bound) - 1 + to_integer((0u32 - value) + bound) + to_integer(bound - value);
+            conclusion 15;
+        }
+    }
 }
 ```
 

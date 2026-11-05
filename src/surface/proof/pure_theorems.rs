@@ -2619,17 +2619,11 @@ pub(in crate::surface) fn is_kernel_standard_theorem_name(name: &str) -> bool {
                 | "click::integer::uint32_pack_uint16_high_first_to_integer"
                 | "click::integer::uint32_unpack_uint16_low"
                 | "click::integer::uint32_unpack_uint16_high"
-                | "click::integer::uint64_multiply_to_integer"
                 | "click::integer::uint64_divide_to_integer"
                 | "click::integer::uint64_remainder_to_integer"
                 | "int32_le_antisymmetric"
-                | "click::integer::uint32_multiply_to_integer"
                 | "click::integer::uint32_divide_to_integer"
                 | "click::integer::uint32_remainder_to_integer"
-                | "click::integer::uint32_multiply_guard_by_integer_bound"
-                | "click::integer::uint32_remainder_less_than_divisor"
-                | "click::integer::uint32_less_than_divisor_implies_remainder_is_value"
-                | "click::integer::uint32_difference_decreases_after_increment"
         )
 }
 
@@ -2658,7 +2652,6 @@ fn verify_kernel_standard_theorem_axiom(
             2,
             crate::kernel::integer_truncation_law_requirements(name).unwrap(),
         ),
-        "click::integer::uint64_multiply_to_integer" => (2, 1),
         "click::integer::uint64_pack_uint16_to_integer"
         | "click::integer::uint64_unpack_uint16_low"
         | "click::integer::uint64_unpack_uint16_high"
@@ -2672,11 +2665,6 @@ fn verify_kernel_standard_theorem_axiom(
         | "click::integer::uint32_remainder_to_integer" => (2, 2),
         "click::integer::int32_remainder_to_integer" => (2, 2),
         "int32_le_antisymmetric" => (2, 2),
-        "click::integer::uint32_multiply_to_integer"
-        | "click::integer::uint32_multiply_guard_by_integer_bound"
-        | "click::integer::uint32_remainder_less_than_divisor"
-        | "click::integer::uint32_less_than_divisor_implies_remainder_is_value" => (2, 1),
-        "click::integer::uint32_difference_decreases_after_increment" => (2, 1),
         _ => unreachable!("only registered kernel standard theorems call this verifier"),
     };
     if ensure_index != 0
@@ -2871,26 +2859,11 @@ fn verify_kernel_standard_theorem_axiom(
                 )
                 .expect("registered unsigned packing law")
             }
-            "click::integer::uint32_remainder_less_than_divisor" => {
-                crate::kernel::prove_uint32_remainder_less_than_divisor(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_less_than_divisor_implies_remainder_is_value" => {
-                crate::kernel::prove_uint32_remainder_of_lt(value, uint32_parameter(1)?)
-            }
             "click::integer::uint32_divide_to_integer" => {
                 crate::kernel::prove_uint32_divide_to_integer(value, uint32_parameter(1)?)
             }
             "click::integer::uint32_remainder_to_integer" => {
                 crate::kernel::prove_uint32_remainder_to_integer(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_multiply_to_integer" => {
-                crate::kernel::prove_uint32_mul_to_integer(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_multiply_guard_by_integer_bound" => {
-                crate::kernel::prove_uint32_mul_guard_by_integer_bound(value, uint32_parameter(1)?)
-            }
-            "click::integer::uint32_difference_decreases_after_increment" => {
-                prove_uint32_difference_decreases_after_increment(value, uint32_parameter(1)?)
             }
             _ => unreachable!("checked above"),
         }
@@ -4193,40 +4166,6 @@ mod tests {
     }
 
     #[test]
-    fn uint32_small_remainder_checks_exact_declaration() {
-        let source = "theorem uint32_less_than_divisor_implies_remainder_is_value(value: uint32, divisor: uint32) { requires value < divisor; ensures value % divisor == value; }";
-        verify_standard_declaration(source).unwrap();
-        for invalid in [
-            source.replace("requires value < divisor;", ""),
-            source.replace("value < divisor", "value <= divisor"),
-            source.replace("value < divisor", "divisor != 0u32"),
-            source.replace("value < divisor", "divisor < value"),
-            source.replace("value % divisor", "divisor % value"),
-            source.replace("== value", "== divisor"),
-            source.replace("value: uint32", "value: int32"),
-            source.replace("divisor: uint32", "divisor: uint64"),
-        ] {
-            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-        }
-    }
-
-    #[test]
-    fn uint32_remainder_bound_checks_exact_declaration() {
-        let source = "theorem uint32_remainder_less_than_divisor(value: uint32, divisor: uint32) { requires divisor != 0u32; ensures value % divisor < divisor; }";
-        verify_standard_declaration(source).unwrap();
-        for invalid in [
-            source.replace("requires divisor != 0u32;", ""),
-            source.replace("requires divisor != 0u32;", "requires value != 0u32;"),
-            source.replace("< divisor;", "<= divisor;"),
-            source.replace("value % divisor", "divisor % value"),
-            source.replace("value: uint32", "value: int32"),
-            source.replace("divisor: uint32", "divisor: uint64"),
-        ] {
-            assert!(verify_standard_declaration(&invalid).is_err(), "{invalid}");
-        }
-    }
-
-    #[test]
     fn uint32_division_bridge_declarations_reject_forged_domains_types_and_goals() {
         for (name, op, mathematical) in [
             (
@@ -4263,11 +4202,6 @@ mod tests {
     #[test]
     fn uint64_integer_bridge_declarations_reject_forged_guards_types_and_goals() {
         for (name, guard, goal) in [
-            (
-                "click::integer::uint64_multiply_to_integer",
-                "to_integer(left) * to_integer(right) <= 18446744073709551615",
-                "to_integer(left * right) == to_integer(left) * to_integer(right)",
-            ),
             (
                 "click::integer::uint64_divide_to_integer",
                 "right != 0u64; requires to_integer(right) != 0",
