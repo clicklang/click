@@ -261,6 +261,18 @@ footprint likewise retains the domains of its endpoints. A missing condition
 is never dropped. `to_integer(x + 1)` observes a machine sum; mathematical
 `to_integer(x) + 1` is total and needs no machine-overflow condition.
 
+A conditional's arm owes its domain only where the condition selects it, as
+the right side of `implies` and `or` does: the then arm's obligation `O`
+becomes `C implies O` and the else arm's `C or O` (scalar, Integer, and
+algebraic `if` alike). An obligation the guard itself states is met. Both arms
+are still lowered under the same assumptions, so the guard changes only what
+is owed, not the arms' terms. `if d != 0u64 { a / d } else { 0u64 }`
+therefore needs no divisor premise, and a pure function guarded that way is
+total and unfolds anywhere; an arm whose guard does not give its domain is
+still refused
+(`a_conditional_arm_owes_its_domain_only_under_its_guard.md`,
+`a_conditional_arm_still_owes_a_domain_its_guard_does_not_give.md`).
+
 ## Specification coverage
 
 Integer is supported in:

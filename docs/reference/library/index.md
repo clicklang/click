@@ -3250,11 +3250,15 @@ function decimal_length(v: uint64) -> uint64 {
 
 ```click
 function decimal_digit(v: uint64, k: uint64) -> uint8 {
-    (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8
+    if k < format::decimal_length(v) {
+        (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8
+    } else {
+        48u8
+    }
 }
 ```
 
-**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant, for `k < format::decimal_length(v)`.
+**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant. Past the last digit, at `k >= format::decimal_length(v)`, it is `'0'` (`48u8`), so the function is total. Unfolding it leaves the digit's division by `format::pow10(...)` owed only where `k < format::decimal_length(v)`; `format::decimal_digit_power_nonzero` discharges that.
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -3503,6 +3507,120 @@ theorem pow10_9() {
 ```
 
 **Meaning:** Evaluates `format::pow10` at `9`.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
+### `format::pow10_nonzero`
+
+```click
+theorem pow10_nonzero(e: uint64) {
+    requires e < 20u64;
+    ensures format::pow10(e) != 0u64 by {
+        unfold(format::pow10(e));
+        if e == 19u64 {
+            normalize() using { e == 19u64; };
+        } else {
+            have e < 19u64 by { solve() using { e < 20u64; not (e == 19u64); }; }
+            if e == 18u64 {
+                normalize() using { e == 18u64; };
+            } else {
+                have e < 18u64 by { solve() using { e < 19u64; not (e == 18u64); }; }
+                if e == 17u64 {
+                    normalize() using { e == 17u64; };
+                } else {
+                    have e < 17u64 by { solve() using { e < 18u64; not (e == 17u64); }; }
+                    if e == 16u64 {
+                        normalize() using { e == 16u64; };
+                    } else {
+                        have e < 16u64 by { solve() using { e < 17u64; not (e == 16u64); }; }
+                        if e == 15u64 {
+                            normalize() using { e == 15u64; };
+                        } else {
+                            have e < 15u64 by { solve() using { e < 16u64; not (e == 15u64); }; }
+                            if e == 14u64 {
+                                normalize() using { e == 14u64; };
+                            } else {
+                                have e < 14u64 by { solve() using { e < 15u64; not (e == 14u64); }; }
+                                if e == 13u64 {
+                                    normalize() using { e == 13u64; };
+                                } else {
+                                    have e < 13u64 by { solve() using { e < 14u64; not (e == 13u64); }; }
+                                    if e == 12u64 {
+                                        normalize() using { e == 12u64; };
+                                    } else {
+                                        have e < 12u64 by { solve() using { e < 13u64; not (e == 12u64); }; }
+                                        if e == 11u64 {
+                                            normalize() using { e == 11u64; };
+                                        } else {
+                                            have e < 11u64 by { solve() using { e < 12u64; not (e == 11u64); }; }
+                                            if e == 10u64 {
+                                                normalize() using { e == 10u64; };
+                                            } else {
+                                                have e < 10u64 by { solve() using { e < 11u64; not (e == 10u64); }; }
+                                                if e == 9u64 {
+                                                    normalize() using { e == 9u64; };
+                                                } else {
+                                                    have e < 9u64 by { solve() using { e < 10u64; not (e == 9u64); }; }
+                                                    if e == 8u64 {
+                                                        normalize() using { e == 8u64; };
+                                                    } else {
+                                                        have e < 8u64 by { solve() using { e < 9u64; not (e == 8u64); }; }
+                                                        if e == 7u64 {
+                                                            normalize() using { e == 7u64; };
+                                                        } else {
+                                                            have e < 7u64 by { solve() using { e < 8u64; not (e == 7u64); }; }
+                                                            if e == 6u64 {
+                                                                normalize() using { e == 6u64; };
+                                                            } else {
+                                                                have e < 6u64 by { solve() using { e < 7u64; not (e == 6u64); }; }
+                                                                if e == 5u64 {
+                                                                    normalize() using { e == 5u64; };
+                                                                } else {
+                                                                    have e < 5u64 by { solve() using { e < 6u64; not (e == 5u64); }; }
+                                                                    if e == 4u64 {
+                                                                        normalize() using { e == 4u64; };
+                                                                    } else {
+                                                                        have e < 4u64 by { solve() using { e < 5u64; not (e == 4u64); }; }
+                                                                        if e == 3u64 {
+                                                                            normalize() using { e == 3u64; };
+                                                                        } else {
+                                                                            have e < 3u64 by { solve() using { e < 4u64; not (e == 3u64); }; }
+                                                                            if e == 2u64 {
+                                                                                normalize() using { e == 2u64; };
+                                                                            } else {
+                                                                                have e < 2u64 by { solve() using { e < 3u64; not (e == 2u64); }; }
+                                                                                if e == 1u64 {
+                                                                                    normalize() using { e == 1u64; };
+                                                                                } else {
+                                                                                    have e < 1u64 by { solve() using { e < 2u64; not (e == 1u64); }; }
+                                                                                    have e == 0u64 by { solve() using { e < 1u64; }; }
+                                                                                    normalize() using { e == 0u64; };
+                                                                                }
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+```
+
+**Meaning:** Every exponent below 20, the exponents of a 64-bit value's digits, has a nonzero power of ten.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -4267,20 +4385,46 @@ theorem decimal_length_10(v: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
+### `format::decimal_digit_power_nonzero`
+
+```click
+theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
+    requires k < format::decimal_length(v);
+    ensures format::pow10(format::decimal_length(v) - 1u64 - k) != 0u64 by {
+        have format::decimal_length(v) <= 20u64 by {
+            unfold(format::decimal_length(v));
+            solve();
+        }
+        have (format::decimal_length(v) - 1u64 - k) as uint64 < 20u64 by { solve(); }
+        apply(format::pow10_nonzero(format::decimal_length(v) - 1u64 - k));
+    }
+}
+```
+
+**Meaning:** Where `k` names one of `v`'s digits, the power of ten that selects it is nonzero, so the digit's division by it has a value.
+
+**Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
+
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+
 ### `format::decimal_digit_of_length`
 
 ```click
 theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     requires format::decimal_length(v) == n;
+    requires k < n;
+    requires format::pow10(n - 1u64 - k) != 0u64;
     ensures format::decimal_digit(v, k) == (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) as uint8 by {
+        have k < format::decimal_length(v) by { solve(); }
+        apply(format::decimal_digit_power_nonzero(v, k));
         unfold(format::decimal_digit(v, k));
         rewrite(format::decimal_length(v) == n);
-        solve();
+        normalize() using { k < n; };
     }
 }
 ```
 
-**Meaning:** Rewrites a digit of a value whose length is known to `48 + v / 10^(n-1-k) % 10`; combine with `format::pow10_e` for the power.
+**Meaning:** Rewrites digit `k < n` of a value whose length is known to be `n` to `48 + v / 10^(n-1-k) % 10`. The statement divides by `format::pow10(n - 1u64 - k)`, so that power being nonzero is a premise; for known `n` and `k`, `format::pow10_e` gives its value, and `format::decimal_digit_power_nonzero` gives it in general.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -4291,9 +4435,16 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
 ```click
 theorem decimal_digit_lower_bound(v: uint64, k: uint64) {
     ensures 48u8 <= format::decimal_digit(v, k) by {
-        unfold(format::decimal_digit(v, k));
-        have 48u8 <= (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
-        assumption();
+        if k < format::decimal_length(v) {
+            apply(format::decimal_digit_power_nonzero(v, k));
+            unfold(format::decimal_digit(v, k));
+            have 48u8 <= (48u64 + v / format::pow10(format::decimal_length(v) - 1u64 - k) % 10u64) as uint8;
+            normalize() using { k < format::decimal_length(v); };
+            assumption();
+        } else {
+            unfold(format::decimal_digit(v, k));
+            normalize() using { not (k < format::decimal_length(v)); };
+        }
     }
 }```
 
