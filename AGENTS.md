@@ -92,7 +92,7 @@ When a proof fails, follow the [tracing procedure](docs/concepts/tracing.md)
 as a chain of `have` goals, and refine the first link that does not close until
 each link is one simple tactic. Every attempt must change that chain; a new
 tactic, spelling, or position for the same link is not progress. Stop at one of
-its named outcomes. A link `auto` does not prove is too big, never by itself a
+its named outcomes. A link `solve` does not prove is too big, never by itself a
 verifier problem. File defects found through this workflow as GitHub issues
 after user approval, following the skill's reporting instructions, including
 for `inexpressible-fact`, `failing-tactic`, `unclear-trace`, crashes, and hangs.

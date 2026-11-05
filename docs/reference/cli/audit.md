@@ -47,7 +47,7 @@ verification, including the performance comparison. Its cold verification runs
 with the implicit closer off for the selected claim and its nested proofs,
 so that claim is shown self-contained. Other claims and modeled workers that
 the targeted verifier visits retain ordinary verification, including their
-implicit automation. A failed whole-claim expansion fails the audit; a selected
+implicit solving. A failed whole-claim expansion fails the audit; a selected
 claim that was not checked also fails.
 
 A cursor, site cap, or changed-source selection can select part of a claim.

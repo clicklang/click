@@ -363,7 +363,7 @@ from the examples:
    a constructor equation such as a `match` arm's `up.model ==
    Context::Left(..)`. 56 hand proofs, about 650 lines, became `by auto;`.
 4. A bare `apply` proves a missing premise by `auto`, and `step`, `fold` and
-   `open` leave open requirements to the implicit `auto`
+   `open` leave open requirements to the implicit `solve`
    ([simple tactics](../docs/reference/tactics/index.md)). 379 `have`s that
    restated an `apply` premise were deleted, about 820 lines, each file
    within 10% of its verification time once `auto` tried a single rewrite

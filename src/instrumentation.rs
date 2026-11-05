@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 /// The tactic name under which the implicit closer proving a simple tactic's
 /// open requirement is profiled, at that tactic's site. A bare simple tactic
 /// is not a selectable expansion site, so its claim is expanded instead.
-pub const IMPLICIT_AUTO_TACTIC: &str = "implicit closer";
+pub const IMPLICIT_SOLVE_TACTIC: &str = "implicit closer";
 /// The tactic name timing records for the implicit tail that ends every
 /// script: the C it runs and the goals it closes.
 pub const IMPLICIT_TAIL_TACTIC: &str = "implicit tail";

@@ -5,7 +5,7 @@ or zero extension, so a type of at most 32 bits that contains the narrow
 type reads the same value from the same word. The implicit closer proves
 `to_integer(result) == to_integer(x)` for each such C widening of a narrow
 parameter, with no premise. The 64-bit widenings are
-[`auto_widens_a_narrow_value_to_64_bits.md`](auto_widens_a_narrow_value_to_64_bits.md),
+[`solve_widens_a_narrow_value_to_64_bits.md`](solve_widens_a_narrow_value_to_64_bits.md),
 and the negatives are
 [`a_narrowing_conversion_without_its_range_is_not_its_operand.md`](a_narrowing_conversion_without_its_range_is_not_its_operand.md)
 and

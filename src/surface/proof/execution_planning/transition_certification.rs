@@ -160,7 +160,7 @@ fn refuse_or_probe(
 /// Returns `error`, or, while open obligations are being probed, records its
 /// structured requirement and lets the tactic continue past it. A simple
 /// tactic other than `step` refuses a requirement it cannot close exactly
-/// through this, so a probe can collect them all for the implicit `auto`.
+/// through this, so a probe can collect them all for the implicit `solve`.
 pub(in crate::surface) fn refuse_or_record_open_obligation(
     error: ClickError,
 ) -> Result<(), ClickError> {
@@ -881,7 +881,7 @@ fn certified_transitions_from_execution(
                             // Stable-view recovery requires the kernel to see
                             // the precondition already proved. A probe must
                             // retain even a trivially true pending clause so
-                            // implicit auto proves it at the pre-state, then
+                            // implicit solve proves it at the pre-state, then
                             // retries the call with that checked evidence.
                             || (matches!(normalize_proposition(proposition), NormalizedProposition::True)
                                 && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
@@ -889,7 +889,7 @@ fn certified_transitions_from_execution(
                                     && rejected_contract_call))
                             // Under `Fast` a step never searches the
                             // context: the probe records the obligation and
-                            // the implicit `auto` proves it.
+                            // the implicit `solve` proves it.
                             || (!matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
                                 && matches!(
                                 proposition,

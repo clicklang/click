@@ -26,7 +26,7 @@ void unsigned_at_zero(uint64 x) {
     have x == 0u64;
 }
 
-theorem unsigned_at_zero_by_auto(x: uint64) {
+theorem unsigned_at_zero_by_solve(x: uint64) {
     requires not 0u64 < x;
     ensures x == 0u64;
 }

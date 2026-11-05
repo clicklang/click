@@ -23,10 +23,17 @@ An omitted proof closes the statement where it holds:
 - `have P;` holds where it is written. It is `have P by solve();` and never
   executes C. On a linear `Integer` bound, `solve` refutes its integer
   negation from the facts connected to it
-  (`mdtests/have_by_auto_refutes_a_linear_bound.md`), and its last strategy
+  (`mdtests/have_by_solve_refutes_a_linear_bound.md`), and its last strategy
   is a short chain of `rewrite` steps by the connected equalities
-  (`mdtests/auto_rewrites_a_constructor_term_to_its_model.md`). Those mdtests
+  (`mdtests/solve_rewrites_a_constructor_term_to_its_model.md`). Those mdtests
   write `have P;`, whose omitted proof is the same proof.
+
+When a simple tactic leaves an obligation open, omitting its proof calls the
+same solver as writing `by solve();`. The driver schedules these calls and
+retains their explicit proofs for expansion; it adds no private witness rule
+or extra premise list. For example, both forms prove the existential call
+requirement in `mdtests/explicit_solve_proves_an_existential_call_requirement.md`
+and `mdtests/implicit_solve_proves_an_existential_call_requirement.md`.
 
 A proof of one step needs no braces: `by T(args);` is `by { T(args); }` for
 any tactic written as a call, as in `have 0 <= x by assumption();`. `click

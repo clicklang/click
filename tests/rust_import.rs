@@ -1243,7 +1243,7 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
 /// requirement `x <= MAX - y`, recorded as `to_integer(x) <= MAX -
 /// to_integer(y)`, is the native check `x <= MAX - y` because the machine
 /// difference is in range. A bound that leaves `y` free is refused, and the
-/// refusal names, as its goal, the condition the implicit `auto` tried, over
+/// refusal names, as its goal, the condition the implicit `solve` tried, over
 /// the function's operands with the machine difference read as an Integer,
 /// not the assertion's false-path obligation `0 == 1`.
 /// (A bound one short, `x <= 18446744073709551614u64 - y`, is an exact
@@ -2757,7 +2757,7 @@ fn rust_enum_signed_match_expansion_checks_without_search() {
         "value.ensures_0",
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    click::surface::without_implicit_auto_for_claim("value.ensures_0", || {
+    click::surface::without_implicit_solve_for_claim("value.ensures_0", || {
         C0VerificationSession::new_program_prepared(&expanded, &prepared)
             .map(|_| ())
             .map_err(|error| error.to_string())
@@ -6197,7 +6197,7 @@ fn rust_recursive_countdown_expansion_checks_without_search() {
         "countdown.ensures_0",
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    click::surface::without_implicit_auto_for_claim("countdown.ensures_0", || {
+    click::surface::without_implicit_solve_for_claim("countdown.ensures_0", || {
         C0VerificationSession::new_program_prepared(&expanded, &prepared)
             .map(|_| ())
             .map_err(|error| error.to_string())
@@ -6254,7 +6254,7 @@ fn charon_stack_transport_repairs_expand_and_replay() {
             &source, &prepared, &claim,
         )
         .unwrap_or_else(|error| panic!("{directory}: {}", error.report()));
-        click::surface::without_implicit_auto_for_claim(&claim, || {
+        click::surface::without_implicit_solve_for_claim(&claim, || {
             C0VerificationSession::new_program_prepared(&expanded, &prepared)
                 .map(|_| ())
                 .map_err(|error| error.report())

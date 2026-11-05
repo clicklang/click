@@ -33,8 +33,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// written body, and returns the joined Proof; `None` as its index means
     /// the plain `by` body.
     ///
-    /// Obligations nothing written proves keep today's checking until the
-    /// implicit `auto` lands.
+    /// Obligations without a written proof are handed to ordinary `solve`.
     pub(in crate::surface::proof) fn apply_step_with_obligation_proofs(
         &self,
         step: ProofStep,
@@ -162,7 +161,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
                     });
                 }
-                // The obligations no entry writes go to the implicit `auto`;
+                // The obligations no entry writes go to the implicit `solve`;
                 // expansion prints each one it proves as an entry.
                 let unwritten = open
                     .iter()
@@ -179,16 +178,18 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     })
                     .collect::<Vec<_>>();
                 if !unwritten.is_empty() {
-                    let result = if implicit_auto_disabled() {
+                    let result = if implicit_solve_disabled() {
                         Err(0)
                     } else {
                         current
                             .driver()
-                            .prove_obligations_by_auto_or_name_the_first_missed(&step, &unwritten)?
+                            .prove_obligations_by_solve_or_name_the_first_missed(
+                                &step, &unwritten,
+                            )?
                     };
                     match result {
-                        Ok((proved_by_auto, entries)) => {
-                            current = proved_by_auto;
+                        Ok((proved_by_solve, entries)) => {
+                            current = proved_by_solve;
                             proved.extend(entries);
                         }
                         Err(missed) => {
@@ -214,19 +215,19 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     }
 
     /// A bare step: the fast path, then the
-    /// implicit `auto` for each obligation it leaves open, recorded so that
+    /// implicit `solve` for each obligation it leaves open, recorded so that
     /// expansion prints the step with a `by` or `requires` entries. A step
-    /// never searches the proof context: when the implicit `auto` cannot spell
+    /// never searches the proof context: when the implicit `solve` cannot spell
     /// or prove an obligation, the fast path refuses the step at it.
     pub(in crate::surface::proof) fn apply_bare_statement_step(
         &self,
         step: ProofStep,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        if implicit_auto_disabled() {
+        if implicit_solve_disabled() {
             return driver_proof.apply_fast_simple_step(&step);
         }
-        // An obligation the implicit `auto` cannot spell or prove refuses the
+        // An obligation the implicit `solve` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
         let refused = || driver_proof.apply_fast_simple_step(&step);
         let (probe, recorded) = driver_proof.prepare_step(&step);
@@ -240,10 +241,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let open = open.iter().collect::<Vec<_>>();
         let (proved, mut entries) = match driver_proof
             .driver()
-            .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+            .prove_obligations_by_solve_or_name_the_first_missed(&step, &open)?
         {
             Ok(proved) => proved,
-            // Refuse at the obligation the implicit `auto` missed, with
+            // Refuse at the obligation the implicit `solve` missed, with
             // the fast path's own diagnostic for it; another open
             // obligation it did prove is not what is wrong.
             Err(missed) => {
@@ -293,14 +294,14 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
     /// Proves each requirement at this pre-state, or returns the index of
     /// the first requirement it could not spell or prove.
-    pub(in crate::surface::proof) fn prove_obligations_by_auto_or_name_the_first_missed(
+    pub(in crate::surface::proof) fn prove_obligations_by_solve_or_name_the_first_missed(
         &self,
         step: &ProofStep,
         requirements: &[&UnresolvedRequirement],
     ) -> Result<Result<(Proof<'a>, Vec<StepRequirementCertificate>), usize>, ClickError> {
         let driver_proof = self.proof;
-        let _implicit_auto = crate::surface::proof::timing::TacticTiming::implicit_auto();
-        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit auto"));
+        let _implicit_solve = crate::surface::proof::timing::TacticTiming::implicit_solve();
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
         let mut current = driver_proof.clone();
         let mut entries = Vec::with_capacity(requirements.len());
         for (index, requirement) in requirements.iter().enumerate() {
@@ -313,11 +314,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let Ok(have) = current.begin_have(surface.clone()) else {
                 return Ok(Err(index));
             };
-            let Some(closed) =
-                crate::surface::proof::smart_closures::close_requirement_spelling_by_auto(
-                    have, &spelling,
-                )?
-            else {
+            let Some(closed) = have.driver().try_solve_closure()? else {
                 return Ok(Err(index));
             };
             current = closed.join()?;
@@ -719,11 +716,11 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
 
     /// Closes an `open(resource)` scope by `close`, its closing fold, with a
     /// proof of the one body fact the fold leaves open: `written`, from the
-    /// source's `open(r) { ... } by { ... }`, or else the implicit `auto`,
+    /// source's `open(r) { ... } by { ... }`, or else the implicit `solve`,
     /// returned so that expansion prints it as that `by`. This Proof is
     /// where the scope closes; `close` closes it from this Proof or from one
     /// that has proved the fact. A close that leaves several facts open, or
-    /// one that cannot be spelled or that `auto` does not prove, is refused
+    /// one that cannot be spelled or that `solve` does not prove, is refused
     /// with the fold's own diagnostic.
     pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
         &self,
@@ -732,7 +729,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         close: &dyn Fn(&Proof<'a>) -> Result<T, ClickError>,
     ) -> Result<(T, Option<Box<ProofCertificate>>), ClickError> {
         let driver_proof = self.proof;
-        if written.is_none() && implicit_auto_disabled() {
+        if written.is_none() && implicit_solve_disabled() {
             return Ok((close(driver_proof)?, None));
         }
         let scope = format!(
@@ -766,15 +763,15 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .unwrap_or(0);
             refusals[position].clone()
         };
-        // Without a written proof, the implicit `auto` proves each open fact
+        // Without a written proof, the implicit `solve` proves each open fact
         // or the close is refused at the first it misses.
-        let proved_by_auto = match written {
+        let proved_by_solve = match written {
             Some(_) => None,
             None => {
                 let open = open.iter().collect::<Vec<_>>();
                 match driver_proof
                     .driver()
-                    .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+                    .prove_obligations_by_solve_or_name_the_first_missed(&step, &open)?
                 {
                     Ok(proved) => Some(proved),
                     Err(missed) => return Err(refused(open[missed])),
@@ -824,7 +821,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
             None => {
                 let (proved, mut entries) =
-                    proved_by_auto.expect("the implicit closer proved every open fact");
+                    proved_by_solve.expect("the implicit closer proved every open fact");
                 (proved, entries.pop().expect("one entry").proof)
             }
         };
@@ -854,7 +851,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         if pending.is_empty() {
             return Ok(driver_proof.clone());
         }
-        if implicit_auto_disabled() {
+        if implicit_solve_disabled() {
             return Err(requirements.refusals[pending[0].0].clone());
         }
         let step = ProofStep::Have {
@@ -867,7 +864,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             .collect::<Vec<_>>();
         match driver_proof
             .driver()
-            .prove_obligations_by_auto_or_name_the_first_missed(&step, &references)?
+            .prove_obligations_by_solve_or_name_the_first_missed(&step, &references)?
         {
             Ok((proved, _)) => Ok(proved),
             Err(missed) => Err(requirements.refusals[pending[missed].0].clone()),
@@ -883,7 +880,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         operation: impl Fn(&Proof<'a>) -> Result<T, ClickError>,
     ) -> Result<T, ClickError> {
         let driver_proof = self.proof;
-        let fast = || without_implicit_auto(|| operation(driver_proof));
+        let fast = || without_implicit_solve(|| operation(driver_proof));
         let (probe, recorded) = probe_open_obligations(fast);
         if recorded.recorded.is_empty() {
             return probe;
@@ -892,9 +889,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let references = open.iter().collect::<Vec<_>>();
         match driver_proof
             .driver()
-            .prove_obligations_by_auto_or_name_the_first_missed(step, &references)?
+            .prove_obligations_by_solve_or_name_the_first_missed(step, &references)?
         {
-            Ok((proved, _)) => without_implicit_auto(|| operation(&proved)),
+            Ok((proved, _)) => without_implicit_solve(|| operation(&proved)),
             Err(missed) => {
                 let position = recorded
                     .recorded

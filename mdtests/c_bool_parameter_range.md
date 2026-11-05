@@ -16,8 +16,8 @@ contract as written.
 int present(bool flag) { return flag; }
 int in_range(bool flag) { return flag; }
 int in_range_reversed(_Bool flag) { return flag; }
-int auto_equal(bool flag) { return flag; }
-int auto_range(bool flag) { return flag; }
+int solve_equal(bool flag) { return flag; }
+int solve_range(bool flag) { return flag; }
 int forwards(bool b) { return present(b); }
 int converts(void) { return present(5); }
 int forwards_range(bool b) { return in_range(b); }
@@ -38,11 +38,11 @@ int32 in_range_reversed(bool flag) {
     ensures result == 1 or result == 0;
 }
 
-int32 auto_equal(bool flag) {
+int32 solve_equal(bool flag) {
     ensures result == flag as int32;
 }
 
-int32 auto_range(bool flag) {
+int32 solve_range(bool flag) {
     ensures result == 0 or result == 1;
 }
 

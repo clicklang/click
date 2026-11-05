@@ -1,7 +1,7 @@
-# A failed auto reports the proposition written in the have
+# A failed solve reports the proposition written in the have
 
 This uint64 difference sends search through definedness and Integer bridges.
-The bound does not follow from the contract. Its diagnostic must name auto
+The bound does not follow from the contract. Its diagnostic must name solve
 and the stated bound, rather than an internal normalization goal.
 
 ```c filename=bound.c

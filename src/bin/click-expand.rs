@@ -616,7 +616,7 @@ fn verify_expansion(
 ) -> Result<(), String> {
     let check = || {
         if whole_claim {
-            click::surface::without_implicit_auto(|| {
+            click::surface::without_implicit_solve(|| {
                 verify_expansion_now(project, expanded, inputs, claim)
             })
         } else {
@@ -934,7 +934,7 @@ int32 identity(int32 x) {
         fs::create_dir(&directory).unwrap();
         let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/vector-push");
         let sidecar = fs::read_to_string(example.join("vector_push.click")).unwrap();
-        // The contract without its proof, left to the implicit `auto`.
+        // The contract without its proof, left to the implicit `solve`.
         let unproved = format!("{}}}\n", &sidecar[..sidecar.find("} by {").unwrap()]);
         fs::copy(
             example.join("vector_push.c"),

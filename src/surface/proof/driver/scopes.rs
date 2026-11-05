@@ -297,34 +297,9 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         next.body = body;
         Ok(Some(next))
     }
-
-    pub(in crate::surface::proof) fn try_direct_caller_requirement_closure(
-        &self,
-        selection: &CallerRequirementSelection,
-    ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let driver_proof = self.proof;
-        let Some(body) = crate::kernel::search::ProofSearch::try_direct_caller_requirement_closure(
-            &(driver_proof.body),
-            selection,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut next = driver_proof.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
 }
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
-    /// `auto` on a stated fact: it executes no C, so it is `solve`.
-    pub(in crate::surface::proof) fn try_auto_fact_closure(
-        &self,
-    ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let driver_proof = self.proof;
-        (driver_proof).driver().try_solve_closure()
-    }
-
     /// Checks a source body after its enclosing driver has selected Proof as
     /// the authority for this scope. Explicit failures remain checked errors
     /// through every nested scope and logical arm.

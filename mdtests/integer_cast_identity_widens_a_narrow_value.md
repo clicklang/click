@@ -1,7 +1,7 @@
 # `integer_cast_identity` widens a narrow value
 
 The explicit certificate behind
-[`auto_widens_a_narrow_value_into_a_containing_type.md`](auto_widens_a_narrow_value_into_a_containing_type.md).
+[`solve_widens_a_narrow_value_into_a_containing_type.md`](solve_widens_a_narrow_value_into_a_containing_type.md).
 A widening of an 8- or 16-bit value is the same word, or the 64-bit
 extension of it, read at a type that contains the source. A parameter is a
 binder, whose word is a carrier only through the range its entry filed, so

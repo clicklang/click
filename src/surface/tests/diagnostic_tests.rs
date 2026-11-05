@@ -294,7 +294,7 @@ fn implicit_loop_closure_is_smart() {
     assert!(
         events.iter().any(|event| matches!(event,
             VerificationEvent::TacticStarted(tactic)
-                if tactic.tactic_name == crate::instrumentation::IMPLICIT_AUTO_TACTIC
+                if tactic.tactic_name == crate::instrumentation::IMPLICIT_SOLVE_TACTIC
                     && tactic.class == "smart" && tactic.source_index == 0
         )),
         "missing smart implicit closer at the owning loop: {events:?}"
@@ -308,13 +308,13 @@ fn implicit_loop_closure_is_smart() {
     );
 }
 
-/// The implicit `auto` proving a bare `fold`'s open body fact is its own
+/// The implicit `solve` proving a bare `fold`'s open body fact is its own
 /// smart tactic at the fold's site, so its search is charged to a smart
 /// budget and profiled apart from the fold's simple certificate check.
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_02")]
-fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
-    use crate::instrumentation::{IMPLICIT_AUTO_TACTIC, VerificationEvent, collect};
+fn implicit_solve_is_a_smart_tactic_at_the_simple_tactic_site() {
+    use crate::instrumentation::{IMPLICIT_SOLVE_TACTIC, VerificationEvent, collect};
     let source = r#"
         verifying "make.c";
         resource either(n: int32, m: int32) { fact n > 0 or m > 0; }
@@ -329,7 +329,7 @@ fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
     "#;
     let (result, events) =
         collect(|| verify_c0_sources(source, &[("make.c", "void make(int32 x, int32 y) { }\n")]));
-    result.expect("the implicit `auto` proves the fold's open body fact");
+    result.expect("the implicit `solve` proves the fold's open body fact");
     let started = |name: &str| {
         events
             .iter()
@@ -342,25 +342,28 @@ fn implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site() {
             .collect::<Vec<_>>()
     };
     let folds = started("fold");
-    let autos = started(IMPLICIT_AUTO_TACTIC);
+    let implicit_sites = started(IMPLICIT_SOLVE_TACTIC);
     let [fold] = folds.as_slice() else {
         panic!("one `fold` tactic: {events:?}");
     };
     assert_eq!(fold.class, "simple", "{events:?}");
-    assert!(!autos.is_empty(), "missing the implicit `auto`: {events:?}");
-    for auto in &autos {
-        assert_eq!(auto.class, "smart", "{events:?}");
+    assert!(
+        !implicit_sites.is_empty(),
+        "missing the implicit `solve`: {events:?}"
+    );
+    for event in &implicit_sites {
+        assert_eq!(event.class, "smart", "{events:?}");
         assert_eq!(
-            (auto.claim.as_str(), auto.source_index),
+            (event.claim.as_str(), event.source_index),
             (fold.claim.as_str(), fold.source_index),
-            "the implicit `auto` is profiled at the fold's site: {events:?}"
+            "the implicit `solve` is profiled at the fold's site: {events:?}"
         );
     }
 }
 
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_03")]
-fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
+fn solve_have_budget_failure_keeps_the_exhaustion_reason() {
     let source = r#"
         verifying "bound.c";
         uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
@@ -384,15 +387,15 @@ fn auto_have_budget_failure_keeps_the_exhaustion_reason() {
             )
         },
     )
-    .expect_err("auto must report its exhausted budget");
+    .expect_err("solve must report its exhausted budget");
     assert!(error.message().contains("budget exhausted"), "{error:?}");
     assert!(
-        !error.message().contains("`auto` could not prove"),
+        !error.message().contains("`solve` could not prove"),
         "{error:?}"
     );
 }
 
-/// A smart closer inside a nested `have` script, `have P by { auto(); }`
+/// A smart closer inside a nested `have` script, `have P by { solve(); }`
 /// within another `have`'s proof, spends a smart tactic's search: its work
 /// is charged to the smart budget and a miss gets the smart advice. It was
 /// once charged to the `have`'s control budget and reported as an engine
@@ -426,7 +429,7 @@ fn smart_closer_inside_a_have_script_spends_the_smart_budget() {
             )
         },
     )
-    .expect_err("the nested auto must exhaust the smart budget");
+    .expect_err("the nested solve must exhaust the smart budget");
     assert!(
         error.message().contains(
             "tactic `have` in `bound.contract` exhausted its deterministic smart work budget"
@@ -2207,7 +2210,7 @@ fn callback_script_tails_complete_or_report_a_bounded_failure() {
         let source = fixture.click_source.unwrap();
         let (source, c_sources) = if fixture_name.ends_with("owns.md") {
             // The written steps stop after the first callback; the script's
-            // implicit auto tail must finish the remaining valid callbacks.
+            // implicit solve tail must finish the remaining valid callbacks.
             (
                 source
                     .replace("step_until(function.exit);", "step(); step(); step();")
@@ -4439,10 +4442,10 @@ diagnostic_batches! {
         failed_outcome_reports_post_call_resources_not_the_execution_entry,
         callback_sources_keep_field_names_through_subobject_lowering,
         implicit_loop_closure_is_smart,
-        implicit_auto_is_a_smart_tactic_at_the_simple_tactic_site,
+        implicit_solve_is_a_smart_tactic_at_the_simple_tactic_site,
     ],
     diagnostic_batch_03: [
-        auto_have_budget_failure_keeps_the_exhaustion_reason,
+        solve_have_budget_failure_keeps_the_exhaustion_reason,
         smart_closer_inside_a_have_script_spends_the_smart_budget,
         wide_arithmetic_unavailable_premise_returns_one_diagnostic,
         wide_arithmetic_budget_refusal_does_not_panic,

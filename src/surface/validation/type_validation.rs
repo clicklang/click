@@ -2488,7 +2488,7 @@ pub(super) fn validate_pure_theorem_proof(
 ) -> Result<(), ClickError> {
     match proof {
         SourceProof::Default => Ok(()),
-        SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Solve) => Ok(()),
+        SourceProof::Tactic(SmartTactic::ImplicitTail | SmartTactic::Solve) => Ok(()),
         SourceProof::Script(tactics) => validate_pure_theorem_tactics(theorem_name, tactics),
     }
 }
@@ -2526,7 +2526,7 @@ fn validate_pure_theorem_tactics(
             | ProofTactic::LetSatisfy(_)
             | ProofTactic::Choose(_)
             | ProofTactic::Solve
-            | ProofTactic::AutoClose
+            | ProofTactic::ImplicitSolve
             // `transport(P, Q) using { ... }` names its source, its target,
             // and every premise, so it needs no state: the explicit facts
             // decide it. The smart `transport(P, Q)` form still does not
@@ -2654,7 +2654,7 @@ pub(in crate::surface) fn tactic_name(tactic: &ProofTactic) -> &'static str {
         ProofTactic::Transport { .. } | ProofTactic::TransportUsing { .. } => "transport",
         ProofTactic::InstantiateUsing { .. } => "instantiate",
         ProofTactic::Solve => "solve",
-        ProofTactic::AutoClose => "implicit tail",
+        ProofTactic::ImplicitSolve => "implicit tail",
         ProofTactic::SolveUsing(_) => "solve",
         ProofTactic::TransportCertificate(_) => "transport_certificate",
         ProofTactic::ArithmeticCertificate(_) => "arithmetic_certificate",

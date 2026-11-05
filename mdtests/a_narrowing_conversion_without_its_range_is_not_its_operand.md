@@ -1,7 +1,7 @@
 # A narrowing conversion without its range is not its operand
 
 A negative of
-[`auto_widens_a_narrow_value_into_a_containing_type.md`](auto_widens_a_narrow_value_into_a_containing_type.md).
+[`solve_widens_a_narrow_value_into_a_containing_type.md`](solve_widens_a_narrow_value_into_a_containing_type.md).
 `(signed char)x` of an `int` wraps outside `signed char`'s range, so without
 a range on `x` its value need not be `x`'s.
 

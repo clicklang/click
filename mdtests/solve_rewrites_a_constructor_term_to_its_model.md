@@ -7,13 +7,13 @@ of rewrites by the equalities connected to the goal, in either direction, and
 closes the rewritten goal by `assumption`. Each rewrite is a checked step, and
 `click expand` writes the chain it found as `rewrite` steps.
 
-```c filename=auto_rewrites_a_constructor_term_to_its_model.c
+```c filename=solve_rewrites_a_constructor_term_to_its_model.c
 void touch(int32 n) {
 }
 ```
 
 ```click
-verifying "auto_rewrites_a_constructor_term_to_its_model.c";
+verifying "solve_rewrites_a_constructor_term_to_its_model.c";
 
 spec enum Walk { At(Integer, Walk), Done }
 

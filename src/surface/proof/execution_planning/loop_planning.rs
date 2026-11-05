@@ -602,7 +602,7 @@ fn check_initialization_body<'a>(
     sites: Option<&[ProofStepSite]>,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
     let checked = match source {
-        SourceProof::Tactic(SmartTactic::Auto) => scope.driver().try_auto_fact_closure()?,
+        SourceProof::Tactic(SmartTactic::ImplicitTail) => scope.driver().try_solve_closure()?,
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
             (scope).driver().try_solve_closure()?
         }
@@ -1251,7 +1251,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 (
                     tactics.len(),
                     source.loop_source_index,
-                    crate::instrumentation::IMPLICIT_AUTO_TACTIC,
+                    crate::instrumentation::IMPLICIT_SOLVE_TACTIC,
                     "smart",
                 )
             };

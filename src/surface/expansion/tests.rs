@@ -220,9 +220,9 @@ fn retained_caller_expansion_preserves_declared_object_return_evidence() {
             .unwrap()
             .unwrap();
     let position = c0_tactic_source_position(&expanded, &sources, "caller.contract", 0).unwrap();
-    without_implicit_auto(|| session.verify_at(&expanded, position.line, position.column))
+    without_implicit_solve(|| session.verify_at(&expanded, position.line, position.column))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn grouped_expansion_keeps_postexecution_closers_in_source_order() {
     let expanded = expand_verified_function_claim_source_by_label(source, &verified, "f.contract")
         .unwrap()
         .unwrap();
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
@@ -466,10 +466,10 @@ void use(struct root* root) {
         expanded.contains("have whole.model == old(cell.model) by"),
         "the expansion should read the unfolded child through the produced binder: {expanded}"
     );
-    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+    crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
         .unwrap();
     assert!(
-        crate::surface::proof::without_implicit_auto(|| verify_c0_sources(
+        crate::surface::proof::without_implicit_solve(|| verify_c0_sources(
             &expanded.replace(
                 "ensures whole.model == old(cell.model);",
                 "ensures whole.model == old(cell.model) + 1;"
@@ -3046,7 +3046,7 @@ fn pure_nested_have_branch_apply_expands_the_retained_proof_object_scope() {
 }
 
 /// An `extern` contract is assumed. Its clauses have no proof, so the
-/// implicit `auto` of an unproved clause is not a site: `click audit` used to
+/// implicit `solve` of an unproved clause is not a site: `click audit` used to
 /// list one per clause and then fail to expand it, reporting that the
 /// function `has no verified ensures clause`.
 #[test]
@@ -3079,7 +3079,7 @@ int32 parent(int32 x) {
 }
 
 #[test]
-fn smart_inventory_does_not_invent_auto_sites_for_kernel_axiom_declarations() {
+fn smart_inventory_does_not_invent_solve_sites_for_kernel_axiom_declarations() {
     let source = r#"
 theorem int32_le_antisymmetric(left: int32, right: int32) {
     requires left <= right;
@@ -3822,7 +3822,7 @@ fn a_caught_call_can_bypass_its_branch_return() {
 /// would not find.
 #[test]
 #[ignore = "nightly: 0.8s in the parallel gate"]
-fn an_auto_sum_identity_after_a_proved_lower_bound_reverifies() {
+fn an_solve_sum_identity_after_a_proved_lower_bound_reverifies() {
     let c_source = "#include <stdint.h>\nint64_t inc(int64_t q) { return q; }\n";
     let source = r#"verifying "inc.c";
 
@@ -3875,7 +3875,7 @@ int32 f(int32 x) {
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).expect("the expanded tail should verify");
-    let refused = without_implicit_auto(|| verify_c0_sources(click_source, &sources))
+    let refused = without_implicit_solve(|| verify_c0_sources(click_source, &sources))
         .expect_err("with the implicit closer off the tail runs no C");
     assert!(
         refused.message().contains("the implicit tail is off"),

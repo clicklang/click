@@ -8,7 +8,7 @@ applications, proved by rewriting each to the shared value, and `solve` then
 reads the fields' equality from it. Different constructors make the same
 equation a contradiction.
 
-```c filename=auto_reads_fields_through_two_constructor_equations.c
+```c filename=solve_reads_fields_through_two_constructor_equations.c
 struct node { unsigned long bits; };
 
 void touch(struct node *p) {
@@ -16,7 +16,7 @@ void touch(struct node *p) {
 ```
 
 ```click
-verifying "auto_reads_fields_through_two_constructor_equations.c";
+verifying "solve_reads_fields_through_two_constructor_equations.c";
 
 spec enum Color { Red, Black }
 spec enum Tree { Empty, Node(Color, Tree) }

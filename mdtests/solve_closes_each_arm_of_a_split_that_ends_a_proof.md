@@ -5,14 +5,14 @@ that path in two, and each arm finishes its own path, closing that arm's
 goals: here two `solve()` steps close the first two claims in
 each arm and the implicit closer the rest.
 
-```c filename=auto_closes_each_arm_of_a_split_that_ends_a_proof.c
+```c filename=solve_closes_each_arm_of_a_split_that_ends_a_proof.c
 int32 f(int32 n) {
     return n;
 }
 ```
 
 ```click
-verifying "auto_closes_each_arm_of_a_split_that_ends_a_proof.c";
+verifying "solve_closes_each_arm_of_a_split_that_ends_a_proof.c";
 
 int32 f(int32 n) {
     ensures result == n;

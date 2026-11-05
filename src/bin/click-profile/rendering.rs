@@ -1073,9 +1073,9 @@ pub(super) fn render_expansion_command(
     } else {
         expanded_artifact_path(&key.source_path)
     };
-    // The implicit `auto` runs at a bare simple tactic, which is not a
+    // The implicit `solve` runs at a bare simple tactic, which is not a
     // selectable site; expanding its claim writes the proof as a `by`.
-    let target = if key.tactic_name == click::instrumentation::IMPLICIT_AUTO_TACTIC {
+    let target = if key.tactic_name == click::instrumentation::IMPLICIT_SOLVE_TACTIC {
         format!(
             "--claim {} {}",
             shell_quote(&key.claim),

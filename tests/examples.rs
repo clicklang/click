@@ -492,7 +492,7 @@ fn registry_trace_labels_record_every_snapshot_origin() {
 /// Auto must choose a spellable certificate for the original recoloring equality.
 #[test]
 #[ignore = "nightly: rechecks rbtree recoloring expansion"]
-fn rbtree_auto_recolor_expansion_rechecks() {
+fn rbtree_solve_recolor_expansion_rechecks() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/rbtree/rbtree-insert/rbtree_insert.click");
     let mut source = fs::read_to_string(&path).unwrap();
@@ -528,7 +528,7 @@ fn rbtree_auto_recolor_expansion_rechecks() {
         line,
         column,
     )
-    .expect("auto's selected certificate must have source spelling");
+    .expect("solve's selected certificate must have source spelling");
     let rewritten = project.with_entry_source(expanded);
     click::surface::verify_project_at(
         &rewritten,
@@ -882,13 +882,13 @@ fn erase_source_refuses_mutation(sidecar: &str, file: &str, before: &str, after:
     erase_source_refuses_replacement(sidecar, file, before, after, 1);
 }
 
-/// `auto` at this `arena` site once deadlocked: the equality graph held its
+/// `solve` at this `arena` site once deadlocked: the equality graph held its
 /// lock while canonicalizing a cell read, and canonicalization consulted the
 /// same graph's read generation. It must now answer promptly. The original
-/// proof stays in the example; only this test proves the fact by `auto`.
+/// proof stays in the example; only this test proves the fact by `solve`.
 #[test]
 #[ignore = "nightly: about 16 s in a debug build, most of it loading the whole arena sidecar"]
-fn auto_on_an_arena_cell_read_answers_instead_of_deadlocking() {
+fn solve_on_an_arena_cell_read_answers_instead_of_deadlocking() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let path = root.join("examples/arena/arena_cells.click");
     let source = fs::read_to_string(&path).expect("the arena sidecar exists");
@@ -911,14 +911,14 @@ fn auto_on_an_arena_cell_read_answers_instead_of_deadlocking() {
     let c_sources = read_verifying_sources(&path, &edited).expect("the arena C bundle loads");
     let started = std::time::Instant::now();
     let _ = limits::spawn(
-        "arena auto verifier",
-        "click-arena-auto".to_string(),
+        "arena solve verifier",
+        "click-arena-solve".to_string(),
         move || verify_c0_sources_at(&edited, &source_refs(&c_sources), line, column),
     )
     .unwrap_or_else(|error| panic!("{error}"));
     assert!(
         started.elapsed() < std::time::Duration::from_secs(120),
-        "`auto` at the arena cell read took {:?}",
+        "`solve` at the arena cell read took {:?}",
         started.elapsed()
     );
 }
@@ -2570,11 +2570,11 @@ fn first_proof_tutorial_sessions_match_the_verifier() {
 /// The markdown harness uses enlarged verifier-thread stacks. Keep this
 /// reproduction in the real CLI too, where main has the ordinary OS stack.
 #[test]
-fn uint64_successor_auto_answers_on_the_normal_cli_stack() {
+fn uint64_successor_solve_answers_on_the_normal_cli_stack() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let output = Command::new(env!("CARGO_BIN_EXE_click"))
         .arg("verify")
-        .arg(root.join("mdtests/uint64_successor_auto_with_additional_bound.md"))
+        .arg(root.join("mdtests/uint64_successor_solve_with_additional_bound.md"))
         .output()
         .expect("run the verifier on its ordinary process stack");
     assert!(
@@ -3012,7 +3012,7 @@ fn replay_cell_source_example(example: &str, sidecar: &str, claim: &str) {
                 error.trace_context_report().unwrap_or_default()
             )
         });
-    click::surface::without_implicit_auto_for_claim(claim, || {
+    click::surface::without_implicit_solve_for_claim(claim, || {
         click::surface::verify_project_functions(
             &project.with_entry_source(expanded),
             &inputs,

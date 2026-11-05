@@ -1482,10 +1482,10 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
 }
 
 #[test]
-fn bounded_auto_loop_expands_without_a_detached_summary() {
+fn bounded_solve_loop_expands_without_a_detached_summary() {
     let sources = [("fill3.c", FILL3_C)];
     let position = c0_tactic_source_position(FILL3_CLICK, &sources, "fill3.returns_second", 0)
-        .expect("the default auto proof should have a source position");
+        .expect("the default solve proof should have a source position");
     let expanded =
         expand_c0_tactic_source_at(FILL3_CLICK, &sources, position.line, position.column)
             .expect("bounded loop execution should have a surface certificate");

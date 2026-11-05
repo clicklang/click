@@ -173,8 +173,8 @@ order reads as the `uint32` observations of its operands. The
 special Integer rules read only the premises a node cites. `solve` refutes a
 native goal as its Integer reading and spells each cited native fact through
 its written operands, so an expanded certificate cites the facts as written
-(`mdtests/auto_observes_an_operation_term_by_term.md`,
-`mdtests/auto_proves_a_64_bit_equality_from_bounds.md`).
+(`mdtests/solve_observes_an_operation_term_by_term.md`,
+`mdtests/solve_proves_a_64_bit_equality_from_bounds.md`).
 
 The checked `integer::uint32_less_equal_to_integer` and
 `integer::uint32_to_integer_less_equal_implies_less_equal` laws preserve and reflect unsigned non-strict
@@ -1284,7 +1284,7 @@ bound (`kernel::machine_integer::bounds::operation_bound`). A divisor that
 is not a positive constant of the operation's format (a signed `0xfffffff8`
 is `-8`), a symbolic divisor, a shift by the width or more, and a narrow or
 128-bit operation give none
-(`mdtests/auto_bounds_a_signed_quotient_by_its_operand.md`).
+(`mdtests/solve_bounds_a_signed_quotient_by_its_operand.md`).
 `excluded_bound N: D => P;` cites premise `N`, a disequality of a
 machine value with its type's minimum or maximum, as the bound it gives: an
 unsigned `v != 0` is `1 <= to_integer(v)` (`excluded_type_bound`).
@@ -1300,8 +1300,8 @@ counterexample, it retries with the facts' native comparisons read as
 Integer ones and with the type range of each machine observation, the
 operation bound of each quotient, shift, or remainder by a constant,
 and the bound each disequality with a type endpoint gives
-(`mdtests/auto_bounds_an_unsigned_quotient_by_its_operand.md`,
-`mdtests/auto_refuses_a_quotient_bound_past_the_floor.md`). When that
+(`mdtests/solve_bounds_an_unsigned_quotient_by_its_operand.md`,
+`mdtests/solve_refuses_a_quotient_bound_past_the_floor.md`). When that
 also fails, it may assume the identity of each machine `+` or `-` it sees,
 and of each `*` with a constant factor, whose exact value is affine;
 for each identity the refutation uses, it proves the two bounds with the
@@ -1309,12 +1309,12 @@ same arithmetic, applies `integer_operation_identity`, and then proves the
 goal. So
 `ensures result == x - 1;` for an unsigned
 `x - 1u` verifies from `requires 1 <= x;` alone
-(`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
+(`mdtests/solve_proves_an_in_range_machine_sum_is_its_integer_sum.md`). The
 retries run only after a miss, so a proof that needs none keeps its
 certificate. An operand that is itself an operation gets its own identity,
 proved first, so the bounds of `(a + b) + c` read `to_integer(a + b) ==
 to_integer(a) + to_integer(b)` and `result == a + b + c` needs no stated step
-(`mdtests/auto_observes_a_nested_sum_under_integer_arithmetic.md`). An
+(`mdtests/solve_observes_a_nested_sum_under_integer_arithmetic.md`). An
 equality goal is proved from its two bounds, each inside its own `have`; when
 the facts alone miss the first bound, the goal's own identities are proved
 once beforehand, so both bounds read them, and a goal that is one of them
@@ -1328,8 +1328,8 @@ word narrowing does not record its operand's signedness, so the identity names
 the operand the facts observe. An identity whose spelling names a different
 observation, such as the signed reading of an unsigned narrowing's word, which
 spells as the unsigned cast, is dropped and the refutation planned again
-(`mdtests/auto_reads_a_narrowing_cast_inside_its_range.md`,
-`mdtests/auto_does_not_read_a_narrowing_cast_outside_its_range.md`).
+(`mdtests/solve_reads_a_narrowing_cast_inside_its_range.md`,
+`mdtests/solve_does_not_read_a_narrowing_cast_outside_its_range.md`).
 `solve() using` plans `integer_cast_identity` for an identity goal from two
 listed constant bounds on the operand.
 
@@ -1349,8 +1349,8 @@ callee's Integer postcondition at the call site is spelled from the current
 state, an observation of a value the proof has since replaced is spelled at
 function entry (`old(*p)` for a written `*p`), and a native fact read as an
 Integer one is spelled from the native fact's own operands
-(`mdtests/auto_reads_a_call_postcondition_for_a_machine_bound.md`,
-`mdtests/auto_spells_a_replaced_value_at_function_entry.md`).
+(`mdtests/solve_reads_a_call_postcondition_for_a_machine_bound.md`,
+`mdtests/solve_spells_a_replaced_value_at_function_entry.md`).
 
 ## Bounded polynomial identities and quotient shifts
 

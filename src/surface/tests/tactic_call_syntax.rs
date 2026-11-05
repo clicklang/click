@@ -73,7 +73,7 @@ fn nested_single_tactic_calls_keep_their_checked_scopes() {
 }
 
 #[test]
-fn whole_proof_auto_call_cannot_be_shadowed_by_a_user_tactic() {
+fn whole_proof_solve_call_cannot_be_shadowed_by_a_user_tactic() {
     let error = parser::parse("tactic solve() { ensures true; } by solve();").unwrap_err();
     assert!(error.message().contains("built-in"), "{error:?}");
 }

@@ -857,7 +857,7 @@ fn generated_commands_quote_locations_and_artifacts() {
 }
 
 #[test]
-fn an_implicit_auto_row_expands_its_claim() {
+fn an_implicit_solve_row_expands_its_claim() {
     let key = StepKey {
         prepared_import: false,
         expand_enclosing_claim: false,
@@ -866,7 +866,7 @@ fn an_implicit_auto_row_expands_its_claim() {
         claim: "caller.contract".to_string(),
         tactic_index: 0,
         source_index: 0,
-        tactic_name: click::instrumentation::IMPLICIT_AUTO_TACTIC.to_string(),
+        tactic_name: click::instrumentation::IMPLICIT_SOLVE_TACTIC.to_string(),
         category: TacticCategory::Smart,
         statement_index: 0,
         position: None,
@@ -1256,13 +1256,13 @@ fn profile_recommendations_expand_loop_closers_and_mixed_have_bodies() {
     let path = directory.path().join("profile.md");
     let source = fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("mdtests/count_to_loop_initialize_by_auto_and_preserve.md"),
+            .join("mdtests/count_to_loop_initialize_by_solve_and_preserve.md"),
     )
     .unwrap()
     .replace("            solve();\n", "")
     .replace(
-        "verifying \"count_to_loop_initialize_by_auto_and_preserve.c\";",
-        r#"verifying "count_to_loop_initialize_by_auto_and_preserve.c";
+        "verifying \"count_to_loop_initialize_by_solve_and_preserve.c\";",
+        r#"verifying "count_to_loop_initialize_by_solve_and_preserve.c";
 theorem mixed(x: int32) {
     ensures x == 1 implies x == 1 by {
         have x == 1 implies x == 1 by { intro(); solve(); }
@@ -1283,7 +1283,7 @@ theorem mixed(x: int32) {
         .iter()
         .find(|step| {
             step.key.claim == "count_to.contract"
-                && step.key.tactic_name == click::instrumentation::IMPLICIT_AUTO_TACTIC
+                && step.key.tactic_name == click::instrumentation::IMPLICIT_SOLVE_TACTIC
         })
         .expect("the implicit loop closer must be identified as such");
     let position = closer.key.position.as_ref().unwrap();
@@ -1301,7 +1301,7 @@ theorem mixed(x: int32) {
         let mut command = String::new();
         render_expansion_command(&mut command, &step.key, position.clone(), thresholds);
         assert!(command.contains("--claim"), "{command}");
-        let selector = if step.key.tactic_name == click::instrumentation::IMPLICIT_AUTO_TACTIC {
+        let selector = if step.key.tactic_name == click::instrumentation::IMPLICIT_SOLVE_TACTIC {
             step.key.claim.clone()
         } else {
             format!("{}:{}:{}", path.display(), position.line, position.column)

@@ -160,7 +160,7 @@ the bounds of the exact result (see
 cite only the loop head and the contract, selects nothing. When its other
 strategies miss, `solve` works from the facts connected to the goal. It reads a condition a function
 fact forces out of the function's definition
-(`mdtests/auto_reads_a_condition_out_of_a_definition.md`), then rewrites the
+(`mdtests/solve_reads_a_condition_out_of_a_definition.md`), then rewrites the
 goal by the connected equalities: first a goal that
 restates an available fact through one connected equality, such as
 `f(Node(..)) == 1` beside `f(t) == 1` and `t == Node(..)`, by one `rewrite`
@@ -172,13 +172,13 @@ mismatch, from it
 (`mdtests/solve_reads_definitions_and_constructor_equations.md`).
 Written
 as a step of a script, `solve();` closes the first open goal
-(`mdtests/a_written_auto_closes_one_goal.md`). A
+(`mdtests/a_written_solve_closes_one_goal.md`). A
 script that stops with C left ends with the implicit tail, which executes
 whatever remains and closes every open goal
 (`mdtests/a_script_that_stops_after_explicit_steps_executes_the_rest.md`). In
 each arm of a proof `if` that ends a proof, the arm's own closer closes that
 arm's goals
-(`mdtests/auto_closes_each_arm_of_a_split_that_ends_a_proof.md`). Successful smart tactics and the implicit closer retain the checked
+(`mdtests/solve_closes_each_arm_of_a_split_that_ends_a_proof.md`). Successful smart tactics and the implicit closer retain the checked
 surface provenance that `click expand` can render as an explicit proof.
 Source-premise selection skips synthesized candidates whose rendered
 propositions do not tokenize as Click, rather than counting a route through an
@@ -192,14 +192,14 @@ resources: when no owned resource's body holds the place, or more than one
 does, the refusal stands. Expansion writes each opening as an explicit
 `unfold(...)`. The contract's resource transition folds the resource again
 at function exit. A written `step()` never opens a resource. See
-[`auto_opens_a_folded_resource_to_store_through_it.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_opens_a_folded_resource_to_store_through_it.md)
+[`implicit_tail_opens_a_folded_resource_to_store_through_it.md`](https://github.com/clicklang/click/blob/master/mdtests/implicit_tail_opens_a_folded_resource_to_store_through_it.md)
 and
 [`a_written_step_does_not_open_a_folded_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/a_written_step_does_not_open_a_folded_resource.md).
 
 A failed `have P` that the implicit closer proves names the written `P`,
 rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
-[`auto_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_failure_names_the_written_goal.md).
+[`solve_failure_names_the_written_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_failure_names_the_written_goal.md).
 
 The implicit closer reads a goal that is one of a function's `if` conditions out of a
 connected fact `f(args) == k`, with `k` an integer constant: the arguments
@@ -214,9 +214,9 @@ goal's, and at each end `have f(args) != k` by `unfold` and
 `normalize() using` the conditions taken, then `contradiction`. At most 16
 connected function facts are read, each up to 16 ends; a `match` that its
 arguments do not decide, or an end that is not a constant, is a miss. See
-[`auto_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_reads_a_condition_out_of_a_definition.md)
+[`solve_reads_a_condition_out_of_a_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_definition.md)
 and
-[`auto_does_not_read_an_unforced_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_does_not_read_an_unforced_condition.md).
+[`solve_does_not_read_an_unforced_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_read_an_unforced_condition.md).
 The function may be generic, and `bool`-valued with `true`/`false` ends: the
 fact `list::contains(xs, x)` reads as `== true`, and is refuted by
 `have not list::contains(xs, x)`. An end that applies a defined function, as
@@ -224,8 +224,8 @@ fact `list::contains(xs, x)` reads as `== true`, and is refuted by
 and unfolded after the fact's own application. A condition spelled other than
 the goal, `v == x` against a postcondition's `result == x`, matches when it
 lowers to the same goal. So `list::contains(Cons(v, Nil), x)` forces `v == x`
-([`auto_reads_a_condition_out_of_a_generic_bool_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_reads_a_condition_out_of_a_generic_bool_definition.md),
-[`auto_does_not_read_an_unforced_generic_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_does_not_read_an_unforced_generic_condition.md)).
+([`solve_reads_a_condition_out_of_a_generic_bool_definition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_reads_a_condition_out_of_a_generic_bool_definition.md),
+[`solve_does_not_read_an_unforced_generic_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_does_not_read_an_unforced_generic_condition.md)).
 
 Signed `int32` arithmetic substitutes equalities: `x == 5` bounds `x` on
 both sides, so it proves `x - 1` defined and closes `x - 1 == 4`; a listed
@@ -2973,42 +2973,42 @@ solve();`, and a one-step proof may drop the braces: `have P by T(args);`. A
 `have` executes no C. On a linear `Integer` bound `solve`
 refutes the integer negation from the facts connected to `P` and applies the
 result as one `arithmetic_certificate`
-([`have_by_auto_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_auto_refutes_a_linear_bound.md)).
+([`have_by_solve_refutes_a_linear_bound.md`](https://github.com/clicklang/click/blob/master/mdtests/have_by_solve_refutes_a_linear_bound.md)).
 
 Connected `int32`, `int64` and `uint64` order facts are carried to `Integer` by
 `assumption()`, since a comparison of observations is the native comparison,
 and `uint64` values get their type range from a `type_range` certificate; only
 the carried facts the certificate cites are kept
-([`auto_carries_machine_orders_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_carries_machine_orders_to_integer.md)).
+([`solve_carries_machine_orders_to_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_carries_machine_orders_to_integer.md)).
 
 A `uint64` or `int64` order goal, or an `int32` `<=` goal, is proved through its
 `Integer` reading, which is the native comparison itself
-([`auto_proves_a_machine_order_through_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_machine_order_through_integer.md)),
+([`solve_proves_a_machine_order_through_integer.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_a_machine_order_through_integer.md)),
 and an `Integer` equality goal from both of its bounds
-([`auto_proves_an_integer_equality_from_both_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_integer_equality_from_both_bounds.md)).
+([`solve_proves_an_integer_equality_from_both_bounds.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_an_integer_equality_from_both_bounds.md)).
 
 A goal `defined(a + b)` or `defined(a - b)` over `int32` or `int64` is proved
 from both `Integer` bounds of the exact result, which together are the
 definedness fact
-([`auto_proves_signed_addition_defined.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_signed_addition_defined.md)),
+([`solve_proves_signed_addition_defined.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_signed_addition_defined.md)),
 and each `to_integer(a + b)` or `to_integer(a - b)` in the goal is observed term
 by term: a signed operation once it is defined, and a `uint64` one once it
 does not wrap, by an `integer_operation_identity` certificate citing both
 constant bounds of its exact value
-([`auto_observes_an_operation_term_by_term.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_observes_an_operation_term_by_term.md)).
+([`solve_observes_an_operation_term_by_term.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_an_operation_term_by_term.md)).
 
 Machine equality facts are carried by rewriting, each observed value gets its
 type range from a `type_range` certificate, an `int32`, `int64` or `uint64`
 equality goal is
 proved as its observed reading once both sides are shown defined, splitting an
 equality into its two bounds when needed, and a conjunction goal is split
-([`auto_proves_a_conservation_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_a_conservation_equation.md)).
+([`solve_proves_a_conservation_equation.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_a_conservation_equation.md)).
 On an implication `A implies B`, `solve` introduces `A` and closes `B`, with
 this arithmetic and the searches below, as for `result == 1 implies cap ==
 old(cap) + 1` on a path where the antecedent reads `true`
-([`auto_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_proves_an_implication_whose_consequent_needs_the_solver.md)).
+([`solve_proves_an_implication_whose_consequent_needs_the_solver.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_proves_an_implication_whose_consequent_needs_the_solver.md)).
 The in-range `+` and `-` identities, `*` identities with a constant factor
-([`auto_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_observes_a_product_by_a_constant.md)),
+([`solve_observes_a_product_by_a_constant.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_observes_a_product_by_a_constant.md)),
 and integral-cast identities this arithmetic uses, nested ones included, are
 described in [mathematical integers](../../internals/mathematical-integers.md#in-range-machine-sums-differences-and-products).
 
@@ -3021,8 +3021,8 @@ algebraic alike, each in either direction, and closes the rewritten goal by
 Each rewrite is a checked step, and the search offers at most 64 equalities,
 those that rewrite `P` itself first, and tries at most 256 rewrites, so a large
 connected component fails promptly
-([`auto_rewrites_a_constructor_term_to_its_model.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_rewrites_a_constructor_term_to_its_model.md),
-[`auto_refuses_a_constructor_rewrite_that_does_not_close.md`](https://github.com/clicklang/click/blob/master/mdtests/auto_refuses_a_constructor_rewrite_that_does_not_close.md)).
+([`solve_rewrites_a_constructor_term_to_its_model.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_rewrites_a_constructor_term_to_its_model.md),
+[`solve_refuses_a_constructor_rewrite_that_does_not_close.md`](https://github.com/clicklang/click/blob/master/mdtests/solve_refuses_a_constructor_rewrite_that_does_not_close.md)).
 
 The search cites only equalities with a source spelling at that point; a fact
 from an earlier `have` or a proof `if` condition inside a pure theorem has none
@@ -3596,7 +3596,7 @@ Click folds exactly the named resource, completing the child map before the
 kernel checks it; expansion keeps a bare fold unless the implicit closer proved
 a body fact, and profiling charges its body.
 
-**Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`a_fold_takes_children_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_takes_children_by_name.md), [`a_fold_does_not_take_an_unfolded_child_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md), [`a_fold_does_not_take_a_child_of_another_family_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_a_child_of_another_family_by_name.md), [`fold_proves_an_unstated_body_fact_by_implicit_auto.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_proves_an_unstated_body_fact_by_implicit_auto.md), [`a_block_bound_instance_name_ends_with_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_block_bound_instance_name_ends_with_its_block.md), [`an_instance_bound_before_a_block_is_named_inside_it.md`](https://github.com/clicklang/click/blob/master/mdtests/an_instance_bound_before_a_block_is_named_inside_it.md)
+**Checked examples:** [`composite_resource_composes_token.md`](https://github.com/clicklang/click/blob/master/mdtests/composite_resource_composes_token.md), [`a_fold_takes_children_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_takes_children_by_name.md), [`a_fold_does_not_take_an_unfolded_child_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_an_unfolded_child_by_name.md), [`a_fold_does_not_take_a_child_of_another_family_by_name.md`](https://github.com/clicklang/click/blob/master/mdtests/a_fold_does_not_take_a_child_of_another_family_by_name.md), [`fold_proves_an_unstated_body_fact_by_implicit_solve.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_proves_an_unstated_body_fact_by_implicit_solve.md), [`a_block_bound_instance_name_ends_with_its_block.md`](https://github.com/clicklang/click/blob/master/mdtests/a_block_bound_instance_name_ends_with_its_block.md), [`an_instance_bound_before_a_block_is_named_inside_it.md`](https://github.com/clicklang/click/blob/master/mdtests/an_instance_bound_before_a_block_is_named_inside_it.md)
 
 ### Folding with one obligation
 
@@ -3980,7 +3980,7 @@ nested search does not re-enter the same operation's bridge. Already available
 prerequisites can still justify the observation; a cyclic attempt is a search
 miss. No stack size or work budget is raised.
 
-[UInt64 successor with an additional bound](https://github.com/clicklang/click/blob/master/mdtests/uint64_successor_auto_with_additional_bound.md)
+[UInt64 successor with an additional bound](https://github.com/clicklang/click/blob/master/mdtests/uint64_successor_solve_with_additional_bound.md)
 checks that an extra machine bound does not make an arithmetic proof recurse
 indefinitely. Its false-small-bound companion keeps an unprovable conversion
 bound rejected.

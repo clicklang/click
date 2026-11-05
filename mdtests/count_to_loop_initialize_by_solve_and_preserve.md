@@ -4,7 +4,7 @@ This checks the full induction syntax for a counter loop: `initialize by solve()
 proves the invariants at loop entry, and `preserve` executes one iteration and
 reestablishes them before the implicit invariant closer.
 
-```c filename=count_to_loop_initialize_by_auto_and_preserve.c
+```c filename=count_to_loop_initialize_by_solve_and_preserve.c
 int32 count_to(int32 n) {
     int32 i = 0;
     while (i < n) {
@@ -15,7 +15,7 @@ int32 count_to(int32 n) {
 ```
 
 ```click
-verifying "count_to_loop_initialize_by_auto_and_preserve.c";
+verifying "count_to_loop_initialize_by_solve_and_preserve.c";
 
 int32 count_to(int32 n) {
     requires n >= 0;

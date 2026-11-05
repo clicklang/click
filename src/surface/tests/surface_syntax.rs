@@ -922,7 +922,7 @@ fn parses_checked_signature_and_contract_clauses() {
             current_int(2),
         )
     );
-    assert!(ensure.proof().is_auto_tactic());
+    assert!(ensure.proof().uses_implicit_tail());
 }
 
 #[test]

@@ -498,7 +498,7 @@ fn has_body_safety_proof(function: &FunctionBlock) -> bool {
 }
 
 fn expansion_covering_proof(function: &FunctionBlock) -> Option<&SourceProof> {
-    static BODY_SAFETY: SourceProof = SourceProof::Tactic(SmartTactic::Auto);
+    static BODY_SAFETY: SourceProof = SourceProof::Tactic(SmartTactic::ImplicitTail);
     function
         .covering_proof()
         .or_else(|| has_body_safety_proof(function).then_some(&BODY_SAFETY))
@@ -2732,7 +2732,7 @@ fn covering_claim(function_block: &FunctionBlock, claim: CProofClaim) -> CProofC
     }
 }
 
-/// The written grouped proof's span, or, for the implicit `auto` that
+/// The written grouped proof's span, or, for the implicit `solve` that
 /// covers omitted claim proofs, an insertion after the contract block.
 fn find_grouped_proof_edit(
     tokens: &[SourceToken],
@@ -4835,7 +4835,7 @@ fn proof_tactic_entries(
 
 fn smart_tactic_name(tactic: SmartTactic) -> &'static str {
     match tactic {
-        SmartTactic::Auto => "implicit tail",
+        SmartTactic::ImplicitTail => "implicit tail",
         SmartTactic::Solve => "solve",
     }
 }

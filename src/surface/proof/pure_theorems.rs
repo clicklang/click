@@ -1849,7 +1849,7 @@ fn verify_theorem_ensure(
     theorem_environment: &TheoremEnvironment,
     function_environment: Option<&CExecutionEnvironment>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
-    let _automation_scope = super::implicit_auto_scope::ClaimScope::enter(claim_label);
+    let _automation_scope = super::implicit_solve_scope::ClaimScope::enter(claim_label);
     // Resolve declaration aliases against the outer parameter values once.
     // Proof-local introductions can shadow either name without recapturing it.
     let scoped_context;
@@ -1974,12 +1974,13 @@ fn verify_theorem_ensure(
     }
 
     let (proof_kind, certificate, checked_completion) = match ensure_clause.proof() {
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Solve) => {
+        SourceProof::Default
+        | SourceProof::Tactic(SmartTactic::ImplicitTail | SmartTactic::Solve) => {
             let (certificate, completion) = check_direct_pure_goal_with_proof(
                 !matches!(ensure_clause.proof(), SourceProof::Default),
                 matches!(
                     ensure_clause.proof(),
-                    SourceProof::Tactic(SmartTactic::Auto)
+                    SourceProof::Tactic(SmartTactic::ImplicitTail)
                 ),
                 claim_label,
                 context,
@@ -2523,8 +2524,7 @@ fn claim_script_sites(
 #[allow(clippy::too_many_arguments)]
 fn check_direct_pure_goal_with_proof(
     has_written_tactic: bool,
-    // `by auto();` is `solve`.
-    auto: bool,
+    implicit: bool,
     claim_label: &str,
     context: &PureTheoremContext,
     surface_goal: &ClickProposition,
@@ -2562,17 +2562,13 @@ fn check_direct_pure_goal_with_proof(
             TacticTiming::new(claim_label, 0, 0, &ProofTactic::Solve, 0),
         )
     };
-    let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some(if auto {
+    let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some(if implicit {
         "implicit tail"
     } else {
         "solve"
     }));
     let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
-        if auto {
-            crate::kernel::search::ProofSearch::try_auto_proof_closure(&(root))
-        } else {
-            crate::kernel::search::ProofSearch::try_solve_closure(&(root))
-        }
+        crate::kernel::search::ProofSearch::try_solve_closure(&root)
     });
     let result = match result {
         Ok(result) => result,

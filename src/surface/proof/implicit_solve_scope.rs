@@ -43,13 +43,13 @@ impl Drop for ClaimScope {
     }
 }
 
-/// Checks one claim without implicit automation, while unrelated proof units
+/// Checks one claim without implicit solving, while unrelated proof units
 /// keep their ordinary policy. `claim_label` is the proof's runtime/source
 /// inventory label. A successful operation must have checked that claim;
 /// an unknown label fails rather than silently leaving automation enabled.
-/// The unconditional [`super::without_implicit_auto`] scope still takes
+/// The unconditional [`super::without_implicit_solve`] scope still takes
 /// precedence, including inside an unselected claim.
-pub fn without_implicit_auto_for_claim<R>(
+pub fn without_implicit_solve_for_claim<R>(
     claim_label: &str,
     operation: impl FnOnce() -> Result<R, String>,
 ) -> Result<R, String> {

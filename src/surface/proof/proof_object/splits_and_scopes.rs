@@ -1131,7 +1131,7 @@ impl<'a> Proof<'a> {
         observe_goal: bool,
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
-        if !super::execution_statements::implicit_auto_disabled() {
+        if !super::execution_statements::implicit_solve_disabled() {
             let step = ProofStep::Have {
                 proposition: proposition.clone(),
                 proof: Box::new(

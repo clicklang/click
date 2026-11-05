@@ -7,16 +7,16 @@ shift by `k` is the floor of `x / 2^k`, so it has the unsigned form,
 `2^k * (x >> k) <= x <= 2^k * (x >> k) + (2^k - 1)`. The implicit closer's solver takes
 these bounds for every such operation among its facts' and goal's terms,
 as it takes an unsigned operation's
-(`auto_bounds_an_unsigned_quotient_by_its_operand.md`).
+(`solve_bounds_an_unsigned_quotient_by_its_operand.md`).
 
-```c filename=auto_bounds_a_signed_quotient_by_its_operand.c
+```c filename=solve_bounds_a_signed_quotient_by_its_operand.c
 int quarter(int x) { return x / 4; }
 int halve(int x) { return x >> 1; }
 long eighth(long x) { return x / 8; }
 ```
 
 ```click
-verifying "auto_bounds_a_signed_quotient_by_its_operand.c";
+verifying "solve_bounds_a_signed_quotient_by_its_operand.c";
 
 int32 quarter(int32 x) {
     ensures to_integer(x) <= 4 * to_integer(result) + 3;

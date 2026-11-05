@@ -551,7 +551,7 @@ loop-level `initialize` proof establishes the complete invariant set before the
 first iteration. The `preserve` proof assumes that set and the loop condition,
 executes one body iteration, and reestablishes the set:
 
-<!-- verified-example: mdtests/count_to_loop_initialize_by_auto_and_preserve.md -->
+<!-- verified-example: mdtests/count_to_loop_initialize_by_solve_and_preserve.md -->
 ```click
 loop {
     decreases n - i;
