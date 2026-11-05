@@ -679,6 +679,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
         "library/rust/vec.click",
         include_str!("../library/rust/vec.click"),
     ),
+    (
+        "library/rust/slice.click",
+        include_str!("../library/rust/slice.click"),
+    ),
 ];
 
 /// Emits one non-overlapping verifier phase on every exit path, including an

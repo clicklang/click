@@ -4076,6 +4076,22 @@ id = "library.function.usize::abs_diff"
 path = "reference/library/index.md#usizeabs_diff"
 
 [[item]]
+id = "library.type.Slice"
+path = "reference/library/index.md#slice"
+
+[[item]]
+id = "library.function.slice::len"
+path = "reference/library/index.md#slicelen"
+
+[[item]]
+id = "library.function.slice::as_ptr"
+path = "reference/library/index.md#sliceas_ptr"
+
+[[item]]
+id = "library.function.slice::from_raw_parts"
+path = "reference/library/index.md#slicefrom_raw_parts"
+
+[[item]]
 id = "library.type.Vec"
 path = "reference/library/index.md#vec"
 

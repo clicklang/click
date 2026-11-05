@@ -77,6 +77,7 @@ import click::rust::u32;
 import click::rust::u64;
 import click::rust::usize;
 import click::rust::vec;
+import click::rust::slice;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -1849,6 +1850,19 @@ theorem use_vec(v: Vec<uint32>, w: Vec<uint32>, x: uint32, i: uint64, j: uint64)
     }
     ensures v == w by {
         apply(vec::extensionality(v, w));
+    }
+}
+
+theorem use_slice(p: uint8*, n: uint64) {
+    ensures slice::len(slice::from_raw_parts(p, n)) == n by {
+        unfold(slice::from_raw_parts(p, n));
+        unfold(slice::len(Slice<uint8>::Slice(p, n)));
+        normalize();
+    }
+    ensures slice::as_ptr(slice::from_raw_parts(p, n)) == p by {
+        unfold(slice::from_raw_parts(p, n));
+        unfold(slice::as_ptr(Slice<uint8>::Slice(p, n)));
+        normalize();
     }
 }
 ```
