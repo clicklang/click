@@ -7551,11 +7551,13 @@ impl AnnotationLowerer<'_> {
                     &value.algebraic_type.value_type(),
                 )))
             }
-            ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
-            ClickType::Integer => Ok(Some(ClickType::Integer)),
-            ClickType::Parameter(_) => {
+            // A `T*` parameter binds `T` from the argument's pointer type,
+            // as a `T` parameter binds it from the argument's type.
+            ClickType::C(C0Type::ParameterPointer(_)) | ClickType::Parameter(_) => {
                 self.infer_unconstrained_call_argument_type(argument, environment)
             }
+            ClickType::C(_) | ClickType::CObjectPointer { .. } => Ok(Some(expected.clone())),
+            ClickType::Integer => Ok(Some(ClickType::Integer)),
         }
     }
 
@@ -9304,6 +9306,26 @@ fn instantiate_algebraic_kernel_field_type(
             .and_then(|index| arguments.get(index))
             .cloned()
             .ok_or_else(|| format!("unresolved type parameter `{name}`")),
+        AlgebraicFieldType::ParameterPointer(name) => match definition
+            .type_parameters()
+            .iter()
+            .position(|parameter| parameter == name)
+            .and_then(|index| arguments.get(index))
+        {
+            Some(AlgebraicValueType::C(element)) => {
+                crate::surface::generics::c0_type_from_kernel(element.clone())
+                    .pointer_type()
+                    .map(|pointer| AlgebraicValueType::C(pointer.to_kernel_type()))
+                    .ok_or_else(|| format!("`{name}*` needs `{name}` to be a C scalar type"))
+            }
+            Some(AlgebraicValueType::Parameter(parameter)) => Ok(AlgebraicValueType::C(
+                crate::kernel::CType::ParameterPointer(crate::kernel::TypeParameterName::intern(
+                    parameter,
+                )),
+            )),
+            Some(_) => Err(format!("`{name}*` needs `{name}` to be a C scalar type")),
+            None => Err(format!("unresolved type parameter `{name}`")),
+        },
         AlgebraicFieldType::Algebraic {
             name,
             arguments: nested_arguments,
