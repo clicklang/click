@@ -433,3 +433,44 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
         assert!(work <= 3 * size as usize, "size={size} work={work}");
     }
 }
+
+#[test]
+fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let raw = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(Pointer::symbolic(Variable(994110))),
+            LoadKind::Int32,
+        );
+        let leaf = KernelTermImport::default().machine(MachineIntegerType::Int32, &raw);
+        let mut root = leaf.clone();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::arithmetic_binary(
+                    MachineIntegerType::Int32,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                )
+                .unwrap();
+                let reads = crate::kernel::shared_machine_read_leaves(&root, || {
+                    crate::instrumentation::record_deterministic_work(1);
+                    true
+                })
+                .unwrap();
+                assert_eq!(reads.len(), 1);
+                assert_eq!(reads.get(&leaf.id()), Some(&leaf));
+                let uses = crate::kernel::shared_machine_read_uses(&root, Some(4), || {
+                    crate::instrumentation::record_deterministic_work(1);
+                    true
+                })
+                .unwrap();
+                assert_eq!(uses.len(), 1);
+                assert_eq!(uses.get(&(leaf.id(), Some(4))), Some(&leaf));
+            }
+        });
+        assert!(work <= 16 * size + 8, "size={size} work={work}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

@@ -472,6 +472,26 @@ volatile reads need their own representation audit. Scaling regressions cover
 retained arithmetic prefixes beside unrelated memory and repeated imports of a
 read with a growing address; explicit native import still pays for its input.
 
+The lexical read/address collectors now have a borrowed read-node route.
+Variable collection, Integer-carrier collection, capture/scope summaries and
+rewrite carrier collection select shared reads from a persistent syntax summary
+and inspect their addresses directly, without exporting surrounding arithmetic
+or looking up a reserved variable. Read-free arithmetic skips this traversal.
+The summary preserves each collector's existing snapshot and binder policy;
+it is syntax, not evidence of access or availability. A doubled-DAG regression
+checks growing read selection without repeated prefix expansion.
+
+Current-memory collection also reads shared descriptors with a retained width
+context: generic casts reset the inherited width, while other operators retain
+the existing native carrier rule. Its syntax summary caches no snapshot-match
+or permission answers. Native/shared tests cover formats, casts, absent widths
+and changed snapshots.
+
+The producer switch remains pending. Before admitting these nodes into shared
+checker observations, migrate canonical-read equality matching, graph/atom
+consumers and observation-origin metadata. Native address payloads also remain an explicit
+boundary. The borrowed lexical walkers alone do not justify removing names.
+
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |

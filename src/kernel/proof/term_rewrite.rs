@@ -66,6 +66,12 @@ fn collect_machine_operand_carriers(
             );
         }
     }
+    if let Some(reads) = shared_machine_read_leaves(root, || variables.visit()) {
+        for (_, read) in reads.iter() {
+            let (_, pointer, _) = MachineOperandView::Shared(read).read().expect("read leaf");
+            collect_pointer_carriers(pointer, variables);
+        }
+    }
     let written = shared_machine_syntax_variables(root, || variables.visit());
     let Some(written) = written else {
         return;
