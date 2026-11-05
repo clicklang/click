@@ -351,3 +351,85 @@ fn machine_root_checking_views_keep_shared_prefixes_unboxed() {
         }
     }
 }
+
+#[test]
+fn retained_load_terms_grow_without_rewalking_snapshots_or_prior_arithmetic() {
+    for unrelated in [0, 128, 512] {
+        let mut memory = CMemory::new();
+        for index in 0..unrelated {
+            memory = memory.with_block(format!("unrelated-read-{index}"), 4);
+        }
+        let memory = intern_c_memory(memory);
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(993200));
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    let read = MachineTerm::MemoryLoad(
+                        memory.clone(),
+                        Box::new(Pointer::symbolic(Variable(993201 + index))),
+                        LoadKind::Int32,
+                    );
+                    let leaf =
+                        KernelTermImport::default().machine(MachineIntegerType::Int32, &read);
+                    assert!(matches!(leaf.node(), KernelTermNode::MemoryLoad { .. }));
+                    root = KernelTerm::arithmetic_binary(
+                        MachineIntegerType::Int32,
+                        MachineBinaryOp::Add,
+                        [root.clone(), leaf],
+                    )
+                    .unwrap();
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                work <= 8 * size as usize,
+                "size={size} unrelated={unrelated} work={work}"
+            );
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 5, "{samples:?}");
+        }
+    }
+}
+
+#[test]
+fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
+    let _session = crate::kernel::VerificationSession::enter();
+    for size in [16, 64, 256] {
+        let mut offset = PointerOffsetTerm::Variable(Variable(993500));
+        for index in 0..size {
+            offset = PointerOffsetTerm::Add(
+                Box::new(offset),
+                Box::new(PointerOffsetTerm::Variable(Variable(993501 + index))),
+            );
+        }
+        let raw = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(Pointer {
+                block: PointerBlock::Symbolic(Variable(993499)),
+                offset,
+            }),
+            LoadKind::Int32,
+        );
+        let (name, _) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
+        let expected =
+            crate::kernel::eval::registered_scalar_read_term(&name, MachineIntegerType::Int32)
+                .unwrap();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                assert_eq!(
+                    crate::kernel::eval::registered_scalar_read_term(
+                        &name,
+                        MachineIntegerType::Int32
+                    )
+                    .unwrap(),
+                    expected,
+                );
+            }
+        });
+        assert!(work <= 3 * size as usize, "size={size} work={work}");
+    }
+}

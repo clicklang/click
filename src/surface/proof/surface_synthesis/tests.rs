@@ -3757,3 +3757,54 @@ fn unified_certificate_terms_raise_and_lower_by_identity() {
         );
     }
 }
+
+#[test]
+fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer {
+        block: PointerBlock::Concrete("shared-read-round-trip".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let state = CState::new()
+        .with_memory(CMemory::new().with_block("shared-read-round-trip", 4))
+        .with_local(
+            "p",
+            CValue::typed_pointer(pointer.clone(), CType::Int32Pointer),
+        );
+    let raw = MachineTerm::MemoryLoad(
+        crate::kernel::intern_c_memory_ref(state.memory()),
+        Box::new(pointer),
+        crate::kernel::LoadKind::Int32,
+    );
+    let (_, descriptor) = crate::kernel::load_variable_for_term(&raw).unwrap();
+    let root =
+        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &descriptor);
+    assert!(matches!(
+        root.node(),
+        crate::kernel::KernelTermNode::MemoryLoad { .. }
+    ));
+    let surface = raise_kernel_term(&root, ParameterBinding::default(), &state, &BTreeMap::new())
+        .expect("read spelling");
+    let claim = ClickProposition::Comparison {
+        left: surface,
+        operator: ComparisonOperator::LessEqual,
+        right: ContractExpression::IntegerLiteral("20".into()),
+    };
+    let lowered = relower_written_proposition(&claim, &state).unwrap();
+    let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
+        panic!("read comparison")
+    };
+    // Surface lowering still produces a named native read during migration.
+    // Use the explicit descriptor bridge until both producers and checker
+    // observations switch representations together.
+    let MachineTerm::Variable(name) = left.as_ref() else {
+        panic!("named read boundary")
+    };
+    assert_eq!(
+        crate::kernel::KernelTermImport::default().machine(
+            MachineIntegerType::Int32,
+            &crate::kernel::registered_load_term_for_variable(name).unwrap(),
+        ),
+        root
+    );
+}

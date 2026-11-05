@@ -449,6 +449,29 @@ with distinct variables have no-export scaling regressions. This provides the
 source interface needed by the pending modular projection migration; it does
 not remove that projection's native output boundary yet.
 
+Scalar reads now have an owned `KernelTermNode::MemoryLoad` descriptor: shared
+memory version, address and read kind. Generic import retains that structure
+instead of a producer-local opaque load. Reserved variables retain their existing
+identity in both generic imports and arithmetic storage until the producer switch;
+changing only one loses matching across these paths. The explicit registered-read
+bridge caches the descriptor per format, so repeated conversion does not walk
+the address again; the retained term survives registry clearing and cache state
+travels with registry capture/restore. Native export and existing typed Surface
+read spelling preserve the descriptor. Stored values, observation origins and
+access permissions are not part of its identity.
+
+This is a representation foundation, not completion of part 1. Read addresses
+still use native `Pointer` payloads; addresses outside the exact structural
+fragment keep their existing legacy representation. Checker observations still
+exclude these new nodes, including reads nested in mathematical conversions.
+Next migrate read/address walkers and selected-operand consumers, preserving
+exact canonical-load matching, then switch scalar read producers and retire the
+reserved-variable bridge. Preserve existing structural read-version selection
+and keep separation-dependent frame equalities in proofs. Pointer-valued and
+volatile reads need their own representation audit. Scaling regressions cover
+retained arithmetic prefixes beside unrelated memory and repeated imports of a
+read with a growing address; explicit native import still pays for its input.
+
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |

@@ -278,7 +278,7 @@ impl KernelTermImport {
         let node = match term {
             Old::IntegerToMachine { value, destination } => {
                 let operand = self.integer(value);
-                if operand.has_producer_local_identity() {
+                if operand.has_opaque_observation_boundary() {
                     return None;
                 }
                 KernelTermNode::IntegerToMachine {
@@ -351,6 +351,9 @@ impl KernelTermImport {
         use KernelTermNode as Node;
         use MachineTerm as Old;
         crate::instrumentation::record_deterministic_work(1);
+        if let Some(read) = self.scalar_read(result, term) {
+            return read;
+        }
         let node = match term {
             int32_constant!(bits) => Node::MachineLiteral(Literal::Word32(constant_u32(*bits))),
             uint32_constant!(bits) => Node::MachineLiteral(Literal::UInt32(constant_u32(*bits))),
@@ -404,8 +407,8 @@ impl KernelTermImport {
                 destination: *to,
                 operand: self.machine(*from, value),
             },
-            // Loads, binders and pointer observations retain their complete
-            // legacy payload.
+            // Reads with unmigrated address payloads, binders and pointer
+            // observations retain their complete legacy payload.
             _ => {
                 return KernelTerm::legacy(PureFunctionArgument::Value(wrap_exact(
                     result,
@@ -437,6 +440,11 @@ impl KernelTermExport {
         Ok(match term.node() {
             Node::MachineLiteral(value) => value.legacy_term(),
             Node::Variable(variable) => Old::Variable(*variable),
+            Node::MemoryLoad {
+                memory,
+                address,
+                kind,
+            } => Old::MemoryLoad(memory.clone(), Box::new(address.clone()), *kind),
             Node::BoolCast {
                 destination,
                 operand,
