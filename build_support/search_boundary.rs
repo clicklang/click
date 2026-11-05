@@ -802,7 +802,12 @@ pub fn check_source(path: &str, source: &str) -> Result<syn::File, Vec<String>> 
     }
 }
 
-fn external_modules(items: &[syn::Item], dir: &Path, result: &mut Vec<(PathBuf, PathBuf)>) {
+fn external_modules(
+    items: &[syn::Item],
+    dir: &Path,
+    source_dir: &Path,
+    result: &mut Vec<(PathBuf, PathBuf)>,
+) {
     for item in items {
         let syn::Item::Mod(module) = item else {
             continue;
@@ -812,7 +817,7 @@ fn external_modules(items: &[syn::Item], dir: &Path, result: &mut Vec<(PathBuf, 
         }
         let name = module.ident.to_string();
         if let Some((_, items)) = &module.content {
-            external_modules(items, &dir.join(name), result);
+            external_modules(items, &dir.join(&name), &dir.join(&name), result);
         } else {
             let explicit = module.attrs.iter().find_map(|a| {
                 if !a.path().is_ident("path") {
@@ -823,7 +828,7 @@ fn external_modules(items: &[syn::Item], dir: &Path, result: &mut Vec<(PathBuf, 
                         syn::Expr::Lit(syn::ExprLit {
                             lit: syn::Lit::Str(s),
                             ..
-                        }) => Some(dir.join(s.value())),
+                        }) => Some(source_dir.join(s.value())),
                         _ => None,
                     },
                     _ => None,
@@ -850,6 +855,9 @@ fn external_modules(items: &[syn::Item], dir: &Path, result: &mut Vec<(PathBuf, 
 /// Follow actual module declarations, including inline modules; test-only
 /// modules are skipped by cfg, not by filename conventions.
 pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
+    let root = root
+        .canonicalize()
+        .map_err(|e| vec![format!("{}: {e}", root.display())])?;
     let start = root.join(relative);
     let directory = if start.file_name().is_some_and(|name| name == "mod.rs") {
         start.parent().unwrap().to_path_buf()
@@ -859,9 +867,12 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
     let mut pending = vec![(start.clone(), directory)];
     let mut errors = Vec::new();
     while let Some((path, dir)) = pending.pop() {
+        let path = path
+            .canonicalize()
+            .map_err(|e| vec![format!("{}: {e}", path.display())])?;
         println!("cargo:rerun-if-changed={}", path.display());
         let relative = path
-            .strip_prefix(root)
+            .strip_prefix(&root)
             .unwrap()
             .to_string_lossy()
             .replace('\\', "/");
@@ -872,7 +883,7 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
                 if let Err(found) = proof_search_boundary::check(&relative, &file) {
                     errors.extend(found);
                 }
-                external_modules(&file.items, &dir, &mut pending);
+                external_modules(&file.items, &dir, path.parent().unwrap(), &mut pending);
             }
             Err(found) => errors.extend(found),
         }

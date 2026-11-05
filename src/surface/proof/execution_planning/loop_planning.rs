@@ -452,9 +452,9 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
         phase = phase.at_source_tactic(*source_index);
         let checkpoint = phase.checkpoint();
         phase = match helper {
-            ProofTactic::UnfoldPredicate(name) => {
-                phase.apply_step(ProofStep::UnfoldPredicate(name.clone()))?
-            }
+            ProofTactic::UnfoldPredicate(name) => phase
+                .driver()
+                .apply_step(ProofStep::UnfoldPredicate(name.clone()))?,
             ProofTactic::Have(have) => {
                 let scope = phase.begin_have(have.proposition.clone())?;
                 check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
@@ -602,13 +602,13 @@ fn check_initialization_body<'a>(
     sites: Option<&[ProofStepSite]>,
 ) -> Result<proof_object::ProofScope<'a>, ClickError> {
     let checked = match source {
-        SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
+        SourceProof::Tactic(SmartTactic::Auto) => scope.driver().try_auto_fact_closure()?,
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
-            (scope).try_solve_closure()?
+            (scope).driver().try_solve_closure()?
         }
         SourceProof::Script(tactics) => match sites {
-            Some(sites) => scope.try_addressed_linear_script(tactics, sites)?,
-            None => scope.try_authoritative_linear_script(tactics)?,
+            Some(sites) => scope.driver().try_addressed_linear_script(tactics, sites)?,
+            None => scope.driver().try_authoritative_linear_script(tactics)?,
         },
     }
     .ok_or_else(|| ClickError::new("loop initialization body did not close its goal"))?;
@@ -1316,6 +1316,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             for (index, invariant) in invariant_surfaces.iter().enumerate() {
                 let scope = leaf.begin_have(invariant.clone())?;
                 let Some(proved) = (scope)
+                    .driver()
                     .try_solve_closure_with_surfaces(&invariant_premise_surfaces[..=index])?
                 else {
                     continue;
@@ -1344,35 +1345,37 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             })?;
             leaf.clone()
         } else {
-            leaf.prepare_loop_invariant_bundle(
-                preservation.loop_entry_state(),
-                preservation.state(),
-                preservation.iterations(),
-                condition,
-                invariant_checks,
-                ranking_measures,
-                structural_measure,
-                &invariant_surfaces,
-                preservation.binders(),
-                environment.function.composite_resource_definitions(),
-                do_while,
-            )
-            .and_then(|prepared| match prepared {
-                Some(proof) => {
-                    proof.certify_loop_invariant_bundle(invariant_checks, ranking_measures)
-                }
-                // A do-while exit has no continuing back edge to certify.
-                None => Ok(leaf.clone()),
-            })
-            .map_err(|error| {
-                let error = error.with_context(format!(
-                    "`{claim_label}` (loop {loop_index} invariant bundle preservation)"
-                ));
-                // A closer the `loop` tactic generated is no written tactic;
-                // the `loop` tactic is where the user reads its failure.
-                error
-                    .attributed_to_source_tactic(environment.frontier_loop_source.loop_source_index)
-            })?
+            leaf.driver()
+                .prepare_loop_invariant_bundle(
+                    preservation.loop_entry_state(),
+                    preservation.state(),
+                    preservation.iterations(),
+                    condition,
+                    invariant_checks,
+                    ranking_measures,
+                    structural_measure,
+                    &invariant_surfaces,
+                    preservation.binders(),
+                    environment.function.composite_resource_definitions(),
+                    do_while,
+                )
+                .and_then(|prepared| match prepared {
+                    Some(proof) => {
+                        proof.certify_loop_invariant_bundle(invariant_checks, ranking_measures)
+                    }
+                    // A do-while exit has no continuing back edge to certify.
+                    None => Ok(leaf.clone()),
+                })
+                .map_err(|error| {
+                    let error = error.with_context(format!(
+                        "`{claim_label}` (loop {loop_index} invariant bundle preservation)"
+                    ));
+                    // A closer the `loop` tactic generated is no written tactic;
+                    // the `loop` tactic is where the user reads its failure.
+                    error.attributed_to_source_tactic(
+                        environment.frontier_loop_source.loop_source_index,
+                    )
+                })?
         };
         let checked_execution = checked.execution_view()?.execution.clone();
         // An inner loop may return while this iteration continues. Export

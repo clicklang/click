@@ -52,8 +52,15 @@ persistent `Proof` descendants; they can't construct semantic successors
 directly. Kernel APIs expose the primitive logical, execution, memory, and
 resource operations needed for that checking.
 
-The checked drivers are the single verification engine: a source or generated
-proof tree is checked by advancing a persistent `Proof`, and a shape no driver
+`ProofDriver` interprets source and generated proof trees over the persistent
+`Proof`. It chooses explicit operations or `ProofSearch`, including implicit
+solving for obligations without written proof blocks. `Proof::prepare_step`
+produces the existing candidate and obligations; the driver proves them at the
+original frontier and resumes through `finish_prepared_step`. This is one
+engine switching between operations and search as it interprets the proof. Remaining operation calls
+back into the driver are frozen in the
+[dependency inventory](https://github.com/clicklang/click/blob/master/build_support/proof_search_edges.tsv); the split
+does not yet establish search-free explicit operations. A proof shape no driver
 accepts is a terminal error, never a reason to run a second engine.
 `ExecutionProofState` is the typed execution snapshot inside a `Proof`: the
 frontier, path state, and surface record it owns are the execution model, and

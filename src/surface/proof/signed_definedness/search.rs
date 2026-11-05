@@ -105,7 +105,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(scope) = proof.begin_have(defined.clone()) else {
                 return Ok(None);
             };
-            let Some(scope) = (scope).try_solve_closure()? else {
+            let Some(scope) = (scope).driver().try_solve_closure()? else {
                 return Ok(None);
             };
             proof = scope.join()?;
@@ -156,7 +156,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(scope) = proof.begin_have(equality.clone()) else {
                 return Ok(None);
             };
-            let Some(scope) = (scope).try_solve_closure()? else {
+            let Some(scope) = (scope).driver().try_solve_closure()? else {
                 return Ok(None);
             };
             proof = scope.join()?;
@@ -180,12 +180,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Ok(scope) = proof.begin_have(defined) else {
             return Ok(None);
         };
-        let Some(scope) = (scope).try_signed_definedness_closure()? else {
+        let Some(scope) = (scope).driver().try_signed_definedness_closure()? else {
             return Ok(None);
         };
         let mut proof = scope.join()?;
         for equality in equalities {
-            let Ok(rewritten) = proof.apply_step(ProofStep::Rewrite(equality)) else {
+            let Ok(rewritten) = proof.driver().apply_step(ProofStep::Rewrite(equality)) else {
                 return Ok(None);
             };
             proof = rewritten;

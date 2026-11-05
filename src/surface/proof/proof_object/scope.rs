@@ -262,25 +262,6 @@ impl<'a> ProofScope<'a> {
             .record_certification_failure_trace(self.body.claim_label(), 0);
     }
 
-    /// Applies one checked step inside the nested body. Failed
-    /// candidates leave the enclosing scope value unchanged.
-    pub(in crate::surface::proof) fn apply_step(
-        &self,
-        step: ProofStep,
-    ) -> Result<Self, ClickError> {
-        let mut next = self.clone();
-        let body = self.body.apply_step_with_origin(step, None)?;
-        if matches!(self.structure.as_ref(), ProofScopeStructure::Open { .. }) {
-            for fact in body.added_facts() {
-                if !next.introduced_facts.contains(fact) {
-                    next.introduced_facts.push(fact.clone());
-                }
-            }
-        }
-        next.body = body;
-        Ok(next)
-    }
-
     /// Opens the C branch at this scope body's frontier as an in-`Proof`
     /// sibling split. The returned proof advances by focusing each recorded
     /// arm; `join_execution_split` accepts the direct joined successor.
@@ -456,143 +437,6 @@ impl<'a> ProofScope<'a> {
         self.body.certificate_since(checkpoint)
     }
 
-    /// Runs the implicit tail's search inside this scope.
-    ///
-    /// Each selected statement is checked and retained by
-    /// `Proof::try_statement_step`; the search never mutates a second
-    /// semantic context or reconstructs steps from its aftermath. A partial
-    /// advance is discarded unless the checked descendant reaches function
-    /// exit, so unsupported frontiers return a bounded miss to the caller.
-    pub(in crate::surface::proof) fn try_execute_to_exit(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) =
-            crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(&(self.body))?
-        else {
-            return Ok(None);
-        };
-        let mut introduced_facts = self.introduced_facts.clone();
-        for fact in added_facts {
-            if !introduced_facts.contains(&fact) {
-                introduced_facts.push(fact);
-            }
-        }
-        let mut next = self.clone();
-        next.introduced_facts = introduced_facts;
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// Checks an explicit theorem application on the scope's current body.
-    /// Preserve a missing-premise diagnostic instead of treating the written
-    /// application as a search miss. Function-exit applications remain
-    /// outcome-local ordered-finalization operations.
-    pub(in crate::surface::proof) fn apply_theorem_application(
-        &self,
-        application: &TheoremApplication,
-    ) -> Result<Option<Self>, ClickError> {
-        if self.body.is_at_function_exit() {
-            return Ok(None);
-        }
-        let body = self.body.apply_theorem_application(application)?;
-        let mut next = self.clone();
-        if matches!(self.structure.as_ref(), ProofScopeStructure::Open { .. }) {
-            for fact in body.added_facts() {
-                if !next.introduced_facts.contains(fact) {
-                    next.introduced_facts.push(fact.clone());
-                }
-            }
-        }
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// Runs bare fact-transport search on the scope's current checked body.
-    /// Failed candidate descendants are discarded by `Proof`; the enclosing
-    /// scope receives only the successful retained `TransportUsing` node.
-    pub(in crate::surface::proof) fn try_fact_transport(
-        &self,
-        source: &ClickProposition,
-        target: &ClickProposition,
-    ) -> Result<Option<Self>, ClickError> {
-        if self.body.is_at_function_exit() {
-            return Ok(None);
-        }
-        let Some(body) = crate::kernel::search::ProofSearch::try_execution_fact_transport(
-            &(self.body),
-            source,
-            target,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        for fact in body.added_facts() {
-            if !next.introduced_facts.contains(fact) {
-                next.introduced_facts.push(fact.clone());
-            }
-        }
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// Runs `step_until` on checked descendants and stops before the
-    /// selected source statement.
-    pub(in crate::surface::proof) fn try_execute_until(
-        &self,
-        region: &CodeRegionRef,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) =
-            crate::kernel::search::ProofSearch::try_execute_until_descendant(&(self.body), region)?
-        else {
-            return Ok(None);
-        };
-        let mut introduced_facts = self.introduced_facts.clone();
-        for fact in added_facts {
-            if !introduced_facts.contains(&fact) {
-                introduced_facts.push(fact);
-            }
-        }
-        let mut next = self.clone();
-        next.introduced_facts = introduced_facts;
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// Runs the small shared smart closure search inside the nested proof.
-    /// Every accepted candidate still advances through `Proof::apply_step`.
-    pub(in crate::surface::proof) fn try_direct_logical_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) =
-            crate::kernel::search::ProofSearch::try_direct_logical_closure(&(self.body))?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// Keep the direct structural candidate and its loop-specific universal
-    /// closer inside a named leaf of a wide conjunction.
-    pub(in crate::surface::proof) fn try_direct_structural_closure_with_quantified(
-        &self,
-        quantified: &mut dyn FnMut(&Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) =
-            crate::kernel::search::ProofSearch::try_direct_structural_closure_with_quantified(
-                &(self.body),
-                quantified,
-            )?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
     /// Runs the migrated `solve` search inside the nested proof and retains
     /// the accepted descendant directly.
     /// Whether execution inside the scope reached function exit.
@@ -621,157 +465,6 @@ impl<'a> ProofScope<'a> {
         Ok(next)
     }
 
-    /// Closes the body's `int32` or `int64` definedness goal from the
-    /// operands' indexed constant bounds.
-    pub(in crate::surface::proof) fn try_signed_definedness_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) =
-            crate::kernel::search::ProofSearch::try_signed_definedness_closure(&(self.body))?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    pub(in crate::surface::proof) fn try_direct_model_equality_rewrite_closure(
-        &self,
-    ) -> Option<Self> {
-        let body = crate::kernel::search::ProofSearch::try_direct_model_equality_rewrite_closure(
-            &(self.body),
-        )?;
-        let mut next = self.clone();
-        next.body = body;
-        Some(next)
-    }
-
-    pub(in crate::surface::proof) fn try_solve_closure(&self) -> Result<Option<Self>, ClickError> {
-        let Some(mut body) = crate::kernel::search::ProofSearch::try_solve_closure(&(self.body))?
-        else {
-            return Ok(None);
-        };
-        // At an outcome or in a pure proof a bare assumption may cite an ambient
-        // fact the certificate cannot spell, so a derivation from spelled
-        // premises is preferred. Mid-execution and at loop entry, an available
-        // fact is its own spelling:
-        // `assumption();` checks by re-checking the judgment, and the
-        // frontier derivation exists for what the direct closer cannot
-        // prove, not to replace what it can.
-        let mid_execution = matches!(self.body.context.as_ref(), ProofContext::Execution(_))
-            && self.body.focused_outcome_data().is_none();
-        if body.node.depth == 1
-            && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
-            && !mid_execution
-            && self.loop_entry_goal.is_none()
-            && let Some(checkable) =
-                crate::kernel::search::ProofSearch::try_solve_closure_after_direct(
-                    &(self.body),
-                    true,
-                )?
-        {
-            body = checkable;
-        }
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// A stated arithmetic subgoal closed by arithmetic alone
-    /// (the body's `try_arithmetic_fact_closure`).
-    pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) =
-            crate::kernel::search::ProofSearch::try_arithmetic_fact_closure(&(self.body))?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// `auto` on a stated fact: it executes no C, so it is `solve`.
-    pub(in crate::surface::proof) fn try_auto_fact_closure(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        (self).try_solve_closure()
-    }
-
-    /// Selected-premise arithmetic without operation identities, for the bounds and
-    /// goal an identity closure proves inside its own `have`s.
-    pub(in crate::surface::proof) fn try_selected_arithmetic_without_identities(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) =
-            crate::kernel::search::ProofSearch::selected_arithmetic(&(self.body), false, &[])?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    pub(in crate::surface::proof) fn try_selected_arithmetic(
-        &self,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = crate::kernel::search::ProofSearch::try_selected_arithmetic(&(self.body))?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    pub(in crate::surface::proof) fn try_restricted_solve_closure(
-        &self,
-        surfaces: &[ClickProposition],
-    ) -> Option<Self> {
-        let body = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
-            &(self.body),
-            surfaces,
-        )?;
-        let mut next = self.clone();
-        next.body = body;
-        Some(next)
-    }
-
-    pub(in crate::surface::proof) fn try_solve_closure_with_surfaces(
-        &self,
-        introduced_surfaces: &[ClickProposition],
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-            &(self.body),
-            introduced_surfaces,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    pub(in crate::surface::proof) fn try_direct_caller_requirement_closure(
-        &self,
-        selection: &CallerRequirementSelection,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = crate::kernel::search::ProofSearch::try_direct_caller_requirement_closure(
-            &(self.body),
-            selection,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
     /// Runs the loop-bundle member planner inside the owned nested body, so a
     /// pivot arm proved under `have` retains the same checked descendant the
     /// bundle root would have retained for it.
@@ -779,59 +472,6 @@ impl<'a> ProofScope<'a> {
         &self,
     ) -> Result<Option<Self>, ClickError> {
         let Some(body) = self.body.plan_invariant_bundle_closure()? else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// Checks a source body after its enclosing driver has selected Proof as
-    /// the authority for this scope. Explicit failures remain checked errors
-    /// through every nested scope and logical arm.
-    pub(in crate::surface::proof) fn try_authoritative_linear_script(
-        &self,
-        tactics: &[ProofTactic],
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_authoritative_linear_script(tactics)? else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    /// [`Self::try_authoritative_linear_script`] for a body whose driver
-    /// knows where each tactic was written: `sites[index]` addresses
-    /// `tactics[index]`.
-    pub(in crate::surface::proof) fn try_addressed_linear_script(
-        &self,
-        tactics: &[ProofTactic],
-        sites: &[ProofStepSite],
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self
-            .body
-            .try_addressed_linear_script(tactics, sites, &mut None, None)?
-        else {
-            return Ok(None);
-        };
-        let mut next = self.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
-
-    pub(in crate::surface::proof) fn try_authoritative_linear_script_reporting(
-        &self,
-        tactics: &[ProofTactic],
-        declined: &mut Option<crate::surface::proof::smart_closures::LinearScriptDecline>,
-        unfinished: &mut Option<Proof<'a>>,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_authoritative_linear_script_reporting(
-            tactics,
-            declined,
-            Some(unfinished),
-        )?
-        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -1087,7 +727,7 @@ impl<'a> ProofScope<'a> {
                         written_close_proof,
                     );
                 }
-                let (closed, close_proof) = self.body.close_scope_with_body_fact_proof(
+                let (closed, close_proof) = self.body.driver().close_scope_with_body_fact_proof(
                     resource,
                     written_close_proof.as_deref(),
                     &|body| {
@@ -1374,3 +1014,6 @@ impl<'a> Proof<'a> {
         Ok(retained)
     }
 }
+
+#[path = "../driver/scopes.rs"]
+mod driver;

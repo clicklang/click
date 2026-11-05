@@ -105,11 +105,13 @@ fn opening_control_retains_loaded_pointer_facts() {
         panic!("the reproduction unfolds, names the alias, and opens its control");
     };
     let unfolded = arm
+        .driver()
         .apply_step(ProofStep::UnfoldResource(parent.clone()))
         .unwrap();
     let named = unfolded
         .begin_have(have.proposition.clone())
         .unwrap()
+        .driver()
         .apply_step(ProofStep::Assumption)
         .unwrap()
         .join()

@@ -214,6 +214,7 @@ fn fixed_state_failure_names_kernel_values_held_in_live_locals() {
         &[],
     );
     let error = root
+        .driver()
         .try_authoritative_linear_script(&[ProofTactic::Assumption])
         .err()
         .expect("the available chunk size does not prove a zero remainder");
@@ -270,7 +271,8 @@ fn missing_assumption_side_uses_recorded_names_in_fixed_state_errors() {
     );
     for traced in [false, true] {
         let render = || {
-            root.try_authoritative_linear_script(&[ProofTactic::Assumption])
+            root.driver()
+                .try_authoritative_linear_script(&[ProofTactic::Assumption])
                 .err()
                 .expect("neither conjunct is available")
                 .to_string()
@@ -496,6 +498,7 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     ));
     assert!(root.certificate().steps().is_empty());
     let rechecked = root
+        .driver()
         .try_authoritative_linear_script(&closed.certificate().to_proof_tactics())
         .unwrap()
         .unwrap();
@@ -623,6 +626,7 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 "the stale spelling must not be extracted, only its entry-anchored form"
             );
             let rechecked = stale
+                .driver()
                 .try_authoritative_linear_script(&anchored.certificate().to_proof_tactics())
                 .unwrap()
                 .unwrap();
@@ -704,6 +708,7 @@ fn invariant_bundle_closure_descends_surface_free_both_and_intro_and_rechecks() 
                 ]
     ));
     let rechecked = root
+        .driver()
         .try_authoritative_linear_script(&certificate.to_proof_tactics())
         .expect("the generated structural certificate should recheck")
         .expect("rechecking the generated certificate should close");
@@ -820,10 +825,10 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
     // expansion is published.
     let mut budget = attempt::AttemptBudget::unbounded();
     let missed = attempt::attempt(&root, &mut budget, |candidate| {
-        let prefix = attempt::candidate_outcome(candidate.apply_step(ProofStep::Intro))?
+        let prefix = attempt::candidate_outcome(candidate.driver().apply_step(ProofStep::Intro))?
             .expect("intro is locally valid on the implication goal");
         // The continuation demands a step the prefix cannot support.
-        attempt::candidate_outcome(prefix.apply_step(ProofStep::Enumerate))
+        attempt::candidate_outcome(prefix.driver().apply_step(ProofStep::Enumerate))
     })
     .expect("a rejected continuation is a miss, not a tooling failure");
     assert!(missed.is_none());
@@ -834,6 +839,7 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
     // checks: every attempt starts from the same prefix state, which was
     // produced by exactly one accepted `Intro`.
     let prefix = root
+        .driver()
         .apply_step(ProofStep::Intro)
         .expect("intro should refine the implication goal");
     let mut attempts = 0usize;
@@ -850,7 +856,7 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
         |shared, step| {
             attempts += 1;
             assert!(shared.state.shares_state_with(&prefix.state));
-            attempt::candidate_outcome(shared.apply_step(step))
+            attempt::candidate_outcome(shared.driver().apply_step(step))
         },
     )
     .expect("candidate misses must not abort the search")
@@ -876,7 +882,7 @@ fn attempt_discards_failed_continuation_and_shares_the_checked_prefix() {
         ],
         |shared, step| {
             attempts += 1;
-            attempt::candidate_outcome(shared.apply_step(step))
+            attempt::candidate_outcome(shared.driver().apply_step(step))
         },
     )
     .expect("budget exhaustion is a miss, not an error");
@@ -1074,11 +1080,13 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     let left = split
         .focus_branch(ids[0])
         .unwrap()
+        .driver()
         .apply_step(ProofStep::Normalize)
         .expect("the required guard remains a checked obligation");
     let joined = left
         .focus_branch(ids[1])
         .unwrap()
+        .driver()
         .apply_step(ProofStep::Normalize)
         .expect("the written body should retain its Surface spelling")
         .join_focused_both(&marker, split_id, ids)
@@ -1086,6 +1094,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     assert!(joined.is_complete());
     let certificate = joined.certificate();
     let cold = root
+        .driver()
         .try_authoritative_linear_script(&certificate.to_proof_tactics())
         .expect("the rendered guarded split should be accepted cold")
         .expect("the rendered guarded split should close");
@@ -1096,7 +1105,8 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
     }])
     .unwrap();
     assert!(
-        root.try_authoritative_linear_script(&missing_guard.to_proof_tactics())
+        root.driver()
+            .try_authoritative_linear_script(&missing_guard.to_proof_tactics())
             .expect("deleting a required guard proof should be a bounded rejection")
             .is_none(),
         "the guard child cannot be silently omitted"
@@ -1226,12 +1236,14 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
         .focus_branch(ids[0])
         .expect("the left sibling is open")
         .begin_execution_match()
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the shared disjunction fact closes the left claim");
     assert!(left_closed.state.open_branches().get(ids[1]).is_some());
     let both_closed = left_closed
         .focus_branch(ids[1])
         .expect("the right sibling is still open")
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the shared disjunction fact closes the right claim");
     assert!(both_closed.is_complete());
@@ -1291,7 +1303,7 @@ fn focused_case_split_partitions_by_attribution_and_rejects_foreign_joins() {
     let focused_branch = split_proof
         .focus_branch(ids[0])
         .expect("the left sibling is open");
-    let error = match focused_branch.apply_step(ProofStep::Intro) {
+    let error = match focused_branch.driver().apply_step(ProofStep::Intro) {
         Ok(_) => panic!("an atomic claim rejects `intro`"),
         Err(error) => error,
     };
@@ -1376,13 +1388,14 @@ fn proof_failure_preserves_ancestor_and_selected_provenance() {
     assert!(Arc::ptr_eq(&root.node, &fork.node));
 
     assert!(
-        fork.apply_step(ProofStep::Normalize).is_err(),
+        fork.driver().apply_step(ProofStep::Normalize).is_err(),
         "a symbolic comparison must not normalize to true"
     );
     assert!(!root.is_complete());
     assert!(root.certificate().steps().is_empty());
 
     let complete = root
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the exact root fact should close the goal");
     assert!(complete.is_complete());
@@ -1429,6 +1442,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
     // scaling of antecedent insertion is covered separately by the multi-size
     // proof-fact fork regression below.
     let introduced = root
+        .driver()
         .apply_step(ProofStep::Intro)
         .expect("intro should refine the implication goal");
     assert_eq!(introduced.sole_branch_id(), Some(root_id));
@@ -1442,6 +1456,7 @@ fn branch_identity_is_stable_across_fork_refinement_and_closure() {
     // Discharge retires the id: the collection is empty and the allocator
     // never reuses the retired identifier.
     let complete = introduced
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the introduced fact should close the consequent");
     assert!(complete.is_complete());
@@ -1482,10 +1497,12 @@ fn certificate_suffix_requires_an_exact_shared_ancestor() {
     );
     let root_checkpoint = root.checkpoint();
     let introduced = root
+        .driver()
         .apply_step(ProofStep::Intro)
         .expect("intro should create the exact antecedent fact");
     let introduced_checkpoint = introduced.checkpoint();
     let complete = introduced
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the introduced fact should close the consequent");
 
@@ -1562,16 +1579,18 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         .begin_have(proposition.clone())
         .expect("have should open a nested proposition proof");
     assert!(scope.clone().join().is_err());
-    assert!(scope.apply_step(ProofStep::Intro).is_err());
+    assert!(scope.driver().apply_step(ProofStep::Intro).is_err());
     assert!(scope.body().certificate().steps().is_empty());
 
     let scope = scope
+        .driver()
         .apply_step(ProofStep::Normalize)
         .expect("constant equality should normalize inside the body");
     let enclosing = scope.join().expect("completed body should close the scope");
     assert!(!enclosing.is_complete());
     assert_eq!(enclosing.added_facts().len(), 1);
     let complete = enclosing
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("published have fact should close the enclosing goal");
     assert_eq!(
@@ -1587,11 +1606,12 @@ fn have_scope_publishes_only_a_completed_checked_body() {
     assert!(!root.is_complete());
     assert!(root.certificate().steps().is_empty());
     assert!(
-        root.apply_step(ProofStep::Have {
-            proposition: proposition.clone(),
-            proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Intro]).unwrap()),
-        })
-        .is_err(),
+        root.driver()
+            .apply_step(ProofStep::Have {
+                proposition: proposition.clone(),
+                proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Intro]).unwrap()),
+            })
+            .is_err(),
         "an invalid explicit Have body must be rejected"
     );
     assert!(
@@ -1600,12 +1620,14 @@ fn have_scope_publishes_only_a_completed_checked_body() {
     );
 
     let checked_have = root
+        .driver()
         .apply_step(ProofStep::Have {
             proposition: proposition.clone(),
             proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
         })
         .expect("an explicit Have step should use the owned checked scope");
     let complete = checked_have
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the checked Have step should publish its proposition");
     assert_eq!(
@@ -1734,14 +1756,17 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
     // intro must use the kernel's already-lowered binder, then the ordinary
     // normalizer and join must recheck the resulting certificate.
     let introduced = adapted
+        .driver()
         .apply_step(ProofStep::Intro)
         .expect("recorded universal should consume through checked intro");
     let completed = introduced
+        .driver()
         .apply_step(ProofStep::Normalize)
         .expect("the renamed universal body should normalize");
     let enclosing = completed
         .join()
         .expect("the checked intro certificate should join")
+        .driver()
         .apply_step(ProofStep::Assumption)
         .expect("the joined have fact should close the enclosing goal");
     assert!(enclosing.is_complete());
@@ -1765,7 +1790,7 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
     let adapted = scope
         .with_reported_goal_introductions(&reported, Some(vec![]))
         .expect("negation introduction assumes its body and leaves false, not its inner universal");
-    let introduced = adapted.apply_step(ProofStep::Intro).unwrap();
+    let introduced = adapted.driver().apply_step(ProofStep::Intro).unwrap();
     assert_eq!(
         introduced.body().goal(),
         Some(&Proposition::ConditionIs(
@@ -2013,6 +2038,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             .begin_have(proposition.clone())
             .expect("have should open a nested proof");
         let error = scope
+            .driver()
             .try_authoritative_linear_script(&missing_body)
             .err()
             .expect("an unknown named theorem must report the source operation's error");
@@ -2021,6 +2047,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
 
         let before = fact_node_allocations();
         let selected = scope
+            .driver()
             .try_authoritative_linear_script(&smart_body)
             .expect("nested smart search should not fail")
             .expect("solve should close the constant equality");
@@ -2028,6 +2055,7 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             .join()
             .expect("the completed nested proof should join");
         let complete = enclosing
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the published have fact should close the outer goal");
         let allocations = fact_node_allocations() - before;
@@ -2052,11 +2080,13 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
 
         let before = fact_node_allocations();
         let complete = root
+            .driver()
             .apply_step(ProofStep::Have {
                 proposition: proposition.clone(),
                 proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
             })
             .expect("the explicit Have should check through its owned scope")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the explicit Have should publish its proposition");
         let allocations = fact_node_allocations() - before;
@@ -2138,6 +2168,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         let joined = root
             .begin_have(proposition.clone())
             .expect("execution have should open")
+            .driver()
             .try_authoritative_linear_script(&explicit)
             .expect("explicit body should check")
             .expect("normalization should close the nested goal")
@@ -2164,6 +2195,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
             proof = proof
                 .begin_have(reflexive(value as u32 + 2000))
                 .expect("next have should open")
+                .driver()
                 .try_authoritative_linear_script(&explicit)
                 .expect("next explicit body should check")
                 .expect("next normalization should close")
@@ -2187,6 +2219,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         .begin_have(reflexive(3001))
         .expect("nested have opens");
     let inner = inner
+        .driver()
         .try_authoritative_linear_script(&explicit)
         .expect("nested body checks")
         .expect("nested body closes");
@@ -2194,6 +2227,7 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         .join_nested(inner)
         .expect("nested have joins its parent");
     let outer = outer
+        .driver()
         .apply_step(ProofStep::Normalize)
         .expect("outer goal still closes independently");
     let joined = outer.join().expect("outer have joins execution");
@@ -2243,6 +2277,7 @@ fn persistent_fact_lookup_scales_logarithmically() {
         );
 
         let complete = shared
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("fixed local step should succeed");
         assert!(complete.is_complete());
@@ -2562,7 +2597,8 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
             "unrelated facts must not enter the selected predicate bucket"
         );
         assert!(
-            root.apply_step(ProofStep::UnfoldPredicate("missing".to_string()))
+            root.driver()
+                .apply_step(ProofStep::UnfoldPredicate("missing".to_string()))
                 .is_err(),
             "an unknown predicate must reject transactionally"
         );
@@ -2572,6 +2608,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         let unfold = ProofStep::UnfoldPredicate("selected".to_string());
         let before = fact_node_allocations();
         let unfolded = root
+            .driver()
             .apply_step(unfold.clone())
             .expect("the selected predicate fact and goal should unfold");
         let allocations = fact_node_allocations() - before;
@@ -2590,6 +2627,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
                 .contains(&"selected".to_string())
         );
         let complete = unfolded
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the unfolded predicate fact should close the unfolded goal");
         assert!(complete.is_complete());
@@ -2601,6 +2639,7 @@ fn proposition_unfold_uses_indexed_facts_and_persistent_local_state() {
         let certificate =
             ProofCertificate::from_steps(vec![unfold.clone(), ProofStep::Assumption]).unwrap();
         let checked = root
+            .driver()
             .try_authoritative_linear_script(&certificate.to_proof_tactics())
             .expect("the explicit proposition unfold script should apply through Proof")
             .expect("the explicit proposition unfold script should close");
@@ -2675,6 +2714,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
     ])
     .unwrap();
     let checked = root
+        .driver()
         .try_authoritative_linear_script(&certificate.to_proof_tactics())
         .expect("fixed-state unfold should use the shared Proof script driver")
         .expect("fixed-state unfold should close through the shared predicate transition");
@@ -2700,7 +2740,8 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
         );
         let retained_root = root.clone();
         assert!(
-            root.apply_step(ProofStep::UnfoldPredicate("missing".to_string()))
+            root.driver()
+                .apply_step(ProofStep::UnfoldPredicate("missing".to_string()))
                 .is_err()
         );
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -2708,6 +2749,7 @@ fn fixed_state_proposition_unfold_checks_the_same_retained_step() {
         let step = ProofStep::UnfoldPredicate("selected".to_string());
         let before = fact_node_allocations();
         let unfolded = root
+            .driver()
             .apply_step(step.clone())
             .expect("a fixed-state proof context should accept a facts-only predicate unfold");
         let allocations = fact_node_allocations() - before;
@@ -2807,6 +2849,7 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
         assert!(
             root.focus_fixed_state_goal(missing.clone())
                 .expect("focusing does not prove the selected goal")
+                .driver()
                 .apply_step(ProofStep::Assumption)
                 .is_err()
         );
@@ -2817,6 +2860,7 @@ fn result_aware_fixed_state_goal_focus_shares_facts_and_checks_assumption() {
         );
 
         let complete = focused_branch
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the focused exact goal should close through Proof");
         assert!(complete.is_complete());
@@ -2880,7 +2924,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             scope.clone().join().is_err(),
             "an unfinished entry cannot publish its guard"
         );
-        let checked_scope = scope.apply_step(ProofStep::Normalize).unwrap();
+        let checked_scope = scope.driver().apply_step(ProofStep::Normalize).unwrap();
         let completion = checked_scope.completed_loop_entry_goal().unwrap();
         assert!(
             completion
@@ -2915,6 +2959,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
                 .unwrap();
             assert_eq!(scope.goal(), Some(&entry_kernel));
             phase = scope
+                .driver()
                 .apply_step(ProofStep::Normalize)
                 .unwrap()
                 .join()
@@ -2928,6 +2973,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
         let first = root
             .begin_have(proposition.clone())
             .expect("a fixed-state proof context should open a checked have scope")
+            .driver()
             .apply_step(ProofStep::Normalize)
             .expect("the first scope should prove the concrete equality")
             .join()
@@ -2935,6 +2981,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
         let second = first
             .begin_have(proposition.clone())
             .expect("the checked successor should open a dependent scope")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the later scope should see the first checked fact")
             .join()
@@ -2955,6 +3002,7 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
                 && second.steps() == [ProofStep::Assumption]
         ));
         let completed = second
+            .driver()
             .complete_fixed_state_obligations(std::slice::from_ref(&proposition))
             .expect("the accumulated frontier should close its external obligation");
         assert!(matches!(
@@ -3007,7 +3055,7 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
         .begin_have(surface)
         .expect("the current fixed-state goal should lower independently");
     assert!(
-        scope.apply_step(ProofStep::Assumption).is_err(),
+        scope.driver().apply_step(ProofStep::Assumption).is_err(),
         "an older fact with the same surface form must not close the current goal"
     );
     assert!(root.certificate().steps().is_empty());
@@ -3071,10 +3119,12 @@ fn proof_if_fork_and_join_work_is_logarithmic_in_unrelated_facts() {
 
         let marker = split_proof.checkpoint();
         let joined = split_proof
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the condition closes the then arm")
             .focus_branch(ids[1])
             .expect("the else sibling remains open")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the exact negation closes the else arm")
             .join_focused_if(&marker, split, ids, condition.clone())
@@ -3117,6 +3167,7 @@ fn execution_frontier_rejects_proposition_closers_transactionally() {
     assert!(Arc::ptr_eq(&root.node, &fork.node));
     for closer in [ProofStep::Assumption, ProofStep::Normalize] {
         let error = fork
+            .driver()
             .apply_step(closer)
             .err()
             .expect("a proposition closer cannot close an execution frontier");
@@ -3197,6 +3248,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
             ContractExpression::CFragment(CExpression::Value(int32(7))),
         ));
         let error = root
+            .driver()
             .apply_step(wrong_name)
             .err()
             .expect("a mismatched witness must reject the candidate");
@@ -3206,6 +3258,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
 
         let before = fact_node_allocations();
         let refined = root
+            .driver()
             .apply_step(ProofStep::Witness(witness.clone()))
             .expect("the named int32 witness should refine the existential");
         let allocations = fact_node_allocations() - before;
@@ -3225,6 +3278,7 @@ fn fixed_state_witness_refines_existential_transactionally_with_constant_local_w
         assert!(refined.added_facts().is_empty());
         assert!(!refined.is_complete());
         let completed = refined
+            .driver()
             .apply_step(ProofStep::Normalize)
             .expect("the instantiated constant equality should normalize");
         assert!(completed.is_complete());
@@ -3306,6 +3360,7 @@ fn universal_intro_binding_is_local_to_its_focused_sibling_branch() {
     let introduced = split
         .focus_branch(ids[0])
         .expect("the first sibling should be focusable")
+        .driver()
         .apply_step(ProofStep::Intro)
         .expect("the universal binder should refine the first sibling");
 
@@ -3392,6 +3447,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         );
         let retained_root = root.clone();
         let missing = root
+            .driver()
             .apply_step(ProofStep::Choose(ProofChoice {
                 name: "candidate".to_string(),
                 source: ProofFactSource::Requirement(1),
@@ -3407,6 +3463,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         };
         let before = fact_node_allocations();
         let chosen = root
+            .driver()
             .apply_step(ProofStep::Choose(choice.clone()))
             .expect("the indexed existential requirement should introduce one local");
         let allocations = fact_node_allocations() - before;
@@ -3424,6 +3481,7 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         assert!(root.state.locals().values.is_empty());
 
         let duplicate = chosen
+            .driver()
             .apply_step(ProofStep::Choose(choice.clone()))
             .err()
             .expect("a duplicate local name must reject transactionally");
@@ -3431,11 +3489,13 @@ fn fixed_state_choose_uses_indexed_requirement_and_persistent_local_bindings() {
         assert_eq!(chosen.certificate().steps(), &[ProofStep::Choose(choice)]);
 
         let completed = chosen
+            .driver()
             .apply_step(ProofStep::Witness(ProofWitness::single(
                 "witness".to_string(),
                 ContractExpression::CFragment(CExpression::Variable("candidate".to_string())),
             )))
             .expect("witness should resolve the one referenced proof local")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the chosen existential fact should close the refined goal");
         assert!(completed.is_complete());
@@ -3610,6 +3670,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         );
         let retained_root = root.clone();
         let error = root
+            .driver()
             .apply_step(ProofStep::Rewrite(unavailable.clone()))
             .err()
             .expect("an unavailable equality must reject the candidate");
@@ -3623,6 +3684,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         let step = ProofStep::Rewrite(equality.clone());
         let before = fact_node_allocations();
         let rewritten = root
+            .driver()
             .apply_step(step.clone())
             .expect("the exact available equality should rewrite the goal");
         let allocations = fact_node_allocations() - before;
@@ -3651,6 +3713,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
         assert!(rewritten.added_facts().is_empty());
         assert!(!rewritten.is_complete());
         let complete = rewritten
+            .driver()
             .apply_step(ProofStep::Normalize)
             .expect("the rewritten constant equality should normalize");
         assert!(complete.is_complete());
@@ -3659,6 +3722,7 @@ fn pure_rewrite_uses_indexed_equality_availability_without_changing_facts() {
             &[step.clone(), ProofStep::Normalize]
         );
         let alternative = root
+            .driver()
             .apply_step(step)
             .expect("the ancestor should remain usable for another descendant");
         assert_eq!(alternative.certificate(), rewritten.certificate());
@@ -3787,6 +3851,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let rewritten = root
+            .driver()
             .apply_step(ProofStep::Rewrite(equality.clone()))
             .expect("the exact equality should produce a checked rewrite successor");
         let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(rewritten))
@@ -3856,6 +3921,7 @@ fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
     );
     assert!(
         merely_top_level
+            .driver()
             .apply_step(ProofStep::Extract(surface.clone()))
             .is_err(),
         "an independently available fact is not extractable unless it is also a proper conjunct"
@@ -3889,6 +3955,7 @@ fn fixed_state_extract_uses_persistent_proper_conjunct_membership() {
         let step = ProofStep::Extract(surface.clone());
         let before = fact_node_allocations();
         let extracted = root
+            .driver()
             .apply_step(step.clone())
             .expect("the nested proper conjunct should extract");
         let allocations = fact_node_allocations() - before;
@@ -3998,6 +4065,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         let step = ProofStep::Extract(target_surface.clone());
         let before = fact_node_allocations();
         let extracted = root
+            .driver()
             .apply_step(step.clone())
             .expect("the alpha-equivalent antecedent should discharge the implication");
         let allocations = fact_node_allocations() - before;
@@ -4023,6 +4091,7 @@ fn implication_extract_uses_indexed_consequent_and_alpha_equivalent_antecedent()
         );
         assert!(
             missing_antecedent
+                .driver()
                 .apply_step(ProofStep::Extract(target_surface.clone()))
                 .is_err(),
             "an indexed consequent does not bypass its antecedent"
@@ -4195,7 +4264,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
             premises: Some(Vec::new()),
         };
         assert!(
-            root.apply_step(omitted).is_err(),
+            root.driver().apply_step(omitted).is_err(),
             "ambient availability must not discharge an omitted guard"
         );
         assert!(root.state.shares_state_with(&retained_root.state));
@@ -4203,6 +4272,7 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
 
         let before = fact_node_allocations();
         let instantiated = root
+            .driver()
             .apply_step(step.clone())
             .expect("the indexed universal and named guard should instantiate");
         let allocations = fact_node_allocations() - before;
@@ -4356,6 +4426,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
             }
         );
         let omitted = root
+            .driver()
             .apply_step(ProofStep::ApplyTheoremUsing {
                 application: application.clone(),
                 premises: Vec::new(),
@@ -4372,6 +4443,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         let step = selected;
         let before = fact_node_allocations();
         let applied = root
+            .driver()
             .apply_step(step.clone())
             .expect("the exact named premise should certify the application");
         let allocations = fact_node_allocations() - before;
@@ -4398,6 +4470,7 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
             "theorem application does not alter the C state"
         );
         let alternative = root
+            .driver()
             .apply_step(step)
             .expect("the retained ancestor should support another checked descendant");
         assert_eq!(alternative.certificate(), applied.certificate());
@@ -4484,7 +4557,7 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     let cold = root
         .begin_have(have.clone())
         .expect("the retained have should be independently reopenable");
-    assert!(cold.try_solve_closure().unwrap().is_some());
+    assert!(cold.driver().try_solve_closure().unwrap().is_some());
 
     // This injected requirement is already present in the fixture's fact
     // context, so the test intentionally checks retention mechanics and exact
@@ -5033,7 +5106,7 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     let cold = root
         .begin_have(proposition.clone())
         .expect("retained qualified Have should reopen cold");
-    assert!(cold.try_solve_closure().unwrap().is_some());
+    assert!(cold.driver().try_solve_closure().unwrap().is_some());
 }
 
 #[test]
@@ -5170,6 +5243,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         ProofTactic::Assumption,
     ];
     let closed = scope
+        .driver()
         .try_authoritative_linear_script(&script)
         .expect("the nested script is a bounded check");
     assert!(
@@ -5190,6 +5264,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     ];
     take_checked_have_operations();
     let completed = scope
+        .driver()
         .try_authoritative_linear_script(&script)
         .unwrap()
         .unwrap();
@@ -5202,6 +5277,7 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
         ProofStep::Have { proof, .. }, ProofStep::Have { .. }, ProofStep::Assumption
     ] if matches!(proof.steps(), [ProofStep::ApplyTheoremUsing { .. }])));
     let error = scope
+        .driver()
         .try_authoritative_linear_script(&[
             ProofTactic::ApplyTheoremUsing {
                 application: missing_application,
@@ -5375,6 +5451,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .expect("the then sibling is open")
             .begin_have(premise.clone())
             .expect("the then arm should open a proposition proof")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the root premise should close the then-arm proof")
             .join()
@@ -5383,6 +5460,7 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .expect("the else sibling is open")
             .begin_have(premise.clone())
             .expect("the else arm should open a proposition proof")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the root premise should close the else-arm proof")
             .join()
@@ -5629,6 +5707,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         );
         let retained_root = root.clone();
         let extracted = root
+            .driver()
             .apply_step(ProofStep::Extract(premise.clone()))
             .expect("a checked predecessor should promote the indexed conjunct");
         assert!(
@@ -5666,6 +5745,7 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
         ];
         let before_apply = fact_node_allocations();
         let complete = root
+            .driver()
             .try_authoritative_linear_script(&tactics)
             .expect("mixed linear search should not fail")
             .expect("extract, smart apply, and solve should close the goal");
@@ -5766,6 +5846,7 @@ fn result_aware_fixed_state_apply_scales_with_unrelated_facts() {
         );
         let before = fact_node_allocations();
         let complete = root
+            .driver()
             .try_authoritative_linear_script(have_tactics)
             .expect("result-aware theorem search should not fail")
             .expect("result-aware theorem application and solve should close the goal");
@@ -5865,6 +5946,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         );
         let retained_root = root.clone();
         let missing = root
+            .driver()
             .apply_step(ProofStep::ApplyTheoremUsing {
                 application: application.clone(),
                 premises: Vec::new(),
@@ -5895,6 +5977,7 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         );
         let before_apply = fact_node_allocations();
         let applied = root
+            .driver()
             .apply_step(step.clone())
             .expect("the selected result-aware theorem step should check");
         let allocations = fact_node_allocations() - before_apply;
@@ -5986,10 +6069,11 @@ fn fixed_state_transport_can_follow_another_checked_step() {
             &[],
         );
         let refined = root
+            .driver()
             .apply_step(ProofStep::Extract(extracted.clone()))
             .expect("the predecessor should advance the proof");
         let retained_refined = refined.clone();
-        let rejected = refined.apply_step(ProofStep::TransportUsing {
+        let rejected = refined.driver().apply_step(ProofStep::TransportUsing {
             source: source.clone(),
             target: missing.clone(),
             premises: Vec::new(),
@@ -6038,6 +6122,7 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         };
         let before = fact_node_allocations();
         let transported = refined
+            .driver()
             .apply_step(transport.clone())
             .expect("the exact ambient source should occupy its own checked slot");
         let allocations = fact_node_allocations() - before;
@@ -6181,6 +6266,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             .expect("the signed-order have should open a nested proof");
         let before = fact_node_allocations();
         let selected = (scope)
+            .driver()
             .try_solve_closure()
             .expect("nested smart search must not exceed its deadline")
             .expect("the exact goal should have an independent theorem path");
@@ -7902,6 +7988,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
         let planned_certificate = ProofCertificate::from_proof_tactics(&planned)
             .expect("the named equality theorem should form a simple certificate");
         let planned_closed = pure_root
+            .driver()
             .try_authoritative_linear_script(&planned_certificate.to_proof_tactics())
             .unwrap_or_else(|error| panic!("the named equality plan failed: {error:?}"))
             .expect("the named equality plan should close through checked Proof operations");
@@ -8948,6 +9035,7 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         );
         let before_script = fact_node_allocations();
         let complete = root
+            .driver()
             .try_authoritative_linear_script(&[
                 ProofTactic::ApplyTheorem(application.clone()),
                 ProofTactic::Solve,
@@ -9090,6 +9178,7 @@ fn pure_apply_using_selects_a_checked_conjunct_without_accepting_disjunctions() 
         ],
     };
     let closed = root
+        .driver()
         .apply_step(ProofStep::ApplyTheoremUsing {
             application,
             premises: vec![selected],
@@ -9166,6 +9255,7 @@ fn execution_unfold_forks_persistently_and_ignores_unrelated_facts() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let successor = root
+            .driver()
             .apply_step(ProofStep::UnfoldPredicate("selected".to_string()))
             .expect("the exact selected predicate should unfold");
         let allocations = fact_node_allocations() - before;
@@ -9292,6 +9382,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         &theorems,
     );
     let unfolded = root
+        .driver()
         .apply_step(ProofStep::UnfoldPredicate("selected".to_string()))
         .expect("the selected requirement should unfold");
     let scope_goal = ClickProposition::Comparison {
@@ -9304,6 +9395,7 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         .expect("a proposition scope should open at the entry frontier");
     let chosen = scope
         .body()
+        .driver()
         .apply_step(ProofStep::Choose(ProofChoice {
             name: "candidate".to_string(),
             source: ProofFactSource::Requirement(0),
@@ -9341,7 +9433,12 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         )]),
     )
     .expect("renaming a citation should be capture-safe");
-    assert!(chosen.apply_step(ProofStep::Extract(wrong_binder)).is_err());
+    assert!(
+        chosen
+            .driver()
+            .apply_step(ProofStep::Extract(wrong_binder))
+            .is_err()
+    );
     let wrong_epoch_selector = SnapshotSelector::ProgramPoint(ProgramPointRef {
         region: CodeRegionRef::Function,
         kind: ProgramPointKind::Exit,
@@ -9365,8 +9462,14 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         },
         other => panic!("chosen projection must retain its source snapshot: {other:?}"),
     };
-    assert!(chosen.apply_step(ProofStep::Extract(wrong_epoch)).is_err());
+    assert!(
+        chosen
+            .driver()
+            .apply_step(ProofStep::Extract(wrong_epoch))
+            .is_err()
+    );
     let extracted = chosen
+        .driver()
         .apply_step(ProofStep::Extract(projection.leaves[0].surface.clone()))
         .expect("extract should consume the checked chosen-body leaf");
     assert!(matches!(
@@ -9472,6 +9575,7 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let observed = root
+            .driver()
             .apply_step(ProofStep::ObserveResource(resource.clone()))
             .expect("the held marker view should be observable");
         let allocations = fact_node_allocations() - before;
@@ -9495,7 +9599,8 @@ fn execution_resource_observation_is_retained_transactional_and_logarithmic() {
         };
         *name = "missing_marker".to_string();
         assert!(
-            root.apply_step(ProofStep::ObserveResource(missing))
+            root.driver()
+                .apply_step(ProofStep::ObserveResource(missing))
                 .is_err()
         );
         assert!(root.certificate().steps().is_empty());
@@ -9584,6 +9689,7 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let unfolded = root
+            .driver()
             .apply_step(ProofStep::UnfoldResource(resource.clone()))
             .expect("the owned marker resource should unfold");
         let allocations = fact_node_allocations() - before;
@@ -9606,7 +9712,11 @@ fn execution_resource_unfold_is_retained_transactional_and_logarithmic() {
             panic!("the marker resource should be declared");
         };
         *name = "missing_marker".to_string();
-        assert!(root.apply_step(ProofStep::UnfoldResource(missing)).is_err());
+        assert!(
+            root.driver()
+                .apply_step(ProofStep::UnfoldResource(missing))
+                .is_err()
+        );
         assert!(root.certificate().steps().is_empty());
         assert_eq!(root.facts().to_vec().len(), size as usize);
     }
@@ -9692,11 +9802,13 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
             &theorem_environment,
         );
         let unfolded = root
+            .driver()
             .apply_step(ProofStep::UnfoldResource(resource.clone()))
             .expect("the owned marker resource should unfold before folding");
         let retained_unfolded = unfolded.clone();
         let before = fact_node_allocations();
         let folded = unfolded
+            .driver()
             .apply_step(ProofStep::FoldResource(resource.clone()))
             .expect("the exposed marker body should fold");
         let allocations = fact_node_allocations() - before;
@@ -9723,6 +9835,7 @@ fn execution_resource_fold_is_retained_transactional_and_logarithmic() {
         *name = "missing_marker".to_string();
         assert!(
             unfolded
+                .driver()
                 .apply_step(ProofStep::FoldResource(missing))
                 .is_err()
         );
@@ -9832,17 +9945,19 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         let rejected = scope
             .begin_have(reflexive.clone())
             .expect("the open scope should begin a rejected proposition subproof");
-        assert!(rejected.apply_step(ProofStep::Step).is_err());
+        assert!(rejected.driver().apply_step(ProofStep::Step).is_err());
         assert!(rejected.body().certificate().steps().is_empty());
         let nested = scope
             .begin_have(reflexive.clone())
             .expect("the open scope should begin a proposition subproof")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the exposed marker fact should close the nested proof");
         let scope = scope
             .join_nested(nested)
             .expect("the checked have should advance the open scope");
         let scope = scope
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the owned resource scope should retain its checked statement step");
         let closed = scope.join().expect("the marker body should close");
@@ -9880,6 +9995,7 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         let sibling_nested = sibling_scope
             .begin_have(reflexive.clone())
             .expect("the sibling should begin its own nested proof")
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the sibling nested proof should close");
         let unrelated_scope = root
@@ -9904,8 +10020,10 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
         let terminal = root
             .begin_open(resource.clone(), 0, None)
             .expect("the retained root should open an alternate scope")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the terminal scope should cross its assignment")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the terminal scope should cross its return")
             .join()
@@ -10003,6 +10121,7 @@ fn execution_transport_forks_without_copying_unrelated_state() {
             premises: vec![surface.clone()],
         };
         let successor = root
+            .driver()
             .apply_step(step.clone())
             .expect("an exact identity transport should succeed");
 
@@ -10124,6 +10243,7 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
             &theorem_environment,
         );
         let progressed = root
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the meaningful assignment should advance the execution Proof");
         if size == 16 {
@@ -10440,6 +10560,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         let marked = root
+            .driver()
             .apply_step(ProofStep::Mark("candidate".to_string()))
             .expect("a fresh proof mark should produce a checked descendant");
         assert!(matches!(
@@ -10447,6 +10568,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
             [ProofStep::Mark(name)] if name == "candidate"
         ));
         let duplicate = marked
+            .driver()
             .apply_step(ProofStep::Mark("candidate".to_string()))
             .err()
             .expect("a duplicate mark must reject the candidate");
@@ -10457,6 +10579,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
         ));
         let before = fact_node_allocations();
         let completed = root
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("an explicit return step should certify");
         let allocations = fact_node_allocations() - before;
@@ -10475,6 +10598,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
         );
         assert!(matches!(completed.certificate().steps(), [ProofStep::Step]));
         let alternative = root
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the retained ancestor should support another checked descendant");
         assert_eq!(alternative.certificate(), completed.certificate());
@@ -10827,6 +10951,7 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
             SpecDefinitions::new(&predicate_environment, &click_function_environment),
             &theorem_environment,
         )
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("the declaration prefix should execute before the proof split");
         let before = fact_node_allocations();
@@ -10867,14 +10992,18 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         let completed = split
             .focus_execution_if_arm(&record, true)
             .expect("the then sibling should remain open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the then assignment should check")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the then return should check")
             .focus_execution_if_arm(&record, false)
             .expect("the else sibling should remain open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the else assignment should check")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the else return should check")
             .join_focused_execution_if_terminal(&record)
@@ -10913,14 +11042,18 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         let inner_completed = inner
             .focus_execution_if_arm(&inner_record, true)
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Step)
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Step)
             .unwrap()
             .focus_execution_if_arm(&inner_record, false)
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Step)
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Step)
             .unwrap()
             .join_focused_execution_if_terminal(&inner_record)
@@ -10934,8 +11067,10 @@ fn execution_proof_if_split_is_logarithmic_in_unrelated_facts() {
         let nested_completed = inner_completed
             .focus_execution_if_arm(&record, false)
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Step)
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Step)
             .unwrap()
             .join_focused_execution_if_terminal(&record)
@@ -11184,6 +11319,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
         );
         assert_eq!(execution.presentation.branch_path.len(), 0);
         let completed = joined
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the joined continuation should execute its return");
         assert!(
@@ -11288,6 +11424,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     let then_completed = split
         .focus_split_arm(&record, true)
         .expect("then branch should be open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("then return should execute through the cursor");
     // Fresh load variables are normally unique, so exercise the collision
@@ -11342,6 +11479,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     let advanced = then_completed
         .focus_split_arm(&record, false)
         .expect("else branch should be open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("else return should execute through the cursor");
     let joined = advanced
@@ -11442,6 +11580,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     let selected = selected_split
         .focus_split_arm(&selected_record, true)
         .expect("selected load branch should be open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("selected return should execute through the cursor");
     let selected = selected
@@ -11759,17 +11898,19 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         let branches = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("then assignment should check")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("else assignment should check");
         let overshoot_step = ProofStep::Step;
         let then_arm = branches
             .focus_split_arm(&record, true)
             .expect("the then sibling stays open until the join");
-        let Err(overshoot) = then_arm.apply_step(overshoot_step) else {
+        let Err(overshoot) = then_arm.driver().apply_step(overshoot_step) else {
             panic!("an arm must not consume the shared return continuation");
         };
         assert!(
@@ -11836,6 +11977,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 .expect("the joined frontier owns its snapshot"),
         ));
         let refined = scope
+            .driver()
             .apply_step(ProofStep::Assumption)
             .expect("the theorem conclusion should close the nested proposition")
             .join()
@@ -11853,6 +11995,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 && proof.steps() == [ProofStep::Assumption]
         ));
         let completed = refined
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the joined continuation should execute its return");
         assert!(
@@ -11900,11 +12043,13 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
             "{premature:?}"
         );
         let then_stepped = split_proof
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the then sibling advances in place");
         let both_stepped = then_stepped
             .focus_branch(sibling_ids[1])
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the else sibling advances in place");
         let (_, foreign_record) = root
@@ -11935,6 +12080,7 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 && matches!(else_proof.steps(), [ProofStep::Step])
         ));
         let sibling_completed = sibling_joined
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the joined sibling frontier should execute its return");
         assert!(
@@ -12065,10 +12211,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         let branches = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("then assignment should check")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("else assignment should check");
         let before = fact_node_allocations();
@@ -12101,6 +12249,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             "the interface node must not copy ambient facts into its delta"
         );
         let completed = joined
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the abstract joined frontier should execute its return");
         assert!(
@@ -12129,10 +12278,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     let error = split
         .focus_split_arm(&record, true)
         .expect("the then sibling is open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("then assignment should check")
         .focus_split_arm(&record, false)
         .expect("the else sibling is open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("else assignment should check")
         .join_focused_execution_interface(&record, vec![ProofAssertion::Fact(negative)])
@@ -12162,6 +12313,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     );
     assert!(record.condition_theorems.iter().all(Option::is_some));
     let then_stepped = split_proof
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("the then sibling advances in place");
     assert!(
@@ -12174,6 +12326,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     let both_stepped = then_stepped
         .focus_branch(sibling_ids[1])
         .expect("the else sibling is open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("the else sibling advances in place");
     for (index, id) in sibling_ids.iter().enumerate() {
@@ -12214,6 +12367,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             && matches!(else_proof.steps(), [ProofStep::Step])
     ));
     let completed = joined
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("the abstract sibling continuation should execute its return");
     assert!(
@@ -12280,10 +12434,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         let branches = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("owned-interface then assignment should check")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("owned-interface else assignment should check");
         let assertions = vec![ProofAssertion::Resource(marker_clause.clone())];
@@ -12304,6 +12460,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             }] if retained == assertions.as_slice()
         ));
         joined
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the exact owned interface should retain its return frontier");
     }
@@ -12344,14 +12501,18 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         let branches = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("transformed-interface then assignment should check")
+            .driver()
             .apply_step(ProofStep::FoldResource(ready_clause.clone()))
             .expect("then arm should fold its ready resource")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("transformed-interface else assignment should check")
+            .driver()
             .apply_step(ProofStep::FoldResource(ready_clause.clone()))
             .expect("else arm should independently fold its ready resource");
         let arm_execution = |take_then: bool| {
@@ -12427,6 +12588,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         );
         let continuation = if size == 16 {
             let observed = joined
+                .driver()
                 .apply_step(ProofStep::ObserveResource(ready_clause.clone()))
                 .expect("explicit observation should project one interface resource layer");
             assert!(
@@ -12445,6 +12607,7 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
             joined
         };
         continuation
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the transformed owned interface should retain its return frontier");
     }
@@ -12477,10 +12640,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
         let branches = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("normalized-ownership then assignment should check")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("normalized-ownership else assignment should check");
         let before = fact_node_allocations();
@@ -12527,10 +12692,12 @@ fn branch_interface_is_checked_per_arm_and_scales_with_its_delta() {
     let invalid_branches = invalid_split
         .focus_split_arm(&invalid_record, true)
         .expect("the then sibling is open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("rejected quantity then assignment should check")
         .focus_split_arm(&invalid_record, false)
         .expect("the else sibling is open")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("rejected quantity else assignment should check");
     let quantity_three = ResourceClause::Quantified {
@@ -12626,10 +12793,12 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
         let nested = nested_split
             .focus_split_arm(&nested_record, true)
             .expect("the nested then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("nested then assignment should check")
             .focus_split_arm(&nested_record, false)
             .expect("the nested else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("nested else assignment should check");
         let nested_statement = nested_record.statement_index;
@@ -12675,6 +12844,7 @@ fn nested_end_of_arm_interface_derives_its_enclosing_continuation() {
             }] if assertions == std::slice::from_ref(&ProofAssertion::Fact(nonnegative.clone()))
         ));
         let completed = joined
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("derived enclosing continuation should execute the return");
         assert!(
@@ -12843,6 +13013,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
     let threw = returned
         .focus_split_arm(&call_record, false)
         .unwrap()
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("the caught arm returns");
     assert!(threw.is_at_function_exit());
@@ -12851,6 +13022,7 @@ fn mixed_call_outcomes_use_the_enclosing_branch_continuation() {
         .unwrap()
         .continue_arm_into_parent_frontier(&outer_record)
         .expect("the outer branch record owns the final return")
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("the final return should complete the normal arm");
     assert!(returned.is_at_function_exit());
@@ -13232,10 +13404,12 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
         let advanced = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("then return should check")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("else return should check");
         assert!(advanced.split_arms_at_function_exit(&record));
@@ -13470,10 +13644,12 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             "{premature:?}"
         );
         let both_returned = split_proof
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the then sibling returns in place")
             .focus_branch(sibling_ids[1])
             .expect("the else sibling is open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("the else sibling returns in place");
         let sibling_joined = both_returned
@@ -13577,7 +13753,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
             &[],
         );
         for root in [root, fixed] {
-            let completed = root.apply_step(ProofStep::Normalize).unwrap();
+            let completed = root.driver().apply_step(ProofStep::Normalize).unwrap();
             take_checked_have_operations();
             let before = fact_node_allocations();
             let retained = root.retain_completed_goal(&completed, &[]).unwrap();
@@ -13594,6 +13770,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
                 matches!(retained.certificate().steps(), [ProofStep::Have { proof, .. }] if matches!(proof.steps(), [ProofStep::Normalize]))
             );
             retained
+                .driver()
                 .apply_step(ProofStep::Assumption)
                 .unwrap()
                 .completed_proposition()
@@ -13607,6 +13784,7 @@ fn completed_application_retention_does_not_rerun_and_scales() {
                 SpecDefinitions::new(&predicates, &functions),
                 &theorems,
             )
+            .driver()
             .apply_step(ProofStep::Normalize)
             .unwrap();
             assert!(root.retain_completed_goal(&other, &[]).is_err());
@@ -13656,19 +13834,21 @@ fn fixed_state_source_failure_is_only_a_miss_at_an_explicit_search_boundary() {
     let retained = root.clone();
     let script = [ProofTactic::Normalize, ProofTactic::Assumption];
     let error = root
+        .driver()
         .try_authoritative_linear_script(&script)
         .err()
         .expect("a named normalization must fail even though assumption could close the goal");
     assert!(error.message().contains("`normalize`"), "{error:?}");
     assert!(error.message().contains("tactic 1"), "{error:?}");
     assert!(
-        attempt::candidate_outcome(root.try_authoritative_linear_script(&script))
+        attempt::candidate_outcome(root.driver().try_authoritative_linear_script(&script))
             .unwrap()
             .is_none()
     );
     assert!(root.state.shares_state_with(&retained.state));
     assert!(root.certificate().steps().is_empty());
     let completed = root
+        .driver()
         .try_authoritative_linear_script(&[ProofTactic::Assumption])
         .unwrap()
         .unwrap();
@@ -13765,6 +13945,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
         );
 
         let terminal = root
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("return step checks");
         let (outcomes, ids) = terminal
@@ -13790,13 +13971,16 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
                 current = current
                     .begin_have(proposition)
                     .unwrap()
+                    .driver()
                     .try_authoritative_linear_script(&[ProofTactic::Normalize])
                     .unwrap()
                     .unwrap()
                     .join()
                     .unwrap()
+                    .driver()
                     .apply_step(ProofStep::UnfoldResource(resource.clone()))
                     .unwrap()
+                    .driver()
                     .apply_step(ProofStep::FoldResource(resource.clone()))
                     .unwrap();
             }
@@ -13829,6 +14013,7 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
             assert_eq!(initial.resources().facts(), final_state.resources().facts());
         }
         let unfolded = root
+            .driver()
             .apply_step(ProofStep::UnfoldResource(resource.clone()))
             .unwrap();
         assert_ne!(
@@ -14005,9 +14190,11 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         &theorem_environment,
     );
     proof = proof
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("declare callback local");
     proof = proof
+        .driver()
         .apply_step(ProofStep::Step)
         .expect("read callback field");
     let execution = proof.execution().unwrap();
@@ -14105,6 +14292,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
             &[],
         );
         let transported = root
+            .driver()
             .apply_step(ProofStep::TransportUsing {
                 source: surface.clone(),
                 target: surface.clone(),
@@ -14122,10 +14310,14 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         let forgotten =
             transported.with_kernel_state(transported.state.with_locals(forgotten_locals));
         let (cached, cached_work) = crate::instrumentation::measure_deterministic_work(|| {
-            transported.apply_step(ProofStep::Rewrite(surface.clone()))
+            transported
+                .driver()
+                .apply_step(ProofStep::Rewrite(surface.clone()))
         });
         let (uncached, uncached_work) = crate::instrumentation::measure_deterministic_work(|| {
-            forgotten.apply_step(ProofStep::Rewrite(surface.clone()))
+            forgotten
+                .driver()
+                .apply_step(ProofStep::Rewrite(surface.clone()))
         });
         let cached = cached.unwrap();
         let uncached = uncached.unwrap();
@@ -14163,6 +14355,7 @@ fn fixed_state_transport_retains_checked_spellings_for_rewrite() {
         let absent = absent.with_kernel_state(absent.state.with_locals(absent_locals));
         assert!(
             absent
+                .driver()
                 .apply_step(ProofStep::Rewrite(surface.clone()))
                 .is_err()
         );
@@ -14252,11 +14445,13 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             premises: None,
         };
         assert!(
-            root.apply_step(step(ContractExpression::Binding("right".into())))
+            root.driver()
+                .apply_step(step(ContractExpression::Binding("right".into())))
                 .is_err(),
             "an unstated guard is not supplied by the index"
         );
         let instantiated = root
+            .driver()
             .apply_step(step(ContractExpression::Binding("chosen".into())))
             .unwrap();
         assert!(
@@ -14269,10 +14464,14 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
         locals.checked_lowerings = SurfacePropositionMap::default();
         let forgotten = instantiated.with_kernel_state(instantiated.state.with_locals(locals));
         let (cached, cached_work) = crate::instrumentation::measure_deterministic_work(|| {
-            instantiated.apply_step(ProofStep::Rewrite(surface.clone()))
+            instantiated
+                .driver()
+                .apply_step(ProofStep::Rewrite(surface.clone()))
         });
         let (uncached, uncached_work) = crate::instrumentation::measure_deterministic_work(|| {
-            forgotten.apply_step(ProofStep::Rewrite(surface.clone()))
+            forgotten
+                .driver()
+                .apply_step(ProofStep::Rewrite(surface.clone()))
         });
         assert_eq!(cached.unwrap().goal(), uncached.unwrap().goal());
         assert!(
@@ -14291,6 +14490,7 @@ fn fixed_state_instantiation_retains_checked_spellings_for_rewrite() {
             instantiated.with_kernel_state(instantiated.state.with_locals(changed_locals));
         assert!(
             shadowed
+                .driver()
                 .apply_step(ProofStep::Rewrite(surface.clone()))
                 .is_err(),
             "a rebound proof name must not reuse the old argument's spelling"
@@ -14363,6 +14563,7 @@ fn fixed_state_rewrite_keeps_authored_goal_names_after_lookup_substitution() {
     );
     let root = root.with_kernel_state(root.state.with_locals(locals));
     let rewritten = root
+        .driver()
         .apply_step(ProofStep::Rewrite(ClickProposition::Comparison {
             left: ContractExpression::Binding("left".into()),
             operator: ComparisonOperator::Equal,

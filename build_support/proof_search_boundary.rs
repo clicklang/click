@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use syn::visit::Visit;
 
 pub const MANIFEST: &str = include_str!("proof_search_edges.tsv");
+pub const DRIVER_METHODS: &str = include_str!("proof_driver_methods.txt");
 pub const TARGETS: &str = include_str!("proof_search_targets.txt");
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
@@ -70,6 +71,18 @@ impl<'ast> Visit<'ast> for Inventory {
             return;
         }
         let name = item.sig.ident.to_string();
+        if self.owner == "ProofDriver" && !DRIVER_METHODS.lines().any(|n| n == name) {
+            self.errors
+                .push(format!("unclassified ProofDriver entry point: {name}"));
+        }
+        if matches!(self.owner.as_str(), "Proof" | "ProofScope" | "ProofObject")
+            && DRIVER_METHODS.lines().any(|n| n == name)
+        {
+            self.errors.push(format!(
+                "driver method must not return to {}: {name}",
+                self.owner
+            ));
+        }
         if self.owner == "ProofSearch" && !TARGETS.lines().any(|n| n == name) {
             self.errors
                 .push(format!("unclassified ProofSearch entry point: {name}"));
@@ -135,6 +148,8 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
             // Reviewed roles describe callers, not a transitive complexity proof.
             let role = if caller.is_empty() {
                 "import"
+            } else if owner == "ProofDriver" || path.starts_with("src/surface/proof/driver/") {
+                "driver"
             } else if owner == "ProofSearch"
                 || path.starts_with("src/kernel/search")
                 || path.starts_with("src/surface/planning/")
@@ -155,6 +170,8 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
                 } else {
                     "legacy-caller"
                 }
+            } else if target == "driver" && matches!(owner.as_str(), "Proof" | "ProofScope") {
+                "operation-to-driver"
             } else if owner == "ProofScope" {
                 "scope-adapter"
             } else if matches!(

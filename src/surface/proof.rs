@@ -9,9 +9,11 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{ExecutionFactSource, ExecutionFacts};
 use crate::kernel::{bits32_constant, constant_u32};
+use crate::surface::proof::driver::DriveProof as _;
 use std::sync::Arc;
 
 mod attempt;
+#[path = "proof/driver/claims.rs"]
 mod claim_proofs;
 #[cfg(test)]
 pub(in crate::surface) use claim_proofs::count_flat_proof_units;
@@ -30,6 +32,7 @@ pub(in crate::surface) mod fact_reasoning;
 pub(in crate::surface) mod fixed_state_proofs;
 mod implicit_auto_scope;
 pub use implicit_auto_scope::without_implicit_auto_for_claim;
+pub(in crate::surface) mod driver;
 mod language_context;
 mod proof_object;
 
@@ -659,6 +662,7 @@ mod certificate_tests {
             &theorem_environment,
         );
         let error = root
+            .driver()
             .apply_step(ProofStep::Assumption)
             .err()
             .expect("a rejected candidate must not be reported as success");
@@ -669,6 +673,7 @@ mod certificate_tests {
         );
         assert!(root.certificate().steps().is_empty());
         let completed = root
+            .driver()
             .apply_step(ProofStep::Normalize)
             .expect("failed validation must not mutate the retained root");
         assert_eq!(

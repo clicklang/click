@@ -458,25 +458,6 @@ impl<'a> Proof<'a> {
         Ok(children)
     }
 
-    pub(in crate::surface::proof) fn apply_both_source(
-        &self,
-        both: &ProofBoth,
-    ) -> Result<Self, ClickError> {
-        // The `both` sits at this proof's own site, the claim's source tactic
-        // its driver attributed, so each arm tactic is addressed inside it
-        // (`tactic 3 > left arm tactic 1`) exactly as a `both` written in a
-        // block addresses its arms. Re-addressing it as the first tactic of
-        // a block would drop the claim-level position and leave the arms
-        // without a source path.
-        self.try_addressed_linear_script(
-            &[ProofTactic::Both(both.clone())],
-            std::slice::from_ref(self.site()),
-            &mut None,
-            None,
-        )?
-        .ok_or_else(|| self.step_error("`both` requires complete proofs of both conjuncts"))
-    }
-
     pub(in crate::surface::proof) fn split_focused_both(
         &self,
     ) -> Result<(Self, SplitId, [BranchId; 2]), ClickError> {
@@ -625,67 +606,6 @@ impl<'a> Proof<'a> {
             successor.record_trace_split(&successor.node, ids, &facts, "if", ["then", "else"]);
         }
         Ok((successor, split, ids))
-    }
-
-    /// Splits a proof path condition that exactly names the current C `if`
-    /// and applies each arm's leading source step as a checked `Step` on
-    /// that focused branch Proof, which decides the C `if` from the assumed case. The returned arms remain
-    /// proof cases, so their source scopes may continue through the C join;
-    /// only the branch-entry transition is selected here.
-    pub(in crate::surface::proof) fn try_split_source_successor_if(
-        &self,
-        condition: &ClickProposition,
-        arm_steps: [(usize, usize); 2],
-    ) -> Result<Option<(Self, ExecutionProofCaseSplit<'a>)>, ClickError> {
-        let Some(execution) = self.execution() else {
-            return Ok(None);
-        };
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Ok(None);
-        };
-        let statement_index = execution.core.frontier.next_statement_index;
-        let (_, current_state, statement, _) = next_top_level_statement_from_frontier_position(
-            execution.view(context),
-            &execution.core.state,
-            context.function,
-            context.arguments,
-            context.claim_label,
-            context.tactic_index,
-            "source proof `if`",
-        )?;
-        let CStatement::If {
-            condition: c_condition,
-            ..
-        } = statement
-        else {
-            return Ok(None);
-        };
-        let source_fact = self.lower_surface_proposition(condition, "proof `if` condition")?;
-        let c_surface = surface_c_condition(&c_condition, &current_state)?;
-        let c_fact = self.lower_surface_proposition(&c_surface, "current C `if` condition")?;
-        if !path_condition_equivalent(&source_fact, &c_fact) {
-            return Ok(None);
-        }
-
-        let surface_condition = surface_at_snapshot(
-            &c_surface,
-            &ProgramPointRef {
-                region: CodeRegionRef::Region(statement_index),
-                kind: ProgramPointKind::Entry,
-            },
-        )?;
-        let (split, record) = self.split_focused_execution_if_with_surface_condition(
-            condition.clone(),
-            surface_condition,
-        )?;
-        let mut advanced = split;
-        for (arm_index, take_then) in [(0usize, true), (1usize, false)] {
-            let (_, source_index) = arm_steps[arm_index];
-            advanced = advanced
-                .focus_execution_if_arm(&record, take_then)?
-                .apply_step_at(ProofStep::Step, source_index)?;
-        }
-        Ok(Some((advanced, record)))
     }
 
     /// Splits one retained execution frontier under an exhaustive proof-level
@@ -1218,9 +1138,11 @@ impl<'a> Proof<'a> {
                     ProofCertificate::from_proof_tactics(&[]).expect("empty certificate"),
                 ),
             };
-            return self.with_proved_lowering_requirements(&step, |proof| {
-                proof.begin_have_spelled(proposition.clone(), observe_goal, observed_spelling)
-            });
+            return self
+                .driver()
+                .with_proved_lowering_requirements(&step, |proof| {
+                    proof.begin_have_spelled(proposition.clone(), observe_goal, observed_spelling)
+                });
         }
         #[cfg(test)]
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
@@ -1575,3 +1497,6 @@ impl<'a> Proof<'a> {
         })
     }
 }
+
+#[path = "../driver/branches.rs"]
+mod driver;
