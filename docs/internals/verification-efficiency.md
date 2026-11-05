@@ -15,18 +15,22 @@ resources, simple tactics, certificates) and the slow part (smart tactics and
 search helpers, bounded and expandable), and the rule that a fast-part
 operation does indexed lookups and never scans a growing collection. This
 page gives the formal contract and describes how the main operations meet it.
-Where an operation still scans, this page says so; every such scan is a known
-violation of the fast-part rule, listed with its options under "Fast-part
-scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+The operation inventory in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)
+distinguishes tested routes, source candidates, deferred evidence and coverage
+gaps. The guarantees below apply to their named routes; they do not establish
+that every checking operation already satisfies the contract.
 
 ## Complexity contract
 
 Let `N` be the size of the selected C source, Click source, imported
 definitions, and explicit proof text. Let `q` be the relevant input inspected
-by one operation: a tactic's explicit operands and premises, the affected
-program operation or definition body, and the index entries that its keys
-select. Let `d` be the amount of new proof state or expanded proof text that
-the operation must produce.
+by one operation: a tactic's explicit operands and premises and the affected
+program operation or definition body. Index entries count toward this input
+only when their traversal is justified by those operands or necessary changes;
+a key selecting a large ambient bucket does not make that bucket explicit
+input. Let `d` be the amount of new proof state or expanded proof text that
+the operation must produce. Eager derived facts or internal cache rebuilding
+do not become necessary output merely because the implementation emits them.
 
 A fast-part operation, including every simple tactic, takes
 
