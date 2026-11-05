@@ -55,13 +55,24 @@ impl ScalarOperandKey {
         match view {
             MachineOperandView::Shared(_) => Self::Shared(MachineAtom::from_operand(ty, view)),
             MachineOperandView::Legacy(term) => {
-                if let Some(shared) =
-                    crate::kernel::KernelTermImport::default().machine_arithmetic(ty, term)
-                {
-                    Self::Shared(MachineAtom::from_operand(
+                // Leaf imports have fixed work. Retaining them merely changes
+                // cold/warm accounting; only compound operands avoid a walk.
+                if matches!(
+                    term,
+                    MachineTerm::Variable(_) | MachineTerm::Constant { .. }
+                ) {
+                    let shared = crate::kernel::KernelTermImport::default()
+                        .machine_arithmetic(ty, term)
+                        .expect("scalar leaf");
+                    return Self::Shared(MachineAtom::from_operand(
                         ty,
                         MachineOperandView::Shared(&shared),
-                    ))
+                    ));
+                }
+                if let Some(shared) =
+                    crate::kernel::SharedMachineIntegerTerm::import_arithmetic(ty, term)
+                {
+                    Self::Shared(MachineAtom::from_operand(ty, shared.operand_view()))
                 } else {
                     Self::Written(term.clone())
                 }
