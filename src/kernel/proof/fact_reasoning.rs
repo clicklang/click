@@ -1355,6 +1355,17 @@ fn polarity_equivalent_by(
     if left_condition == right_condition && left_value == right_value {
         return true;
     }
+    // A retained order observation and its native comparison are the same typed
+    // claim. Read their syntax identities; never export a shared operand or
+    // consult proof facts to recover the native spelling.
+    if retained_order_comparison_equivalent(
+        &left_condition,
+        left_value,
+        &right_condition,
+        right_value,
+    ) {
+        return true;
+    }
     matches!(
         (
             canonical(&left_condition, left_value),
@@ -1362,6 +1373,61 @@ fn polarity_equivalent_by(
         ),
         (Some(left), Some(right)) if left == right
     )
+}
+
+/// Exact written order direction and polarity, across native/shared carriers.
+/// Native arithmetic imports reuse their syntax memo; shared keys retain IDs.
+/// Thus repeated growing shared queries do not revisit the expression DAG.
+fn retained_order_comparison_equivalent(
+    left: &ConditionTerm,
+    left_value: bool,
+    right: &ConditionTerm,
+    right_value: bool,
+) -> bool {
+    use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey;
+    use crate::kernel::machine_integer::comparison::structural_comparison_view;
+    // This bridge is only for different representations. Existing same-form
+    // matching must not import every unsuccessful native comparison into the
+    // shared arena during proof search.
+    if matches!(left, ConditionTerm::Compare { .. })
+        == matches!(right, ConditionTerm::Compare { .. })
+    {
+        return false;
+    }
+    let (Some(left), Some(right)) = (
+        structural_comparison_view(left),
+        structural_comparison_view(right),
+    ) else {
+        return false;
+    };
+    // Only order guards are migrated here. Equality matching has separate
+    // admission and search paths; accepting additional equalities here can
+    // introduce new automatic rewrite/transport branches.
+    if left.relation == CompareRelation::Equal
+        || left.format != right.format
+        || left.relation != right.relation
+        || (left_value ^ left.negated) != (right_value ^ right.negated)
+    {
+        return false;
+    }
+    let format = left.format;
+    left.operands.iter().zip(&right.operands).all(|(a, b)| {
+        let (a, b) = (a.operand_view(), b.operand_view());
+        // A variable is its name, and cannot have the syntax of a compound
+        // operand. Avoid re-interning fixed-size leaves at every failed
+        // selected-premise comparison in smart search.
+        match (a.variable(), b.variable()) {
+            (Some(a), Some(b)) => return a == b,
+            (Some(_), None) | (None, Some(_)) => return false,
+            _ => {}
+        }
+        match (a.literal(), b.literal()) {
+            (Some(a), Some(b)) if a == b => return true,
+            (Some(_), None) | (None, Some(_)) => return false,
+            _ => {}
+        }
+        ScalarOperandKey::for_format(format, a) == ScalarOperandKey::for_format(format, b)
+    })
 }
 
 /// The comparison an order condition spells, before its polarity and
@@ -1809,6 +1875,88 @@ pub(crate) fn direct_fact_transport_premises(
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn retained_atomic_comparison_matching_needs_no_operand_imports() {
+        use super::*;
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let x = MachineTerm::Variable(Variable(1005250));
+        let y = MachineTerm::Variable(Variable(1005251));
+        let observed = |word| IntegerTerm::Machine(SharedMachineIntegerTerm::intern(format, word));
+        let retained = ConditionTerm::integer_less_than(observed(x.clone()), observed(y.clone()));
+        let native = ConditionTerm::signed_less_than(x, y);
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..32 {
+                assert!(retained_order_comparison_equivalent(
+                    &native, true, &retained, true
+                ));
+                assert!(!retained_order_comparison_equivalent(
+                    &native, false, &retained, true
+                ));
+            }
+        });
+        assert_eq!(
+            work, 0,
+            "fixed-size atom matching should not import operands"
+        );
+    }
+
+    #[test]
+    fn exact_premises_match_retained_machine_orders() {
+        use super::*;
+        use crate::kernel::MachineOperandView as V;
+        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+        let _session = VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let constant = |n| match format {
+                MachineIntegerType::Int32 => MachineTerm::constant(n as u32),
+                _ => MachineTerm::uint64_constant(n),
+            };
+            let native = MachineTerm::machine_binary(
+                format,
+                MachineBinaryOp::Subtract,
+                MachineTerm::Variable(Variable(1005200)),
+                constant(1),
+            );
+            let root = KernelTermImport::default()
+                .machine_arithmetic(format, &native)
+                .unwrap();
+            let bound = constant(17);
+            let exports = KernelTermExport::machine_export_count();
+            for relation in [CompareRelation::LessThan, CompareRelation::LessEqual] {
+                let written = Proposition::ConditionIs(
+                    ConditionTerm::machine_compare(format, relation, native.clone(), bound.clone()),
+                    true,
+                );
+                let retained = condition_for_operand_views(
+                    format,
+                    relation,
+                    [V::Shared(&root), V::Legacy(&bound)],
+                );
+                let required = Proposition::ConditionIs(retained.clone(), true);
+                assert!(
+                    exact_fact_is_available(&required, &[written.clone()]),
+                    "{format:?} {relation:?}: {required:?} versus {written:?}"
+                );
+                assert!(exact_fact_is_available(&written, &[required]));
+                assert!(!exact_fact_is_available(
+                    &Proposition::ConditionIs(retained, false),
+                    &[written.clone()]
+                ));
+                let changed = condition_for_operand_views(
+                    format,
+                    relation,
+                    [V::Shared(&root), V::Legacy(&constant(18))],
+                );
+                assert!(!exact_fact_is_available(
+                    &Proposition::ConditionIs(changed, true),
+                    &[written]
+                ));
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
     use super::*;
     use crate::kernel::proof::facts::ProofFacts;
     use crate::kernel::proof::quantified_equivalence_index_key;

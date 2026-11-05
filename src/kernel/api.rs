@@ -7560,6 +7560,70 @@ pub fn prove_population_member_count_zero(
     ))
 }
 
+/// A fold law shifts its endpoint by one in the endpoint's word ring. Keep
+/// the existing native constructor reading without expanding retained input.
+fn shifted_fold_endpoint(
+    endpoint: &SharedIntegerRangeEndpoint,
+    format: MachineIntegerType,
+    operation: MachineBinaryOp,
+) -> SharedIntegerRangeEndpoint {
+    use crate::kernel::{KernelTermImport, MachineOperandView as V};
+    let one = match format {
+        MachineIntegerType::Int32 => MachineTerm::constant(1),
+        MachineIntegerType::UInt64 => MachineTerm::uint64_constant(1),
+        _ => unreachable!("machine fold endpoint format"),
+    };
+    let operand = endpoint.machine_operand().operand_view();
+    let root = match operand {
+        V::Legacy(term) => {
+            return SharedIntegerRangeEndpoint::intern(MachineTerm::machine_binary(
+                format,
+                operation,
+                term.clone(),
+                one,
+            ));
+        }
+        V::Shared(root) => root.with_machine_observation_type(format),
+    };
+    // The native uint64 constructor reads constant arithmetic and casts;
+    // int32 constructors read only literal roots. The shared constant reading
+    // is cached with the syntax node, including unsuccessful readings.
+    let root = if format == MachineIntegerType::UInt64 {
+        operand
+            .uint64_constant()
+            .map(|bits| {
+                KernelTermImport::default().machine(format, &MachineTerm::uint64_constant(bits))
+            })
+            .unwrap_or(root)
+    } else {
+        root
+    };
+    let one = KernelTermImport::default().machine(format, &one);
+    let shifted = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+        format, operation, root, one,
+    )
+    .with_machine_observation_type(MachineIntegerType::Int32);
+    endpoint
+        .with_shared_operand(shifted)
+        .expect("retained fold endpoint")
+}
+
+fn fold_endpoint_order(
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    left: &SharedIntegerRangeEndpoint,
+    right: &SharedIntegerRangeEndpoint,
+) -> ConditionTerm {
+    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        format,
+        relation,
+        [
+            left.machine_operand().operand_view(),
+            right.machine_operand().operand_view(),
+        ],
+    )
+}
+
 /// The empty Integer fold law, guarded by the endpoint ordering.
 pub fn prove_integer_range_fold_empty(
     index: IntegerRangeFoldIndex,
@@ -7569,12 +7633,18 @@ pub fn prove_integer_range_fold_empty(
     body: IntegerTerm,
 ) -> Theorem {
     let guard = match &index {
-        IntegerRangeFoldIndex::Int32 { start, end } => {
-            ConditionTerm::signed_less_equal(end.value().clone(), start.value().clone())
-        }
-        IntegerRangeFoldIndex::UInt64 { start, end } => {
-            ConditionTerm::uint64_less_equal(end.value().clone(), start.value().clone())
-        }
+        IntegerRangeFoldIndex::Int32 { start, end } => fold_endpoint_order(
+            MachineIntegerType::Int32,
+            CompareRelation::LessEqual,
+            end,
+            start,
+        ),
+        IntegerRangeFoldIndex::UInt64 { start, end } => fold_endpoint_order(
+            MachineIntegerType::UInt64,
+            CompareRelation::LessEqual,
+            end,
+            start,
+        ),
         IntegerRangeFoldIndex::Integer { start, end } => {
             ConditionTerm::integer_less_equal(end.as_ref().clone(), start.as_ref().clone())
         }
@@ -7603,19 +7673,32 @@ pub fn prove_integer_range_fold_append(
     }
     let (extended, guard, item_value) = match &index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
-            let original_end = end.value().clone();
-            let increment = MachineTerm::add(original_end.clone(), MachineTerm::constant(1));
-            let guard =
-                ConditionTerm::signed_less_equal(start.value().clone(), end.value().clone());
-            let safe = ConditionTerm::signed_less_than(
-                end.value().clone(),
-                MachineTerm::constant(i32::MAX as u32),
+            let item_value = end
+                .machine_operand()
+                .operand_view()
+                .observe(MachineIntegerType::Int32)?;
+            let increment =
+                shifted_fold_endpoint(end, MachineIntegerType::Int32, MachineBinaryOp::Add);
+            let guard = fold_endpoint_order(
+                MachineIntegerType::Int32,
+                CompareRelation::LessEqual,
+                start,
+                end,
+            );
+            let safe = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::LessThan,
+                [
+                    end.machine_operand().operand_view(),
+                    crate::kernel::MachineOperandView::Legacy(&MachineTerm::constant(
+                        i32::MAX as u32,
+                    )),
+                ],
             );
             let extended = IntegerRangeFoldIndex::Int32 {
                 start: start.clone(),
-                end: SharedIntegerRangeEndpoint::intern(increment),
+                end: increment,
             };
-            let item_value = IntegerTerm::from_machine(MachineIntegerType::Int32, original_end)?;
             (
                 extended,
                 Proposition::And(
@@ -7629,20 +7712,32 @@ pub fn prove_integer_range_fold_append(
         // range only below the type's largest value, where `end + 1` does
         // not wrap.
         IntegerRangeFoldIndex::UInt64 { start, end } => {
-            let original_end = end.value().clone();
+            let item_value = end
+                .machine_operand()
+                .operand_view()
+                .observe(MachineIntegerType::UInt64)?;
             let increment =
-                MachineTerm::uint64_add(original_end.clone(), MachineTerm::uint64_constant(1));
-            let guard =
-                ConditionTerm::uint64_less_equal(start.value().clone(), end.value().clone());
-            let safe = ConditionTerm::uint64_less_than(
-                end.value().clone(),
-                MachineTerm::uint64_constant(u64::MAX),
+                shifted_fold_endpoint(end, MachineIntegerType::UInt64, MachineBinaryOp::Add);
+            let guard = fold_endpoint_order(
+                MachineIntegerType::UInt64,
+                CompareRelation::LessEqual,
+                start,
+                end,
+            );
+            let safe = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                CompareRelation::LessThan,
+                [
+                    end.machine_operand().operand_view(),
+                    crate::kernel::MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                        u64::MAX,
+                    )),
+                ],
             );
             let extended = IntegerRangeFoldIndex::UInt64 {
                 start: start.clone(),
-                end: SharedIntegerRangeEndpoint::intern(increment),
+                end: increment,
             };
-            let item_value = IntegerTerm::from_machine(MachineIntegerType::UInt64, original_end)?;
             (
                 extended,
                 Proposition::And(
@@ -7701,24 +7796,33 @@ fn integer_range_fold_predecessor_index(
 ) -> Option<(IntegerRangeFoldIndex, IntegerTerm)> {
     match index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
-            let predecessor = MachineTerm::subtract(end.value().clone(), MachineTerm::constant(1));
+            let predecessor =
+                shifted_fold_endpoint(end, MachineIntegerType::Int32, MachineBinaryOp::Subtract);
+            let item_value = predecessor
+                .machine_operand()
+                .operand_view()
+                .observe(MachineIntegerType::Int32)?;
             Some((
                 IntegerRangeFoldIndex::Int32 {
                     start: start.clone(),
-                    end: SharedIntegerRangeEndpoint::intern(predecessor.clone()),
+                    end: predecessor,
                 },
-                IntegerTerm::from_machine(MachineIntegerType::Int32, predecessor)?,
+                item_value,
             ))
         }
         IntegerRangeFoldIndex::UInt64 { start, end } => {
             let predecessor =
-                MachineTerm::uint64_subtract(end.value().clone(), MachineTerm::uint64_constant(1));
+                shifted_fold_endpoint(end, MachineIntegerType::UInt64, MachineBinaryOp::Subtract);
+            let item_value = predecessor
+                .machine_operand()
+                .operand_view()
+                .observe(MachineIntegerType::UInt64)?;
             Some((
                 IntegerRangeFoldIndex::UInt64 {
                     start: start.clone(),
-                    end: SharedIntegerRangeEndpoint::intern(predecessor.clone()),
+                    end: predecessor,
                 },
-                IntegerTerm::from_machine(MachineIntegerType::UInt64, predecessor)?,
+                item_value,
             ))
         }
         IntegerRangeFoldIndex::Integer { start, end } => {
@@ -9316,4 +9420,80 @@ pub fn prove_memory_load_after_store_other(
         pointer: loaded_pointer,
         outcome,
     }))
+}
+
+#[cfg(test)]
+mod retained_fold_law_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, VerificationSession,
+    };
+
+    fn endpoint(native: &MachineTerm) -> SharedIntegerRangeEndpoint {
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, native)
+            .unwrap();
+        SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+            .with_shared_operand(root)
+            .unwrap()
+    }
+
+    #[test]
+    fn retained_endpoint_shifts_match_the_existing_word_constructors() {
+        let _session = VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let constant = |n| {
+                if format == MachineIntegerType::Int32 {
+                    MachineTerm::constant(n as u32)
+                } else {
+                    MachineTerm::uint64_constant(n)
+                }
+            };
+            let x = MachineTerm::Variable(Variable(1005000));
+            let raw = |op, a, b| MachineTerm::Binary {
+                format,
+                op,
+                left: Box::new(a),
+                right: Box::new(b),
+            };
+            let mut cases = vec![
+                x.clone(),
+                constant(0),
+                constant(1),
+                constant(u64::MAX),
+                raw(MachineBinaryOp::Add, x.clone(), constant(1)),
+                raw(MachineBinaryOp::Add, constant(1), x.clone()),
+                raw(MachineBinaryOp::Subtract, x, constant(1)),
+                raw(MachineBinaryOp::Add, constant(2), constant(3)),
+            ];
+            if format == MachineIntegerType::UInt64 {
+                cases.push(MachineTerm::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: MachineIntegerType::Int32,
+                    to: format,
+                    value: Box::new(MachineTerm::constant(7)),
+                });
+            }
+            for native in cases {
+                for operation in [MachineBinaryOp::Add, MachineBinaryOp::Subtract] {
+                    let end = endpoint(&native);
+                    let exports = KernelTermExport::machine_export_count();
+                    let shifted = shifted_fold_endpoint(&end, format, operation);
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    let expected =
+                        MachineTerm::machine_binary(format, operation, native.clone(), constant(1));
+                    assert_eq!(
+                        shifted.value(),
+                        &expected,
+                        "{format:?} {operation:?}: {native:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/api/retained_fold_law_tests.rs");
+    }
 }
