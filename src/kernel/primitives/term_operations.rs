@@ -5726,7 +5726,10 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
         return false;
     };
     // The range of a machine operand read at `format`.
-    fn machine_range(term: &MachineTerm, format: MachineIntegerType) -> Option<(i128, i128)> {
+    fn machine_range(
+        term: MachineOperandView<'_>,
+        format: MachineIntegerType,
+    ) -> Option<(i128, i128)> {
         let bounds = |ty: MachineIntegerType| {
             let (lo, hi) = ty.format().bounds();
             Some((i128::try_from(lo).ok()?, i128::try_from(hi).ok()?))
@@ -5776,9 +5779,9 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
                     .and_then(MachineIntegerConstant::to_i128)
             };
             match (constant(left), constant(right)) {
-                (None, Some(c)) => machine_range(left, *format)
+                (None, Some(c)) => machine_range(MachineOperandView::Legacy(left), *format)
                     .and_then(|range| decide(range, *relation, c, false)),
-                (Some(c), None) => machine_range(right, *format)
+                (Some(c), None) => machine_range(MachineOperandView::Legacy(right), *format)
                     .and_then(|range| decide(range, *relation, c, true)),
                 _ => None,
             }
@@ -5795,7 +5798,7 @@ pub(crate) fn holds_by_format_range(proposition: &Proposition) -> bool {
             };
             let range = |term: &IntegerTerm| match term {
                 IntegerTerm::Machine(machine) => machine
-                    .value()
+                    .operand_view()
                     .narrow_widening32_operand()
                     .map_or(machine.ty(), |(source, _)| source)
                     .format()
@@ -6182,5 +6185,148 @@ mod format_range_premise_tests {
             MachineTerm::Variable(Variable(9)),
             -128
         ));
+    }
+    #[test]
+    fn shared_format_ranges_preserve_true_false_and_unknown_without_exports() {
+        use crate::kernel::{KernelTerm, KernelTermExport, KernelType, VerificationSession};
+        use MachineIntegerType as T;
+        let cases = [
+            (T::Int32, None),
+            (T::UInt32, None),
+            (T::Int64, None),
+            (T::UInt64, None),
+            (T::Int32, Some(T::Int8)),
+            (T::Int32, Some(T::UInt8)),
+            (T::Int32, Some(T::Int16)),
+            (T::Int32, Some(T::UInt16)),
+            (T::UInt32, Some(T::UInt8)),
+            (T::UInt32, Some(T::UInt16)),
+        ];
+        for (index, (format, narrow)) in cases.into_iter().enumerate() {
+            let _session = VerificationSession::enter();
+            let variable = Variable(994000 + index as u64);
+            let root = if let Some(source) = narrow {
+                KernelTerm::machine_cast_shared(
+                    MachineCastSpelling::Generic,
+                    source,
+                    format,
+                    KernelTerm::variable(KernelType::C(source.c_type()), variable),
+                )
+            } else {
+                let leaf = KernelTerm::variable(KernelType::C(format.c_type()), variable);
+                KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [leaf.clone(), leaf],
+                )
+            };
+            let machine = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+            assert!(!machine.has_boxed_operand());
+            let observed: SharedIntegerTerm = IntegerTerm::Machine(machine).into();
+            let (lo, hi) = narrow.unwrap_or(format).format().bounds();
+            let (lo, hi) = (i128::try_from(lo).unwrap(), i128::try_from(hi).unwrap());
+            let exports = KernelTermExport::machine_export_count();
+            for bound in [lo - 1, lo, 1, hi, hi + 1] {
+                for relation in [
+                    CompareRelation::LessThan,
+                    CompareRelation::LessEqual,
+                    CompareRelation::GreaterThan,
+                    CompareRelation::GreaterEqual,
+                ] {
+                    for flipped in [false, true] {
+                        let constant: SharedIntegerTerm =
+                            IntegerTerm::constant(bound.into()).into();
+                        let (left, right) = if flipped {
+                            (constant, observed.clone())
+                        } else {
+                            (observed.clone(), constant)
+                        };
+                        let condition = match relation {
+                            CompareRelation::LessThan => {
+                                ConditionTerm::IntegerLessThan(left, right)
+                            }
+                            CompareRelation::LessEqual => {
+                                ConditionTerm::IntegerLessEqual(left, right)
+                            }
+                            CompareRelation::GreaterThan => {
+                                ConditionTerm::IntegerGreaterThan(left, right)
+                            }
+                            CompareRelation::GreaterEqual => {
+                                ConditionTerm::IntegerGreaterEqual(left, right)
+                            }
+                            _ => unreachable!(),
+                        };
+                        let at = |value| {
+                            let (a, b) = if flipped {
+                                (bound, value)
+                            } else {
+                                (value, bound)
+                            };
+                            match relation {
+                                CompareRelation::LessThan => a < b,
+                                CompareRelation::LessEqual => a <= b,
+                                CompareRelation::GreaterThan => a > b,
+                                CompareRelation::GreaterEqual => a >= b,
+                                _ => unreachable!(),
+                            }
+                        };
+                        for truth in [true, false] {
+                            assert_eq!(
+                                holds_by_format_range(&Proposition::ConditionIs(
+                                    condition.clone(),
+                                    truth
+                                )),
+                                at(lo) == truth && at(hi) == truth,
+                                "{format:?}/{narrow:?}, {relation:?} {bound}, flipped={flipped}, truth={truth}"
+                            );
+                        }
+                    }
+                }
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn shared_narrow_widening_view_matches_the_written_cast() {
+        use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
+        use MachineIntegerType as T;
+        let _session = VerificationSession::enter();
+        for (source, destination) in [
+            (T::Int8, T::Int32),
+            (T::UInt16, T::UInt32),
+            (T::Int32, T::Int64),
+            (T::UInt8, T::UInt64),
+            (T::Int32, T::UInt32),
+        ] {
+            let variable = Variable(994101);
+            let native = MachineTerm::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: source,
+                to: destination,
+                value: Box::new(MachineTerm::Variable(variable)),
+            };
+            let root = KernelTermImport::default()
+                .machine_arithmetic(destination, &native)
+                .unwrap();
+            let exports = KernelTermExport::machine_export_count();
+            let read = MachineOperandView::Shared(&root).narrow_widening32_operand();
+            assert_eq!(
+                read.map(|(ty, _)| ty),
+                native.narrow_widening32_operand().map(|(ty, _)| ty)
+            );
+            if let Some((_, value)) = read {
+                assert_eq!(value.variable(), Some(&variable));
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[cfg(test)]
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../scaling_tests/kernel/primitives/term_operations/format_range_premise_tests.rs"
+        );
     }
 }
