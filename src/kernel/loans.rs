@@ -901,6 +901,10 @@ struct LoanLedgerData {
     /// protects fresh function-local storage.
     active_nonlocal_indexed_ranges: usize,
     active_memory_loans: usize,
+    /// Exact coordinate origins, including symbolic pointers. Constant byte
+    /// intervals support cache retention without searching the symbolic loans.
+    cache_memory_index: CacheProtectionIndex,
+    cache_memory_subtree: CacheProtectionIndex,
     /// Protected ranges whose bounds are not concrete, keyed by the block
     /// they lie in. Contract input views over parameter memory live here: a
     /// parameter pointer has a symbolic offset in the shared external block,
@@ -917,12 +921,78 @@ struct LoanLedgerStorage {
     data: LoanLedgerData,
 }
 
+type CacheProtectionIndex =
+    PersistentMap<(Pointer, ResourceMemoryIntervalNode), PersistentSet<LoanId>>;
+
+fn cache_protection_nodes(
+    range: &CMemoryRange,
+) -> Option<(Pointer, Vec<ResourceMemoryIntervalNode>)> {
+    let (origin, start, end) = super::primitives::constant_memory_coordinates(range)?;
+    let nodes = super::primitives::memory_interval_nodes_for_coordinates(
+        &origin.block,
+        i64::try_from(start).ok()?,
+        i64::try_from(end).ok()?,
+    )?;
+    Some((origin, nodes))
+}
+
+fn update_cache_protection_bucket(
+    index: &mut CacheProtectionIndex,
+    key: (Pointer, ResourceMemoryIntervalNode),
+    loan: LoanId,
+    insert: bool,
+) {
+    let bucket = index.get(&key).cloned().unwrap_or_default();
+    let bucket = if insert {
+        bucket.with_value(loan)
+    } else {
+        bucket.without_value(&loan)
+    };
+    *index = if bucket.is_empty() {
+        index.without_key(&key)
+    } else {
+        index.with_inserted(key, bucket)
+    };
+}
+
+fn update_cache_protection(
+    data: &mut LoanLedgerData,
+    range: &CMemoryRange,
+    loan: LoanId,
+    insert: bool,
+) {
+    // Charge one explicit backing-range update, as with the write-barrier
+    // interval index. Its fixed 32-bit decomposition is bounded independently
+    // of the ledger and does not enumerate the range's cells.
+    crate::instrumentation::record_deterministic_work(1);
+    let Some((origin, nodes)) = cache_protection_nodes(range) else {
+        return;
+    };
+    for node in nodes {
+        for ancestor in memory_interval_ancestors(&node) {
+            update_cache_protection_bucket(
+                &mut data.cache_memory_subtree,
+                (origin.clone(), ancestor),
+                loan,
+                insert,
+            );
+        }
+        update_cache_protection_bucket(
+            &mut data.cache_memory_index,
+            (origin.clone(), node),
+            loan,
+            insert,
+        );
+    }
+}
+
 fn update_indexed_memory_range(
     data: &mut LoanLedgerData,
     range: &CMemoryRange,
     loan: LoanId,
     insert: bool,
 ) -> Result<(), LoanRefusal> {
+    update_cache_protection(data, range, loan, insert);
     if ledger_interval_nodes(range).is_none() {
         return Ok(());
     }
@@ -4342,6 +4412,8 @@ impl LoanLedger {
                     active_memory_subtree: PersistentMap::default(),
                     active_nonlocal_indexed_ranges: 0,
                     active_memory_loans: 0,
+                    cache_memory_index: PersistentMap::default(),
+                    cache_memory_subtree: PersistentMap::default(),
                     unindexed_memory: PersistentMap::default(),
                 },
             }),
@@ -5705,9 +5777,45 @@ impl LoanLedger {
         Arc::ptr_eq(&self.storage, &other.storage)
     }
 
+    /// Select the least conflicting loan ID from the concrete write index.
+    /// Each fixed-width dyadic bucket contributes only its first member;
+    /// selecting the minimum preserves the diagnostic's existing loan choice.
+    fn first_active_memory_overlap(
+        &self,
+        range: &CMemoryRange,
+    ) -> Result<Option<LoanId>, LoanRefusal> {
+        if memory_range_is_empty(range) {
+            return Ok(None);
+        }
+        let Some(nodes) = memory_interval_nodes(range) else {
+            return if self.storage.data.active_memory_loans == 0 {
+                Ok(None)
+            } else {
+                Err(LoanRefusal::UnsupportedPartition)
+            };
+        };
+        let mut selected: Option<LoanId> = None;
+        let mut consider = |bucket: Option<&PersistentSet<LoanId>>| {
+            crate::instrumentation::record_deterministic_work(1);
+            // PersistentSet's iterator descends to the least key lazily.
+            // Taking one member does not enumerate or collect the bucket.
+            if let Some(loan) = bucket.and_then(|bucket| bucket.iter().next()).copied() {
+                selected = Some(selected.map_or(loan, |previous| previous.min(loan)));
+            }
+        };
+        for node in nodes {
+            for ancestor in memory_interval_ancestors(&node) {
+                consider(self.storage.data.active_memory_index.get(&ancestor));
+            }
+            consider(self.storage.data.active_memory_subtree.get(&node));
+        }
+        Ok(selected)
+    }
+
     /// Return active memory loans whose concrete byte footprints overlap the
     /// query. The dyadic index visits logarithmically many buckets plus the
     /// returned loan IDs; it never scans the ledger.
+    #[cfg(test)]
     pub(crate) fn active_memory_overlaps(
         &self,
         range: &CMemoryRange,
@@ -5744,20 +5852,20 @@ impl LoanLedger {
         Ok(loans.iter().copied().collect())
     }
 
-    fn active_memory_overlaps_with_assumptions(
+    fn first_active_memory_overlap_with_assumptions(
         &self,
         range: &CMemoryRange,
         assumptions: &PureFactContext,
-    ) -> Result<Vec<LoanId>, LoanRefusal> {
-        let mut loans = PersistentSet::default();
+    ) -> Result<Option<LoanId>, LoanRefusal> {
+        let mut selected: Option<LoanId> = None;
         for alias in memory_range_aliases(range, assumptions) {
-            if memory_interval_nodes(&alias).is_some() {
-                for loan in self.active_memory_overlaps(&alias)? {
-                    loans = loans.with_value(loan);
-                }
+            if memory_interval_nodes(&alias).is_some()
+                && let Some(loan) = self.first_active_memory_overlap(&alias)?
+            {
+                selected = Some(selected.map_or(loan, |previous| previous.min(loan)));
             }
         }
-        Ok(loans.iter().copied().collect())
+        Ok(selected)
     }
 
     /// Whether a write, free, or havoc of `range` is compatible with every
@@ -5788,7 +5896,7 @@ impl LoanLedger {
             for alias in &aliases {
                 if memory_interval_nodes(alias).is_some() {
                     indexed_alias_exists = true;
-                    if !self.active_memory_overlaps(alias)?.is_empty() {
+                    if self.first_active_memory_overlap(alias)?.is_some() {
                         return Err(LoanRefusal::ActiveDependency);
                     }
                 }
@@ -5868,21 +5976,17 @@ impl LoanLedger {
             let record = self.storage.data.loans.get(&loan)?;
             Some((loan, protected.clone(), origin_kind(&record.origin)))
         };
-        if let Ok(loans) = self.active_memory_overlaps_with_assumptions(range, assumptions) {
-            for loan in loans {
-                let Some(record) = self.storage.data.loans.get(&loan) else {
-                    continue;
-                };
-                let protected = record
-                    .memory_backing
-                    .iter()
-                    .find(|protected| {
-                        protected_range_proven_overlapping(range, protected, assumptions)
-                    })
-                    .or_else(|| record.memory_backing.first());
-                if let Some(protected) = protected {
-                    return described(loan, protected);
-                }
+        if let Ok(Some(loan)) =
+            self.first_active_memory_overlap_with_assumptions(range, assumptions)
+            && let Some(record) = self.storage.data.loans.get(&loan)
+        {
+            let protected = record
+                .memory_backing
+                .iter()
+                .find(|protected| protected_range_proven_overlapping(range, protected, assumptions))
+                .or_else(|| record.memory_backing.first());
+            if let Some(protected) = protected {
+                return described(loan, protected);
             }
         }
         let mut checked_blocks = BTreeSet::new();
@@ -5905,12 +6009,67 @@ impl LoanLedger {
     }
 
     /// [`Self::permits_memory_access_with_assumptions`] without path
-    /// assumptions, for callers such as branch joins and memory havoc that
-    /// have none. Fewer assumptions prove fewer overlaps, so this is the
+    /// assumptions, for write-authority callers that have none. Cache
+    /// retention instead uses `has_indexed_memory_overlap` and never searches
+    /// the symbolic buckets. Fewer assumptions prove fewer overlaps, so this is the
     /// more permissive form; the ordinary owned-authority check remains the
     /// primary guard on every write.
     pub(crate) fn permits_memory_access(&self, range: &CMemoryRange) -> Result<(), LoanRefusal> {
         self.permits_memory_access_with_assumptions(range, &PureFactContext::default())
+    }
+
+    /// Positive protection evidence for cache preservation. Unknown relative
+    /// bounds forget the value; they never grant permission to write.
+    /// Unlike the write barrier, this optional retention query does not search
+    /// other coordinate origins, and it asks only whether an interval bucket is occupied.
+    pub(crate) fn has_indexed_memory_overlap(&self, range: &CMemoryRange) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        if self.storage.data.cache_memory_index.is_empty()
+            && self.storage.data.cache_memory_subtree.is_empty()
+        {
+            return false;
+        }
+        let Some((origin, nodes)) = cache_protection_nodes(range) else {
+            return false;
+        };
+        let root = ResourceMemoryIntervalNode {
+            block: origin.block.clone(),
+            level: 32,
+            start: 0,
+        };
+        if !self
+            .storage
+            .data
+            .cache_memory_subtree
+            .contains_key(&(origin.clone(), root))
+        {
+            return false;
+        }
+        for node in nodes {
+            for ancestor in memory_interval_ancestors(&node) {
+                crate::instrumentation::record_deterministic_work(1);
+                if self
+                    .storage
+                    .data
+                    .cache_memory_index
+                    .get(&(origin.clone(), ancestor))
+                    .is_some_and(|bucket| !bucket.is_empty())
+                {
+                    return true;
+                }
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if self
+                .storage
+                .data
+                .cache_memory_subtree
+                .get(&(origin.clone(), node))
+                .is_some_and(|bucket| !bucket.is_empty())
+            {
+                return true;
+            }
+        }
+        false
     }
 
     /// Whether any active memory loan contributes a footprint to this ledger.
@@ -6913,6 +7072,46 @@ impl LoanLedger {
             return false;
         }
         let data = &self.storage.data;
+        let mut expected_cache_index = CacheProtectionIndex::default();
+        let mut expected_cache_subtree = CacheProtectionIndex::default();
+        for (loan, record) in data.loans.iter() {
+            if !data
+                .scopes
+                .get(&record.scope)
+                .is_some_and(|scope| scope.active)
+            {
+                continue;
+            }
+            for range in &record.memory_backing {
+                if let Some((origin, nodes)) = cache_protection_nodes(range) {
+                    for node in nodes {
+                        for ancestor in memory_interval_ancestors(&node) {
+                            update_cache_protection_bucket(
+                                &mut expected_cache_subtree,
+                                (origin.clone(), ancestor),
+                                *loan,
+                                true,
+                            );
+                        }
+                        update_cache_protection_bucket(
+                            &mut expected_cache_index,
+                            (origin.clone(), node),
+                            *loan,
+                            true,
+                        );
+                    }
+                }
+            }
+        }
+        if !expected_cache_index
+            .iter()
+            .eq(data.cache_memory_index.iter())
+            || !expected_cache_subtree
+                .iter()
+                .eq(data.cache_memory_subtree.iter())
+        {
+            return false;
+        }
         let mut expected_unindexed = BTreeMap::new();
         for (loan_id, loan) in data.loans.iter() {
             if matches!(loan.origin, LoanOrigin::Reborrowed)

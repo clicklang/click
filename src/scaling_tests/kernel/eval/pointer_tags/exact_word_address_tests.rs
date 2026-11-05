@@ -153,3 +153,145 @@ fn bounded_symbolic_tag_lookup_ignores_unrelated_facts() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn shared_tag_bounds_reuse_growing_dags_across_contexts() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport};
+    let mut samples = Vec::new();
+    for size in [32, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let mut root = KernelTermImport::default()
+            .machine_arithmetic(
+                ty,
+                &MachineTerm::uint64_bitwise_and(
+                    MachineTerm::Variable(Variable(985311)),
+                    MachineTerm::uint64_constant(3),
+                ),
+            )
+            .unwrap();
+        let mut context = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                context = context
+                    .clone()
+                    .assume_condition(ConditionTerm::Variable(Variable(985400 + index)), true);
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::BitwiseOr,
+                    [root.clone(), root],
+                );
+                assert_eq!(tag_bound(MachineOperandView::Shared(&root)), Some(3));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn unknown_left_tag_bound_does_not_visit_the_right_dag() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport};
+    let mut samples = Vec::new();
+    for size in [8, 64, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let unknown = KernelTermImport::default()
+            .machine_arithmetic(ty, &MachineTerm::Variable(Variable(985312)))
+            .unwrap();
+        let mut right = KernelTermImport::default()
+            .machine_arithmetic(ty, &MachineTerm::uint64_constant(3))
+            .unwrap();
+        for _ in 0..size {
+            right = KernelTerm::machine_binary_shared(
+                ty,
+                MachineBinaryOp::BitwiseOr,
+                [right.clone(), right],
+            );
+        }
+        let root =
+            KernelTerm::machine_binary_shared(ty, MachineBinaryOp::BitwiseOr, [unknown, right]);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(tag_bound(MachineOperandView::Shared(&root)), None);
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn cited_shared_tag_bounds_retain_growing_prefixes_and_selected_sources() {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt32;
+        let mut root = KernelTermImport::default()
+            .machine_arithmetic(ty, &MachineTerm::Variable(Variable(985331)))
+            .unwrap();
+        let one = KernelTermImport::default()
+            .machine_arithmetic(ty, &MachineTerm::constant(1))
+            .unwrap();
+        let mut context = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Multiply,
+                    [root, one.clone()],
+                );
+                let converted = KernelTerm::machine_cast_shared(
+                    MachineCastSpelling::UInt64From32,
+                    ty,
+                    MachineIntegerType::UInt64,
+                    root.clone(),
+                );
+                assert_eq!(
+                    tag_bound_citing(
+                        MachineOperandView::Shared(&converted),
+                        &context,
+                        &mut UsedFacts::new()
+                    ),
+                    None
+                );
+                let upper = condition_for_operand_views(
+                    ty,
+                    CompareRelation::LessEqual,
+                    [
+                        MachineOperandView::Shared(&root),
+                        MachineOperandView::Legacy(&MachineTerm::constant(3)),
+                    ],
+                );
+                context = context.clone().assume_condition(upper.clone(), true);
+                let mut used = UsedFacts::new();
+                assert_eq!(
+                    tag_bound_citing(MachineOperandView::Shared(&converted), &context, &mut used),
+                    Some(3)
+                );
+                assert!(
+                    used.premises
+                        .contains(&Proposition::ConditionIs(upper, true))
+                );
+                assert!(used.complete);
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100),
+        "{samples:?}"
+    );
+}

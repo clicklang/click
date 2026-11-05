@@ -43,7 +43,6 @@ use crate::kernel::{
     prove_owned_resource_quantity_nonnegative, prove_symbolic_c_condition_evaluation,
     prove_symbolic_c_loop_exit_with_proven_phases_using_budget,
     prove_symbolic_c_statement_verification_paths_with_environment_and_loop_rule_using_budget,
-    prove_uint32_difference_decreases_after_increment,
     prove_universally_quantified_pure_implication,
     prove_universally_quantified_pure_implication_by_int32_rewrites,
     substitute_int32_variable_in_proposition,

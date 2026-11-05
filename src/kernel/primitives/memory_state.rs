@@ -2833,7 +2833,9 @@ impl BlockMembership for BTreeSet<PointerBlock> {
 /// it can reach, so the only cells that survive are the ones something else
 /// guarantees: storage the function declared and did not expose
 /// (`preserved_blocks`), and bytes an active loan protects from being written
-/// at all. That is why it consults the ledger rather than the assumptions, and
+/// at all. Only indexed protection at the exact coordinate origin retains a value;
+/// unknown relative bounds forget it without searching the ledger. That is why it consults
+/// the ledger rather than the assumptions, and
 /// why the resource tracker's havoc arms cannot answer it.
 ///
 /// A cell whose width is unknown fails closed, because keeping its value on a
@@ -2848,14 +2850,12 @@ fn loan_preserving_havoc_keeps_cell(
     preserved_blocks.contains_block(&pointer.block)
         || ledger.is_some_and(|ledger| {
             byte_width != 0
-                && ledger
-                    .permits_memory_access(&CMemoryRange::new_with_element_width(
-                        pointer.clone(),
-                        MachineTerm::constant(0),
-                        MachineTerm::constant(byte_width),
-                        1,
-                    ))
-                    .is_err()
+                && ledger.has_indexed_memory_overlap(&CMemoryRange::new_with_element_width(
+                    pointer.clone(),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(byte_width),
+                    1,
+                ))
         })
 }
 
@@ -2887,8 +2887,14 @@ fn loan_preserving_havoc_keeps_run(
         ),
         1,
     );
-    if ledger.permits_memory_access(&whole).is_ok() {
-        (SlotSet::Nothing, exact)
+    if !ledger.has_indexed_memory_overlap(&whole) {
+        // An unindexable whole range can contain indexable individual slots.
+        // Forgetting the whole run is sound but may discard extra knowledge;
+        // forget_cached_values records those dropped slots.
+        (
+            SlotSet::Nothing,
+            crate::kernel::primitives::RuleAnswer::Sound,
+        )
     } else {
         (SlotSet::PerSlot, exact)
     }

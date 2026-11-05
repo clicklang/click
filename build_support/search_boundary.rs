@@ -43,6 +43,81 @@ struct Boundary<'a> {
 impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/loans.rs"
+            && matches!(
+                self.function.as_str(),
+                "permits_memory_access_with_assumptions"
+                    | "conflicting_memory_loan"
+                    | "first_active_memory_overlap"
+                    | "first_active_memory_overlap_with_assumptions"
+            )
+            && matches!(
+                name,
+                "active_memory_overlaps" | "active_memory_overlaps_with_assumptions"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: write checks must select a conflict witness, not collect loans ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/loans.rs"
+            && matches!(
+                self.function.as_str(),
+                "first_active_memory_overlap" | "first_active_memory_overlap_with_assumptions"
+            )
+            && matches!(
+                name,
+                "collect"
+                    | "with_value"
+                    | "flat_map"
+                    | "filter"
+                    | "find"
+                    | "find_map"
+                    | "for_each"
+                    | "fold"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: indexed conflict selection must not enumerate loan buckets ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/primitives/memory_state.rs"
+            && matches!(
+                self.function.as_str(),
+                "loan_preserving_havoc_keeps_cell" | "loan_preserving_havoc_keeps_run"
+            )
+            && matches!(
+                name,
+                "permits_memory_access"
+                    | "permits_memory_access_with_assumptions"
+                    | "active_memory_overlaps"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: cache retention must not search loan protection ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/loans.rs"
+            && self.function == "has_indexed_memory_overlap"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "unindexed_memory"
+                    | "permits_memory_access"
+                    | "permits_memory_access_with_assumptions"
+                    | "active_memory_overlaps"
+                    | "protected_range_proven_overlapping"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: cache protection must use interval bucket occupancy ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "constant_memory_overlap"
             && matches!(

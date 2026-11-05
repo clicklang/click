@@ -899,3 +899,74 @@ fn constant_overlap_rejects_alias_and_premise_enumeration() {
         );
     }
 }
+
+#[test]
+fn cache_protection_rejects_loan_enumeration() {
+    for name in [
+        "iter",
+        "collect",
+        "unindexed_memory",
+        "permits_memory_access",
+        "permits_memory_access_with_assumptions",
+        "active_memory_overlaps",
+        "protected_range_proven_overlapping",
+    ] {
+        let source = format!("fn has_indexed_memory_overlap(c: C) {{ c.{name}(); }}");
+        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+    }
+}
+
+#[test]
+fn havoc_cache_retention_cannot_restore_the_write_barrier_scan() {
+    for function in [
+        "loan_preserving_havoc_keeps_cell",
+        "loan_preserving_havoc_keeps_run",
+    ] {
+        for name in [
+            "permits_memory_access",
+            "permits_memory_access_with_assumptions",
+            "active_memory_overlaps",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(
+                boundary::check_source("src/kernel/primitives/memory_state.rs", &source).is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn write_barriers_and_diagnostics_cannot_collect_conflicting_loans() {
+    for function in [
+        "permits_memory_access_with_assumptions",
+        "conflicting_memory_loan",
+        "first_active_memory_overlap",
+        "first_active_memory_overlap_with_assumptions",
+    ] {
+        for method in [
+            "active_memory_overlaps",
+            "active_memory_overlaps_with_assumptions",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{method}(); }}");
+            assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+        }
+    }
+    for function in [
+        "first_active_memory_overlap",
+        "first_active_memory_overlap_with_assumptions",
+    ] {
+        for method in [
+            "collect",
+            "with_value",
+            "flat_map",
+            "filter",
+            "find",
+            "find_map",
+            "for_each",
+            "fold",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{method}(); }}");
+            assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+        }
+    }
+}

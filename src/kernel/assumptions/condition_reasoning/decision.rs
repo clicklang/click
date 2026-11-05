@@ -1,4 +1,5 @@
 use super::*;
+
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{MachineCastSpelling, cast_term};
 
@@ -530,7 +531,8 @@ impl PureFactContext {
         if let Some(value) = self.decide_shared_mask_zero(condition, &mut Default::default()) {
             return Some(value);
         }
-        // Still required for wide equality and remaining compatibility rules.
+        // Wide equality retains its compatibility boundary until tagged-address
+        // forms and opaque operands have shared consumers.
         if !crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
             .is_some_and(|view| {
                 matches!(
@@ -2064,7 +2066,10 @@ impl PureFactContext {
             )
             && matches!(
                 view.format,
-                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                MachineIntegerType::Int32
+                    | MachineIntegerType::UInt32
+                    | MachineIntegerType::Int64
+                    | MachineIntegerType::UInt64
             )
             && matches!(
                 view.relation,
@@ -2078,7 +2083,13 @@ impl PureFactContext {
                 .each_ref()
                 .map(|operand| match operand.operand_view() {
                     MachineOperandView::Shared(root) => {
-                        Some(self.checking_word32_shared_root(root))
+                        Some(if view.format.format().bits() == 64 {
+                            crate::kernel::proof::term_rewrite::TermRewrite::checking_wide_syntax(
+                                root,
+                            )
+                        } else {
+                            self.checking_word32_shared_root(root)
+                        })
                     }
                     MachineOperandView::Legacy(_) => None,
                 });

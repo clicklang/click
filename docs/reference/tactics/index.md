@@ -1659,9 +1659,12 @@ cited premise is accepted:
   exact `Integer` value as the sum of the other two, in either order or
   orientation: `(bytes + prefix) + suffix == bytes + total` from
   `to_integer(total) == to_integer(prefix) + to_integer(suffix)`, for every
-  index type. A native sum (`total == prefix + suffix`) does not, because it
-  may wrap
+  index type. One of the two may be a constant offset, a whole number of
+  elements: `(bytes + prefix) + 3 == bytes + total` from
+  `to_integer(total) == to_integer(prefix) + 3`. A native sum
+  (`total == prefix + suffix`) does not, because it may wrap
   ([`normalize_using_adds_element_indices_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_element_indices_by_a_cited_integer_sum.md),
+  [`normalize_using_adds_a_constant_element_offset_by_a_cited_integer_sum.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_adds_a_constant_element_offset_by_a_cited_integer_sum.md),
   [`normalize_using_refuses_a_wrapping_index_sum_for_an_address.md`](https://github.com/clicklang/click/blob/master/mdtests/normalize_using_refuses_a_wrapping_index_sum_for_an_address.md)).
 - For a top-level read equality of any width, a pointer read equality, or a
   pointer-offset equality, the cited conditions can justify the read's

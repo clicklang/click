@@ -1,4 +1,4 @@
-//! Shared machine reconstruction for checking and unguarded rewriting.
+//! Shared machine reconstruction for checking and scoped rewriting.
 //! This is not lowering: stored operands keep their exact syntax.
 use super::*;
 
@@ -45,6 +45,21 @@ impl TermRewrite<'_> {
                 return None;
             }
             if get(&term).is_some() {
+                continue;
+            }
+            if self.conditions.is_some()
+                && !self.comparison_arithmetic
+                && self.bitvector.is_none()
+                && self.integer_exact.is_none()
+                && self.integer_variables.is_none()
+                && self.typed_variables.is_none()
+                && !self.resolve_registered_loads
+                && self.scope.c.is_empty()
+                && self.scope.integer.is_empty()
+                && self.scope.algebraic.is_empty()
+                && !term.has_conditional_machine_rewrites()
+            {
+                local.borrow_mut().insert(term.id(), term.clone());
                 continue;
             }
             let KernelType::C(ty) = term.ty() else {
@@ -141,7 +156,19 @@ impl TermRewrite<'_> {
                     if self.integer_exact.is_some() {
                         KernelTerm::machine_cast_shared(*encoding, *source, *destination, operand)
                     } else if *encoding == MachineCastSpelling::Generic {
-                        operand.checking_machine_cast_preserving_sign_pairs(*source, *destination)
+                        self.widened_narrowed_shared_carrier(
+                            match term.node() {
+                                KernelTermNode::MachineCast { operand, .. } => operand,
+                                _ => unreachable!(),
+                            },
+                            &operand,
+                            *source,
+                            *destination,
+                        )
+                        .unwrap_or_else(|| {
+                            operand
+                                .checking_machine_cast_preserving_sign_pairs(*source, *destination)
+                        })
                     } else if encoding.unary(*source, *destination).is_width_conversion() {
                         operand.checking_legacy_machine_conversion(*source, *destination)
                     } else {
@@ -151,6 +178,7 @@ impl TermRewrite<'_> {
                 _ => return None,
             }
             .with_machine_observation_type(format);
+            let value = self.reduce_shared_remainder(value);
             if crate::instrumentation::deadline_exceeded_with_work(0) {
                 self.integer_work_exhausted = true;
             }
@@ -166,10 +194,269 @@ impl TermRewrite<'_> {
     }
 }
 
-fn literal(term: &KernelTerm) -> Option<MachineTerm> {
+impl TermRewrite<'_> {
+    fn shared_guard_holds(&self, guard: &ConditionTerm) -> bool {
+        crate::instrumentation::record_deterministic_work(1);
+        self.conditions
+            .is_some_and(|conditions| conditions.get(guard) == Some(&true))
+            || self
+                .cited_comparison_context
+                .is_some_and(|context| context.rewrite_guard_value(guard) == Some(true))
+            || folded_machine_condition(guard.clone()) == ConditionTerm::Constant(true)
+    }
+
+    fn widened_narrowed_shared_carrier(
+        &mut self,
+        original: &KernelTerm,
+        rewritten: &KernelTerm,
+        source: MachineIntegerType,
+        destination: MachineIntegerType,
+    ) -> Option<KernelTerm> {
+        if (self.conditions.is_none() && self.collected_conditions.is_none())
+            || !crate::kernel::is_narrow_widening32(source, destination)
+        {
+            return None;
+        }
+        let (MachineCastSpelling::Generic, original_source, original_destination, original) =
+            MachineOperandView::Shared(original).cast()?
+        else {
+            return None;
+        };
+        let (MachineCastSpelling::Generic, rewritten_source, rewritten_destination, rewritten) =
+            MachineOperandView::Shared(rewritten).cast()?
+        else {
+            return None;
+        };
+        if original_source != rewritten_source
+            || original_destination != source
+            || rewritten_destination != source
+        {
+            return None;
+        }
+        let MachineOperandView::Shared(original) = original else {
+            unreachable!()
+        };
+        let MachineOperandView::Shared(rewritten) = rewritten else {
+            unreachable!()
+        };
+        let (original_bounds, _) =
+            shared_narrowed_cast_identity(original, original_source, source)?;
+        let (bounds, carrier) = shared_narrowed_cast_identity(rewritten, rewritten_source, source)?;
+        if let Some(collected) = &mut self.collected_conditions {
+            collected.extend(original_bounds.into_iter().flatten());
+            collected.extend(bounds.into_iter().flatten());
+            return None;
+        }
+        self.conditions?;
+        bounds
+            .iter()
+            .zip(&original_bounds)
+            .all(|(a, b)| {
+                a.iter()
+                    .chain(b)
+                    .any(|guard| self.shared_guard_holds(guard))
+            })
+            .then_some(carrier)
+    }
+
+    fn reduce_shared_remainder(&mut self, value: KernelTerm) -> KernelTerm {
+        if self.conditions.is_none() && self.collected_conditions.is_none() {
+            return value;
+        }
+        let Some((guards, replacement)) = shared_remainder_rewrite(&value) else {
+            return value;
+        };
+        if let Some(collected) = &mut self.collected_conditions {
+            collected.extend(guards.iter().cloned());
+        }
+        if self.conditions.is_some() && guards.iter().all(|guard| self.shared_guard_holds(guard)) {
+            replacement
+        } else {
+            value
+        }
+    }
+}
+
+fn shared_narrowed_cast_identity(
+    value: &KernelTerm,
+    source: MachineIntegerType,
+    destination: MachineIntegerType,
+) -> Option<(Vec<Vec<ConditionTerm>>, KernelTerm)> {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use MachineIntegerType as T;
+    use MachineOperandView as V;
+    if let Some(literal) = literal(value) {
+        let (bounds, carrier) =
+            crate::kernel::assumptions::narrowed_cast_identity(&literal, source, destination)?;
+        return Some((
+            bounds.into_iter().map(|b| b.conditions).collect(),
+            imported(T::Int32, carrier),
+        ));
+    }
+    let bits = destination.format().bits();
+    let source_bits = source.format().bits();
+    if !matches!(bits, 8 | 16) || destination.format().contains(source.format()) || source_bits > 64
+    {
+        return None;
+    }
+    let (lo, hi) = if destination.format().is_signed() {
+        (-(1i64 << (bits - 1)), (1i64 << (bits - 1)) - 1)
+    } else {
+        (0, (1i64 << bits) - 1)
+    };
+    let source_signed = source.format().is_signed();
+    let needs_lower = source_signed && -(1i128 << (source_bits - 1)) < i128::from(lo);
+    let max = if source_signed {
+        (1i128 << (source_bits - 1)) - 1
+    } else {
+        (1i128 << source_bits) - 1
+    };
+    let value = if source_bits < 32 {
+        value.checking_machine_cast_preserving_sign_pairs(source, T::Int32)
+    } else {
+        value.clone()
+    };
+    let compare = |format, relation, bound: i64| {
+        let bound = match format {
+            T::Int64 => MachineTerm::int64_constant(bound),
+            T::UInt64 => MachineTerm::uint64_constant(bound as u64),
+            _ => MachineTerm::constant(bound as i32 as u32),
+        };
+        condition_for_operand_views(format, relation, [V::Shared(&value), V::Legacy(&bound)])
+    };
+    let format = match source {
+        T::Int8 | T::UInt8 | T::Int16 | T::UInt16 => T::Int32,
+        _ => source,
+    };
+    let mut bounds = Vec::new();
+    if needs_lower {
+        bounds.push(vec![compare(format, CompareRelation::GreaterEqual, lo)]);
+    }
+    if max > i128::from(hi) {
+        let mut upper = vec![compare(format, CompareRelation::LessEqual, hi)];
+        if matches!(source, T::UInt8 | T::UInt16) {
+            upper.push(compare(T::UInt32, CompareRelation::LessEqual, hi));
+        }
+        bounds.push(upper);
+    }
+    let carrier = if source_bits == 64 {
+        value.checking_legacy_machine_conversion(source, T::UInt32)
+    } else {
+        value
+    };
+    Some((bounds, carrier))
+}
+
+fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, KernelTerm)> {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use MachineBinaryOp as O;
+    use MachineIntegerType as T;
+    use MachineOperandView as V;
+    let KernelTermNode::MachineBinary {
+        format,
+        operator: O::Remainder,
+        arguments: [n, d],
+    } = value.node()
+    else {
+        return None;
+    };
+    let compare = |ty, relation, a: &KernelTerm, b: &KernelTerm| {
+        let condition = condition_for_operand_views(ty, relation, [V::Shared(a), V::Shared(b)]);
+        crate::kernel::assumptions::observation_comparisons::constant_observation_value(&condition)
+            .map(ConditionTerm::Constant)
+            .unwrap_or(condition)
+    };
+    if *format == T::UInt64 {
+        let divisor = V::Shared(d).uint64_constant();
+        if divisor == Some(1) {
+            return Some((vec![], constant(*format, 0)));
+        }
+        if divisor.is_some_and(|d| d != 0)
+            && let Some([original, tail]) = binary(n, *format, O::Subtract)
+        {
+            if let Some([tail_original, tail_d]) = binary(tail, *format, O::Remainder)
+                && original == tail_original
+                && d == tail_d
+            {
+                return Some((vec![], constant(*format, 0)));
+            }
+            if tail == d {
+                return Some((
+                    vec![compare(*format, CompareRelation::LessEqual, d, original)],
+                    comparison_binary(*format, O::Remainder, original.clone(), d.clone()),
+                ));
+            }
+        }
+        return Some((
+            vec![compare(*format, CompareRelation::LessThan, n, d)],
+            n.clone(),
+        ));
+    }
+    if *format != T::Int32 {
+        return None;
+    }
+    let divisor = word(d)? as i32;
+    if divisor == 1 {
+        return Some((vec![], constant(*format, 0)));
+    }
+    if divisor <= 0 {
+        return None;
+    }
+    let low = match n.node() {
+        KernelTermNode::MachineCast {
+            encoding: MachineCastSpelling::Generic,
+            source: T::UInt32,
+            destination: T::Int32,
+            operand,
+        } => operand,
+        _ => n,
+    };
+    if let KernelTermNode::MachineCast {
+        encoding: MachineCastSpelling::UInt32From64,
+        operand: wide,
+        ..
+    } = low.node()
+        && let Some([original, tail]) = binary(wide, T::UInt64, O::Subtract)
+        && let Some([other_original, other_d]) = binary(tail, T::UInt64, O::Remainder)
+        && original == other_original
+        && V::Shared(other_d).uint64_constant() == Some(divisor as u64)
+    {
+        return Some((
+            vec![compare(
+                T::UInt64,
+                CompareRelation::LessEqual,
+                original,
+                &constant(T::UInt64, i32::MAX as u32),
+            )],
+            constant(*format, 0),
+        ));
+    }
+    if let Some([original, step]) = binary(n, T::Int32, O::Subtract)
+        && step == d
+    {
+        return Some((
+            vec![compare(*format, CompareRelation::LessEqual, d, original)],
+            comparison_binary(*format, O::Remainder, original.clone(), d.clone()),
+        ));
+    }
+    Some((
+        vec![
+            compare(
+                *format,
+                CompareRelation::LessEqual,
+                &constant(*format, 0),
+                n,
+            ),
+            compare(*format, CompareRelation::LessThan, n, d),
+        ],
+        n.clone(),
+    ))
+}
+
+pub(super) fn literal(term: &KernelTerm) -> Option<MachineTerm> {
     MachineOperandView::Shared(term).literal()
 }
-fn imported(format: MachineIntegerType, value: MachineTerm) -> KernelTerm {
+pub(super) fn imported(format: MachineIntegerType, value: MachineTerm) -> KernelTerm {
     KernelTermImport::default()
         .machine_arithmetic(format, &value)
         .expect("machine arithmetic result")
@@ -184,7 +471,7 @@ fn constant(format: MachineIntegerType, value: u32) -> KernelTerm {
 fn word(term: &KernelTerm) -> Option<u32> {
     literal(term)?.as_const()
 }
-fn binary<'a>(
+pub(super) fn binary<'a>(
     term: &'a KernelTerm,
     format: MachineIntegerType,
     op: MachineBinaryOp,
@@ -418,6 +705,179 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn check_conditional_parity(
+        format: MachineIntegerType,
+        native: MachineTerm,
+        guards: Vec<ConditionTerm>,
+    ) {
+        let root = imported(format, native.clone());
+        for omitted in 0..=guards.len() {
+            for refuted in [false, true] {
+                let mut selected = PureFactContext::new();
+                let mut conditions = HashMap::new();
+                for (index, guard) in guards.iter().enumerate() {
+                    if index == omitted && !refuted {
+                        continue;
+                    }
+                    let truth = index != omitted;
+                    conditions.insert(guard.clone(), truth);
+                    selected = selected.assume_condition(guard.clone(), truth);
+                }
+                let expected = TermRewrite::for_conditions(&conditions).bits(&native);
+                let exports = KernelTermExport::machine_export_count();
+                let actual = TermRewrite::for_cited_conditions_with_context(
+                    &conditions,
+                    &selected,
+                    &selected,
+                )
+                .shared_machine_operand(&root)
+                .unwrap();
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                assert_eq!(
+                    actual,
+                    imported(format, expected.clone()),
+                    "{native:?}, omitted={omitted}, refuted={refuted}; actual={:?}; expected={:?}",
+                    actual.node(),
+                    imported(format, expected.clone()).node()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn shared_conditional_remainders_preserve_selected_guards() {
+        let _session = crate::kernel::VerificationSession::enter();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let n = MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: MachineTerm::Variable(Variable(985001)).into(),
+                right: MachineTerm::Variable(Variable(985002)).into(),
+            };
+            let constant = |number| {
+                crate::kernel::machine_integer::range::constant_word(
+                    format,
+                    &num_bigint::BigInt::from(number),
+                )
+                .unwrap()
+            };
+            for divisor in [0, 1, 5] {
+                let d = constant(divisor);
+                let inputs = [
+                    n.clone(),
+                    MachineTerm::Binary {
+                        format,
+                        op: MachineBinaryOp::Subtract,
+                        left: n.clone().into(),
+                        right: d.clone().into(),
+                    },
+                    MachineTerm::Binary {
+                        format,
+                        op: MachineBinaryOp::Subtract,
+                        left: n.clone().into(),
+                        right: MachineTerm::Binary {
+                            format,
+                            op: MachineBinaryOp::Remainder,
+                            left: n.clone().into(),
+                            right: d.clone().into(),
+                        }
+                        .into(),
+                    },
+                ];
+                for input in inputs {
+                    let native = MachineTerm::Binary {
+                        format,
+                        op: MachineBinaryOp::Remainder,
+                        left: input.into(),
+                        right: d.clone().into(),
+                    };
+                    let guards = native
+                        .guarded_remainder_rewrite()
+                        .map(|(guards, _)| guards)
+                        .unwrap_or_default();
+                    check_conditional_parity(format, native, guards);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_conditional_low_word_multiple_requires_the_full_width_bound() {
+        let _session = crate::kernel::VerificationSession::enter();
+        use MachineIntegerType as T;
+        let n = MachineTerm::uint64_add(
+            MachineTerm::Variable(Variable(985021)),
+            MachineTerm::Variable(Variable(985022)),
+        );
+        let d = MachineTerm::uint64_constant(5);
+        let multiple = MachineTerm::uint64_subtract(n.clone(), MachineTerm::uint64_remainder(n, d));
+        let low = MachineTerm::uint32_from_64(multiple);
+        for low in [
+            low.clone(),
+            MachineTerm::sign_cast32(T::UInt32, T::Int32, low),
+        ] {
+            let input = MachineTerm::Binary {
+                format: T::Int32,
+                op: MachineBinaryOp::Remainder,
+                left: low.into(),
+                right: MachineTerm::constant(5).into(),
+            };
+            let guards = input.guarded_remainder_rewrite().unwrap().0;
+            check_conditional_parity(T::Int32, input, guards);
+        }
+    }
+
+    #[test]
+    fn shared_conditional_narrowing_preserves_source_width_and_every_bound() {
+        let _session = crate::kernel::VerificationSession::enter();
+        use MachineIntegerType as T;
+        for source in [
+            T::Int8,
+            T::UInt8,
+            T::Int16,
+            T::UInt16,
+            T::Int32,
+            T::UInt32,
+            T::Int64,
+            T::UInt64,
+        ] {
+            for destination in [T::Int8, T::UInt8, T::Int16, T::UInt16] {
+                let value = if source.format().bits() >= 32 {
+                    MachineTerm::Binary {
+                        format: source,
+                        op: MachineBinaryOp::Add,
+                        left: MachineTerm::Variable(Variable(985011)).into(),
+                        right: MachineTerm::Variable(Variable(985012)).into(),
+                    }
+                } else {
+                    MachineTerm::Variable(Variable(985011))
+                };
+                let Some((bounds, _)) =
+                    crate::kernel::assumptions::narrowed_cast_identity(&value, source, destination)
+                else {
+                    continue;
+                };
+                let native = MachineTerm::Cast {
+                    spelling: MachineCastSpelling::Generic,
+                    from: destination,
+                    to: T::Int32,
+                    value: MachineTerm::Cast {
+                        spelling: MachineCastSpelling::Generic,
+                        from: source,
+                        to: destination,
+                        value: value.into(),
+                    }
+                    .into(),
+                };
+                let guards = bounds
+                    .into_iter()
+                    .map(|bound| bound.conditions[0].clone())
+                    .collect();
+                check_conditional_parity(T::Int32, native, guards);
+            }
+        }
+    }
 
     #[test]
     fn unguarded_machine_observation_copy_keeps_shared_operands() {

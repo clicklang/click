@@ -298,6 +298,14 @@ fn rooted_parameter_view(
 fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     let assumptions = PureFactContext::new();
     let (ledger, holder, opening, _) = rooted_parameter_view(41);
+    assert!(
+        ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 1, 4)),
+        "an exact symbolic origin is indexed without a loan search"
+    );
+    assert!(ledger.has_indexed_memory_overlap(&parameter_range(41, 3, 4, 1)));
+    assert!(ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 8, 1)));
+    assert!(!ledger.has_indexed_memory_overlap(&parameter_range(41, 4, 8, 1)));
+    assert!(!ledger.has_indexed_memory_overlap(&parameter_range(42, 0, 1, 4)));
     assert!(ledger.invariant_holds());
     assert!(ledger.has_active_memory_loans());
     assert!(ledger.permits_view(
@@ -4356,6 +4364,11 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         .lend(owner, reader, backing(&owned_range), owned_range)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
+    let protected_snapshot = ledger.clone();
+    assert!(ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
+    assert!(!ledger.has_indexed_memory_overlap(memory(8, 10, false).memory_range().unwrap()));
+    assert!(!ledger.has_indexed_memory_overlap(memory(8, 8, false).memory_range().unwrap()));
+    assert!(!ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 1, 4)));
     assert_eq!(
         ledger
             .active_memory_overlaps(memory(2, 4, false).memory_range().unwrap())
@@ -4401,6 +4414,10 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         ledger
             .permits_memory_access(memory(2, 4, false).memory_range().unwrap())
             .is_ok()
+    );
+    assert!(!ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
+    assert!(
+        protected_snapshot.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap())
     );
     let _ = ledger.recover(opening.loan, owner).unwrap();
 }
@@ -4608,4 +4625,77 @@ fn selected_loan_consumption_never_tries_another_occurrence() {
     assert!(consumed.contains_exact_representation(&first));
     assert!(!consumed.contains_exact_representation(&second));
     assert!(resources.contains_exact_representation(&second));
+}
+
+#[test]
+fn indexed_write_witness_keeps_the_least_loan_across_buckets_and_aliases() {
+    let (mut ledger, holder, _) = participants();
+    let mut first = None;
+    for (start, end) in [(12, 16), (0, 32), (64, 96)] {
+        let view = memory(start, end, false);
+        let resources = ResourceContext::new().unchecked_with_fact(view.clone());
+        let opening = ledger
+            .borrowed_contract_input(holder, resources.occurrences_for_fact(&view)[0], view, None)
+            .unwrap();
+        first.get_or_insert(opening.loan);
+        ledger = ledger.apply(&opening.transition).unwrap();
+    }
+    for (start, end) in [(0, 32), (0, 1), (12, 16), (32, 64), (64, 100), (16, 16)] {
+        let query = memory(start, end, false);
+        let range = query.memory_range().unwrap();
+        let expected = ledger
+            .active_memory_overlaps(range)
+            .unwrap()
+            .first()
+            .copied();
+        assert_eq!(ledger.first_active_memory_overlap(range), Ok(expected));
+        let report = ledger.memory_access_refusal(
+            range,
+            &PureFactContext::new(),
+            LoanRefusalOperation::MemoryAccess,
+        );
+        assert_eq!(
+            report.and_then(|d| d.subject().loan_id()),
+            expected.map(|loan| (loan.arena, loan.ordinal))
+        );
+    }
+    let original = memory(0, 32, false);
+    let alias = Pointer {
+        block: PointerBlock::Symbolic(Variable(991_123)),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let facts = PureFactContext::new().assume_condition(
+        ConditionTerm::pointer_equal(
+            alias.clone(),
+            original.memory_range().unwrap().base().clone(),
+        ),
+        true,
+    );
+    let query = CMemoryRange::new_with_element_width(
+        alias,
+        0u32.into(),
+        32u32.into(),
+        original.memory_range().unwrap().element_width(),
+    );
+    assert_eq!(
+        ledger.first_active_memory_overlap_with_assumptions(&query, &facts),
+        Ok(first)
+    );
+    assert_eq!(
+        ledger
+            .memory_access_refusal(&query, &facts, LoanRefusalOperation::MemoryAccess)
+            .unwrap()
+            .subject()
+            .loan_id(),
+        first.map(|loan| (loan.arena, loan.ordinal))
+    );
+    let unknown = parameter_range(991_124, 0, 1, 4);
+    assert_eq!(
+        ledger.first_active_memory_overlap(&unknown),
+        Err(LoanRefusal::UnsupportedPartition)
+    );
+    assert_eq!(
+        LoanLedger::new().first_active_memory_overlap(&unknown),
+        Ok(None)
+    );
 }

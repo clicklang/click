@@ -138,6 +138,7 @@ struct NodeKeyData {
     shared_machine_operand: bool,
     producer_local_identity: bool,
     machine_conversions: bool,
+    conditional_machine_rewrites: bool,
     machine_constant: Option<KernelMachineLiteral>,
 }
 #[derive(Clone)]
@@ -210,6 +211,25 @@ impl NodeKey {
             | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_conversions(),
             _ => false,
         };
+        // Conditional rewriting leaves ordinary arithmetic untouched. Retain
+        // this syntax summary so each query skips unchanged shared prefixes.
+        let conditional_machine_rewrites = match &node {
+            KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MachineCast { .. } => true,
+            KernelTermNode::MachineBinary {
+                operator,
+                arguments,
+                ..
+            } => {
+                *operator == MachineBinaryOp::Remainder
+                    || arguments
+                        .iter()
+                        .any(KernelTerm::has_conditional_machine_rewrites)
+            }
+            KernelTermNode::MachineUnary { operand, .. } => {
+                operand.has_conditional_machine_rewrites()
+            }
+            _ => false,
+        };
         let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
             machine_constant,
@@ -217,6 +237,7 @@ impl NodeKey {
             shared_machine_operand,
             producer_local_identity,
             machine_conversions,
+            conditional_machine_rewrites,
             ty,
             node,
         }))
@@ -313,6 +334,10 @@ impl KernelTerm {
 
     pub(crate) fn has_machine_conversions(&self) -> bool {
         self.0.key.0.machine_conversions
+    }
+
+    pub(crate) fn has_conditional_machine_rewrites(&self) -> bool {
+        self.0.key.0.conditional_machine_rewrites
     }
 
     pub(crate) fn is_shared_machine_operand(&self) -> bool {

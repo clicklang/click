@@ -8878,66 +8878,6 @@ pub fn prove_integer_machine_round_trip(
     )
 }
 
-/// Unsigned multiplication has its exact mathematical value under the native
-/// checked-multiplication guard. The zero factor branch does not divide by zero.
-/// Definedness of a wrapping u32 product alone is insufficient.
-pub fn prove_uint32_mul_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let premise = uint32_mul_guard(left.clone(), right.clone());
-    let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
-            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
-    };
-    let product = observe(MachineTerm::multiply_at(
-        MachineIntegerType::UInt32,
-        left.clone(),
-        right.clone(),
-    ));
-    let exact = IntegerTerm::Multiply(observe(left).into(), observe(right).into());
-    implication(
-        [premise],
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(product.into(), exact.into()),
-            true,
-        ),
-    )
-}
-
-fn uint32_mul_guard(left: MachineTerm, right: MachineTerm) -> Proposition {
-    Proposition::Or(
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::equal(right.clone(), MachineTerm::constant(0)),
-            true,
-        )),
-        Box::new(Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_equal(
-                left,
-                MachineTerm::unsigned_divide(MachineTerm::constant(u32::MAX), right),
-            ),
-            true,
-        )),
-    )
-}
-
-/// A mathematical product that fits u32 establishes Rust's checked native
-/// multiplication guard. Unsigned observations are nonnegative, so the
-/// nonzero branch is exactly left <= floor(u32::MAX / right).
-pub fn prove_uint32_mul_guard_by_integer_bound(left: MachineTerm, right: MachineTerm) -> Theorem {
-    let observe = |value| {
-        IntegerTerm::from_machine(MachineIntegerType::UInt32, value)
-            .expect("every uint32 bit pattern has an unsigned Integer interpretation")
-    };
-    let product =
-        IntegerTerm::Multiply(observe(left.clone()).into(), observe(right.clone()).into());
-    let premise = Proposition::ConditionIs(
-        ConditionTerm::IntegerLessEqual(
-            product.into(),
-            IntegerTerm::constant_i64(i64::from(u32::MAX)).into(),
-        ),
-        true,
-    );
-    implication([premise], uint32_mul_guard(left, right))
-}
-
 /// Observe unsigned machine division in Integer arithmetic. Both domains
 /// explicitly exclude a zero divisor; no no-wrap premise is needed.
 pub fn prove_uint32_divide_to_integer(left: MachineTerm, right: MachineTerm) -> Theorem {
@@ -8986,50 +8926,6 @@ fn prove_uint32_integer_division_bridge(
     implication([native_nonzero, integer_nonzero], conclusion)
 }
 
-/// An unsigned remainder is strictly below its nonzero divisor.
-/// No upper bound on the dividend is needed; zero division is excluded.
-pub fn prove_uint32_remainder_less_than_divisor(
-    value: MachineTerm,
-    divisor: MachineTerm,
-) -> Theorem {
-    implication(
-        [Proposition::ConditionIs(
-            ConditionTerm::equal(divisor.clone(), MachineTerm::constant(0)),
-            false,
-        )],
-        Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_than(
-                MachineTerm::unsigned_remainder(value, divisor.clone()),
-                divisor,
-            ),
-            true,
-        ),
-    )
-}
-
-/// A dividend strictly below an unsigned divisor is already its remainder.
-/// The strict unsigned premise also excludes division by zero.
-pub fn prove_uint32_remainder_of_lt(value: MachineTerm, divisor: MachineTerm) -> Theorem {
-    implication(
-        [Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_than(value.clone(), divisor.clone()),
-            true,
-        )],
-        Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::unsigned_remainder(value.clone(), divisor),
-                value,
-            ),
-            true,
-        ),
-    )
-}
-
-/// Exact unsigned 64-bit observations. Addition and multiplication require
-/// explicit no-wrap bounds; subtraction requires no underflow. Division and
-/// remainder exclude zero in both evaluation domains, but impose no bound on
-/// the dividend. These laws
-/// describe unsigned machine arithmetic, not signed overflow definedness.
 /// Exact mathematical observation of two unsigned 16-bit fields packed
 /// into a 32- or 64-bit word. Both bounds are necessary: the fields must be
 /// disjoint, and the high shift must preserve all bits.
@@ -9221,6 +9117,9 @@ fn prove_uint64_unpack_uint16_word(
     )
 }
 
+/// The `uint64` kernel laws: 16-bit packing and unpacking, and exact
+/// division and remainder observations. Division and remainder exclude zero
+/// in both evaluation domains, but impose no bound on the dividend.
 pub fn prove_uint64_integer_bridge(
     name: &str,
     left: MachineTerm,
@@ -9239,77 +9138,52 @@ pub fn prove_uint64_integer_bridge(
             name == "click::integer::uint64_unpack_uint16_high",
         ));
     }
+    if !matches!(
+        name,
+        "click::integer::uint64_divide_to_integer" | "click::integer::uint64_remainder_to_integer"
+    ) {
+        return None;
+    }
     let observe = |value| {
         IntegerTerm::from_machine(MachineIntegerType::UInt64, value)
             .expect("every uint64 bit pattern has an unsigned Integer interpretation")
     };
     let a = observe(left.clone());
     let b = observe(right.clone());
-    let maximum = IntegerTerm::constant(num_bigint::BigInt::from(u64::MAX));
-    let (machine, exact, guard) = match name {
-        "click::integer::uint64_multiply_to_integer" => {
-            let exact = IntegerTerm::Multiply(a.into(), b.into());
-            let guard = Proposition::ConditionIs(
-                ConditionTerm::IntegerLessEqual(exact.clone().into(), maximum.into()),
-                true,
-            );
-            (
-                MachineTerm::Binary {
-                    format: MachineIntegerType::UInt64,
-                    op: MachineBinaryOp::Multiply,
-                    left: left.into(),
-                    right: right.into(),
-                },
-                exact,
-                guard,
-            )
-        }
-        "click::integer::uint64_divide_to_integer"
-        | "click::integer::uint64_remainder_to_integer" => {
-            let native_nonzero = Proposition::ConditionIs(
-                ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0)),
-                false,
-            );
-            let integer_nonzero = Proposition::ConditionIs(
-                ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
-                true,
-            );
-            let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
-                (
-                    MachineTerm::Binary {
-                        format: MachineIntegerType::UInt64,
-                        op: MachineBinaryOp::Divide,
-                        left: left.into(),
-                        right: right.into(),
-                    },
-                    IntegerTerm::TruncatingQuotient(a.into(), b.into()),
-                )
-            } else {
-                (
-                    MachineTerm::Binary {
-                        format: MachineIntegerType::UInt64,
-                        op: MachineBinaryOp::Remainder,
-                        left: left.into(),
-                        right: right.into(),
-                    },
-                    IntegerTerm::TruncatingRemainder(a.into(), b.into()),
-                )
-            };
-            let conclusion = Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
-                true,
-            );
-            return Some(implication([native_nonzero, integer_nonzero], conclusion));
-        }
-        _ => return None,
+    let native_nonzero = Proposition::ConditionIs(
+        ConditionTerm::uint64_equal(right.clone(), MachineTerm::uint64_constant(0)),
+        false,
+    );
+    let integer_nonzero = Proposition::ConditionIs(
+        ConditionTerm::integer_not_equal(b.clone(), IntegerTerm::constant_i64(0)),
+        true,
+    );
+    let (machine, exact) = if name == "click::integer::uint64_divide_to_integer" {
+        (
+            MachineTerm::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Divide,
+                left: left.into(),
+                right: right.into(),
+            },
+            IntegerTerm::TruncatingQuotient(a.into(), b.into()),
+        )
+    } else {
+        (
+            MachineTerm::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: left.into(),
+                right: right.into(),
+            },
+            IntegerTerm::TruncatingRemainder(a.into(), b.into()),
+        )
     };
-    Some(implication(
-        [guard],
-        Proposition::ConditionIs(
-            ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
-            true,
-        ),
-    ))
+    let conclusion = Proposition::ConditionIs(
+        ConditionTerm::IntegerEqual(observe(machine).into(), exact.into()),
+        true,
+    );
+    Some(implication([native_nonzero, integer_nonzero], conclusion))
 }
 
 /// Exact mathematical remainder of a defined signed 32-bit operation.
@@ -9353,41 +9227,6 @@ fn uint32_implication(premise: ConditionTerm, conclusion: ConditionTerm) -> Theo
     implication(
         [Proposition::ConditionIs(premise, true)],
         Proposition::ConditionIs(conclusion, true),
-    )
-}
-
-/// Incrementing a uint32 `value` below `bound` decreases the difference
-/// `bound - value`, stated over the affine forms a loop measure `bound -
-/// value` evaluates to: `(0 - value) + (bound - 1)` after the increment and
-/// `(0 - value) + bound` before it. Neither wraps: `value <= bound - 1`, so
-/// the first is `bound - 1 - value` in `[0, bound - 1]` and the second is
-/// one more.
-pub fn prove_uint32_difference_decreases_after_increment(
-    value: MachineTerm,
-    bound: MachineTerm,
-) -> Theorem {
-    let negated = binary_node!(
-        UInt32,
-        Subtract,
-        Box::new(MachineTerm::uint32_constant(0)),
-        Box::new(value.clone()),
-    );
-    uint32_implication(
-        ConditionTerm::unsigned_less_than(value, bound.clone()),
-        ConditionTerm::unsigned_less_than(
-            binary_node!(
-                UInt32,
-                Add,
-                Box::new(negated.clone()),
-                Box::new(binary_node!(
-                    UInt32,
-                    Subtract,
-                    Box::new(bound.clone()),
-                    Box::new(MachineTerm::uint32_constant(1)),
-                )),
-            ),
-            binary_node!(UInt32, Add, Box::new(negated), Box::new(bound)),
-        ),
     )
 }
 

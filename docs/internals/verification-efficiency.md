@@ -318,18 +318,27 @@ charged to visible semantic output rather than hidden ambient state:
   path theorems list (completion indexes each path's facts once to list
   them).
 
+Loan-preserving cache havoc uses a maintained interval index keyed by exact
+coordinate origins, including symbolic pointer expressions. Unknown relative
+bounds forget the cached value; they never authorize a write. The write barrier retains its independent loan checks. Interval queries
+ask whether a bucket is nonempty, without enumerating the loans it contains.
+`loop_head_havoc_work_over_cells_and_symbolic_loans` enforces near-linear work
+as cached cells and unrelated symbolic loans grow together. The write barrier's
+symbolic-loan comparison is a separate remaining checking caller; cache
+retention evidence must not be used to grant write permission.
+
+Concrete loan write barriers select one indexed conflict witness instead of
+collecting all overlapping loan IDs. Each dyadic bucket contributes only its
+least member; taking the minimum across those buckets preserves the diagnostic's
+loan choice. Both checking and refusal diagnostics use this selection. The
+`write_barrier_does_not_enumerate_overlapping_loans` regression grows overlapping
+loans around one fixed write, including covering and adjacent queries and repeats.
+Symbolic-loan and alias candidate discovery remain separate checking costs.
+
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 Their mechanisms are described here; their cost is not accepted.
 
-- **Loan-preserving havoc.** A havoc at a loop head or interface join decides,
-  per surviving cell, whether an active loan protects it. Concrete protected
-  ranges answer from the dyadic index; a range with a symbolic base or bounds
-  is found by walking its block's symbolic bucket, so the havoc costs cells
-  times symbolic loans in that block
-  (`loop_head_havoc_work_over_cells_and_symbolic_loans` pins the measurement).
-  A secondary index over symbolic base terms, or a havoc narrowed to a checked
-  write set, would remove it.
 - **Interface-join binding inheritance.** The successor's bindings are
   compared with the arms' through one membership index over binding values,
   linear in the binding count, which grows with proof length

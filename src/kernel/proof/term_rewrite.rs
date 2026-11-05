@@ -25,6 +25,7 @@ mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
 mod shared_comparison;
+mod shared_wide_syntax;
 mod spec_rewrite;
 
 thread_local! {
@@ -37,6 +38,7 @@ thread_local! {
 pub(crate) fn clear_arithmetic_comparison_cache() {
     ARITHMETIC_COMPARISONS.with(|cache| cache.borrow_mut().clear());
     shared_comparison::clear();
+    shared_wide_syntax::clear();
 }
 
 fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut CarrierVariables) {
@@ -1545,6 +1547,7 @@ pub(crate) struct TermRewrite<'a> {
     condition_exact: Option<(&'a ConditionTerm, &'a ConditionTerm)>,
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
+    cited_comparison_context: Option<&'a PureFactContext>,
     bounded_uint64_indices: Option<std::collections::HashSet<MachineTerm>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
@@ -1715,6 +1718,7 @@ impl<'a> TermRewrite<'a> {
             comparison_arithmetic: false,
             conditions: None,
             cited_conditions: None,
+            cited_comparison_context: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1799,6 +1803,7 @@ impl<'a> TermRewrite<'a> {
             comparison_arithmetic: false,
             conditions: None,
             cited_conditions: None,
+            cited_comparison_context: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -1955,6 +1960,7 @@ impl<'a> TermRewrite<'a> {
             integer_exact: None,
             conditions: Some(conditions),
             cited_conditions: None,
+            cited_comparison_context: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -2014,11 +2020,15 @@ impl<'a> TermRewrite<'a> {
 
     pub(in crate::kernel) fn for_cited_conditions_with_context(
         conditions: &'a HashMap<ConditionTerm, bool>,
-        selected: &'a crate::kernel::equality_graph::EqualityGraph,
+        selected: &'a PureFactContext,
         ambient: &'a PureFactContext,
     ) -> Self {
-        let mut rewrite =
-            Self::for_cited_conditions_with_graph(conditions, selected, &ambient.equality_graph);
+        let mut rewrite = Self::for_cited_conditions_with_graph(
+            conditions,
+            &selected.equality_graph,
+            &ambient.equality_graph,
+        );
+        rewrite.cited_comparison_context = Some(selected);
         rewrite.pointer_context = Some(ambient);
         rewrite
     }
@@ -2093,6 +2103,7 @@ impl<'a> TermRewrite<'a> {
             condition_exact: None,
             conditions: None,
             cited_conditions: None,
+            cited_comparison_context: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -2184,6 +2195,7 @@ impl<'a> TermRewrite<'a> {
             condition_exact: None,
             conditions: None,
             cited_conditions: None,
+            cited_comparison_context: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -2369,6 +2381,7 @@ impl<'a> TermRewrite<'a> {
             condition_exact: None,
             conditions: None,
             cited_conditions: None,
+            cited_comparison_context: None,
             bounded_uint64_indices: None,
             equality_graph: None,
             pointer_context: None,
@@ -3535,12 +3548,9 @@ impl<'a> TermRewrite<'a> {
                 ))
             }
             IntegerTerm::Machine(value) => {
-                // Unguarded rewrites share the same arithmetic traversal;
-                // leaf rewriting supplies their particular substitution mode.
-                // Conditional reductions still use their established rule path.
-                if (self.comparison_arithmetic
-                    || (self.conditions.is_none() && self.collected_conditions.is_none()))
-                    && let Some(root) = value.shared_operand()
+                // Every rewrite mode retains the shared arithmetic traversal;
+                // conditional reductions consult only their selected guards.
+                if let Some(root) = value.shared_operand()
                     && let Some(result) = self.shared_machine_operand(root)
                 {
                     let operand = MachineOperandView::Shared(&result);
