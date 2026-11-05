@@ -18,8 +18,8 @@
 
 use super::operators::CBitwiseOperation;
 use super::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{MachineTerm, cast_term};
+use crate::kernel::MachineTerm;
+use crate::kernel::{CompareRelation, MachineIntegerType, MachineOperandView};
 
 pub(in crate::kernel) struct TaggedAddress {
     pub(in crate::kernel) pointer: Pointer,
@@ -188,58 +188,60 @@ impl PureFactContext {
 /// A mask covering every possible tag bit. Symbolic tags use only exact
 /// scalar bounds, so lookup work is independent of unrelated assumptions.
 pub(in crate::kernel) fn tag_bound_citing(
-    term: &MachineTerm,
+    term: MachineOperandView<'_>,
     assumptions: &PureFactContext,
     used: &mut UsedFacts,
 ) -> Option<u64> {
+    use crate::kernel::MachineCastSpelling as E;
+    use MachineIntegerType as T;
+    use MachineOperandView as V;
     if let Some(mask) = tag_bound(term) {
         return Some(mask);
     }
-    let exact = |condition: ConditionTerm, used: &mut UsedFacts| {
-        for spelling in [condition.clone(), condition.flipped()] {
-            crate::instrumentation::record_deterministic_work(1);
-            if assumptions.condition_facts.get(&spelling) == Some(&true) {
-                used.cite(Proposition::ConditionIs(spelling, true));
-                return true;
-            }
-        }
-        false
-    };
-    let lower = match term {
-        cast_term!(UInt64FromInt32, value) => Some(ConditionTerm::signed_less_equal(
-            0u32.into(),
-            value.as_ref().clone(),
-        )),
-        cast_term!(UInt64FromInt64, value) => Some(ConditionTerm::int64_signed_less_equal(
-            MachineTerm::int64_constant(0),
-            value.as_ref().clone(),
-        )),
-        cast_term!(UInt64From32, _) | MachineTerm::Variable(_) | MachineTerm::MemoryLoad(..) => {
-            None
+    let (format, value, signed) = match term.cast() {
+        Some((E::UInt64FromInt32, T::Int32, T::UInt64, value)) => (T::Int32, value, true),
+        Some((E::UInt64FromInt64, T::Int64, T::UInt64, value)) => (T::Int64, value, true),
+        Some((E::UInt64From32, T::UInt32, T::UInt64, value)) => (T::UInt32, value, false),
+        _ if term.variable().is_some()
+            || matches!(term, V::Legacy(MachineTerm::MemoryLoad(..))) =>
+        {
+            (T::UInt64, term, false)
         }
         _ => return None,
     };
-    if lower.is_some_and(|condition| !exact(condition, used)) {
+    let bounds = match format {
+        T::Int32 => &assumptions.signed_order_bounds,
+        T::UInt32 => &assumptions.uint32_order_bounds,
+        T::Int64 => &assumptions.int64_signed_order_bounds,
+        T::UInt64 => &assumptions.uint64_order_bounds,
+        _ => unreachable!("tag bound format"),
+    };
+    let constant = |value| match format {
+        T::Int32 | T::UInt32 => MachineTerm::constant(value),
+        T::Int64 => MachineTerm::int64_constant(i64::from(value)),
+        T::UInt64 => MachineTerm::uint64_constant(u64::from(value)),
+        _ => unreachable!("tag bound format"),
+    };
+    // The common order index selects the original premise for this exact
+    // non-strict edge. No other bounds or equality classes are searched.
+    fn exact(
+        bounds: &crate::kernel::assumptions::retained_order_bounds::OrderBoundIndex,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        used: &mut UsedFacts,
+    ) -> bool {
+        if let Some(source) = bounds.exact_source(left, right, false) {
+            used.cite(source.clone());
+            true
+        } else {
+            false
+        }
+    }
+    if signed && !exact(bounds, V::Legacy(&constant(0)), value, used) {
         return None;
     }
     for mask in [1u32, 3, 7] {
-        let upper = match term {
-            cast_term!(UInt64FromInt32, value) => {
-                ConditionTerm::signed_less_equal(value.as_ref().clone(), mask.into())
-            }
-            cast_term!(UInt64FromInt64, value) => ConditionTerm::int64_signed_less_equal(
-                value.as_ref().clone(),
-                MachineTerm::int64_constant(i64::from(mask)),
-            ),
-            cast_term!(UInt64From32, value) => {
-                ConditionTerm::unsigned_less_equal(value.as_ref().clone(), mask.into())
-            }
-            _ => ConditionTerm::uint64_less_equal(
-                term.clone(),
-                MachineTerm::uint64_constant(u64::from(mask)),
-            ),
-        };
-        if exact(upper, used) {
+        if exact(bounds, value, V::Legacy(&constant(mask)), used) {
             return Some(u64::from(mask));
         }
     }
@@ -269,7 +271,8 @@ fn require(
     ];
     for (index, (condition, what)) in conditions.into_iter().enumerate() {
         if index == 1
-            && tag_bound_citing(&form.tag, assumptions, used).is_some_and(|mask| mask < alignment)
+            && tag_bound_citing(MachineOperandView::Legacy(&form.tag), assumptions, used)
+                .is_some_and(|mask| mask < alignment)
         {
             continue;
         }
@@ -408,7 +411,7 @@ fn structural_form_of(
             // (rbtree's `rb_color(rb) | (unsigned long)p`), whose bound the
             // mask constant gives.
             let masked_bound = |term: &MachineTerm, used: &mut UsedFacts| {
-                tag_bound_citing(term, assumptions, used)
+                tag_bound_citing(MachineOperandView::Legacy(term), assumptions, used)
             };
             let (inner, tag, constant) = match (left.uint64_as_const(), right.uint64_as_const()) {
                 (None, Some(constant)) => (left, None, constant),
@@ -443,8 +446,12 @@ fn structural_form_of(
                     Some(TaggedAddress {
                         pointer: form.pointer,
                         object_class: form.object_class,
-                        tag: if tag_bound_citing(&form.tag, assumptions, used)
-                            .is_some_and(|mask| mask & constant == 0)
+                        tag: if tag_bound_citing(
+                            MachineOperandView::Legacy(&form.tag),
+                            assumptions,
+                            used,
+                        )
+                        .is_some_and(|mask| mask & constant == 0)
                         {
                             MachineTerm::uint64_constant(0)
                         } else {
@@ -502,34 +509,98 @@ pub(in crate::kernel) fn tagged_address_form(
         .flatten()
 }
 
-/// `term & mask` with a tag-reading mask, as the masked tag alone, using
-/// only decided conditions.
-/// An upper bound on a tag term: a constant is its own bound, `x & m` is
-/// bounded by `m`, and `a | b` by the all-ones value covering both bounds.
-pub(in crate::kernel) fn tag_bound(term: &MachineTerm) -> Option<u64> {
-    if let Some(constant) = term.uint64_as_const() {
-        return Some(constant);
-    }
-    match term {
-        MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::BitwiseAnd,
-            left,
-            right,
-        } => left.uint64_as_const().or_else(|| right.uint64_as_const()),
-        MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::BitwiseOr,
-            left,
-            right,
-        } => {
-            let bound = tag_bound(left)?.max(tag_bound(right)?);
-            Some(bound.checked_add(1)?.checked_next_power_of_two()? - 1)
-        }
-        _ => None,
-    }
+thread_local! {
+    // Bounds depend only on syntax. Cache each shared node once per
+    // verification, including misses, across changing proof contexts.
+    static SHARED_TAG_BOUNDS: std::cell::RefCell<std::collections::HashMap<u64, Option<u64>>> = Default::default();
 }
 
+pub(in crate::kernel) fn clear_tag_bound_cache() {
+    SHARED_TAG_BOUNDS.with(|cache| cache.borrow_mut().clear());
+}
+
+/// An upper bound on a tag term: a constant is its own bound, `x & m` is
+/// bounded by `m`, and `a | b` by the all-ones value covering both bounds.
+pub(in crate::kernel) fn tag_bound(term: MachineOperandView<'_>) -> Option<u64> {
+    enum Task<'a> {
+        Read(MachineOperandView<'a>),
+        AfterLeft(Option<u64>, MachineOperandView<'a>),
+        FinishOr(Option<u64>, u64),
+    }
+    // Match the native rule's literal roots. A constant arithmetic expression
+    // is simplified by checking elsewhere, not by this tag-bound rule.
+    let literal = |term: MachineOperandView<'_>| term.literal()?.uint64_as_const();
+    SHARED_TAG_BOUNDS.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut pending = vec![Task::Read(term)];
+        let mut values: Vec<Option<u64>> = Vec::new();
+        while let Some(task) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let (key, result) = match task {
+                Task::AfterLeft(key, right) => {
+                    if let Some(left) = values.pop().expect("left tag bound") {
+                        pending.push(Task::FinishOr(key, left));
+                        pending.push(Task::Read(right));
+                        continue;
+                    }
+                    (key, None)
+                }
+                Task::FinishOr(key, left) => {
+                    let right = values.pop().expect("right tag bound");
+                    let bound = right.and_then(|right| {
+                        left.max(right)
+                            .checked_add(1)?
+                            .checked_next_power_of_two()
+                            .map(|n| n - 1)
+                    });
+                    (key, bound)
+                }
+                Task::Read(term) => {
+                    let key = match term {
+                        MachineOperandView::Shared(term) => Some(term.id()),
+                        MachineOperandView::Legacy(_) => None,
+                    };
+                    if let Some(key) = key
+                        && let Some(bound) = cache.get(&key)
+                    {
+                        values.push(*bound);
+                        continue;
+                    }
+                    let result = if let Some(value) = literal(term) {
+                        Some(value)
+                    } else {
+                        match term.binary() {
+                            Some((
+                                MachineIntegerType::UInt64,
+                                MachineBinaryOp::BitwiseAnd,
+                                [left, right],
+                            )) => literal(left).or_else(|| literal(right)),
+                            Some((
+                                MachineIntegerType::UInt64,
+                                MachineBinaryOp::BitwiseOr,
+                                [left, right],
+                            )) => {
+                                pending.push(Task::AfterLeft(key, right));
+                                pending.push(Task::Read(left));
+                                continue;
+                            }
+                            _ => None,
+                        }
+                    };
+                    (key, result)
+                }
+            };
+            if let Some(key) = key {
+                cache.insert(key, result);
+            }
+            values.push(result);
+        }
+        values.pop().expect("root tag bound")
+    })
+}
+
+/// `term & mask` with a tag-reading mask, as the masked tag alone, using
+/// only decided conditions.
 pub(in crate::kernel) fn masked_tag_value(
     term: &MachineTerm,
     assumptions: &PureFactContext,
@@ -625,6 +696,100 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
 #[cfg(test)]
 mod exact_word_address_tests {
     use super::*;
+
+    #[test]
+    fn tag_bound_views_preserve_literal_masks_and_unknown_shapes() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let variable = || MachineTerm::Variable(Variable(985301));
+        let constant = MachineTerm::uint64_constant;
+        let binary = |format, op, left: MachineTerm, right: MachineTerm| MachineTerm::Binary {
+            format,
+            op,
+            left: left.into(),
+            right: right.into(),
+        };
+        let and = |left, right| {
+            binary(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::BitwiseAnd,
+                left,
+                right,
+            )
+        };
+        let or = |left, right| {
+            binary(
+                MachineIntegerType::UInt64,
+                MachineBinaryOp::BitwiseOr,
+                left,
+                right,
+            )
+        };
+        let cases = [
+            (constant(0), Some(0)),
+            (constant(u64::MAX), Some(u64::MAX)),
+            (variable(), None),
+            (and(variable(), constant(3)), Some(3)),
+            (and(constant(3), variable()), Some(3)),
+            (
+                or(and(variable(), constant(1)), and(variable(), constant(3))),
+                Some(3),
+            ),
+            (
+                or(and(variable(), constant(0)), and(variable(), constant(0))),
+                Some(0),
+            ),
+            (or(and(variable(), constant(1 << 63)), constant(1)), None),
+            (or(variable(), and(variable(), constant(3))), None),
+            (
+                binary(
+                    MachineIntegerType::UInt64,
+                    MachineBinaryOp::Add,
+                    constant(1),
+                    constant(1),
+                ),
+                None,
+            ),
+            (
+                and(
+                    binary(
+                        MachineIntegerType::UInt64,
+                        MachineBinaryOp::Add,
+                        constant(1),
+                        constant(1),
+                    ),
+                    variable(),
+                ),
+                None,
+            ),
+            (
+                binary(
+                    MachineIntegerType::Int64,
+                    MachineBinaryOp::BitwiseAnd,
+                    variable(),
+                    constant(3),
+                ),
+                None,
+            ),
+        ];
+        for (native, expected) in cases {
+            let root = KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::UInt64, &native)
+                .unwrap();
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                tag_bound(MachineOperandView::Shared(&root)),
+                expected,
+                "shared {native:?}"
+            );
+            assert_eq!(
+                tag_bound(MachineOperandView::Legacy(&native)),
+                expected,
+                "native {native:?}"
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
 
     #[test]
     fn different_tags_on_aligned_addresses_need_no_pointer_inequality() {
@@ -903,6 +1068,118 @@ mod exact_word_address_tests {
     }
 
     #[test]
+    fn shared_tag_bound_guards_preserve_sources_width_and_scope() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        use MachineCastSpelling as E;
+        use MachineIntegerType as T;
+        for (format, encoding, signed) in [
+            (T::Int32, E::UInt64FromInt32, true),
+            (T::Int64, E::UInt64FromInt64, true),
+            (T::UInt32, E::UInt64From32, false),
+        ] {
+            for mirrored in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let value = MachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: MachineTerm::Variable(Variable(985321)).into(),
+                    right: MachineTerm::Variable(Variable(985322)).into(),
+                };
+                let constant = |n| {
+                    crate::kernel::machine_integer::range::constant_word(
+                        format,
+                        &num_bigint::BigInt::from(n),
+                    )
+                    .unwrap()
+                };
+                let mut lower = ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::LessEqual,
+                    constant(0),
+                    value.clone(),
+                );
+                let mut upper = ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::LessEqual,
+                    value.clone(),
+                    constant(3),
+                );
+                if mirrored {
+                    lower = lower.flipped();
+                    upper = upper.flipped();
+                }
+                let converted = MachineTerm::legacy_cast(encoding, value.into());
+                let shared = KernelTermImport::default()
+                    .machine_arithmetic(T::UInt64, &converted)
+                    .unwrap();
+                for lower_truth in [None, Some(false), Some(true)] {
+                    if !signed && lower_truth.is_some() {
+                        continue;
+                    }
+                    for upper_truth in [None, Some(false), Some(true)] {
+                        let parent = PureFactContext::new();
+                        let mut context = parent.clone();
+                        if let Some(truth) = lower_truth {
+                            context = context.assume_condition(lower.clone(), truth);
+                        }
+                        if let Some(truth) = upper_truth {
+                            context = context.assume_condition(upper.clone(), truth);
+                        }
+                        let expected = (upper_truth == Some(true)
+                            && (!signed || lower_truth == Some(true)))
+                        .then_some(3);
+                        let exports = KernelTermExport::machine_export_count();
+                        for view in [
+                            MachineOperandView::Shared(&shared),
+                            MachineOperandView::Legacy(&converted),
+                        ] {
+                            let mut used = UsedFacts::new();
+                            assert_eq!(
+                                tag_bound_citing(view, &context, &mut used),
+                                expected,
+                                "{format:?}, {lower_truth:?}, {upper_truth:?}, mirrored={mirrored}"
+                            );
+                            if expected.is_some() {
+                                assert!(
+                                    used.premises
+                                        .contains(&Proposition::ConditionIs(upper.clone(), true))
+                                );
+                                if signed {
+                                    assert!(
+                                        used.premises.contains(&Proposition::ConditionIs(
+                                            lower.clone(),
+                                            true
+                                        ))
+                                    );
+                                }
+                                assert!(
+                                    used.complete
+                                        && used
+                                            .premises
+                                            .iter()
+                                            .all(|p| context.contains_assumed_exact(p))
+                                );
+                                let withdrawn = context.without_exact_fact(
+                                    &Proposition::ConditionIs(upper.clone(), true),
+                                );
+                                assert_eq!(
+                                    tag_bound_citing(view, &withdrawn, &mut UsedFacts::new()),
+                                    None
+                                );
+                            }
+                            assert_eq!(
+                                tag_bound_citing(view, &parent, &mut UsedFacts::new()),
+                                None
+                            );
+                        }
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn symbolic_tag_bounds_require_nonnegative_and_upper_premises() {
         let _session = crate::kernel::VerificationSession::enter();
         let tag = MachineTerm::Variable(Variable(980_011));
@@ -916,7 +1193,11 @@ mod exact_word_address_tests {
             PureFactContext::new().assume_condition(upper.clone(), true),
         ] {
             assert_eq!(
-                tag_bound_citing(&converted, &context, &mut UsedFacts::new()),
+                tag_bound_citing(
+                    MachineOperandView::Legacy(&converted),
+                    &context,
+                    &mut UsedFacts::new()
+                ),
                 None
             );
         }

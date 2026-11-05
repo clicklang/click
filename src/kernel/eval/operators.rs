@@ -1527,7 +1527,7 @@ fn bounded_uint64_tag_equation(
         };
         for (word, tag) in [(a, b), (b, a)] {
             let Some(bits) = super::pointer_tags::tag_bound_citing(
-                tag,
+                crate::kernel::MachineOperandView::Legacy(tag),
                 assumptions,
                 &mut super::pointer_tags::UsedFacts::new(),
             ) else {
@@ -1573,7 +1573,7 @@ pub(in crate::kernel) fn apply_c_bitwise_binary(
                         matches!(operation, CBitwiseOperation::Or)
                             .then(|| {
                                 super::pointer_tags::tag_bound_citing(
-                                    &bits,
+                                    crate::kernel::MachineOperandView::Legacy(&bits),
                                     assumptions,
                                     &mut super::pointer_tags::UsedFacts::new(),
                                 )

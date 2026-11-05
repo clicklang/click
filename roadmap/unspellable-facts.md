@@ -347,6 +347,11 @@ Remaining groups to audit and migrate:
   summary lets conditional queries skip unchanged arithmetic prefixes.
   Tests cover native/shared parity, omitted and refuted guards, full-width
   bounds, source withdrawal and changing-context scaling without exports.
+  Structural pointer-tag bounds now read operand views and memoize shared DAG
+  nodes, including misses. Guarded tag bounds read exact retained order edges
+  and retain their original sources; signed carriers still require both a
+  nonnegative lower bound and a small upper bound. This migrates the bound
+  consumers, not the surrounding tagged-address form or wide equality dispatch.
   Opaque leaves outside the shared operand fragment still require a
   parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
