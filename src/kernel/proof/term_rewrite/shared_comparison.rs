@@ -201,7 +201,7 @@ impl TermRewrite<'_> {
             .is_some_and(|conditions| conditions.get(guard) == Some(&true))
             || self
                 .cited_comparison_context
-                .is_some_and(|context| context.exact_condition_value(guard) == Some(true))
+                .is_some_and(|context| context.rewrite_guard_value(guard) == Some(true))
             || folded_machine_condition(guard.clone()) == ConditionTerm::Constant(true)
     }
 

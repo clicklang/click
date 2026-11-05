@@ -336,10 +336,14 @@ Remaining groups to audit and migrate:
   variable substitution. Exact congruence preserves raw operators and casts;
   selected source/replacement imports are cached per numeric interpretation.
   Conditional narrowing and remainder reductions now retain shared operands
-  and consult only their selected guards. Native order premises have an exact
-  source index, including promoted narrow readings; structural matches retain
-  the original cast premise before checking reads through it. Unrelated
-  equality and literal queries keep their existing fast paths. A cached syntax
+  and consult only their selected guards. Native order premises reuse the
+  existing retained-bound index, including promoted narrow readings; structural
+  matches retain the original cast premise before checking reads through it.
+  This lookup stays within the selected rewrite context: indexing native orders
+  in the general observation lookup changed unrelated automatic search and
+  exhausted the false-loop-invariant fixture's budget. Unrelated equality and
+  literal queries keep their existing fast paths. Equivalent 32-bit literal
+  spellings share an operand key while retaining their original source facts. A cached syntax
   summary lets conditional queries skip unchanged arithmetic prefixes.
   Tests cover native/shared parity, omitted and refuted guards, full-width
   bounds, source withdrawal and changing-context scaling without exports.

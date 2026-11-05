@@ -40,6 +40,18 @@ impl ScalarOperandKey {
         ty: MachineIntegerType,
         view: MachineOperandView<'_>,
     ) -> Self {
+        // Both 32-bit literal spellings denote the same word at this format.
+        // Normalize only the key's fixed-size literal; retain each fact's
+        // original operand and source proposition unchanged.
+        let literal = (ty.format().bits() == 32)
+            .then(|| view.literal())
+            .flatten()
+            .filter(|literal| matches!(literal, crate::kernel::uint32_constant!(_)))
+            .map(MachineTerm::constant_word32);
+        let view = literal
+            .as_ref()
+            .map(MachineOperandView::Legacy)
+            .unwrap_or(view);
         match view {
             MachineOperandView::Shared(_) => Self::Shared(MachineAtom::from_operand(ty, view)),
             MachineOperandView::Legacy(term) => {

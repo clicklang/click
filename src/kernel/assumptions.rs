@@ -7951,7 +7951,7 @@ impl PureFactContext {
             crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(proposition)
                 .into_iter()
                 .filter_map(|condition| {
-                    let value = self.exact_condition_value(&condition)?;
+                    let value = self.rewrite_guard_value(&condition)?;
                     Some((condition, value))
                 })
                 .collect::<std::collections::HashMap<_, _>>();
