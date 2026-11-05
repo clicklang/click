@@ -326,7 +326,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                         kind,
                     ),
                     crate::surface::diagnostics::describe_c_statement_site()
-                ))),
+                )).with_reported_assertion_goal(kind.required_goal().cloned())),
                 CConditionOutcome::RuntimeError(error) => Err(proof_condition_runtime_error(
                     context_label,
                     error,
@@ -469,7 +469,7 @@ pub(in crate::surface::proof) fn certified_condition_transitions(
                         kind,
                     ),
                     crate::surface::diagnostics::describe_c_statement_site()
-                ))),
+                )).with_reported_assertion_goal(kind.required_goal().cloned())),
                 Proposition::CConditionEvaluates {
                     outcome: CConditionOutcome::RuntimeError(error),
                     ..
