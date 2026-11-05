@@ -474,3 +474,70 @@ fn machine_observation_round_trip_covers_each_declared_integer_format() {
         );
     }
 }
+
+#[test]
+fn machine_fold_endpoint_congruence_retains_shared_operands() {
+    use crate::kernel::{
+        IntegerRangeFoldIndex, IntegerTerm, KernelTermExport, SharedIntegerRangeEndpoint,
+    };
+    for unsigned in [false, true] {
+        let _session = VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(989921));
+        let y = MachineTerm::Variable(Variable(989922));
+        let format = if unsigned {
+            MachineIntegerType::UInt64
+        } else {
+            MachineIntegerType::Int32
+        };
+        let fold = |value: MachineTerm| {
+            let native = MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: value.into(),
+                right: if unsigned {
+                    MachineTerm::uint64_constant(1)
+                } else {
+                    MachineTerm::constant(1)
+                }
+                .into(),
+            };
+            let root = crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &native)
+                .unwrap();
+            let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+                .with_shared_operand(root)
+                .unwrap();
+            assert!(!endpoint.machine_operand().has_boxed_operand());
+            let index = if unsigned {
+                IntegerRangeFoldIndex::UInt64 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                }
+            } else {
+                IntegerRangeFoldIndex::Int32 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                }
+            };
+            IntegerTerm::range_fold(
+                index,
+                IntegerTerm::constant_i64(0),
+                Variable(989923),
+                Variable(989924),
+                IntegerTerm::var(Variable(989923)),
+            )
+        };
+        let left = fold(x.clone());
+        let right = fold(y.clone());
+        let exports = KernelTermExport::machine_export_count();
+        let mut graph = EqualityGraph::default();
+        assert!(!graph.are_integer_equal(&left, &right));
+        if unsigned {
+            graph.add_uint64_equality(&x, &y);
+        } else {
+            graph.add_int32_equality(&x, &y);
+        }
+        assert!(graph.are_integer_equal(&left, &right));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
