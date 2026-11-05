@@ -2548,6 +2548,10 @@ impl Parser {
         };
         if rust_type.is_none() && type_parameters.iter().any(|parameter| parameter == &name) {
             self.position += 1;
+            if self.peek() == Some(&Token::Star) {
+                self.position += 1;
+                return Ok(AlgebraicFieldType::ParameterPointer(name));
+            }
             return Ok(AlgebraicFieldType::Parameter(name));
         }
         if rust_type.is_some() || is_c_type_keyword(&name) {

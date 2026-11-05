@@ -1,8 +1,5 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::prelude::*;
-use crate::surface::planning::proposition_search::PropositionSearch;
 mod byte_view_tests;
 mod callback_signature_tests;
 mod one_byte_one_name_tests;
@@ -376,9 +373,9 @@ fn own_memory_context(
 }
 
 fn assert_checkable_derivation(assumptions: &PureFactContext, proposition: &Proposition) {
-    let derivation = assumptions
-        .derive_proposition(proposition)
-        .expect("expected an explicit proposition derivation");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), proposition)
+            .expect("expected an explicit proposition derivation");
     assert_eq!(derivation.conclusion(), proposition);
     assert!(
         derivation.check(assumptions),

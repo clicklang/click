@@ -75,7 +75,7 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
         );
         let before = BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get);
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            proof.try_bridged_selected_arithmetic()
+            crate::kernel::search::ProofSearch::try_bridged_selected_arithmetic(&(proof))
         });
         assert!(
             result.unwrap().is_none(),
@@ -100,10 +100,10 @@ fn failed_integer_bridge_does_not_construct_unused_facts() {
             &theorems,
         );
         let before = BRIDGE_ESTABLISHMENTS.with(std::cell::Cell::get);
-        let closed = positive
-            .try_bridged_selected_arithmetic()
-            .unwrap()
-            .expect("the bound x < 100 proves x + 1 <= 100");
+        let closed =
+            crate::kernel::search::ProofSearch::try_bridged_selected_arithmetic(&(positive))
+                .unwrap()
+                .expect("the bound x < 100 proves x + 1 <= 100");
         assert!(closed.is_complete());
         // Selected-premise arithmetic reads the native bound `x < 100` as its Integer reading,
         // the same fact in its one form, so no carrying bridge is built.
@@ -210,7 +210,7 @@ fn disequality_refutation_work_ignores_unrelated_facts() {
             &theorems,
         );
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            proof.try_disequality_by_selected_refutation()
+            crate::kernel::search::ProofSearch::try_disequality_by_selected_refutation(&(proof))
         });
         let closed = result.unwrap().expect("k < j refutes k == j, so k != j");
         assert!(closed.is_complete());

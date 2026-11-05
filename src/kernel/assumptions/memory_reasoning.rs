@@ -5277,7 +5277,6 @@ pub(in crate::kernel) fn additive_base_spellings(pointer: &Pointer) -> Vec<Point
 mod seeded_interval_adjacency_tests {
     use super::*;
     use crate::kernel::primitives::{CellRun, IndexIntervals};
-    use crate::surface::planning::proposition_search::PropositionSearch;
 
     #[test]
     fn materialized_run_adjacency_rejects_signed_residue_as_unsigned_distance() {

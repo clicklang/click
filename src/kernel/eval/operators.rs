@@ -1002,10 +1002,10 @@ fn apply_c_int128_multiply(
         if let IntegerTerm::Machine(machine) = observed.value_read() {
             let constant = match machine.ty() {
                 MachineIntegerType::Int64 => assumptions
-                    .wide_constant_from_equalities(machine.value())
+                    .wide_constant_from_equalities_view(machine.operand_view())
                     .map(|value| IntegerTerm::constant_i64(value as i64)),
                 MachineIntegerType::UInt64 => assumptions
-                    .wide_constant_from_equalities(machine.value())
+                    .wide_constant_from_equalities_view(machine.operand_view())
                     .map(|value| IntegerTerm::constant(num_bigint::BigInt::from(value))),
                 _ => None,
             };

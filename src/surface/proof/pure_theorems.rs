@@ -2565,9 +2565,9 @@ fn check_direct_pure_goal_with_proof(
     }));
     let (result, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| {
         if auto {
-            root.try_auto_proof_closure()
+            crate::kernel::search::ProofSearch::try_auto_proof_closure(&(root))
         } else {
-            root.try_solve_closure()
+            crate::kernel::search::ProofSearch::try_solve_closure(&(root))
         }
     });
     let result = match result {

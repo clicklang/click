@@ -1,7 +1,6 @@
 //! Checked execution statement steps and loop-invariant bundles.
 
 use super::*;
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 thread_local! {
     /// The source spelling of the bundle member the invariant-bundle planner
@@ -217,6 +216,14 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
+        // Expanded preservation proofs already publish their invariant facts.
+        // Use that evidence before spelling members and rebuilding their
+        // nested proofs. The kernel checks exact availability (including
+        // conjunction leaves); a miss continues with bounded planning below.
+        if let Some(closed) = attempt::candidate_outcome(self.apply_step(ProofStep::Assumption))? {
+            scope.succeed();
+            return Ok(Some(closed));
+        }
         // The generated invariant bundle can have no Surface spelling. Its
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the
@@ -320,8 +327,9 @@ impl<'a> Proof<'a> {
     /// ([`ranking_descent_surface`]), as a function's exit closes each
     /// `ensures` as written.
     fn close_bundle_member_by_solve(&self) -> Result<Option<Self>, ClickError> {
-        self.with_synthesized_bundle_member_surface()
-            .try_solve_closure()
+        crate::kernel::search::ProofSearch::try_solve_closure(
+            &(self.with_synthesized_bundle_member_surface()),
+        )
     }
 
     /// Restores presentation metadata for one generated bundle leaf from the
@@ -2677,7 +2685,9 @@ impl<'a> Proof<'a> {
                     "`{claim_label}` tactic {tactic_index}: could not lower `transport` source: {message}"
                 ))
             })?;
-            if assumptions.derive_proposition(&source).is_none() {
+            if crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &source)
+                .is_none()
+            {
                 return Err(ClickError::new(format!(
                     "`{claim_label}` tactic {tactic_index}: `transport` requires a source derivable from its ambient facts: {}",
                     describe_missing_pure_fact(
@@ -2766,11 +2776,11 @@ impl<'a> Proof<'a> {
             return Err(self.step_error("`transport` lost its focused function outcome"));
         };
         let source = self.lower_surface_proposition_direct(surface_source, "`transport` source")?;
-        if self
-            .facts()
-            .assumptions()
-            .derive_proposition(&source)
-            .is_none()
+        if crate::kernel::search::ProofSearch::derive_proposition(
+            self.facts().assumptions(),
+            &source,
+        )
+        .is_none()
         {
             let facts = self.facts().to_vec();
             return Err(ClickError::new(format!(

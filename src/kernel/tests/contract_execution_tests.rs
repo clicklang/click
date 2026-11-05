@@ -1,11 +1,8 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::LoanRefusalCategory;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
 
 /// A completed frontier fork must share all sibling data, independently of
@@ -1075,18 +1072,21 @@ fn symbolic_add_uses_exact_intervals_to_rule_out_overflow() {
             false,
         );
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            binary_node!(
-                Int32,
-                Add,
-                Box::new(MachineTerm::Variable(left)),
-                Box::new(MachineTerm::Variable(right)),
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                binary_node!(
+                    Int32,
+                    Add,
+                    Box::new(MachineTerm::Variable(left)),
+                    Box::new(MachineTerm::Variable(right)),
+                ),
+                MachineTerm::constant(2),
             ),
-            MachineTerm::constant(2),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 
     prove_symbolic_c_execution(state, statement, assumptions)
         .expect("exact reconstructed intervals should rule out signed addition overflow");
@@ -1571,15 +1571,18 @@ fn verified_function_rule_applies_contract_without_executing_body() {
     let CValue::Int32(result) = value else {
         panic!("opaque helper should return int32")
     };
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(result.clone()),
-            right: Box::new(MachineTerm::constant(5))
-        },
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(result.clone()),
+                right: Box::new(MachineTerm::constant(5))
+            },
+            true,
+        )
+    ));
 
     let body_execution = prove_symbolic_c_execution_paths_with_environment(
         CState::new().with_population_creation_tracking(),
@@ -1806,10 +1809,13 @@ fn opaque_pointer_result_can_alias_its_argument() {
             .map(|fact| fact.proposition().clone())
             .collect::<Vec<_>>(),
     );
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(result.pointer().clone(), argument),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(result.pointer().clone(), argument),
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -2328,24 +2334,30 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 let CValue::Int32(value) = value else {
                     panic!("normal result should be int32")
                 };
-                assert!(assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(value.clone()),
-                        right: Box::new(MachineTerm::constant(5))
-                    },
-                    true,
-                )));
-                assert!(!assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(value.clone()),
-                        right: Box::new(MachineTerm::constant(7))
-                    },
-                    true,
-                )));
+                assert!(crate::kernel::search::ProofSearch::proves(
+                    &(assumptions),
+                    &Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(value.clone()),
+                            right: Box::new(MachineTerm::constant(5))
+                        },
+                        true,
+                    )
+                ));
+                assert!(!crate::kernel::search::ProofSearch::proves(
+                    &(assumptions),
+                    &Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(value.clone()),
+                            right: Box::new(MachineTerm::constant(7))
+                        },
+                        true,
+                    )
+                ));
             }
             Proposition::CStatementVerifies {
                 outcome: CStatementOutcome::Throw { value, state },
@@ -2357,24 +2369,30 @@ fn verified_exceptional_rule_produces_isolated_outcome_paths() {
                 let CValue::Int32(value) = value else {
                     panic!("exceptional payload should be int32")
                 };
-                assert!(assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(value.clone()),
-                        right: Box::new(MachineTerm::constant(7))
-                    },
-                    true,
-                )));
-                assert!(!assumptions.proves(&Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::Equal,
-                        left: Box::new(value.clone()),
-                        right: Box::new(MachineTerm::constant(5))
-                    },
-                    true,
-                )));
+                assert!(crate::kernel::search::ProofSearch::proves(
+                    &(assumptions),
+                    &Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(value.clone()),
+                            right: Box::new(MachineTerm::constant(7))
+                        },
+                        true,
+                    )
+                ));
+                assert!(!crate::kernel::search::ProofSearch::proves(
+                    &(assumptions),
+                    &Proposition::ConditionIs(
+                        ConditionTerm::Compare {
+                            format: MachineIntegerType::Int32,
+                            relation: CompareRelation::Equal,
+                            left: Box::new(value.clone()),
+                            right: Box::new(MachineTerm::constant(5))
+                        },
+                        true,
+                    )
+                ));
             }
             other => panic!("unexpected modular outcome: {other:?}"),
         }
@@ -2474,24 +2492,30 @@ fn verified_exceptional_call_enters_int32_handler_with_only_exceptional_claims()
                 .map(|fact| fact.proposition().clone())
                 .collect::<Vec<_>>(),
         );
-        assert!(assumptions.proves(&Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(value.clone()),
-                right: Box::new(MachineTerm::constant(7))
-            },
-            true,
-        )));
-        assert!(!assumptions.proves(&Proposition::ConditionIs(
-            ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::Equal,
-                left: Box::new(value.clone()),
-                right: Box::new(MachineTerm::constant(99))
-            },
-            true,
-        )));
+        assert!(crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(value.clone()),
+                    right: Box::new(MachineTerm::constant(7))
+                },
+                true,
+            )
+        ));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(value.clone()),
+                    right: Box::new(MachineTerm::constant(99))
+                },
+                true,
+            )
+        ));
     }
     assert!(saw_normal && saw_caught);
 }
@@ -6012,10 +6036,10 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let CValue::Int32(value) = value else {
         panic!("constructed int32 field");
     };
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(value.clone(), 37u32.into()),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(ConditionTerm::equal(value.clone(), 37u32.into()), true,)
+    ));
     let loads = evaluate_c_expression_paths(
         state,
         &c_typed_load(c_variable("node"), CType::Int32Pointer),
@@ -6032,10 +6056,13 @@ fn construction_return_contract_certifies_and_applies_to_caller_storage() {
     let assumptions = load.facts.iter().fold(assumptions, |context, fact| {
         context.assume_proposition(fact.proposition().clone())
     });
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(self_pointer.pointer().clone(), at.offset_by_bytes(8)),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(self_pointer.pointer().clone(), at.offset_by_bytes(8)),
+            true,
+        )
+    ));
 }
 
 // A modular ordinary-parameter constructor must establish initialization from

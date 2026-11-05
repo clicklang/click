@@ -1,13 +1,10 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::LoanViewBinding;
 use crate::kernel::binary_node;
 use crate::kernel::int32_constant;
 use crate::kernel::loans::{LoanLedger, LoanViewBindings};
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// A fold publishes read authority for the cells it consumed, attached to
 /// the folded instance. Folding what an unfold opened returns the state the
@@ -1748,13 +1745,16 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
     .unwrap();
     assert_eq!(paths.len(), 1);
     assert!(
-        !empty.proves(&paths[0].proposition),
+        !crate::kernel::search::ProofSearch::proves(&(empty), &paths[0].proposition),
         "ownership alone must not imply preservation"
     );
     let equal = empty
         .clone()
         .assume_proposition(Proposition::Equal(Term::Algebraic(n), Term::Algebraic(m)));
-    assert!(equal.proves(&paths[0].proposition));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(equal),
+        &paths[0].proposition
+    ));
     let missing = CState::new();
     let application = |at_entry| SpecAlgebraicExpression {
         algebraic_type: ty.clone(),
@@ -1777,7 +1777,10 @@ fn resource_instance_projections_use_owned_current_or_explicit_entry_state() {
             &mut ExecutionBudget::default(),
         )
         .unwrap();
-        assert_eq!(empty.proves(&paths[0].proposition), should_hold);
+        assert_eq!(
+            crate::kernel::search::ProofSearch::proves(&(empty), &paths[0].proposition),
+            should_hold
+        );
     }
     for (state, old, claim) in [
         (&missing, Some(&entry), application_claim),
@@ -3454,12 +3457,13 @@ fn resource_context_observes_write_separation() {
 
     assert_eq!(facts.len(), 1);
     assert!(matches!(facts[0], Proposition::CResourceComposition(_)));
-    assert!(
-        PureFactContext::new().proves(&Proposition::CResourceSeparate {
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::CResourceSeparate {
             left: Box::new(CResource::Memory(left)),
             right: Box::new(CResource::Memory(right)),
-        })
-    );
+        }
+    ));
 }
 
 #[test]
@@ -3492,14 +3496,20 @@ fn resource_context_observes_same_and_cross_family_separation() {
         .fold(PureFactContext::new(), |assumptions, fact| {
             assumptions.assume_proposition(fact)
         });
-    assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: Box::new(token.clone()),
-        right: Box::new(other_token),
-    }));
-    assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: Box::new(memory),
-        right: Box::new(token),
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CResourceSeparate {
+            left: Box::new(token.clone()),
+            right: Box::new(other_token),
+        }
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CResourceSeparate {
+            left: Box::new(memory),
+            right: Box::new(token),
+        }
+    ));
 }
 
 #[test]
@@ -3520,10 +3530,13 @@ fn observable_abstract_resources_use_one_indexed_composition() {
             .fold(PureFactContext::new(), |assumptions, fact| {
                 assumptions.assume_proposition(fact)
             });
-        assert!(assumptions.proves(&Proposition::CResourceSeparate {
-            left: Box::new(context.facts()[0].resource().clone()),
-            right: Box::new(context.facts()[size - 1].resource().clone()),
-        }));
+        assert!(crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::CResourceSeparate {
+                left: Box::new(context.facts()[0].resource().clone()),
+                right: Box::new(context.facts()[size - 1].resource().clone()),
+            }
+        ));
     }
 }
 
@@ -3587,10 +3600,13 @@ fn resource_separation_covers_larger_memory_range() {
             right: Box::new(right.clone()),
         });
 
-    assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: Box::new(left_combined),
-        right: Box::new(right),
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CResourceSeparate {
+            left: Box::new(left_combined),
+            right: Box::new(right),
+        }
+    ));
 }
 
 #[test]
@@ -3619,10 +3635,13 @@ fn resource_separation_transports_across_equal_memory_ranges() {
         )
         .assume_condition(ConditionTerm::equal(original_length, equal_length), true);
 
-    assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: Box::new(target_resource),
-        right: Box::new(equal_resource),
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CResourceSeparate {
+            left: Box::new(target_resource),
+            right: Box::new(equal_resource),
+        }
+    ));
 }
 
 #[test]
@@ -3647,10 +3666,13 @@ fn resource_contains_projects_separation_to_children() {
             child: Box::new(child.clone()),
         });
 
-    assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: Box::new(child),
-        right: Box::new(other),
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CResourceSeparate {
+            left: Box::new(child),
+            right: Box::new(other),
+        }
+    ));
 }
 
 #[test]

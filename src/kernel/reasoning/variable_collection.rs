@@ -34,6 +34,18 @@ fn visit_machine_carrier_leaves(
     }
 }
 
+/// The machine-variable collector's existing carrier rules on a retained
+/// operand. Written arithmetic contributes only its distinct variables and
+/// conversion leaves; registered loads are resolved in the current query.
+pub(in crate::kernel) fn collect_machine_bitvector_variables(
+    machine: &SharedMachineIntegerTerm,
+    variables: &mut BTreeSet<Variable>,
+) {
+    visit_machine_carrier_leaves(machine, |leaf| {
+        collect_bitvector_variables(leaf, variables);
+    });
+}
+
 fn collect_machine_integer_variables(
     machine: &SharedMachineIntegerTerm,
     variables: &mut BTreeSet<Variable>,

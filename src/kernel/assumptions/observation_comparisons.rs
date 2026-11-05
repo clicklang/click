@@ -245,6 +245,9 @@ fn constant_reading(view: &NativeComparisonView<'_>, key: &Key) -> Option<bool> 
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct ObservationComparisons {
     keys_by_source: PersistentMap<Proposition, Vec<Key>>,
+    // Exact native equality endpoints for explicitly selected guards. Keep
+    // these out of general observation lookup, like native order sources.
+    selected_native_equalities: PersistentMap<Key, PersistentSet<Proposition>>,
     sources: PersistentMap<Key, PersistentSet<Proposition>>,
     // The existing four-byte offset rule, indexed separately so admission
     // does not alter unrelated observation/constant-query work.
@@ -252,6 +255,67 @@ pub(in crate::kernel) struct ObservationComparisons {
 }
 
 impl ObservationComparisons {
+    pub(super) fn adjust_native_equality(
+        &mut self,
+        condition: &ConditionTerm,
+        truth: bool,
+        insert: bool,
+    ) {
+        if !matches!(
+            condition,
+            ConditionTerm::Compare {
+                relation: CompareRelation::Equal,
+                ..
+            }
+        ) {
+            return;
+        }
+        let view = comparison_view(condition, truth).expect("native equality");
+        let key = key(&view);
+        let source = Proposition::ConditionIs(condition.clone(), truth);
+        let sources = self
+            .selected_native_equalities
+            .get(&key)
+            .cloned()
+            .unwrap_or_default();
+        let sources = if insert {
+            sources.with_value(source)
+        } else {
+            sources.without_value(&source)
+        };
+        self.selected_native_equalities = if sources.is_empty() {
+            self.selected_native_equalities.without_key(&key)
+        } else {
+            self.selected_native_equalities.with_inserted(key, sources)
+        };
+    }
+
+    fn selected_native_equality_source(
+        &self,
+        condition: &ConditionTerm,
+        truth: bool,
+    ) -> Option<&Proposition> {
+        if self.selected_native_equalities.is_empty() {
+            return None;
+        }
+        let view = match condition {
+            ConditionTerm::Compare {
+                relation: CompareRelation::Equal,
+                ..
+            } => comparison_view(condition, truth)?,
+            ConditionTerm::IntegerEqual(..) | ConditionTerm::IntegerNotEqual(..) => {
+                crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                    condition, truth,
+                )?
+            }
+            _ => return None,
+        };
+        self.selected_native_equalities
+            .get(&key(&view))?
+            .iter()
+            .next()
+    }
+
     pub(super) fn adjust(&mut self, condition: &ConditionTerm, truth: bool, insert: bool) {
         let source = Proposition::ConditionIs(condition.clone(), truth);
         if let ConditionTerm::PointerOffsetEqual(left, right) = condition {
@@ -602,7 +666,8 @@ impl PureFactContext {
 
     /// Select an exact comparison premise from indexes already maintained by
     /// admission. Shared order queries reuse the retained endpoint index;
-    /// native-only facts need no duplicate observation index. This is for an
+    /// native equalities use their selected endpoint pairs. Neither enters
+    /// the general observation source index. This is for an
     /// explicitly selected rewrite guard, not general condition decision:
     /// exposing these aliases globally changes unrelated automatic search.
     pub(in crate::kernel) fn selected_comparison_source(
@@ -644,7 +709,9 @@ impl PureFactContext {
             .source(condition, truth)
             .or_else(|| {
                 if !order {
-                    return None;
+                    return self
+                        .observation_comparisons
+                        .selected_native_equality_source(condition, truth);
                 }
                 let view = native_comparison_view(condition, truth)?;
                 exact(&view).or_else(|| view.widened().and_then(|view| exact(&view)))

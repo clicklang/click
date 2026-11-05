@@ -2116,7 +2116,7 @@ pub(super) fn validate_to_nat_argument_type(
 fn return_type_needs_instantiation(click_type: &ClickType) -> bool {
     match click_type {
         ClickType::Resource => false,
-        ClickType::Parameter(_) => true,
+        ClickType::Parameter(_) | ClickType::C(C0Type::ParameterPointer(_)) => true,
         ClickType::Algebraic(application) => application
             .arguments
             .iter()

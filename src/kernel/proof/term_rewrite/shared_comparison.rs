@@ -13,6 +13,17 @@ pub(super) fn clear() {
 }
 
 impl TermRewrite<'_> {
+    /// Checking-only reconstruction shared with arithmetic comparison. The
+    /// operands stay in the shared arena; syntax work uses the same memo.
+    pub(in crate::kernel) fn machine_binary_reading(
+        format: MachineIntegerType,
+        op: MachineBinaryOp,
+        left: KernelTerm,
+        right: KernelTerm,
+    ) -> KernelTerm {
+        comparison_binary(format, op, left, right)
+    }
+
     /// Reconstruct shared arithmetic, including Integer conversion leaves.
     /// Comparison mode simplifies arithmetic; substitution preserves raw
     /// operators, and exact Integer congruence also preserves raw casts.
@@ -71,7 +82,9 @@ impl TermRewrite<'_> {
             // rather than rebuilding it at every shared occurrence.
             if !self.source_disabled
                 && let Some((from, to)) = self.bitvector
-                && !matches!(from, MachineTerm::Variable(_))
+                && (!matches!(from, MachineTerm::Variable(_))
+                    || matches!(to, MachineOperandView::Shared(_)))
+                && !matches!(from, MachineTerm::Variable(variable) if self.scope.c.contains_key(variable))
             {
                 let source = sources.entry(format).or_insert_with(|| {
                     KernelTermImport::default().machine_arithmetic(format, from)
@@ -79,8 +92,13 @@ impl TermRewrite<'_> {
                 if source.as_ref() == Some(&term) {
                     let replacement = replacements
                         .entry(format)
-                        .or_insert_with(|| {
-                            KernelTermImport::default().machine_arithmetic(format, to)
+                        .or_insert_with(|| match to {
+                            MachineOperandView::Shared(root) => {
+                                Some(root.with_machine_observation_type(format))
+                            }
+                            MachineOperandView::Legacy(term) => {
+                                KernelTermImport::default().machine_arithmetic(format, term)
+                            }
                         })
                         .clone()?;
                     if crate::instrumentation::deadline_exceeded_with_work(0) {

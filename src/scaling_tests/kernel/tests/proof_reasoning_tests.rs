@@ -52,9 +52,11 @@ fn nested_solve_derivations_keep_rule_temporaries_off_the_recursive_stack() {
                 let assumptions = PureFactContext::new();
                 let (proof, planning_work) =
                     crate::instrumentation::measure_deterministic_work(|| {
-                        assumptions
-                            .derive_solve_proposition(&goal)
-                            .expect("nested quantified proof")
+                        crate::kernel::search::ProofSearch::derive_solve_proposition(
+                            &(assumptions),
+                            &goal,
+                        )
+                        .expect("nested quantified proof")
                     });
                 let (checked, checking_work) =
                     crate::instrumentation::measure_deterministic_work(|| {
@@ -108,7 +110,7 @@ fn algebraic_constructor_injectivity_ignores_unrelated_facts() {
                 });
             }
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assumptions.derive_solve_proposition(&goal)
+                crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
             });
             assert!(derivation.is_some());
             (size, work)
@@ -503,8 +505,9 @@ fn order_path_decision_scales_flat_in_unrelated_propositions() {
                     ));
             }
             let goal = Proposition::ConditionIs(ConditionTerm::signed_less_equal(a, c), true);
-            let (proved, work) =
-                crate::instrumentation::measure_deterministic_work(|| assumptions.proves(&goal));
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::search::ProofSearch::proves(&(assumptions), &goal)
+            });
             assert!(proved);
             (size, work)
         })
@@ -918,8 +921,9 @@ fn quantified_fact_query_scales_near_linearly_with_unrelated_quantified_facts() 
                 bytes: MachineTerm::constant(4),
                 wide: false,
             };
-            let (proved, work) =
-                crate::instrumentation::measure_deterministic_work(|| assumptions.proves(&target));
+            let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::search::ProofSearch::proves(&(assumptions), &target)
+            });
             assert!(!proved, "quantified value facts grant no loadability");
             (size, work)
         })

@@ -3,7 +3,6 @@ use crate::kernel::threads::{
     JoinRuntimeAssumption, PendingThreadCreate, ThreadContext, ThreadHandle,
 };
 use crate::kernel::{CVerifiedFunctionTerminationRule, c_verified_function_termination_rules};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 fn pointer(index: usize) -> Pointer {
     Pointer {
@@ -1084,12 +1083,14 @@ fn thread_guarantees_are_withheld_until_join() {
         true,
     );
     assert!(
-        facts
-            .iter()
-            .fold(PureFactContext::new(), |assumptions, fact| {
-                assumptions.assume_proposition(fact.proposition.clone())
-            })
-            .proves(&postcondition),
+        crate::kernel::search::ProofSearch::proves(
+            &(facts
+                .iter()
+                .fold(PureFactContext::new(), |assumptions, fact| {
+                    assumptions.assume_proposition(fact.proposition.clone())
+                })),
+            &postcondition
+        ),
         "join must publish the worker's exact snapshot postcondition"
     );
 }

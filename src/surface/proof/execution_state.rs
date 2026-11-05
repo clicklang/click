@@ -6,7 +6,6 @@ thread_local! {
 }
 #[cfg(test)]
 use crate::persistent::persistent_node_allocations;
-use crate::surface::planning::proposition_search::PropositionSearch;
 #[cfg(test)]
 use std::sync::Arc;
 
@@ -59,11 +58,24 @@ pub(super) struct CaseAssumption {
     pub(super) match_arm: Option<ProofMatchArmCase>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(super) struct ProofCertificateBuilder {
     pub(super) steps: Vec<ProofStep>,
     pub(super) blocker: Option<String>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
+}
+
+impl Clone for ProofCertificateBuilder {
+    fn clone(&self) -> Self {
+        crate::instrumentation::record_deterministic_work(
+            self.steps.len() + self.path_choices.len(),
+        );
+        Self {
+            steps: self.steps.clone(),
+            blocker: self.blocker.clone(),
+            path_choices: self.path_choices.clone(),
+        }
+    }
 }
 
 /// The path's surface record: what the constructed certificate's own check
@@ -1128,7 +1140,8 @@ pub(super) fn surface_branch_path_for_outcome(
             recorded_snapshots,
         )?;
         let assumptions = assumptions_from_propositions(available);
-        let is_true = exact_fact_is_available(&lowered, available) || assumptions.proves(&lowered);
+        let is_true = exact_fact_is_available(&lowered, available)
+            || crate::kernel::search::ProofSearch::proves(&(assumptions), &lowered);
         let is_false = available
             .propositions()
             .any(|fact| propositions_are_exact_negations(fact, &lowered))

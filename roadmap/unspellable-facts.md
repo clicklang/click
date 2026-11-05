@@ -408,20 +408,30 @@ Remaining groups to audit and migrate:
 5. `scripts/check.sh` passes, including expansion/rechecking and all ordinary
    scaling tests. No raised limits, weakened proofs or nightly run substitutes.
 
-**Compiler-guided accessor inventory (2026-11-05, `863cc08da` tree):** a
+**Compiler-guided accessor inventory (2026-11-05, `136f64774` tree):** a
 throwaway build marked `SharedMachineIntegerTerm::value`,
 `SharedIntegerRangeEndpoint::value`, and the forwarding `MachineAtom::value`
 deprecated, then ran `cargo check --lib --features fast-gate
---message-format=json`. It identified 107 distinct source-line sites: 58 machine
-observation, 40 fold endpoint, and 9 forwarded atom sites. These include guarded
-legacy reads and output adapters; classify each route against the completion
-criteria above. The temporary annotations are not part of the implementation.
+--message-format=json`. It identified 74 distinct source-line sites (down from
+107 at `863cc08da`). These include guarded legacy reads, native reconstruction
+and explicit output adapters; the count is not a count of defects. Classify each
+route against the completion criteria above. The temporary annotations are not
+part of the implementation. Checked rewritten-load evidence in `proof/facts.rs` now caches structural
+correspondence for pairs of shared observations. It selects differing leaves
+without exporting their surrounding arithmetic, then checks current load
+registry/snapshot/premise authority. Cached syntax is never authority; differing
+compound roots under binders keep their existing refusal. Cold doubled DAGs
+and growing prefixes at 16/64/256 retain shared terms, including branch and
+registry-clear refusal controls. Mixed shared/native observations and native
+evidence construction for a selected load-versus-compound replacement remain
+explicit boundaries to migrate; this does not complete the memory comparison
+audit.
 
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
-| Fold checking and equality | empty/append/step rules in `api.rs`, fold guards in `spec.rs`, endpoint equality in `order_reasoning.rs`, exact equality rewriting |
-| Memory, dependency and identity walkers | memory-load collection in `assumptions.rs`, fold keys, all-variable and substitution collectors |
+| Fold checking and equality | exact equality rewriting; native-output reconstruction boundaries |
+| Dependency and selected-atom walkers | native-carrier reconstruction boundaries; verify remaining guarded legacy reads |
 | Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
 | Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
 | Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
@@ -430,6 +440,71 @@ The intrinsic format-range check now reads the outer cast through an operand
 view. Its bound decisions retain true, false and unknown answers without
 exporting the observed arithmetic, including growing prefixes and narrow
 widenings.
+
+Caller classification: `resource_tracker::collect_integer_node_reads` feeds
+`reads_of_proposition` and the version-mismatch diagnostic helpers, not proof
+admission; its export belongs to the output audit in part 4. The public
+`IntegerTerm::max_variable` compatibility helper has no in-repository callers.
+Neither is evidence of a remaining live checker export.
+`resource_steps::observes_machine_arithmetic` is used only by the missing-fold-
+guard diagnostic, so it belongs to part 4 too. `uint32_order_bound_entries`,
+like its signed counterpart, is called only by Surface proof planning. In
+contrast, `recorded_less_equal_candidates` feeds
+`exact_less_equal_for_memory_resolution`: its retained endpoint exports remain
+a live checking dependency. Preserve its written-premise checks and memory
+identity evidence when migrating it; its existing candidate-bucket enumeration
+must not acquire an additional scan.
+
+Current-snapshot memory-load collection retains shared observations and fold
+endpoints. It visits cached conversion syntax, then applies the existing
+memory/width/opaque-carrier rules to the retained Integer payloads. Snapshot
+answers are recomputed per query; syntax caches contain no memory facts. Fold
+alpha identities also retain machine endpoints and recognize conversions nested
+inside shared arithmetic, retaining endpoint outer scopes and index widths. Constant
+endpoint emptiness checks inspect operand views. The conservative accumulator
+carrier check decides composite roots directly instead of collecting their
+variables before returning the same conservative answer.
+
+Fold endpoint equality now uses retained operands and selected exact equality
+sources. Native equality pairs are indexed when admitted, separately from
+general observation lookup; the existing native-query work boundary remains
+unchanged. Signed endpoint matching counts DAG occurrences with the original
+separate positive/negative multisets. Multiplicities and constants wrap in the
+32-bit word ring, avoiding growing big-integer work on cold doubled DAGs. Syntax-only memos
+reuse constant spines and previously checked Add/Sub child equalities across
+proof contexts; exact fact-derived answers never enter those memos. Operand
+keys reuse the session's admitted arithmetic imports, avoiding a second tree
+walk when a native equality enters the selected-pair index.
+
+
+Fold item-range guards now use the common retained comparison constructor.
+Fold-bound dependency collection preserves endpoint outer scopes, initial-value
+variables and conversion payloads without expanding shared arithmetic. Checked
+fold-step substitution accepts a retained replacement operand; shared machine
+observations and nested binders keep that operand through capture-avoiding
+rewriting. Native output carriers still require a written machine term, and
+that output conversion remains explicit at reconstruction rather than occurring
+unconditionally before substitution. Its mixed-carrier callers remain part of
+the compatibility audit.
+
+Fold empty/append laws and predecessor construction now retain machine
+endpoints, including the checked increment bound and item observations. Their
+checking-only ±1 reconstruction shares the arithmetic-comparison memo and
+preserves the existing native constructor readings. Exact premise matching
+recognizes a retained order observation and a native comparison of the same typed
+operands, without exporting arithmetic or consulting proof facts; wrong bounds
+and opposite polarity remain unavailable. The existing explicit `peel ... using`
+regression covers the full-width unsigned bound. Both endpoint widths have
+cold growing-DAG no-export coverage.
+
+Selected equality-atom collection now reads retained machine observations.
+Syntax-only persistent summaries retain written variables and 32-bit constants;
+wide literals and Integer conversion payloads keep the native collector's opaque
+rules. Load-address atoms are resolved against the current registry after the
+syntax-cache borrow ends. Growing prefixes and cold doubled DAGs reuse shared
+summaries without exports; clearing the registry cannot preserve old address
+atoms. Existing indexed candidate-bucket enumeration is unchanged by this
+representation migration and retains its separate search/scaling audit.
 
 ### 2. Finish expression producers — after part 1
 

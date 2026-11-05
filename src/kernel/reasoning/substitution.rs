@@ -3637,8 +3637,8 @@ fn collect_integer_bound_variables_seen(
             match index {
                 crate::kernel::IntegerRangeFoldIndex::Int32 { start, end }
                 | crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    collect_bitvector_variables(start.value(), variables);
-                    collect_bitvector_variables(end.value(), variables);
+                    collect_machine_bitvector_variables(start.machine_operand(), variables);
+                    collect_machine_bitvector_variables(end.machine_operand(), variables);
                 }
                 crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
                     collect_integer_bound_variables_seen(start, variables, seen);
@@ -4438,16 +4438,19 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
         replacement_work(accumulator_value),
     )?;
     if let Some(item_type) = machine_item {
-        let Some(bits) = integer_item_bitvector(item_value, item_type) else {
+        let Some(operand) = integer_item_operand(item_value, item_type) else {
             return Err(IntegerPureSubstitutionError::UnsupportedCarrier);
         };
-        Ok(
-            substitute_bitvector_variable_in_integer_checked_with_registered_loads(
-                &with_accumulator,
-                temporary_item,
-                &bits,
-            )?,
-        )
+        let source = MachineTerm::Variable(temporary_item);
+        let mut rewrite =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_machine_operand_checked(
+                &source,
+                operand.operand_view(),
+            );
+        rewrite.enable_registered_load_resolution();
+        let result = rewrite.integer(&with_accumulator);
+        integer_substitution_refusal(rewrite.refusal())?;
+        Ok(result)
     } else {
         substitute_integer_pure_term(
             &with_accumulator,
@@ -4462,21 +4465,24 @@ pub(in crate::kernel) fn instantiate_integer_range_fold_step(
 
 /// The machine term of type `item_type` an item value denotes: the term a
 /// machine observation observes, or a constant in the type's range.
-fn integer_item_bitvector(
+fn integer_item_operand(
     value: &IntegerTerm,
     item_type: MachineIntegerType,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
     match (value, item_type) {
-        (IntegerTerm::Machine(machine), _) if machine.ty() == item_type => {
-            Some(machine.value().clone())
-        }
+        (IntegerTerm::Machine(machine), _) if machine.ty() == item_type => Some(machine.clone()),
         (IntegerTerm::Constant(value), MachineIntegerType::Int32) => value
             .to_i64()
             .filter(|value| (i64::from(i32::MIN)..=i64::from(i32::MAX)).contains(value))
-            .map(|value| MachineTerm::constant(value as i32 as u32)),
-        (IntegerTerm::Constant(value), MachineIntegerType::UInt64) => {
-            value.to_u64().map(MachineTerm::uint64_constant)
-        }
+            .map(|value| {
+                SharedMachineIntegerTerm::intern(
+                    item_type,
+                    MachineTerm::constant(value as i32 as u32),
+                )
+            }),
+        (IntegerTerm::Constant(value), MachineIntegerType::UInt64) => value.to_u64().map(|value| {
+            SharedMachineIntegerTerm::intern(item_type, MachineTerm::uint64_constant(value))
+        }),
         _ => None,
     }
 }
@@ -8253,6 +8259,55 @@ mod integer_mixed_quantifier_tests {
 #[cfg(test)]
 mod integer_range_fold_substitution_tests {
     use super::*;
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../scaling_tests/kernel/reasoning/substitution/integer_range_fold_substitution_tests.rs"
+        );
+    }
+
+    #[test]
+    fn retained_machine_replacement_freshens_a_capturing_fold_binder() {
+        use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Variable(1004100);
+        let item = Variable(1004101);
+        let accumulator = Variable(1004102);
+        let format = MachineIntegerType::Int32;
+        let leaf = KernelTerm::variable(KernelType::C(CType::Int32), item);
+        let root =
+            KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]);
+        let replacement = SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap();
+        let fold = IntegerTerm::range_fold(
+            int32_index(MachineTerm::constant(0), MachineTerm::constant(1)),
+            IntegerTerm::constant_i64(0),
+            accumulator,
+            item,
+            c_item(source),
+        );
+        let from = MachineTerm::Variable(source);
+        let exports = KernelTermExport::machine_export_count();
+        let mut rewrite =
+            crate::kernel::proof::term_rewrite::TermRewrite::for_machine_operand_checked(
+                &from,
+                replacement.operand_view(),
+            );
+        let result = rewrite.integer(&fold);
+        assert!(rewrite.refusal().is_none());
+        let IntegerTerm::RangeFold {
+            item: fresh, body, ..
+        } = result
+        else {
+            panic!("fold scope")
+        };
+        assert_ne!(fresh, item);
+        let IntegerTerm::Machine(value) = body.as_ref() else {
+            panic!("machine body")
+        };
+        assert_eq!(value.shared_operand(), Some(&root));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     fn int32_index(start: MachineTerm, end: MachineTerm) -> IntegerRangeFoldIndex {
         IntegerRangeFoldIndex::Int32 {

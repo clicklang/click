@@ -1,6 +1,4 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
@@ -13,7 +11,6 @@ use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
     uint64_constant,
 };
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
 fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
@@ -40,8 +37,7 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     // Inserting an opposite condition ordinarily replaces its polarity.
     // This witness checks the contradiction without rebuilding case contexts.
     let goal = Proposition::Equal(Term::CValue(int32(0)), Term::CValue(int32(1)));
-    let derivation = context
-        .derive_proposition(&goal)
+    let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
         .expect("all arms are refuted");
     assert!(derivation.check(&context));
     assert_eq!(derivation.context_premises().len(), 4);
@@ -49,7 +45,9 @@ fn refuted_disjunction_requires_the_source_and_every_exact_negation() {
     for case in &cases {
         let without = context.without_exact_fact(&Proposition::Not(Box::new(case.clone())));
         assert!(!derivation.check(&without));
-        assert!(without.derive_proposition(&goal).is_none());
+        assert!(
+            crate::kernel::search::ProofSearch::derive_proposition(&(without), &goal).is_none()
+        );
     }
     assert!(!derivation.check(&PureFactContext::new()));
 }
@@ -160,15 +158,19 @@ fn checked_algebraic_constructor_rules_are_sound() {
 
     let injectivity_context =
         PureFactContext::new().assume_proposition(constructor_equality.clone());
-    let injectivity = injectivity_context
-        .derive_solve_proposition(&field_equality)
-        .expect("a checked same-constructor equality entails its field equality");
+    let injectivity = crate::kernel::search::ProofSearch::derive_solve_proposition(
+        &(injectivity_context),
+        &field_equality,
+    )
+    .expect("a checked same-constructor equality entails its field equality");
     assert!(injectivity.check(&injectivity_context));
 
     let congruence_context = PureFactContext::new().assume_proposition(field_equality);
-    let congruence = congruence_context
-        .derive_solve_proposition(&constructor_equality)
-        .expect("checked field equalities entail equality of their constructors");
+    let congruence = crate::kernel::search::ProofSearch::derive_solve_proposition(
+        &(congruence_context),
+        &constructor_equality,
+    )
+    .expect("checked field equalities entail equality of their constructors");
     assert!(congruence.check(&congruence_context));
 
     let malformed = Proposition::Equal(
@@ -184,9 +186,11 @@ fn checked_algebraic_constructor_rules_are_sound() {
         )),
     );
     assert!(
-        PureFactContext::new()
-            .derive_solve_proposition(&malformed)
-            .is_none(),
+        crate::kernel::search::ProofSearch::derive_solve_proposition(
+            &(PureFactContext::new()),
+            &malformed
+        )
+        .is_none(),
         "constructor rules must reject terms that do not match the retained schema"
     );
 }
@@ -214,9 +218,9 @@ fn algebraic_equality_lookup_for_constructor_disequality_is_goal_local() {
         Term::Algebraic(maybe_constructor(&algebraic_type, "None", vec![])),
     )));
     let assumptions = PureFactContext::new().assume_proposition(source.clone());
-    let derivation = assumptions
-        .derive_atomic_proposition(&goal)
-        .expect("a known constructor proves disequality from every other constructor");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &goal)
+            .expect("a known constructor proves disequality from every other constructor");
     assert!(derivation.has_typed_atomic_evidence());
     assert!(derivation.check(&assumptions));
     let facts = crate::kernel::proof::ProofFacts::from_ordered(&[source.clone(), unrelated]);
@@ -348,8 +352,7 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
         let goal = equality(term, term);
         assert!(crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal));
         assert!(
-            context
-                .derive_solve_proposition(&goal)
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal)
                 .unwrap()
                 .check(&context)
         );
@@ -381,7 +384,10 @@ fn algebraic_symbolic_reflexivity_checks_well_formed_terms() {
     for term in [malformed_call, malformed_match] {
         let goal = equality(&term, &term);
         assert!(!crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal));
-        assert!(context.derive_solve_proposition(&goal).is_none());
+        assert!(
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal)
+                .is_none()
+        );
     }
 }
 
@@ -568,9 +574,9 @@ fn int32_le_and_not_lt_equality_derivation_retains_both_exact_premises() {
         .assume_proposition(less_equal.clone())
         .assume_proposition(not_less_than.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("<= plus not-< should derive int32 equality");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("<= plus not-< should derive int32 equality");
     assert_eq!(
         derivation.int32_le_and_not_lt_implies_equality_premises(),
         Some((&less_equal, &not_less_than))
@@ -598,9 +604,9 @@ fn int32_ge_and_not_gt_equality_derivation_retains_both_exact_premises() {
         .assume_proposition(greater_equal.clone())
         .assume_proposition(not_greater_than.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect(">= plus not-> should derive int32 equality");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect(">= plus not-> should derive int32 equality");
     assert_eq!(
         derivation.int32_ge_and_not_gt_implies_equality_premises(),
         Some((&greater_equal, &not_greater_than))
@@ -624,9 +630,9 @@ fn int32_positive_is_nonnegative_derivation_retains_its_exact_premise() {
     );
     let assumptions = PureFactContext::new().assume_proposition(positive.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("0 < value should derive 0 <= value");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("0 < value should derive 0 <= value");
     assert_eq!(
         derivation
             .int32_positive_is_nonnegative_step()
@@ -640,9 +646,11 @@ fn int32_positive_is_nonnegative_derivation_retains_its_exact_premise() {
         ConditionTerm::signed_greater_equal(value, MachineTerm::constant(0)),
         true,
     );
-    let reversed = assumptions
-        .derive_solve_proposition(&reversed_goal)
-        .expect("0 < value should derive value >= 0");
+    let reversed = crate::kernel::search::ProofSearch::derive_solve_proposition(
+        &(assumptions),
+        &reversed_goal,
+    )
+    .expect("0 < value should derive value >= 0");
     assert_eq!(
         reversed
             .int32_positive_is_nonnegative_step()
@@ -665,9 +673,9 @@ fn int32_negated_strict_successor_bound_retains_its_exact_premise() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("not (value < 2) should derive value >= 1");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("not (value < 2) should derive value >= 1");
     let step = derivation
         .int32_negated_strict_successor_bound_step()
         .expect("the atomic decision should retain its successor-bound premise");
@@ -692,9 +700,9 @@ fn int32_successor_le_implies_lt_retains_its_exact_premise() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("2 <= value should derive 1 < value");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("2 <= value should derive 1 < value");
     let step = derivation
         .int32_successor_le_implies_lt_step()
         .expect("the atomic decision should retain its adjacent lower bound");
@@ -724,9 +732,9 @@ fn int32_constant_lower_bound_weakening_retains_its_exact_premise() {
 
     for premise in [lower, reversed] {
         let assumptions = PureFactContext::new().assume_proposition(premise.clone());
-        let derivation = assumptions
-            .derive_solve_proposition(&goal)
-            .expect("3 <= value should derive 0 <= value");
+        let derivation =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+                .expect("3 <= value should derive 0 <= value");
         let step = derivation
             .int32_constant_lower_bound_weakening_step()
             .expect("the atomic decision should retain its stronger lower bound");
@@ -754,9 +762,9 @@ fn int32_le_and_neq_strict_derivation_retains_both_exact_premises() {
         .assume_proposition(less_equal.clone())
         .assume_proposition(not_equal.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("<= plus != should derive strict int32 order");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("<= plus != should derive strict int32 order");
     assert_eq!(
         derivation.int32_le_and_neq_implies_strict_premises(),
         Some((&less_equal, &not_equal))
@@ -1165,19 +1173,26 @@ fn int32_le_antisymmetric_axiom_has_the_exact_implications() {
 fn proposition_derivation_honors_active_deadline() {
     let assumptions = PureFactContext::new();
     let proposition = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
-    assert!(assumptions.derive_proposition(&proposition).is_some());
     assert!(
-        assumptions
-            .derive_atomic_proposition(&proposition)
+        crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &proposition)
+            .is_some()
+    );
+    assert!(
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &proposition)
             .is_some()
     );
 
     crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-        assert!(assumptions.derive_proposition(&proposition).is_none());
         assert!(
-            assumptions
-                .derive_atomic_proposition(&proposition)
+            crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &proposition)
                 .is_none()
+        );
+        assert!(
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                &(assumptions),
+                &proposition
+            )
+            .is_none()
         );
         assert!(crate::kernel::reasoning::resolution_interrupted());
     });
@@ -1193,17 +1208,19 @@ fn strict_reverse_order_derives_a_false_comparison() {
     );
     let target = Proposition::ConditionIs(ConditionTerm::signed_less_than(left, right), false);
     let assumptions = PureFactContext::new().assume_proposition(reverse.clone());
-    let derivation = assumptions
-        .derive_proposition(&target)
-        .expect("a strict reverse order should prove the comparison false");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &target)
+            .expect("a strict reverse order should prove the comparison false");
     assert_eq!(derivation.context_premises(), vec![reverse]);
     assert!(derivation.check(&assumptions));
     assert!(
-        assumptions
-            .clone()
-            .defer_non_exact_loadability_obligations()
-            .derive_proposition(&target)
-            .is_some(),
+        crate::kernel::search::ProofSearch::derive_proposition(
+            &(assumptions
+                .clone()
+                .defer_non_exact_loadability_obligations()),
+            &target
+        )
+        .is_some(),
         "proof construction remains available when symbolic execution defers search"
     );
 }
@@ -1229,9 +1246,9 @@ fn signed_order_derivation_retains_its_exact_edge_path() {
         .assume_proposition(first.clone())
         .assume_proposition(second.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the signed-order chain should derive its conclusion");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the signed-order chain should derive its conclusion");
     let path = derivation
         .signed_order_path()
         .expect("the atomic decision should retain its selected order path");
@@ -1267,9 +1284,9 @@ fn signed_order_derivation_retains_the_exact_negative_polarity_premise() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the negated non-strict bound should derive reversed strict order");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the negated non-strict bound should derive reversed strict order");
     let path = derivation
         .signed_order_path()
         .expect("the atomic decision should retain its normalized order edge");
@@ -1304,9 +1321,9 @@ fn increment_upper_bound_derivation_retains_its_exact_strict_premise() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the strict bound should derive the increment upper bound");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the strict bound should derive the increment upper bound");
     let step = derivation
         .int32_increment_upper_bound_step()
         .expect("the atomic decision should retain its named-rule premise");
@@ -1349,9 +1366,9 @@ fn increment_upper_bound_uses_only_an_exact_direct_strict_edge() {
     ];
     for premise in premises {
         let assumptions = PureFactContext::new().assume_proposition(premise.clone());
-        let derivation = assumptions
-            .derive_solve_proposition(&goal)
-            .expect("each normalized strict edge derives the increment bound");
+        let derivation =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+                .expect("each normalized strict edge derives the increment bound");
         let step = derivation
             .int32_increment_upper_bound_step()
             .expect("the direct rule retains its edge");
@@ -1398,9 +1415,9 @@ fn increment_constant_upper_bound_retains_its_exact_nonstrict_premise() {
 
     for premise in [direct, reversed] {
         let assumptions = PureFactContext::new().assume_proposition(premise.clone());
-        let derivation = assumptions
-            .derive_solve_proposition(&goal)
-            .expect("value <= 3 should derive value + 1 <= 5");
+        let derivation =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+                .expect("value <= 3 should derive value + 1 <= 5");
         let step = derivation
             .int32_increment_constant_upper_bound_step()
             .expect("the atomic decision should retain its non-strict constant bound");
@@ -1430,9 +1447,9 @@ fn increment_strictly_increases_derivation_retains_its_exact_strict_premise() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the strict upper bound should prove that the increment increases");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the strict upper bound should prove that the increment increases");
     let step = derivation
         .int32_increment_strictly_increases_step()
         .expect("the atomic decision should retain its named-rule premise");
@@ -1462,9 +1479,9 @@ fn increment_definedness_derivation_retains_its_exact_max_bound() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the strict maximum bound should prove increment definedness");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the strict maximum bound should prove increment definedness");
     let step = derivation
         .int32_increment_below_max_is_defined_premise()
         .expect("the atomic decision should retain its named-rule premise");
@@ -1501,18 +1518,18 @@ fn one_plus_rules_retain_their_exact_max_bound_and_operand_order() {
     );
     let assumptions = PureFactContext::new().assume_proposition(premise.clone());
 
-    let defined = assumptions
-        .derive_solve_proposition(&defined_goal)
-        .expect("the maximum bound should prove one-plus definedness");
+    let defined =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &defined_goal)
+            .expect("the maximum bound should prove one-plus definedness");
     let defined_step = defined
         .int32_one_plus_below_max_is_defined_premise()
         .expect("definedness must retain the operand-order-specific rule");
     assert_eq!(defined_step, &premise);
     assert!(defined.check(&assumptions));
 
-    let strict = assumptions
-        .derive_solve_proposition(&strict_goal)
-        .expect("the maximum bound should prove one-plus strict increase");
+    let strict =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &strict_goal)
+            .expect("the maximum bound should prove one-plus strict increase");
     let strict_step = strict
         .int32_one_plus_strictly_increases_step()
         .expect("strict increase must not select the value-plus-one theorem");
@@ -1554,9 +1571,9 @@ fn symbolic_add_definedness_retains_both_exact_named_theorem_bounds() {
         .assume_proposition(amount_nonnegative.clone())
         .assume_proposition(within_headroom.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the two named-theorem bounds should prove symbolic addition definedness");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the two named-theorem bounds should prove symbolic addition definedness");
     let (nonnegative_step, headroom_step) = derivation
         .int32_nonnegative_add_within_max_premises()
         .expect("the atomic decision should retain both named-theorem premises");
@@ -1591,9 +1608,9 @@ fn symbolic_subtract_definedness_retains_both_exact_named_theorem_bounds() {
         .assume_proposition(amount_nonnegative.clone())
         .assume_proposition(within_value.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the two named-theorem bounds should prove symbolic subtraction definedness");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the two named-theorem bounds should prove symbolic subtraction definedness");
     let (nonnegative_step, within_value_step) = derivation
         .int32_nonnegative_subtract_within_value_premises()
         .expect("the atomic decision should retain both named-theorem premises");
@@ -1627,9 +1644,9 @@ fn increment_lower_bound_derivation_retains_both_exact_bounds() {
         .assume_proposition(lower_premise.clone())
         .assume_proposition(upper_premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the two exact bounds should prove the increment lower bound");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the two exact bounds should prove the increment lower bound");
     let (lower_bound, upper_bound) = derivation
         .int32_increment_lower_bound_steps()
         .expect("the atomic decision should retain both named-rule premises");
@@ -1680,9 +1697,9 @@ fn remaining_increment_bound_derivations_retain_both_exact_bounds() {
         .assume_proposition(upper_premise.clone());
 
     for (index, goal) in goals.iter().enumerate() {
-        let derivation = assumptions
-            .derive_solve_proposition(goal)
-            .expect("the two exact bounds should prove each remaining increment rule");
+        let derivation =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), goal)
+                .expect("the two exact bounds should prove each remaining increment rule");
         let (lower_bound, upper_bound) = match index {
             0 => derivation.int32_increment_greater_equal_lower_bound_steps(),
             1 => derivation.int32_increment_strict_greater_lower_bound_steps(),
@@ -1726,9 +1743,9 @@ fn strict_lower_increment_derivation_retains_both_exact_strict_bounds() {
         .assume_proposition(lower_premise.clone())
         .assume_proposition(upper_premise.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the two strict bounds should prove the incremented strict lower bound");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the two strict bounds should prove the incremented strict lower bound");
     let (lower_bound, upper_bound) = derivation
         .int32_increment_strict_greater_from_strict_lower_steps()
         .expect("the atomic decision should retain both exact strict premises");
@@ -1773,9 +1790,11 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
         ConditionTerm::signed_less_equal(zero.clone(), predecessor.clone()),
         true,
     );
-    let nonnegative_derivation = positive_assumptions
-        .derive_solve_proposition(&nonnegative_goal)
-        .expect("strict positivity should prove a nonnegative predecessor");
+    let nonnegative_derivation = crate::kernel::search::ProofSearch::derive_solve_proposition(
+        &(positive_assumptions),
+        &nonnegative_goal,
+    )
+    .expect("strict positivity should prove a nonnegative predecessor");
     let nonnegative_step = nonnegative_derivation
         .int32_positive_predecessor_is_nonnegative_step()
         .expect("the decision should retain its exact positivity premise");
@@ -1789,9 +1808,11 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
         ConditionTerm::signed_less_than(predecessor.clone(), value.clone()),
         true,
     );
-    let decrease_derivation = positive_assumptions
-        .derive_solve_proposition(&decrease_goal)
-        .expect("strict positivity should prove predecessor decrease");
+    let decrease_derivation = crate::kernel::search::ProofSearch::derive_solve_proposition(
+        &(positive_assumptions),
+        &decrease_goal,
+    )
+    .expect("strict positivity should prove predecessor decrease");
     let decrease_step = decrease_derivation
         .int32_positive_predecessor_strictly_decreases_step()
         .expect("the decision should retain its exact positivity premise");
@@ -1805,9 +1826,11 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
         ConditionTerm::signed_less_equal(predecessor, bound.clone()),
         true,
     );
-    let bounded_derivation = bounded_assumptions
-        .derive_solve_proposition(&bounded_goal)
-        .expect("the two exact bounds should prove the predecessor bound");
+    let bounded_derivation = crate::kernel::search::ProofSearch::derive_solve_proposition(
+        &(bounded_assumptions),
+        &bounded_goal,
+    )
+    .expect("the two exact bounds should prove the predecessor bound");
     let (nonnegative_step, bounded_step) = bounded_derivation
         .int32_nonnegative_predecessor_upper_bound_steps()
         .expect("the decision should retain both exact bound premises");
@@ -1827,9 +1850,11 @@ fn predecessor_derivations_retain_their_exact_named_rule_premises() {
     );
     let one_le_assumptions = PureFactContext::new().assume_proposition(one_le.clone());
     for (goal, nonnegative_result) in [(&nonnegative_goal, true), (&decrease_goal, false)] {
-        let derivation = one_le_assumptions
-            .derive_solve_proposition(goal)
-            .expect("one at most the value should prove the predecessor conclusion");
+        let derivation = crate::kernel::search::ProofSearch::derive_solve_proposition(
+            &(one_le_assumptions),
+            goal,
+        )
+        .expect("one at most the value should prove the predecessor conclusion");
         let step = if nonnegative_result {
             derivation.int32_one_le_predecessor_is_nonnegative_step()
         } else {
@@ -1874,9 +1899,9 @@ fn predecessor_derivation_retains_equal_one_path_instead_of_a_derived_bound() {
             false,
         ),
     ] {
-        let derivation = assumptions
-            .derive_solve_proposition(&goal)
-            .expect("equality to one should prove the predecessor conclusion");
+        let derivation =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+                .expect("equality to one should prove the predecessor conclusion");
         let path = if nonnegative_result {
             derivation.int32_equal_one_predecessor_is_nonnegative_path()
         } else {
@@ -1917,9 +1942,9 @@ fn predecessor_zero_derivation_retains_its_equal_one_path() {
             true,
         ),
     ] {
-        let derivation = assumptions
-            .derive_solve_proposition(&goal)
-            .expect("equality to one should prove that the predecessor is zero");
+        let derivation =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+                .expect("equality to one should prove that the predecessor is zero");
         let path = derivation
             .int32_equal_one_predecessor_is_zero_path()
             .expect("the predecessor-zero decision should retain its exact equality path");
@@ -1945,9 +1970,9 @@ fn bitvector_equality_derivation_retains_its_exact_oriented_path() {
         .assume_proposition(first.clone())
         .assume_proposition(second.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the exact equality chain should derive its conclusion");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the exact equality chain should derive its conclusion");
     let path = derivation
         .bitvector_equality_path()
         .expect("the atomic decision should retain its selected equality path");
@@ -1993,9 +2018,11 @@ fn scalar_graph_literal_evaluation_supplies_checkable_solve_equality() {
     // that is separate from the Boolean equality query measured above.
     assert_checkable_derivation(&assumptions, &goal);
     assert!(
-        PureFactContext::new()
-            .derive_solve_proposition(&goal)
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_solve_proposition(
+            &(PureFactContext::new()),
+            &goal
+        )
+        .is_none()
     );
     assert!(!assumptions.int32_values_known_equal(
         &binary_node!(Int32, Add, Box::new(left), Box::new(right)),
@@ -2043,7 +2070,10 @@ fn condition_search_skips_irrelevant_implication_antecedents() {
         ));
 
     PureFactContext::reset_condition_implication_antecedent_checks();
-    assert!(assumptions.proves(&Proposition::ConditionIs(target_condition, true)));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(target_condition, true)
+    ));
     assert_eq!(
         PureFactContext::condition_implication_antecedent_checks(),
         1,
@@ -2062,7 +2092,10 @@ fn merging_required_obligations_preserves_the_certification_frontier() {
         ConditionTerm::signed_less_than(MachineTerm::constant(0), value),
         true,
     );
-    assert!(assumptions.proves(&derived));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &derived
+    ));
 
     let required = ProofObligation::verification_condition(derived.clone());
     let merged = merge_obligations(&[], &[required], &assumptions)
@@ -2248,9 +2281,9 @@ fn proposition_derivation_proves_implication_from_false_antecedent() {
     );
     let assumptions = PureFactContext::new().assume_condition(condition, true);
 
-    let derivation = assumptions
-        .derive_solve_proposition(&conclusion)
-        .expect("a false antecedent should prove an implication");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &conclusion)
+            .expect("a false antecedent should prove an implication");
     assert!(derivation.check(&assumptions));
 }
 
@@ -2263,25 +2296,34 @@ fn builtin_obligation_solver_proves_trivial_props() {
         offset: PointerOffsetTerm::Constant(4),
     };
 
-    assert!(assumptions.proves(&Proposition::Equal(
-        Term::Bitvector32(MachineTerm::constant(7)),
-        Term::Bitvector32(MachineTerm::constant(7)),
-    )));
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::Constant(true),
-        true
-    )));
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: memory.clone(),
-        base: pointer.clone(),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
-    assert!(assumptions.proves(&Proposition::CMemoryCanStore {
-        memory,
-        pointer,
-        byte_width: 4,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::Equal(
+            Term::Bitvector32(MachineTerm::constant(7)),
+            Term::Bitvector32(MachineTerm::constant(7)),
+        )
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(ConditionTerm::Constant(true), true)
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: pointer.clone(),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width: 4,
+        }
+    ));
 }
 
 /// Range narrowing at element granularity: the one loadability route whose
@@ -2371,7 +2413,10 @@ mod loadable_range_narrowing {
         let [a, b, c, d] = endpoints();
         let assumptions = assume_orders(segment(&memory, &a, &b), &inside(&a, &b, &c, &d));
 
-        assert!(assumptions.proves(&segment(&memory, &c, &d)));
+        assert!(crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&memory, &c, &d)
+        ));
     }
 
     #[test]
@@ -2381,7 +2426,10 @@ mod loadable_range_narrowing {
         // `d <= b` is exactly the fact that is missing.
         let assumptions = assume_orders(segment(&memory, &a, &b), &[order(&a, &c), order(&c, &d)]);
 
-        assert!(!assumptions.proves(&segment(&memory, &c, &d)));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&memory, &c, &d)
+        ));
     }
 
     /// A reversed goal range lowers to a negative extent. Both ends sit inside
@@ -2394,7 +2442,10 @@ mod loadable_range_narrowing {
         orders.extend(extent_is_valid(&a, &b));
         let assumptions = assume_orders(segment(&memory, &a, &b), &orders);
 
-        assert!(!assumptions.proves(&segment(&memory, &c, &d)));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&memory, &c, &d)
+        ));
     }
 
     /// Loadability is a claim about one memory snapshot. A snapshot in which
@@ -2407,7 +2458,10 @@ mod loadable_range_narrowing {
         let [a, b, c, d] = endpoints();
         let assumptions = assume_orders(segment(&assumed, &a, &b), &inside(&a, &b, &c, &d));
 
-        assert!(!assumptions.proves(&segment(&elsewhere, &c, &d)));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&elsewhere, &c, &d)
+        ));
     }
 
     /// The wrapped corner, and the reason the rule asks for the assumed range's
@@ -2433,7 +2487,10 @@ mod loadable_range_narrowing {
         ];
         let assumptions = assume_orders(segment(&memory, &a, &b), &orders);
 
-        assert!(!assumptions.proves(&segment(&memory, &c, &d)));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&memory, &c, &d)
+        ));
     }
 
     /// A bound on the count is not enough on its own either. With `a` the least
@@ -2453,7 +2510,10 @@ mod loadable_range_narrowing {
         ];
         let assumptions = assume_orders(segment(&memory, &a, &b), &orders);
 
-        assert!(!assumptions.proves(&segment(&memory, &c, &d)));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&memory, &c, &d)
+        ));
     }
 
     /// A count bounded past the limit is refused even though it is nonnegative:
@@ -2473,7 +2533,10 @@ mod loadable_range_narrowing {
         ];
         let assumptions = assume_orders(segment(&memory, &a, &b), &orders);
 
-        assert!(!assumptions.proves(&segment(&memory, &c, &d)));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &segment(&memory, &c, &d)
+        ));
     }
 
     /// The two extents must be scaled by one element width. A goal counting
@@ -2499,7 +2562,10 @@ mod loadable_range_narrowing {
         };
         let assumptions = assume_orders(segment(&memory, &a, &b), &inside(&a, &b, &c, &d));
 
-        assert!(!assumptions.proves(&byte_goal));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &byte_goal
+        ));
     }
 }
 
@@ -2515,7 +2581,10 @@ fn empty_memory_range_is_vacuously_loadable() {
         wide: false,
     };
 
-    assert!(PureFactContext::new().proves(&proposition));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &proposition
+    ));
 }
 
 #[test]
@@ -2575,7 +2644,7 @@ fn structured_obligations_are_emitted_rather_than_derived() {
         Box::new(Proposition::ConditionIs(conclusion.clone(), true)),
     );
     assert!(
-        assumptions.proves(&structured),
+        crate::kernel::search::ProofSearch::proves(&(assumptions), &structured),
         "the general prover derives this implication from its consequent"
     );
 
@@ -2629,9 +2698,9 @@ fn memory_derivation_records_the_selected_range_candidate() {
     let assumptions = PureFactContext::new()
         .assume_proposition(unrelated)
         .assume_proposition(selected.clone());
-    let derivation = assumptions
-        .derive_atomic_proposition(&target)
-        .expect("the selected range should establish the element access");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &target)
+            .expect("the selected range should establish the element access");
 
     assert!(derivation.check(&assumptions));
     assert_eq!(derivation.context_premises(), vec![selected]);
@@ -2688,7 +2757,8 @@ fn loadable_symbolic_subrange_proves_an_indexed_cell() {
         );
 
     assert!(
-        assumptions.derive_atomic_proposition(&target).is_some(),
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &target)
+            .is_some(),
         "split <= index < len should select a cell from [split..len]"
     );
 }
@@ -2721,9 +2791,9 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
     let assumptions = PureFactContext::new()
         .assume_proposition(prefix.clone())
         .assume_proposition(next_cell.clone());
-    let derivation = assumptions
-        .derive_atomic_proposition(&goal)
-        .expect("an initialized next cell should extend the viewable prefix");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &goal)
+            .expect("an initialized next cell should extend the viewable prefix");
     assert!(derivation.check(&assumptions));
     let premises = derivation.context_premises();
     assert_eq!(premises.len(), 2);
@@ -2741,9 +2811,11 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         wide: false,
     };
     let stored_assumptions = PureFactContext::new().assume_proposition(prefix.clone());
-    let stored_derivation = stored_assumptions
-        .derive_atomic_proposition(&stored_goal)
-        .expect("a materialized next cell should extend the viewable prefix");
+    let stored_derivation = crate::kernel::search::ProofSearch::derive_atomic_proposition(
+        &(stored_assumptions),
+        &stored_goal,
+    )
+    .expect("a materialized next cell should extend the viewable prefix");
     assert!(stored_derivation.check(&stored_assumptions));
     assert_eq!(stored_derivation.context_premises(), vec![prefix]);
 
@@ -2762,7 +2834,10 @@ fn adjacent_loadable_regions_certify_their_concatenation() {
         bytes: MachineTerm::constant(16),
         wide: false,
     };
-    assert!(!assumptions.proves(&too_wide));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &too_wide
+    ));
 }
 
 #[test]
@@ -2861,7 +2936,8 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     };
 
     assert!(
-        assumptions.derive_atomic_proposition(&target).is_some(),
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &target)
+            .is_some(),
         "a field-derived capacity range must cover an entry-written live-prefix cell"
     );
 }
@@ -2928,20 +3004,22 @@ fn quantified_int32_fact_does_not_certify_an_instantiated_load() {
     };
 
     assert!(
-        !assumptions.proves(&target),
+        !crate::kernel::search::ProofSearch::proves(&(assumptions), &target),
         "a logical value fact cannot grant viewability"
     );
     crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-        assert!(!assumptions.proves(&target));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &target
+        ));
     });
-    assert!(
-        !PureFactContext::new()
-            .assume_proposition(forall_int32(
-                fact_index,
-                Proposition::ConditionIs(ConditionTerm::Constant(true), true),
-            ))
-            .proves(&target)
-    );
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new().assume_proposition(forall_int32(
+            fact_index,
+            Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+        ))),
+        &target
+    ));
 }
 
 #[test]
@@ -2985,12 +3063,15 @@ fn quantified_loadability_fact_certifies_an_instantiated_load() {
         .assume_proposition(guarded_fact)
         .assume_proposition(guard_for(target_index));
 
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory,
-        base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory,
+            base: data.offset_by_int32_elements(MachineTerm::Variable(target_index)),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -3037,9 +3118,9 @@ fn quantified_signed_condition_fact_certifies_a_symbolic_index() {
         true,
     );
 
-    let derivation = assumptions
-        .derive_solve_proposition(&target)
-        .expect("a universal with symbolic bounds should specialize at the target index");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &target)
+            .expect("a universal with symbolic bounds should specialize at the target index");
     let (selected, argument, guards) = derivation
         .forall_int32_instantiation()
         .expect("the specialization should retain its universal evidence");
@@ -3111,9 +3192,9 @@ fn quantified_atomic_derivation_retains_its_specialization_and_guards() {
         .assume_proposition(quantified.clone())
         .assume_proposition(exit_guard.clone());
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("the selected universal instance should prove the concrete cell");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("the selected universal instance should prove the concrete cell");
     let (selected, argument, guards) = derivation
         .forall_int32_instantiation()
         .expect("the atomic decision should retain its specialization");
@@ -3183,9 +3264,9 @@ fn a_quantified_instantiation_guard_needing_a_derivation_is_refused() {
         .assume_proposition(quantified)
         .assume_proposition(derivable_guard_source);
 
-    let retained = assumptions
-        .derive_solve_proposition(&goal)
-        .and_then(|derivation| derivation.forall_int32_instantiation().map(|_| ()));
+    let retained =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .and_then(|derivation| derivation.forall_int32_instantiation().map(|_| ()));
     assert!(
         retained.is_none(),
         "an instantiation guard that needs a derivation must not be retained \
@@ -3239,11 +3320,10 @@ fn quantified_int32_fact_certifies_a_concrete_indexed_load() {
         true,
     );
 
-    assert!(
-        PureFactContext::new()
-            .assume_proposition(guarded_fact)
-            .proves(&target)
-    );
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new().assume_proposition(guarded_fact)),
+        &target
+    ));
 }
 
 #[test]
@@ -3292,10 +3372,13 @@ fn quantified_copy_fact_certifies_concrete_pointer_indices() {
 
     for index in [0, 1] {
         let index = MachineTerm::constant(index);
-        assert!(assumptions.proves(&Proposition::ConditionIs(
-            ConditionTerm::equal(load(&destination, index.clone()), load(&source, index),),
-            true,
-        )));
+        assert!(crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::ConditionIs(
+                ConditionTerm::equal(load(&destination, index.clone()), load(&source, index),),
+                true,
+            )
+        ));
     }
 }
 
@@ -3342,24 +3425,30 @@ fn quantified_int32_fact_does_not_certify_its_complete_guarded_range() {
     };
 
     assert!(
-        !assumptions.proves(&target),
+        !crate::kernel::search::ProofSearch::proves(&(assumptions), &target),
         "a logical value fact cannot grant viewability"
     );
-    assert!(!assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: memory.with_block("other-state", 4),
-        base: data.clone(),
-        bytes: MachineTerm::multiply(length.clone(), MachineTerm::constant(4)),
-        wide: false,
-    }));
-    assert!(!assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: CMemory::new(),
-        base: Pointer {
-            block: "other-data".into(),
-            offset: PointerOffsetTerm::Constant(0),
-        },
-        bytes: MachineTerm::multiply(length, MachineTerm::constant(4)),
-        wide: false,
-    }));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: memory.with_block("other-state", 4),
+            base: data.clone(),
+            bytes: MachineTerm::multiply(length.clone(), MachineTerm::constant(4)),
+            wide: false,
+        }
+    ));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: CMemory::new(),
+            base: Pointer {
+                block: "other-data".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            bytes: MachineTerm::multiply(length, MachineTerm::constant(4)),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -3370,9 +3459,9 @@ fn proposition_derivation_check_requires_its_context() {
         true,
     );
     let assumptions = PureFactContext::new().assume_proposition(proposition.clone());
-    let derivation = assumptions
-        .derive_solve_proposition(&proposition)
-        .expect("exact fact should produce a derivation");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &proposition)
+            .expect("exact fact should produce a derivation");
 
     assert!(derivation.check(&assumptions));
     assert!(!derivation.check(&PureFactContext::new()));
@@ -3387,9 +3476,9 @@ fn implication_derivation_context_excludes_its_local_antecedent() {
     };
     let goal = Proposition::Implies(Box::new(antecedent.clone()), Box::new(antecedent));
     let assumptions = PureFactContext::new();
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("an implication may use its own antecedent");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("an implication may use its own antecedent");
 
     assert!(derivation.check(&assumptions));
     assert!(
@@ -3408,8 +3497,13 @@ fn forall_introduction_rejects_a_variable_free_in_ambient_assumptions() {
     let goal = forall_int32(variable, body.clone());
     let assumptions = PureFactContext::new().assume_proposition(body);
 
-    assert!(!assumptions.proves(&goal));
-    assert!(assumptions.derive_proposition(&goal).is_none());
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &goal
+    ));
+    assert!(
+        crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &goal).is_none()
+    );
 }
 
 #[test]
@@ -3420,9 +3514,9 @@ fn forall_derivation_check_shadows_ambient_uses_of_the_binder_id() {
         variable,
         Proposition::ConditionIs(ConditionTerm::equal(value.clone(), value), true),
     );
-    let derivation = PureFactContext::new()
-        .derive_proposition(&goal)
-        .expect("reflexivity should prove a universal in an empty context");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_proposition(&(PureFactContext::new()), &goal)
+            .expect("reflexivity should prove a universal in an empty context");
     let contaminated = PureFactContext::new().assume_proposition(Proposition::Predicate {
         name: "ambient".to_string(),
         arguments: vec![Term::Bitvector32(MachineTerm::Variable(variable))],
@@ -3448,8 +3542,7 @@ fn forall_introduction_keeps_outer_facts_when_the_body_ignores_the_binder() {
         .assume_proposition(second.clone())
         .assume_proposition(outer.clone());
 
-    let derivation = assumptions
-        .derive_proposition(&goal)
+    let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &goal)
         .expect("the binder-free body can use outer facts without weakening the context");
     assert!(derivation.check(&assumptions));
     assert_eq!(derivation.context_premises(), vec![outer, first, second]);
@@ -3477,9 +3570,9 @@ fn singleton_substitution_derivation_records_only_its_bound_premises() {
         .assume_proposition(lower.clone())
         .assume_proposition(upper.clone())
         .assume_proposition(unrelated);
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("singleton bounds should establish equality");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("singleton bounds should establish equality");
 
     assert!(matches!(
         &derivation.rule,
@@ -3512,7 +3605,11 @@ fn singleton_substitution_derivation_records_only_its_bound_premises() {
                 };
                 instrumentation::emit(VerificationEvent::TacticStarted(tactic.clone()));
                 let result = (
-                    assumptions.derive_by_singleton_substitution(&goal, true),
+                    crate::kernel::search::ProofSearch::derive_by_singleton_substitution(
+                        &(assumptions),
+                        &goal,
+                        true,
+                    ),
                     derivation.check(&assumptions),
                 );
                 instrumentation::emit(VerificationEvent::TacticFailed(tactic));
@@ -3552,9 +3649,9 @@ fn successor_order_derivation_needs_only_an_upper_bound() {
             name: "unrelated".to_string(),
             arguments: Vec::new(),
         });
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("an int32 value below another int32 value cannot overflow when incremented");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("an int32 value below another int32 value cannot overflow when incremented");
 
     assert!(derivation.check(&assumptions));
     assert_eq!(derivation.context_premises(), vec![upper_bound]);
@@ -3818,8 +3915,14 @@ fn assumptions_do_not_split_a_multi_value_context_variable() {
         )),
     );
 
-    assert!(!assumptions.proves(&proposition));
-    assert!(assumptions.derive_proposition(&proposition).is_none());
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &proposition
+    ));
+    assert!(
+        crate::kernel::search::ProofSearch::derive_proposition(&(assumptions), &proposition)
+            .is_none()
+    );
 }
 
 /// A finite universal's order fact reaches the order theory only through an
@@ -3882,14 +3985,17 @@ fn finite_forall_order_fact_needs_an_explicit_instantiation() {
         true,
     );
     assert!(
-        !assumptions.proves(&goal),
+        !crate::kernel::search::ProofSearch::proves(&(assumptions), &goal),
         "the quantified bound is not an order fact until it is instantiated"
     );
 
     // The condition fact an explicit `enumerate` instantiation contributes.
     let enumerated =
         assumptions.assume_condition(ConditionTerm::signed_less_equal(load_0, load_1_again), true);
-    assert!(enumerated.proves(&goal));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(enumerated),
+        &goal
+    ));
 }
 
 /// A bound available only under a guarded implication needs the explicit
@@ -3920,10 +4026,13 @@ fn guarded_implication_bound_needs_an_explicit_extraction() {
 
     let goal = Proposition::ConditionIs(ConditionTerm::signed_less_equal(a, c), true);
     assert!(
-        !assumptions.proves(&goal),
+        !crate::kernel::search::ProofSearch::proves(&(assumptions), &goal),
         "a guarded bound is not an order fact until the proof extracts it"
     );
-    assert!(assumptions.assume_proposition(a_le_b).proves(&goal));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions.assume_proposition(a_le_b)),
+        &goal
+    ));
 }
 
 #[test]
@@ -3983,9 +4092,9 @@ fn conditional_forall_instantiates_at_same_named_variable_in_order_path() {
         true,
     );
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("quantified order instance should produce a simplifier derivation");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("quantified order instance should produce a simplifier derivation");
     assert_eq!(derivation.conclusion(), &goal);
     assert!(derivation.check(&assumptions));
 }
@@ -4594,7 +4703,10 @@ fn assumptions_prove_by_bounded_disjunction_cases() {
     // The general prover does not eliminate disjunctions; the explicit
     // derivation still does.
     let proposition = Proposition::Or(Box::new(x_is_one), Box::new(x_is_zero));
-    assert!(!assumptions.proves(&proposition));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &proposition
+    ));
     assert_checkable_derivation(&assumptions, &proposition);
 }
 
@@ -4614,17 +4726,23 @@ fn known_memory_block_bounds_prove_symbolic_element_access() {
     let memory = CMemory::new().with_block("local:a", 12);
     let pointer = CMemory::local_pointer("a").offset_by_int32_elements(index_bits);
 
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: memory.clone(),
-        base: pointer.clone(),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
-    assert!(assumptions.proves(&Proposition::CMemoryCanStore {
-        memory,
-        pointer,
-        byte_width: 4,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: memory.clone(),
+            base: pointer.clone(),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryCanStore {
+            memory,
+            pointer,
+            byte_width: 4,
+        }
+    ));
 }
 
 #[test]
@@ -4656,12 +4774,15 @@ fn symbolic_int32_range_directly_proves_constant_element_loadable() {
             wide: false,
         });
 
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory,
-        base: base.offset_by_int32_elements(MachineTerm::constant(1)),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory,
+            base: base.offset_by_int32_elements(MachineTerm::constant(1)),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -4697,10 +4818,13 @@ fn assumptions_prove_forall_int32_array_range_body() {
         wide: false,
     });
 
-    assert!(assumptions.proves(&forall_int32(
-        index,
-        Proposition::Implies(Box::new(in_segment), Box::new(loadable_index)),
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &forall_int32(
+            index,
+            Proposition::Implies(Box::new(in_segment), Box::new(loadable_index)),
+        )
+    ));
 }
 
 #[test]
@@ -4744,12 +4868,15 @@ fn loadability_transports_to_snapshot_with_symbolic_index_bounds() {
         )),
         Some(true)
     );
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: snapshot_memory,
-        base: base.offset_by_int32_elements(index),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: snapshot_memory,
+            base: base.offset_by_int32_elements(index),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -4788,9 +4915,9 @@ fn loadability_same_base_extent_uses_graph_for_byte_count() {
     PureFactContext::reset_bitvector_equality_index_fact_visits();
     assert!(with_premise.proves_atomic_without_search(&goal));
     assert_eq!(PureFactContext::bitvector_equality_index_fact_visits(), 0);
-    let derivation = with_premise
-        .derive_atomic_proposition(&goal)
-        .expect("the same-base loadable range should transport");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(with_premise), &goal)
+            .expect("the same-base loadable range should transport");
     assert!(derivation.check(&with_premise));
     assert!(!without_premise.proves_atomic_without_search(&goal));
     let withdrawn =
@@ -4842,9 +4969,15 @@ fn finite_forall_rejects_a_bare_conjunct_beside_a_guarded_one() {
     let body = Proposition::And(Box::new(guarded.clone()), Box::new(bare));
 
     assert!(finite_forall_ranges(&[k], &body).is_none());
-    assert!(!PureFactContext::new().proves(&forall_int32(k, body)));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &forall_int32(k, body)
+    ));
     // The guarded conjunct alone still derives by instantiation.
-    assert!(PureFactContext::new().proves(&forall_int32(k, guarded)));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &forall_int32(k, guarded)
+    ));
 }
 
 #[test]
@@ -4873,10 +5006,16 @@ fn finite_forall_instantiates_the_hull_of_every_guard() {
     let false_at_five = Proposition::And(Box::new(narrow.clone()), Box::new(wide(5)));
     let ranges = finite_forall_ranges(&[k], &false_at_five).expect("both leaves are guarded");
     assert_eq!((ranges[0].lower, ranges[0].upper), (0, 9));
-    assert!(!PureFactContext::new().proves(&forall_int32(k, false_at_five)));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &forall_int32(k, false_at_five)
+    ));
 
     let true_throughout = Proposition::And(Box::new(narrow), Box::new(wide(10)));
-    assert!(PureFactContext::new().proves(&forall_int32(k, true_throughout)));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &forall_int32(k, true_throughout)
+    ));
 }
 
 #[test]
@@ -4918,13 +5057,16 @@ fn assumptions_prove_finite_forall_int32_by_instantiation() {
         )),
     );
 
-    assert!(PureFactContext::new().proves(&forall_int32(
-        i,
-        forall_int32(
-            j,
-            Proposition::Implies(Box::new(antecedent), Box::new(consequent)),
-        ),
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &forall_int32(
+            i,
+            forall_int32(
+                j,
+                Proposition::Implies(Box::new(antecedent), Box::new(consequent)),
+            ),
+        )
+    ));
 }
 
 #[test]
@@ -4960,23 +5102,26 @@ fn assumptions_use_finite_forall_fact_to_prove_condition() {
         Proposition::Implies(Box::new(antecedent), Box::new(consequent)),
     ));
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            binary_node!(
-                Int32,
-                Add,
-                Box::new(base_left),
-                Box::new(MachineTerm::constant(1))
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                binary_node!(
+                    Int32,
+                    Add,
+                    Box::new(base_left),
+                    Box::new(MachineTerm::constant(1))
+                ),
+                binary_node!(
+                    Int32,
+                    Add,
+                    Box::new(base_right),
+                    Box::new(MachineTerm::constant(1))
+                ),
             ),
-            binary_node!(
-                Int32,
-                Add,
-                Box::new(base_right),
-                Box::new(MachineTerm::constant(1))
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -4988,10 +5133,10 @@ fn order_solver_uses_negated_less_than_transitively() {
         .assume_condition(ConditionTerm::signed_less_than(b.clone(), a.clone()), false)
         .assume_condition(ConditionTerm::signed_less_than(c.clone(), b), false);
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_less_equal(a, c),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(ConditionTerm::signed_less_equal(a, c), true,)
+    ));
 }
 
 #[test]
@@ -5004,10 +5149,10 @@ fn assumptions_do_not_prove_implication_by_treating_unknown_antecedent_as_false(
     let consequent =
         Proposition::ConditionIs(ConditionTerm::equal(x, MachineTerm::constant(0)), true);
 
-    assert!(!PureFactContext::new().proves(&Proposition::Implies(
-        Box::new(antecedent),
-        Box::new(consequent),
-    )));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::Implies(Box::new(antecedent), Box::new(consequent),)
+    ));
 }
 
 #[test]
@@ -5024,10 +5169,10 @@ fn assumptions_prove_implication_with_refuted_antecedent() {
         true,
     );
 
-    assert!(assumptions.proves(&Proposition::Implies(
-        Box::new(antecedent),
-        Box::new(consequent),
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::Implies(Box::new(antecedent), Box::new(consequent),)
+    ));
 }
 
 #[test]
@@ -5054,9 +5199,9 @@ fn solve_derives_vacuous_implication_before_searching_large_consequent() {
     let goal = Proposition::Implies(Box::new(antecedent), Box::new(consequent));
     let assumptions = PureFactContext::new().assume_condition(condition, false);
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("a refuted antecedent should close before inspecting the consequent");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("a refuted antecedent should close before inspecting the consequent");
     assert!(derivation.check(&assumptions));
 }
 
@@ -5078,9 +5223,9 @@ fn solve_derives_implication_body_before_refuting_known_antecedent() {
         .assume_condition(antecedent_condition, true)
         .assume_condition(consequent_condition, true);
 
-    let derivation = assumptions
-        .derive_solve_proposition(&goal)
-        .expect("a known antecedent should use the available consequent directly");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .expect("a known antecedent should use the available consequent directly");
     assert!(derivation.check(&assumptions));
 }
 
@@ -5226,10 +5371,11 @@ fn equality_rewrites_through_matching_decrement() {
     );
 
     assert!(
-        PureFactContext::new()
-            .assume_proposition(equality)
-            .derive_solve_proposition(&goal)
-            .is_some()
+        crate::kernel::search::ProofSearch::derive_solve_proposition(
+            &(PureFactContext::new().assume_proposition(equality)),
+            &goal
+        )
+        .is_some()
     );
 }
 
@@ -5680,7 +5826,8 @@ fn solve_derivations_have_no_step_budget() {
                 .collect();
         }
         assert!(
-            assumptions.derive_solve_proposition(&parts[0]).is_some(),
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &parts[0])
+                .is_some(),
             "a conjunction of {width} exact facts derives"
         );
     }
@@ -5736,7 +5883,7 @@ fn finite_forall_instantiates_domains_of_any_width() {
             Proposition::Implies(Box::new(antecedent), Box::new(consequent)),
         );
         assert!(
-            PureFactContext::new().proves(&goal),
+            crate::kernel::search::ProofSearch::proves(&(PureFactContext::new()), &goal),
             "a domain of {width} values instantiates"
         );
     }
@@ -5763,7 +5910,10 @@ fn disjunction_cases_of_any_width_derive_a_common_consequence() {
             ConditionTerm::signed_less_equal(MachineTerm::constant(0), x.clone()),
             true,
         );
-        assert!(!assumptions.proves(&nonnegative));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &nonnegative
+        ));
         assert_checkable_derivation(&assumptions, &nonnegative);
     }
 }
@@ -5949,8 +6099,14 @@ fn required_obligation_discharge_uses_goal_connectives_without_search() {
         &assumptions,
         &implication
     ));
-    assert!(assumptions.proves(&disjunction));
-    assert!(assumptions.proves(&implication));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &disjunction
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &implication
+    ));
 
     // And the emitted obligation is the required (non-assumable) kind,
     // carrying its context.
@@ -6741,8 +6897,7 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
         .assume_proposition(lower.clone())
         .assume_proposition(upper.clone())
         .assume_proposition(pinned.clone());
-    let proof = facts
-        .derive_solve_proposition(&goal)
+    let proof = crate::kernel::search::ProofSearch::derive_solve_proposition(&(facts), &goal)
         .expect("typed singleton equality");
     assert!(proof.check(&facts));
     assert!(proof.is_int32_pinned_constant_equality());
@@ -6756,7 +6911,10 @@ fn singleton_bound_through_an_exact_constant_equality_retains_its_premises() {
     for missing in [lower, upper, pinned] {
         let restricted = facts.without_exact_fact(&missing);
         assert!(!proof.check(&restricted));
-        assert!(restricted.derive_solve_proposition(&goal).is_none());
+        assert!(
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(restricted), &goal)
+                .is_none()
+        );
     }
 }
 
@@ -7193,8 +7351,7 @@ fn bounded_byte_pointer_association_uses_checked_signed_addition() {
             .decide_selected_condition(&condition),
         Some(true)
     );
-    let proof = facts
-        .derive_solve_proposition(&goal)
+    let proof = crate::kernel::search::ProofSearch::derive_solve_proposition(&(facts), &goal)
         .expect("exact bounded pointer association");
     assert!(proof.check(&facts));
 }
@@ -7312,8 +7469,7 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
         .clone()
         .store(base.clone(), CValue::Int32(MachineTerm::constant(7)));
     let goal = fact(written, MachineTerm::uint64_constant(8), true);
-    let proof = context
-        .derive_atomic_proposition(&goal)
+    let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
         .expect("writes preserve native liveness");
     assert!(proof.check(&context));
     assert_eq!(proof.context_premises(), vec![source]);
@@ -7330,7 +7486,10 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
             true,
         ),
     ] {
-        assert!(context.derive_atomic_proposition(&wrong).is_none());
+        assert!(
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &wrong)
+                .is_none()
+        );
     }
     let native_count = MachineTerm::Variable(Variable(973_001));
     let narrow = PureFactContext::new().assume_proposition(fact(
@@ -7342,9 +7501,11 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
         false,
     ));
     assert!(
-        narrow
-            .derive_atomic_proposition(&fact(CMemory::new(), native_count, true,))
-            .is_none(),
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(narrow),
+            &fact(CMemory::new(), native_count, true,)
+        )
+        .is_none(),
         "a low-word extent cannot establish the full native extent"
     );
     let external = Pointer {
@@ -7366,9 +7527,11 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
     };
     let context = PureFactContext::new().assume_proposition(external_fact(live));
     assert!(
-        context
-            .derive_atomic_proposition(&external_fact(dead))
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(context),
+            &external_fact(dead)
+        )
+        .is_none()
     );
 }
 
@@ -7397,7 +7560,8 @@ fn native_loadability_prefix_coverage_retains_full_width_bounds() {
             PureFactContext::new().assume_proposition(range(MachineTerm::uint64_constant(held)));
         for requested in [0, 1, held, held.saturating_add(1)] {
             let goal = range(MachineTerm::uint64_constant(requested));
-            let proof = context.derive_atomic_proposition(&goal);
+            let proof =
+                crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal);
             assert_eq!(proof.is_some(), requested <= held, "{requested} <= {held}");
             if let Some(proof) = proof {
                 assert!(proof.check(&context));
@@ -7409,13 +7573,16 @@ fn native_loadability_prefix_coverage_retains_full_width_bounds() {
     let source = range(held.clone());
     let goal = range(requested.clone());
     let context = PureFactContext::new().assume_proposition(source.clone());
-    assert!(context.derive_atomic_proposition(&goal).is_none());
+    assert!(
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal).is_none()
+    );
     let bound = Proposition::ConditionIs(
         ConditionTerm::uint64_less_equal(requested.clone(), held.clone()),
         true,
     );
     let bounded = context.clone().assume_proposition(bound);
-    let proof = bounded.derive_atomic_proposition(&goal).unwrap();
+    let proof =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(bounded), &goal).unwrap();
     assert!(proof.check(&bounded));
     assert!(
         !proof.check(&context),
@@ -7429,10 +7596,11 @@ fn native_loadability_prefix_coverage_retains_full_width_bounds() {
         true,
     );
     assert!(
-        context
-            .assume_proposition(low_word_bound)
-            .derive_atomic_proposition(&goal)
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(context.assume_proposition(low_word_bound)),
+            &goal
+        )
+        .is_none()
     );
 }
 
@@ -7454,10 +7622,12 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         .clone()
         .store(base.clone(), CValue::Int32(MachineTerm::constant(7)));
     assert!(
-        context
-            .derive_atomic_proposition(&range(written, base.clone(), 4))
-            .unwrap()
-            .check(&context)
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(context),
+            &range(written, base.clone(), 4)
+        )
+        .unwrap()
+        .check(&context)
     );
     for wrong in [
         range(live.clone().with_block("native-prefix", 2), base.clone(), 4),
@@ -7468,7 +7638,10 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         ),
         range(CMemory::new(), base.offset_by_bytes(8), 1),
     ] {
-        assert!(context.derive_atomic_proposition(&wrong).is_none());
+        assert!(
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &wrong)
+                .is_none()
+        );
     }
     let external = Pointer {
         block: PointerBlock::ExternalArgument,
@@ -7483,9 +7656,11 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         .unwrap();
     let context = PureFactContext::new().assume_proposition(range(allocated, external.clone(), 8));
     assert!(
-        context
-            .derive_atomic_proposition(&range(retired, external, 4))
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(context),
+            &range(retired, external, 4)
+        )
+        .is_none()
     );
 }
 
@@ -7520,7 +7695,8 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
             },
             length,
         );
-        let proof = context.derive_atomic_proposition(&goal);
+        let proof =
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal);
         assert_eq!(
             proof.is_some(),
             expected,
@@ -7547,15 +7723,16 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
         PureFactContext::new().assume_proposition(range(memory.clone(), root.clone(), large + 8));
     let goal = range(memory.clone(), goal_base.clone(), 8);
     assert!(
-        context
-            .derive_atomic_proposition(&goal)
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
             .unwrap()
             .check(&context)
     );
     assert!(
-        context
-            .derive_atomic_proposition(&range(memory, goal_base, 9))
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(context),
+            &range(memory, goal_base, 9)
+        )
+        .is_none()
     );
     let live = CMemory::new()
         .with_heap_allocation_claim(root.clone(), MachineTerm::constant(16))
@@ -7566,9 +7743,11 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
         .unwrap();
     let context = PureFactContext::new().assume_proposition(range(live, root.clone(), 16));
     assert!(
-        context
-            .derive_atomic_proposition(&range(dead, root.offset_by_bytes(1), 4))
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(context),
+            &range(dead, root.offset_by_bytes(1), 4)
+        )
+        .is_none()
     );
 }
 
@@ -7616,7 +7795,8 @@ fn native_loadability_window_requires_every_full_width_guard() {
         PureFactContext::new().assume_proposition(source.clone()),
         PureFactContext::assume_proposition,
     );
-    let proof = full.derive_atomic_proposition(&goal).unwrap();
+    let proof =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(full), &goal).unwrap();
     assert!(proof.check(&full));
     for omitted in 0..guards.len() {
         let context = guards
@@ -7630,7 +7810,8 @@ fn native_loadability_window_requires_every_full_width_guard() {
             );
         assert!(!proof.check(&context));
         assert!(
-            context.derive_atomic_proposition(&goal).is_none(),
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
+                .is_none(),
             "omitted guard {omitted}"
         );
     }
@@ -8006,8 +8187,7 @@ fn lazy_finite_forall_certificates_require_exact_complete_instance_tables() {
     let instances = context
         .finite_forall_instantiations(&goal)
         .map(|instance| {
-            context
-                .derive_proposition(&instance)
+            crate::kernel::search::ProofSearch::derive_proposition(&(context), &instance)
                 .expect("explicit indexed instance")
         })
         .collect::<Vec<_>>();

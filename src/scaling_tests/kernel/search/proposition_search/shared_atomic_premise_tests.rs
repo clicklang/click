@@ -1,4 +1,4 @@
-// Scaling tests of `src/surface/planning/proposition_search.rs` (module `shared_atomic_premise_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/search/proposition_search.rs` (module `shared_atomic_premise_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -31,7 +31,7 @@ fn solve_retains_recorded_equality_edges_instead_of_connected_aliases() {
             context = context.assume_proposition(equality(1, 10 + index as u64));
         }
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_solve_proposition(&goal).unwrap()
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal).unwrap()
         });
         let premises = derivation.context_premises();
         assert_eq!(premises.len(), 2, "count {count}");
@@ -144,7 +144,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
         }
         let goal = equality(indexed, first);
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_solve_proposition(&goal).unwrap()
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal).unwrap()
         });
         assert!(derivation.load_address_congruence_paths().is_some());
         assert_eq!(derivation.context_premises(), vec![required.clone()]);
@@ -191,7 +191,8 @@ fn native_view_prefix_retains_only_its_order_path() {
                 context.assume_proposition(le(n.clone(), MachineTerm::uint64_constant(bound)));
         }
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_solve_atomic_proposition(&goal).unwrap()
+            crate::kernel::search::ProofSearch::derive_solve_atomic_proposition(&(context), &goal)
+                .unwrap()
         });
         let premises = derivation.context_premises();
         assert_eq!(premises.len(), 3);
@@ -248,7 +249,7 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
             true,
         );
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_solve_proposition(&goal).unwrap()
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal).unwrap()
         });
         assert!(derivation.load_address_congruence_paths().is_some());
         assert_eq!(derivation.context_premises(), vec![required.clone()]);

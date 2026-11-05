@@ -2909,9 +2909,16 @@ impl<'a> Proof<'a> {
         if crate::instrumentation::smart_tactic_active() {
             return self.structural_goal_spelling(goal);
         }
-        let recorded = self.premise_surface_facts()?;
-        self.available_surface_fact(recorded, None, goal)
-            .or_else(|| self.available_surface_fact(self.local_surface_facts(), None, goal))
+        let recorded = (self).premise_surface_facts()?;
+        crate::kernel::search::ProofSearch::available_surface_fact(self, recorded, None, goal)
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::available_surface_fact(
+                    self,
+                    self.local_surface_facts(),
+                    None,
+                    goal,
+                )
+            })
     }
 
     /// Structural presentation from indexed names. Planning may use this for
@@ -2921,7 +2928,7 @@ impl<'a> Proof<'a> {
         goal: &Proposition,
     ) -> Option<ClickProposition> {
         use super::surface_synthesis as synthesis;
-        let _qualified = self
+        let _qualified = (self)
             .premise_surface_facts()
             .map(synthesis::QualifiedSynthesisScope::enter);
         let candidate = synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {

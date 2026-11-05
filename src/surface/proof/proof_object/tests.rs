@@ -1,13 +1,10 @@
 use crate::kernel::binary_node;
 use crate::surface::planning::solve::{SolveEvidence, plan_solve_certificate};
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::proof::quantified_equivalence_index_key;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{IntegerRangeFoldIndex, IntegerTerm, LoweringIntroduction, SharedIntegerTerm};
-use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::{ArithmeticCertificateFamily, IntegerCertificateNode, SignedArithmeticStep};
 
 // These tests measure local proof updates rather than fixture setup.
@@ -458,7 +455,9 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
     let assumptions = PureFactContext::new()
         .assume_proposition(pairs[0].0.clone())
         .assume_proposition(pairs[1].0.clone());
-    let derivation = assumptions.derive_solve_proposition(&goal).unwrap();
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_solve_proposition(&(assumptions), &goal)
+            .unwrap();
     assert!(derivation.check(&assumptions));
     assert_eq!(derivation.context_premises().len(), 2);
     // An alternate derivation selects two premises, but the goal is also an
@@ -482,10 +481,13 @@ fn atomic_conjunct_extraction_returns_when_an_early_step_completes_the_goal() {
         SpecDefinitions::new(&predicates, &functions),
         &theorems,
     );
-    let closed = root
-        .extract_special_conjunct_premises(&derivation, &pairs)
-        .expect("the checked extraction should succeed")
-        .expect("the first extraction should complete the proof");
+    let closed = crate::kernel::search::ProofSearch::extract_special_conjunct_premises(
+        &(root),
+        &derivation,
+        &pairs,
+    )
+    .expect("the checked extraction should succeed")
+    .expect("the first extraction should complete the proof");
     assert!(closed.is_complete());
     assert_eq!(closed.completed_proposition().unwrap().proposition(), &goal);
     assert!(matches!(
@@ -576,20 +578,26 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 &[],
                 &[],
             );
-            let (_, stale_derivation, _) = stale
-                .selected_solve_derivation(false)
-                .expect("the old resource leaf should be selected from its conjunction");
+            let (_, stale_derivation, _) =
+                crate::kernel::search::ProofSearch::selected_solve_derivation(&(stale), false)
+                    .expect("the old resource leaf should be selected from its conjunction");
             let selected_pairs = vec![(old_leaf.clone(), surface.clone())];
             assert!(
-                stale
-                    .extract_special_conjunct_premises(&stale_derivation, &selected_pairs)
-                    .is_err(),
+                crate::kernel::search::ProofSearch::extract_special_conjunct_premises(
+                    &(stale),
+                    &stale_derivation,
+                    &selected_pairs
+                )
+                .is_err(),
                 "extracting the current spelling must not count as producing the selected old leaf"
             );
             assert!(
-                stale
-                    .extract_special_conjunct_premises(&stale_derivation, &selected_pairs)
-                    .is_err(),
+                crate::kernel::search::ProofSearch::extract_special_conjunct_premises(
+                    &(stale),
+                    &stale_derivation,
+                    &selected_pairs
+                )
+                .is_err(),
                 "a retry must remain a prompt miss rather than accumulating extraction steps"
             );
             // The unanchored current spelling cannot stand for the old leaf,
@@ -605,9 +613,9 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 },
             )
             .expect("the selected surface anchors at function entry");
-            let anchored = stale
-                .try_typed_atomic_solve_closure()
-                .expect("the entry-anchored spelling of the old leaf should extract it");
+            let anchored =
+                crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(&(stale))
+                    .expect("the entry-anchored spelling of the old leaf should extract it");
             assert!(anchored.is_complete());
             assert_eq!(
                 anchored.certificate().steps(),
@@ -641,9 +649,9 @@ fn atomic_conjunct_extraction_requires_exact_selected_premise_on_small_stack() {
                 &[],
             );
             let sibling = exact.clone();
-            let closed = exact
-                .try_typed_atomic_solve_closure()
-                .expect("the exact selected leaf should extract and close the goal");
+            let closed =
+                crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(&(exact))
+                    .expect("the exact selected leaf should extract and close the goal");
             assert!(closed.is_complete());
             assert_eq!(closed.certificate().steps(), &[ProofStep::Extract(surface)]);
             assert!(sibling.certificate().steps().is_empty());
@@ -778,7 +786,10 @@ fn invariant_bundle_budget_refusal_retains_selected_obligation() {
     );
     assert!(root.certificate().steps().is_empty());
     let direct = crate::instrumentation::with_run_work_limit(0, || {
-        root.try_direct_structural_closure_with_quantified(&mut |_| Ok(None))
+        crate::kernel::search::ProofSearch::try_direct_structural_closure_with_quantified(
+            &(root),
+            &mut |_| Ok(None),
+        )
     })
     .err()
     .expect("the direct strategy must also refuse exhaustion");
@@ -1090,8 +1101,7 @@ fn both_preserves_written_body_across_an_inserted_guard_and_reverifies_cold() {
             .is_none(),
         "the guard child cannot be silently omitted"
     );
-    let smart = root
-        .try_solve_closure()
+    let smart = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
         .expect("hidden-guard simplification should remain bounded")
         .expect("both normalized children should close");
     assert!(smart.is_complete());
@@ -1329,7 +1339,7 @@ fn attempt_reports_deadline_failure_instead_of_a_rejection() {
         "an exceeded deadline must abort the search, not read as a miss"
     );
     let aborted = crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-        root.try_direct_logical_closure()
+        crate::kernel::search::ProofSearch::try_direct_logical_closure(&(root))
     });
     assert!(
         aborted.is_err(),
@@ -2311,7 +2321,10 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
         allocation_samples.push((size, logarithmic_height, allocations));
         assert!(!facts.contains(&added));
         assert!(successor.contains(&added));
-        assert!(successor.assumptions().proves(&added));
+        assert!(crate::kernel::search::ProofSearch::proves(
+            &(successor.assumptions()),
+            &added
+        ));
     }
     let (_, base_height, base_allocations) = allocation_samples[0];
     for (size, height, allocations) in allocation_samples {
@@ -3776,8 +3789,7 @@ fn surface_rewrite_retains_structural_successor_and_scales() {
         let rewritten = root
             .apply_step(ProofStep::Rewrite(equality.clone()))
             .expect("the exact equality should produce a checked rewrite successor");
-        let closed = rewritten
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(rewritten))
             .expect("smart search must not exceed its deadline")
             .expect("the rewritten Surface conjunction should retain both child proofs");
         let allocations = fact_node_allocations() - before;
@@ -4112,7 +4124,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
                 (kernel_quantified.clone(), quantified_surface.clone()),
                 (kernel_premise.clone(), premise.clone()),
             ];
-            let selected = root.try_selected_forall_instantiation(&kernel_goal, &premise_pairs);
+            let selected = crate::kernel::search::ProofSearch::try_selected_forall_instantiation(
+                &(root),
+                &kernel_goal,
+                &premise_pairs,
+            );
             let selected =
                 selected.expect("the selected universal candidate should close through Proof");
             assert!(selected.is_complete());
@@ -4150,9 +4166,11 @@ fn fixed_state_instantiate_uses_indexed_universal_and_only_named_guards() {
         *indexed_state.open_branches_mut() = indexed_branches;
         indexed_root.state = indexed_root.state.with_state(indexed_state);
         let before = fact_node_allocations();
-        let selected = indexed_root
-            .try_indexed_forall_instantiation()
-            .expect("the unfold-owned universal should close without scanning ambient universals");
+        let selected =
+            crate::kernel::search::ProofSearch::try_indexed_forall_instantiation(&(indexed_root))
+                .expect(
+                    "the unfold-owned universal should close without scanning ambient universals",
+                );
         let allocations = fact_node_allocations() - before;
         let logarithmic_height = (u32::BITS - size.leading_zeros()) as usize;
         let allocation_bound = 96 * logarithmic_height + 384;
@@ -4304,14 +4322,20 @@ fn execution_apply_uses_only_named_evidence_and_forks_persistently() {
         );
         let retained_root = root.clone();
         assert!(
-            root.try_theorem_application(&missing_application)
-                .expect("missing execution theorem search should be a bounded miss")
-                .is_none(),
+            crate::kernel::search::ProofSearch::try_theorem_application(
+                &(root),
+                &missing_application
+            )
+            .expect("missing execution theorem search should be a bounded miss")
+            .is_none(),
             "an unavailable execution theorem premise must not manufacture a descendant"
         );
         let before_query = fact_node_allocations();
-        let selected = root
-            .select_execution_theorem_application_step(&application)
+        let selected =
+            crate::kernel::search::ProofSearch::select_execution_theorem_application_step(
+                &(root),
+                &application,
+            )
             .expect("smart search should select one explicit indexed premise");
         // The global persistent-node counter now also sees the selected
         // theorem's small elaboration binding maps. Their fixed setup cost
@@ -4430,19 +4454,24 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
     );
-    let Some((until, _)) = root
-        .try_execute_until_descendant(&CodeRegionRef::Region(1))
-        .expect("execute_until should use the checked smart step route")
-    else {
+    let Some((until, _)) = crate::kernel::search::ProofSearch::try_execute_until_descendant(
+        &(root),
+        &CodeRegionRef::Region(1),
+    )
+    .expect("execute_until should use the checked smart step route") else {
         panic!("execute_until should advance to its target");
     };
     assert!(matches!(until.certificate().steps(), [ProofStep::Step]));
     let refusal = ClickError::new("injected unresolved requirement")
         .with_unresolved_requirement(&ProofObligation::verification_condition(requirement));
     let mut retried = BTreeSet::new();
-    let retried = root
-        .retry_statement_after_refusal(ProofStep::Step, &mut retried, Err(refusal))
-        .expect("the checked have should discharge the injected requirement");
+    let retried = crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+        &(root),
+        ProofStep::Step,
+        &mut retried,
+        Err(refusal),
+    )
+    .expect("the checked have should discharge the injected requirement");
     let certificate = retried.certificate();
     let steps = certificate.steps();
     assert_eq!(steps.len(), 2);
@@ -4478,7 +4507,8 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         &ProofObligation::verification_condition(unsupported.clone())
             .with_call_requirement_site(source.clone()),
     );
-    let error = match root.retry_statement_after_refusal(
+    let error = match crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+        &(root),
         ProofStep::Step,
         &mut BTreeSet::new(),
         Err(refusal),
@@ -4531,7 +4561,8 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
     let refusal = ClickError::new("injected supported source refusal").with_unresolved_requirement(
         &ProofObligation::verification_condition(supported).with_call_requirement_site(source),
     );
-    let error = match root.retry_statement_after_refusal(
+    let error = match crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+        &(root),
         ProofStep::Step,
         &mut BTreeSet::new(),
         Err(refusal),
@@ -4674,10 +4705,11 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
         SpecDefinitions::new(&predicate_environment, &click_function_environment),
         &theorem_environment,
     );
-    let Some((at_call, _)) = root
-        .try_execute_until_descendant(&CodeRegionRef::Region(1))
-        .expect("declaration should advance to the need call")
-    else {
+    let Some((at_call, _)) = crate::kernel::search::ProofSearch::try_execute_until_descendant(
+        &(root),
+        &CodeRegionRef::Region(1),
+    )
+    .expect("declaration should advance to the need call") else {
         panic!("execution should reach the call frontier");
     };
     for (label, callee, interface, ordinal, source_arguments) in [
@@ -4729,7 +4761,8 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
                 .with_call_requirement_site(source),
         );
         let before = at_call.certificate();
-        let error = match at_call.retry_statement_after_refusal(
+        let error = match crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+            &(at_call),
             ProofStep::StepContract("Need".into()),
             &mut BTreeSet::new(),
             Err(refusal),
@@ -4760,9 +4793,13 @@ fn smart_retry_falls_back_from_mismatching_registry_to_exact_synthesized_existen
             .with_call_requirement_site(source),
     );
     let step = ProofStep::StepContract("Need".into());
-    let retried = at_call
-        .retry_statement_after_refusal(step, &mut BTreeSet::new(), Err(refusal))
-        .expect("the exact synthesized fallback should be retained");
+    let retried = crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+        &(at_call),
+        step,
+        &mut BTreeSet::new(),
+        Err(refusal),
+    )
+    .expect("the exact synthesized fallback should be retained");
     let certificate = retried.certificate();
     let Some(ProofStep::Have { proposition, .. }) = certificate.steps().get(1) else {
         panic!("retry should retain a Have before the call step");
@@ -4838,7 +4875,7 @@ fn supported_source_refusal_on_branch_does_not_enter_planning() {
         .with_call_requirement_site(source),
     );
     let mut refusal = Some(refusal);
-    let result = root.try_statement_step_with_apply(|_| {
+    let result = crate::kernel::search::ProofSearch::try_statement_step_with_apply(&(root), |_| {
         Err(refusal
             .take()
             .expect("the branch selector should invoke the test operation once"))
@@ -4982,9 +5019,13 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
     );
     let refusal = ClickError::new("injected static-array requirement")
         .with_unresolved_requirement(&ProofObligation::verification_condition(lowered));
-    let retried = root
-        .retry_statement_after_refusal(ProofStep::Step, &mut BTreeSet::new(), Err(refusal))
-        .expect("recorded qualified static cell should synthesize during retry");
+    let retried = crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+        &(root),
+        ProofStep::Step,
+        &mut BTreeSet::new(),
+        Err(refusal),
+    )
+    .expect("recorded qualified static cell should synthesize during retry");
     let certificate = retried.certificate();
     let [ProofStep::Have { proposition, .. }, ProofStep::Step] = certificate.steps() else {
         panic!("retry should retain one checked Have before the exact Step");
@@ -5282,23 +5323,29 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .focus_split_arm(&record, true)
             .expect("the then sibling is open");
         assert!(
-            then_arm
-                .try_theorem_application(&missing_application)
-                .expect("an unavailable exact theorem premise should be a bounded miss")
-                .is_none(),
+            crate::kernel::search::ProofSearch::try_theorem_application(
+                &(then_arm),
+                &missing_application
+            )
+            .expect("an unavailable exact theorem premise should be a bounded miss")
+            .is_none(),
             "an unavailable theorem premise must not manufacture an arm descendant"
         );
 
         let before = fact_node_allocations();
-        let branches = then_arm
-            .try_theorem_application(&application)
+        let branches = crate::kernel::search::ProofSearch::try_theorem_application(
+            &(crate::kernel::search::ProofSearch::try_theorem_application(
+                &(then_arm),
+                &application,
+            )
             .expect("then arm theorem search should run")
             .expect("then arm theorem search should retain its checked step")
             .focus_split_arm(&record, false)
-            .expect("the else sibling is open")
-            .try_theorem_application(&application)
-            .expect("else arm theorem search should run")
-            .expect("else arm theorem search should retain its checked step");
+            .expect("the else sibling is open")),
+            &application,
+        )
+        .expect("else arm theorem search should run")
+        .expect("else arm theorem search should retain its checked step");
         samples.push((
             size,
             (u32::BITS - size.leading_zeros()) as usize,
@@ -5585,16 +5632,20 @@ fn fixed_state_apply_search_uses_indexes_and_retains_its_checked_successor() {
             .apply_step(ProofStep::Extract(premise.clone()))
             .expect("a checked predecessor should promote the indexed conjunct");
         assert!(
-            extracted
-                .try_theorem_application(&missing_application)
-                .expect("missing fixed-state theorem search should be a bounded miss")
-                .is_none(),
+            crate::kernel::search::ProofSearch::try_theorem_application(
+                &(extracted),
+                &missing_application
+            )
+            .expect("missing fixed-state theorem search should be a bounded miss")
+            .is_none(),
             "an unavailable fixed-state theorem premise must not manufacture a descendant"
         );
         let before_query = fact_node_allocations();
-        let step = extracted
-            .select_fixed_state_theorem_application_step(&application)
-            .expect("smart search should select one explicit indexed premise");
+        let step = crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
+            &(extracted),
+            &application,
+        )
+        .expect("smart search should select one explicit indexed premise");
         let query_allocations = fact_node_allocations() - before_query;
         assert_eq!(
             query_allocations,
@@ -5825,9 +5876,11 @@ fn result_aware_fixed_state_context_apply_is_indexed_and_transactional() {
         assert!(root.certificate().steps().is_empty());
 
         let before_query = fact_node_allocations();
-        let step = root
-            .select_fixed_state_theorem_application_step(application)
-            .expect("the indexed result-aware premise should be selected");
+        let step = crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
+            &(root),
+            application,
+        )
+        .expect("the indexed result-aware premise should be selected");
         let query_allocations = fact_node_allocations() - before_query;
         assert_eq!(
             query_allocations,
@@ -5945,22 +5998,35 @@ fn fixed_state_transport_can_follow_another_checked_step() {
         assert!(refined.state.shares_state_with(&retained_refined.state));
         if size == 16 {
             assert!(
-                refined
-                    .try_fixed_state_fact_transport(&source, &missing, std::iter::empty())
-                    .expect("an ordinary optional transport miss is not a proof error")
-                    .is_none()
+                crate::kernel::search::ProofSearch::try_fixed_state_fact_transport(
+                    &(refined),
+                    &source,
+                    &missing,
+                    std::iter::empty()
+                )
+                .expect("an ordinary optional transport miss is not a proof error")
+                .is_none()
             );
             assert!(
                 crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
-                    refined.try_fixed_state_fact_transport(&source, &missing, std::iter::empty())
+                    crate::kernel::search::ProofSearch::try_fixed_state_fact_transport(
+                        &(refined),
+                        &source,
+                        &missing,
+                        std::iter::empty(),
+                    )
                 })
                 .is_err(),
                 "an interrupted search must not become an ordinary miss"
             );
-            let searched = refined
-                .try_fixed_state_fact_transport(&source, &source, std::iter::empty())
-                .expect("the optional transport search should run")
-                .expect("the available source should transport");
+            let searched = crate::kernel::search::ProofSearch::try_fixed_state_fact_transport(
+                &(refined),
+                &source,
+                &source,
+                std::iter::empty(),
+            )
+            .expect("the optional transport search should run")
+            .expect("the available source should transport");
             assert_eq!(searched.certificate().steps().len(), 2);
             assert!(refined.state.shares_state_with(&retained_refined.state));
         }
@@ -6065,8 +6131,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the typed path should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -6115,7 +6180,7 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             .begin_have(surface_goal.clone())
             .expect("the signed-order have should open a nested proof");
         let before = fact_node_allocations();
-        let selected = scope
+        let selected = (scope)
             .try_solve_closure()
             .expect("nested smart search must not exceed its deadline")
             .expect("the exact goal should have an independent theorem path");
@@ -6208,8 +6273,7 @@ fn pure_equality_refinement_solve_applies_one_rewrite_with_logarithmic_local_upd
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("one selected equality should refine and close the Proof");
         let allocations = fact_node_allocations() - before;
@@ -6330,8 +6394,7 @@ fn goal_term_equality_rewrite_ignores_unrelated_equality_buckets() {
             comparisons <= 2 * logarithmic_height + 4,
             "size {size} equality lookup made {comparisons} key comparisons"
         );
-        let closed = root
-            .try_goal_equality_rewrite_closure()
+        let closed = crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
             .expect("the selected equality should rewrite and normalize the goal");
         assert!(closed.is_complete());
         assert!(matches!(
@@ -6449,8 +6512,7 @@ fn goal_term_equality_rewrite_chain_shrinks_independently_of_unrelated_buckets()
             );
         }
         let before = fact_node_allocations();
-        let closed = root
-            .try_goal_equality_rewrite_closure()
+        let closed = crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
             .expect("the two selected equalities should shrink and normalize the goal");
         let allocations = fact_node_allocations() - before;
         let allocation_bound = 128 * logarithmic_height + 512;
@@ -6566,8 +6628,7 @@ fn check_fixed_state_predecessor_solve(sizes: &[u32]) {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the predecessor search should retain one structured descendant");
         let allocations = fact_node_allocations() - before;
@@ -6668,8 +6729,7 @@ fn fixed_state_equality_solve_builds_its_recorded_path_with_logarithmic_local_up
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the typed equality path should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -6764,8 +6824,7 @@ fn fixed_state_arithmetic_rewrite_paths_ignore_unrelated_facts() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the retained equality paths should close the arithmetic goal");
         let allocations = fact_node_allocations() - before;
@@ -6857,8 +6916,7 @@ fn fixed_state_order_solve_builds_its_theorem_path_with_logarithmic_local_update
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the typed order path should build one checked fixed-state Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -7165,8 +7223,7 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             );
             let retained_root = root.clone();
             let before = fact_node_allocations();
-            let closed = root
-                .try_solve_closure()
+            let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| panic!("fixed-state solve should prove the {label} goal"));
             let allocations = fact_node_allocations() - before;
@@ -7212,16 +7269,19 @@ fn check_fixed_state_single_premise_arithmetic_solves(sizes: &[u32], labels: Opt
             );
             let retained_pure_root = pure_root.clone();
             assert!(
-                pure_root.try_restricted_solve_closure(&[]).is_none(),
+                crate::kernel::search::ProofSearch::try_restricted_solve_closure(&(pure_root), &[])
+                    .is_none(),
                 "omitting the named premise must reject the restricted candidate"
             );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             let before_restricted = fact_node_allocations();
-            let pure_closed = pure_root
-                .try_restricted_solve_closure(std::slice::from_ref(surface_premise))
-                .unwrap_or_else(|| {
-                    panic!("restricted solve should retain the checked typed {label} rule")
-                });
+            let pure_closed = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                &(pure_root),
+                std::slice::from_ref(surface_premise),
+            )
+            .unwrap_or_else(|| {
+                panic!("restricted solve should retain the checked typed {label} rule")
+            });
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
@@ -7323,8 +7383,7 @@ fn branch_exported_premise_uses_one_selected_anchor_with_logarithmic_work() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the selected anchor should retain the two-premise theorem step");
         let allocations = fact_node_allocations() - before;
@@ -7461,8 +7520,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             );
             let retained_root = root.clone();
             let before = fact_node_allocations();
-            let closed = root
-                .try_solve_closure()
+            let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
                 .expect("smart search must not exceed its deadline")
                 .expect("the typed two-premise rule should build one checked Proof descendant");
             let allocations = fact_node_allocations() - before;
@@ -7516,15 +7574,21 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
                 std::slice::from_ref(&upper_premise),
             ] {
                 assert!(
-                    pure_root.try_restricted_solve_closure(omitted).is_none(),
+                    crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                        &(pure_root),
+                        omitted
+                    )
+                    .is_none(),
                     "omitting either theorem premise must reject the restricted candidate"
                 );
                 assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             }
             let before_restricted = fact_node_allocations();
-            let pure_closed = pure_root
-                .try_restricted_solve_closure(&selected_premises)
-                .expect("restricted solve should retain the checked two-premise rule");
+            let pure_closed = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                &(pure_root),
+                &selected_premises,
+            )
+            .expect("restricted solve should retain the checked two-premise rule");
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
@@ -7585,8 +7649,7 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the strict-lower increment path should advance one Proof");
         let allocations = fact_node_allocations() - before;
@@ -7631,13 +7694,21 @@ fn increment_bound_family_retains_two_indexed_theorem_premises() {
             std::slice::from_ref(&strict_lower_premise),
             std::slice::from_ref(&upper_premise),
         ] {
-            assert!(pure_root.try_restricted_solve_closure(omitted).is_none());
+            assert!(
+                crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                    &(pure_root),
+                    omitted
+                )
+                .is_none()
+            );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
         }
         let before_restricted = fact_node_allocations();
-        let pure_closed = pure_root
-            .try_restricted_solve_closure(&strict_selected_premises)
-            .expect("restricted strict-lower solve should advance one Proof");
+        let pure_closed = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+            &(pure_root),
+            &strict_selected_premises,
+        )
+        .expect("restricted strict-lower solve should advance one Proof");
         let restricted_allocations = fact_node_allocations() - before_restricted;
         assert!(
             restricted_allocations <= allocation_bound,
@@ -7732,8 +7803,7 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the typed equality rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -7794,7 +7864,13 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
             std::slice::from_ref(&less_equal),
             std::slice::from_ref(&not_less_than),
         ] {
-            assert!(pure_root.try_restricted_solve_closure(omitted).is_none());
+            assert!(
+                crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                    &(pure_root),
+                    omitted
+                )
+                .is_none()
+            );
             assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
         }
         let restricted_derivation = plan_solve_certificate(
@@ -7830,9 +7906,11 @@ fn le_and_not_lt_equality_solve_retains_one_indexed_arithmetic_certificate() {
             .unwrap_or_else(|error| panic!("the named equality plan failed: {error:?}"))
             .expect("the named equality plan should close through checked Proof operations");
         assert!(planned_closed.is_complete());
-        let pure_closed = pure_root
-            .try_restricted_solve_closure(&selected)
-            .expect("restricted solve should retain the checked equality theorem");
+        let pure_closed = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+            &(pure_root),
+            &selected,
+        )
+        .expect("restricted solve should retain the checked equality theorem");
         assert!(is_one_arithmetic_certificate_over(
             pure_closed.certificate().steps(),
             &selected,
@@ -7918,8 +7996,7 @@ fn ge_and_not_gt_equality_solve_retains_one_indexed_theorem_application() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the typed >=/not-> rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -8015,8 +8092,7 @@ fn le_and_neq_strict_solve_retains_one_indexed_arithmetic_certificate() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the typed <=/!= rule should build one checked Proof descendant");
         let allocations = fact_node_allocations() - before;
@@ -8146,8 +8222,7 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
             );
             let retained_root = root.clone();
             let before = fact_node_allocations();
-            let closed = root
-                .try_solve_closure()
+            let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
                 .expect("smart search must not exceed its deadline")
                 .expect(
                     "the typed symbolic arithmetic rule should build one checked Proof descendant",
@@ -8192,13 +8267,21 @@ fn symbolic_arithmetic_definedness_retains_two_indexed_theorem_premises() {
                 std::slice::from_ref(&selected[0]),
                 std::slice::from_ref(&selected[1]),
             ] {
-                assert!(pure_root.try_restricted_solve_closure(omitted).is_none());
+                assert!(
+                    crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                        &(pure_root),
+                        omitted
+                    )
+                    .is_none()
+                );
                 assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             }
             let before_restricted = fact_node_allocations();
-            let pure_closed = pure_root
-                .try_restricted_solve_closure(selected)
-                .expect("restricted solve should retain the symbolic arithmetic theorem");
+            let pure_closed = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                &(pure_root),
+                selected,
+            )
+            .expect("restricted solve should retain the symbolic arithmetic theorem");
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
@@ -8291,8 +8374,7 @@ fn selected_disjunction_solve_retains_checked_cases_and_scales() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let closed = root
-            .try_solve_closure()
+        let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
             .expect("smart search must not exceed its deadline")
             .expect("the selected disjunction should close both checked Proof arms");
         let allocations = fact_node_allocations() - before;
@@ -8471,8 +8553,7 @@ fn surface_structural_solve_retains_recursive_child_proofs_and_scales() {
                 ));
             }
             let before = fact_node_allocations();
-            let closed = root
-                .try_solve_closure()
+            let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| panic!("the {label} should retain its recursive proof"));
             let allocations = fact_node_allocations() - before;
@@ -8669,8 +8750,7 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
             );
             let retained_root = root.clone();
             let before = fact_node_allocations();
-            let closed = root
-                .try_solve_closure()
+            let closed = crate::kernel::search::ProofSearch::try_solve_closure(&(root))
                 .expect("smart search must not exceed its deadline")
                 .unwrap_or_else(|| {
                     panic!(
@@ -8720,15 +8800,21 @@ fn predecessor_solves_retain_indexed_named_rule_premises() {
                     .map(|(_, premise)| premise.clone())
                     .collect::<Vec<_>>();
                 assert!(
-                    pure_root.try_restricted_solve_closure(&omitted).is_none(),
+                    crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                        &(pure_root),
+                        &omitted
+                    )
+                    .is_none(),
                     "omitting a theorem premise must reject the restricted candidate"
                 );
                 assert!(pure_root.state.shares_state_with(&retained_pure_root.state));
             }
             let before_restricted = fact_node_allocations();
-            let pure_closed = pure_root
-                .try_restricted_solve_closure(selected)
-                .expect("restricted solve should retain the checked predecessor rule");
+            let pure_closed = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                &(pure_root),
+                selected,
+            )
+            .expect("restricted solve should retain the checked predecessor rule");
             let restricted_allocations = fact_node_allocations() - before_restricted;
             assert!(
                 restricted_allocations <= allocation_bound,
@@ -8825,21 +8911,28 @@ fn pure_apply_search_instantiates_requirements_and_retains_its_successor() {
         );
         let retained_root = root.clone();
         assert!(
-            root.try_theorem_application(&missing_application)
-                .expect("missing pure theorem search should be a bounded miss")
-                .is_none(),
+            crate::kernel::search::ProofSearch::try_theorem_application(
+                &(root),
+                &missing_application
+            )
+            .expect("missing pure theorem search should be a bounded miss")
+            .is_none(),
             "an unavailable pure theorem premise must not manufacture a descendant"
         );
-        let missing = root
-            .select_pure_theorem_application_step(&missing_application)
-            .expect_err("an unavailable instantiated requirement must reject the candidate");
+        let missing = crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
+            &(root),
+            &missing_application,
+        )
+        .expect_err("an unavailable instantiated requirement must reject the candidate");
         assert!(missing.message().contains("required exact fact"));
         assert!(root.state.shares_state_with(&retained_root.state));
         assert!(root.certificate().steps().is_empty());
         let before_query = fact_node_allocations();
-        let step = root
-            .select_pure_theorem_application_step(&application)
-            .expect("smart pure search should select the indexed source requirement");
+        let step = crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
+            &(root),
+            &application,
+        )
+        .expect("smart pure search should select the indexed source requirement");
         let query_allocations = fact_node_allocations() - before_query;
         assert_eq!(
             query_allocations,
@@ -10035,9 +10128,12 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
             .expect("the meaningful assignment should advance the execution Proof");
         if size == 16 {
             let retained = progressed.clone();
-            let rejected = progressed
-                .try_execution_fact_transport(&source, &missing)
-                .expect("a bounded rejected transport search should remain prompt");
+            let rejected = crate::kernel::search::ProofSearch::try_execution_fact_transport(
+                &(progressed),
+                &source,
+                &missing,
+            )
+            .expect("a bounded rejected transport search should remain prompt");
             assert!(
                 rejected.is_none(),
                 "an unrelated target must not be manufactured by transport search"
@@ -10050,10 +10146,13 @@ fn execution_transport_search_returns_checked_successors_and_scales() {
         }
 
         let before = fact_node_allocations();
-        let transported = progressed
-            .try_execution_fact_transport(&source, &source)
-            .expect("the bounded source candidate search should run")
-            .expect("the source candidate should produce one checked transport descendant");
+        let transported = crate::kernel::search::ProofSearch::try_execution_fact_transport(
+            &(progressed),
+            &source,
+            &source,
+        )
+        .expect("the bounded source candidate search should run")
+        .expect("the source candidate should produce one checked transport descendant");
         samples.push((
             size,
             (u32::BITS - size.leading_zeros()) as usize,
@@ -10135,8 +10234,7 @@ fn statement_assignment_step_ignores_unrelated_proof_facts() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let stepped = root
-            .try_statement_step()
+        let stepped = crate::kernel::search::ProofSearch::try_statement_step(&(root))
             .expect("the assignment step should remain available")
             .expect("unrelated facts should not force mutable planning");
         let allocations = fact_node_allocations() - before;
@@ -10250,8 +10348,7 @@ fn contextual_store_step_scales_with_unrelated_named_facts() {
         );
         let retained_root = root.clone();
         let before = fact_node_allocations();
-        let stepped = root
-            .try_statement_step()
+        let stepped = crate::kernel::search::ProofSearch::try_statement_step(&(root))
             .expect("the contextual store step should remain available")
             .expect("the statement-local bounds and resource should prove the store");
         let allocations = fact_node_allocations() - before;
@@ -10336,8 +10433,7 @@ fn checked_statement_step_ignores_unrelated_proof_facts() {
         let retained_root = root.clone();
         // A bare step runs in the whole context: unrelated ambient facts
         // neither block it nor enter its certificate.
-        let stepped = root
-            .try_statement_step()
+        let stepped = crate::kernel::search::ProofSearch::try_statement_step(&(root))
             .expect("the bare statement step should remain available")
             .expect("unrelated ambient facts must not block the bare step");
         assert!(matches!(stepped.certificate().steps(), [ProofStep::Step]));
@@ -11697,10 +11793,12 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
         ));
         if size == 16 {
             assert!(
-                joined
-                    .try_theorem_application(&missing_application)
-                    .expect("missing theorem search should remain a bounded miss")
-                    .is_none(),
+                crate::kernel::search::ProofSearch::try_theorem_application(
+                    &(joined),
+                    &missing_application
+                )
+                .expect("missing theorem search should remain a bounded miss")
+                .is_none(),
                 "a missing theorem must not manufacture a descendant"
             );
             assert!(matches!(
@@ -11708,10 +11806,10 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
                 [ProofStep::Branch { .. }]
             ));
         }
-        let applied = joined
-            .try_theorem_application(&application)
-            .expect("common theorem search should run")
-            .expect("the reflexive theorem should produce a checked descendant");
+        let applied =
+            crate::kernel::search::ProofSearch::try_theorem_application(&(joined), &application)
+                .expect("common theorem search should run")
+                .expect("the reflexive theorem should produce a checked descendant");
         assert!(matches!(
             applied.certificate().steps(),
             [
@@ -12883,12 +12981,13 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
             .expect("the selecting fact should make exactly one arm feasible");
         assert_eq!(record.sole_feasible_arm(), Some(true));
         assert!(record.arm_id(false).is_none());
-        let advanced = split
-            .focus_split_arm(&record, true)
-            .expect("the sole sibling is open")
-            .try_statement_step()
-            .expect("smart selection should remain bounded")
-            .expect("the assignment should produce a checked simple successor");
+        let advanced = crate::kernel::search::ProofSearch::try_statement_step(
+            &(split
+                .focus_split_arm(&record, true)
+                .expect("the sole sibling is open")),
+        )
+        .expect("smart selection should remain bounded")
+        .expect("the assignment should produce a checked simple successor");
         let before = fact_node_allocations();
         let decided = advanced
             .finish_focused_execution_decided(&record)
@@ -12924,8 +13023,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
                 .all(|fact| !(0..size).any(|index| *fact == indexed_fact(index))),
             "the decided node delta must not copy unrelated ambient facts"
         );
-        let completed = decided
-            .try_statement_step()
+        let completed = crate::kernel::search::ProofSearch::try_statement_step(&(decided))
             .expect("contextual return selection should remain bounded")
             .expect("the continuation return should check with retained branch facts");
         assert!(
@@ -12950,12 +13048,13 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
         .split_focused_execution_branch()
         .expect("the rejecting fact should retain only the else arm");
     assert_eq!(record.sole_feasible_arm(), Some(false));
-    let advanced = split
-        .focus_split_arm(&record, false)
-        .expect("the sole else sibling is open")
-        .try_statement_step()
-        .expect("else-arm smart selection should remain bounded")
-        .expect("the else assignment should produce a checked successor");
+    let advanced = crate::kernel::search::ProofSearch::try_statement_step(
+        &(split
+            .focus_split_arm(&record, false)
+            .expect("the sole else sibling is open")),
+    )
+    .expect("else-arm smart selection should remain bounded")
+    .expect("the else assignment should produce a checked successor");
     let decided = advanced
         .finish_focused_execution_decided(&record)
         .expect("the sole else arm should form a decided path");
@@ -12989,8 +13088,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
         .expect("the selecting fact should split to the sole then sibling");
     assert!(record.arm_branches[0].is_some() && record.arm_branches[1].is_none());
     assert_eq!(split_proof.branches().count(), 1);
-    let advanced = split_proof
-        .try_statement_step()
+    let advanced = crate::kernel::search::ProofSearch::try_statement_step(&(split_proof))
         .expect("sole-sibling selection should remain bounded")
         .expect("the assignment should produce a checked simple successor");
     let decided = advanced
@@ -13018,8 +13116,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
             .len(),
         0
     );
-    let completed = decided
-        .try_statement_step()
+    let completed = crate::kernel::search::ProofSearch::try_statement_step(&(decided))
         .expect("contextual return selection should remain bounded")
         .expect("the continuation return should check with retained branch facts");
     assert!(
@@ -13039,8 +13136,7 @@ fn decided_execution_branch_retains_one_checked_path_without_copying_context() {
     let (split_proof, record) = root
         .split_focused_execution_branch()
         .expect("the selecting fact should split to the sole then sibling");
-    let advanced = split_proof
-        .try_statement_step()
+    let advanced = crate::kernel::search::ProofSearch::try_statement_step(&(split_proof))
         .expect("sole-sibling selection should remain bounded")
         .expect("the assignment should produce a checked simple successor");
     let decided = advanced

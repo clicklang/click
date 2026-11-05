@@ -1,11 +1,8 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm, cast_term};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 // --- the canonicalization model's production invariants -------------------
 // See docs/internals/canonicalization.md.
@@ -543,8 +540,14 @@ fn canonical_term_is_independent_of_contextual_equalities() {
             true,
         )
     };
-    assert!(equal_to_one.derive_proposition(&equals(1)).is_some());
-    assert!(equal_to_two.derive_proposition(&equals(2)).is_some());
+    assert!(
+        crate::kernel::search::ProofSearch::derive_proposition(&(equal_to_one), &equals(1))
+            .is_some()
+    );
+    assert!(
+        crate::kernel::search::ProofSearch::derive_proposition(&(equal_to_two), &equals(2))
+            .is_some()
+    );
     assert_eq!(crate::kernel::eval::canonical_term(&term), canonical);
     assert_eq!(canonical, term);
 }
@@ -690,15 +693,18 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
         crate::kernel::eval::canonical_term(&left),
         crate::kernel::eval::canonical_term(&right),
     );
-    assert!(PureFactContext::new().proves(&Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::Equal,
-            left: Box::new(left),
-            right: Box::new(right)
-        },
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left),
+                right: Box::new(right)
+            },
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -843,9 +849,9 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         ConditionTerm::equal(indexed_load_variable.clone(), first_load_variable.clone()),
         true,
     );
-    let derivation = with_index_fact
-        .derive_proposition(&goal)
-        .expect("the explicit load-address congruence should derive the equality");
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_proposition(&(with_index_fact), &goal)
+            .expect("the explicit load-address congruence should derive the equality");
     assert!(derivation.load_address_congruence_paths().is_some());
     assert!(derivation.check(&with_index_fact));
     // A different constant index selects a different cell.
@@ -853,7 +859,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         ConditionTerm::equal(MachineTerm::Variable(Variable(7)), MachineTerm::constant(1)),
         true,
     );
-    assert!(other.derive_proposition(&goal).is_none());
+    assert!(crate::kernel::search::ProofSearch::derive_proposition(&(other), &goal).is_none());
 
     let other_epoch =
         crate::kernel::intern_c_memory(memory.as_ref().clone().with_call_memory_havoc(
@@ -882,9 +888,11 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         true,
     );
     assert!(
-        with_index_fact
-            .derive_proposition(&other_epoch_goal)
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_proposition(
+            &(with_index_fact),
+            &other_epoch_goal
+        )
+        .is_none()
     );
 
     let other_block_load = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
@@ -900,9 +908,11 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         true,
     );
     assert!(
-        with_index_fact
-            .derive_proposition(&other_block_goal)
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_proposition(
+            &(with_index_fact),
+            &other_block_goal
+        )
+        .is_none()
     );
 }
 

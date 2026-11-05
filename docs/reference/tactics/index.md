@@ -905,6 +905,12 @@ produced instances.
 The input map and output pattern are the only sources of bindings; nothing is
 searched or inferred. Expansion reprints both unchanged.
 
+A call publishes the callee's postconditions. It does not search memory history
+to turn symbolic reads in those postconditions into extra constant equalities.
+Establish the needed read equality in the proof; use a transport certificate
+when it crosses a memory effect. Already-available equalities remain usable by
+`assumption()` and explicit arithmetic or rewrite steps.
+
 **Checked examples:** [`c_call_binder_transport.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport.md), [`c_call_binder_transport_multiple_produces.md`](https://github.com/clicklang/click/blob/master/mdtests/c_call_binder_transport_multiple_produces.md), [`call_result_in_condition.md`](https://github.com/clicklang/click/blob/master/mdtests/call_result_in_condition.md), [`call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/call_step_binder_map_on_an_uncontracted_inline_helper_rejected.md)
 
 ### Named contracts with resource bindings

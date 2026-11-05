@@ -435,7 +435,11 @@ such applications exposes equality only at the same field position
 Pattern arms must name every variant exactly once, use the declared field
 arity, and keep field bindings local to the arm. Generic arguments and fields
 may be modeled C types or other fully applied algebraic types; nested generic
-applications such as `Holder<Maybe<int32>>` are supported. Nested fields stay
+applications such as `Holder<Maybe<int32>>` are supported. A field may be a
+pointer to a type parameter, `Span(T*, uint64)`: at an instance it is the
+element's pointer type, `uint8*` for `Span<uint8>`, and in a generic
+declaration it stays `T*`
+([`a_spec_enum_field_points_to_its_type_parameter.md`](https://github.com/clicklang/click/blob/master/mdtests/a_spec_enum_field_points_to_its_type_parameter.md)). Nested fields stay
 as typed algebraic terms when bound by a symbolic match.
 
 <!-- verified-example: mdtests/algebraic_nested_fields.md -->

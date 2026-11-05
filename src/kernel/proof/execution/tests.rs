@@ -58,15 +58,12 @@ fn balanced_unit_sum_domain_requires_all_three_original_domains() {
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-// The proposition search is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. Only these tests reach
-// it from inside the kernel.
+// These operation tests also exercise kernel proposition search explicitly.
 use crate::kernel::{
     CComparisonOperator, CCompositeResourceDefinition, CMemory, CResourceAccessMode, CResourceFact,
     CResourceSpec, CType, CValue, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
     SpecExpression, c_function, int32,
 };
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// One arm state holding a checked view rooted in a fresh loan.
 fn arm_holding_a_view(name: &str) -> (CState, crate::kernel::loans::LoanViewBinding) {
@@ -1917,7 +1914,10 @@ fn checked_composite_events_reject_forged_resources_facts_memory_and_definitions
     );
     let premise = facts.with_fact(strong);
     let derivable_delta = premise.with_fact(weak.clone());
-    assert!(premise.assumptions().proves(&weak));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(premise.assumptions()),
+        &weak
+    ));
     assert!(!premise.assumptions().proves_exact(&weak));
     assert!(
         CheckedResourceObservation::check(
@@ -2364,7 +2364,7 @@ fn checked_event_premises_require_exact_facts_or_ground_comparisons() {
     ));
     let derived = empty.with_fact(stronger);
     assert!(
-        derived.assumptions().proves(&required),
+        crate::kernel::search::ProofSearch::proves(&(derived.assumptions()), &required),
         "the retired fallback would find this proof"
     );
     assert!(!checked_evidence_premises_hold(
@@ -2785,7 +2785,7 @@ fn interface_assertion_requires_an_available_proof_not_derivability() {
         true,
     ));
     assert!(
-        facts.assumptions().proves(&goal),
+        crate::kernel::search::ProofSearch::proves(&(facts.assumptions()), &goal),
         "the removed contextual checker could derive this consequence"
     );
     assert!(

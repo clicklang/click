@@ -61,3 +61,23 @@ fn integer_fold_alpha_key_visits_shared_bodies_once_per_scope() {
         assert!(pair[1] <= pair[0] * 3, "{work:?}");
     }
 }
+
+#[test]
+fn shared_fold_endpoint_alpha_keys_visit_each_dag_node_once() {
+    use crate::kernel::{KernelTermExport, VerificationSession};
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let variable = Variable(997100);
+        let fold = shared_endpoint_fold(variable, MachineIntegerType::UInt64, depth);
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            alpha_integer_key(&fold, &mut BTreeMap::from([(variable, 0)])).unwrap()
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "{samples:?}");
+    }
+}

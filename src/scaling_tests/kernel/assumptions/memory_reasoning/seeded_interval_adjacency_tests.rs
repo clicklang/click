@@ -39,7 +39,11 @@ fn materialized_run_adjacency_preserves_holes_and_scales() {
                     bytes: MachineTerm::constant(size + 1),
                     wide: false,
                 };
-                let derivation = context.derive_atomic_proposition(&goal).unwrap();
+                let derivation = crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                    &(context),
+                    &goal,
+                )
+                .unwrap();
                 assert!(derivation.check(&context));
                 assert!(derivation.context_premises().is_empty());
             }

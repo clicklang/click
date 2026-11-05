@@ -944,6 +944,10 @@ pub struct AlgebraicVariantDefinition {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AlgebraicFieldType {
     Parameter(String),
+    /// A pointer to the type parameter's values, `T*`: at an instance, the
+    /// pointer type of `T`'s C representation, as a generic function's `T*`
+    /// parameter is. A slice's data is one.
+    ParameterPointer(String),
     Integer,
     /// A C value type. `struct_name` is the pointee's struct tag when the
     /// field is declared `struct tag*`; every C pointer shares one kernel
@@ -984,6 +988,7 @@ impl AlgebraicFieldType {
     pub fn describe(&self) -> String {
         match self {
             Self::Parameter(name) => name.clone(),
+            Self::ParameterPointer(name) => format!("{name}*"),
             Self::Integer => "Integer".to_string(),
             Self::C {
                 struct_name: Some(name),

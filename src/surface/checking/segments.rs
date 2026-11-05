@@ -1,6 +1,5 @@
 use super::*;
 use crate::kernel::binary_term;
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Checks that a returning path wrote no caller-visible memory.
 ///
@@ -246,13 +245,16 @@ pub(in crate::surface) fn segment_contains_pointer(
     ) else {
         return false;
     };
-    assumptions.proves(&Proposition::ConditionIs(
-        signed_less_equal(segment.start.clone(), index.clone()),
-        true,
-    )) && assumptions.proves(&Proposition::ConditionIs(
-        signed_less_than(index, segment.end.clone()),
-        true,
-    ))
+    crate::kernel::search::ProofSearch::proves(
+        assumptions,
+        &Proposition::ConditionIs(
+            signed_less_equal(segment.start.clone(), index.clone()),
+            true,
+        ),
+    ) && crate::kernel::search::ProofSearch::proves(
+        assumptions,
+        &Proposition::ConditionIs(signed_less_than(index, segment.end.clone()), true),
+    )
 }
 #[cfg(test)]
 pub(in crate::surface) fn pointer_element_index_from_base(

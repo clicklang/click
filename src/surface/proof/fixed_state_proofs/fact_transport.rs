@@ -5,7 +5,6 @@ use crate::kernel::OverflowOperation;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::proof_diagnostics::render;
 
 /// The premises a bare `transport` writes: its source, when that is an
@@ -46,10 +45,14 @@ pub(in crate::surface::proof) fn plan_explicit_fact_transport(
             .fold(explicit_assumptions, |assumptions, fact| {
                 assumptions.assume_proposition(fact)
             });
-        if selected_assumptions.derive_proposition(source).is_none() {
+        if crate::kernel::search::ProofSearch::derive_proposition(&(selected_assumptions), source)
+            .is_none()
+        {
             return false;
         }
-        if selected_assumptions.derive_proposition(target).is_some() {
+        if crate::kernel::search::ProofSearch::derive_proposition(&(selected_assumptions), target)
+            .is_some()
+        {
             return true;
         }
         let transport_assumptions = effect_facts
@@ -433,9 +436,11 @@ fn check_fixed_state_fact_transport_using_facts_inner(
             &selected_assumptions,
             effect_facts,
         )
-        && selected_assumptions
-            .derive_atomic_proposition(&source)
-            .is_none()
+        && crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(selected_assumptions),
+            &source,
+        )
+        .is_none()
     {
         // Mid-execution, an available source that `using` does not list is
         // refused only for not being listed. Say so, naming it as written,
@@ -1330,7 +1335,8 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
         target,
         Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. }
     ) {
-        return assumptions.derive_atomic_proposition(target).is_some();
+        return crate::kernel::search::ProofSearch::derive_atomic_proposition(assumptions, target)
+            .is_some();
     }
     // A reflexive source adds no information. Match the target directly in
     // this context rather than comparing both copies of the source's load

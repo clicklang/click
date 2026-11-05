@@ -161,6 +161,25 @@ void pool_pipeline(struct pool* pool, struct object* first, struct object* secon
     have first->value == 11;
     have second->value == 22;
     unfold(pool_control(pool));
+    have count(pool_object(pool, _)) == 0 by {
+        rewrite(old(count(pool_object(pool, _))) == 0);
+        normalize();
+    }
+    have count(pool_slot(pool)) == 2 by {
+        rewrite(old(count(pool_slot(pool))) == 0);
+        normalize();
+    }
+    have pool->checked_out == 0 by {
+        rewrite(pool->checked_out == count(pool_object(pool, _)));
+        rewrite(count(pool_object(pool, _)) == 0);
+        normalize();
+    }
+    have pool->capacity == 2 by {
+        rewrite(pool->capacity == pool->checked_out + count(pool_slot(pool)));
+        rewrite(pool->checked_out == 0);
+        rewrite(count(pool_slot(pool)) == 2);
+        normalize();
+    }
     fold(pool_control(pool));
     step();
     have first->value == 11;

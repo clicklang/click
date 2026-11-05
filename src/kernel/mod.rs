@@ -268,16 +268,15 @@ mod prelude {
     pub(super) use std::collections::{BTreeMap, BTreeSet};
 }
 
-/// The kernel vocabulary the Surface proposition planner is built from.
+/// The kernel vocabulary exposed to proposition discovery.
 ///
-/// The planner in `src/surface/planning/proposition_search.rs` used to be a
-/// kernel module, so it names kernel types directly. This is the complete,
-/// deliberately enumerated list of what it may reach: the proposition and
+/// The planner in `src/kernel/search/proposition_search.rs` uses this
+/// deliberately enumerated vocabulary: the proposition and
 /// term vocabulary, the derivation records it produces, the checked context
 /// operations it advances state through, and the exact queries and frozen
 /// atomic checkers it calls at its leaves. Nothing here issues authority --
 /// a `PropositionDerivation` is inert until `check` validates it -- and
-/// nothing under `src/kernel/` imports this module.
+/// explicit proof operations do not use it to enter proposition search.
 pub(crate) mod planning_api {
     /// Atomic answers depend on these scoped memory-reasoning modes as well
     /// as on the selected fact context.
@@ -371,7 +370,10 @@ impl VerificationSession {
             // Structural operand identities read no registry or proof state;
             // retain them across function epochs and state restores.
             proof::signed_arithmetic::clear_shared_operand_keys();
+            proof::clear_selected_atom_cache();
+            proof::clear_rewritten_load_syntax_cache();
             primitives::clear_shared_machine_variable_cache();
+            reasoning::order_reasoning::clear_fold_affine_bases();
             VERIFICATION_SESSION_GENERATION
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 
@@ -506,3 +508,6 @@ mod execution_facts;
 #[cfg(test)]
 pub(crate) use execution_facts::indexed_execution_facts;
 pub use execution_facts::{ExecutionFactSource, ExecutionFacts, ExecutionFactsIter};
+
+// Search has no authority to construct proof successors.
+pub(crate) mod search;

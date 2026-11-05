@@ -2836,7 +2836,12 @@ pub(in crate::kernel) fn typed_ranges_disjoint_from_pointer_evidence(
 ) -> Option<Vec<RangeDisjointFromPointerEvidence>> {
     ranges
         .iter()
-        .map(|range| typed_range_disjoint_from_pointer_evidence(range, pointer, bytes, assumptions))
+        .map(|range| {
+            // Even an immediate distinct-block hit visits one write range.
+            // Charge lazily so a refusal pays only for the visited prefix.
+            crate::instrumentation::record_deterministic_work(1);
+            typed_range_disjoint_from_pointer_evidence(range, pointer, bytes, assumptions)
+        })
         .collect()
 }
 
@@ -7011,7 +7016,7 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
 #[test]
 fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
     // Surface planning; only this test reaches it from inside the kernel.
-    use crate::surface::planning::proposition_search::PropositionSearch;
+
     let left = PointerOffsetTerm::Variable(Variable(911));
     let right = PointerOffsetTerm::Variable(Variable(912));
     let facts = PureFactContext::new().assume_condition(ConditionTerm::Constant(false), true);
@@ -7020,7 +7025,7 @@ fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
         true,
     );
     assert!(
-        facts.proves(&goal),
+        crate::kernel::search::ProofSearch::proves(&(facts), &goal),
         "the old general fallback could close this query"
     );
     assert!(!c_pointer_offsets_proven_equal_for_effect(
@@ -8483,4 +8488,10 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
         };
         assert!(crate::kernel::condition_variable_widths(condition).is_ok());
     }
+}
+
+#[cfg(test)]
+mod range_scan_accounting_tests {
+    use super::*;
+    include!("../scaling_tests/kernel/memory_provenance/range_scan_accounting_tests.rs");
 }
