@@ -446,6 +446,16 @@ native reconstruction boundary and must be migrated before part 1 is complete.
 | Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
 | Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
 
+Signed-certificate atom identities now use retained KernelTerm keys rather than
+flat token vectors. Native input parsing and shared operand views produce the
+same keys, preserving casts, low-word observations, operator widths and opaque
+atom classification. The mathematical-result adapter retains shared operands
+through checking-only cast canonicalization; narrow observations keep their
+explicit widening and unsigned 32-bit observations remain outside the signed
+fragment. Integer conversion payloads remain refused by this certificate grammar,
+as on the native path. Shared prefixes and map-key operations reuse syntax;
+no lowered value or proof authority comes from these keys.
+
 The intrinsic format-range check now reads the outer cast through an operand
 view. Its bound decisions retain true, false and unknown answers without
 exporting the observed arithmetic, including growing prefixes and narrow

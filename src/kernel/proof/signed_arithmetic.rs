@@ -19,6 +19,7 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use std::collections::{BTreeMap, HashMap};
 
+mod atom_keys;
 mod shared_operands;
 pub(crate) use shared_operands::clear_shared_operand_keys;
 
@@ -71,68 +72,66 @@ enum SignedArithmeticAtomToken {
     },
 }
 
-/// Flat, iterative identity for the supported signed-machine term fragment.
-/// Claim maps and checked arena atoms use this key rather than deriving
-/// equality/ordering over the recursive source term. New payload families must
-/// add tokens here or remain rejected by `signed_arithmetic_atom_key`.
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+/// Structural identity for the supported signed-machine term fragment.
+/// The common term interner retains arithmetic sharing; claim maps compare
+/// handles rather than repeatedly hashing expanded token sequences.
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub(crate) struct SignedArithmeticAtom {
-    tokens: Vec<SignedArithmeticAtomToken>,
+    key: crate::kernel::KernelTerm,
+    opaque_root: bool,
+    opaque_parts: bool,
+    small_word_literal: bool,
+}
+
+impl Ord for SignedArithmeticAtom {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        (
+            self.key.id(),
+            self.opaque_root,
+            self.opaque_parts,
+            self.small_word_literal,
+        )
+            .cmp(&(
+                other.key.id(),
+                other.opaque_root,
+                other.opaque_parts,
+                other.small_word_literal,
+            ))
+    }
+}
+impl PartialOrd for SignedArithmeticAtom {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl SignedArithmeticAtom {
-    /// Build the bounded identity used by claims and checked term arenas.
-    /// Unsupported payload families fail closed until their own flat token
-    /// encoding is added here.
     pub(crate) fn from_term(term: &MachineTerm) -> Option<Self> {
         signed_arithmetic_atom_key(term)
     }
 
-    pub(crate) fn work(&self) -> usize {
-        signed_atom_work(self)
+    fn from_operand(value: crate::kernel::MachineOperandView<'_>) -> Option<Self> {
+        match value {
+            crate::kernel::MachineOperandView::Legacy(value) => Self::from_term(value),
+            crate::kernel::MachineOperandView::Shared(value) => atom_keys::from_shared(value),
+        }
     }
 
-    /// The variable this atom is, when it is exactly one variable.
+    pub(crate) fn work(&self) -> usize {
+        // Construction pays for the selected syntax. A retained map key has
+        // constant-size hashing, ordering and equality.
+        1
+    }
+
     pub(crate) fn as_variable(&self) -> Option<Variable> {
-        match self.tokens.as_slice() {
-            [SignedArithmeticAtomToken::Variable(variable)] => Some(*variable),
+        match self.key.node() {
+            crate::kernel::KernelTermNode::Variable(variable) => Some(*variable),
             _ => None,
         }
     }
 
     fn is_opaque_root(&self) -> bool {
-        // The `int32` widening of an 8- or 16-bit value is that value, as
-        // opaque as a variable; a narrowing is an operation, related to its
-        // operand only by `IntervalNarrowedCast`.
-        let widening = |token: &SignedArithmeticAtomToken| {
-            matches!(
-                token,
-                SignedArithmeticAtomToken::Cast {
-                    source,
-                    destination: MachineIntegerType::Int32,
-                } if source.format().bits() < 32
-            )
-        };
-        (matches!(
-            self.tokens.first(),
-            Some(SignedArithmeticAtomToken::Variable(_))
-                | Some(SignedArithmeticAtomToken::Narrow64Variable(_))
-                | Some(SignedArithmeticAtomToken::Narrow64Expression)
-                | Some(SignedArithmeticAtomToken::PureFunction { .. })
-        ) || self.tokens.first().is_some_and(widening))
-            && self.tokens.iter().all(|token| {
-                widening(token)
-                    || matches!(
-                        token,
-                        SignedArithmeticAtomToken::Constant(_)
-                            | SignedArithmeticAtomToken::Variable(_)
-                            | SignedArithmeticAtomToken::Narrow64Variable(_)
-                            | SignedArithmeticAtomToken::Narrow64Expression
-                            | SignedArithmeticAtomToken::NativeConstant(_)
-                            | SignedArithmeticAtomToken::NativeBinary(_)
-                            | SignedArithmeticAtomToken::PureFunction { .. }
-                    )
-            })
+        self.opaque_root
     }
 }
 
@@ -278,7 +277,7 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
             }
         }
     }
-    Some(SignedArithmeticAtom { tokens })
+    atom_keys::from_tokens(tokens)
 }
 
 /// A 32-bit operation of the supported signed fragment: an `int32`
@@ -1290,16 +1289,7 @@ impl SignedArithmeticCertificate {
                     let same_remainder =
                         match (&terms.terms[operand_term], &terms.terms[remainder_term]) {
                             (CheckedTerm::Atom(base), CheckedTerm::Atom(actual)) => {
-                                let mut expected = Vec::with_capacity(base.tokens.len() + 2);
-                                expected.push(SignedArithmeticAtomToken::Binary(
-                                    BitvectorBinaryOp::Machine(
-                                        crate::kernel::MachineIntegerType::Int32,
-                                        crate::kernel::MachineBinaryOp::Remainder,
-                                    ),
-                                ));
-                                expected.extend(base.tokens.iter().cloned());
-                                expected.push(SignedArithmeticAtomToken::Constant(*divisor as u32));
-                                let expected = SignedArithmeticAtom { tokens: expected };
+                                let expected = atom_keys::remainder(base, *divisor as u32);
                                 charge_atom_pair_work(&expected, actual) && expected == *actual
                             }
                             _ => terms.equivalent(expected_remainder, remainder_term),
@@ -1666,9 +1656,9 @@ fn charge_affine_map_update_work(
     !crate::instrumentation::deadline_exceeded_with_work(units)
 }
 
-fn charge_atom_pair_work(left: &SignedArithmeticAtom, right: &SignedArithmeticAtom) -> bool {
-    let units = left.work().saturating_add(right.work()).saturating_add(1);
-    !crate::instrumentation::deadline_exceeded_with_work(units)
+fn charge_atom_pair_work(_left: &SignedArithmeticAtom, _right: &SignedArithmeticAtom) -> bool {
+    // Atom construction paid for syntax; comparing retained keys reads IDs.
+    !crate::instrumentation::deadline_exceeded_with_work(1)
 }
 
 fn charge_bigint_binary_work(left: &BigInt, right: &BigInt) -> bool {
@@ -1765,27 +1755,7 @@ fn charge_scale_work(claim: &SignedArithmeticClaim, coefficient: &BigInt) -> boo
 }
 
 fn signed_atom_work(atom: &SignedArithmeticAtom) -> usize {
-    atom.tokens.iter().fold(0usize, |units, token| {
-        let token_units = match token {
-            SignedArithmeticAtomToken::Constant(value) => {
-                (u32::BITS - value.leading_zeros()) as usize + 1
-            }
-            SignedArithmeticAtomToken::Variable(_)
-            | SignedArithmeticAtomToken::Narrow64Variable(_) => 1,
-            SignedArithmeticAtomToken::PureFunction { name, arity } => {
-                name.len().saturating_add(*arity).saturating_add(1)
-            }
-            SignedArithmeticAtomToken::NativeConstant(value) => {
-                (u64::BITS - value.leading_zeros()) as usize + 1
-            }
-            SignedArithmeticAtomToken::Narrow64Expression
-            | SignedArithmeticAtomToken::NativeBinary(_)
-            | SignedArithmeticAtomToken::Binary(_)
-            | SignedArithmeticAtomToken::UnaryNot
-            | SignedArithmeticAtomToken::Cast { .. } => 1,
-        };
-        units.saturating_add(token_units)
-    })
+    atom.work()
 }
 
 #[cfg(test)]
@@ -2780,58 +2750,13 @@ fn signed_operand_matches(
     operand: crate::kernel::MachineOperandView<'_>,
     written: &MachineTerm,
 ) -> bool {
-    use crate::kernel::{KernelTermNode, MachineOperandView, MachineUnaryOp};
-    let root = match operand {
-        MachineOperandView::Shared(root) => root,
-        MachineOperandView::Legacy(value) => return signed_arithmetic_terms_equal(value, written),
-    };
-    let mut pending = vec![(root, written)];
-    while let Some((shared, written)) = pending.pop() {
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return false;
-        }
-        match (shared.node(), written) {
-            (KernelTermNode::Variable(a), MachineTerm::Variable(b)) if a == b => {}
-            (KernelTermNode::MachineLiteral(_), bits32_constant!(b)) => {
-                if MachineOperandView::Shared(shared)
-                    .literal()
-                    .and_then(|v| v.as_const())
-                    != Some(constant_u32(*b))
-                {
-                    return false;
-                }
-            }
-            (
-                KernelTermNode::MachineUnary {
-                    format: MachineIntegerType::Int32,
-                    operator: MachineUnaryOp::BitwiseNot,
-                    operand,
-                },
-                unary_term!(Int32, BitwiseNot, written),
-            ) => pending.push((operand, written)),
-            (
-                KernelTermNode::MachineBinary {
-                    format,
-                    operator,
-                    arguments,
-                },
-                written,
-            ) => {
-                let Some((BitvectorBinaryOp::Machine(written_format, written_operator), a, b)) =
-                    signed_binary(written)
-                else {
-                    return false;
-                };
-                if *format != written_format || *operator != written_operator {
-                    return false;
-                }
-                pending.push((&arguments[1], b));
-                pending.push((&arguments[0], a));
-            }
-            _ => return false,
-        }
+    match (
+        SignedArithmeticAtom::from_operand(operand),
+        SignedArithmeticAtom::from_term(written),
+    ) {
+        (Some(left), Some(right)) => charge_atom_pair_work(&left, &right) && left == right,
+        _ => false,
     }
-    true
 }
 
 fn signed_arithmetic_terms_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
@@ -3061,8 +2986,7 @@ fn term_interval_proves(
     if !terms.equivalent(operand, right_term) {
         return false;
     }
-    matches!(terms.terms.get(shift), Some(CheckedTerm::Atom(SignedArithmeticAtom { tokens }))
-        if tokens.iter().any(|token| matches!(token, SignedArithmeticAtomToken::Constant(value) if *value <= 31)))
+    matches!(terms.terms.get(shift), Some(CheckedTerm::Atom(atom)) if atom.small_word_literal)
 }
 
 fn affine_claim(proposition: &Proposition) -> Option<SignedArithmeticClaim> {
@@ -3233,18 +3157,22 @@ pub(crate) fn signed_arithmetic_integer_result(
         };
         // An 8- or 16-bit observation reads the value its `int32` widening
         // keeps, so its atom is that widening's.
-        let term = match machine.ty() {
-            MachineIntegerType::Int32 => canonical_term_budgeted(machine.value())?,
-            narrow if narrow.format().bits() < 32 => {
-                canonical_term_budgeted(&MachineTerm::machine_integer_cast(
-                    narrow,
-                    MachineIntegerType::Int32,
-                    machine.value().clone(),
-                ))?
-            }
-            _ => return None,
+        let atom = if let Some(root) = machine.shared_operand() {
+            atom_keys::from_observation(root, machine.ty())?
+        } else {
+            let term = match machine.ty() {
+                MachineIntegerType::Int32 => canonical_term_budgeted(machine.value())?,
+                narrow if narrow.format().bits() < 32 => {
+                    canonical_term_budgeted(&MachineTerm::machine_integer_cast(
+                        narrow,
+                        MachineIntegerType::Int32,
+                        machine.value().clone(),
+                    ))?
+                }
+                _ => return None,
+            };
+            SignedArithmeticAtom::from_term(&term)?
         };
-        let atom = SignedArithmeticAtom::from_term(&term)?;
         if !charge_affine_map_update_work(&terms, &atom, &coefficient) {
             return None;
         }

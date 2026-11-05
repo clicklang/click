@@ -1,108 +1,21 @@
-//! Structural signed-certificate identities over shared machine operands.
-//! Normalize only the signed atom fragment's literal tags and observation
-//! types. The keys are checking metadata, never replacements for stored terms.
+//! Shared/native certificate operands use the same retained structural key.
 use super::*;
-use crate::kernel::{
-    KernelTerm, KernelTermImport, KernelTermNode, KernelType, MachineOperandView, MachineUnaryOp,
-};
-use crate::kernel::{bits32_constant, constant_u32};
-
-thread_local! {
-    static KEYS: std::cell::RefCell<HashMap<u64, Option<KernelTerm>>> = Default::default();
-}
+use crate::kernel::MachineOperandView;
+#[cfg(test)]
+use crate::kernel::{KernelTerm, KernelType};
 
 pub(crate) fn clear_shared_operand_keys() {
-    KEYS.with(|keys| keys.borrow_mut().clear());
+    atom_keys::clear();
 }
 
 pub(super) fn operands_equal(left: MachineOperandView<'_>, right: MachineOperandView<'_>) -> bool {
-    match (left, right) {
-        (MachineOperandView::Legacy(left), right) => signed_operand_matches(right, left),
-        (left, MachineOperandView::Legacy(right)) => signed_operand_matches(left, right),
-        (MachineOperandView::Shared(left), MachineOperandView::Shared(right)) => {
-            KEYS.with(|keys| {
-                let mut keys = keys.borrow_mut();
-                match (shared_key(left, &mut keys), shared_key(right, &mut keys)) {
-                    (Some(left), Some(right)) => left == right,
-                    _ => false,
-                }
-            })
-        }
+    match (
+        SignedArithmeticAtom::from_operand(left),
+        SignedArithmeticAtom::from_operand(right),
+    ) {
+        (Some(left), Some(right)) => charge_atom_pair_work(&left, &right) && left == right,
+        _ => false,
     }
-}
-
-fn shared_key(
-    root: &KernelTerm,
-    keys: &mut HashMap<u64, Option<KernelTerm>>,
-) -> Option<KernelTerm> {
-    let mut pending = vec![(root, false)];
-    while let Some((term, finish)) = pending.pop() {
-        if crate::instrumentation::deadline_exceeded_with_work(1) {
-            return None;
-        }
-        if keys.contains_key(&term.id()) {
-            continue;
-        }
-        let normalized = match term.node() {
-            KernelTermNode::Variable(variable) => Some(KernelTerm::variable(
-                KernelType::C(crate::kernel::CType::Int32),
-                *variable,
-            )),
-            KernelTermNode::MachineLiteral(_) => MachineOperandView::Shared(term)
-                .literal()
-                .and_then(|literal| match literal {
-                    bits32_constant!(bits) => Some(KernelTermImport::default().machine(
-                        MachineIntegerType::Int32,
-                        &MachineTerm::constant(constant_u32(bits)),
-                    )),
-                    _ => None,
-                }),
-            KernelTermNode::MachineUnary {
-                format: MachineIntegerType::Int32,
-                operator: MachineUnaryOp::BitwiseNot,
-                operand,
-            } => {
-                if !finish {
-                    pending.push((term, true));
-                    pending.push((operand, false));
-                    continue;
-                }
-                keys[&operand.id()].as_ref().map(|operand| {
-                    KernelTerm::machine_unary_shared(
-                        MachineIntegerType::Int32,
-                        MachineUnaryOp::BitwiseNot,
-                        operand.clone(),
-                    )
-                })
-            }
-            KernelTermNode::MachineBinary {
-                format,
-                operator,
-                arguments,
-            } if *format == MachineIntegerType::Int32
-                || (*format == MachineIntegerType::UInt32
-                    && *operator == MachineBinaryOp::ShiftRight) =>
-            {
-                if !finish {
-                    pending.push((term, true));
-                    pending.push((&arguments[1], false));
-                    pending.push((&arguments[0], false));
-                    continue;
-                }
-                match (&keys[&arguments[0].id()], &keys[&arguments[1].id()]) {
-                    (Some(left), Some(right)) => Some(KernelTerm::machine_binary_shared(
-                        *format,
-                        *operator,
-                        [left.clone(), right.clone()],
-                    )),
-                    _ => None,
-                }
-            }
-            _ => None,
-        };
-        keys.insert(term.id(), normalized);
-    }
-    keys[&root.id()].clone()
 }
 
 #[cfg(test)]
@@ -126,7 +39,7 @@ mod tests {
             }
             let view = MachineOperandView::Shared(&term);
             assert!(operands_equal(view, view));
-            let count = KEYS.with(|keys| keys.borrow().len());
+            let count = atom_keys::cache_len();
             assert!(crate::kernel::VerificationSession::restore_state(&snapshot));
             crate::kernel::eval::begin_load_origin_epoch();
             let (same, work) =
@@ -136,9 +49,9 @@ mod tests {
                 work <= 4,
                 "a restored context rewalked structural operands: {work}"
             );
-            assert_eq!(KEYS.with(|keys| keys.borrow().len()), count);
+            assert_eq!(atom_keys::cache_len(), count);
         }
         let _session = crate::kernel::VerificationSession::enter();
-        assert!(KEYS.with(|keys| keys.borrow().is_empty()));
+        assert!(atom_keys::cache_len() == 0);
     }
 }
