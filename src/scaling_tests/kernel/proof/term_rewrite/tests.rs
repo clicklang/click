@@ -1427,3 +1427,58 @@ fn shared_carrier_collection_reuses_growing_prefixes_without_exporting() {
         assert!(lw * small * 4 <= sw * large * 5, "{samples:?}");
     }
 }
+
+#[test]
+fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
+    let mut work = Vec::new();
+    for size in [16usize, 64, 256] {
+        let _session = VerificationSession::enter();
+        let source = MachineTerm::Variable(Variable(989911));
+        let replacement = MachineTerm::Variable(Variable(989912));
+        let format = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), Variable(989911));
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+            .with_shared_operand(root)
+            .unwrap();
+        let fold = Term::Integer(IntegerTerm::range_fold(
+            IntegerRangeFoldIndex::Int32 {
+                start: endpoint.clone(),
+                end: endpoint,
+            },
+            IntegerTerm::constant_i64(0),
+            Variable(989913),
+            Variable(989914),
+            IntegerTerm::var(Variable(989913)),
+        ));
+        let exports = KernelTermExport::machine_export_count();
+        let (output, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
+            let output = rewrite.term(&fold);
+            assert!(rewrite.refusal().is_none());
+            let (Term::Integer(original), Term::Integer(rewritten)) = (&fold, &output) else {
+                panic!("Integer folds");
+            };
+            let mut graph = crate::kernel::equality_graph::EqualityGraph::default();
+            assert!(!graph.are_integer_equal(original, rewritten));
+            graph.add_int32_equality(&source, &replacement);
+            assert!(graph.are_integer_equal(original, rewritten));
+            output
+        });
+        assert!(matches!(
+            output,
+            Term::Integer(IntegerTerm::RangeFold { .. })
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work.push(measured);
+    }
+    for pair in work.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "shared endpoint work: {work:?}");
+    }
+}

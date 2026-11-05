@@ -66,9 +66,11 @@ explicit input and the state it produces. It doesn't scan.
   facts, the snapshots, or the resources, and then keeps only the entries it
   needs. This rule has no exceptions: a fast-part operation doesn't scan even
   the facts "related" to its input unless an index hands them over by key.
-  Following an index from entry to entry (a chain of order facts, say) is
-  allowed when each step reads only entries filed under the current key and
-  the walk reads each entry at most once.
+  Visiting each indexed entry once is not sufficient: a bucket, equality
+  class or chain can grow while the explicit operation stays fixed. A traversal
+  needs an explicit-input/state-delta bound, or an amortized argument across
+  the whole proof including cold queries and persistent branches. Discovery
+  without that bound belongs in expandable search.
 
 Writing `N` for the size of the selected C, Click, and proof text, `q` for the
 operation's input, and `d` for its output, one operation costs
@@ -87,9 +89,11 @@ The fact collections of a `PureFactContext` (`condition_facts`,
 for each element a full iteration visits (`src/kernel/fact_collections.rs`),
 so a scan shows up in scaling tests and tactic budgets wherever it is written.
 
-Operations in the fast part that scan today are listed, with the options for
-each, in
-the "Fast-part scans" section of [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+Remaining checking candidates and gaps in scaling evidence are organized by
+operation in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+That inventory distinguishes source candidates, scoped regression evidence and
+unaudited routes; it is not a claim that the whole verifier already meets the
+contract.
 
 ## Enforced search access
 

@@ -551,11 +551,15 @@ impl TermClasses {
             RememberInteger(crate::kernel::SharedIntegerTerm),
             Field(&'a crate::kernel::AlgebraicValue),
             Machine(&'a T, W),
+            RetainedMachine(&'a crate::kernel::SharedMachineIntegerTerm, W),
             OpaqueCount(&'a T),
             Argument(&'a A),
             Value(&'a CValue),
             Wrap(ArgumentTag),
             Call(u64, usize),
+            /// Exact observation followed by conversion back to its own type.
+            /// Keep both written application nodes and join their word value.
+            ObservationRoundTrip(crate::kernel::MachineIntegerType),
             Binary(Binary),
             Unary(Int32Unary, bool),
             /// A conversion into an 8- or 16-bit format, whose operand's
@@ -748,12 +752,24 @@ impl TermClasses {
                             pending.push(Work::Integer(initial));
                             match index {
                                 crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
-                                    pending.push(Work::Machine(end.value(), W::Bits32));
-                                    pending.push(Work::Machine(start.value(), W::Bits32));
+                                    pending.push(Work::RetainedMachine(
+                                        end.machine_operand(),
+                                        W::Bits32,
+                                    ));
+                                    pending.push(Work::RetainedMachine(
+                                        start.machine_operand(),
+                                        W::Bits32,
+                                    ));
                                 }
                                 crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
-                                    pending.push(Work::Machine(end.value(), W::Bits64));
-                                    pending.push(Work::Machine(start.value(), W::Bits64));
+                                    pending.push(Work::RetainedMachine(
+                                        end.machine_operand(),
+                                        W::Bits64,
+                                    ));
+                                    pending.push(Work::RetainedMachine(
+                                        start.machine_operand(),
+                                        W::Bits64,
+                                    ));
                                 }
                                 crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
                                     pending.push(Work::Integer(end));
@@ -854,6 +870,14 @@ impl TermClasses {
                             pending.push(Work::Wrap(ArgumentTag::Integer));
                             pending.push(Work::Integer(term));
                         }
+                    }
+                    continue;
+                }
+                Work::RetainedMachine(term, width) => {
+                    if let Some(root) = term.shared_operand() {
+                        values.push(self.intern_shared_machine(root, width));
+                    } else {
+                        pending.push(Work::Machine(term.value(), width));
                     }
                     continue;
                 }
@@ -1097,6 +1121,20 @@ impl TermClasses {
                     if let T::IntegerToMachine { value, destination } = term
                         && width == W::of_machine_type(*destination)
                     {
+                        if let crate::kernel::IntegerTerm::Machine(source) = value.as_ref()
+                            && source.ty() == *destination
+                        {
+                            // The observation is in this exact type's range by
+                            // construction. Other widths or signednesses need
+                            // their ordinary range evidence; do not erase them.
+                            pending.push(Work::ObservationRoundTrip(*destination));
+                            if let Some(root) = source.shared_operand() {
+                                values.push(self.intern_shared_machine(root, width));
+                            } else {
+                                pending.push(Work::Machine(source.value(), width));
+                            }
+                            continue;
+                        }
                         let head = self.intern_node(Node::IntegerToMachine(*destination));
                         pending.push(Work::Call(head, 1));
                         pending.push(Work::Integer(value));
@@ -1288,6 +1326,17 @@ impl TermClasses {
                     let value = values.pop().expect("argument value");
                     let tag = self.intern_node(Node::ArgumentTag(tag));
                     Node::Apply(tag, value)
+                }
+                Work::ObservationRoundTrip(format) => {
+                    let operand = values.pop().expect("observed machine operand");
+                    let observe =
+                        self.intern_node(Node::IntegerOperation(IntegerOperation::Observe(format)));
+                    let observed = self.intern_node(Node::Apply(observe, operand));
+                    let convert = self.intern_node(Node::IntegerToMachine(format));
+                    let converted = self.intern_node(Node::Apply(convert, observed));
+                    self.close(vec![(converted, operand)]);
+                    values.push(converted);
+                    continue;
                 }
                 Work::Call(mut head, count) => {
                     let constructor = self.constructor_heads.contains_key(&head);

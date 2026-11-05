@@ -87,6 +87,18 @@ impl<K: Ord, V> PersistentMap<K, V> {
         self.get(key).is_some()
     }
 
+    /// Greatest entry, found by the tree's right spine.
+    pub(crate) fn last(&self) -> Option<(&K, &V)> {
+        let mut node = self.root.as_deref()?;
+        loop {
+            record_persistent_work(1);
+            match node.right.as_deref() {
+                Some(right) => node = right,
+                None => return Some((node.key.as_ref(), node.value.as_ref())),
+            }
+        }
+    }
+
     /// Returns the greatest entry whose key is strictly less than `key`.
     pub(crate) fn get_less_than(&self, key: &K) -> Option<(&K, &V)> {
         let mut node = self.root.as_deref();
@@ -470,6 +482,10 @@ impl<T: Ord> PersistentSet<T> {
         T: Borrow<Q>,
     {
         self.map.get(value).is_some()
+    }
+
+    pub(crate) fn last(&self) -> Option<&T> {
+        self.map.last().map(|(key, ())| key)
     }
 
     /// Greatest member strictly below `value`, without enumerating the set.

@@ -330,6 +330,15 @@ impl SharedMachineIntegerTerm {
 }
 
 impl<'a> MachineOperandView<'a> {
+    /// The exact generic 8/16-to-32-bit widening recognized by the native
+    /// word reader. Inspect only this root; retain the operand's handle.
+    pub(crate) fn narrow_widening32_operand(self) -> Option<(MachineIntegerType, Self)> {
+        let (MachineCastSpelling::Generic, source, destination, operand) = self.cast()? else {
+            return None;
+        };
+        crate::kernel::is_narrow_widening32(source, destination).then_some((source, operand))
+    }
+
     /// Retain the written carrier at one fixed interpretation for indexed
     /// matching. This changes no node and reads no proof facts.
     pub(crate) fn retain(self, ty: MachineIntegerType) -> SharedMachineIntegerTerm {

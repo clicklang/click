@@ -15,18 +15,22 @@ resources, simple tactics, certificates) and the slow part (smart tactics and
 search helpers, bounded and expandable), and the rule that a fast-part
 operation does indexed lookups and never scans a growing collection. This
 page gives the formal contract and describes how the main operations meet it.
-Where an operation still scans, this page says so; every such scan is a known
-violation of the fast-part rule, listed with its options under "Fast-part
-scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
+The operation inventory in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)
+distinguishes tested routes, source candidates, deferred evidence and coverage
+gaps. The guarantees below apply to their named routes; they do not establish
+that every checking operation already satisfies the contract.
 
 ## Complexity contract
 
 Let `N` be the size of the selected C source, Click source, imported
 definitions, and explicit proof text. Let `q` be the relevant input inspected
-by one operation: a tactic's explicit operands and premises, the affected
-program operation or definition body, and the index entries that its keys
-select. Let `d` be the amount of new proof state or expanded proof text that
-the operation must produce.
+by one operation: a tactic's explicit operands and premises and the affected
+program operation or definition body. Index entries count toward this input
+only when their traversal is justified by those operands or necessary changes;
+a key selecting a large ambient bucket does not make that bucket explicit
+input. Let `d` be the amount of new proof state or expanded proof text that
+the operation must produce. Eager derived facts or internal cache rebuilding
+do not become necessary output merely because the implementation emits them.
 
 A fast-part operation, including every simple tactic, takes
 
@@ -326,6 +330,15 @@ ask whether a bucket is nonempty, without enumerating the loans it contains.
 as cached cells and unrelated symbolic loans grow together. The write barrier's
 symbolic-loan comparison is a separate remaining checking caller; cache
 retention evidence must not be used to grant write permission.
+
+Loan write barriers consult the maintained active-memory-loan count before
+pointer alias discovery. Empty ledgers, non-memory loans, and ended memory
+loans impose no loan restriction on a write; checking them must not visit the
+pointer's equality class. The
+`writes_without_active_memory_loans_do_not_walk_pointer_aliases` regression
+grows that class for constant and symbolic bounds, including repeated checks
+and the no-refusal diagnostic path. This shortcut does not replace ownership,
+bounds, or definedness checks.
 
 Concrete loan write barriers select one indexed conflict witness instead of
 collecting all overlapping loan IDs. Each dyadic bucket contributes only its

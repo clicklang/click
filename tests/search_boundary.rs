@@ -981,3 +981,26 @@ fn call_postconditions_cannot_restore_implicit_constant_recovery() {
         assert!(boundary::check_source("src/kernel/functions.rs", &source).is_err());
     }
 }
+
+#[test]
+fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
+    for method in [
+        "iter",
+        "values",
+        "keys",
+        "collect",
+        "any",
+        "all",
+        "fold",
+        "count",
+        "loans",
+        "scopes",
+        "unindexed_memory",
+        "active_memory_index",
+        "cache_memory_index",
+        "loan_protects_memory",
+    ] {
+        let source = format!("fn has_active_memory_loans(c: C) {{ c.{method}(); }}");
+        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+    }
+}

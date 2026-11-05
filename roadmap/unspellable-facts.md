@@ -360,6 +360,26 @@ Remaining groups to audit and migrate:
   and retain their original sources; signed carriers still require both a
   nonnegative lower bound and a small upper bound. This migrates the bound
   consumers, not the surrounding tagged-address form or wide equality dispatch.
+  A machine observation converted back to its exact original format now joins
+  the original word in the equality graph, retaining both written application
+  nodes. The rule handles retained shared operands and existing opaque values
+  without exporting surrounding arithmetic. Different widths or signednesses
+  still need their ordinary range evidence. This closes the missing inverse
+  identity inside larger arithmetic; it does not migrate opaque term storage.
+  The scoped term rewriter retains machine fold endpoints during carrier
+  collection and substitution, including capture-avoiding binder renaming.
+  Fold congruence also interns retained endpoints directly at the range's
+  machine width. Shared endpoint DAGs no longer export for these traversals.
+  The separate
+  exact-equality rewrite adapter still needs its own parity audit; its native
+  canonical-load and pointer-address matching rules must be preserved.
+  The carrier collectors also retain shared machine observations and fold
+  endpoints for Integer variables, binders and scope reservations. Conversion
+  payloads and registered loads use the original collector-specific callbacks.
+  Maximum-name queries read the syntax index's greatest member and selected
+  load names, rather than enumerating every variable of each growing prefix.
+  Mathematical variables inside a machine endpoint's conversion payload are
+  included even when the C item binder has the same numeric identity.
   Opaque leaves outside the shared operand fragment still require a
   parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
@@ -387,6 +407,29 @@ Remaining groups to audit and migrate:
    and unrelated facts. A fixed-context recursive cache alone is insufficient.
 5. `scripts/check.sh` passes, including expansion/rechecking and all ordinary
    scaling tests. No raised limits, weakened proofs or nightly run substitutes.
+
+**Compiler-guided accessor inventory (2026-11-05, `863cc08da` tree):** a
+throwaway build marked `SharedMachineIntegerTerm::value`,
+`SharedIntegerRangeEndpoint::value`, and the forwarding `MachineAtom::value`
+deprecated, then ran `cargo check --lib --features fast-gate
+--message-format=json`. It identified 107 distinct source-line sites: 58 machine
+observation, 40 fold endpoint, and 9 forwarded atom sites. These include guarded
+legacy reads and output adapters; classify each route against the completion
+criteria above. The temporary annotations are not part of the implementation.
+
+| Remaining audit group | Main consumers |
+| --- | --- |
+| Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
+| Fold checking and equality | empty/append/step rules in `api.rs`, fold guards in `spec.rs`, endpoint equality in `order_reasoning.rs`, exact equality rewriting |
+| Memory, dependency and identity walkers | memory-load collection in `assumptions.rs`, fold keys, all-variable and substitution collectors |
+| Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
+| Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
+| Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
+
+The intrinsic format-range check now reads the outer cast through an operand
+view. Its bound decisions retain true, false and unknown answers without
+exporting the observed arithmetic, including growing prefixes and narrow
+widenings.
 
 ### 2. Finish expression producers — after part 1
 

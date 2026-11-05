@@ -296,3 +296,97 @@ fn shared_wide_endpoint_queries_reuse_growing_prefixes() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn machine_observation_round_trips_retain_growing_shared_operands() {
+    use crate::kernel::{
+        IntegerTerm, KernelTerm, KernelTermExport, KernelType, SharedMachineIntegerTerm,
+    };
+    for nested in [false, true] {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = VerificationSession::enter();
+            let format = MachineIntegerType::UInt64;
+            let mut root = KernelTerm::variable(KernelType::C(CType::UInt64), Variable(989821));
+            let context = PureFactContext::new();
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for index in 0..size {
+                    let fresh = KernelTerm::variable(
+                        KernelType::C(CType::UInt64),
+                        Variable(989822 + index),
+                    );
+                    if !nested {
+                        root = KernelTerm::machine_binary_shared(
+                            format,
+                            MachineBinaryOp::Add,
+                            [root.clone(), fresh],
+                        );
+                    }
+                    let original = IntegerTerm::Machine(
+                        SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap(),
+                    );
+                    let observed: crate::kernel::SharedIntegerTerm = original.clone().into();
+                    let conversion = KernelTerm::integer_to_machine(
+                        format,
+                        crate::kernel::KernelTermImport::default().integer(&observed),
+                    )
+                    .unwrap();
+                    let converted = IntegerTerm::Machine(
+                        SharedMachineIntegerTerm::from_shared(format, conversion.clone()).unwrap(),
+                    );
+                    assert!(
+                        context
+                            .equality_graph
+                            .are_integer_equal(&converted, &original)
+                    );
+                    if nested {
+                        root = conversion;
+                    }
+                }
+            });
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            samples.push((size, work));
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1].1 <= pair[0].1 * 5, "{samples:?}");
+        }
+    }
+}
+
+#[test]
+fn machine_observation_round_trip_ignores_unrelated_equalities() {
+    use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [16_u64, 64, 256] {
+        let _session = VerificationSession::enter();
+        let mut graph = EqualityGraph::default();
+        for index in 0..size {
+            graph.add_uint64_equality(
+                &MachineTerm::Variable(Variable(980000 + index)),
+                &MachineTerm::Variable(Variable(981000 + index)),
+            );
+        }
+        let source = MachineTerm::PureFunctionApplication {
+            name: "opaque_round_trip_scaling".into(),
+            arguments: vec![MachineTerm::Variable(Variable(989831))],
+        };
+        let converted = MachineTerm::IntegerToMachine {
+            destination: MachineIntegerType::UInt64,
+            value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::UInt64,
+                source.clone(),
+            ))
+            .into(),
+        };
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(graph.are_uint64_equal(&converted, &source));
+            assert!(!graph.are_uint64_equal(&converted, &MachineTerm::Variable(Variable(989832))));
+        });
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}
