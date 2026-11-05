@@ -3,7 +3,7 @@
 use super::*;
 
 impl crate::kernel::search::ProofSearch<CFunction> {
-    pub(crate) fn call_frame(
+    pub(in crate::kernel) fn call_frame(
         residual: &ResourceContext,
         definitions: &[CCompositeResourceDefinition],
         state: &CState,

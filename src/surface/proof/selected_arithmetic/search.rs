@@ -969,7 +969,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Closes the goal from one fact `f(arguments) == value` along `plan`,
     /// as [`Self::try_definition_condition_closure`] describes.
-    pub(in crate::surface::proof) fn read_definition_condition(
+    pub(super) fn read_definition_condition(
         search_input: &Proof<'a>,
         plan: &DefinitionPlan,
         surface_goal: &ClickProposition,
@@ -1049,7 +1049,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// applications already followed to reach `body`. `None` when any of
     /// that fails or the tree has more than `DEFINITION_LEAVES` ends.
     #[allow(clippy::too_many_arguments)]
-    pub(in crate::surface::proof) fn definition_condition_plan(
+    pub(super) fn definition_condition_plan(
         search_input: &Proof<'a>,
         body: &ContractExpression,
         environment: &BTreeMap<String, ContractExpression>,
@@ -1182,7 +1182,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// Closes the focused branch, where the goal is false, along `plan`:
     /// each split is a proof `if`, and each end refutes the fact.
-    pub(in crate::surface::proof) fn refute_definition_ends(
+    pub(super) fn refute_definition_ends(
         search_input: &Proof<'a>,
         plan: &DefinitionPlan,
         refutation: &DefinitionRefutation,
@@ -1264,7 +1264,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// checked step. A goal already reached with at least as many rewrites
     /// left is not explored again, and the whole search tries at most
     /// `REWRITE_ATTEMPTS` rewrites.
-    pub(in crate::surface::proof) fn rewrite_search(
+    pub(super) fn rewrite_search(
         search_input: &Proof<'a>,
         candidates: &[Vec<(Proposition, ClickProposition)>],
         used: &mut Vec<bool>,
@@ -1336,7 +1336,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
-    pub(in crate::surface::proof) fn try_close_after_rewrite(
+    pub(super) fn try_close_after_rewrite(
         search_input: &Proof<'a>,
         budget: &mut RewriteBudget,
         closers: RewriteClosers<'_>,
@@ -1685,7 +1685,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// The `Integer` reading of each connected machine order fact, and the
     /// type range of each unsigned value they mention.
-    pub(in crate::surface::proof) fn carried_machine_facts(
+    pub(super) fn carried_machine_facts(
         search_input: &Proof<'a>,
         candidates: &[Proposition],
     ) -> Vec<Carried> {
