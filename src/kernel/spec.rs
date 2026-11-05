@@ -2561,16 +2561,29 @@ fn integer_range_fold_item_domain(
     index: &IntegerRangeFoldIndex,
     item: Variable,
 ) -> (Sort, Proposition) {
+    use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+    use crate::kernel::{CompareRelation as R, MachineOperandView as V};
     let (item_sort, guard) = match index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
             let item_term = MachineTerm::Variable(item);
             let guard = Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::signed_greater_equal(item_term.clone(), start.value().clone()),
+                    condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        R::GreaterEqual,
+                        [
+                            V::Legacy(&item_term),
+                            start.machine_operand().operand_view(),
+                        ],
+                    ),
                     true,
                 )),
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::signed_less_than(item_term, end.value().clone()),
+                    condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        R::LessThan,
+                        [V::Legacy(&item_term), end.machine_operand().operand_view()],
+                    ),
                     true,
                 )),
             );
@@ -2580,11 +2593,22 @@ fn integer_range_fold_item_domain(
             let item_term = MachineTerm::Variable(item);
             let guard = Proposition::And(
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::uint64_less_equal(start.value().clone(), item_term.clone()),
+                    condition_for_operand_views(
+                        MachineIntegerType::UInt64,
+                        R::LessEqual,
+                        [
+                            start.machine_operand().operand_view(),
+                            V::Legacy(&item_term),
+                        ],
+                    ),
                     true,
                 )),
                 Box::new(Proposition::ConditionIs(
-                    ConditionTerm::uint64_less_than(item_term, end.value().clone()),
+                    condition_for_operand_views(
+                        MachineIntegerType::UInt64,
+                        R::LessThan,
+                        [V::Legacy(&item_term), end.machine_operand().operand_view()],
+                    ),
                     true,
                 )),
             );
