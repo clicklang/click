@@ -114,3 +114,56 @@ fn a_later_fact_reads_a_decided_conditional_at_its_branch() {
 mod scaling_tests {
     include!("../../scaling_tests/kernel/assumptions/decided_algebraic_if_tests.rs");
 }
+
+#[test]
+fn decided_native_guards_reduce_shared_remainders_without_export() {
+    use crate::kernel::{
+        IntegerTerm, KernelTermExport, KernelTermImport, SharedMachineIntegerTerm,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    let ty = MachineIntegerType::UInt64;
+    let n = MachineTerm::uint64_add(
+        MachineTerm::Variable(Variable(985201)),
+        MachineTerm::Variable(Variable(985202)),
+    );
+    let guard = ConditionTerm::uint64_less_than(n.clone(), MachineTerm::uint64_constant(5));
+    let selected = term(AlgebraicTermNode::If {
+        condition: guard.into(),
+        then_term: none().into(),
+        else_term: some(985203).into(),
+    });
+    let context = PureFactContext::new().assume_proposition(equal(selected, none()));
+    let observe = |native| {
+        IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(
+                ty,
+                KernelTermImport::default()
+                    .machine_arithmetic(ty, &native)
+                    .unwrap(),
+            )
+            .unwrap(),
+        )
+    };
+    let proposition = Proposition::ConditionIs(
+        ConditionTerm::integer_equal(
+            observe(MachineTerm::uint64_remainder(
+                n.clone(),
+                MachineTerm::uint64_constant(5),
+            )),
+            IntegerTerm::constant_i64(0),
+        ),
+        true,
+    );
+    let expected = Proposition::ConditionIs(
+        ConditionTerm::integer_equal(observe(n), IntegerTerm::constant_i64(0)),
+        true,
+    );
+    let exports = KernelTermExport::machine_export_count();
+    assert_eq!(
+        context.reduce_by_decided_conditions(&proposition),
+        Some(expected)
+    );
+    let missing = PureFactContext::new().assume_proposition(equal(view(985204, 985205), none()));
+    assert_eq!(missing.reduce_by_decided_conditions(&proposition), None);
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}
