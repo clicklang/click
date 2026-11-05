@@ -453,10 +453,10 @@ fn shared_remainder_rewrite(value: &KernelTerm) -> Option<(Vec<ConditionTerm>, K
     ))
 }
 
-fn literal(term: &KernelTerm) -> Option<MachineTerm> {
+pub(super) fn literal(term: &KernelTerm) -> Option<MachineTerm> {
     MachineOperandView::Shared(term).literal()
 }
-fn imported(format: MachineIntegerType, value: MachineTerm) -> KernelTerm {
+pub(super) fn imported(format: MachineIntegerType, value: MachineTerm) -> KernelTerm {
     KernelTermImport::default()
         .machine_arithmetic(format, &value)
         .expect("machine arithmetic result")
@@ -471,7 +471,7 @@ fn constant(format: MachineIntegerType, value: u32) -> KernelTerm {
 fn word(term: &KernelTerm) -> Option<u32> {
     literal(term)?.as_const()
 }
-fn binary<'a>(
+pub(super) fn binary<'a>(
     term: &'a KernelTerm,
     format: MachineIntegerType,
     op: MachineBinaryOp,
