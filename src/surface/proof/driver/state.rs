@@ -90,7 +90,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let claim_closer = claim_goals.get(index).and_then(|forms| {
                 forms.iter().find_map(|form| {
                     driver_proof
-                        .focus_kernel_claim_goal(form, goal)
+                        .driver()
+                        .open_contract_claim(form, goal)
                         .and_then(|focused| focused.driver().apply_step(ProofStep::Assumption))
                         .ok()
                 })
