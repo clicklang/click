@@ -148,6 +148,16 @@ pub fn inventory(path: &str, file: &syn::File) -> BTreeMap<String, usize> {
             // Reviewed roles describe callers, not a transitive complexity proof.
             let role = if caller.is_empty() {
                 "import"
+            } else if owner == "ProofDriver"
+                && target != "driver"
+                && matches!(
+                    caller.as_str(),
+                    "apply_step_without_outcome_wrapping" | "apply_theorem_application"
+                )
+            {
+                // Moving explicit tactic dispatch must not relabel its search
+                // dependencies as legitimate implicit closing.
+                "operation"
             } else if owner == "ProofDriver" || path.starts_with("src/surface/proof/driver/") {
                 "driver"
             } else if owner == "ProofSearch"

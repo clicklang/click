@@ -103,15 +103,19 @@ Roles distinguish the work remaining:
 | `import` | Named import, not a runtime invocation. |
 
 The current inventory contains 605 records: 7 legacy bridges, 22 kernel callers,
-10 Surface operation dependencies, 15 operation-to-driver dependencies,
-98 driver records, 1 other dispatch record, 6 presentation records,
+14 Surface operation dependencies, 15 operation-to-driver dependencies,
+94 driver records, 1 other dispatch record, 6 presentation records,
 415 search-internal records, 29 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
 callers reach the same traversal; dispatch and search-to-search calls are
 expected. The `operation`, `operation-to-driver` and legacy rows are the migration list;
-`mixed` rows are explicitly unresolved, not silently declared fast.
+`mixed` rows are explicitly unresolved, not silently declared fast. Four of the
+operation records belong to explicit tactic/theorem handlers now implemented
+on `ProofDriver`: moving dispatch must not hide those search dependencies or
+reclassify them as legitimate implicit solving. Driver placement alone is not
+an efficiency guarantee.
 
 Seven kernel bridges preserve these implementations:
 
