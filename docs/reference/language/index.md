@@ -1205,8 +1205,11 @@ proposition `requires` clauses, and proposition `ensures` clauses with proof
 clauses. A theorem-only `.click` file does not need a `verifying "file.c";`
 declaration.
 
-A generic theorem can declare `p: T*`. Applications infer `T` from the
-argument's pointee type and require repeated occurrences to agree. Native
+A generic theorem or pure function can declare `p: T*`, and a pure function
+can return `T*`. Applications infer `T` from the argument's pointee type and
+require repeated occurrences to agree; a `T*` result is the instantiated
+pointer type, so `id(p) == p` compares `int32*` with `int32*`
+([`a_generic_pointer_result_is_its_argument_pointer_type.md`](https://github.com/clicklang/click/blob/master/mdtests/a_generic_pointer_result_is_its_argument_pointer_type.md)). Native
 scalar, pointer, and struct element types retain their identity when instantiated.
 For a struct element, range lowering looks up its physical size, including padding,
 in the imported C layout. The generic declaration does not require a concrete

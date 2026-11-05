@@ -768,6 +768,12 @@ fn validate_algebraic_field_declaration(
             owner.name(),
             variant.name()
         ))),
+        AlgebraicFieldType::ParameterPointer(name) if parameters.contains(name.as_str()) => Ok(()),
+        AlgebraicFieldType::ParameterPointer(name) => Err(ClickError::new(format!(
+            "variant `{}::{}` uses unknown type parameter `{name}`",
+            owner.name(),
+            variant.name()
+        ))),
         AlgebraicFieldType::Integer => Ok(()),
         AlgebraicFieldType::C { .. } => Ok(()),
         AlgebraicFieldType::Algebraic { name, arguments } => {
@@ -975,6 +981,7 @@ fn arguments_preserve_owner_parameters(
 fn algebraic_field_is_grounded(field: &AlgebraicFieldType, grounded: &BTreeSet<&str>) -> bool {
     match field {
         AlgebraicFieldType::Parameter(_)
+        | AlgebraicFieldType::ParameterPointer(_)
         | AlgebraicFieldType::Integer
         | AlgebraicFieldType::C { .. } => true,
         AlgebraicFieldType::Algebraic { name, .. } => grounded.contains(name.as_str()),
@@ -3813,6 +3820,31 @@ pub(super) fn instantiate_field_type(
             .and_then(|index| application.arguments.get(index))
             .cloned()
             .ok_or_else(|| ClickError::new(format!("unresolved type parameter `{name}`"))),
+        AlgebraicFieldType::ParameterPointer(name) => {
+            let element = definition
+                .type_parameters()
+                .iter()
+                .position(|parameter| parameter == name)
+                .and_then(|index| application.arguments.get(index))
+                .ok_or_else(|| ClickError::new(format!("unresolved type parameter `{name}`")))?;
+            // In a generic declaration the parameter is still rigid: the field
+            // is the generic pointer a `T*` parameter has.
+            if let ClickType::Parameter(parameter) = element {
+                return Ok(ClickType::C(C0Type::ParameterPointer(
+                    crate::kernel::TypeParameterName::intern(parameter),
+                )));
+            }
+            element
+                .c_type()
+                .and_then(|ty| ty.pointer_type())
+                .map(ClickType::C)
+                .ok_or_else(|| {
+                    ClickError::new(format!(
+                        "`{name}*` needs `{name}` to be a C scalar type; `{}` is not",
+                        crate::surface::validation::describe_click_type(element)
+                    ))
+                })
+        }
         AlgebraicFieldType::Algebraic { name, arguments } => {
             let arguments = arguments
                 .iter()
