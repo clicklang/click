@@ -25,6 +25,7 @@ mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
 mod shared_comparison;
+mod shared_wide_syntax;
 mod spec_rewrite;
 
 thread_local! {
@@ -37,6 +38,7 @@ thread_local! {
 pub(crate) fn clear_arithmetic_comparison_cache() {
     ARITHMETIC_COMPARISONS.with(|cache| cache.borrow_mut().clear());
     shared_comparison::clear();
+    shared_wide_syntax::clear();
 }
 
 fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut CarrierVariables) {

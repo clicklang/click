@@ -252,8 +252,16 @@ Remaining groups to audit and migrate:
   absent or refuted bounds remain unknown. Recorded wide-equation endpoint
   queries also accept shared operands, retaining logical-read dependencies,
   current equality classes and the original source endpoints. Pointer-address/tag
-  forms and general wide simplification still need migration before removing
-  the wide-equality compatibility bridge.
+  forms and fact-dependent wide simplification still need migration before
+  removing the wide-equality compatibility bridge. Wide arithmetic and bitwise
+  syntax now have an iterative, session-memoized checking reading over shared
+  nodes. It preserves the existing native constructor rules, including unsigned
+  subtraction's atomic-only identity and signed/unsigned observation types.
+  Casts and opaque nodes remain boundaries; this reading consults no facts and
+  never changes the written term. Native/shared constructor parity and growing
+  shared prefixes cover this part of the simplifier. The dispatcher still needs
+  the tagged-address route: disabling its bridge loses both `x & ~3 == x` and
+  `(x | 3) & ~3 == x` when `x == address(p)` and `p` is aligned.
   Shared scalar dependency admission now stores syntax edges and attaches facts
   at their roots, instead of filing every prefix under every variable. Each
   node propagates at most two distinct witnesses along a monotone branch;
