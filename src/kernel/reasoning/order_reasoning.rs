@@ -1097,12 +1097,15 @@ fn integer_range_fold_indices_proven_equal(
                 end: right_end,
             },
         ) => {
-            fold_endpoint_terms_proven_equal(left_start.value(), right_start.value(), assumptions)
-                && fold_endpoint_terms_proven_equal(
-                    left_end.value(),
-                    right_end.value(),
-                    assumptions,
-                )
+            fold_endpoint_terms_proven_equal(
+                left_start.machine_operand(),
+                right_start.machine_operand(),
+                assumptions,
+            ) && fold_endpoint_terms_proven_equal(
+                left_end.machine_operand(),
+                right_end.machine_operand(),
+                assumptions,
+            )
         }
         // Unsigned 64-bit endpoints are equal by identity or by an exact
         // 64-bit equality fact; the 32-bit affine forms do not read them.
@@ -1116,19 +1119,15 @@ fn integer_range_fold_indices_proven_equal(
                 end: right_end,
             },
         ) => {
-            let equal = |left: &MachineTerm, right: &MachineTerm| {
-                left == right
-                    || assumptions.exact_condition_value(&ConditionTerm::uint64_equal(
-                        left.clone(),
-                        right.clone(),
-                    )) == Some(true)
-                    || assumptions.exact_condition_value(&ConditionTerm::uint64_equal(
-                        right.clone(),
-                        left.clone(),
-                    )) == Some(true)
+            let equal = |left: &SharedIntegerRangeEndpoint, right: &SharedIntegerRangeEndpoint| {
+                exact_fold_endpoint_equality(
+                    MachineIntegerType::UInt64,
+                    left.machine_operand().operand_view(),
+                    right.machine_operand().operand_view(),
+                    assumptions,
+                )
             };
-            equal(left_start.value(), right_start.value())
-                && equal(left_end.value(), right_end.value())
+            equal(left_start, right_start) && equal(left_end, right_end)
         }
         (
             IntegerRangeFoldIndex::Integer {
@@ -1149,14 +1148,48 @@ fn integer_range_fold_indices_proven_equal(
     }
 }
 
+fn exact_fold_endpoint_equality(
+    format: MachineIntegerType,
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    use crate::kernel::machine_integer::{
+        Relation,
+        comparison::{ComparisonOperand, NativeComparisonView},
+    };
+    if ScalarOperandKey::for_format(format, left) == ScalarOperandKey::for_format(format, right) {
+        return true;
+    }
+    let condition = |a: crate::kernel::MachineOperandView<'_>,
+                     b: crate::kernel::MachineOperandView<'_>| {
+        NativeComparisonView {
+            format,
+            relation: Relation::Equal,
+            operands: [
+                ComparisonOperand::Observation(a.retain(format)),
+                ComparisonOperand::Observation(b.retain(format)),
+            ],
+        }
+        .integer_condition()
+    };
+    let stated = |condition| {
+        let Some(source) = assumptions.selected_comparison_source(&condition, true) else {
+            return false;
+        };
+        crate::kernel::assumptions::record_implicit_reasoning_provenance(assumptions, source);
+        true
+    };
+    stated(condition(left, right)) || stated(condition(right, left))
+}
+
 /// Whether two int32 fold endpoints are the same value.
 ///
 /// Three routes, none of them a search over the ambient facts:
 ///
 /// 1. interner identity, which is the shared endpoint node's own equality;
 /// 2. an equality between exactly these two terms already recorded as a fact,
-///    found by a keyed lookup (`exact_condition_value` also tries the mirrored
-///    orientation of an int32 equality);
+///    found by the selected comparison-source index in either orientation;
 /// 3. the two terms' affine normal forms, which is what makes `(hi - 1) + 1`
 ///    and `hi` the same endpoint.
 ///
@@ -1167,14 +1200,196 @@ fn integer_range_fold_indices_proven_equal(
 /// Z/2^32, and equal normal forms are equal values whether or not any
 /// intermediate would overflow.
 fn fold_endpoint_terms_proven_equal(
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: &SharedMachineIntegerTerm,
+    right: &SharedMachineIntegerTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    left == right
-        || assumptions.exact_condition_value(&ConditionTerm::equal(left.clone(), right.clone()))
-            == Some(true)
-        || bitvector_affine_forms_equal(left, right)
+    let (left, right) = (left.operand_view(), right.operand_view());
+    exact_fold_endpoint_equality(MachineIntegerType::Int32, left, right, assumptions)
+        || retained_fold_affine_equal(left, right)
+}
+
+thread_local! {
+    // Syntax only: peeling a written constant offset reads no proof facts or
+    // registered loads. Keep growing prefixes reusable across proof contexts.
+    static FOLD_AFFINE_EQUALITIES: std::cell::RefCell<std::collections::HashMap<(u64, u64), bool>> = Default::default();
+    static FOLD_AFFINE_BASES: std::cell::RefCell<std::collections::HashMap<u64, (Option<ScalarOperandKey>, u32)>> = Default::default();
+}
+
+pub(crate) fn clear_fold_affine_bases() {
+    FOLD_AFFINE_BASES.with(|cache| cache.borrow_mut().clear());
+    FOLD_AFFINE_EQUALITIES.with(|cache| cache.borrow_mut().clear());
+}
+
+/// Memoize only syntax-based equality. A new Add/Sub root can reuse the
+/// preceding roots' affine equality across changing fact contexts. Exact
+/// premise lookups never publish into this memo.
+fn retained_fold_affine_equal(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+) -> bool {
+    use crate::kernel::{MachineBinaryOp as Op, MachineOperandView as V};
+    let pair = |a: V<'_>, b: V<'_>| match (a, b) {
+        (V::Shared(a), V::Shared(b)) => Some((a.id().min(b.id()), a.id().max(b.id()))),
+        _ => None,
+    };
+    FOLD_AFFINE_EQUALITIES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let key = pair(left, right);
+        if let Some(result) = key.and_then(|key| cache.get(&key)) {
+            return *result;
+        }
+        let known = |a: V<'_>, b: V<'_>| {
+            pair(a, b).and_then(|key| cache.get(&key)).copied() == Some(true)
+                || ScalarOperandKey::new(a) == ScalarOperandKey::new(b)
+        };
+        let congruent = match (left.binary(), right.binary()) {
+            (
+                Some((MachineIntegerType::Int32, a_op, [a, b])),
+                Some((MachineIntegerType::Int32, b_op, [c, d])),
+            ) if a_op == b_op && matches!(a_op, Op::Add | Op::Subtract) => {
+                (known(a, c) && known(b, d)) || (a_op == Op::Add && known(a, d) && known(b, c))
+            }
+            _ => false,
+        };
+        let result = congruent
+            || retained_fold_affine_base(left) == retained_fold_affine_base(right)
+            || retained_fold_affine_form(left) == retained_fold_affine_form(right);
+        if let Some(key) = key {
+            cache.insert(key, result);
+        }
+        result
+    })
+}
+
+/// The affine rule's common one-base case. Repeated `(prefix - 1) + 1`
+/// queries should inspect their new constant spine, not the growing prefix.
+fn retained_fold_affine_base(
+    mut view: crate::kernel::MachineOperandView<'_>,
+) -> (Option<ScalarOperandKey>, u32) {
+    use crate::kernel::{MachineBinaryOp as Op, MachineOperandView as V};
+    let literal = |v: V<'_>| v.literal().and_then(|term| term.as_const());
+    FOLD_AFFINE_BASES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut path = Vec::new();
+        let mut result = loop {
+            crate::instrumentation::record_deterministic_work(1);
+            let id = match view {
+                V::Shared(root) => Some(root.id()),
+                V::Legacy(_) => None,
+            };
+            if let Some(known) = id.and_then(|id| cache.get(&id)) {
+                break known.clone();
+            }
+            if let Some(value) = literal(view) {
+                break (None, value);
+            }
+            if let Some((MachineIntegerType::Int32, operation, [left, right])) = view.binary() {
+                let next = match operation {
+                    Op::Add => literal(right)
+                        .map(|c| (left, c))
+                        .or_else(|| literal(left).map(|c| (right, c))),
+                    Op::Subtract => literal(right).map(|c| (left, 0u32.wrapping_sub(c))),
+                    _ => None,
+                };
+                if let Some((operand, offset)) = next {
+                    path.push((id, offset));
+                    view = operand;
+                    continue;
+                }
+            }
+            let result = (Some(ScalarOperandKey::new(view)), 0);
+            if let Some(id) = id {
+                cache.insert(id, result.clone());
+            }
+            break result;
+        };
+        for (id, offset) in path.into_iter().rev() {
+            result.1 = result.1.wrapping_add(offset);
+            if let Some(id) = id {
+                cache.insert(id, result.clone());
+            }
+        }
+        result
+    })
+}
+
+/// Count signed occurrences in the explicit DAG rather than expanding one
+/// occurrence per path. Positive/negative counts remain separate, preserving
+/// the native rule's refusal to cancel opposite occurrences. Each count can
+/// wrap modulo 2^32: every atom is multiplied in the endpoint's word ring.
+/// Fixed-width counts also avoid quadratic big-integer work on a cold DAG
+/// built by repeatedly doubling a shared child.
+fn retained_fold_affine_form(
+    root: crate::kernel::MachineOperandView<'_>,
+) -> (BTreeMap<(bool, ScalarOperandKey), u32>, u32) {
+    use crate::kernel::{MachineBinaryOp as Op, MachineOperandView as V};
+    let identity = |view: V<'_>| match view {
+        V::Shared(term) => (true, term.id()),
+        V::Legacy(term) => (false, term as *const _ as usize as u64),
+    };
+    fn children(view: V<'_>) -> Option<(MachineIntegerType, Op, [V<'_>; 2])> {
+        view.binary().filter(|(format, op, _)| {
+            *format == MachineIntegerType::Int32 && matches!(op, Op::Add | Op::Subtract)
+        })
+    }
+    let mut pending = vec![(root, false)];
+    let mut seen = BTreeSet::new();
+    let mut order = Vec::new();
+    while let Some((view, finish)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if finish {
+            order.push(view);
+            continue;
+        }
+        if !seen.insert(identity(view)) {
+            continue;
+        }
+        pending.push((view, true));
+        if let Some((_, _, [left, right])) = children(view) {
+            pending.extend([(right, false), (left, false)]);
+        }
+    }
+    let mut counts = std::collections::HashMap::from([(identity(root), [1u32, 0u32])]);
+    let mut atoms = BTreeMap::new();
+    let mut constant = 0u32;
+    for view in order.into_iter().rev() {
+        crate::instrumentation::record_deterministic_work(1);
+        let [positive, negative] = counts
+            .remove(&identity(view))
+            .expect("reachable affine node");
+        if let Some((_, op, [left, right])) = children(view) {
+            let left = counts.entry(identity(left)).or_insert([0u32; 2]);
+            left[0] = left[0].wrapping_add(positive);
+            left[1] = left[1].wrapping_add(negative);
+            let right = counts.entry(identity(right)).or_insert([0u32; 2]);
+            if op == Op::Subtract {
+                right[0] = right[0].wrapping_add(negative);
+                right[1] = right[1].wrapping_add(positive);
+            } else {
+                right[0] = right[0].wrapping_add(positive);
+                right[1] = right[1].wrapping_add(negative);
+            }
+        } else if let Some(value) = view.literal().and_then(|term| term.as_const()) {
+            constant = constant
+                .wrapping_add(value.wrapping_mul(positive))
+                .wrapping_sub(value.wrapping_mul(negative));
+        } else {
+            let key = ScalarOperandKey::new(view);
+            for (sign, count) in [(true, positive), (false, negative)] {
+                if count != 0 {
+                    let key = (sign, key.clone());
+                    let total = atoms.get(&key).copied().unwrap_or(0u32).wrapping_add(count);
+                    if total == 0 {
+                        atoms.remove(&key);
+                    } else {
+                        atoms.insert(key, total);
+                    }
+                }
+            }
+        }
+    }
+    (atoms, constant)
 }
 
 /// The Integer-endpoint counterpart of [`fold_endpoint_terms_proven_equal`].
@@ -1203,6 +1418,7 @@ fn integer_fold_endpoint_terms_proven_equal(
 /// Only `Add`, `Subtract`, and `Constant` are interpreted; every other node,
 /// including the 64-bit constants and arithmetic that share this arena, is an
 /// opaque atom. The walk visits each node of `term` once.
+#[cfg(test)]
 fn collect_bitvector_affine_atoms(
     term: &MachineTerm,
     positive: bool,
@@ -1229,6 +1445,7 @@ fn collect_bitvector_affine_atoms(
     }
 }
 
+#[cfg(test)]
 fn bitvector_affine_forms_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     let mut left_atoms = Vec::new();
     let mut left_constant = 0u32;
@@ -1454,5 +1671,140 @@ mod retained_cycle_tests {
     mod scaling_tests {
         use super::*;
         include!("../../scaling_tests/kernel/reasoning/order_reasoning/retained_cycles.rs");
+    }
+}
+
+#[cfg(test)]
+mod retained_fold_endpoint_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp as Op,
+        VerificationSession,
+    };
+
+    fn raw(op: Op, left: MachineTerm, right: MachineTerm) -> MachineTerm {
+        MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op,
+            left: Box::new(left),
+            right: Box::new(right),
+        }
+    }
+    fn retained(format: MachineIntegerType, term: &MachineTerm) -> SharedMachineIntegerTerm {
+        let root = KernelTermImport::default()
+            .machine_arithmetic(format, term)
+            .unwrap();
+        let result = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+        assert!(!result.has_boxed_operand());
+        result
+    }
+
+    #[test]
+    fn shared_fold_affine_matching_preserves_the_native_multiset_rule() {
+        let _session = VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(999001));
+        let y = MachineTerm::Variable(Variable(999002));
+        let one = MachineTerm::constant(1);
+        let sum = raw(Op::Add, x.clone(), y.clone());
+        let cases = [
+            (
+                raw(
+                    Op::Add,
+                    raw(Op::Subtract, x.clone(), one.clone()),
+                    one.clone(),
+                ),
+                x.clone(),
+            ),
+            (sum.clone(), raw(Op::Add, y.clone(), x.clone())),
+            (raw(Op::Subtract, sum.clone(), y.clone()), x.clone()),
+            (raw(Op::Add, sum.clone(), one.clone()), sum.clone()),
+            (
+                raw(Op::Add, sum.clone(), sum.clone()),
+                raw(Op::Add, sum.clone(), x.clone()),
+            ),
+        ];
+        for (left, right) in cases {
+            let a = retained(MachineIntegerType::Int32, &left);
+            let b = retained(MachineIntegerType::Int32, &right);
+            let exports = KernelTermExport::machine_export_count();
+            let actual = retained_fold_affine_form(a.operand_view())
+                == retained_fold_affine_form(b.operand_view());
+            assert_eq!(actual, bitvector_affine_forms_equal(&left, &right));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn shared_fold_endpoint_equality_uses_exact_sources_at_the_index_width() {
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let _session = VerificationSession::enter();
+            let left = KernelTerm::variable(KernelType::C(format.c_type()), Variable(999101));
+            let right = KernelTerm::variable(KernelType::C(format.c_type()), Variable(999102));
+            let left = SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTerm::machine_binary_shared(format, Op::Add, [left.clone(), left]),
+            )
+            .unwrap();
+            let right = SharedMachineIntegerTerm::from_shared(
+                format,
+                KernelTerm::machine_binary_shared(format, Op::Add, [right.clone(), right]),
+            )
+            .unwrap();
+            assert!(!left.has_boxed_operand() && !right.has_boxed_operand());
+            let native = |variable| MachineTerm::Binary {
+                format,
+                op: Op::Add,
+                left: Box::new(MachineTerm::Variable(variable)),
+                right: Box::new(MachineTerm::Variable(variable)),
+            };
+            let source = ConditionTerm::machine_compare(
+                format,
+                CompareRelation::Equal,
+                native(Variable(999102)),
+                native(Variable(999101)),
+            );
+            let empty = PureFactContext::new();
+            let cold_exports = KernelTermExport::machine_export_count();
+            assert!(!exact_fold_endpoint_equality(
+                format,
+                left.operand_view(),
+                right.operand_view(),
+                &empty
+            ));
+            assert_eq!(KernelTermExport::machine_export_count(), cold_exports);
+            let original = Proposition::ConditionIs(source.clone(), true);
+            let known = empty.clone().assume_condition(source.clone(), true);
+            let refuted = empty.clone().assume_condition(source, false);
+            let exports = KernelTermExport::machine_export_count();
+            let equal = |context: &PureFactContext| {
+                exact_fold_endpoint_equality(
+                    format,
+                    left.operand_view(),
+                    right.operand_view(),
+                    context,
+                )
+            };
+            assert!(!equal(&empty));
+            let (proved, sources) =
+                crate::kernel::assumptions::collect_reasoning_provenance(|| {
+                    crate::kernel::assumptions::capture_implicit_reasoning_provenance(|| {
+                        equal(&known)
+                    })
+                });
+            assert!(proved, "{format:?}");
+            assert_eq!(sources, vec![original.clone()]);
+            let withdrawn = known.without_exact_fact(&original);
+            assert!(!equal(&withdrawn));
+            assert!(!equal(&refuted));
+            assert!(!equal(&empty));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../scaling_tests/kernel/reasoning/order_reasoning/retained_fold_endpoint_tests.rs"
+        );
     }
 }

@@ -420,8 +420,8 @@ criteria above. The temporary annotations are not part of the implementation.
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
-| Fold checking and equality | empty/append/step rules in `api.rs`, fold guards in `spec.rs`, endpoint equality in `order_reasoning.rs`, exact equality rewriting |
-| Memory, dependency and identity walkers | memory-load collection in `assumptions.rs`, fold keys, all-variable and substitution collectors |
+| Fold checking and equality | empty/append/step rules in `api.rs`, fold guards in `spec.rs`, exact equality rewriting |
+| Dependency and selected-atom walkers | fold-bound substitution collector, shared substitution replacements, selected-atom collection in `proof/facts.rs` |
 | Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
 | Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
 | Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
@@ -446,6 +446,17 @@ inside shared arithmetic, retaining endpoint outer scopes and index widths. Cons
 endpoint emptiness checks inspect operand views. The conservative accumulator
 carrier check decides composite roots directly instead of collecting their
 variables before returning the same conservative answer.
+
+Fold endpoint equality now uses retained operands and selected exact equality
+sources. Native equality pairs are indexed when admitted, separately from
+general observation lookup; the existing native-query work boundary remains
+unchanged. Signed endpoint matching counts DAG occurrences with the original
+separate positive/negative multisets. Multiplicities and constants wrap in the
+32-bit word ring, avoiding growing big-integer work on cold doubled DAGs. Syntax-only memos
+reuse constant spines and previously checked Add/Sub child equalities across
+proof contexts; exact fact-derived answers never enter those memos. Operand
+keys reuse the session's admitted arithmetic imports, avoiding a second tree
+walk when a native equality enters the selected-pair index.
 
 ### 2. Finish expression producers — after part 1
 

@@ -4864,6 +4864,8 @@ impl PureFactContext {
         self.checked_scalar_facts.adjust(condition, value, insert);
         self.observation_comparisons
             .adjust(condition, value, insert);
+        self.observation_comparisons
+            .adjust_native_equality(condition, value, insert);
         self.contradictions.adjust(condition, value, insert);
         if let (ConditionTerm::PointerOffsetEqual(left, right), true) = (condition, value) {
             for shape in [offset_snapshot_shape(left), offset_snapshot_shape(right)] {
