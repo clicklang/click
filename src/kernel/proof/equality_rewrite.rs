@@ -1,5 +1,8 @@
 //! Checked equality substitution. Surface syntax is never evidence for a rewrite.
 
+mod shared;
+pub(in crate::kernel) use shared::clear as clear_shared_exact_rewrite_cache;
+
 use super::fact_reasoning::exactly_available_fact;
 use super::{ProofFacts, PropositionObligation, PropositionSource};
 use crate::kernel::CompareRelation;
@@ -839,6 +842,231 @@ impl From<AtomicRewriteRefusal> for String {
                 message
             }
         }
+    }
+}
+
+// Address annotations describe a producer's object class, not the bits
+// observed by a numeric equality. Keep the pointer and mask themselves
+// exact; no pointer-value or memory-snapshot identity is substituted.
+fn same_address_observation(left: &MachineTerm, right: &MachineTerm) -> bool {
+    fn key(term: &MachineTerm) -> Option<(&Pointer, Option<u64>)> {
+        if let Some(pointer) = term.address_pointer() {
+            return Some((pointer, None));
+        }
+        let MachineTerm::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::BitwiseAnd,
+            left,
+            right,
+        } = term
+        else {
+            return None;
+        };
+        let (pointer, mask) = if let Some(pointer) = left.address_pointer() {
+            (pointer, right.as_ref())
+        } else {
+            (right.address_pointer()?, left.as_ref())
+        };
+        Some((pointer, Some(mask.uint64_as_const()?)))
+    }
+    matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
+}
+fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {
+    fn rewrite_offset(
+        offset: &PointerOffsetTerm,
+        from: &MachineTerm,
+        to: &MachineTerm,
+    ) -> PointerOffsetTerm {
+        match offset {
+            PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::add(
+                rewrite_offset(left, from, to),
+                rewrite_offset(right, from, to),
+            ),
+            PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                PointerOffsetTerm::scale_int32(rewrite_term(value, from, to), *byte_width)
+            }
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            } => PointerOffsetTerm::scale_int64(
+                rewrite_term(value, from, to),
+                *byte_width,
+                *unsigned,
+            ),
+            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
+        }
+    }
+    if term == from
+        || same_address_observation(term, from)
+        // Load variables and load terms of one atom are the
+        // same occurrence.
+        || crate::kernel::terms_have_same_canonical_form(term, from)
+    {
+        return to.clone();
+    }
+    // Widening a literal folds away the cast node. Recover only a
+    // matching, checked 32-to-64-bit cast of the cited constant; the
+    // replacement keeps that cast, including its signedness. Never
+    // identify a full-width literal by truncating it to 32 bits.
+    if let bits32_constant!(_) = from {
+        let casts: &[fn(MachineTerm) -> MachineTerm] = match term {
+            int64_constant!(_) => &[MachineTerm::int64_from_32, MachineTerm::int64_from_uint32],
+            uint64_constant!(_) => &[MachineTerm::uint64_from_32, MachineTerm::uint64_from_int32],
+            _ => &[],
+        };
+        for cast in casts {
+            if cast(from.clone()) == *term {
+                return cast(to.clone());
+            }
+        }
+    }
+    let binary = |left: &MachineTerm, right: &MachineTerm| {
+        (
+            Box::new(rewrite_term(left, from, to)),
+            Box::new(rewrite_term(right, from, to)),
+        )
+    };
+    // Substituting a constant can leave a two-constant operation
+    // (`0 + 1` after `rewrite(len == 0)` in a `len + 1` goal); folding
+    // it is deterministic arithmetic on the rewritten node only, so the
+    // rewritten goal states the value the substitution denotes.
+    match term {
+        binary_term!(Int32, Add, left, right) => {
+            let (left, right) = binary(left, right);
+            match (left.as_ref(), right.as_ref()) {
+                (bits32_constant!(first), bits32_constant!(second)) => {
+                    MachineTerm::constant(constant_u32(*first).wrapping_add(constant_u32(*second)))
+                }
+                _ => binary_node!(Int32, Add, left, right),
+            }
+        }
+        binary_term!(Int32, Subtract, left, right) => {
+            let (left, right) = binary(left, right);
+            match (left.as_ref(), right.as_ref()) {
+                (bits32_constant!(first), bits32_constant!(second)) => {
+                    MachineTerm::constant(constant_u32(*first).wrapping_sub(constant_u32(*second)))
+                }
+                _ => binary_node!(Int32, Subtract, left, right),
+            }
+        }
+        binary_term!(Int32, Multiply, left, right) => {
+            MachineTerm::multiply(rewrite_term(left, from, to), rewrite_term(right, from, to))
+        }
+        binary_term!(Int32, BitwiseAnd, left, right) => {
+            MachineTerm::bitwise_and(rewrite_term(left, from, to), rewrite_term(right, from, to))
+        }
+        binary_term!(Int32, ShiftLeft, left, right) => {
+            // The term denotes the shifted bits; signed C overflow is
+            // checked separately during expression evaluation. Preserve
+            // unsigned high-bit results when substitution makes both
+            // operands constant.
+            MachineTerm::unsigned_shift_left(
+                rewrite_term(left, from, to),
+                rewrite_term(right, from, to),
+            )
+        }
+        // The same at `uint32`, whose operators and constants keep their
+        // format.
+        binary_term!(UInt32, Add, left, right) => {
+            let (left, right) = binary(left, right);
+            match (left.constant32(), right.constant32()) {
+                (Some(first), Some(second)) => {
+                    MachineTerm::uint32_constant(first.wrapping_add(second))
+                }
+                _ => binary_node!(UInt32, Add, left, right),
+            }
+        }
+        binary_term!(UInt32, Subtract, left, right) => {
+            let (left, right) = binary(left, right);
+            match (left.constant32(), right.constant32()) {
+                (Some(first), Some(second)) => {
+                    MachineTerm::uint32_constant(first.wrapping_sub(second))
+                }
+                _ => binary_node!(UInt32, Subtract, left, right),
+            }
+        }
+        binary_term!(UInt32, Multiply, left, right) => MachineTerm::multiply_at(
+            MachineIntegerType::UInt32,
+            rewrite_term(left, from, to),
+            rewrite_term(right, from, to),
+        ),
+        binary_term!(UInt32, BitwiseAnd, left, right) => MachineTerm::bitwise_and_at(
+            MachineIntegerType::UInt32,
+            rewrite_term(left, from, to),
+            rewrite_term(right, from, to),
+        ),
+        binary_term!(UInt32, ShiftLeft, left, right) => MachineTerm::uint32_shift_left(
+            rewrite_term(left, from, to),
+            rewrite_term(right, from, to),
+        ),
+        MachineTerm::PureFunctionApplication { name, arguments } => {
+            MachineTerm::PureFunctionApplication {
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| rewrite_term(argument, from, to))
+                    .collect(),
+            }
+        }
+        // The memory snapshot is fixed, but its address is an ordinary
+        // expression: exact equality substitution is congruent there too.
+        MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(Pointer {
+                block: pointer.block.clone(),
+                offset: rewrite_offset(&pointer.offset, from, to),
+            }),
+            *kind,
+        ),
+        MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
+            Pointer {
+                block: pointer.block.clone(),
+                offset: rewrite_offset(&pointer.offset, from, to),
+            },
+            class.class(),
+        ),
+        MachineTerm::Variable(_) => rewrite_through_load_variable(term, &|pointer| Pointer {
+            block: pointer.block.clone(),
+            offset: rewrite_offset(&pointer.offset, from, to),
+        })
+        .unwrap_or_else(|| term.clone()),
+        MachineTerm::If { .. }
+        | MachineTerm::BoolCast { .. }
+        | MachineTerm::RangeFold { .. }
+        | MachineTerm::ClickFunctionApplication { .. }
+        | MachineTerm::AlgebraicMatch { .. }
+        | MachineTerm::IntegerToMachine { .. } => {
+            let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
+            let rewritten = rewrite.bits(term);
+            // The walker reports a scope it will not substitute through,
+            // or exhausted work, by setting a flag and handing back a
+            // placeholder constant. That placeholder is not a rewritten
+            // term: keeping it replaced an unfolded `match` by `0` and
+            // let `rewrite` close false goals. Declining an occurrence is
+            // always a sound substitution, so the term stays as it was.
+            if rewrite.refusal().is_some() {
+                term.clone()
+            } else {
+                rewritten
+            }
+        }
+        MachineTerm::Constant { .. } => term.clone(),
+        term => match (term.as_binary(), term.as_unary()) {
+            // The 32-bit word operators are rebuilt as bare nodes, the rest
+            // through their smart constructors.
+            (Some((op, left, right)), _) if op.is_bitvector32() => {
+                op.build_raw(rewrite_term(left, from, to), rewrite_term(right, from, to))
+            }
+            (Some((op, left, right)), _) => {
+                op.build(rewrite_term(left, from, to), rewrite_term(right, from, to))
+            }
+            (_, Some((op, value))) if op.is_bitvector32() => {
+                op.build_raw(rewrite_term(value, from, to))
+            }
+            (_, Some((op, value))) => op.build(rewrite_term(value, from, to)),
+            _ => unreachable!("every other variant has its own arm"),
+        },
     }
 }
 
@@ -1758,234 +1986,6 @@ fn rewrite_atomic_proposition_by_exact_equality(
         _ => return Err("`rewrite` expects a mathematical Integer, native 32-bit/64-bit, pointer, or algebraic equality".into()),
 
     };
-    // Address annotations describe a producer's object class, not the bits
-    // observed by a numeric equality. Keep the pointer and mask themselves
-    // exact; no pointer-value or memory-snapshot identity is substituted.
-    fn same_address_observation(left: &MachineTerm, right: &MachineTerm) -> bool {
-        fn key(term: &MachineTerm) -> Option<(&Pointer, Option<u64>)> {
-            if let Some(pointer) = term.address_pointer() {
-                return Some((pointer, None));
-            }
-            let MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::BitwiseAnd,
-                left,
-                right,
-            } = term
-            else {
-                return None;
-            };
-            let (pointer, mask) = if let Some(pointer) = left.address_pointer() {
-                (pointer, right.as_ref())
-            } else {
-                (right.address_pointer()?, left.as_ref())
-            };
-            Some((pointer, Some(mask.uint64_as_const()?)))
-        }
-        matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
-    }
-    fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {
-        fn rewrite_offset(
-            offset: &PointerOffsetTerm,
-            from: &MachineTerm,
-            to: &MachineTerm,
-        ) -> PointerOffsetTerm {
-            match offset {
-                PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::add(
-                    rewrite_offset(left, from, to),
-                    rewrite_offset(right, from, to),
-                ),
-                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                    PointerOffsetTerm::scale_int32(rewrite_term(value, from, to), *byte_width)
-                }
-                PointerOffsetTerm::Int64Scaled {
-                    value,
-                    byte_width,
-                    unsigned,
-                } => PointerOffsetTerm::scale_int64(
-                    rewrite_term(value, from, to),
-                    *byte_width,
-                    *unsigned,
-                ),
-                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => offset.clone(),
-            }
-        }
-        if term == from
-            || same_address_observation(term, from)
-            // Load variables and load terms of one atom are the
-            // same occurrence.
-            || crate::kernel::terms_have_same_canonical_form(term, from)
-        {
-            return to.clone();
-        }
-        // Widening a literal folds away the cast node. Recover only a
-        // matching, checked 32-to-64-bit cast of the cited constant; the
-        // replacement keeps that cast, including its signedness. Never
-        // identify a full-width literal by truncating it to 32 bits.
-        if let bits32_constant!(_) = from {
-            let casts: &[fn(MachineTerm) -> MachineTerm] = match term {
-                int64_constant!(_) => &[MachineTerm::int64_from_32, MachineTerm::int64_from_uint32],
-                uint64_constant!(_) => {
-                    &[MachineTerm::uint64_from_32, MachineTerm::uint64_from_int32]
-                }
-                _ => &[],
-            };
-            for cast in casts {
-                if cast(from.clone()) == *term {
-                    return cast(to.clone());
-                }
-            }
-        }
-        let binary = |left: &MachineTerm, right: &MachineTerm| {
-            (
-                Box::new(rewrite_term(left, from, to)),
-                Box::new(rewrite_term(right, from, to)),
-            )
-        };
-        // Substituting a constant can leave a two-constant operation
-        // (`0 + 1` after `rewrite(len == 0)` in a `len + 1` goal); folding
-        // it is deterministic arithmetic on the rewritten node only, so the
-        // rewritten goal states the value the substitution denotes.
-        match term {
-            binary_term!(Int32, Add, left, right) => {
-                let (left, right) = binary(left, right);
-                match (left.as_ref(), right.as_ref()) {
-                    (bits32_constant!(first), bits32_constant!(second)) => MachineTerm::constant(
-                        constant_u32(*first).wrapping_add(constant_u32(*second)),
-                    ),
-                    _ => binary_node!(Int32, Add, left, right),
-                }
-            }
-            binary_term!(Int32, Subtract, left, right) => {
-                let (left, right) = binary(left, right);
-                match (left.as_ref(), right.as_ref()) {
-                    (bits32_constant!(first), bits32_constant!(second)) => MachineTerm::constant(
-                        constant_u32(*first).wrapping_sub(constant_u32(*second)),
-                    ),
-                    _ => binary_node!(Int32, Subtract, left, right),
-                }
-            }
-            binary_term!(Int32, Multiply, left, right) => {
-                MachineTerm::multiply(rewrite_term(left, from, to), rewrite_term(right, from, to))
-            }
-            binary_term!(Int32, BitwiseAnd, left, right) => MachineTerm::bitwise_and(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            binary_term!(Int32, ShiftLeft, left, right) => {
-                // The term denotes the shifted bits; signed C overflow is
-                // checked separately during expression evaluation. Preserve
-                // unsigned high-bit results when substitution makes both
-                // operands constant.
-                MachineTerm::unsigned_shift_left(
-                    rewrite_term(left, from, to),
-                    rewrite_term(right, from, to),
-                )
-            }
-            // The same at `uint32`, whose operators and constants keep their
-            // format.
-            binary_term!(UInt32, Add, left, right) => {
-                let (left, right) = binary(left, right);
-                match (left.constant32(), right.constant32()) {
-                    (Some(first), Some(second)) => {
-                        MachineTerm::uint32_constant(first.wrapping_add(second))
-                    }
-                    _ => binary_node!(UInt32, Add, left, right),
-                }
-            }
-            binary_term!(UInt32, Subtract, left, right) => {
-                let (left, right) = binary(left, right);
-                match (left.constant32(), right.constant32()) {
-                    (Some(first), Some(second)) => {
-                        MachineTerm::uint32_constant(first.wrapping_sub(second))
-                    }
-                    _ => binary_node!(UInt32, Subtract, left, right),
-                }
-            }
-            binary_term!(UInt32, Multiply, left, right) => MachineTerm::multiply_at(
-                MachineIntegerType::UInt32,
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            binary_term!(UInt32, BitwiseAnd, left, right) => MachineTerm::bitwise_and_at(
-                MachineIntegerType::UInt32,
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            binary_term!(UInt32, ShiftLeft, left, right) => MachineTerm::uint32_shift_left(
-                rewrite_term(left, from, to),
-                rewrite_term(right, from, to),
-            ),
-            MachineTerm::PureFunctionApplication { name, arguments } => {
-                MachineTerm::PureFunctionApplication {
-                    name: name.clone(),
-                    arguments: arguments
-                        .iter()
-                        .map(|argument| rewrite_term(argument, from, to))
-                        .collect(),
-                }
-            }
-            // The memory snapshot is fixed, but its address is an ordinary
-            // expression: exact equality substitution is congruent there too.
-            MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
-                memory.clone(),
-                Box::new(Pointer {
-                    block: pointer.block.clone(),
-                    offset: rewrite_offset(&pointer.offset, from, to),
-                }),
-                *kind,
-            ),
-            MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
-                Pointer {
-                    block: pointer.block.clone(),
-                    offset: rewrite_offset(&pointer.offset, from, to),
-                },
-                class.class(),
-            ),
-            MachineTerm::Variable(_) => rewrite_through_load_variable(term, &|pointer| Pointer {
-                block: pointer.block.clone(),
-                offset: rewrite_offset(&pointer.offset, from, to),
-            })
-            .unwrap_or_else(|| term.clone()),
-            MachineTerm::If { .. }
-            | MachineTerm::BoolCast { .. }
-            | MachineTerm::RangeFold { .. }
-            | MachineTerm::ClickFunctionApplication { .. }
-            | MachineTerm::AlgebraicMatch { .. }
-            | MachineTerm::IntegerToMachine { .. } => {
-                let mut rewrite = super::term_rewrite::TermRewrite::for_bits(from, to);
-                let rewritten = rewrite.bits(term);
-                // The walker reports a scope it will not substitute through,
-                // or exhausted work, by setting a flag and handing back a
-                // placeholder constant. That placeholder is not a rewritten
-                // term: keeping it replaced an unfolded `match` by `0` and
-                // let `rewrite` close false goals. Declining an occurrence is
-                // always a sound substitution, so the term stays as it was.
-                if rewrite.refusal().is_some() {
-                    term.clone()
-                } else {
-                    rewritten
-                }
-            }
-            MachineTerm::Constant { .. } => term.clone(),
-            term => match (term.as_binary(), term.as_unary()) {
-                // The 32-bit word operators are rebuilt as bare nodes, the rest
-                // through their smart constructors.
-                (Some((op, left, right)), _) if op.is_bitvector32() => {
-                    op.build_raw(rewrite_term(left, from, to), rewrite_term(right, from, to))
-                }
-                (Some((op, left, right)), _) => {
-                    op.build(rewrite_term(left, from, to), rewrite_term(right, from, to))
-                }
-                (_, Some((op, value))) if op.is_bitvector32() => {
-                    op.build_raw(rewrite_term(value, from, to))
-                }
-                (_, Some((op, value))) => op.build(rewrite_term(value, from, to)),
-                _ => unreachable!("every other variant has its own arm"),
-            },
-        }
-    }
-
     fn rewrite_offset_term(
         offset: &PointerOffsetTerm,
         from: &MachineTerm,
@@ -2027,6 +2027,28 @@ fn rewrite_atomic_proposition_by_exact_equality(
     ) -> SharedIntegerTerm {
         match term.as_ref() {
             IntegerTerm::Machine(machine) => {
+                if let Some(root) = machine.shared_operand()
+                    && let Some(value) =
+                        shared::rewrite(root, from, to, |leaf| rewrite_term(leaf, from, to))
+                {
+                    if value == *root {
+                        return term.clone();
+                    }
+                    return MachineOperandView::Shared(&value)
+                        .observe(machine.ty())
+                        .unwrap_or_else(|| {
+                            IntegerTerm::Machine(
+                                SharedMachineIntegerTerm::from_shared(machine.ty(), value)
+                                    .expect("retained rewrite"),
+                            )
+                        })
+                        .into();
+                }
+                if crate::instrumentation::deadline_exceeded() {
+                    return term.clone();
+                }
+                // An opaque replacement can leave the shared producer fragment.
+                // Keep that explicit compatibility output boundary.
                 let value = rewrite_term(machine.value(), from, to);
                 if value == *machine.value() {
                     return term.clone();
@@ -2077,13 +2099,37 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 item,
                 body,
             } => {
-                let rewritten_start = rewrite_term(start.value(), from, to);
-                let rewritten_end = rewrite_term(end.value(), from, to);
-                if rewritten_start == *start.value() && rewritten_end == *end.value() {
+                let endpoint = |endpoint: &SharedIntegerRangeEndpoint| {
+                    if let Some(root) = endpoint.machine_operand().shared_operand()
+                        && let Some(value) =
+                            shared::rewrite(root, from, to, |leaf| rewrite_term(leaf, from, to))
+                    {
+                        return endpoint
+                            .with_shared_operand(value)
+                            .expect("retained endpoint rewrite");
+                    }
+                    if crate::instrumentation::deadline_exceeded() {
+                        return endpoint.clone();
+                    }
+                    SharedIntegerRangeEndpoint::intern(rewrite_term(endpoint.value(), from, to))
+                };
+                let rewritten_start = endpoint(start);
+                let rewritten_end = endpoint(end);
+                if rewritten_start == *start && rewritten_end == *end {
                     return term.clone();
                 }
                 IntegerTerm::RangeFold {
-                    index: index.with_machine_endpoints(rewritten_start, rewritten_end),
+                    index: match index {
+                        IntegerRangeFoldIndex::Int32 { .. } => IntegerRangeFoldIndex::Int32 {
+                            start: rewritten_start,
+                            end: rewritten_end,
+                        },
+                        IntegerRangeFoldIndex::UInt64 { .. } => IntegerRangeFoldIndex::UInt64 {
+                            start: rewritten_start,
+                            end: rewritten_end,
+                        },
+                        _ => unreachable!(),
+                    },
                     initial: initial.clone(),
                     accumulator: *accumulator,
                     item: *item,

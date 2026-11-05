@@ -427,10 +427,20 @@ evidence construction for a selected load-versus-compound replacement remain
 explicit boundaries to migrate; this does not complete the memory comparison
 audit.
 
+Exact equality substitution now retains shared arithmetic in machine observations
+and machine range-fold endpoints. Reconstruction preserves the native rewrite
+constructors, including raw 32-bit sums/differences, legacy cast encodings and
+literal spelling. Pure arithmetic rewrites reuse syntax results; load-bearing
+rewrites retain query-local registry-dependent results. Differential tests cover
+widths, operators, casts and load canonical matching; cold DAGs and growing
+prefixes cover both observations and fold endpoints without boxed exports.
+Opaque replacements that leave the shared producer fragment still reach the
+native reconstruction boundary and must be migrated before part 1 is complete.
+
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
-| Fold checking and equality | exact equality rewriting; native-output reconstruction boundaries |
+| Fold checking and equality | opaque outputs from exact equality rewriting; native-output reconstruction boundaries |
 | Dependency and selected-atom walkers | native-carrier reconstruction boundaries; verify remaining guarded legacy reads |
 | Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
 | Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
