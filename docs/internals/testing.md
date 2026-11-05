@@ -1103,9 +1103,9 @@ line (`arena` 1,382, `rbtree-insert` 1,456, `owned-vector` 2,434;
 `evals/speed-survey.sh` remains the whole-corpus survey: every
 example, wall time, so its number moves with the corpus.
 
-### The `auto` eval
+### The `solve` eval
 
-`evals/auto.py` measures, for a sample of the hand-written `have`
+`evals/solve.py` measures, for a sample of the hand-written `have`
 statements in the examples, how many the omitted proof `have P;` proves where
 they stand and how many can be deleted with the proof still verifying, against a committed
 baseline. A change to the implicit closer, `solve` or what they rely on quotes its result,
@@ -1634,7 +1634,7 @@ automation only inside the selected claim, including nested proofs. Untouched
 neighboring claims and required modeled workers are still verified normally.
 The selected runtime label must be visited; a missing label is a failure rather
 than a check with automation left enabled. The unconditional
-`without_implicit_auto` API remains strict for every proof it visits. Expanding
+`without_implicit_solve` API remains strict for every proof it visits. Expanding
 one site runs its whole claim, so this costs a fixed number of runs of the
 claim where the per-site path costs one per site. The per-site path that
 follows is used only when `--start-at`, `--max-sites` or `--changed-since` selects a
@@ -1684,7 +1684,7 @@ audit target is narrowed to one sidecar or the claim is selected by location,
 timings:
 
 ```text
-[1/1] mdtests/scalar.md:16:47  scalar.arithmetic_result (auto) ... expanded (expand 1107 units, 25ms, cold original 1053 units, 13ms, cold rewritten 1240 units, 12ms, reexpand 163 units, 4ms)
+[1/1] mdtests/scalar.md:16:47  scalar.arithmetic_result (solve) ... expanded (expand 1107 units, 25ms, cold original 1053 units, 13ms, cold rewritten 1240 units, 12ms, reexpand 163 units, 4ms)
 CLAIM scalar.arithmetic_result verify 1 rewrite(s) ... ok (1210 units, 17ms)
 ```
 

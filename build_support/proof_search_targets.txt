@@ -38,6 +38,7 @@ derive_structural_rule
 disequality_by_refutation
 disequality_goal_equality
 disjunction_candidates
+driver
 equality_by_bounds
 extract_special_conjunct_premises
 fact_transport_candidate_search
@@ -68,8 +69,8 @@ read_definition_condition
 refute_definition_ends
 resolve_solve_premises
 resolve_solve_premises_unmeasured
-retry_statement_after_auto_open
 retry_statement_after_refusal
+retry_statement_after_solve_open
 rewrite_search
 scalar_equality_goal_is_refuted
 scalar_offset_goal_is_refuted
@@ -85,9 +86,7 @@ selected_solve_derivation_with_surfaces
 signed_operand_bound_premises
 try_arithmetic_fact_closure
 try_arithmetic_with_selected_premises
-try_auto_proof_closure
 try_bridged_selected_arithmetic
-try_carry_entry_conjunct
 try_cell_frame_transport_closure
 try_close_after_rewrite
 try_connected_equality_chain_closure
@@ -98,7 +97,6 @@ try_constructor_join_closure
 try_constructor_witness_exists_closure
 try_definedness_by_bounds
 try_definition_condition_closure
-try_direct_caller_requirement_closure
 try_direct_logical_closure
 try_direct_model_equality_rewrite_closure
 try_direct_operation_identity
@@ -201,4 +199,7 @@ try_wide_arithmetic_using
 try_wide_equality_through_integer
 wide_arithmetic_with
 with_goal_operation_identities
-driver
+try_zero_witness_closure
+try_entry_existential_closure
+try_selected_entry_existential_closure
+try_carry_entry_conjunct

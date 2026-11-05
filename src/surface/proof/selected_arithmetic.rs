@@ -1,4 +1,4 @@
-//! `auto` on an `Integer` fact whose atoms observe machine values.
+//! `solve` on an `Integer` fact whose atoms observe machine values.
 //!
 //! Selected-premise arithmetic reads linear `Integer` claims. A proof about `to_integer(i)`
 //! usually also needs what the program knows about `i` itself: `i < n` for
@@ -67,14 +67,14 @@ const REWRITE_SOLVE_CLOSURES: usize = 8;
 /// by `assumption`: a goal that restates a fact through one equation.
 const SINGLE_REWRITES: usize = 16;
 
-/// How many connected constructor equations `auto` pairs.
+/// How many connected constructor equations `solve` pairs.
 const CONSTRUCTOR_EQUATIONS: usize = 16;
 
-/// How many connected function facts `auto` reads a goal out of, and how
+/// How many connected function facts `solve` reads a goal out of, and how
 /// many leaves of one definition's conditional tree it splits down to.
 const DEFINITION_FACTS: usize = 16;
 const DEFINITION_LEAVES: usize = 16;
-/// How many applications at a definition's ends `auto` follows into their
+/// How many applications at a definition's ends `solve` follows into their
 /// own definitions on the way to one end.
 const DEFINITION_UNFOLDS: usize = 4;
 
@@ -170,7 +170,7 @@ enum Establish {
     /// A fixed sequence of steps.
     Steps(Vec<ProofStep>),
     /// The term-by-term observation of `left + right` or `left - right`:
-    /// a signed operation once it is defined, which `auto` proves when it is
+    /// a signed operation once it is defined, which `solve` proves when it is
     /// not already a fact, and an unsigned one once it stays in range.
     Operation {
         operation: ContractExpression,
@@ -668,7 +668,7 @@ impl<'a> Proof<'a> {
     }
 }
 
-/// The proof `if`s `auto` writes through a definition, and their ends.
+/// The proof `if`s `solve` writes through a definition, and their ends.
 enum DefinitionPlan {
     Split {
         condition: ClickProposition,
@@ -770,7 +770,7 @@ theorem identity(x: {ty}) {{
             expanded.contains("integer_operation_identity"),
             "{expanded}"
         );
-        without_implicit_auto(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
+        without_implicit_solve(|| crate::surface::verify_click_theorems(&expanded)).unwrap();
         let omitted = source.replace(&format!("using {{ {bound}; }}"), "using {}");
         assert!(
             crate::surface::verify_click_theorems(&omitted).is_err(),
@@ -799,7 +799,7 @@ theorem identity(x: {ty}) {{
     }
 
     #[test]
-    fn auto_proves_an_equality_operation_identity_once() {
+    fn solve_proves_an_equality_operation_identity_once() {
         // Each bound of the split equality is proved inside its own `have`,
         // which drops the identities proved there, so proving them per bound
         // would prove `to_integer(x + 1) == to_integer(x) + 1` twice.
@@ -831,7 +831,7 @@ theorem successor_identity(x: int32) {
     /// `solve` reaches its simplification before splitting a plain 64-bit
     /// equality into its two bounds, each of which would run a nested search.
     #[test]
-    fn auto_leaves_a_plain_64_bit_equality_to_solve() {
+    fn selected_arithmetic_leaves_a_plain_64_bit_equality_to_general_solve() {
         let source = r#"spec enum Color { Red, Black, }
 function color_bit(color: Color) -> int32 {
     match color { Color::Red => 0, Color::Black => 1, }
@@ -881,7 +881,7 @@ theorem black_color_is_black(color: Color) {
     }
 
     /// The connected-equality rewrite search is `solve`'s, so `solve()` alone
-    /// proves what used to need `auto()`.
+    /// proves what used to need `solve()`.
     #[test]
     fn solve_runs_the_connected_equality_rewrite_search() {
         crate::surface::verify_click_theorems(

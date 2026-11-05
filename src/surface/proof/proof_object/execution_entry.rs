@@ -337,7 +337,7 @@ impl<'a> Proof<'a> {
                                     can_expand_execution_prefix: matches!(
                                         &tactic,
                                         PostExecutionTactic::Solve
-                                            | PostExecutionTactic::AutoClose
+                                            | PostExecutionTactic::ImplicitSolve
                                             | PostExecutionTactic::SolveUsing(_)
                                             | PostExecutionTactic::Have(_)
                                     ),
@@ -398,7 +398,7 @@ impl<'a> Proof<'a> {
                     can_expand_execution_prefix: matches!(
                         &tactic,
                         PostExecutionTactic::Solve
-                            | PostExecutionTactic::AutoClose
+                            | PostExecutionTactic::ImplicitSolve
                             | PostExecutionTactic::SolveUsing(_)
                             | PostExecutionTactic::Have(_)
                     ),

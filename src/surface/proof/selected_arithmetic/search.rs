@@ -87,7 +87,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
-    /// `auto`'s route for a disequality goal `a != b`: a linear refutation
+    /// `solve`'s route for a disequality goal `a != b`: a linear refutation
     /// of `a == b` leaves `a` on one side of `b`, so prove `a < b`, or else
     /// `b < a`, by selected-premise arithmetic, and refute `a == b` from it.
     pub(in crate::surface::proof) fn try_disequality_by_selected_refutation(
@@ -103,7 +103,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             relate(right.clone(), left.clone(), Relation::Less),
         ] {
             check_verification_deadline()?;
-            let Ok(scope) = search_input.begin_have(order.clone()) else {
+            let Ok(scope) = search_input.driver().open_have(order.clone()) else {
                 continue;
             };
             // An order that is itself a fact is not among the premises the
@@ -317,7 +317,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// The equality-by-bounds closure as `solve` tries it early. A plain
     /// 64-bit equality, with no sum or difference on either side, waits for
     /// `solve`'s other strategies and the wide-equality route after them:
-    /// proving it by bounds here would run a nested `auto` for each bound
+    /// proving it by bounds here would run a nested `solve` for each bound
     /// ahead of them.
     pub(in crate::surface::proof) fn try_equality_by_bounds_early(
         search_input: &Proof<'a>,
@@ -341,7 +341,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Close an `Integer` equality goal `l == r` by proving `l <= r` and
-    /// `r <= l` with `auto` on each stated fact and joining them with
+    /// `r <= l` with `solve` on each stated fact and joining them with
     /// `equal_from_bounds`. Any miss leaves the proof unchanged.
     pub(in crate::surface::proof) fn try_equality_by_bounds(
         search_input: &Proof<'a>,
@@ -350,7 +350,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// [`Self::try_equality_by_bounds`], also for a plain 32-bit
-    /// equality when `plain_32_bit`: `auto`'s last route, after the indexed
+    /// equality when `plain_32_bit`: `solve`'s last route, after the indexed
     /// native-reading route has missed, as it does for an Integer fact such
     /// as `to_integer(i) + 1 == 2`.
     pub(in crate::surface::proof) fn equality_by_bounds(
@@ -422,7 +422,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Otherwise the goal's identities are proved once, here, rather than
         // once inside each bound's `have`, where the first bound's proof of
         // them would be dropped when its `have` closes.
-        let Ok(scope) = search_input.begin_have(lower.clone()) else {
+        let Ok(scope) = search_input.driver().open_have(lower.clone()) else {
             return Ok(None);
         };
         let mut lower_alone = scope
@@ -450,7 +450,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let closed = match lower_alone.take() {
                 Some(closed) => closed,
                 None => {
-                    let Ok(scope) = proof.begin_have(bound.clone()) else {
+                    let Ok(scope) = proof.driver().open_have(bound.clone()) else {
                         return Ok(None);
                     };
                     let Some(closed) = (scope).driver().try_arithmetic_fact_closure()? else {
@@ -469,13 +469,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .driver()
                 .apply_step(ProofStep::ArithmeticUsing(vec![lower, upper])),
         )
-    }
-
-    /// `auto` on a proposition goal with no C to run: `solve`.
-    pub(in crate::surface::proof) fn try_auto_proof_closure(
-        search_input: &Proof<'a>,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
-        crate::kernel::search::ProofSearch::try_solve_closure(search_input)
     }
 
     /// A goal that restates an available fact through one connected
@@ -676,7 +669,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
-    /// `auto` on a goal about the fields of a value that two connected facts
+    /// `solve` on a goal about the fields of a value that two connected facts
     /// equate to constructor applications, `t == Node(c, r)` and
     /// `t == Node(Black, Empty)`: it states `Node(c, r) == Node(Black, Empty)`,
     /// proved by rewriting each application to `t`, and `solve` then reads the
@@ -775,7 +768,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         Ok(None)
     }
 
-    /// `auto` on a goal that is a condition inside a function's definition,
+    /// `solve` on a goal that is a condition inside a function's definition,
     /// given a fact `f(args) == k` whose arguments decide the definition's
     /// `match`es: `is_rb(left) == 1` from `is_rb(Node(.., left, right)) == 1`.
     /// Where every way through the definition's `if`s that does not take
@@ -1456,7 +1449,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         fact: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
-        let Ok(scope) = search_input.begin_have(fact.clone()) else {
+        let Ok(scope) = search_input.driver().open_have(fact.clone()) else {
             return Ok(None);
         };
         let Some(closed) = (scope).driver().try_arithmetic_fact_closure()? else {
@@ -1553,7 +1546,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 
     /// `try_machine_goal_through_integer` for a 64-bit equality goal. Its
     /// `Integer` reading is proved before the type is known, so it costs
-    /// more than the other machine goals; `auto` tries it last, after
+    /// more than the other machine goals; `solve` tries it last, after
     /// `solve` and its rewrite search.
     pub(in crate::surface::proof) fn try_wide_equality_through_integer(
         search_input: &Proof<'a>,

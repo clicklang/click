@@ -209,7 +209,7 @@ loop region starts.
 
 For a simple counter loop:
 
-<!-- verified-example: mdtests/count_to_loop_initialize_by_auto_and_preserve.md -->
+<!-- verified-example: mdtests/count_to_loop_initialize_by_solve_and_preserve.md -->
 ```c
 int32 count_to(int32 n) {
     int32 i = 0;
@@ -239,7 +239,7 @@ by {
 
 The full induction syntax names its two obligations explicitly:
 
-<!-- verified-example: mdtests/count_to_loop_initialize_by_auto_and_preserve.md -->
+<!-- verified-example: mdtests/count_to_loop_initialize_by_solve_and_preserve.md -->
 ```click
 loop {
     decreases n - i;

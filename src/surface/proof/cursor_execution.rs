@@ -2940,7 +2940,7 @@ fn execute_step_from_frontier_position_selecting_path(
             // Definedness is one of the statement's requirements, like a
             // callee's precondition: a probing step records it as an open
             // obligation, so a `step() by { ... }` body or the implicit
-            // `auto` proves it at the pre-state and the step reruns with it
+            // `solve` proves it at the pre-state and the step reruns with it
             // stated, which leaves the defined transition alone.
             let error = error
                 .with_reported_goal(goal.clone())

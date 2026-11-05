@@ -68,13 +68,13 @@ includes the phase costs for each claim batch.
 
 A claim whose sites are all selected is expanded once, with every site
 together, since expanding one site runs its whole claim, and its rewrite is
-cold-verified with the implicit `auto` off inside that claim. Untouched
+cold-verified with the implicit `solve` off inside that claim. Untouched
 neighboring claims and required workers are still verified normally. Failure
 of that whole-claim expansion fails the audit. A partial selection is captured together in one verification as well;
 its fixed-point check covers only the emitted regions, leaving unselected
 smart tactics unchanged.
 
-A claim with no smart site whose bare simple tactics the implicit `auto`
+A claim with no smart site whose bare simple tactics the implicit `solve`
 proves is one site of its own, found by verifying its source once during the
 inventory, and is audited as a whole claim.
 
@@ -739,7 +739,7 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
         sites.len()
     );
     let claims = resolve_audit_claims(&sources, &arguments.claims)?;
-    // A claim the implicit `auto` proves without a smart site is found by
+    // A claim the implicit `solve` proves without a smart site is found by
     // verifying its source; a run naming claims by location reads only theirs.
     let discovery_sources = if !claims.is_empty() && claims.iter().all(|claim| claim.path.is_some())
     {
@@ -752,14 +752,14 @@ fn prepare_audit(arguments: &Arguments, deadline: Instant) -> Result<AuditInvent
     } else {
         sources.clone()
     };
-    let (implicit_sites, implicit_failures) = implicit_auto_sites(
+    let (implicit_sites, implicit_failures) = implicit_solve_sites(
         &discovery_sources,
         &sites,
         arguments.limits.session.within(deadline)?,
         arguments.keep_going,
     )?;
     for failure in &implicit_failures {
-        println!("  implicit-auto discovery FAILED: {failure}");
+        println!("  implicit-solve discovery FAILED: {failure}");
     }
     println!(
         "  {} claims proved by the implicit closer with no smart site",
@@ -1438,13 +1438,13 @@ fn inventory_sites(sources: &[PathBuf]) -> Result<Vec<AuditSite>, String> {
     Ok(sites.into_values().collect())
 }
 
-/// One site per claim whose bare simple tactics the implicit `auto` proves,
+/// One site per claim whose bare simple tactics the implicit `solve` proves,
 /// or whose script's implicit tail runs C or closes a goal, and which holds
 /// no smart site: its whole expansion must verify without the implicit
-/// `auto`, so the audit expands it
+/// `solve`, so the audit expands it
 /// as it does a claim of smart sites. Finding them verifies each source once;
 /// a source with no smart site that does not verify is returned as a failure.
-fn implicit_auto_sites(
+fn implicit_solve_sites(
     sources: &[PathBuf],
     smart: &[AuditSite],
     limit: PhaseLimit,
@@ -1470,7 +1470,7 @@ fn implicit_auto_sites(
         if limit.deadline_exceeded() {
             return Err(RUN_LIMIT_EXHAUSTED.to_string());
         }
-        match implicit_auto_sites_in_source(
+        match implicit_solve_sites_in_source(
             source_path,
             &smart_claims,
             &smart_positions,
@@ -1495,7 +1495,7 @@ fn implicit_auto_sites(
     Ok((sites, failures))
 }
 
-fn implicit_auto_sites_in_source(
+fn implicit_solve_sites_in_source(
     source_path: &Path,
     smart_claims: &BTreeSet<(PathBuf, String)>,
     smart_positions: &BTreeSet<(PathBuf, usize, usize)>,
@@ -1513,10 +1513,10 @@ fn implicit_auto_sites_in_source(
     // The kernel's tables are thread-local, as in a session.
     let discovered = thread::scope(|scope| {
         thread::Builder::new()
-            .name("click-audit-implicit-auto".to_string())
+            .name("click-audit-implicit-solve".to_string())
             .stack_size(SESSION_THREAD_STACK_BYTES)
             .spawn_scoped(scope, || {
-                run_phase("implicit-auto discovery", limit, || {
+                run_phase("implicit-solve discovery", limit, || {
                     let (verified, events) =
                         click::instrumentation::collect(|| start_session(&source));
                     verified?;
@@ -1525,7 +1525,7 @@ fn implicit_auto_sites_in_source(
                         .filter_map(|event| match event {
                             click::instrumentation::VerificationEvent::TacticStarted(tactic)
                                 if tactic.tactic_name
-                                    == click::instrumentation::IMPLICIT_AUTO_TACTIC
+                                    == click::instrumentation::IMPLICIT_SOLVE_TACTIC
                                     || tactic.tactic_name
                                         == click::instrumentation::IMPLICIT_TAIL_TACTIC =>
                             {
@@ -1536,9 +1536,9 @@ fn implicit_auto_sites_in_source(
                         .collect::<BTreeSet<_>>())
                 })
             })
-            .map_err(|error| format!("failed to start implicit-auto discovery: {error}"))?
+            .map_err(|error| format!("failed to start implicit-solve discovery: {error}"))?
             .join()
-            .map_err(|_| "implicit-auto discovery thread panicked".to_string())?
+            .map_err(|_| "implicit-solve discovery thread panicked".to_string())?
     });
     let claims = match discovered {
         Ok((claims, _)) => claims,
@@ -1586,7 +1586,7 @@ fn implicit_auto_sites_in_source(
             },
             click_position,
             claim,
-            tactic_name: click::instrumentation::IMPLICIT_AUTO_TACTIC.to_string(),
+            tactic_name: click::instrumentation::IMPLICIT_SOLVE_TACTIC.to_string(),
         });
     }
     Ok((sites, failures))
@@ -2061,7 +2061,7 @@ fn audit_claim_rewrite(
     let original = worker.source.container_source.clone();
     // Runtime discovery can observe an implicit tail after an already
     // complete explicit script. Its unchanged expansion is a fixed point;
-    // it still has to pass the smart-site and cold, no-implicit-auto checks.
+    // it still has to pass the smart-site and cold, no-implicit-solve checks.
     let expanded_click_source = rewritten_click_source(&worker.source, &expanded)
         .map_err(|error| format!("expanded proof container did not parse: {error}"))?;
     claim_source_position_for_source(&worker.source, &expanded_click_source, &site.claim)?;
@@ -2100,7 +2100,7 @@ fn audit_claim_rewrite(
                 // Only the expanded claim must be self-contained. The
                 // targeted verifier also checks untouched neighboring claims
                 // and modeled workers, whose automation remains ordinary.
-                click::surface::without_implicit_auto_for_claim(&site.claim, || {
+                click::surface::without_implicit_solve_for_claim(&site.claim, || {
                     cold_verify(
                         &expanded,
                         &cold_source,
@@ -2224,7 +2224,7 @@ fn audit_selected_claim_rewrite(
         limits.verification.within(deadline)?,
         "original proof-unit verification",
     )?;
-    // Unselected automation keeps running, the implicit `auto` included.
+    // Unselected automation keeps running, the implicit `solve` included.
     let expanded_cost = cold_verify(
         &expanded,
         source,

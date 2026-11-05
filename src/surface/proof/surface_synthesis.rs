@@ -2951,7 +2951,8 @@ fn raise_kernel_term(
             };
             SurfaceTerm::CFragment(CExpression::Value(value))
         }
-        Node::MachineBinary { .. }
+        Node::MemoryLoad { .. }
+        | Node::MachineBinary { .. }
         | Node::MachineUnary { .. }
         | Node::MachineCast { .. }
         | Node::Variable(_) => {

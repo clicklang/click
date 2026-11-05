@@ -828,7 +828,7 @@ fn proof_error_report(
 
 /// What refused a proof step, by class, and the `click docs` entry that
 /// documents it. A C statement's open requirement is proved by the implicit
-/// `auto` when no smart tactic reached the statement, so its refusal is a
+/// implicit `solve` when no smart tactic reached the statement, so its refusal is a
 /// smart miss even under a written `step()`. A smart form that elides an
 /// argument, such as `apply(t(x))`, refuses by a search miss: the fix is to
 /// write the argument. A proof that ran out of steps with its goal open was

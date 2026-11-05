@@ -766,7 +766,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
         .apply_step(ProofStep::UnfoldPredicate("selected".into()))
         .unwrap();
         let body_kernel = root.lower_surface_goal(&body_surface, "test body").unwrap();
-        let scope = root.begin_have(surface.clone()).unwrap();
+        let scope = root.driver().open_have(surface.clone()).unwrap();
         assert!(scope.clone().join().is_err());
         let closed = scope.driver().apply_step(ProofStep::Normalize).unwrap();
         let (joined, work) =

@@ -1,6 +1,6 @@
 # Separate proof operations from proof search
 
-Status: behavior-preserving proof/search split and explicit proof driver implemented.
+Status: proof/search split, explicit proof driver, and shared implicit/explicit solver implemented.
 The next step is to remove the inventoried operation-to-search dependencies
 one at a time. The general fast-operation guarantee is not established yet.
 
@@ -9,13 +9,17 @@ one at a time. The general fast-operation guarantee is not established yet.
 - **Parts:** proof operations, discovery, proof-script driver, persistent state.
 - **Boundary:** explicit operations remain on `kernel::proof::ProofObject` and
   its Surface `Proof` wrapper; discovery is exposed through `kernel::search::ProofSearch`.
-- **Cost:** this refactor does not change algorithms, indexes, budgets or costs.
+- **Cost:** the interface split preserves operation costs. The shared solver
+  includes the former implicit zero-witness attempt, entry-witness transport,
+  and return-resource folding;
+  these remain expandable search, with existing budgets.
   The eventual operation bound is selected input and necessary state delta,
   up to indexing factors; ambient buckets and history are not explicit input.
 - **Result:** search uses the existing operations and persistent successors.
   There is no second proof state, proof conversion or new validation pass.
-- **Lowering/refusal:** no changes to syntax, lowering, obligations, proof
-  acceptance, diagnostics or search refusal policy are intended.
+- **Lowering/refusal:** syntax and obligation generation are unchanged.
+  An omitted obligation proof and written `solve()` use the same strategies;
+  explicit solve can now prove the former implicit-only zero-witness case.
 
 ## Implemented split
 
@@ -73,10 +77,13 @@ For statement obligations:
    existing candidate/retry behavior. The candidate cannot prove its own inputs.
 
 Obligation generation is intended to be fast; implicit solving is legitimately
-slow and expandable. This extraction preserves existing fold dispatch and
-failed-preparation retries. It does not introduce a second checker, change
-acceptance or remove a walk. In particular, `apply_fast_simple_step` still
-re-enters the driver for folds with implicit auto disabled; this compatibility
+slow and expandable. An omitted obligation proof invokes the same
+`ProofSearch::try_solve_closure` entry point as written `solve()`. The driver
+provides no private witness heuristic, extra premise list or caller-requirement
+shortcut. Such strategies belong in the shared solver. The implicit tail
+schedules the remaining C and outstanding goals; it is not another solver. This extraction preserves existing fold dispatch and
+failed-preparation retries. It introduces no second checker. In particular, `apply_fast_simple_step` still
+re-enters the driver for folds with implicit solve disabled; this compatibility
 edge is inventoried rather than claimed search-free.
 
 ## Dependency inventory and enforcement
@@ -102,10 +109,10 @@ Roles distinguish the work remaining:
 | `mixed` | Mixed drivers and auxiliary planners still requiring caller-level classification. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 605 records: 7 legacy bridges, 22 kernel callers,
-14 Surface operation dependencies, 15 operation-to-driver dependencies,
-94 driver records, 1 other dispatch record, 6 presentation records,
-415 search-internal records, 29 mixed records and 2 imports. These are reference
+The current inventory contains 600 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 14 operation-to-driver dependencies,
+95 driver records, 1 other dispatch record, 6 presentation records,
+420 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
@@ -144,6 +151,32 @@ inline loop, resolve arbitrary macro-generated calls, or prove an arbitrary
 helper fast. The existing operation audit and scaling tests remain necessary.
 The separate target list includes compatibility entry points so a caller cannot
 hide an existing search merely by using the old wrapper.
+
+## Have prerequisite boundary
+
+`Proof::begin_have` opens a nested goal or reports ordinary lowering
+requirements; it does not acquire a driver or schedule their proofs.
+`ProofDriver::open_have` (and its source-proof adapters) owns the existing
+lowering-obligation probe, invokes the shared obligation solver when needed,
+and opens the scope with the resulting facts. Strict replay takes the direct
+operation path. No new obligation format or proof rechecker is introduced.
+The existing probe/retry behavior is preserved; this change does not claim to
+remove repeated preparation or the separate separation-observation costs.
+
+The source boundary rejects driver and registered search references inside
+`begin_have`. The primitive regression leaves implicit solving enabled and
+requires raw opening to report a prerequisite; driver opening succeeds and
+retains the prerequisite proof. Scoped-conversion expansion replays with
+implicit solving disabled. Other operation-to-driver records remain pending.
+
+## Detailed caller classification
+
+The [caller audit](proof-boundary-classification.md) classifies the original 19 mixed and
+15 operation-to-driver records (14 remain after the have extraction) by why they invoke search or interpretation.
+It distinguishes expected dispatch from hidden obligation callbacks, declaration
+validation, diagnostic execution, and the remaining primitive search dependencies.
+The proposed enforcement changes are for design review; no behavior changes or
+new scaling measurements accompany that classification.
 
 ## Next step
 

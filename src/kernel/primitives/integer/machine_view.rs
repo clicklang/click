@@ -9,6 +9,8 @@ use crate::kernel::{constant_i64, int64_constant};
 // Only written machine variables are cached. Registered-load dependencies are
 // resolved by each collector against its current registry, never cached here.
 thread_local! {
+    static SHARED_MACHINE_READ_USES: std::cell::RefCell<HashMap<(u64, Option<u32>), crate::persistent::PersistentMap<(u64, Option<u32>), KernelTerm>>> = Default::default();
+    static SHARED_MACHINE_READS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
     static SHARED_MACHINE_CONVERSIONS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
     static SHARED_MACHINE_CARRIERS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentSet<Variable>>> = Default::default();
 }
@@ -19,6 +21,8 @@ pub(crate) fn clear_shared_machine_variable_cache() {
     KernelTerm::clear_cast_checks();
     SHARED_MACHINE_CARRIERS.with(|cache| cache.borrow_mut().clear());
     SHARED_MACHINE_CONVERSIONS.with(|cache| cache.borrow_mut().clear());
+    SHARED_MACHINE_READS.with(|cache| cache.borrow_mut().clear());
+    SHARED_MACHINE_READ_USES.with(|cache| cache.borrow_mut().clear());
 }
 
 /// Written variables of the shared arithmetic storage fragment. This summary
@@ -43,9 +47,9 @@ pub(crate) fn shared_machine_syntax_variables(
                 KernelTermNode::Variable(variable) => {
                     crate::persistent::PersistentSet::default().with_value(*variable)
                 }
-                KernelTermNode::MachineLiteral(_) | KernelTermNode::IntegerToMachine { .. } => {
-                    Default::default()
-                }
+                KernelTermNode::MachineLiteral(_)
+                | KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::MemoryLoad { .. } => Default::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {
@@ -95,12 +99,45 @@ pub(crate) fn shared_machine_syntax_variables(
 /// This memo contains syntax only; load registries are read by each caller.
 pub(crate) fn shared_machine_conversion_leaves(
     root: &KernelTerm,
-    mut visit: impl FnMut() -> bool,
+    visit: impl FnMut() -> bool,
 ) -> Option<crate::persistent::PersistentMap<u64, KernelTerm>> {
     if !root.has_machine_conversions() {
         return Some(Default::default());
     }
-    SHARED_MACHINE_CONVERSIONS.with(|cache| {
+    shared_machine_selected_leaves(
+        root,
+        &SHARED_MACHINE_CONVERSIONS,
+        |node| matches!(node, KernelTermNode::IntegerToMachine { .. }),
+        visit,
+    )
+}
+
+/// Selected scalar read nodes. Their addresses and snapshots remain borrowed;
+/// this syntax summary reads neither registry metadata nor proof facts.
+pub(crate) fn shared_machine_read_leaves(
+    root: &KernelTerm,
+    visit: impl FnMut() -> bool,
+) -> Option<crate::persistent::PersistentMap<u64, KernelTerm>> {
+    if !root.has_machine_reads() {
+        return Some(Default::default());
+    }
+    shared_machine_selected_leaves(
+        root,
+        &SHARED_MACHINE_READS,
+        |node| matches!(node, KernelTermNode::MemoryLoad { .. }),
+        visit,
+    )
+}
+
+type SharedLeafCache =
+    std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>>;
+fn shared_machine_selected_leaves(
+    root: &KernelTerm,
+    cache: &'static std::thread::LocalKey<SharedLeafCache>,
+    is_leaf: fn(&KernelTermNode) -> bool,
+    mut visit: impl FnMut() -> bool,
+) -> Option<crate::persistent::PersistentMap<u64, KernelTerm>> {
+    cache.with(|cache| {
         let mut cache = cache.borrow_mut();
         let mut pending = vec![(root, false)];
         while let Some((term, finish)) = pending.pop() {
@@ -122,7 +159,7 @@ pub(crate) fn shared_machine_conversion_leaves(
                 continue;
             }
             let mut result = crate::persistent::PersistentMap::default();
-            if matches!(term.node(), KernelTermNode::IntegerToMachine { .. }) {
+            if is_leaf(term.node()) {
                 result.insert(term.id(), term.clone());
             }
             for child in children {
@@ -151,6 +188,94 @@ pub(crate) fn shared_machine_conversion_leaves(
             cache.insert(term.id(), result);
         }
         Some(cache[&root.id()].clone())
+    })
+}
+
+/// Read occurrences with the inherited native access width. One read can occur
+/// under different casts; retain each width, without caching memory availability.
+pub(crate) fn shared_machine_read_uses(
+    root: &KernelTerm,
+    width: Option<u32>,
+    mut visit: impl FnMut() -> bool,
+) -> Option<crate::persistent::PersistentMap<(u64, Option<u32>), KernelTerm>> {
+    if !root.has_machine_reads() {
+        return Some(Default::default());
+    }
+    SHARED_MACHINE_READ_USES.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let mut pending = vec![(root, width, false)];
+        while let Some((term, width, finish)) = pending.pop() {
+            if !visit() {
+                return None;
+            }
+            let key = (term.id(), width);
+            if cache.contains_key(&key) {
+                continue;
+            }
+            let children: Vec<_> = match term.node() {
+                KernelTermNode::MachineBinary {
+                    format, arguments, ..
+                } => {
+                    // Preserve binary_wide_term!'s native carrier classification.
+                    let width = if !matches!(
+                        format,
+                        MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                    ) {
+                        Some(8)
+                    } else {
+                        width
+                    };
+                    arguments.iter().map(|child| (child, width)).collect()
+                }
+                KernelTermNode::MachineCast {
+                    encoding: MachineCastSpelling::Generic,
+                    source,
+                    operand,
+                    ..
+                } => vec![(operand, Some(source.format().byte_width()))],
+                KernelTermNode::MachineUnary { operand, .. }
+                | KernelTermNode::MachineCast { operand, .. } => vec![(operand, width)],
+                _ => Vec::new(),
+            };
+            if !finish && !children.is_empty() {
+                pending.push((term, width, true));
+                pending.extend(
+                    children
+                        .into_iter()
+                        .map(|(child, width)| (child, width, false)),
+                );
+                continue;
+            }
+            let mut result = crate::persistent::PersistentMap::default();
+            if matches!(term.node(), KernelTermNode::MemoryLoad { .. }) {
+                result.insert(key, term.clone());
+            }
+            for (child, width) in children {
+                let entries = &cache[&(child.id(), width)];
+                if result.is_empty() {
+                    result = entries.clone();
+                    continue;
+                }
+                if result.shares_root_with(entries) {
+                    continue;
+                }
+                let smaller = if result.len() < entries.len() {
+                    let smaller = result;
+                    result = entries.clone();
+                    smaller
+                } else {
+                    entries.clone()
+                };
+                for (key, leaf) in smaller.iter() {
+                    if !visit() {
+                        return None;
+                    }
+                    result.insert(*key, leaf.clone());
+                }
+            }
+            cache.insert(key, result);
+        }
+        Some(cache[&(root.id(), width)].clone())
     })
 }
 
@@ -330,6 +455,24 @@ impl SharedMachineIntegerTerm {
 }
 
 impl<'a> MachineOperandView<'a> {
+    /// Inspect a read without rebuilding its address or surrounding arithmetic.
+    pub(crate) fn read(self) -> Option<(&'a SharedCMemory, &'a Pointer, LoadKind)> {
+        match self {
+            Self::Shared(term) => match term.node() {
+                KernelTermNode::MemoryLoad {
+                    memory,
+                    address,
+                    kind,
+                } => Some((memory, address, *kind)),
+                _ => None,
+            },
+            Self::Legacy(MachineTerm::MemoryLoad(memory, address, kind)) => {
+                Some((memory, address, *kind))
+            }
+            Self::Legacy(_) => None,
+        }
+    }
+
     /// The exact generic 8/16-to-32-bit widening recognized by the native
     /// word reader. Inspect only this root; retain the operand's handle.
     pub(crate) fn narrow_widening32_operand(self) -> Option<(MachineIntegerType, Self)> {

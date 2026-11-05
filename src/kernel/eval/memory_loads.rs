@@ -2327,6 +2327,10 @@ pub(crate) fn is_load_variable_defining_fact(proposition: &Proposition) -> bool 
 /// session has learned about it since.
 #[derive(Clone)]
 struct RegisteredLoad {
+    /// Shared structural forms of this immutable descriptor. Capture/restore
+    /// keeps them with the entry they describe; origins and widths do not
+    /// change the value. None records an unmigrated native address payload.
+    terms: std::collections::HashMap<MachineIntegerType, Option<crate::kernel::KernelTerm>>,
     /// The canonical snapshot, address and kind: the load itself.
     memory: SharedCMemory,
     pointer: Pointer,
@@ -2857,6 +2861,30 @@ pub(crate) fn registered_load_term_for_variable(variable: &Variable) -> Option<M
                 load.kind,
             )
         })
+    })
+}
+
+/// Retain a registered read as structure once, without expanding its address
+/// on every imported use. The descriptor is immutable within its registry entry.
+pub(crate) fn registered_scalar_read_term(
+    variable: &Variable,
+    format: MachineIntegerType,
+) -> Option<crate::kernel::KernelTerm> {
+    crate::instrumentation::record_deterministic_work(1);
+    LOAD_VARIABLE_REGISTRY.with(|registry| {
+        let mut registry = registry.borrow_mut();
+        let read = registry.get_mut(variable)?;
+        read.terms
+            .entry(format)
+            .or_insert_with(|| {
+                crate::kernel::KernelTerm::scalar_read_descriptor(
+                    format,
+                    &read.memory,
+                    &read.pointer,
+                    read.kind,
+                )
+            })
+            .clone()
     })
 }
 
@@ -4429,6 +4457,7 @@ fn mint_load_variable_identity(
                     origin: known_origin,
                     epoch: known_epoch,
                     bytes: known_bytes,
+                    ..
                 }) if known_memory == memory && known_pointer == pointer && *known_kind == kind => {
                     // One entry stands for every access that resolved to this
                     // name, so its width has to cover all of them: a caller
@@ -4459,6 +4488,7 @@ fn mint_load_variable_identity(
                     registry.insert(
                         variable,
                         RegisteredLoad {
+                            terms: Default::default(),
                             memory: memory.clone(),
                             pointer: pointer.clone(),
                             kind,

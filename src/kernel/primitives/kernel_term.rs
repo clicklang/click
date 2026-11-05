@@ -5,6 +5,7 @@ use super::*;
 use crate::kernel::MachineCastSpelling;
 mod boolean;
 mod machine;
+mod reads;
 pub use machine::KernelMachineLiteral;
 use num_bigint::BigInt;
 use std::collections::{HashMap, VecDeque};
@@ -58,6 +59,14 @@ pub enum KernelTermNode {
     IntegerToMachine {
         destination: MachineIntegerType,
         operand: KernelTerm,
+    },
+    /// Exact scalar read descriptor. The snapshot is an opaque shared value;
+    /// observation origins and access evidence are not part of this node.
+    /// Native addresses remain an explicit input boundary during migration.
+    MemoryLoad {
+        memory: SharedCMemory,
+        address: Pointer,
+        kind: LoadKind,
     },
     MachineObservation {
         format: MachineIntegerType,
@@ -136,8 +145,9 @@ struct NodeKeyData {
     ty: KernelType,
     node: KernelTermNode,
     shared_machine_operand: bool,
-    producer_local_identity: bool,
+    opaque_observation_boundary: bool,
     machine_conversions: bool,
+    machine_reads: bool,
     conditional_machine_rewrites: bool,
     machine_constant: Option<KernelMachineLiteral>,
 }
@@ -159,31 +169,35 @@ impl NodeKey {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         ty.hash(&mut hash);
         node.hash(&mut hash);
-        // A fresh legacy identity belongs to its producer, so importing an
-        // equal native payload independently need not recover the same node.
-        // Do not admit a conversion over such a payload into shared observations.
-        let producer_local_identity = match &node {
+        // A fresh legacy identity belongs to its producer. Read addresses also
+        // remain native until their checker consumers migrate. Keep both out of
+        // shared observations, including when nested in a mathematical conversion.
+        // Inspect immediate children only; retain the result across growing DAGs.
+        let opaque_observation_boundary = match &node {
+            KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
                 matches!(value.identity, LegacyIdentity::Fresh(_))
             }
             KernelTermNode::Call { arguments, .. }
             | KernelTermNode::IntegerOperation { arguments, .. } => arguments
                 .iter()
-                .any(KernelTerm::has_producer_local_identity),
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::MachineBinary { arguments, .. }
             | KernelTermNode::BoolCompare { arguments, .. }
             | KernelTermNode::IntegerCompare { arguments, .. }
             | KernelTermNode::BoolEqual { arguments } => arguments
                 .iter()
-                .any(KernelTerm::has_producer_local_identity),
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::BoolIf { arguments } => arguments
                 .iter()
-                .any(KernelTerm::has_producer_local_identity),
+                .any(KernelTerm::has_opaque_observation_boundary),
             KernelTermNode::BoolCast { operand, .. }
             | KernelTermNode::IntegerToMachine { operand, .. }
             | KernelTermNode::MachineObservation { operand, .. }
             | KernelTermNode::MachineUnary { operand, .. }
-            | KernelTermNode::MachineCast { operand, .. } => operand.has_producer_local_identity(),
+            | KernelTermNode::MachineCast { operand, .. } => {
+                operand.has_opaque_observation_boundary()
+            }
             _ => false,
         };
         // This migration fragment has exact structural identities all the way
@@ -191,7 +205,7 @@ impl NodeKey {
         // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
             KernelTermNode::MachineLiteral(_) => true,
-            KernelTermNode::IntegerToMachine { .. } => !producer_local_identity,
+            KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
             }
@@ -209,6 +223,15 @@ impl NodeKey {
             }
             KernelTermNode::MachineUnary { operand, .. }
             | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_conversions(),
+            _ => false,
+        };
+        let machine_reads = match &node {
+            KernelTermNode::MemoryLoad { .. } => true,
+            KernelTermNode::MachineBinary { arguments, .. } => {
+                arguments.iter().any(KernelTerm::has_machine_reads)
+            }
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_reads(),
             _ => false,
         };
         // Conditional rewriting leaves ordinary arithmetic untouched. Retain
@@ -235,8 +258,9 @@ impl NodeKey {
             machine_constant,
             fingerprint: hash.finish(),
             shared_machine_operand,
-            producer_local_identity,
+            opaque_observation_boundary,
             machine_conversions,
+            machine_reads,
             conditional_machine_rewrites,
             ty,
             node,
@@ -328,8 +352,14 @@ impl KernelTerm {
         self.0.key.0.machine_constant.as_ref()
     }
 
-    pub(crate) fn has_producer_local_identity(&self) -> bool {
-        self.0.key.0.producer_local_identity
+    pub(crate) fn has_opaque_observation_boundary(&self) -> bool {
+        self.0.key.0.opaque_observation_boundary
+    }
+
+    /// Reads in the machine arithmetic fragment. Integer conversion payloads
+    /// are separate carrier leaves and retain their own scoped traversal.
+    pub(crate) fn has_machine_reads(&self) -> bool {
+        self.0.key.0.machine_reads
     }
 
     pub(crate) fn has_machine_conversions(&self) -> bool {
@@ -683,7 +713,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_conversion_observations_keep_producer_local_payloads_outside_the_fragment() {
+    fn integer_conversion_observations_keep_unmigrated_payloads_outside_the_fragment() {
         let _session = crate::kernel::VerificationSession::enter();
         let format = MachineIntegerType::Int32;
         let value = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
@@ -702,7 +732,7 @@ mod tests {
         };
         let mut importer = KernelTermImport::default();
         let root = importer.machine(format, &native);
-        assert!(root.has_producer_local_identity());
+        assert!(root.has_opaque_observation_boundary());
         assert!(SharedMachineIntegerTerm::from_shared(format, root.clone()).is_none());
         assert!(importer.machine_arithmetic(format, &native).is_none());
         assert_eq!(KernelTermExport::machine(&root).unwrap(), native);

@@ -2314,6 +2314,22 @@ fn collect_bitvector_memory_loads(
     collect_bitvector_memory_loads_with_width(term, current_memory, loads, width, seen_integers)
 }
 
+fn collect_memory_read_descriptor(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    current_memory: &CMemory,
+    loads: &mut Vec<(Pointer, u32)>,
+    width: Option<u32>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    if CMemorySnapshotIdentity::of(memory.memory()) == CMemorySnapshotIdentity::of(current_memory) {
+        let width = width
+            .ok_or_else(|| "current memory load has no statically known byte width".to_string())?;
+        loads.push((pointer.clone(), width));
+    }
+    collect_pointer_offset_memory_loads(&pointer.offset, current_memory, loads, seen_integers)
+}
+
 fn collect_bitvector_memory_loads_with_width(
     term: &MachineTerm,
     current_memory: &CMemory,
@@ -2340,22 +2356,14 @@ fn collect_bitvector_memory_loads_with_width(
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _) => Ok(()),
-        MachineTerm::MemoryLoad(memory, pointer, _) => {
-            if CMemorySnapshotIdentity::of(memory.memory())
-                == CMemorySnapshotIdentity::of(current_memory)
-            {
-                let width = width.ok_or_else(|| {
-                    "current memory load has no statically known byte width".to_string()
-                })?;
-                loads.push((pointer.as_ref().clone(), width));
-            }
-            collect_pointer_offset_memory_loads(
-                &pointer.offset,
-                current_memory,
-                loads,
-                seen_integers,
-            )
-        }
+        MachineTerm::MemoryLoad(memory, pointer, _) => collect_memory_read_descriptor(
+            memory,
+            pointer,
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        ),
         MachineTerm::PointerAddress(pointer, _) => collect_pointer_offset_memory_loads(
             &pointer.offset,
             current_memory,
@@ -2701,8 +2709,8 @@ fn collect_integer_memory_loads_with_width(
     collect_integer_node_memory_loads(term.as_ref(), current_memory, loads, width, seen_integers)
 }
 
-/// Shared arithmetic contains raw memory-bearing carriers only inside its
-/// Integer conversion leaves. Read that syntax summary, then resolve each
+/// Shared arithmetic retains read nodes and Integer conversion carriers.
+/// Read their syntax summaries, then resolve each
 /// payload against this query's snapshot; never cache memory-dependent results.
 fn collect_shared_machine_memory_loads(
     value: &SharedMachineIntegerTerm,
@@ -2720,6 +2728,7 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     };
+    collect_shared_read_memory_loads(root, current_memory, loads, width, seen_integers)?;
     let interrupted = || "memory-load collection exceeded its checking budget".to_string();
     let leaves = crate::kernel::shared_machine_conversion_leaves(root, || {
         !crate::instrumentation::deadline_exceeded()
@@ -2736,6 +2745,31 @@ fn collect_shared_machine_memory_loads(
             current_memory,
             loads,
             width,
+            seen_integers,
+        )?;
+    }
+    Ok(())
+}
+
+fn collect_shared_read_memory_loads(
+    root: &KernelTerm,
+    current_memory: &CMemory,
+    loads: &mut Vec<(Pointer, u32)>,
+    width: Option<u32>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    let reads = crate::kernel::shared_machine_read_uses(root, width, || {
+        !crate::instrumentation::deadline_exceeded_with_work(1)
+    })
+    .ok_or_else(|| "memory-load collection exceeded its checking budget".to_string())?;
+    for ((_, width), read) in reads.iter() {
+        let (memory, pointer, _) = MachineOperandView::Shared(read).read().expect("read leaf");
+        collect_memory_read_descriptor(
+            memory,
+            pointer,
+            current_memory,
+            loads,
+            *width,
             seen_integers,
         )?;
     }
@@ -13771,3 +13805,95 @@ mod shared_load_atom_comparison_tests {
 }
 
 mod legacy_search;
+
+#[cfg(test)]
+mod shared_read_memory_collection_tests {
+    use super::*;
+
+    #[test]
+    fn shared_read_collection_preserves_width_and_snapshot_refusals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new().with_block("read-width", 8);
+        let pointer = Pointer {
+            block: PointerBlock::Concrete("read-width".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let raw = MachineTerm::MemoryLoad(
+            intern_c_memory(memory.clone()),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        );
+        let narrow = MachineTerm::Cast {
+            spelling: MachineCastSpelling::Generic,
+            from: MachineIntegerType::Int8,
+            to: MachineIntegerType::Int32,
+            value: Box::new(raw.clone()),
+        };
+        let wide = MachineTerm::Binary {
+            format: MachineIntegerType::Int64,
+            op: MachineBinaryOp::Add,
+            left: Box::new(raw.clone()),
+            right: Box::new(raw.clone()),
+        };
+        let specialized = MachineTerm::Cast {
+            spelling: MachineCastSpelling::Int64From32,
+            from: MachineIntegerType::Int32,
+            to: MachineIntegerType::Int64,
+            value: Box::new(raw.clone()),
+        };
+        let changed = memory
+            .clone()
+            .store(pointer, CValue::Int32(MachineTerm::constant(9)));
+        let mut cases = vec![raw.clone(), narrow, wide, specialized];
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::UInt8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::UInt16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int128,
+            MachineIntegerType::UInt128,
+        ] {
+            cases.push(MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: Box::new(raw.clone()),
+                right: Box::new(raw.clone()),
+            });
+        }
+        for native in cases {
+            let root = KernelTermImport::default().machine(MachineIntegerType::Int64, &native);
+            for current in [&memory, &changed] {
+                for width in [None, Some(2), Some(4), Some(8)] {
+                    let mut expected = Vec::new();
+                    let native_result = collect_bitvector_memory_loads_with_width(
+                        &native,
+                        current,
+                        &mut expected,
+                        width,
+                        &mut BTreeSet::new(),
+                    );
+                    let mut actual = Vec::new();
+                    let exports = KernelTermExport::machine_export_count();
+                    let shared_result = collect_shared_read_memory_loads(
+                        &root,
+                        current,
+                        &mut actual,
+                        width,
+                        &mut BTreeSet::new(),
+                    );
+                    assert_eq!(shared_result, native_result);
+                    expected.sort();
+                    expected.dedup();
+                    actual.sort();
+                    actual.dedup();
+                    assert_eq!(actual, expected);
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
+}

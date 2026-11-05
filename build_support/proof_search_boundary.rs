@@ -119,8 +119,9 @@ impl<'ast> Visit<'ast> for Inventory {
     }
     fn visit_expr_path(&mut self, expr: &'ast syn::ExprPath) {
         if let Some(last) = expr.path.segments.last() {
-            // Local closures named `proves` are not the search interface.
-            if expr.path.segments.len() != 1 || last.ident != "proves" {
+            // Local closures named `proves` and compiler-driver variables
+            // named `driver` are not proof/search interface acquisitions.
+            if expr.path.segments.len() != 1 || (last.ident != "proves" && last.ident != "driver") {
                 self.record(&last.ident.to_string());
             }
         }

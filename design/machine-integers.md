@@ -327,7 +327,7 @@ Done 2026-10-23. What changed:
   extension, when the word is built as a canonical carrier or is a binder
   whose stated `int32` range the certificate cites, and `auto` plans it by
   matching the word, so every C widening of a narrow value
-  verifies with no premise (`mdtests/auto_widens_*`,
+  verifies with no premise (`mdtests/solve_widens_*`,
   `mdtests/integer_cast_identity_widens_a_narrow_value.md`).
 - `narrow_word_is_extension` is gone. A narrow comparison still takes its
   native form only where that form's `int32` reading normalizes back to
@@ -363,9 +363,9 @@ Done 2026-10-24, for every gap that needs no new node. What changed:
   except where a gap was filled.
 - Filled: multiplication identities at every format with a product node
   (`mdtests/integer_operation_identity_of_a_product.md`,
-  `mdtests/auto_observes_a_product_by_a_constant.md`), and signed operation
+  `mdtests/solve_observes_a_product_by_a_constant.md`), and signed operation
   bounds at `int32` and `int64`
-  (`mdtests/auto_bounds_a_signed_quotient_by_its_operand.md`). Their
+  (`mdtests/solve_bounds_a_signed_quotient_by_its_operand.md`). Their
   soundness arguments are in `docs/internals/kernel.md`.
 - Narrow comparison readings already hold for every canonical carrier, a
   narrow load or conversion, through `IntegerTerm::from_machine`'s

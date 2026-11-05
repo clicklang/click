@@ -6,10 +6,17 @@ use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
 /// scope rules; arithmetic nodes themselves introduce no variables or binders.
 fn visit_machine_carrier_leaves(
     machine: &SharedMachineIntegerTerm,
-    mut visit: impl FnMut(&MachineTerm),
+    visit: impl FnMut(MachineOperandView<'_>),
 ) {
-    let Some(root) = machine.shared_operand() else {
-        visit(machine.value());
+    visit_machine_operand_carrier_leaves(machine.operand_view(), visit);
+}
+
+fn visit_machine_operand_carrier_leaves(
+    operand: MachineOperandView<'_>,
+    mut visit: impl FnMut(MachineOperandView<'_>),
+) {
+    let MachineOperandView::Shared(root) = operand else {
+        visit(operand);
         return;
     };
     if let Some(leaves) =
@@ -19,7 +26,17 @@ fn visit_machine_carrier_leaves(
             if checked_collection_checkpoint() {
                 return;
             }
-            visit(leaf.machine_conversion_leaf().expect("conversion leaf"));
+            visit(MachineOperandView::Legacy(
+                leaf.machine_conversion_leaf().expect("conversion leaf"),
+            ));
+        }
+    }
+    if let Some(reads) = shared_machine_read_leaves(root, || !checked_collection_checkpoint()) {
+        for (_, read) in reads.iter() {
+            if checked_collection_checkpoint() {
+                return;
+            }
+            visit(MachineOperandView::Shared(read));
         }
     }
     if let Some(written) =
@@ -29,7 +46,9 @@ fn visit_machine_carrier_leaves(
             if checked_collection_checkpoint() {
                 return;
             }
-            visit(&MachineTerm::Variable(*variable));
+            visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+                *variable,
+            )));
         }
     }
 }
@@ -42,7 +61,7 @@ pub(in crate::kernel) fn collect_machine_bitvector_variables(
     variables: &mut BTreeSet<Variable>,
 ) {
     visit_machine_carrier_leaves(machine, |leaf| {
-        collect_bitvector_variables(leaf, variables);
+        collect_operand_bitvector_variables(leaf, variables);
     });
 }
 
@@ -54,8 +73,54 @@ fn collect_machine_integer_variables(
     // set for the whole machine operand, as the native traversal does.
     let mut seen = SeenTerms::default();
     visit_machine_carrier_leaves(machine, |leaf| {
-        collect_bitvector_integer_variables_seen(leaf, variables, &mut seen);
+        collect_operand_integer_variables_seen(leaf, variables, &mut seen);
     });
+}
+
+fn collect_operand_bitvector_variables(
+    operand: MachineOperandView<'_>,
+    variables: &mut BTreeSet<Variable>,
+) {
+    if let Some((memory, pointer, _)) = operand.read() {
+        collect_shared_memory_bitvector_variables(memory, variables);
+        collect_pointer_bitvector_variables(pointer, variables);
+        collect_stored_load_connection_variables(memory, pointer, variables);
+    } else if let MachineOperandView::Legacy(term) = operand {
+        collect_bitvector_variables(term, variables);
+    } else {
+        unreachable!("carrier leaf");
+    }
+}
+
+fn collect_operand_integer_variables_seen(
+    operand: MachineOperandView<'_>,
+    variables: &mut BTreeSet<Variable>,
+    seen: &mut SeenTerms,
+) {
+    if let Some((_, pointer, _)) = operand.read() {
+        collect_pointer_integer_variables(pointer, variables, seen);
+    } else if let MachineOperandView::Legacy(term) = operand {
+        collect_bitvector_integer_variables_seen(term, variables, seen);
+    } else {
+        unreachable!("carrier leaf");
+    }
+}
+
+fn collect_operand_binder_variables_seen(
+    operand: MachineOperandView<'_>,
+    integer_variables: &mut BTreeSet<Variable>,
+    bitvector_variables: &mut BTreeSet<Variable>,
+    seen: &mut SeenTerms,
+) {
+    // The existing binder collector treats read addresses as binder-free.
+    if operand.read().is_some() {
+        return;
+    }
+    if let MachineOperandView::Legacy(term) = operand {
+        collect_bitvector_binder_variables_seen(term, integer_variables, bitvector_variables, seen);
+    } else {
+        unreachable!("carrier leaf");
+    }
 }
 
 #[derive(Default)]
@@ -1964,7 +2029,7 @@ fn collect_integer_carrier_variables_seen(
     match term {
         IntegerTerm::Constant(_) => {}
         IntegerTerm::Machine(value) => visit_machine_carrier_leaves(value, |leaf| {
-            collect_bitvector_integer_variables_seen(leaf, variables, seen)
+            collect_operand_integer_variables_seen(leaf, variables, seen)
         }),
         IntegerTerm::Variable(variable) => {
             variables.insert(*variable);
@@ -2044,7 +2109,7 @@ fn collect_integer_carrier_variables_seen(
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     for endpoint in [start, end] {
                         visit_machine_carrier_leaves(endpoint.machine_operand(), |leaf| {
-                            collect_bitvector_integer_variables_seen(leaf, variables, seen);
+                            collect_operand_integer_variables_seen(leaf, variables, seen);
                         });
                         if crate::instrumentation::checked_collection_exhausted() {
                             return;
@@ -2272,7 +2337,7 @@ fn collect_integer_free_variables_seen(
     match term {
         IntegerTerm::Constant(_) => {}
         IntegerTerm::Machine(value) => visit_machine_carrier_leaves(value, |leaf| {
-            collect_bitvector_integer_variables_seen(leaf, variables, seen)
+            collect_operand_integer_variables_seen(leaf, variables, seen)
         }),
         IntegerTerm::Variable(variable) => {
             variables.insert(*variable);
@@ -2365,7 +2430,7 @@ fn collect_integer_free_variables_seen(
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     for endpoint in [start, end] {
                         visit_machine_carrier_leaves(endpoint.machine_operand(), |leaf| {
-                            collect_bitvector_integer_variables_seen(leaf, variables, seen);
+                            collect_operand_integer_variables_seen(leaf, variables, seen);
                         });
                         if crate::instrumentation::checked_collection_exhausted() {
                             return;
@@ -2722,6 +2787,16 @@ fn collect_integer_variables_seen(
                     for (_, leaf) in leaves.iter() {
                         collect_bitvector_variables(
                             leaf.machine_conversion_leaf().expect("conversion leaf"),
+                            variables,
+                        );
+                    }
+                }
+                if let Some(reads) =
+                    shared_machine_read_leaves(root, || !checked_collection_checkpoint())
+                {
+                    for (_, read) in reads.iter() {
+                        collect_operand_bitvector_variables(
+                            MachineOperandView::Shared(read),
                             variables,
                         );
                     }
@@ -3460,6 +3535,15 @@ fn collect_integer_bitvector_capture_variables(
                         );
                     }
                 }
+                if let Some(reads) =
+                    shared_machine_read_leaves(root, || !checked_collection_checkpoint())
+                {
+                    for (_, read) in reads.iter() {
+                        let (_, pointer, _) =
+                            MachineOperandView::Shared(read).read().expect("read leaf");
+                        collect_pointer_capture_variables(pointer, variables, integer_seen);
+                    }
+                }
                 if let Some(written) =
                     shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
                 {
@@ -3686,6 +3770,12 @@ fn collect_machine_scope_summary(
                 leaf.machine_conversion_leaf().expect("conversion leaf"),
                 summaries,
             ));
+        }
+    }
+    if let Some(reads) = shared_machine_read_leaves(root, || !checked_collection_checkpoint()) {
+        for (_, read) in reads.iter() {
+            let (_, pointer, _) = MachineOperandView::Shared(read).read().expect("read leaf");
+            summary.merge(collect_pointer_scope_summary(pointer, summaries));
         }
     }
     if let Some(written) =
@@ -4254,7 +4344,7 @@ fn collect_integer_binder_variables_seen(
     match term {
         IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => {}
         IntegerTerm::Machine(value) => visit_machine_carrier_leaves(value, |leaf| {
-            collect_bitvector_binder_variables_seen(
+            collect_operand_binder_variables_seen(
                 leaf,
                 integer_variables,
                 bitvector_variables,
@@ -4369,7 +4459,7 @@ fn collect_integer_binder_variables_seen(
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     bitvector_variables.insert(*item);
                     visit_machine_carrier_leaves(start.machine_operand(), |leaf| {
-                        collect_bitvector_binder_variables_seen(
+                        collect_operand_binder_variables_seen(
                             leaf,
                             integer_variables,
                             bitvector_variables,
@@ -4380,7 +4470,7 @@ fn collect_integer_binder_variables_seen(
                         return;
                     }
                     visit_machine_carrier_leaves(end.machine_operand(), |leaf| {
-                        collect_bitvector_binder_variables_seen(
+                        collect_operand_binder_variables_seen(
                             leaf,
                             integer_variables,
                             bitvector_variables,
@@ -6264,3 +6354,83 @@ mod spec_walk_oracle_tests;
 
 #[cfg(test)]
 mod shared_machine_collector_tests;
+
+#[cfg(test)]
+mod shared_read_walker_tests {
+    use super::*;
+
+    #[test]
+    fn shared_read_integer_carriers_remain_visible_inside_pointer_calls() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: PointerBlock::PureFunctionApplication(SharedPureApplication::intern(
+                "read_address".into(),
+                vec![PureFunctionArgument::Integer(
+                    IntegerTerm::Variable(Variable(994120)).into(),
+                )],
+            )),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let native = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(pointer),
+            LoadKind::Int32,
+        );
+        let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &native);
+        assert!(matches!(root.node(), KernelTermNode::MemoryLoad { .. }));
+        let mut expected = BTreeSet::new();
+        collect_bitvector_integer_variables(&native, &mut expected);
+        let mut actual = BTreeSet::new();
+        let mut seen = SeenTerms::default();
+        visit_machine_operand_carrier_leaves(MachineOperandView::Shared(&root), |leaf| {
+            collect_operand_integer_variables_seen(leaf, &mut actual, &mut seen);
+        });
+        assert_eq!(actual, expected);
+        assert!(actual.contains(&Variable(994120)));
+    }
+
+    #[test]
+    fn shared_read_carriers_match_native_addresses_without_export_or_registry() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: PointerBlock::Symbolic(Variable(994100)),
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: Box::new(MachineTerm::Variable(Variable(994101))),
+                byte_width: 4,
+            },
+        };
+        let raw = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(pointer),
+            LoadKind::Int32,
+        );
+        let leaf = KernelTermImport::default().machine(MachineIntegerType::Int32, &raw);
+        let root = KernelTerm::arithmetic_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            [leaf.clone(), leaf],
+        )
+        .unwrap();
+        let native = MachineTerm::Binary {
+            format: MachineIntegerType::Int32,
+            op: MachineBinaryOp::Add,
+            left: Box::new(raw.clone()),
+            right: Box::new(raw),
+        };
+        crate::kernel::eval::clear_load_variable_registry();
+        let mut expected = BTreeSet::new();
+        collect_bitvector_variables(&native, &mut expected);
+        let exports = KernelTermExport::machine_export_count();
+        let mut actual = BTreeSet::new();
+        let mut reads = 0;
+        visit_machine_operand_carrier_leaves(MachineOperandView::Shared(&root), |leaf| {
+            reads += usize::from(leaf.read().is_some());
+            collect_operand_bitvector_variables(leaf, &mut actual);
+        });
+        assert_eq!(actual, expected);
+        assert!(actual.contains(&Variable(994100)));
+        assert!(actual.contains(&Variable(994101)));
+        assert_eq!(reads, 1, "a shared read is selected once");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

@@ -116,7 +116,7 @@ fn ends_after_split(continuation: &InternalProofNode) -> bool {
             tactics,
             continuation,
         } => {
-            matches!(tactics.as_slice(), [only] if matches!(only.tactic, ProofTactic::AutoClose))
+            matches!(tactics.as_slice(), [only] if matches!(only.tactic, ProofTactic::ImplicitSolve))
                 && matches!(continuation.as_ref(), InternalProofNode::Done)
         }
         _ => false,
@@ -806,7 +806,7 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
         return Err(proof.step_error("obligation proofs follow a `step` form"));
     };
     let solve = |proof: &Proof<'a>, have: &ProofHave| -> Result<Proof<'a>, ClickError> {
-        let nested = proof.begin_source_have(have)?;
+        let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;
         let selected = solve_nested_have(nested, have, &mut failed_check)
@@ -923,7 +923,7 @@ fn flat_post_execution_tactic(tactic: &ProofTactic) -> Option<PostExecutionTacti
             target: target.clone(),
         }),
         ProofTactic::Solve => Some(PostExecutionTactic::Solve),
-        ProofTactic::AutoClose => Some(PostExecutionTactic::AutoClose),
+        ProofTactic::ImplicitSolve => Some(PostExecutionTactic::ImplicitSolve),
         ProofTactic::SolveUsing(solve) => Some(PostExecutionTactic::SolveUsing(solve.clone())),
         _ => None,
     }
@@ -1079,7 +1079,7 @@ fn deferred_post_execution_if_is_explicit_path_cursor(
         depth < MAX_CHECKED_EXECUTION_REGION_DEPTH
             && tactics.iter().all(|deferred| match &deferred.tactic {
                 PostExecutionTactic::Solve
-                | PostExecutionTactic::AutoClose
+                | PostExecutionTactic::ImplicitSolve
                 | PostExecutionTactic::Match { .. } => false,
                 PostExecutionTactic::If {
                     condition,
@@ -1186,7 +1186,7 @@ fn apply_frontier_source_tactic<'a>(
         }
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let have = have.as_ref();
-        let nested = proof.begin_source_have(have)?;
+        let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;
         let selected = solve_nested_have(nested, have, &mut failed_check)
@@ -1291,7 +1291,7 @@ fn apply_frontier_source_tactic<'a>(
 /// With the implicit closer off, as an expanded proof is checked cold, the
 /// implicit tail runs no C: a script that stops with C left is refused.
 fn refuse_implicit_tail_when_disabled(proof: &Proof<'_>) -> Result<(), ClickError> {
-    if crate::surface::proof::proof_object::implicit_auto_disabled() {
+    if crate::surface::proof::proof_object::implicit_solve_disabled() {
         return Err(proof.step_error(
             "the script stops with C left to run, and the implicit tail is off: write the remaining steps",
         ));
@@ -1316,10 +1316,10 @@ fn advance_checked_linear_continuation<'a>(
         return decline();
     };
     for (offset, indexed) in tactics.iter().enumerate() {
-        // A written `auto();` at a live frontier first executes the C that
+        // A written `solve();` at a live frontier first executes the C that
         // remains, as the implicit tail does, then closes the open goals at
-        // function exit like the `auto` an omitted proof stands for.
-        if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
+        // function exit like the `solve` an omitted proof stands for.
+        if matches!(indexed.tactic, ProofTactic::ImplicitSolve) && !proof.is_at_function_exit() {
             check_verification_deadline()?;
             proof = proof.start_source_tactic(indexed.source_index)?;
             refuse_implicit_tail_when_disabled(&proof)?;
@@ -2284,11 +2284,11 @@ pub(in crate::surface::proof) fn source_have_error(
     cause: Option<ClickError>,
     root_failure: bool,
 ) -> ClickError {
-    // Search failures belong to the written auto goal, rather than the last
+    // Search failures belong to the written solve goal, rather than the last
     // candidate's nested proof step. Resource exhaustion still takes priority.
     if matches!(
         have.checking_proof().as_ref(),
-        SourceProof::Tactic(SmartTactic::Auto)
+        SourceProof::Tactic(SmartTactic::ImplicitTail)
     ) {
         if let Err(error) = check_verification_deadline() {
             return error;
@@ -2299,7 +2299,7 @@ pub(in crate::surface::proof) fn source_have_error(
         {
             if root_failure && let Some(error) = cause {
                 return error.with_context(format!(
-                    "`{}` tactic {index}: `auto` could not prove `{}`",
+                    "`{}` tactic {index}: `solve` could not prove `{}`",
                     proof.claim_label(),
                     crate::surface::diagnostics::describe_click_proposition(&have.proposition)
                 ));
@@ -2308,7 +2308,7 @@ pub(in crate::surface::proof) fn source_have_error(
             // the other source-have failures do. Search candidates are not
             // the environment in which this written goal failed.
             return proof.attach_step_diagnostic(ClickError::new(format!(
-                "`{}` tactic {index}: `auto` could not prove `{}`",
+                "`{}` tactic {index}: `solve` could not prove `{}`",
                 proof.claim_label(),
                 crate::surface::diagnostics::describe_click_proposition(&have.proposition)
             )));
@@ -2367,8 +2367,8 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
         crate::surface::proof_diagnostics::capture_check_observations(
             || -> Result<_, ClickError> {
                 Ok(match source_proof.as_ref() {
-                    SourceProof::Tactic(SmartTactic::Auto) => {
-                        nested.driver().try_auto_fact_closure()?
+                    SourceProof::Tactic(SmartTactic::ImplicitTail) => {
+                        nested.driver().try_solve_closure()?
                     }
                     SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
                         (nested).driver().try_solve_closure()?
@@ -3432,7 +3432,7 @@ fn advance_focused_execution_arm<'a>(
         proof = proof.at_source_tactic(indexed.source_index);
         // The implicit closer at a live frontier first runs the C that
         // remains, as in a linear continuation, then closes at exit.
-        if matches!(indexed.tactic, ProofTactic::AutoClose) && !proof.is_at_function_exit() {
+        if matches!(indexed.tactic, ProofTactic::ImplicitSolve) && !proof.is_at_function_exit() {
             refuse_implicit_tail_when_disabled(&proof)?;
             let execute = IndexedTactic {
                 index: indexed.index,
@@ -5012,7 +5012,7 @@ fn advance_linear_open_scope<'a>(
         // here too; without this the site verifies and then reports that the
         // proof has no such source tactic.
         let checkpoint = scope.checkpoint();
-        let nested = scope.begin_source_have(have)?;
+        let nested = scope.driver().open_source_have(have)?;
         let mut failed_check = None;
         let selected = solve_nested_have(nested, have, &mut failed_check)?;
         let Some(selected) = selected else {

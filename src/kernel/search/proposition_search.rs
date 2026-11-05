@@ -1988,7 +1988,7 @@ type AtomicPremiseSelection = (
 );
 
 /// The equality facts connected to `goal` through shared atoms, condition
-/// equalities and algebraic `==` facts alike. `auto` offers them to its
+/// equalities and algebraic `==` facts alike. `solve` offers them to its
 /// rewrite chain.
 pub(crate) fn connected_equalities(
     context: &PureFactContext,

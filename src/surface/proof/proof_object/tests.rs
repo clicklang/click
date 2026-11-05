@@ -1576,7 +1576,8 @@ fn have_scope_publishes_only_a_completed_checked_body() {
         &theorem_environment,
     );
     let scope = root
-        .begin_have(proposition.clone())
+        .driver()
+        .open_have(proposition.clone())
         .expect("have should open a nested proposition proof");
     assert!(scope.clone().join().is_err());
     assert!(scope.driver().apply_step(ProofStep::Intro).is_err());
@@ -1694,7 +1695,7 @@ fn have_scope_accepts_matching_reported_goal_and_records_introductions() {
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).expect("have should open");
+    let scope = root.driver().open_have(surface).expect("have should open");
     let reported = scope
         .body()
         .goal()
@@ -1785,7 +1786,7 @@ fn have_scope_negation_metadata_stops_at_the_contradiction_goal() {
         }),
     }));
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).unwrap();
+    let scope = root.driver().open_have(surface).unwrap();
     let reported = scope.body().goal().unwrap().clone();
     let adapted = scope
         .with_reported_goal_introductions(&reported, Some(vec![]))
@@ -1832,7 +1833,7 @@ fn have_scope_rejects_mismatched_reported_goal_transactionally() {
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
     };
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).expect("have should open");
+    let scope = root.driver().open_have(surface).expect("have should open");
     let before = scope.body().clone();
     let wrong = Proposition::ConditionIs(
         ConditionTerm::Compare {
@@ -1871,7 +1872,7 @@ fn have_scope_rejects_inconsistent_universal_binder_flags() {
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).expect("have should open");
+    let scope = root.driver().open_have(surface).expect("have should open");
     let reported = scope.body().goal().expect("lowered goal").clone();
     let error = match scope.with_reported_goal_introductions(
         &reported,
@@ -1905,7 +1906,7 @@ fn have_scope_matches_renamed_existential_display_name_and_binder() {
         }),
     };
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).expect("have should open");
+    let scope = root.driver().open_have(surface).expect("have should open");
     let reported = Proposition::Exists {
         name: "different_display_name".to_string(),
         var: Variable(8_765_432),
@@ -1946,7 +1947,7 @@ fn have_scope_rejects_unreachable_universal_introduction() {
         }),
     );
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).expect("have should open");
+    let scope = root.driver().open_have(surface).expect("have should open");
     let reported = scope.body().goal().expect("lowered goal").clone();
     let error = match scope.with_reported_goal_introductions(
         &reported,
@@ -1975,7 +1976,7 @@ fn have_scope_with_no_reported_introductions_is_presentation_noop() {
         right: ContractExpression::CFragment(CExpression::Value(int32(1))),
     };
     let root = pure_have_presentation_root(surface.clone());
-    let scope = root.begin_have(surface).expect("have should open");
+    let scope = root.driver().open_have(surface).expect("have should open");
     let reported = scope.body().goal().expect("lowered goal").clone();
     let adapted = scope
         .with_reported_goal_introductions(&reported, None)
@@ -2035,7 +2036,8 @@ fn smart_have_scope_and_explicit_step_scale_with_local_output() {
             &theorem_environment,
         );
         let scope = root
-            .begin_have(proposition.clone())
+            .driver()
+            .open_have(proposition.clone())
             .expect("have should open a nested proof");
         let error = scope
             .driver()
@@ -2166,7 +2168,8 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         crate::kernel::proof::take_fact_entry_counts();
         take_checked_have_operations();
         let joined = root
-            .begin_have(proposition.clone())
+            .driver()
+            .open_have(proposition.clone())
             .expect("execution have should open")
             .driver()
             .try_authoritative_linear_script(&explicit)
@@ -2193,7 +2196,8 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
         take_checked_have_operations();
         for value in 0..count {
             proof = proof
-                .begin_have(reflexive(value as u32 + 2000))
+                .driver()
+                .open_have(reflexive(value as u32 + 2000))
                 .expect("next have should open")
                 .driver()
                 .try_authoritative_linear_script(&explicit)
@@ -2214,9 +2218,13 @@ fn execution_have_indexes_only_its_delta_and_scales_with_history() {
     }
 
     let root = make_root(8);
-    let outer = root.begin_have(reflexive(3000)).expect("outer have opens");
+    let outer = root
+        .driver()
+        .open_have(reflexive(3000))
+        .expect("outer have opens");
     let inner = outer
-        .begin_have(reflexive(3001))
+        .driver()
+        .open_have(reflexive(3001))
         .expect("nested have opens");
     let inner = inner
         .driver()
@@ -2905,7 +2913,8 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
         // An entry scope selects the producer's goal without rebuilding the
         // ambient facts. Terminal completion retains the full guarded judgment.
         let entry_kernel = root
-            .begin_have(proposition.clone())
+            .driver()
+            .open_have(proposition.clone())
             .unwrap()
             .goal()
             .unwrap()
@@ -2971,7 +2980,8 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
         let retained_root = root.clone();
         let before = fact_node_allocations();
         let first = root
-            .begin_have(proposition.clone())
+            .driver()
+            .open_have(proposition.clone())
             .expect("a fixed-state proof context should open a checked have scope")
             .driver()
             .apply_step(ProofStep::Normalize)
@@ -2979,7 +2989,8 @@ fn fixed_state_context_have_publishes_checked_fact_for_later_scope() {
             .join()
             .expect("a completed fixed-state scope should publish its fact");
         let second = first
-            .begin_have(proposition.clone())
+            .driver()
+            .open_have(proposition.clone())
             .expect("the checked successor should open a dependent scope")
             .driver()
             .apply_step(ProofStep::Assumption)
@@ -3052,7 +3063,8 @@ fn fixed_state_context_have_goal_does_not_reuse_an_older_surface_lowering() {
         &[],
     );
     let scope = root
-        .begin_have(surface)
+        .driver()
+        .open_have(surface)
         .expect("the current fixed-state goal should lower independently");
     assert!(
         scope.driver().apply_step(ProofStep::Assumption).is_err(),
@@ -4555,7 +4567,8 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
         _ => unreachable!(),
     };
     let cold = root
-        .begin_have(have.clone())
+        .driver()
+        .open_have(have.clone())
         .expect("the retained have should be independently reopenable");
     assert!(cold.driver().try_solve_closure().unwrap().is_some());
 
@@ -5104,7 +5117,8 @@ fn assert_static_array_retry_uses_recorded_qualified_source(block: &str, name: &
         panic!("retry should retain one checked Have before the exact Step");
     };
     let cold = root
-        .begin_have(proposition.clone())
+        .driver()
+        .open_have(proposition.clone())
         .expect("retained qualified Have should reopen cold");
     assert!(cold.driver().try_solve_closure().unwrap().is_some());
 }
@@ -5125,29 +5139,6 @@ fn smart_retry_uses_static_local_array_qualified_source() {
         "static_local::increment_twice::values",
         3,
     );
-}
-
-#[test]
-fn retained_have_conjunct_collection_is_iterative_and_bounded() {
-    let leaf = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(1))),
-        operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
-    };
-    let within_limit = (0..2047).fold(leaf.clone(), |body, _| {
-        ClickProposition::And(Box::new(leaf.clone()), Box::new(body))
-    });
-    let leaves = crate::surface::proof::smart_closures::collect_bounded_surface_conjunct_leaves(
-        &within_limit,
-    )
-    .expect("a 4095-node conjunction should fit the retained-have bound");
-    assert_eq!(leaves.len(), 2048);
-
-    let over_limit = ClickProposition::And(Box::new(leaf), Box::new(within_limit));
-    let error =
-        crate::surface::proof::smart_closures::collect_bounded_surface_conjunct_leaves(&over_limit)
-            .expect_err("retained-have collection must propagate structural exhaustion");
-    assert!(error.message().contains("structural limit"));
 }
 
 #[test]
@@ -5236,7 +5227,8 @@ fn nested_have_accepts_trailing_assumption_after_closure() {
     // is discharged before the script's final `assumption`; that trailing
     // tactic asserts a closed judgment and must not decline the script.
     let scope = root
-        .begin_have(conclusion.clone())
+        .driver()
+        .open_have(conclusion.clone())
         .expect("the have scope opens on the execution proof");
     let script = [
         ProofTactic::ApplyTheorem(application.clone()),
@@ -5449,7 +5441,8 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
         let nested_branches = split
             .focus_split_arm(&record, true)
             .expect("the then sibling is open")
-            .begin_have(premise.clone())
+            .driver()
+            .open_have(premise.clone())
             .expect("the then arm should open a proposition proof")
             .driver()
             .apply_step(ProofStep::Assumption)
@@ -5458,7 +5451,8 @@ fn branch_theorem_search_retains_checked_arm_steps_and_scales() {
             .expect("the completed proof should advance the then arm")
             .focus_split_arm(&record, false)
             .expect("the else sibling is open")
-            .begin_have(premise.clone())
+            .driver()
+            .open_have(premise.clone())
             .expect("the else arm should open a proposition proof")
             .driver()
             .apply_step(ProofStep::Assumption)
@@ -6262,7 +6256,8 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             &theorem_environment,
         );
         let scope = exact_root
-            .begin_have(surface_goal.clone())
+            .driver()
+            .open_have(surface_goal.clone())
             .expect("the signed-order have should open a nested proof");
         let before = fact_node_allocations();
         let selected = (scope)
@@ -9391,7 +9386,8 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         right: ContractExpression::CFragment(CExpression::Value(int32(0))),
     };
     let scope = unfolded
-        .begin_have(scope_goal)
+        .driver()
+        .open_have(scope_goal)
         .expect("a proposition scope should open at the entry frontier");
     let chosen = scope
         .body()
@@ -9477,7 +9473,8 @@ fn choose_projection_retains_unfolded_source_token_and_is_consumed_by_extract() 
         [ProofStep::Choose(_), ProofStep::Extract(_)]
     ));
     let nested = chosen
-        .begin_have(ClickProposition::Comparison {
+        .driver()
+        .open_have(ClickProposition::Comparison {
             left: ContractExpression::CFragment(CExpression::Value(int32(0))),
             operator: ComparisonOperator::Equal,
             right: ContractExpression::CFragment(CExpression::Value(int32(0))),
@@ -9943,12 +9940,14 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .begin_open(resource.clone(), 0, None)
             .expect("the held marker should open");
         let rejected = scope
-            .begin_have(reflexive.clone())
+            .driver()
+            .open_have(reflexive.clone())
             .expect("the open scope should begin a rejected proposition subproof");
         assert!(rejected.driver().apply_step(ProofStep::Step).is_err());
         assert!(rejected.body().certificate().steps().is_empty());
         let nested = scope
-            .begin_have(reflexive.clone())
+            .driver()
+            .open_have(reflexive.clone())
             .expect("the open scope should begin a proposition subproof")
             .driver()
             .apply_step(ProofStep::Assumption)
@@ -9993,7 +9992,8 @@ fn execution_open_scope_owns_entry_body_and_close_transactionally() {
             .begin_open(resource.clone(), 0, None)
             .expect("the retained root should open a sibling scope");
         let sibling_nested = sibling_scope
-            .begin_have(reflexive.clone())
+            .driver()
+            .open_have(reflexive.clone())
             .expect("the sibling should begin its own nested proof")
             .driver()
             .apply_step(ProofStep::Assumption)
@@ -11962,7 +11962,8 @@ fn nonempty_execution_branch_retains_checked_arm_steps_at_the_join() {
             ] if retained == &application && premises.is_empty()
         ));
         let scope = applied
-            .begin_have(reflexive.clone())
+            .driver()
+            .open_have(reflexive.clone())
             .expect("the joined proof should open a common nested proposition");
         // The nested proposition goal borrows the frontier's execution
         // snapshot by identity: its path-local lowering context is
@@ -13969,7 +13970,8 @@ fn outcome_haves_and_folds_share_facts_and_keep_sibling_resources_isolated() {
                     right: value,
                 };
                 current = current
-                    .begin_have(proposition)
+                    .driver()
+                    .open_have(proposition)
                     .unwrap()
                     .driver()
                     .try_authoritative_linear_script(&[ProofTactic::Normalize])
@@ -14659,4 +14661,90 @@ fn signed_certificate_premise_keeps_native_addition_when_printed() {
         .lower_surface_proposition_direct(&reparsed, "printed premise")
         .unwrap();
     assert_eq!(lowered, premise, "{printed}");
+}
+
+#[test]
+fn have_primitive_reports_prerequisites_and_driver_solves_them() {
+    let file = crate::surface::parse(r#"
+        theorem scoped_conversion(j: int32) {
+            requires 0 <= j and j <= 255;
+            ensures 0 == 0;
+            ensures forall (k: int32) { k < j implies to_uint8(to_integer(j)) == to_uint8(to_integer(j)) };
+        }
+    "#).unwrap();
+    let theorem = &file.theorem_definitions()[0];
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let definitions = SpecDefinitions::new(&predicates, &functions);
+    let mut context = pure_identity_fixture();
+    context.values.insert(
+        "j".into(),
+        CValue::Int32(MachineTerm::Variable(Variable(0))),
+    );
+    for requirement in theorem.requires() {
+        let Requirement::Proposition(surface) = requirement else {
+            panic!("pure requirement");
+        };
+        let kernel = lower_pure_theorem_proposition(
+            "have prerequisite",
+            surface,
+            ContractEnvironment::new(&context.values, &context.array_refs),
+            &context.memory,
+            definitions,
+        )
+        .unwrap();
+        context
+            .surface_requirements
+            .record_lowering(surface, &kernel)
+            .unwrap();
+        context.requires.push(kernel);
+    }
+    let Ensure::Proposition(parent) = theorem.ensures()[0].ensure() else {
+        panic!("pure goal");
+    };
+    let Ensure::Proposition(target) = theorem.ensures()[1].ensure() else {
+        panic!("pure goal");
+    };
+    let kernel = lower_pure_theorem_proposition(
+        "have prerequisite",
+        parent,
+        ContractEnvironment::new(&context.values, &context.array_refs),
+        &context.memory,
+        definitions,
+    )
+    .unwrap();
+    let root = Proof::for_pure_surface_goal(
+        "have prerequisite",
+        &context.requires,
+        kernel,
+        parent.clone(),
+        &context,
+        definitions,
+        &theorems,
+    );
+    // No without_implicit_solve scope: the primitive itself must not solve.
+    assert!(root.begin_have(target.clone(), true, true).is_err());
+    let (_, obligations) = probe_open_obligations(|| root.begin_have(target.clone(), true, true));
+    assert!(
+        !obligations.recorded.is_empty(),
+        "opening must expose its prerequisites"
+    );
+    assert!(
+        root.certificate().steps().is_empty(),
+        "preparation cannot publish a proof"
+    );
+    let scope = root
+        .driver()
+        .open_have(target.clone())
+        .expect("the driver solves the prerequisites");
+    let scope = scope.driver().apply_step(ProofStep::Intro).unwrap();
+    let scope = scope.driver().apply_step(ProofStep::Intro).unwrap();
+    let scope = scope.driver().try_solve_closure().unwrap().unwrap();
+    let joined = scope.join().unwrap();
+    assert!(
+        joined.certificate().steps().len() > 1,
+        "prerequisite proofs precede the have"
+    );
+    assert!(root.certificate().steps().is_empty());
 }

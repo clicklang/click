@@ -4395,7 +4395,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it. A
-            // probe records it for the implicit `auto`, which proves it and
+            // probe records it for the implicit `solve`, which proves it and
             // folds again.
             // A body fact reading a stored cell can hold by evaluation of the
             // value stored there (the read-over-write authority).

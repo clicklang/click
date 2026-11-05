@@ -26,7 +26,30 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
         Context::Left(identity, grandparent, color, sibling_model, outer_model) => {
             have parent == identity;
             let { sibling: sibling, up: outer } = unfold(before);
+            mark before_child_change;
+            have separate(memory(parent->rb_left), memory(identity->__rb_parent_color)) by {
+                rewrite(parent == identity);
+                normalize();
+            }
             step_until(function.exit);
+            have separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color)) by {
+                normalize() using {
+                    parent == identity;
+                    separate(memory(parent->rb_left), memory(identity->__rb_parent_color));
+                };
+            }
+            have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
+                transport_certificate {
+                    premise 0: separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color))
+                        => separate(statement(0).statement(0).statement(0).footprint, memory(identity->__rb_parent_color));
+                    preserve 0 => identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color);
+                    conclusion 1;
+                }
+            }
+            have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
+                rewrite(identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color));
+                assumption();
+            }
             let after = fold(ctx_at(new, root), {
                 model: Context::Left(identity, grandparent, color, sibling_model, outer_model)
             }, { up: outer });
@@ -38,7 +61,31 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
             match sibling.model {
                 RbTree::Empty => {
                     unfold(sibling);
+                    mark before_child_change;
+                    have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
+                        rewrite(parent == identity);
+                        normalize();
+                    }
                     step_until(function.exit);
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by {
+                        normalize() using {
+                            parent == identity;
+                            separate(memory(parent->rb_right), memory(identity->__rb_parent_color));
+                        };
+                    }
+                    have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
+                        transport_certificate {
+                            premise 0: separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color))
+                                => separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color));
+                            preserve 0 => identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color);
+                            conclusion 1;
+                        }
+                    }
+                    have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
+                        rewrite(identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color));
+                        assumption();
+                    }
+
                     let sibling = fold(rb_at(parent->rb_left), { model: RbTree::Empty });
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
@@ -52,7 +99,31 @@ void __rb_change_child(struct rb_node* old, struct rb_node* new,
                     let sibling = fold(rb_at(parent->rb_left), {
                         model: RbTree::Node(sid, sp, sc, sl, sr)
                     });
+                    mark before_child_change;
+                    have separate(memory(parent->rb_right), memory(identity->__rb_parent_color)) by {
+                        rewrite(parent == identity);
+                        normalize();
+                    }
                     step_until(function.exit);
+                    have separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color)) by {
+                        normalize() using {
+                            parent == identity;
+                            separate(memory(parent->rb_right), memory(identity->__rb_parent_color));
+                        };
+                    }
+                    have identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color) by {
+                        transport_certificate {
+                            premise 0: separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color))
+                                => separate(statement(0).statement(0).statement(1).footprint, memory(identity->__rb_parent_color));
+                            preserve 0 => identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color);
+                            conclusion 1;
+                        }
+                    }
+                    have identity->__rb_parent_color == address(grandparent) + (identity->__rb_parent_color & 1) by {
+                        rewrite(identity->__rb_parent_color == at(before_child_change, identity->__rb_parent_color));
+                        assumption();
+                    }
+
                     let after = fold(ctx_at(new, root), {
                         model: Context::Right(identity, grandparent, color, sibling_model, outer_model)
                     }, { up: outer });

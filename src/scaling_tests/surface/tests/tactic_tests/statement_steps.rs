@@ -57,7 +57,7 @@ void write(struct job *job, int32 *dest) {
         c.push_str("}\n");
         click.push_str("step();\n}\n");
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            crate::surface::without_implicit_auto(|| verify_c0_sources(&click, &[("probe.c", &c)]))
+            crate::surface::without_implicit_solve(|| verify_c0_sources(&click, &[("probe.c", &c)]))
         });
         result.unwrap_or_else(|error| panic!("size {size}: {error}\n{click}"));
         if size != 2 {

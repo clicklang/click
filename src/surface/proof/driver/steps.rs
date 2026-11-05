@@ -155,7 +155,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 .driver()
                 .apply_close_invariants_body(&body.to_proof_tactics());
         }
-        if !super::execution_statements::implicit_auto_disabled()
+        if !super::execution_statements::implicit_solve_disabled()
             && matches!(
                 &step,
                 ProofStep::UnfoldPredicate(_)
@@ -190,9 +190,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             });
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
-        // implicit `auto` for each body fact it leaves open.
+        // implicit `solve` for each body fact it leaves open.
         if matches!(step, ProofStep::FoldResource(_))
-            && !super::execution_statements::implicit_auto_disabled()
+            && !super::execution_statements::implicit_solve_disabled()
         {
             return driver_proof.driver().apply_bare_statement_step(step);
         }
@@ -572,7 +572,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     }
 
     /// An `apply` that leaves its goal open adds its theorem's conclusions
-    /// as facts with no source spelling, so a later rewrite or `auto` could
+    /// as facts with no source spelling, so a later rewrite or `solve` could
     /// not cite them. Spell each conclusion the way the caller would write it
     /// and record it as a checked `have` closed by `assumption`, which finds
     /// the fact the application just added. The `apply` keeps its own proof
@@ -631,8 +631,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         let observe_goal = !matches!(proof.steps(), [ProofStep::TransportUsing { .. }]);
-        let mut scope =
-            driver_proof.begin_have_with_goal_observations(proposition.clone(), observe_goal)?;
+        let mut scope = driver_proof
+            .driver()
+            .open_have_with_goal_observations(proposition.clone(), observe_goal)?;
         for step in proof.steps() {
             scope = scope.driver().apply_step(step.clone())?;
         }

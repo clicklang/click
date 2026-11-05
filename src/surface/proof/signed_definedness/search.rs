@@ -102,7 +102,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if premises.contains(&defined) {
                 continue;
             }
-            let Ok(scope) = proof.begin_have(defined.clone()) else {
+            let Ok(scope) = proof.driver().open_have(defined.clone()) else {
                 return Ok(None);
             };
             let Some(scope) = (scope).driver().try_solve_closure()? else {
@@ -153,7 +153,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 restated.push(simpler);
                 continue;
             }
-            let Ok(scope) = proof.begin_have(equality.clone()) else {
+            let Ok(scope) = proof.driver().open_have(equality.clone()) else {
                 return Ok(None);
             };
             let Some(scope) = (scope).driver().try_solve_closure()? else {
@@ -177,7 +177,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 _ => ContractExpression::Add(Box::new(left), Box::new(right)),
             },
         };
-        let Ok(scope) = proof.begin_have(defined) else {
+        let Ok(scope) = proof.driver().open_have(defined) else {
             return Ok(None);
         };
         let Some(scope) = (scope).driver().try_signed_definedness_closure()? else {

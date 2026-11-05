@@ -1,0 +1,20 @@
+# A failed solve reports the proposition written in the have
+
+This uint64 difference sends search through definedness and Integer bridges.
+The bound does not follow from the contract. Its diagnostic must name solve
+and the stated bound, rather than an internal normalization goal.
+
+```c filename=bound.c
+unsigned long bound(unsigned long a, unsigned long b) { return a; }
+```
+
+```click
+verifying "bound.c";
+uint64 bound(uint64 a, uint64 b) { ensures result == a; } by {
+    have to_integer(a) <= to_integer(b - b % 4u64);
+}
+```
+
+```expect
+fail: could not establish `to_integer(a) <= to_integer((b - (b % 4u64)))`
+```

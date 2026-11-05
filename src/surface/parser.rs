@@ -1108,6 +1108,19 @@ impl StructPointerCast {
     }
 }
 
+/// The module that specifies Rust slices, brought in where a sidecar
+/// declares a slice.
+pub(super) const SLICE_MODULE: &str = "library/rust/slice.click";
+
+/// Whether `name` is the library's `slice::from_raw_parts`, a slice made of
+/// a pointer and a length.
+fn is_slice_from_raw_parts(name: &str) -> bool {
+    matches!(
+        name,
+        "slice::from_raw_parts" | "click::rust::slice::from_raw_parts"
+    )
+}
+
 pub(super) fn is_c_type_keyword(name: &str) -> bool {
     matches!(
         name,
@@ -1725,6 +1738,7 @@ impl Parser {
                             .insert(name.clone(), positions);
                     }
                     if let Some(slices) = self.written_slice_parameters(parameters) {
+                        crate::surface::diagnostics::record_pure_function_slices(&name, &slices.1);
                         self.pure_function_slices.insert(name, slices);
                     }
                 }
@@ -1792,10 +1806,31 @@ impl Parser {
         (!slices.is_empty()).then_some((count, slices))
     }
 
+    /// The slice parameter `expression` reads at another point:
+    /// `old(bytes)` or `at(point, bytes)`.
+    fn read_slice_parameter<'a>(&self, expression: &'a ContractExpression) -> Option<&'a str> {
+        let (ContractExpression::Old(inner)
+        | ContractExpression::At {
+            expression: inner, ..
+        }) = expression
+        else {
+            return None;
+        };
+        match inner.as_ref() {
+            ContractExpression::CFragment(CExpression::Variable(slice))
+                if self.rust_slice_params.contains(slice) =>
+            {
+                Some(slice)
+            }
+            _ => None,
+        }
+    }
+
     /// The arguments of a call to a pure function that takes a slice, with
     /// each slice argument written as the pointer and the length it stands
-    /// for. A call that already writes them, as printed proofs do, is left
-    /// as it is.
+    /// for. A slice argument is one value: a slice parameter in scope, such
+    /// as `bytes`, or `slice::from_raw_parts(p, n)` for a pointer and a
+    /// length.
     fn spread_slice_arguments(
         &self,
         name: &str,
@@ -1805,7 +1840,10 @@ impl Parser {
             return Ok(arguments);
         };
         if arguments.len() != *count {
-            return Ok(arguments);
+            return Err(self.error(format!(
+                "`{name}` takes {count} argument{}, and each slice is one argument; pass a pointer and a length as `slice::from_raw_parts(p, n)`",
+                if *count == 1 { "" } else { "s" }
+            )));
         }
         let mut spread = Vec::with_capacity(count + slices.len());
         for (index, argument) in arguments.into_iter().enumerate() {
@@ -1813,22 +1851,50 @@ impl Parser {
                 spread.push(argument);
                 continue;
             }
-            let ContractExpression::CFragment(CExpression::Variable(slice)) = &argument else {
-                return Err(self.error(format!(
-                    "argument {} of `{name}` is a slice; pass a slice parameter, such as `bytes`, or its pointer and length",
-                    index + 1
-                )));
-            };
-            if !self.rust_slice_params.contains(slice) {
-                return Err(self.error(format!(
-                    "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or a pointer and a length",
-                    index + 1
-                )));
+            match argument {
+                ContractExpression::Call {
+                    name: constructor,
+                    arguments: parts,
+                } if is_slice_from_raw_parts(&constructor) && parts.len() == 2 => {
+                    spread.extend(parts);
+                }
+                // A slice read at another point, as a printed proof writes
+                // it: its pointer at that point, and its length, which a
+                // shared slice parameter never changes.
+                argument @ (ContractExpression::Old(_) | ContractExpression::At { .. })
+                    if self.read_slice_parameter(&argument).is_some() =>
+                {
+                    let slice = self
+                        .read_slice_parameter(&argument)
+                        .expect("matched above")
+                        .to_string();
+                    spread.push(argument);
+                    spread.push(ContractExpression::CFragment(CExpression::Variable(
+                        format!("{slice}_len"),
+                    )));
+                }
+                ContractExpression::CFragment(CExpression::Variable(slice))
+                    if self.rust_slice_params.contains(&slice) =>
+                {
+                    let length = ContractExpression::CFragment(CExpression::Variable(format!(
+                        "{slice}_len"
+                    )));
+                    spread.push(ContractExpression::CFragment(CExpression::Variable(slice)));
+                    spread.push(length);
+                }
+                ContractExpression::CFragment(CExpression::Variable(slice)) => {
+                    return Err(self.error(format!(
+                        "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or `slice::from_raw_parts(p, n)` for a pointer and a length",
+                        index + 1
+                    )));
+                }
+                _ => {
+                    return Err(self.error(format!(
+                        "argument {} of `{name}` is a slice; pass a slice parameter, such as `bytes`, or `slice::from_raw_parts(p, n)` for a pointer and a length",
+                        index + 1
+                    )));
+                }
             }
-            let length =
-                ContractExpression::CFragment(CExpression::Variable(format!("{slice}_len")));
-            spread.push(argument);
-            spread.push(length);
         }
         Ok(spread)
     }
@@ -3687,6 +3753,7 @@ impl Parser {
                     if let Some(slices) = &mut self.pending_slice_params {
                         slices.push(name.clone());
                     }
+                    self.implied_library_modules.insert(SLICE_MODULE);
                     parameters.push(self.parse_parameter_array_suffix(name, element)?.parameter);
                     parameters.push(FunctionParameter {
                         click_type: ClickType::C(C0Type::UInt64(LongRank::Long)),
@@ -8767,7 +8834,7 @@ impl Parser {
             return Ok(proof);
         }
 
-        // `auto()` uses whole-proof automation. Other single calls are one-step scripts.
+        // `solve()` uses whole-proof automation. Other single calls are one-step scripts.
         if self.starts_standalone_smart_proof() {
             let first = self.position;
             let tactic = self.parse_tactic()?;
@@ -9593,8 +9660,8 @@ impl Parser {
                 proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Solve)),
             }));
         }
-        // `have P by auto();` proves the fact where it is stated: with no C
-        // to run toward the fact, `auto` is `solve`.
+        // `have P by solve();` proves the fact where it is stated: with no C
+        // to run toward the fact, `solve` is `solve`.
         let binder_scope = self.loop_proof_value_names.clone();
         self.remember_loop_goal_binders(&proposition);
         let proof = self.parse_by_clause();

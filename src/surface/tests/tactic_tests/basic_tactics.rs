@@ -6,7 +6,7 @@ fn omitted_ensure_proof_uses_default_prover() {
     let file = parse(&source).expect("sidecar should parse omitted proof clause");
     let ensure = &file.function_blocks()[0].ensures()[0];
 
-    assert!(ensure.proof().is_auto_tactic());
+    assert!(ensure.proof().uses_implicit_tail());
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn a_grouped_proof_covers_only_claims_without_their_own_proof() {
     assert_eq!(function.grouped_proof(), None);
     assert_eq!(
         function.covering_proof(),
-        Some(&SourceProof::Tactic(SmartTactic::Auto))
+        Some(&SourceProof::Tactic(SmartTactic::ImplicitTail))
     );
     assert!(!function.covers_claim_proof(function.ensures()[0].proof()));
     assert!(function.covers_claim_proof(function.ensures()[1].proof()));
@@ -146,7 +146,7 @@ fn grouped_function_certificates_share_finalized_specification() {
 }
 
 #[test]
-fn grouped_auto_completes_the_proof_execution_without_a_body_rerun() {
+fn grouped_solve_completes_the_proof_execution_without_a_body_rerun() {
     let c_source = r#"
             int32 set(int32 p[], int32 value) {
                 p[0] = value;
@@ -164,8 +164,8 @@ fn grouped_auto_completes_the_proof_execution_without_a_body_rerun() {
         "#;
     let _ = crate::kernel::take_checked_function_body_execution_count();
     let verified = verify_c0_sources(click_source, &[("set.c", c_source)])
-        .expect("grouped auto proof should verify");
-    let expected_tactics = [ProofTactic::SmartExecute, ProofTactic::AutoClose];
+        .expect("grouped solve proof should verify");
+    let expected_tactics = [ProofTactic::SmartExecute, ProofTactic::ImplicitSolve];
 
     assert_eq!(verified.len(), 3);
     assert!(

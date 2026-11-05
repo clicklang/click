@@ -3,9 +3,9 @@
 Reading a condition out of a function's definition, and joining two
 constructor equations of one value, are strategies of `solve` over the facts
 connected to the goal, so `solve()` proves what the omitted proof does in
-[`auto_reads_a_condition_out_of_a_definition.md`](auto_reads_a_condition_out_of_a_definition.md)
+[`solve_reads_a_condition_out_of_a_definition.md`](solve_reads_a_condition_out_of_a_definition.md)
 and
-[`auto_reads_fields_through_two_constructor_equations.md`](auto_reads_fields_through_two_constructor_equations.md).
+[`solve_reads_fields_through_two_constructor_equations.md`](solve_reads_fields_through_two_constructor_equations.md).
 
 ```click
 spec enum Tree {

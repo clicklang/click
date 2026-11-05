@@ -1088,62 +1088,15 @@ impl<'a> Proof<'a> {
         scope.with_reported_goal_introductions(kernel, introductions)
     }
 
-    /// Opens a nested proof for one surface proposition. The body has a fresh
-    /// provenance root but shares the persistent semantic fact index and
-    /// immutable checking context with its enclosing proof.
-    ///
-    /// A fixed-state proof may open `have` either while refining a proposition or
-    /// from its initial result frontier. The latter is the audited way for
-    /// grouped contract finalization to prove one obligation, publish it as a
-    /// checked fact, and then prove a dependent obligation without rebuilding
-    /// or mutating an external fact context.
-    /// A `have` a smart step opens over a native machine comparison, such as
-    /// a theorem requirement `0 <= n - 1` at an argument's arithmetic, is
-    /// recorded by the observations it compares, so its printed step reads
-    /// the same fact wherever arithmetic is Integer.
+    /// Open a nested proposition scope, reporting unmet lowering requirements
+    /// through the ordinary obligation channel. This operation never schedules
+    /// their proofs; the driver handles them at the original frontier.
     pub(in crate::surface::proof) fn begin_have(
-        &self,
-        proposition: ClickProposition,
-    ) -> Result<ProofScope<'a>, ClickError> {
-        self.begin_have_spelled(proposition, true, true)
-    }
-
-    pub(in crate::surface::proof) fn begin_source_have(
-        &self,
-        have: &ProofHave,
-    ) -> Result<ProofScope<'a>, ClickError> {
-        let explicit_transport = matches!(&have.proof,
-            SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::TransportUsing { .. }]));
-        self.begin_have_with_goal_observations(have.proposition.clone(), !explicit_transport)
-    }
-
-    pub(in crate::surface::proof) fn begin_have_with_goal_observations(
-        &self,
-        proposition: ClickProposition,
-        observe_goal: bool,
-    ) -> Result<ProofScope<'a>, ClickError> {
-        self.begin_have_spelled(proposition, observe_goal, false)
-    }
-
-    fn begin_have_spelled(
         &self,
         proposition: ClickProposition,
         observe_goal: bool,
         observed_spelling: bool,
     ) -> Result<ProofScope<'a>, ClickError> {
-        if !super::execution_statements::implicit_auto_disabled() {
-            let step = ProofStep::Have {
-                proposition: proposition.clone(),
-                proof: Box::new(
-                    ProofCertificate::from_proof_tactics(&[]).expect("empty certificate"),
-                ),
-            };
-            return self
-                .driver()
-                .with_proved_lowering_requirements(&step, |proof| {
-                    proof.begin_have_spelled(proposition.clone(), observe_goal, observed_spelling)
-                });
-        }
         #[cfg(test)]
         CHECKED_HAVE_OPERATIONS.with(|count| count.set(count.get() + 1));
         if self.state().open_branches().is_discharged() {

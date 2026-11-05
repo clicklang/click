@@ -8,15 +8,15 @@ fn transport_certificate_preserves_byte_reads_without_search() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
     let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     // Separation of q cannot carry a read of the cell actually written.
     let overlapping = source.replace(
         "*q == at(statement(0).entry, *q)",
         "*p == at(statement(0).entry, *p)",
     );
-    assert!(without_implicit_auto(|| verify_c0_sources(&overlapping, &sources)).is_err());
+    assert!(without_implicit_solve(|| verify_c0_sources(&overlapping, &sources)).is_err());
 }
 
 #[test]
@@ -27,7 +27,7 @@ fn transport_certificate_preserves_pointer_read() {
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
     with_proof_trace("copy_pos", || {
-        if let Err(error) = without_implicit_auto(|| verify_c0_sources(&source, &sources)) {
+        if let Err(error) = without_implicit_solve(|| verify_c0_sources(&source, &sources)) {
             panic!(
                 "{}\n{}",
                 error.report(),
@@ -38,9 +38,9 @@ fn transport_certificate_preserves_pointer_read() {
     let expanded =
         expand_c0_claim_source(&source, &sources, "copy_pos", CProofClaim::Grouped).unwrap();
     assert!(expanded.contains("transport_certificate"));
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     let scalar_source = source.replace("source->data", "source->len");
-    without_implicit_auto(|| verify_c0_sources(&scalar_source, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&scalar_source, &sources)).unwrap();
     for (from, to) in [
         ("memory(target->pos))", "memory(target->len))"),
         ("preserve 0 =>", "preserve 1 =>"),
@@ -68,7 +68,7 @@ fn transport_certificate_transitive_and_bad_indices() {
             }
         }
     "#;
-    without_implicit_auto(|| verify_click_theorems(source)).unwrap();
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
     for (from, to) in [
         ("transitive 0, 1", "transitive 1, 0"),
         ("transitive 0, 1", "transitive 0, 2"),
@@ -124,7 +124,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
             }}
         "#
         );
-        without_implicit_auto(|| verify_c0_sources(&source, &[("wide.c", &c)])).unwrap();
+        without_implicit_solve(|| verify_c0_sources(&source, &[("wide.c", &c)])).unwrap();
     }
 }
 
@@ -201,11 +201,11 @@ fn region_footprint_free_and_call_certificates_expand_without_search() {
             .iter()
             .map(|(name, source)| (name.as_str(), source.as_str()))
             .collect::<Vec<_>>();
-        without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+        without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
         let expanded =
             expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped).unwrap();
         assert!(expanded.contains("transport_certificate"));
-        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
         if claim == "beside_call" {
             // The contract still supplies this separation. A selected proof
             // must not silently find it in the ambient context.
@@ -242,7 +242,7 @@ fn cell_source_removal_repairs_expand_and_replay_without_implicit_search() {
         let expanded = expand_c0_claim_source(&source, &sources, claim, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
         assert!(expanded.contains("transport_certificate"), "{fixture}");
-        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap_or_else(|error| {
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap_or_else(|error| {
             panic!(
                 "{fixture}: {}\nExpanded source:\n{expanded}",
                 error.report()
@@ -263,10 +263,10 @@ fn check_resource_field_certificate(ty: &str) {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &sources))
+    without_implicit_solve(|| verify_c0_sources(&source, &sources))
         .unwrap_or_else(|e| panic!("{ty}: {}", e.report()));
     let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -304,7 +304,7 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
     "#
     );
     let c = format!("{}\nvoid call_keep(int *p) {{ keep(p); }}", sources[0].1);
-    without_implicit_auto(|| verify_c0_sources(&caller, &[("resource_frame.c", &c)]))
+    without_implicit_solve(|| verify_c0_sources(&caller, &[("resource_frame.c", &c)]))
         .unwrap_or_else(|e| panic!("{}", e.report()));
 }
 
@@ -318,7 +318,8 @@ fn transport_certificate_refuses_other_or_modified_resource() {
     let wrong_instance = source
         .replace("owns m: model();", "owns m: model(); owns n: model();")
         .replace("m.value", "n.value");
-    let error = without_implicit_auto(|| verify_c0_sources(&wrong_instance, &sources)).unwrap_err();
+    let error =
+        without_implicit_solve(|| verify_c0_sources(&wrong_instance, &sources)).unwrap_err();
     assert!(
         error.report().contains("selected field"),
         "{}",
@@ -329,7 +330,7 @@ fn transport_certificate_refuses_other_or_modified_resource() {
         "extern void update(int *p) { owns m: model(); }\nvoid keep(int *p) {",
     );
     let changed_c = "void update(int *p); void keep(int *p) { update(p); }";
-    let error = without_implicit_auto(|| {
+    let error = without_implicit_solve(|| {
         verify_c0_sources(&changed_source, &[("resource_frame.c", changed_c)])
     })
     .unwrap_err();
@@ -361,10 +362,10 @@ fn transport_certificate_named_resource_is_a_theorem_argument() {
         .iter()
         .map(|(n, s)| (n.as_str(), s.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &sources))
+    without_implicit_solve(|| verify_c0_sources(&source, &sources))
         .unwrap_or_else(|e| panic!("{}", e.report()));
     let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
 #[test]
@@ -390,7 +391,7 @@ fn destructor_footprint_cleanup_expands_and_replays() {
         .position(|line| line.contains("template<class T> Stack<T>::~Stack()"))
         .expect("destructor declaration")
         + 5;
-    without_implicit_auto(|| {
+    without_implicit_solve(|| {
         verify_sources_at(&expanded.source, &inputs.program_inputs(), line, 1)
     })
     .unwrap_or_else(|error| panic!("{}\n{}", error.report(), expanded.source));
@@ -424,7 +425,7 @@ fn pointer_rejection_prefixes_expand_and_replay() {
             .collect::<Vec<_>>();
         let expanded = expand_c0_claim_source(&repaired, &inputs, claim, CProofClaim::Grouped)
             .unwrap_or_else(|error| panic!("{fixture}: {}", error.report()));
-        without_implicit_auto(|| verify_c0_sources(&expanded, &inputs))
+        without_implicit_solve(|| verify_c0_sources(&expanded, &inputs))
             .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
     }
 }

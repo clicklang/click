@@ -1457,7 +1457,7 @@ mod observed_integer_argument_tests {
         "#;
         verify_c0_sources(source, &[]).unwrap();
         let expanded = expand_c0_claim_source_by_label(source, &[], "observed.ensures_0").unwrap();
-        crate::surface::without_implicit_auto(|| verify_c0_sources(&expanded, &[])).unwrap();
+        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
         let apply_start = expanded.find("apply(reflexive(").unwrap();
         let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
         let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
@@ -1466,7 +1466,9 @@ mod observed_integer_argument_tests {
             &expanded[..using_start],
             &expanded[using_end..]
         );
-        assert!(crate::surface::without_implicit_auto(|| verify_c0_sources(&erased, &[])).is_err());
+        assert!(
+            crate::surface::without_implicit_solve(|| verify_c0_sources(&erased, &[])).is_err()
+        );
         assert!(verify_c0_sources(&source.replace("requires defined(x + 1);", ""), &[]).is_err());
     }
 
@@ -1550,7 +1552,7 @@ theorem nested_count(value: int32) {
             .expect("nested model argument must retain its known overflow guard");
         let expanded =
             expand_c0_claim_source_by_label(source, &[], "nested_count.ensures_0").unwrap();
-        crate::surface::without_implicit_auto(|| verify_c0_sources(&expanded, &[]))
+        crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[]))
             .expect("the explicit application must cold-check with its selected guard");
         let apply_start = expanded.find("apply(count_less(").unwrap();
         let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
@@ -1561,7 +1563,7 @@ theorem nested_count(value: int32) {
             &expanded[using_end..]
         );
         assert!(
-            crate::surface::without_implicit_auto(|| verify_c0_sources(&erased, &[])).is_err(),
+            crate::surface::without_implicit_solve(|| verify_c0_sources(&erased, &[])).is_err(),
             "the theorem's requirement alone must not supply the argument's overflow guard"
         );
         let missing = source.replace("requires defined(value - 1);", "");
@@ -1596,7 +1598,7 @@ theorem nested_count(value: int32) {
             verify_c0_sources(&source, &[]).unwrap_or_else(|error| panic!("{argument}: {error}"));
             let expanded =
                 expand_c0_claim_source_by_label(&source, &[], "guarded.ensures_0").unwrap();
-            crate::surface::without_implicit_auto(|| verify_c0_sources(&expanded, &[])).unwrap();
+            crate::surface::without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
             let apply_start = expanded.find("apply(known_count(").unwrap();
             let using_start = apply_start + expanded[apply_start..].find("using {").unwrap();
             let using_end = using_start + expanded[using_start..].find('}').unwrap() + 1;
@@ -1606,7 +1608,7 @@ theorem nested_count(value: int32) {
                 &expanded[using_end..]
             );
             assert!(
-                crate::surface::without_implicit_auto(|| verify_c0_sources(&erased, &[])).is_err(),
+                crate::surface::without_implicit_solve(|| verify_c0_sources(&erased, &[])).is_err(),
                 "{argument}: accepted erased evaluation guards"
             );
         }

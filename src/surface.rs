@@ -158,7 +158,7 @@ pub use verification::{
     verify_sources_at, verify_standard_library, with_allow_sorry,
 };
 mod proof_trace;
-pub use proof::{without_implicit_auto, without_implicit_auto_for_claim};
+pub use proof::{without_implicit_solve, without_implicit_solve_for_claim};
 pub use proof_trace::with_proof_trace;
 
 /// Render one accepted checked path while `with_proof_trace` is active.
@@ -678,6 +678,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/vec.click",
         include_str!("../library/rust/vec.click"),
+    ),
+    (
+        "library/rust/slice.click",
+        include_str!("../library/rust/slice.click"),
     ),
 ];
 
@@ -3477,7 +3481,7 @@ struct RecordedSnapshotChange {
 /// thousand statements owns a chain that long. Dropping it through the
 /// derived `Drop` recurses once per node and overflowed the 8 MB main thread
 /// of `click verify` at about 6,000 recorded steps, well inside the budget an
-/// `auto` proof may spend; the test harness only hid it behind a 64 MB
+/// implicit proof may spend; the test harness only hid it behind a 64 MB
 /// worker. The chain is unlinked here instead, node by node, for as long as
 /// this drop holds the last reference to the next one; a node another
 /// version still shares stops the walk and is dropped by that version later.
@@ -5286,11 +5290,9 @@ pub enum ProofTactic {
         premises: Option<Vec<ClickProposition>>,
     },
     Solve,
-    /// The closer `auto` ends a proof with: each pending claim is tried by
-    /// `solve`, then by the rest of `auto`'s search. It has no source
-    /// spelling; `by auto();`, an omitted proof, and a script that ends with
-    /// claims still open use it.
-    AutoClose,
+    /// The driver schedules ordinary `solve` for every remaining claim.
+    /// This has no written spelling; explicit `solve()` selects one goal.
+    ImplicitSolve,
     SolveUsing(ProofSolveUsing),
     ArithmeticCertificate(ArithmeticCertificate),
     TransportCertificate(TransportCertificate),
@@ -5926,7 +5928,7 @@ impl ProofTactic {
                 TacticClass::smart(SmartTacticKind::Execute)
             }
             Self::Solve | Self::SolveUsing(_) => TacticClass::smart(SmartTacticKind::Solve),
-            Self::AutoClose => TacticClass::Smart(SmartSite::Implicit),
+            Self::ImplicitSolve => TacticClass::Smart(SmartSite::Implicit),
             Self::Have(_) => TacticClass::Control(ControlTactic::Have),
             Self::Open(_) => TacticClass::Control(ControlTactic::Open),
             Self::If(_) => TacticClass::Control(ControlTactic::If),
@@ -5942,11 +5944,10 @@ impl ProofTactic {
 }
 
 impl SmartTactic {
-    /// The smart site a `by` proof of this tactic is: `by auto();` is the
-    /// omitted proof, and `by solve();` is `solve`.
+    /// Distinguish omitted-proof attribution from a written `solve()` site.
     pub fn site(self) -> SmartSite {
         match self {
-            Self::Auto => SmartSite::Implicit,
+            Self::ImplicitTail => SmartSite::Implicit,
             Self::Solve => SmartSite::Engine(SmartTacticKind::Solve),
         }
     }
@@ -6948,7 +6949,8 @@ pub enum ProofFactSource {
 /// A `.click` tactic that may search for a proof.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SmartTactic {
-    Auto,
+    /// Omitted proof: run the remaining C, then solve each outstanding goal.
+    ImplicitTail,
     Solve,
 }
 
@@ -7788,7 +7790,7 @@ struct ReportDetail {
     /// site of its own arose: its claim and source occurrence.
     source_tactic: Option<(String, Vec<usize>)>,
     /// The resource fact a refused C operation needed and the state did not
-    /// hold. Planning input, like an unresolved requirement: `auto` opens the
+    /// hold. Planning input, like an unresolved requirement: execution search opens the
     /// one folded resource whose body holds it (design/proof-reuse.md R4).
     missing_resource: Option<crate::kernel::CResourceFact>,
     /// The proposition a refused C operation needed, for the report's
@@ -8826,17 +8828,17 @@ impl FunctionBlock {
     }
 
     /// The one proof of every claim without its own `by`: the written
-    /// grouped proof, or `auto` when two or more claims omit theirs. Each
+    /// grouped proof, or the implicit tail when two or more claims omit theirs. Each
     /// claim with its own `by` keeps that proof. A single claim without one
     /// keeps its per-claim default, which is the same proof over the same
     /// single execution.
     pub fn covering_proof(&self) -> Option<&SourceProof> {
-        static IMPLICIT_AUTO: SourceProof = SourceProof::Tactic(SmartTactic::Auto);
+        static IMPLICIT_SOLVE: SourceProof = SourceProof::Tactic(SmartTactic::ImplicitTail);
         if let Some(proof) = &self.grouped_proof {
             return Some(proof);
         }
         (!self.external && !self.tactic_procedure && self.claims_without_proof() >= 2)
-            .then_some(&IMPLICIT_AUTO)
+            .then_some(&IMPLICIT_SOLVE)
     }
 
     /// Whether `claim_proof`, a claim's own `by` clause, leaves that claim to
@@ -9403,8 +9405,11 @@ impl StructuralItem {
 }
 
 impl SourceProof {
-    pub fn is_auto_tactic(&self) -> bool {
-        matches!(self, Self::Default | Self::Tactic(SmartTactic::Auto))
+    pub fn uses_implicit_tail(&self) -> bool {
+        matches!(
+            self,
+            Self::Default | Self::Tactic(SmartTactic::ImplicitTail)
+        )
     }
 
     fn unfold_tactic_names(&self) -> Vec<String> {

@@ -119,7 +119,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .map(|(_, surface)| surface.clone())
                 .collect::<Vec<_>>();
             let scope = search_input
-                .begin_have(surface_guard.as_ref().clone())
+                .driver()
+                .open_have(surface_guard.as_ref().clone())
                 .ok()?;
             // The guard is a side condition of the listed fact: prefer the
             // other listed premises, and otherwise decide it as `solve` would.
@@ -188,7 +189,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         surface_guard: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let Some(scope) =
-            attempt::candidate_outcome(search_input.begin_have(surface_guard.clone()))?
+            attempt::candidate_outcome(search_input.driver().open_have(surface_guard.clone()))?
         else {
             return Ok(None);
         };

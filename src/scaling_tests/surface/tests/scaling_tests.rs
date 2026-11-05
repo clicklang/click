@@ -41,7 +41,7 @@ fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
         );
         if size == 1 {
             let expanded = expand_checked_grouped_claim(&source, &verified, "pop").unwrap();
-            crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &c))
                 .expect("the emitted guard refutation checks in a fresh proof");
             assert_eq!(expanded.matches(clause).count(), 1);
             let false_expanded = expanded.replace(
@@ -49,7 +49,7 @@ fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
                 "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
             );
             assert!(
-                crate::surface::proof::without_implicit_auto(|| {
+                crate::surface::proof::without_implicit_solve(|| {
                     verify_c0_sources(&false_expanded, &c)
                 })
                 .is_err(),
@@ -387,7 +387,7 @@ int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
                     let expanded =
                         expand_checked_function_claim(&source, &verified, "unit.contract")
                             .expect("the nested claim expands");
-                    without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                    without_implicit_solve(|| verify_c0_sources(&expanded, &c))
                         .expect("the nested expansion verifies independently");
                     let invalid = source.replace("ensures result == 0", "ensures result == 1");
                     assert!(verify_c0_sources(&invalid, &c).is_err());
@@ -433,7 +433,7 @@ int32 unit() {{ owns m: marker(); ensures result == 0; }} by {{ {body} }}"
                     let expanded =
                         expand_checked_function_claim(&source, &verified, "unit.contract")
                             .expect("the nested claim expands");
-                    without_implicit_auto(|| verify_c0_sources(&expanded, &c))
+                    without_implicit_solve(|| verify_c0_sources(&expanded, &c))
                         .expect("the nested expansion verifies independently");
                     let invalid = source.replace("ensures result == 0", "ensures result == 1");
                     assert!(verify_c0_sources(&invalid, &c).is_err());
@@ -1363,7 +1363,7 @@ fn a_functions_tactic_work_does_not_grow_with_earlier_unrelated_functions() {
 /// function-specific input identities, in selected and whole-file verification.
 #[test]
 #[ignore = "nightly: verifies the arena example twice"]
-fn arena_pipeline_auto_at_recorded_snapshot_survives_stable_input_names() {
+fn arena_pipeline_solve_at_recorded_snapshot_survives_stable_input_names() {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena/arena_cells.click");
     let source = std::fs::read_to_string(&path).unwrap();
@@ -1610,7 +1610,7 @@ fn explicit_step_scales_near_linearly_with_unrelated_ambient_facts() {
 
 /// A call step whose fast path leaves the callee's precondition open, proved
 /// by a written `by` body of simple tactics and checked with the implicit
-/// `auto` off, as an expanded proof is. Unrelated context facts mention the
+/// `solve` off, as an expanded proof is. Unrelated context facts mention the
 /// same variable, so a search over the context would visit every one.
 #[test]
 #[ignore = "nightly: 1.0s alone (2026-10-14)"]
@@ -1620,7 +1620,7 @@ fn step_with_written_obligation_proof_scales_near_linearly_with_unrelated_ambien
         .map(|size| {
             let (c_source, click_source) = call_with_unrelated_facts(size);
             let (verified, sample) = scaling_sample(size, || {
-                crate::surface::proof::without_implicit_auto(|| {
+                crate::surface::proof::without_implicit_solve(|| {
                     verify_c0_sources(&click_source, &[("call_target.c", c_source.as_str())])
                 })
             });
@@ -9486,7 +9486,7 @@ fn early_return_expansions_stay_flat_and_join_without_copying_paths() {
                 let (expanded, c) = expanded_early_return_proof(returns);
                 depths.push(brace_depth(&expanded));
                 crate::surface::proof::take_terminal_join_materialized_facts();
-                crate::surface::proof::without_implicit_auto(|| {
+                crate::surface::proof::without_implicit_solve(|| {
                     verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
                 })
                 .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
@@ -9517,13 +9517,13 @@ fn one_hundred_twenty_eight_early_returns_expand_and_reverify() {
         .spawn(|| {
             let (expanded, c) = expanded_early_return_proof(128);
             assert!(brace_depth(&expanded) <= 4, "{}", brace_depth(&expanded));
-            crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::proof::without_implicit_solve(|| {
                 verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
             })
             .unwrap_or_else(|error| panic!("128 returns reverify: {}", error.message()));
             let false_c = c.replace("    return 0;\n}", "    return -1;\n}");
             assert_ne!(false_c, c);
-            crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::proof::without_implicit_solve(|| {
                 verify_c0_sources(&expanded, &[("mark.c", false_c.as_str())])
             })
             .expect_err("the last path still owes its postcondition");
@@ -9576,7 +9576,7 @@ fn early_return_finishing_curves(sizes: &[usize]) -> Vec<(&'static str, Vec<usiz
                         let joined = crate::surface::proof::join_arm_effect_facts();
                         let indexed = crate::kernel::indexed_execution_facts();
                         let (verified, sample) = scaling_sample(returns, || {
-                            crate::surface::proof::without_implicit_auto(|| {
+                            crate::surface::proof::without_implicit_solve(|| {
                                 verify_c0_sources(&expanded, &[("mark.c", c.as_str())])
                             })
                         });

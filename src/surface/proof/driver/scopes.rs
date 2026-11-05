@@ -297,34 +297,9 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         next.body = body;
         Ok(Some(next))
     }
-
-    pub(in crate::surface::proof) fn try_direct_caller_requirement_closure(
-        &self,
-        selection: &CallerRequirementSelection,
-    ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let driver_proof = self.proof;
-        let Some(body) = crate::kernel::search::ProofSearch::try_direct_caller_requirement_closure(
-            &(driver_proof.body),
-            selection,
-        )?
-        else {
-            return Ok(None);
-        };
-        let mut next = driver_proof.clone();
-        next.body = body;
-        Ok(Some(next))
-    }
 }
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
-    /// `auto` on a stated fact: it executes no C, so it is `solve`.
-    pub(in crate::surface::proof) fn try_auto_fact_closure(
-        &self,
-    ) -> Result<Option<ProofScope<'a>>, ClickError> {
-        let driver_proof = self.proof;
-        (driver_proof).driver().try_solve_closure()
-    }
-
     /// Checks a source body after its enclosing driver has selected Proof as
     /// the authority for this scope. Explicit failures remain checked errors
     /// through every nested scope and logical arm.
@@ -416,5 +391,69 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         }
         next.body = body;
         Ok(Some(next))
+    }
+}
+
+impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    /// Open a generated have, preserving its native arithmetic presentation.
+    pub(in crate::surface::proof) fn open_have(
+        &self,
+        proposition: ClickProposition,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.open_have_with_presentation(proposition, true, true)
+    }
+
+    pub(in crate::surface::proof) fn open_source_have(
+        &self,
+        have: &ProofHave,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        let explicit_transport = matches!(&have.proof,
+            SourceProof::Script(tactics) if matches!(tactics.as_slice(), [ProofTactic::TransportUsing { .. }]));
+        self.open_have_with_goal_observations(have.proposition.clone(), !explicit_transport)
+    }
+
+    pub(in crate::surface::proof) fn open_have_with_goal_observations(
+        &self,
+        proposition: ClickProposition,
+        observe_goal: bool,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.open_have_with_presentation(proposition, observe_goal, false)
+    }
+
+    fn open_have_with_presentation(
+        &self,
+        proposition: ClickProposition,
+        observe_goal: bool,
+        observed_spelling: bool,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        let operation = |proof: &Proof<'a>| {
+            proof.begin_have(proposition.clone(), observe_goal, observed_spelling)
+        };
+        if super::execution_statements::implicit_solve_disabled() {
+            return operation(self.proof);
+        }
+        let step = ProofStep::Have {
+            proposition: proposition.clone(),
+            proof: Box::new(ProofCertificate::from_proof_tactics(&[]).expect("empty certificate")),
+        };
+        self.with_proved_lowering_requirements(&step, operation)
+    }
+}
+
+impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Open a nested have at this scope's current body. The resulting scope
+    /// must still be incorporated through the existing join_nested operation.
+    pub(in crate::surface::proof) fn open_have(
+        &self,
+        proposition: ClickProposition,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.proof.body.driver().open_have(proposition)
+    }
+
+    pub(in crate::surface::proof) fn open_source_have(
+        &self,
+        have: &ProofHave,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.proof.body.driver().open_source_have(have)
     }
 }

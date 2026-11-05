@@ -1122,7 +1122,7 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
         ProofTactic::SmartExecute
         | ProofTactic::ExecuteUntil(_)
         | ProofTactic::Solve
-        | ProofTactic::AutoClose => {
+        | ProofTactic::ImplicitSolve => {
             unreachable!("certificate validation rejects this tactic")
         }
     }

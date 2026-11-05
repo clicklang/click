@@ -2474,6 +2474,8 @@ impl Printer<'_> {
         for argument in arguments {
             spelled_arguments.push(self.pure_argument(argument, depth + 1)?.text);
         }
+        let spelled_arguments =
+            crate::surface::diagnostics::slice_call_arguments(name, spelled_arguments);
         let text = format!("{name}({})", spelled_arguments.join(", "));
         (text.len() <= 2048 || self.source_mode()).then(|| atom(text))
     }

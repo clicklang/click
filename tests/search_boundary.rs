@@ -1135,3 +1135,49 @@ fn moving_explicit_dispatch_to_the_driver_does_not_hide_operation_search() {
     assert!(edges.keys().all(|key| key.contains("\toperation\t")));
     assert_eq!(edges.len(), 1);
 }
+
+#[test]
+fn implicit_obligations_cannot_restore_private_solver_strategies() {
+    let path = "src/surface/proof/driver/obligations.rs";
+    for method in [
+        "try_solve_closure_with_surfaces",
+        "try_direct_caller_requirement_closure",
+        "Witness",
+        "try_restricted_solve_closure",
+    ] {
+        let source = format!(
+            "fn prove_obligations_by_solve_or_name_the_first_missed() {{ hidden!({method}); }}"
+        );
+        assert!(boundary::check_source(path, &source).is_err(), "{method}");
+    }
+    assert!(boundary::check_source(path, "fn prove_obligations_by_solve_or_name_the_first_missed(p: P) { p.driver().try_solve_closure(); }").is_ok());
+}
+
+#[test]
+fn proof_driver_inventory_ignores_unrelated_local_driver_variables() {
+    let file = syn::parse_file("fn frontend() { let driver = compiler(); validate(driver); } fn proof(p: P) { p.driver(); DriveProof::driver(p); }").unwrap();
+    let edges = proof_search_boundary::inventory("src/example.rs", &file);
+    assert_eq!(edges.len(), 1);
+    let (key, count) = edges.iter().next().unwrap();
+    assert!(key.contains("::proof\tdriver"));
+    assert_eq!(*count, 2);
+}
+
+#[test]
+fn have_primitive_cannot_schedule_proofs_or_search() {
+    let path = "src/surface/proof/proof_object/splits_and_scopes.rs";
+    for source in [
+        "impl Proof { fn begin_have(&self) { self.driver().open_have(goal); } }",
+        "impl Proof { fn begin_have(&self) { ProofSearch::proves(facts, goal); } }",
+        "impl Proof { fn begin_have(&self) { invoke!(self.driver()); } }",
+        "impl Proof { fn begin_have(&self) { let run = ProofDriver::open_have; } }",
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+    assert!(boundary::check_source(path,
+        "impl Proof { fn begin_have(&self) { self.lower_surface_goal_recording_introductions(goal); } }"
+    ).is_ok());
+}

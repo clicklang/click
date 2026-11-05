@@ -418,13 +418,18 @@ and a reference `&T` is refused there. `x as T` casts in a body as in a
 contract. The C spellings (`uint8`, `const uint8*`, `x as int32`) still read
 the same types.
 
-A pure function may take a slice of scalars, `bytes: &[u8]`. As in a `fn`
-signature, the slice is its pointer and a `bytes_len` length: the body reads
-`bytes[k]`, `bytes.len()` and `*bytes`. A call passes it a slice parameter in
-scope, such as a `fn`'s `bytes` or another pure function's, and the call
-stands for the pointer and the length. A caller with no slice in scope, such
-as a theorem over `p: *const u8` and `n: usize`, writes both, `size(p, n)`;
-printed proofs write calls that way too, as `size(bytes, bytes.len())`. The
+A pure function may take a slice of scalars, `bytes: &[u8]`. The body reads
+`bytes[k]`, `bytes.len()` and `*bytes`. Each slice is one argument of a call:
+a slice parameter in scope, such as a `fn`'s `bytes` or another pure
+function's, that parameter at another point, `old(bytes)` or
+`at(point, bytes)`, or a slice built from a pointer and a length,
+`slice::from_raw_parts(p, n)` (with `import click::rust::slice;`), as a
+theorem over `p: *const u8` and `n: usize` writes it. Passing the pointer and
+the length as two arguments is refused. Printed proofs write a call the same
+way, `size(old(bytes))`. The library's `Slice<T>`
+(`library/rust/slice.click`) is the slice as one value, with `slice::len` and
+`slice::as_ptr`; a slice parameter is lowered as its pointer and its length,
+and the two spellings are the same slice. The
 [byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
 sums a prefix with `function prefix(bytes: &[u8], end: usize) -> Integer`,
 whose body adds `to_integer(bytes[k] as i32)`, and calls it as

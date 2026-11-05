@@ -419,7 +419,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(surfaces) = search_input.wide_conjunction_surfaces() {
             let mut proof = search_input.clone();
             for surface in surfaces {
-                let scope = proof.begin_have(surface)?;
+                let scope = proof.driver().open_have(surface)?;
                 let Some(closed) = (scope)
                     .driver()
                     .try_direct_structural_closure_with_quantified(quantified)?
@@ -509,7 +509,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     }
 
     /// Close a mathematical `Integer` bound goal with selected-premise arithmetic behind
-    /// `auto`: refute the goal's negation from the facts connected to it and
+    /// `solve`: refute the goal's negation from the facts connected to it and
     /// apply the resulting certificate as one ordinary checked step. Any
     /// miss leaves the proof unchanged.
     /// `solve` on an arithmetic goal: `arithmetic` from premises it selects
@@ -839,7 +839,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(spelled) = search_input.spell_integer_comparison(&reading, &written) else {
                 continue;
             };
-            let Ok(scope) = search_input.begin_have(spelled) else {
+            let Ok(scope) = search_input.driver().open_have(spelled) else {
                 continue;
             };
             let Some(closed) = (scope).driver().try_selected_arithmetic()? else {
@@ -1250,7 +1250,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 },
             );
             for bound in [&lower, &upper] {
-                let scope = proof.begin_have(bound.clone())?;
+                let scope = proof.driver().open_have(bound.clone())?;
                 let closed = if let Some(listed) = listed {
                     let mut premises = listed.to_vec();
                     premises.extend(established.iter().map(|(_, surface)| surface.clone()));
@@ -1285,7 +1285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: spelled_value,
             };
             let identity_surface = identity.clone();
-            let scope = proof.begin_have(identity.clone())?;
+            let scope = proof.driver().open_have(identity.clone())?;
             let step = ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
                 SpecialArithmeticCertificate {
                     premises: vec![lower, upper],
@@ -1361,7 +1361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mut proof = search_input.clone();
         for surface in surfaces {
-            let scope = proof.begin_have(surface)?;
+            let scope = proof.driver().open_have(surface)?;
             let Some(closed) = (scope)
                 .driver()
                 .try_solve_closure_with_surfaces(introduced_surfaces)?
@@ -1371,6 +1371,316 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             proof = closed.join()?;
         }
         attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))
+    }
+
+    /// Try the explicit zero witness for a machine-integer existential.
+    /// The recursive solve sees its instantiated body, not the existential.
+    pub(in crate::surface::proof) fn try_zero_witness_closure(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let Some(ClickProposition::Exists {
+            click_type: ClickType::C(syntax::C0Type::Int32),
+            name,
+            written_name,
+            ..
+        }) = search_input.surface_goal()
+        else {
+            return Ok(None);
+        };
+        let Some(witnessed) = attempt::candidate_outcome(search_input.driver().apply_step(
+            ProofStep::Witness(ProofWitness::single(
+                written_name.as_ref().unwrap_or(name).clone(),
+                ContractExpression::CFragment(CExpression::Value(CValue::Int32(
+                    MachineTerm::constant(0),
+                ))),
+            )),
+        ))?
+        else {
+            return Ok(None);
+        };
+        crate::kernel::search::ProofSearch::try_solve_closure(&witnessed)
+    }
+
+    /// Reuse a witness from a function-entry existential, then transport its
+    /// leaves through the effect-free prefix. This is an ordinary solve
+    /// strategy; it receives no call-site obligation or private premise list.
+    pub(in crate::surface::proof) fn try_entry_existential_closure(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        if !matches!(
+            search_input.surface_goal(),
+            Some(ClickProposition::Exists { .. })
+        ) {
+            return Ok(None);
+        }
+        let ProofContext::Execution(context) = search_input.context.as_ref() else {
+            return Ok(None);
+        };
+        let Some(execution) = search_input.execution() else {
+            return Ok(None);
+        };
+        if !execution.core.effect_facts.is_empty() {
+            return Ok(None);
+        }
+        let Some(owner) = &context.constants.caller_source_owner else {
+            return Ok(None);
+        };
+        for outer_ordinal in 0..context.function_block.requires().len() {
+            check_verification_deadline()?;
+            let source_id = RequirementSourceId {
+                owner: owner.clone(),
+                outer_ordinal,
+            };
+            let Some(selection) = context
+                .constants
+                .caller_requirement_index
+                .lookup_source_requirement(&source_id)
+            else {
+                continue;
+            };
+            let ClickProposition::PredicateCall { name, .. } = &selection.source_proposition else {
+                continue;
+            };
+            let proof = if search_input.active_unfolded_predicates().contains(name) {
+                search_input.clone()
+            } else {
+                let Some(unfolded) = attempt::candidate_outcome(
+                    search_input
+                        .driver()
+                        .apply_step(ProofStep::UnfoldPredicate(name.clone())),
+                )?
+                else {
+                    continue;
+                };
+                unfolded
+            };
+            if let Some(closed) =
+                crate::kernel::search::ProofSearch::try_selected_entry_existential_closure(
+                    &proof, &selection,
+                )?
+            {
+                return Ok(Some(closed));
+            }
+        }
+        Ok(None)
+    }
+
+    pub(in crate::surface::proof) fn try_selected_entry_existential_closure(
+        search_input: &Proof<'a>,
+        selection: &CallerRequirementSelection,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let ProofContext::Execution(context) = search_input.context.as_ref() else {
+            return Ok(None);
+        };
+        let unfolded = unfold_structural_invariant_proposition(
+            context.spec_definitions.predicates,
+            &selection.source_proposition,
+            &search_input.active_unfolded_predicates(),
+        )
+        .map_err(|message| search_input.step_error(message))?;
+        let ClickProposition::Exists {
+            click_type,
+            name: source_name,
+            body,
+            ..
+        } = unfolded
+        else {
+            return Ok(None);
+        };
+        let candidate_names = std::iter::once(source_name.clone()).chain((0..4096).map(|suffix| {
+            format!(
+                "{}_witness_{}_{suffix}",
+                source_name, selection.source_id.outer_ordinal
+            )
+        }));
+        let Some(choice_name) = candidate_names.into_iter().find(|candidate| {
+            search_input.local_binding(candidate).is_none()
+                && !context
+                    .parsed_function
+                    .parameters()
+                    .iter()
+                    .any(|parameter| parameter.name() == candidate)
+                && search_input
+                    .execution()
+                    .is_none_or(|execution| !execution.core.state.locals().contains_name(candidate))
+        }) else {
+            return Ok(None);
+        };
+        let replacement = match &click_type {
+            ClickType::Resource => return Ok(None),
+            ClickType::Integer | ClickType::Algebraic(_) => {
+                ContractExpression::Binding(choice_name.clone())
+            }
+            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
+                ContractExpression::CFragment(CExpression::Variable(choice_name.clone()))
+            }
+            ClickType::Parameter(_) => return Ok(None),
+        };
+        let body =
+            substitute_click_proposition(&body, &BTreeMap::from([(source_name, replacement)]))
+                .map_err(|message| search_input.step_error(message))?;
+        let source = ClickProposition::At {
+            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            proposition: Box::new(ClickProposition::Exists {
+                click_type: click_type.clone(),
+                name: choice_name.clone(),
+                written_name: None,
+                body: Box::new(body),
+            }),
+        };
+        let Some(chosen) = attempt::candidate_outcome(search_input.driver().apply_step(
+            ProofStep::LetSatisfy(ProofLetSatisfy {
+                bindings: vec![(choice_name.clone(), click_type)],
+                proposition: source,
+            }),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let Some(projection) = chosen
+            .execution()
+            .and_then(|execution| execution.presentation.existential_projection.as_ref())
+        else {
+            return Ok(None);
+        };
+        if chosen.focused_discharged() {
+            return Ok(Some(chosen));
+        }
+        let source_leaves = projection
+            .leaves
+            .iter()
+            .map(|leaf| leaf.surface.clone())
+            .collect::<Vec<_>>();
+        let Some(ClickProposition::Exists {
+            name, written_name, ..
+        }) = chosen.surface_goal()
+        else {
+            return Ok(None);
+        };
+        let witness_name = written_name.as_ref().unwrap_or(name).clone();
+        let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
+            ProofStep::Witness(ProofWitness::single(
+                witness_name,
+                ContractExpression::CFragment(CExpression::Variable(choice_name)),
+            )),
+        ))?
+        else {
+            return Ok(None);
+        };
+        let mut proof = witnessed;
+        for source in &source_leaves {
+            // At the entry snapshot the leaves already close the goal.
+            if proof.focused_discharged() {
+                return Ok(Some(proof));
+            }
+            let Some(extracted) = attempt::candidate_outcome(
+                proof
+                    .driver()
+                    .apply_step(ProofStep::Extract(source.clone())),
+            )?
+            else {
+                return Ok(None);
+            };
+            proof = extracted;
+        }
+        if proof.focused_discharged() {
+            return Ok(Some(proof));
+        }
+        // The leaves hold at function entry. A conjunct this frontier does
+        // not state exactly, such as a wide range or a universal over reads,
+        // is carried here by one explicit transport of its entry form.
+        let Some(goal) = proof.surface_goal().cloned() else {
+            return Ok(None);
+        };
+        let mut conjuncts = Vec::new();
+        let mut pending = vec![goal];
+        while let Some(proposition) = pending.pop() {
+            match proposition {
+                ClickProposition::And(left, right) => {
+                    pending.push(*right);
+                    pending.push(*left);
+                }
+                conjunct => conjuncts.push(conjunct),
+            }
+        }
+        for conjunct in conjuncts {
+            check_verification_deadline()?;
+            let Ok(lowered) =
+                proof.lower_surface_proposition(&conjunct, "caller requirement conjunct")
+            else {
+                return Ok(None);
+            };
+            if proof.facts().pure_assumption_available(&lowered) {
+                continue;
+            }
+            let Some(carried) =
+                crate::kernel::search::ProofSearch::try_carry_entry_conjunct(&(proof), &conjunct)?
+            else {
+                return Ok(None);
+            };
+            proof = carried;
+        }
+        crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
+            &(proof),
+            &source_leaves,
+        )
+    }
+
+    /// Proves `conjunct` at this frontier from its function-entry form: a
+    /// plain fact by one `transport`, and a guarded universal by introducing
+    /// its binder and guard, instantiating the entry universal there, and
+    /// transporting that one conclusion. Every step is the checked operation.
+    pub(in crate::surface::proof) fn try_carry_entry_conjunct(
+        search_input: &Proof<'a>,
+        conjunct: &ClickProposition,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let entry = |proposition: &ClickProposition| ClickProposition::At {
+            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            }),
+            proposition: Box::new(proposition.clone()),
+        };
+        let transport = |proposition: &ClickProposition| ProofStep::TransportUsing {
+            source: entry(proposition),
+            target: proposition.clone(),
+            premises: vec![entry(proposition)],
+        };
+        let steps = match conjunct {
+            ClickProposition::ForAll { name, body, .. } => {
+                let ClickProposition::Implies(guard, consequent) = body.as_ref() else {
+                    return Ok(None);
+                };
+                vec![
+                    ProofStep::IntroAs(name.clone()),
+                    ProofStep::Intro,
+                    ProofStep::InstantiateUsing {
+                        quantified: entry(conjunct),
+                        argument: ContractExpression::CFragment(CExpression::Variable(
+                            name.clone(),
+                        )),
+                        premises: Some(vec![guard.as_ref().clone()]),
+                    },
+                    transport(consequent),
+                ]
+            }
+            _ => vec![transport(conjunct)],
+        };
+        let Some(mut scope) =
+            attempt::candidate_outcome(search_input.driver().open_have(conjunct.clone()))?
+        else {
+            return Ok(None);
+        };
+        for step in steps {
+            let Some(next) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
+                return Ok(None);
+            };
+            scope = next;
+        }
+        attempt::candidate_outcome(scope.join())
     }
 
     pub(in crate::surface::proof) fn try_solve_closure_strategies(
@@ -1385,6 +1695,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_direct_logical_closure(search_input)?
+        {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) =
+            crate::kernel::search::ProofSearch::try_zero_witness_closure(search_input)?
+        {
+            scope.succeed();
+            return Ok(Some(proof));
+        }
+        if let Some(proof) =
+            crate::kernel::search::ProofSearch::try_entry_existential_closure(search_input)?
         {
             scope.succeed();
             return Ok(Some(proof));
@@ -1492,7 +1814,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(surface) = search_input.spelled_goal_for_search(&resolved) else {
             return Ok(None);
         };
-        let Some(scope) = attempt::candidate_outcome(search_input.begin_have(surface))? else {
+        let Some(scope) = attempt::candidate_outcome(search_input.driver().open_have(surface))?
+        else {
             return Ok(None);
         };
         let Some(closed) = (scope).driver().try_solve_closure()? else {
@@ -1621,7 +1944,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::LessThan,
             right: successor,
         };
-        let Ok(scope) = search_input.begin_have(strict.clone()) else {
+        let Ok(scope) = search_input.driver().open_have(strict.clone()) else {
             return Ok(None);
         };
         let Some(proved) = (scope).driver().try_solve_closure()? else {
@@ -3453,7 +3776,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let then_branch = split_proof.focus_branch(ids[0])?;
             let disequality = surface_split_disequality(&condition)
                 .expect("an upper-bound split condition is a strict comparison");
-            let disequality_scope = then_branch.begin_have(disequality.clone())?;
+            let disequality_scope = then_branch.driver().open_have(disequality.clone())?;
             let disequality_done = (disequality_scope)
                 .driver()
                 .try_solve_closure_with_surfaces(&then_surfaces)?;
@@ -3478,8 +3801,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let nonstrict = surface_split_nonstrict_bound(&condition)
                 .expect("an upper-bound split condition is a strict comparison");
             let else_branch = then_done.focus_branch(ids[1])?;
-            let equality_scope = else_branch.begin_have(equality.clone())?;
-            let nonstrict_scope = equality_scope.begin_have(nonstrict.clone())?;
+            let equality_scope = else_branch.driver().open_have(equality.clone())?;
+            let nonstrict_scope = equality_scope.driver().open_have(nonstrict.clone())?;
             let nonstrict_done = nonstrict_scope
                 .driver()
                 .try_solve_closure_with_surfaces(&else_surfaces)?
@@ -4080,7 +4403,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let opposite = negate_click_proposition(&antecedent);
-        let Some(scope) = attempt::candidate_outcome(search_input.begin_have(opposite.clone()))?
+        let Some(scope) =
+            attempt::candidate_outcome(search_input.driver().open_have(opposite.clone()))?
         else {
             return Ok(None);
         };
@@ -4139,7 +4463,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // contradiction checks the two explicit facts.
             let negated_antecedent = negate_click_proposition(&antecedent);
             if let Some(scope) =
-                attempt::candidate_outcome(base.begin_have(negated_antecedent.clone()))?
+                attempt::candidate_outcome(base.driver().open_have(negated_antecedent.clone()))?
                 && let Some(proved) = (scope).driver().try_solve_closure()?
                 && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
                 && let Some(with_antecedent) =
@@ -4631,7 +4955,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for surface in [surface_left, surface_right] {
             let selected = (|| {
                 let Some(scope) =
-                    attempt::candidate_outcome(search_input.begin_have(surface.clone()))?
+                    attempt::candidate_outcome(search_input.driver().open_have(surface.clone()))?
                 else {
                     return Ok(None);
                 };
@@ -4740,7 +5064,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 _ => surface_instance,
             };
-            let Some(scope) = attempt::candidate_outcome(proof.begin_have(surface_instance))?
+            let Some(scope) =
+                attempt::candidate_outcome(proof.driver().open_have(surface_instance))?
             else {
                 return Ok(None);
             };
@@ -5893,7 +6218,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     MachineTerm::constant(constant_u32(*value)),
                 ))),
             };
-            let scope = search_input.begin_have(surface.clone()).ok()?;
+            let scope = search_input.driver().open_have(surface.clone()).ok()?;
             let closed = (scope).driver().try_direct_logical_closure().ok()??;
             return Some((surface, closed.join().ok()?));
         }
@@ -6278,7 +6603,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator,
                 right: surface_goal_constant.clone(),
             };
-            let Ok(scope) = search_input.begin_have(bound_surface.clone()) else {
+            let Ok(scope) = search_input.driver().open_have(bound_surface.clone()) else {
                 continue;
             };
             let Some(scope) = (scope).driver().try_direct_logical_closure().ok().flatten() else {
@@ -6287,7 +6612,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(proof) = scope.join() else {
                 continue;
             };
-            let Ok(scope) = proof.begin_have(link_surface.clone()) else {
+            let Ok(scope) = proof.driver().open_have(link_surface.clone()) else {
                 continue;
             };
             let Some(scope) = scope.driver().try_direct_logical_closure().ok().flatten() else {
@@ -6611,7 +6936,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 orientations.push(reverse);
             }
             for equality in orientations {
-                let scope = search_input.begin_have(nonnegative_surface.clone()).ok()?;
+                let scope = search_input
+                    .driver()
+                    .open_have(nonnegative_surface.clone())
+                    .ok()?;
                 let Ok(scope) = scope.driver().apply_step(ProofStep::Rewrite(equality)) else {
                     continue;
                 };
@@ -6801,7 +7129,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;
                         let selected_goal = if index == 0 { goal_left } else { goal_right };
-                        let scope = focused_branch.begin_have(selected_goal).ok()?;
+                        let scope = focused_branch.driver().open_have(selected_goal).ok()?;
                         let rewritten = scope
                             .driver()
                             .apply_step(ProofStep::Rewrite(assumed_surface.clone()))
@@ -7744,7 +8072,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             let mut proof = search_input.clone();
             for conjunct in [left, right] {
-                let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
+                let scope = proof.driver().open_have(conjunct.as_ref().clone()).ok()?;
                 proof = (scope)
                     .driver()
                     .try_restricted_solve_closure(surfaces)?
@@ -8491,13 +8819,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )
     }
 
-    /// `auto`'s automatic opening (design/proof-reuse.md R4): a C operation
+    /// `solve`'s automatic opening (design/proof-reuse.md R4): a C operation
     /// refused because the resource it reads or writes lies inside a folded
     /// resource is retried once that resource is unfolded, one layer per
     /// refused access. The certificate records each `unfold`, so expansion
     /// writes it out. A refusal the opening does not resolve is reported as
     /// the original refusal.
-    pub(in crate::surface::proof) fn retry_statement_after_auto_open(
+    pub(in crate::surface::proof) fn retry_statement_after_solve_open(
         search_input: &Proof<'a>,
         step: ProofStep,
         retried_requirements: &mut std::collections::BTreeSet<PropositionIdentityKey>,
@@ -8509,7 +8837,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(missing) = refusal.missing_resource() else {
                 break;
             };
-            let Some(opened) = proof.auto_open_for_missing_resource(missing)? else {
+            let Some(opened) = proof.solve_open_for_missing_resource(missing)? else {
                 break;
             };
             proof = opened;
@@ -8539,7 +8867,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         match initial {
             Ok(proof) => Ok(proof),
             Err(error) if error.missing_resource().is_some() => {
-                crate::kernel::search::ProofSearch::retry_statement_after_auto_open(
+                crate::kernel::search::ProofSearch::retry_statement_after_solve_open(
                     search_input,
                     step,
                     retried_requirements,
@@ -8556,141 +8884,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 if !retried_requirements.insert(identity) {
                     return Err(error);
                 }
-                let ProofContext::Execution(context) = search_input.context.as_ref() else {
-                    return Err(error);
-                };
                 let mut proof = search_input.clone();
                 let mut error = error;
                 loop {
-                    let Some(execution) = proof.execution() else {
+                    let Some(spelling) = proof.requirement_surface(&requirement, &step)? else {
                         return Err(error);
                     };
-                    let execution_view = execution.view(context);
-                    let _qualified_sources =
-                        super::surface_synthesis::QualifiedSynthesisScope::enter(
-                            execution_view.surface_propositions,
-                        );
-                    // A call requirement is authoritative only at the call
-                    // site that produced it. Resolve its source clause from
-                    // the immutable registry/interface definition, after
-                    // checking that this proof is still at that exact call.
-                    // In particular, do not synthesize from the caller's
-                    // reduced snapshot or use the kernel candidate ordinal
-                    // as a source selector.
-                    // Lower and compare each candidate independently; no
-                    // surface is admitted merely because it parses or because
-                    // lowering succeeds.  The caller below invokes this at
-                    // most twice in a fixed order.
-                    let admit_candidate = |candidate: ClickProposition| match proof
-                        .lower_surface_goal(&candidate, "smart retained-have requirement")
-                    {
-                        Ok(lowered) if lowered_states_requirement(&lowered, &requirement) => {
-                            Ok(Some(candidate))
-                        }
-                        Ok(_) | Err(_) => {
-                            check_verification_deadline()?;
-                            Ok(None)
-                        }
-                    };
-                    let synthesize_candidate = || {
-                        synthesize_surface_proposition(
-                            &requirement.proposition,
-                            context.parameter_binding(),
-                            &execution.core.state,
-                        )
-                    };
-                    let mut direct_caller = requirement.call_site.as_ref().and_then(|_| {
-                        source_backed_direct_caller_requirement(
-                            &requirement,
-                            &step,
-                            execution,
-                            context,
-                        )
-                    });
-                    let surface = if requirement.call_site.is_some() {
-                        // A source-backed call may only use the source form
-                        // after all carrier/call/frontier/ordinal checks have
-                        // passed.  A missing authoritative registry entry is
-                        // still a hard refusal; synthesis is only the second
-                        // spelling of an admitted source candidate.
-                        let Some(registry_surface) = source_backed_call_requirement_surface(
-                            &requirement,
-                            &step,
-                            execution,
-                            context,
-                        ) else {
-                            return Err(error);
-                        };
-                        let candidate = if let Some((predicate_name, _)) = &direct_caller {
-                            let mut unfolded = proof.active_unfolded_predicates();
-                            unfolded.push(predicate_name.clone());
-                            unfold_structural_invariant_proposition(
-                                context.spec_definitions.predicates,
-                                &registry_surface.proposition,
-                                &unfolded,
-                            )
-                            .map_err(|message| proof.step_error(message))?
-                        } else {
-                            registry_surface.proposition
-                        };
-                        if let Some(surface) = admit_candidate(candidate)? {
-                            surface
-                        } else {
-                            let Some(synthesized) = synthesize_candidate() else {
-                                return Err(error);
-                            };
-                            let Some(surface) = admit_candidate(synthesized)? else {
-                                return Err(error);
-                            };
-                            // A synthesized generated guard is a different
-                            // goal from the written predicate's existential.
-                            // Its witness must be selected for this goal.
-                            direct_caller = None;
-                            surface
-                        }
-                    } else {
-                        let Some(synthesized) = synthesize_candidate() else {
-                            return Err(error);
-                        };
-                        let Some(surface) = admit_candidate(synthesized)? else {
-                            return Err(error);
-                        };
-                        surface
-                    };
-                    if let Some((predicate_name, _)) = &direct_caller {
-                        let Some(unfolded) = attempt::candidate_outcome(
-                            proof
-                                .driver()
-                                .apply_step(ProofStep::UnfoldPredicate(predicate_name.clone())),
-                        )?
-                        else {
-                            return Err(error);
-                        };
-                        proof = unfolded;
-                    }
-                    let have = match proof.begin_have(surface.clone()) {
+                    let have = match proof.driver().open_have(spelling.surface) {
                         Ok(have) => have,
                         Err(_) => {
                             check_verification_deadline()?;
                             return Err(error);
                         }
                     };
-                    let closed = match direct_caller {
-                        Some((predicate_name, selection)) => {
-                            let _ = predicate_name;
-                            match (have)
-                                .driver()
-                                .try_direct_caller_requirement_closure(&selection)
-                            {
-                                Ok(closed) => closed,
-                                Err(_) => {
-                                    check_verification_deadline()?;
-                                    return Err(error);
-                                }
-                            }
-                        }
-                        None => close_requirement_have_by_auto(have, &surface)?,
-                    };
+                    let closed = have.driver().try_solve_closure()?;
                     let Some(closed) = closed else {
                         return Err(error);
                     };
@@ -8753,237 +8960,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 retried_requirements,
             )
         })
-    }
-
-    pub(in crate::surface::proof) fn try_direct_caller_requirement_closure(
-        search_input: &Proof<'a>,
-        selection: &CallerRequirementSelection,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
-        let ProofContext::Execution(context) = search_input.context.as_ref() else {
-            return Ok(None);
-        };
-        let unfolded = unfold_structural_invariant_proposition(
-            context.spec_definitions.predicates,
-            &selection.source_proposition,
-            &search_input.active_unfolded_predicates(),
-        )
-        .map_err(|message| search_input.step_error(message))?;
-        let ClickProposition::Exists {
-            click_type,
-            name: source_name,
-            body,
-            ..
-        } = unfolded
-        else {
-            return Ok(None);
-        };
-        let candidate_names = std::iter::once(source_name.clone()).chain(
-            (0..MAX_DIRECT_CALLER_BINDING_NAMES).map(|suffix| {
-                format!(
-                    "{}_witness_{}_{suffix}",
-                    source_name, selection.source_id.outer_ordinal
-                )
-            }),
-        );
-        let Some(choice_name) = candidate_names.into_iter().find(|candidate| {
-            search_input.local_binding(candidate).is_none()
-                && !context
-                    .parsed_function
-                    .parameters()
-                    .iter()
-                    .any(|parameter| parameter.name() == candidate)
-                && search_input
-                    .execution()
-                    .is_none_or(|execution| !execution.core.state.locals().contains_name(candidate))
-        }) else {
-            return Ok(None);
-        };
-        let replacement = match &click_type {
-            ClickType::Resource => return Ok(None),
-            ClickType::Integer | ClickType::Algebraic(_) => {
-                ContractExpression::Binding(choice_name.clone())
-            }
-            ClickType::C(_) | ClickType::CObjectPointer { .. } => {
-                ContractExpression::CFragment(CExpression::Variable(choice_name.clone()))
-            }
-            ClickType::Parameter(_) => return Ok(None),
-        };
-        let body =
-            substitute_click_proposition(&body, &BTreeMap::from([(source_name, replacement)]))
-                .map_err(|message| search_input.step_error(message))?;
-        let source = ClickProposition::At {
-            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Function,
-                kind: ProgramPointKind::Entry,
-            }),
-            proposition: Box::new(ClickProposition::Exists {
-                click_type: click_type.clone(),
-                name: choice_name.clone(),
-                written_name: None,
-                body: Box::new(body),
-            }),
-        };
-        let Some(chosen) = attempt::candidate_outcome(search_input.driver().apply_step(
-            ProofStep::LetSatisfy(ProofLetSatisfy {
-                bindings: vec![(choice_name.clone(), click_type)],
-                proposition: source,
-            }),
-        ))?
-        else {
-            return Ok(None);
-        };
-        let Some(projection) = chosen
-            .execution()
-            .and_then(|execution| execution.presentation.existential_projection.as_ref())
-        else {
-            return Ok(None);
-        };
-        if chosen.focused_discharged() {
-            return Ok(Some(chosen));
-        }
-        let source_leaves = projection
-            .leaves
-            .iter()
-            .map(|leaf| leaf.surface.clone())
-            .collect::<Vec<_>>();
-        let Some(ClickProposition::Exists {
-            name, written_name, ..
-        }) = chosen.surface_goal()
-        else {
-            return Ok(None);
-        };
-        let witness_name = written_name.as_ref().unwrap_or(name).clone();
-        let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
-            ProofStep::Witness(ProofWitness::single(
-                witness_name,
-                ContractExpression::CFragment(CExpression::Variable(choice_name)),
-            )),
-        ))?
-        else {
-            return Ok(None);
-        };
-        let mut proof = witnessed;
-        for source in &source_leaves {
-            // At the entry snapshot the leaves already close the goal.
-            if proof.focused_discharged() {
-                return Ok(Some(proof));
-            }
-            let Some(extracted) = attempt::candidate_outcome(
-                proof
-                    .driver()
-                    .apply_step(ProofStep::Extract(source.clone())),
-            )?
-            else {
-                return Ok(None);
-            };
-            proof = extracted;
-        }
-        if proof.focused_discharged() {
-            return Ok(Some(proof));
-        }
-        if let Some(closed) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-            &(proof),
-            &source_leaves,
-        )? {
-            return Ok(Some(closed));
-        }
-        // The leaves hold at function entry. A conjunct this frontier does
-        // not state exactly, such as a wide range or a universal over reads,
-        // is carried here by one explicit transport of its entry form.
-        let Some(goal) = proof.surface_goal().cloned() else {
-            return Ok(None);
-        };
-        let mut conjuncts = Vec::new();
-        let mut pending = vec![goal];
-        while let Some(proposition) = pending.pop() {
-            match proposition {
-                ClickProposition::And(left, right) => {
-                    pending.push(*right);
-                    pending.push(*left);
-                }
-                conjunct => conjuncts.push(conjunct),
-            }
-        }
-        let mut carried_any = false;
-        for conjunct in conjuncts {
-            check_verification_deadline()?;
-            let Ok(lowered) =
-                proof.lower_surface_proposition(&conjunct, "caller requirement conjunct")
-            else {
-                return Ok(None);
-            };
-            if proof.facts().pure_assumption_available(&lowered) {
-                continue;
-            }
-            let Some(carried) =
-                crate::kernel::search::ProofSearch::try_carry_entry_conjunct(&(proof), &conjunct)?
-            else {
-                return Ok(None);
-            };
-            proof = carried;
-            carried_any = true;
-        }
-        if !carried_any {
-            return Ok(None);
-        }
-        crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
-            &(proof),
-            &source_leaves,
-        )
-    }
-
-    /// Proves `conjunct` at this frontier from its function-entry form: a
-    /// plain fact by one `transport`, and a guarded universal by introducing
-    /// its binder and guard, instantiating the entry universal there, and
-    /// transporting that one conclusion. Every step is the checked operation.
-    pub(in crate::surface::proof) fn try_carry_entry_conjunct(
-        search_input: &Proof<'a>,
-        conjunct: &ClickProposition,
-    ) -> Result<Option<Proof<'a>>, ClickError> {
-        let entry = |proposition: &ClickProposition| ClickProposition::At {
-            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
-                region: CodeRegionRef::Function,
-                kind: ProgramPointKind::Entry,
-            }),
-            proposition: Box::new(proposition.clone()),
-        };
-        let transport = |proposition: &ClickProposition| ProofStep::TransportUsing {
-            source: entry(proposition),
-            target: proposition.clone(),
-            premises: vec![entry(proposition)],
-        };
-        let steps = match conjunct {
-            ClickProposition::ForAll { name, body, .. } => {
-                let ClickProposition::Implies(guard, consequent) = body.as_ref() else {
-                    return Ok(None);
-                };
-                vec![
-                    ProofStep::IntroAs(name.clone()),
-                    ProofStep::Intro,
-                    ProofStep::InstantiateUsing {
-                        quantified: entry(conjunct),
-                        argument: ContractExpression::CFragment(CExpression::Variable(
-                            name.clone(),
-                        )),
-                        premises: Some(vec![guard.as_ref().clone()]),
-                    },
-                    transport(consequent),
-                ]
-            }
-            _ => vec![transport(conjunct)],
-        };
-        let Some(mut scope) =
-            attempt::candidate_outcome(search_input.begin_have(conjunct.clone()))?
-        else {
-            return Ok(None);
-        };
-        for step in steps {
-            let Some(next) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
-                return Ok(None);
-            };
-            scope = next;
-        }
-        attempt::candidate_outcome(scope.join())
     }
 
     pub(in crate::surface::proof) fn try_statement_step_with_apply(

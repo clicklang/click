@@ -79,7 +79,7 @@ pub(in crate::surface) fn source_site_kind(tactic: &ProofTactic) -> SourceSiteKi
 }
 
 /// The work budget `tactic`'s timing charges. A `have` whose proof still
-/// searches, `have P by { auto(); }`, owns that search when its body is not
+/// searches, `have P by { solve(); }`, owns that search when its body is not
 /// timed tactic by tactic, as inside another `have`'s script, so it spends a
 /// smart budget and a miss is reported as one. Its source site stays a
 /// control container: expansion selects the nested tactics.
@@ -150,14 +150,14 @@ impl TacticTiming {
         )
     }
 
-    /// Times the implicit `auto` proving a simple tactic's open requirement
+    /// Times the implicit `solve` proving a simple tactic's open requirement
     /// as a smart tactic of its own at that tactic's site, so its search is
-    /// charged to a smart budget and profiled as `implicit auto`, not as the
+    /// charged to a smart budget and profiled as `implicit solve`, not as the
     /// simple tactic's certificate check.
-    pub(super) fn implicit_auto() -> Option<Self> {
+    pub(super) fn implicit_solve() -> Option<Self> {
         let enclosing = current_timing_tactic()?;
         crate::instrumentation::enabled().then(|| {
-            let tactic_name = crate::instrumentation::IMPLICIT_AUTO_TACTIC.to_string();
+            let tactic_name = crate::instrumentation::IMPLICIT_SOLVE_TACTIC.to_string();
             let tactic_class = SourceSiteKind::ExpandableAutomation.profiling_label();
             if crate::instrumentation::starts_enabled() {
                 crate::instrumentation::emit(

@@ -177,7 +177,7 @@ fn rust_shift_spelling_survives_expansion_and_rechecking() {
     let expanded =
         expand_c0_claim_source_by_label(source, &sources, "rust_shift.ensures_0").unwrap();
     assert!(expanded.contains("<<"), "{expanded}");
-    crate::surface::proof::without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+    crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
         .unwrap();
 }
 

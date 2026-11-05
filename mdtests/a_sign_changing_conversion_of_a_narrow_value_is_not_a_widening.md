@@ -1,7 +1,7 @@
 # A sign-changing conversion of a narrow value is not a widening
 
 A negative of
-[`auto_widens_a_narrow_value_into_a_containing_type.md`](auto_widens_a_narrow_value_into_a_containing_type.md).
+[`solve_widens_a_narrow_value_into_a_containing_type.md`](solve_widens_a_narrow_value_into_a_containing_type.md).
 `unsigned int` does not contain `signed char`: converting `-1` gives
 `4294967295`, so the result is not read as the same value.
 

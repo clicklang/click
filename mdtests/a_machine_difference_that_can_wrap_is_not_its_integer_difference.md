@@ -2,7 +2,7 @@
 
 Without a lower bound on `x`, the unsigned `x - 1u` wraps to `4294967295`
 when `x` is `0`, so it is not the Integer `x - 1`, and the omitted proof does not prove
-that it is (`mdtests/auto_proves_an_in_range_machine_sum_is_its_integer_sum.md`
+that it is (`mdtests/solve_proves_an_in_range_machine_sum_is_its_integer_sum.md`
 adds the bound).
 
 ```c filename=a_machine_difference_that_can_wrap_is_not_its_integer_difference.c

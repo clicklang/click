@@ -2715,7 +2715,7 @@ fn verify_c0_sources_in_context(
                 operator: ComparisonOperator::Equal,
                 right: ContractExpression::CFragment(CExpression::Value(int32(0))),
             }),
-            proof: SourceProof::Tactic(SmartTactic::Auto),
+            proof: SourceProof::Tactic(SmartTactic::ImplicitTail),
             borrowed: false,
             condition: None,
         };
@@ -2738,7 +2738,7 @@ fn verify_c0_sources_in_context(
             };
         if let Some(grouped_proof) = function_block.covering_proof() {
             let theorems = match grouped_proof {
-                SourceProof::Tactic(SmartTactic::Auto) => prove_claims_by_grouped_auto(
+                SourceProof::Tactic(SmartTactic::ImplicitTail) => prove_claims_by_implicit_tail(
                     expansion_capture.as_deref_mut(),
                     source_path,
                     &function_block,
@@ -2792,8 +2792,8 @@ fn verify_c0_sources_in_context(
                     claim_labels::body_safety_label(function_block.signature.name())
                 };
                 let theorems = match claim.proof() {
-                    SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto) => {
-                        prove_claim_by_auto(
+                    SourceProof::Default | SourceProof::Tactic(SmartTactic::ImplicitTail) => {
+                        prove_claim_by_implicit_tail(
                             expansion_capture.as_deref_mut(),
                             source_path,
                             &function_block,
@@ -4881,11 +4881,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         }
         ContractExpression::Call { name, arguments } => format!(
             "{name}({})",
-            arguments
-                .iter()
-                .map(termination_measure_source)
-                .collect::<Vec<_>>()
-                .join(", ")
+            crate::surface::diagnostics::slice_call_arguments(
+                name,
+                arguments.iter().map(termination_measure_source).collect()
+            )
+            .join(", ")
         ),
         ContractExpression::ResourceField(access) => {
             format!("{}.{}", access.owner, access.field)

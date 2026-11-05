@@ -1243,7 +1243,7 @@ fn charon_slices_preserve_metadata_permissions_and_cleanup() {
 /// requirement `x <= MAX - y`, recorded as `to_integer(x) <= MAX -
 /// to_integer(y)`, is the native check `x <= MAX - y` because the machine
 /// difference is in range. A bound that leaves `y` free is refused, and the
-/// refusal names, as its goal, the condition the implicit `auto` tried, over
+/// refusal names, as its goal, the condition the implicit `solve` tried, over
 /// the function's operands with the machine difference read as an Integer,
 /// not the assertion's false-path obligation `0 == 1`.
 /// (A bound one short, `x <= 18446744073709551614u64 - y`, is an exact
@@ -2757,7 +2757,7 @@ fn rust_enum_signed_match_expansion_checks_without_search() {
         "value.ensures_0",
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    click::surface::without_implicit_auto_for_claim("value.ensures_0", || {
+    click::surface::without_implicit_solve_for_claim("value.ensures_0", || {
         C0VerificationSession::new_program_prepared(&expanded, &prepared)
             .map(|_| ())
             .map_err(|error| error.to_string())
@@ -6197,7 +6197,7 @@ fn rust_recursive_countdown_expansion_checks_without_search() {
         "countdown.ensures_0",
     )
     .unwrap_or_else(|error| panic!("{error}"));
-    click::surface::without_implicit_auto_for_claim("countdown.ensures_0", || {
+    click::surface::without_implicit_solve_for_claim("countdown.ensures_0", || {
         C0VerificationSession::new_program_prepared(&expanded, &prepared)
             .map(|_| ())
             .map_err(|error| error.to_string())
@@ -6254,11 +6254,57 @@ fn charon_stack_transport_repairs_expand_and_replay() {
             &source, &prepared, &claim,
         )
         .unwrap_or_else(|error| panic!("{directory}: {}", error.report()));
-        click::surface::without_implicit_auto_for_claim(&claim, || {
+        click::surface::without_implicit_solve_for_claim(&claim, || {
             C0VerificationSession::new_program_prepared(&expanded, &prepared)
                 .map(|_| ())
                 .map_err(|error| error.report())
         })
         .unwrap_or_else(|error| panic!("{directory}: {error}\n{expanded}"));
     }
+}
+
+/// A slice is one argument of a pure-function call: the parameter, the
+/// parameter at another point, or `slice::from_raw_parts(p, n)`. Passing a
+/// pointer and a length as two arguments is refused, and a printed call
+/// writes the slice as one argument again.
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+fn rust_pure_function_slice_arguments_are_one_value() {
+    let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = |proof: &str| {
+        format!(
+            "import click::rust::slice;\nverifying \"borrow.rs\";\n\
+             function head(bytes: &[u8]) -> u8 {{ bytes[0] }}\n\
+             fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4;\n    views bytes[0..4];\n    ensures result == old(head(bytes));\n}} by {{\n{proof}\n}}\n"
+        )
+    };
+    let accepted = sidecar(
+        "    have head(slice::from_raw_parts(bytes, bytes.len())) == head(bytes);\n    \
+         have old(head(bytes)) == head(old(bytes));\n    \
+         step_until(function.exit);\n    solve();",
+    );
+    C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    let spread = sidecar(
+        "    have head(bytes, bytes.len()) == head(bytes);\n    step_until(function.exit);\n    solve();",
+    );
+    let error = C0VerificationSession::new_program_prepared(&spread, &prepared)
+        .err()
+        .expect("two arguments for one slice must be refused")
+        .to_string();
+    assert!(
+        error.contains("each slice is one argument") && error.contains("slice::from_raw_parts"),
+        "{error}"
+    );
+    let failing =
+        sidecar("    have head(bytes) == 7u8;\n    step_until(function.exit);\n    solve();");
+    let error = C0VerificationSession::new_program_prepared(&failing, &prepared)
+        .err()
+        .expect("an unproved fact must fail")
+        .to_string();
+    assert!(
+        !error.contains("bytes.len())"),
+        "a slice prints as one argument: {error}"
+    );
 }
