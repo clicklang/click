@@ -360,6 +360,12 @@ Remaining groups to audit and migrate:
   and retain their original sources; signed carriers still require both a
   nonnegative lower bound and a small upper bound. This migrates the bound
   consumers, not the surrounding tagged-address form or wide equality dispatch.
+  A machine observation converted back to its exact original format now joins
+  the original word in the equality graph, retaining both written application
+  nodes. The rule handles retained shared operands and existing opaque values
+  without exporting surrounding arithmetic. Different widths or signednesses
+  still need their ordinary range evidence. This closes the missing inverse
+  identity inside larger arithmetic; it does not migrate opaque term storage.
   Opaque leaves outside the shared operand fragment still require a
   parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
