@@ -2462,6 +2462,33 @@ fn pure_theorem_wide_arithmetic_has_attributed_work_at_growing_sizes() {
     }
 }
 
+#[test]
+fn loop_closer_reuses_published_invariant_facts() {
+    let c = "void run(int n, int x) { while (n > 0) { n--; } }";
+    let source = r#"verifying "reuse.c";
+void run(int32 n, int32 x) { requires n >= 0; requires x == 7; ensures x == 7; } by {
+    loop {
+        decreases n;
+        invariant n >= 0;
+        invariant x == 7;
+        preserve by {
+            step();
+            have n >= 0 by { solve(); }
+            have x == 7 by { assumption(); }
+        }
+    }
+    step_until(function.exit); solve();
+}
+"#;
+    let sources = [("reuse.c", c)];
+    let verified = verify_c0_sources(source, &sources).unwrap();
+    let expanded = expand_checked_function_claim(source, &verified, "run.contract").unwrap();
+    verify_c0_sources(&expanded, &sources).expect("the retained closure expands and rechecks");
+    let invalid = expanded.replace("invariant x == 7;", "invariant x == 8;");
+    assert_ne!(invalid, expanded);
+    assert!(verify_c0_sources(&invalid, &sources).is_err());
+}
+
 fn wide_loop_invariant_fixture(size: usize) -> (String, String) {
     let source =
         "void run(int total) { int remaining = total; while (0 < remaining) { remaining--; } }";
@@ -4543,4 +4570,41 @@ diagnostic_batches! {
     diagnostic_batch_24: [
         child_argument_goal_reports_scalar_indices,
     ],
+}
+
+#[test]
+fn explicit_call_constant_proofs_reject_changed_values() {
+    for (name, markdown, before, after) in [
+        (
+            "call_read_constant_explicit.md",
+            include_str!("../../../mdtests/call_read_constant_explicit.md"),
+            "*p = 7",
+            "*p = 8",
+        ),
+        (
+            "call_byte_constant_explicit.md",
+            include_str!("../../../mdtests/call_byte_constant_explicit.md"),
+            "{3}",
+            "{4}",
+        ),
+    ] {
+        let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), markdown).unwrap();
+        let changed: Vec<_> = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| {
+                let changed = source.replace(before, after);
+                assert_ne!(&changed, source);
+                (name.as_str(), changed)
+            })
+            .collect();
+        let sources: Vec<_> = changed
+            .iter()
+            .map(|(name, source)| (*name, source.as_str()))
+            .collect();
+        assert!(
+            verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources).is_err(),
+            "the explicit proof must not retain the old constant: {name}"
+        );
+    }
 }

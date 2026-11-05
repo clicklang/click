@@ -217,6 +217,14 @@ impl<'a> Proof<'a> {
         let Some(goal) = self.goal() else {
             return Ok(None);
         };
+        // Expanded preservation proofs already publish their invariant facts.
+        // Use that evidence before spelling members and rebuilding their
+        // nested proofs. The kernel checks exact availability (including
+        // conjunction leaves); a miss continues with bounded planning below.
+        if let Some(closed) = attempt::candidate_outcome(self.apply_step(ProofStep::Assumption))? {
+            scope.succeed();
+            return Ok(Some(closed));
+        }
         // The generated invariant bundle can have no Surface spelling. Its
         // conjunction and implication structure is nevertheless checked by
         // the kernel, so descend that structure directly and retain the

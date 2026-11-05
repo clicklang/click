@@ -48,3 +48,38 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
         "the smaller grid must detect the original quadratic crossover: {samples:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: arena free loop closure work regression"]
+fn expanded_arena_loop_reuses_published_invariant_facts() {
+    use crate::instrumentation::{VerificationEvent, collect};
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena/arena_cells.click");
+    let (_, project, input) = crate::cli::load_sidecar_inputs(&path, None).unwrap();
+    let (result, events) = collect(|| {
+        crate::surface::verify_project_functions(
+            &project,
+            &input.program_inputs(),
+            ["arena_free".to_string()],
+        )
+    });
+    result.unwrap();
+    let work: usize = events
+        .iter()
+        .filter_map(|event| match event {
+            VerificationEvent::OperationFinished { name, work, .. }
+                if name == "close invariants: members" =>
+            {
+                Some(*work)
+            }
+            _ => None,
+        })
+        .sum();
+    // Reconstructing the already-published members cost 223,506 units;
+    // checking availability first costs 174,675. Keep this outside the
+    // fast gate: the small fixture there covers expansion and rejection.
+    assert!(
+        work > 0 && work <= 180_000,
+        "redundant invariant reconstruction: {work}"
+    );
+}

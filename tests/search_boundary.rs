@@ -972,6 +972,17 @@ fn write_barriers_and_diagnostics_cannot_collect_conflicting_loans() {
 }
 
 #[test]
+fn call_postconditions_cannot_restore_implicit_constant_recovery() {
+    for name in [
+        "add_normalized_verified_ensure_facts",
+        "resolve_load_along_memory_derivations",
+    ] {
+        let source = format!("fn add_ensures(c: C) {{ c.{name}(); }}");
+        assert!(boundary::check_source("src/kernel/functions.rs", &source).is_err());
+    }
+}
+
+#[test]
 fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
     for method in [
         "iter",

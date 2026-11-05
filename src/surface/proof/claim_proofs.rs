@@ -1014,7 +1014,7 @@ use exit_claim::{ClaimCertificate, ClaimClosure, ClosedClaim};
 /// A lowering with several paths is not yet closed as several goals.
 fn kernel_claim_goal<'a>(
     function: &'a CFunction,
-    claim: &FunctionClaimRef<'_>,
+    target: Option<&CFunctionContractClaimTarget>,
     pre_state: &CState,
     arguments: &[CExpression],
     outcome: &CFunctionOutcome,
@@ -1022,66 +1022,37 @@ fn kernel_claim_goal<'a>(
     unfolded_predicates: &[String],
     return_context: &mut Option<Option<crate::kernel::CFunctionEnsureGoalContext<'a>>>,
 ) -> Option<crate::kernel::CClaimGoal> {
-    let mut goals = match claim {
-        FunctionClaimRef::Ensure(source_index, _) => {
-            let contract_index =
-                function
-                    .contract_claims()
-                    .iter()
-                    .find_map(|contract_claim| {
-                        match (contract_claim.key(), contract_claim.target()) {
-                            (
-                                CFunctionContractClaimKey::Ensure(index),
-                                CFunctionContractClaimTarget::EnsureProposition(contract_index),
-                            ) if index == source_index => Some(*contract_index),
-                            _ => None,
-                        }
-                    })?;
-            return_context
-                .get_or_insert_with(|| {
-                    crate::instrumentation::measure_operation(
-                        function.name(),
-                        "explicit return closer",
-                        "return claim state preparation",
-                        || {
-                            crate::kernel::CFunctionEnsureGoalContext::new(
-                                function,
-                                pre_state,
-                                arguments,
-                                outcome,
-                                assumptions,
-                            )
-                        },
-                    )
-                })
-                .as_ref()?
-                .goals(contract_index, unfolded_predicates)?
-        }
-        FunctionClaimRef::ExceptionalEnsure(source_index, _) => {
-            let contract_index =
-                function
-                    .contract_claims()
-                    .iter()
-                    .find_map(|contract_claim| {
-                        match (contract_claim.key(), contract_claim.target()) {
-                            (
-                                CFunctionContractClaimKey::ExceptionalEnsure(index),
-                                CFunctionContractClaimTarget::ExceptionalEnsureProposition(
-                                    contract_index,
-                                ),
-                            ) if index == source_index => Some(*contract_index),
-                            _ => None,
-                        }
-                    })?;
+    let mut goals = match target? {
+        CFunctionContractClaimTarget::EnsureProposition(contract_index) => return_context
+            .get_or_insert_with(|| {
+                crate::instrumentation::measure_operation(
+                    function.name(),
+                    "explicit return closer",
+                    "return claim state preparation",
+                    || {
+                        crate::kernel::CFunctionEnsureGoalContext::new(
+                            function,
+                            pre_state,
+                            arguments,
+                            outcome,
+                            assumptions,
+                        )
+                    },
+                )
+            })
+            .as_ref()?
+            .goals(*contract_index, unfolded_predicates)?,
+        CFunctionContractClaimTarget::ExceptionalEnsureProposition(contract_index) => {
             crate::kernel::c_function_exceptional_ensure_goals(
                 function,
-                contract_index,
+                *contract_index,
                 pre_state,
                 arguments,
                 outcome,
                 assumptions,
             )?
         }
+        _ => return None,
     };
     if goals.len() != 1 {
         return None;
@@ -1095,7 +1066,7 @@ fn kernel_claim_goal<'a>(
 /// form; two forms at most.
 fn kernel_claim_goal_forms<'a>(
     function: &'a CFunction,
-    claim: &FunctionClaimRef<'_>,
+    target: Option<&CFunctionContractClaimTarget>,
     pre_state: &CState,
     arguments: &[CExpression],
     outcome: &CFunctionOutcome,
@@ -1115,7 +1086,7 @@ fn kernel_claim_goal_forms<'a>(
             || {
                 kernel_claim_goal(
                     function,
-                    claim,
+                    target,
                     pre_state,
                     arguments,
                     outcome,
@@ -1316,7 +1287,8 @@ fn begin_outcome_existence_proof<'a>(
     let root = outcome_root.clone();
     let kernel_goal = kernel_claim_goal(
         function,
-        &claims[claim_index],
+        root.claim_goals()
+            .and_then(|goals| goals.target(&claims[claim_index].key())),
         pre_state,
         arguments,
         outcome,
@@ -1403,7 +1375,8 @@ fn close_claim_directly_from_outcome<'a>(
         .then(|| {
             kernel_claim_goal(
                 function,
-                claim,
+                root.claim_goals()
+                    .and_then(|goals| goals.target(&claim.key())),
                 pre_state,
                 parameter_binding.arguments,
                 outcome,
@@ -2026,7 +1999,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     // `solve` acts on the first open goal;
     // `auto` is the catch-all that closes every
     // goal still open.
-    let main_claim = main_goal_claim(outcome_proof, closures, claims)?;
+    let main_claim = main_goal_claim(outcome_proof, closures)?;
     let acts_on = |claim_index: usize| auto_closer || Some(claim_index) == main_claim;
     let capturing_this_tactic =
         path_capture.is_some_and(|capture| capture.tactic_index == *tactic_index);
@@ -2553,7 +2526,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     .map(|(claim_index, _, _)| {
                         kernel_claim_goal_forms(
                             function,
-                            &claims[*claim_index],
+                            outcome_proof.as_ref().and_then(Proof::claim_goals).and_then(|goals| goals.target(&claims[*claim_index].key())),
                             contract_pre_state,
                             arguments,
                             outcome,
@@ -2934,16 +2907,13 @@ fn continue_claim_existence_proof<'a>(
 fn main_goal_claim(
     outcome_proof: &Option<Proof<'_>>,
     closures: &[ClaimClosure],
-    claims: &[FunctionClaimRef<'_>],
 ) -> Result<Option<usize>, ClickError> {
     match outcome_proof {
         Some(proof) => {
             let goals = proof.claim_goals().ok_or_else(|| {
                 proof.step_error("the outcome Proof no longer holds this path's claim goals")
             })?;
-            Ok(goals
-                .first_open()
-                .and_then(|key| claims.iter().position(|claim| &claim.key() == key)))
+            Ok(goals.first_open_position())
         }
         None => Ok(closures.iter().position(|closure| !closure.is_closed())),
     }
@@ -3044,7 +3014,7 @@ pub(super) fn finish_ordered_proof<'a>(
     function: &CFunction,
     arguments: &[CExpression],
     certificate_tactics: &std::sync::Arc<[ProofTactic]>,
-    claim_surface_builders: &mut Vec<(VerifiedClaim, ProofCertificateBuilder)>,
+    claim_surface_builders: &mut Vec<(VerifiedClaim, std::sync::Arc<ProofCertificateBuilder>)>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let proof_label = if require_explicit_closers {
@@ -3139,6 +3109,14 @@ pub(super) fn finish_ordered_proof<'a>(
     let function_environment = frontier_function_environment
         .as_ref()
         .unwrap_or(function_environment);
+    let claim_targets: BTreeMap<_, _> = function
+        .contract_claims()
+        .iter()
+        .map(|claim| {
+            crate::instrumentation::record_deterministic_work(1);
+            (claim.key().clone(), claim.target().clone())
+        })
+        .collect();
     let result = (|| {
         let execution = frontier.execution().ok_or_else(|| {
             ClickError::new(format!(
@@ -3589,11 +3567,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         outcome = root.focused_outcome_snapshot()?;
                         let contract_claims = claims.iter().map(|claim| {
                             let key = claim.key();
-                            let target = function
-                                .contract_claims()
-                                .iter()
-                                .find(|contract_claim| *contract_claim.key() == key)
-                                .map(|contract_claim| contract_claim.target().clone());
+                            crate::instrumentation::record_deterministic_work(1);
+                            let target = claim_targets.get(&key).cloned();
                             (key, target)
                         });
                         outcome_proof = Some(root.open_contract_claim_goals(contract_claims)?);
@@ -4428,12 +4403,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                 // refusal is the reader's, so the summary
                                 // below stands.
                                 let mut both_errors = Vec::new();
-                                let main_claim =
-                                    main_goal_claim(&outcome_proof, &closures, claims)?;
-                                for (claim_index, claim) in claims.iter().enumerate() {
-                                    if Some(claim_index) != main_claim {
-                                        continue;
-                                    }
+                                let main_claim = main_goal_claim(&outcome_proof, &closures)?;
+                                for claim_index in main_claim.into_iter() {
+                                    let claim = &claims[claim_index];
                                     let ensure_clause = claim.clause();
                                     if !assumption
                                         && matches!(outcome, CFunctionOutcome::VerificationDiverges)
@@ -4509,7 +4481,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let kernel_goals = kernel_claim_goal_forms(
                                         function,
-                                        claim,
+                                        outcome_proof
+                                            .as_ref()
+                                            .and_then(Proof::claim_goals)
+                                            .and_then(|goals| goals.target(&claim.key())),
                                         contract_pre_state,
                                         arguments,
                                         &outcome,
@@ -4738,7 +4713,10 @@ pub(super) fn finish_ordered_proof<'a>(
                                     };
                                     let kernel_goals = kernel_claim_goal_forms(
                                         function,
-                                        claim,
+                                        outcome_proof
+                                            .as_ref()
+                                            .and_then(Proof::claim_goals)
+                                            .and_then(|goals| goals.target(&claim.key())),
                                         contract_pre_state,
                                         arguments,
                                         &outcome,
@@ -5216,9 +5194,8 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
 
-                    if let Some((claim_index, claim)) =
-                        main_goal_claim(&outcome_proof, &closures, claims)?
-                            .map(|claim_index| (claim_index, &claims[claim_index]))
+                    if let Some((claim_index, claim)) = main_goal_claim(&outcome_proof, &closures)?
+                        .map(|claim_index| (claim_index, &claims[claim_index]))
                     {
                         let claim_label = function_claim_label(function_block, claim);
                         let summary = format!(
@@ -5690,6 +5667,7 @@ pub(super) fn finish_ordered_proof<'a>(
             // Record exactly one builder per declared claim for this context;
             // tying builders to produced theorems silently dropped such arms
             // (and duplicated builders when a context certified many paths).
+            let expanded = std::sync::Arc::new(expanded);
             for claim in claims {
                 claim_surface_builders.push((claim.verified_claim(), expanded.clone()));
             }
@@ -5748,7 +5726,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         theorem.expansion_blocker = expanded.blocker.clone();
                     }
                 }
-                claim_surface_builders.push((verified_claim, expanded));
+                claim_surface_builders.push((verified_claim, std::sync::Arc::new(expanded)));
             }
         }
         if tactic_expansion_capture_is_active(expansion_capture.as_deref())
