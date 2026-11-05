@@ -19845,6 +19845,10 @@ fn contract_claim_requirements_expand_as_ordinary_have_proofs() {
         }
     "#;
     let sources = [("claim_domain.c", c)];
+    assert!(
+        without_implicit_solve(|| verify_c0_sources(source, &sources)).is_err(),
+        "the original proof has an outstanding conversion domain"
+    );
     let verified =
         verify_c0_sources(source, &sources).expect("the implicit solver proves the scoped domain");
     let expanded = expand_checked_grouped_claim(source, &verified, "identity").unwrap();

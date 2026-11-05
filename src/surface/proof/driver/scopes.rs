@@ -457,3 +457,45 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         self.proof.body.driver().open_source_have(have)
     }
 }
+
+impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    /// Import the facts introduced by lowering this claim, then open its proof.
+    pub(in crate::surface::proof) fn open_contract_claim(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        surface: &ClickProposition,
+    ) -> Result<Proof<'a>, ClickError> {
+        let root = self
+            .proof
+            .clone()
+            .with_claim_lowering_facts(self.proof, goal.facts())?;
+        root.driver()
+            .open_contract_claim_without_lowering_facts(goal, surface)
+    }
+
+    /// Open a claim using the existing facts, retaining prerequisite proofs
+    /// before its own steps without copying the enclosing execution history.
+    pub(in crate::surface::proof) fn open_contract_claim_without_lowering_facts(
+        &self,
+        goal: &crate::kernel::CClaimGoal,
+        surface: &ClickProposition,
+    ) -> Result<Proof<'a>, ClickError> {
+        let checkpoint = self.proof.checkpoint();
+        let operation = |root: &Proof<'a>| {
+            let mut opened = root.begin_contract_claim(goal, surface)?;
+            for step in root.certificate_since(&checkpoint)?.steps() {
+                opened.node =
+                    ProofNode::step_child(&opened.node, BranchId::ROOT, Arc::new(step.clone()));
+            }
+            Ok(opened)
+        };
+        if super::execution_statements::implicit_solve_disabled() {
+            return operation(self.proof);
+        }
+        let step = ProofStep::Have {
+            proposition: surface.clone(),
+            proof: Box::new(ProofCertificate::from_proof_tactics(&[]).expect("empty certificate")),
+        };
+        self.with_proved_lowering_requirements(&step, operation)
+    }
+}

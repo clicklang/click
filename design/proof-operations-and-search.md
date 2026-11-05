@@ -109,9 +109,9 @@ Roles distinguish the work remaining:
 | `mixed` | Mixed drivers and auxiliary planners still requiring caller-level classification. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 600 records: 7 legacy bridges, 22 kernel callers,
-14 Surface operation dependencies, 14 operation-to-driver dependencies,
-95 driver records, 1 other dispatch record, 6 presentation records,
+The current inventory contains 602 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 13 operation-to-driver dependencies,
+98 driver records, 1 other dispatch record, 6 presentation records,
 420 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
@@ -169,10 +169,21 @@ requires raw opening to report a prerequisite; driver opening succeeds and
 retains the prerequisite proof. Scoped-conversion expansion replays with
 implicit solving disabled. Other operation-to-driver records remain pending.
 
+## Contract-claim prerequisite boundary
+
+`Proof::begin_contract_claim` opens an already-lowered claim or reports its
+missing definedness obligations through the ordinary obligation channel.
+`ProofDriver::open_contract_claim` imports the claim's lowering facts and
+schedules prerequisite proofs. Its `open_contract_claim_without_lowering_facts`
+adapter uses the existing facts instead. Both retain prerequisite certificates
+before the claim's own steps, preserving expansion and strict replay.
+The source guard prohibits direct driver/search references in the primitive.
+Claim lowering, goal transformations, and state preparation are unchanged.
+
 ## Detailed caller classification
 
 The [caller audit](proof-boundary-classification.md) classifies the original 19 mixed and
-15 operation-to-driver records (14 remain after the have extraction) by why they invoke search or interpretation.
+15 operation-to-driver records (13 remain after extracting have and claim opening) by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation, diagnostic execution, and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or

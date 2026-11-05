@@ -1181,3 +1181,21 @@ fn have_primitive_cannot_schedule_proofs_or_search() {
         "impl Proof { fn begin_have(&self) { self.lower_surface_goal_recording_introductions(goal); } }"
     ).is_ok());
 }
+
+#[test]
+fn contract_claim_primitive_cannot_schedule_proofs_or_search() {
+    let path = "src/surface/proof/proof_object/outcomes_and_focus.rs";
+    for source in [
+        "impl Proof { fn begin_contract_claim(&self) { self.driver().open_contract_claim(goal); } }",
+        "impl Proof { fn begin_contract_claim(&self) { ProofSearch::proves(facts, goal); } }",
+        "impl Proof { fn begin_contract_claim(&self) { invoke!(self.driver()); } }",
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+    assert!(boundary::check_source(path,
+        "impl Proof { fn begin_contract_claim(&self) { refuse_or_record_open_obligation(error)?; } }"
+    ).is_ok());
+}
