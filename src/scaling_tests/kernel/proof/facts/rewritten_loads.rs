@@ -1,0 +1,86 @@
+#[test]
+fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
+    for prefixes in [false, true] {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = VerificationSession::enter();
+            let format = MachineIntegerType::Int32;
+            let memory = intern_c_memory(CMemory::new());
+            let pointer = Pointer {
+                block: PointerBlock::Symbolic(Variable(1005500)),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let variable =
+                crate::kernel::eval::load_variable_for_cell(&memory, &pointer, LoadKind::Int32);
+            let one = MachineTerm::constant(1);
+            let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+                ConditionTerm::equal(MachineTerm::Variable(variable), one.clone()),
+                true,
+            )]);
+            let mut left = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+            let mut right = KernelTermImport::default().machine(format, &one);
+            let goal = |root| {
+                Proposition::ConditionIs(
+                    ConditionTerm::IntegerEqual(
+                        IntegerTerm::Machine(
+                            SharedMachineIntegerTerm::from_shared(format, root).unwrap(),
+                        )
+                        .into(),
+                        IntegerTerm::constant_i64(0).into(),
+                    ),
+                    true,
+                )
+            };
+            let exports = KernelTermExport::machine_export_count();
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                for i in 0..size {
+                    left = KernelTerm::machine_binary_shared(
+                        format,
+                        MachineBinaryOp::Add,
+                        [left.clone(), left.clone()],
+                    );
+                    right = KernelTerm::machine_binary_shared(
+                        format,
+                        MachineBinaryOp::Add,
+                        [right.clone(), right.clone()],
+                    );
+                    if prefixes || i + 1 == size {
+                        assert!(
+                            facts
+                                .with_checked_rewritten_loads(
+                                    &goal(left.clone()),
+                                    &goal(right.clone())
+                                )
+                                .is_some()
+                        );
+                    }
+                }
+            });
+            let (a, b) = (goal(left), goal(right));
+            // A warm syntax cache is no authority for another proof branch.
+            assert!(
+                ProofFacts::default()
+                    .with_checked_rewritten_loads(&a, &b)
+                    .is_none()
+            );
+            let bind = |body| Proposition::ForAll {
+                name: Default::default(),
+                var: Variable(1005501),
+                sort: Sort::CInt32,
+                body: Box::new(body),
+            };
+            assert!(
+                facts
+                    .with_checked_rewritten_loads(&bind(a.clone()), &bind(b.clone()))
+                    .is_none()
+            );
+            crate::kernel::eval::clear_load_variable_registry();
+            assert!(facts.with_checked_rewritten_loads(&a, &b).is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= pair[0] * 5, "prefixes={prefixes}: {samples:?}");
+        }
+    }
+}

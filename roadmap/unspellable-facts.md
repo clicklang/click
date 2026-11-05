@@ -416,9 +416,16 @@ deprecated, then ran `cargo check --lib --features fast-gate
 107 at `863cc08da`). These include guarded legacy reads, native reconstruction
 and explicit output adapters; the count is not a count of defects. Classify each
 route against the completion criteria above. The temporary annotations are not
-part of the implementation. Checked rewritten-load evidence in `proof/facts.rs`
-also still exports observed arithmetic and belongs to the remaining memory
-comparison audit.
+part of the implementation. Checked rewritten-load evidence in `proof/facts.rs` now caches structural
+correspondence for pairs of shared observations. It selects differing leaves
+without exporting their surrounding arithmetic, then checks current load
+registry/snapshot/premise authority. Cached syntax is never authority; differing
+compound roots under binders keep their existing refusal. Cold doubled DAGs
+and growing prefixes at 16/64/256 retain shared terms, including branch and
+registry-clear refusal controls. Mixed shared/native observations and native
+evidence construction for a selected load-versus-compound replacement remain
+explicit boundaries to migrate; this does not complete the memory comparison
+audit.
 
 | Remaining audit group | Main consumers |
 | --- | --- |
@@ -439,6 +446,14 @@ Caller classification: `resource_tracker::collect_integer_node_reads` feeds
 admission; its export belongs to the output audit in part 4. The public
 `IntegerTerm::max_variable` compatibility helper has no in-repository callers.
 Neither is evidence of a remaining live checker export.
+`resource_steps::observes_machine_arithmetic` is used only by the missing-fold-
+guard diagnostic, so it belongs to part 4 too. `uint32_order_bound_entries`,
+like its signed counterpart, is called only by Surface proof planning. In
+contrast, `recorded_less_equal_candidates` feeds
+`exact_less_equal_for_memory_resolution`: its retained endpoint exports remain
+a live checking dependency. Preserve its written-premise checks and memory
+identity evidence when migrating it; its existing candidate-bucket enumeration
+must not acquire an additional scan.
 
 Current-snapshot memory-load collection retains shared observations and fold
 endpoints. It visits cached conversion syntax, then applies the existing
