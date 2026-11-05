@@ -1397,3 +1397,72 @@ fn write_barrier_does_not_enumerate_overlapping_loans() {
         );
     }
 }
+
+#[test]
+fn writes_without_active_memory_loans_do_not_walk_pointer_aliases() {
+    for mode in ["empty", "token", "ended_memory"] {
+        let (mut ledger, owner, reader) = participants();
+        if mode != "empty" {
+            let fact = if mode == "token" {
+                owned("token")
+            } else {
+                memory(0, 8, true)
+            };
+            let opening = lend_test(&ledger, owner, reader, fact);
+            ledger = ledger.apply(&opening.transition).unwrap();
+            if mode == "ended_memory" {
+                let returned = ledger.transfer(opening.root_share, reader, owner).unwrap();
+                ledger = ledger.apply(&returned).unwrap();
+                let ended = ledger.end(opening.scope, owner).unwrap();
+                ledger = ledger.apply(&ended).unwrap();
+            }
+        }
+        assert!(!ledger.has_active_memory_loans());
+        assert!(ledger.invariant_holds());
+        for symbolic_bound in [false, true] {
+            let mut samples = Vec::new();
+            for count in [4, 16, 64, 256] {
+                let base = Pointer::symbolic(Variable(980_000));
+                let mut facts = PureFactContext::new();
+                for index in 0..count {
+                    facts = facts.assume_condition(
+                        ConditionTerm::pointer_equal(
+                            base.clone(),
+                            Pointer::symbolic(Variable(980_001 + index as u64)),
+                        ),
+                        true,
+                    );
+                }
+                let end = if symbolic_bound {
+                    MachineTerm::Variable(Variable(981_000))
+                } else {
+                    MachineTerm::constant(1)
+                };
+                let range = CMemoryRange::new_with_element_width(base, 0u32.into(), end, 4);
+                for repeat in 0..3 {
+                    let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                        ledger.permits_memory_access_with_assumptions(&range, &facts)
+                    });
+                    assert_eq!(result, Ok(()));
+                    let (report, diagnostic_work) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            ledger.memory_access_refusal(
+                                &range,
+                                &facts,
+                                LoanRefusalOperation::MemoryAccess,
+                            )
+                        });
+                    assert!(report.is_none());
+                    samples.push((count, repeat, work, diagnostic_work));
+                }
+            }
+            eprintln!("{mode}, symbolic bounds {symbolic_bound}: {samples:?}");
+            assert!(
+                samples
+                    .iter()
+                    .all(|(_, _, work, diagnostic_work)| *work == 0 && *diagnostic_work == 0),
+                "{mode}, symbolic bounds {symbolic_bound}: no memory loans must mean no alias candidates: {samples:?}"
+            );
+        }
+    }
+}

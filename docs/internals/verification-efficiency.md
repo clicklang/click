@@ -327,6 +327,15 @@ as cached cells and unrelated symbolic loans grow together. The write barrier's
 symbolic-loan comparison is a separate remaining checking caller; cache
 retention evidence must not be used to grant write permission.
 
+Loan write barriers consult the maintained active-memory-loan count before
+pointer alias discovery. Empty ledgers, non-memory loans, and ended memory
+loans impose no loan restriction on a write; checking them must not visit the
+pointer's equality class. The
+`writes_without_active_memory_loans_do_not_walk_pointer_aliases` regression
+grows that class for constant and symbolic bounds, including repeated checks
+and the no-refusal diagnostic path. This shortcut does not replace ownership,
+bounds, or definedness checks.
+
 Concrete loan write barriers select one indexed conflict witness instead of
 collecting all overlapping loan IDs. Each dyadic bucket contributes only its
 least member; taking the minimum across those buckets preserves the diagnostic's

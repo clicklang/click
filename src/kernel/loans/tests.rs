@@ -4365,6 +4365,7 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
     let protected_snapshot = ledger.clone();
+    assert!(ledger.has_active_memory_loans());
     assert!(ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
     assert!(!ledger.has_indexed_memory_overlap(memory(8, 10, false).memory_range().unwrap()));
     assert!(!ledger.has_indexed_memory_overlap(memory(8, 8, false).memory_range().unwrap()));
@@ -4418,6 +4419,12 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
     assert!(!ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
     assert!(
         protected_snapshot.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap())
+    );
+    assert!(!ledger.has_active_memory_loans());
+    assert!(protected_snapshot.has_active_memory_loans());
+    assert_eq!(
+        protected_snapshot.permits_memory_access(memory(2, 4, false).memory_range().unwrap()),
+        Err(LoanRefusal::ActiveDependency)
     );
     let _ = ledger.recover(opening.loan, owner).unwrap();
 }
