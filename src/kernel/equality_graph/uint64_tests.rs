@@ -339,3 +339,138 @@ fn shared_wide_endpoint_queries_preserve_exact_sources_and_scope() {
     );
     assert_eq!(KernelTermExport::machine_export_count(), exports);
 }
+
+#[test]
+fn machine_observation_cast_round_trip_is_congruent_inside_arithmetic() {
+    use crate::kernel::{
+        CompareRelation, IntegerTerm, MachineIntegerType, SharedMachineIntegerTerm,
+    };
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let leaf = MachineTerm::PureFunctionApplication {
+            name: "opaque_round_trip_probe".into(),
+            arguments: vec![MachineTerm::Variable(Variable(989801))],
+        };
+        let observed = SharedMachineIntegerTerm::intern(format, leaf.clone());
+        let round_trip = MachineTerm::IntegerToMachine {
+            value: IntegerTerm::Machine(observed).into(),
+            destination: format,
+        };
+        let parent = |left: MachineTerm| MachineTerm::Binary {
+            format,
+            op: crate::kernel::MachineBinaryOp::Add,
+            left: left.into(),
+            right: MachineTerm::Variable(Variable(989802)).into(),
+        };
+        let goal = crate::kernel::ConditionTerm::machine_compare(
+            format,
+            CompareRelation::Equal,
+            parent(round_trip),
+            parent(leaf),
+        );
+        assert_eq!(
+            crate::kernel::PureFactContext::new().decide(&goal),
+            Some(true),
+            "{format:?}"
+        );
+    }
+}
+
+#[test]
+fn machine_observation_round_trip_keeps_equality_scope_and_format() {
+    use crate::kernel::{CompareRelation, IntegerTerm, SharedMachineIntegerTerm};
+    let _session = VerificationSession::enter();
+    for format in [
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+    ] {
+        let x = MachineTerm::Variable(Variable(989811));
+        let y = MachineTerm::Variable(Variable(989812));
+        let converted = MachineTerm::IntegerToMachine {
+            destination: format,
+            value: IntegerTerm::Machine(SharedMachineIntegerTerm::intern(format, x.clone())).into(),
+        };
+        let goal =
+            ConditionTerm::machine_compare(format, CompareRelation::Equal, converted, y.clone());
+        let edge = Proposition::ConditionIs(
+            ConditionTerm::machine_compare(format, CompareRelation::Equal, x, y),
+            true,
+        );
+        let parent = PureFactContext::new();
+        assert_eq!(parent.decide(&goal), None);
+        let child = parent.clone().assume_proposition(edge.clone());
+        assert_eq!(child.decide(&goal), Some(true));
+        assert_eq!(parent.decide(&goal), None);
+        assert_eq!(child.without_exact_fact(&edge).decide(&goal), None);
+    }
+    // Integer-to-machine conversion is range-checked, not a wrapping cast.
+    // Equal widths alone cannot justify converting a negative signed value
+    // into its unsigned bit pattern.
+    let signed = SharedMachineIntegerTerm::intern(
+        MachineIntegerType::Int32,
+        MachineTerm::constant(u32::MAX),
+    );
+    let changed_sign = MachineTerm::IntegerToMachine {
+        destination: MachineIntegerType::UInt32,
+        value: IntegerTerm::Machine(signed).into(),
+    };
+    assert_ne!(
+        PureFactContext::new().decide(&ConditionTerm::equal(
+            changed_sign,
+            MachineTerm::constant(u32::MAX)
+        )),
+        Some(true)
+    );
+    let wide = SharedMachineIntegerTerm::intern(
+        MachineIntegerType::UInt64,
+        MachineTerm::uint64_constant(1u64 << 32),
+    );
+    let narrowed = MachineTerm::IntegerToMachine {
+        destination: MachineIntegerType::UInt32,
+        value: IntegerTerm::Machine(wide).into(),
+    };
+    assert_ne!(
+        PureFactContext::new().decide(&ConditionTerm::equal(narrowed, MachineTerm::constant(0))),
+        Some(true)
+    );
+}
+
+#[test]
+fn machine_observation_round_trip_covers_each_declared_integer_format() {
+    use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm};
+    for format in [
+        MachineIntegerType::Int8,
+        MachineIntegerType::UInt8,
+        MachineIntegerType::Int16,
+        MachineIntegerType::UInt16,
+        MachineIntegerType::Int32,
+        MachineIntegerType::UInt32,
+        MachineIntegerType::Int64,
+        MachineIntegerType::UInt64,
+        MachineIntegerType::Int128,
+        MachineIntegerType::UInt128,
+    ] {
+        let _session = VerificationSession::enter();
+        let source =
+            SharedMachineIntegerTerm::intern(format, MachineTerm::Variable(Variable(989841)));
+        let original = IntegerTerm::Machine(source);
+        let converted = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            format,
+            MachineTerm::IntegerToMachine {
+                destination: format,
+                value: original.clone().into(),
+            },
+        ));
+        assert!(
+            EqualityGraph::default().are_integer_equal(&converted, &original),
+            "{format:?}"
+        );
+    }
+}
