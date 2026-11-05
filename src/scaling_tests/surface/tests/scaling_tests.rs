@@ -9852,3 +9852,29 @@ fn recorded_algebraic_field_names_use_changed_instances_and_direct_lookups() {
         assert!(work <= 4, "{size}: lookup {work}");
     }
 }
+
+#[test]
+#[ignore = "nightly: end-to-end explicit claim closing scaling; 2.8s under build load"]
+fn explicit_claim_closers_have_near_linear_finishing_work() {
+    let samples = [16, 32, 64, 128]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = grouped_claim_project(size);
+            let click_source =
+                click_source.replace("    normalize();", &"    normalize();\n".repeat(size));
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("shared_claims.c", c_source.as_str())])
+            });
+            assert_eq!(verified.unwrap().len(), size);
+            sample
+        })
+        .collect::<Vec<_>>();
+    let work = samples
+        .iter()
+        .map(|sample| sample.named_work["operation `post-execution claim tactics`"])
+        .collect::<Vec<_>>();
+    assert!(work.iter().all(|units| *units > 0));
+    for pair in work.windows(2) {
+        assert!(pair[1] <= 3 * pair[0], "explicit closer work: {work:?}");
+    }
+}

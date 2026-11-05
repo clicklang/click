@@ -406,16 +406,29 @@ pub(crate) struct ClaimResourceReceipt {
 /// closed.
 #[derive(Clone)]
 pub(crate) struct OutcomeClaimGoals {
-    claims: Arc<[OutcomeClaimGoal]>,
+    claims: crate::persistent::PersistentMap<CFunctionContractClaimKey, OutcomeClaimGoal>,
+    open: crate::persistent::PersistentMap<usize, CFunctionContractClaimKey>,
 }
 
-#[derive(Clone)]
 struct OutcomeClaimGoal {
-    key: CFunctionContractClaimKey,
+    position: usize,
     /// The kernel claim the goal stands for. A clause the kernel files no
     /// claim for (a `consumes` transition) has none.
     target: Option<CFunctionContractClaimTarget>,
     state: ClaimGoalState,
+}
+
+impl Clone for OutcomeClaimGoal {
+    fn clone(&self) -> Self {
+        // Charge copied entries, including if storage ever regresses to a
+        // whole-collection copy. Persistent updates copy only this entry.
+        crate::instrumentation::record_deterministic_work(1);
+        Self {
+            position: self.position,
+            target: self.target.clone(),
+            state: self.state.clone(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -435,39 +448,63 @@ impl OutcomeClaimGoals {
         >,
         is_exceptional: bool,
     ) -> Self {
-        Self {
-            claims: claims
-                .into_iter()
-                .map(|(key, target)| OutcomeClaimGoal {
-                    state: if matches!(
-                        (&key, is_exceptional),
-                        (CFunctionContractClaimKey::Ensure(_), true)
-                            | (CFunctionContractClaimKey::ExceptionalEnsure(_), false)
-                    ) {
+        let mut result = Self {
+            claims: Default::default(),
+            open: Default::default(),
+        };
+        for (position, (key, target)) in claims.into_iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            let vacuous = matches!(
+                (&key, is_exceptional),
+                (CFunctionContractClaimKey::Ensure(_), true)
+                    | (CFunctionContractClaimKey::ExceptionalEnsure(_), false)
+            );
+            if !vacuous {
+                result.open.insert(position, key.clone());
+            }
+            result.claims.insert(
+                key,
+                OutcomeClaimGoal {
+                    position,
+                    target,
+                    state: if vacuous {
                         ClaimGoalState::Vacuous
                     } else {
                         ClaimGoalState::Open
                     },
-                    key,
-                    target,
-                })
-                .collect(),
+                },
+            );
         }
+        result
     }
 
-    /// The claim a closer acts on: the first open one.
+    /// The claim a closer acts on, retaining the contract's input order.
+    #[cfg(test)]
     pub(crate) fn first_open(&self) -> Option<&CFunctionContractClaimKey> {
-        self.claims
-            .iter()
-            .find_map(|goal| matches!(goal.state, ClaimGoalState::Open).then_some(&goal.key))
+        crate::instrumentation::record_deterministic_work(1);
+        self.open.iter().next().map(|(_, key)| key)
+    }
+
+    pub(crate) fn first_open_position(&self) -> Option<usize> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.open.iter().next().map(|(position, _)| *position)
+    }
+
+    pub(crate) fn target(
+        &self,
+        key: &CFunctionContractClaimKey,
+    ) -> Option<&CFunctionContractClaimTarget> {
+        crate::instrumentation::record_deterministic_work(1);
+        self.claims.get(key)?.target.as_ref()
     }
 
     /// The evidence that closed `key`. A vacuous or open claim has none.
     pub(crate) fn evidence(&self, key: &CFunctionContractClaimKey) -> Option<&ClaimGoalEvidence> {
-        self.claims.iter().find_map(|goal| match &goal.state {
-            ClaimGoalState::Closed(evidence) if goal.key == *key => Some(evidence),
+        crate::instrumentation::record_deterministic_work(1);
+        match &self.claims.get(key)?.state {
+            ClaimGoalState::Closed(evidence) => Some(evidence),
             _ => None,
-        })
+        }
     }
 
     /// Closes `key` with `evidence`. A checked completion must have been
@@ -479,12 +516,8 @@ impl OutcomeClaimGoals {
         evidence: ClaimGoalEvidence,
         outcome: &OutcomeIdentity,
     ) -> Result<Self, ClaimGoalError> {
-        let position = self
-            .claims
-            .iter()
-            .position(|goal| goal.key == *key)
-            .ok_or(ClaimGoalError::Unknown)?;
-        let goal = &self.claims[position];
+        crate::instrumentation::record_deterministic_work(1);
+        let goal = self.claims.get(key).ok_or(ClaimGoalError::Unknown)?;
         if !matches!(goal.state, ClaimGoalState::Open) {
             return Err(ClaimGoalError::AlreadyClosed);
         }
@@ -502,10 +535,11 @@ impl OutcomeClaimGoals {
                 return Err(ClaimGoalError::WrongClaim);
             }
         }
-        let mut claims = self.claims.to_vec();
-        claims[position].state = ClaimGoalState::Closed(evidence);
+        let mut closed = goal.clone();
+        closed.state = ClaimGoalState::Closed(evidence);
         Ok(Self {
-            claims: claims.into(),
+            claims: self.claims.with_inserted(key.clone(), closed),
+            open: self.open.without_key(&goal.position),
         })
     }
 }
@@ -688,5 +722,8 @@ mod outcome_claim_goal_tests {
                 .expect("a closed claim does not close again"),
             ClaimGoalError::AlreadyClosed
         );
+    }
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/proof/obligations/outcome_claim_goals.rs");
     }
 }
