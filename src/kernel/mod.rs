@@ -383,6 +383,7 @@ impl VerificationSession {
             primitives::clear_never_address_taken_locals();
             fold_read_summary::clear_fold_read_summaries();
             eval::clear_load_canonicalization_caches();
+            eval::pointer_tags::clear_tag_bound_cache();
             memory_provenance::clear_canonical_form_caches();
             memory_provenance::clear_provenance_memos();
             reasoning::memory_resolution::clear_canonical_memory_cache();
