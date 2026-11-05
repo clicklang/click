@@ -5882,7 +5882,10 @@ impl LoanLedger {
         range: &CMemoryRange,
         assumptions: &PureFactContext,
     ) -> Result<(), LoanRefusal> {
-        if memory_range_is_empty(range) {
+        // This barrier only restricts otherwise owner-authorized writes.
+        // With no active memory loans there is nothing to compare, regardless
+        // of pointer aliases, non-memory loans, or ended loan history.
+        if !self.has_active_memory_loans() || memory_range_is_empty(range) {
             return Ok(());
         }
         let aliases = memory_range_aliases(range, assumptions);
@@ -6072,11 +6075,12 @@ impl LoanLedger {
         false
     }
 
-    /// Whether any active memory loan contributes a footprint to this ledger.
+    /// Whether an active loan may protect memory, including composite loans
+    /// whose one-level frontier enumerated no bytes.
     ///
-    /// Loop and branch havoc need a fail-closed answer when no checked write
-    /// set is available.  Reading the maintained count keeps that barrier
-    /// constant time and avoids turning the check into an ambient ledger scan.
+    /// A zero count skips write-barrier alias discovery. Loop and branch havoc
+    /// also need this fail-closed answer when no checked write set is available.
+    /// Read the maintained count; do not rediscover it from loans or scopes.
     pub(crate) fn has_active_memory_loans(&self) -> bool {
         self.storage.data.active_memory_loans != 0
     }

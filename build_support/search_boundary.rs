@@ -44,6 +44,31 @@ impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
         if self.path == "src/kernel/loans.rs"
+            && self.function == "has_active_memory_loans"
+            && matches!(
+                name,
+                "iter"
+                    | "values"
+                    | "keys"
+                    | "collect"
+                    | "any"
+                    | "all"
+                    | "fold"
+                    | "count"
+                    | "loans"
+                    | "scopes"
+                    | "unindexed_memory"
+                    | "active_memory_index"
+                    | "cache_memory_index"
+                    | "loan_protects_memory"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: memory-loan presence must read the maintained count ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/loans.rs"
             && matches!(
                 self.function.as_str(),
                 "permits_memory_access_with_assumptions"
