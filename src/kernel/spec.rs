@@ -8122,6 +8122,13 @@ fn evaluate_spec_if_paths_in(
                 budget,
             )?,
             None => {
+                // Each arm is evaluated only where the condition selects it,
+                // as with `implies` and `or`, so its evaluation obligations
+                // are owed only there. `if d != 0 { a / d } else { 0 }` is then
+                // defined whatever the facts. The arms are lowered under the
+                // same assumptions, so their terms do not depend on the guard.
+                let condition = &condition_path.proposition;
+                let negated_condition = negated_lowered_condition(condition);
                 let then_paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
                     scope,
                     then_branch,
@@ -8136,12 +8143,21 @@ fn evaluate_spec_if_paths_in(
                 )?;
                 let mut branch_paths = Vec::new();
                 for then_path in then_paths {
+                    let then_obligations =
+                        obligations_owed_under(&then_path.obligations, condition, |guard, owed| {
+                            Proposition::Implies(Box::new(guard), Box::new(owed))
+                        });
                     for else_path in &else_paths {
+                        let else_obligations = obligations_owed_under(
+                            &else_path.obligations,
+                            &negated_condition,
+                            |_, owed| Proposition::Or(Box::new(condition.clone()), Box::new(owed)),
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &then_path.facts,
-                            &then_path.obligations,
+                            &then_obligations,
                             &else_path.facts,
-                            &else_path.obligations,
+                            &else_obligations,
                             &branch_assumptions,
                         ) else {
                             continue;
@@ -8188,6 +8204,34 @@ fn evaluate_spec_if_paths_in(
     Ok(paths)
 }
 
+/// The lowered negation of a lowered condition, as an execution spells the
+/// branch it did not take.
+fn negated_lowered_condition(condition: &Proposition) -> Proposition {
+    match condition {
+        Proposition::ConditionIs(term, value) => Proposition::ConditionIs(term.clone(), !value),
+        Proposition::Not(body) => body.as_ref().clone(),
+        proposition => Proposition::Not(Box::new(proposition.clone())),
+    }
+}
+
+/// The obligations of a conditional arm, owed only where `guard` selects that
+/// arm: one the guard itself states is met there, and every other becomes
+/// `guarded(guard, obligation)`.
+fn obligations_owed_under(
+    obligations: &[ProofObligation],
+    guard: &Proposition,
+    guarded: impl Fn(Proposition, Proposition) -> Proposition,
+) -> Vec<ProofObligation> {
+    obligations
+        .iter()
+        .filter(|obligation| obligation.proposition() != guard)
+        .cloned()
+        .map(|obligation| {
+            obligation.map_proposition(|proposition| guarded(guard.clone(), proposition))
+        })
+        .collect()
+}
+
 /// An algebraic `if`, as [`evaluate_spec_if_paths_in`] evaluates a scalar
 /// one: a literally constant condition selects its branch, and any other
 /// lowers both into one conditional term.
@@ -8229,6 +8273,10 @@ fn evaluate_spec_algebraic_if_paths_in(
                     proposition_as_single_condition(&condition_path.proposition)
                         .or_else(|| compound_spec_value_condition(&condition_path.proposition))
                         .ok_or(ExecutionLimit::Paths)?;
+                // Each arm's obligations are owed only where it is selected,
+                // as [`evaluate_spec_if_paths_in`] scopes a scalar arm's.
+                let lowered_condition = &condition_path.proposition;
+                let negated_condition = negated_lowered_condition(lowered_condition);
                 let then_paths = evaluate_spec_algebraic_at_state_with_bindings_in(
                     scope,
                     then_branch,
@@ -8243,12 +8291,24 @@ fn evaluate_spec_algebraic_if_paths_in(
                 )?;
                 let mut branch_paths = Vec::new();
                 for then_path in then_paths {
+                    let then_obligations = obligations_owed_under(
+                        &then_path.obligations,
+                        lowered_condition,
+                        |guard, owed| Proposition::Implies(Box::new(guard), Box::new(owed)),
+                    );
                     for else_path in &else_paths {
+                        let else_obligations = obligations_owed_under(
+                            &else_path.obligations,
+                            &negated_condition,
+                            |_, owed| {
+                                Proposition::Or(Box::new(lowered_condition.clone()), Box::new(owed))
+                            },
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &then_path.facts,
-                            &then_path.obligations,
+                            &then_obligations,
                             &else_path.facts,
-                            &else_path.obligations,
+                            &else_obligations,
                             &branch_assumptions,
                         ) else {
                             continue;
@@ -8329,6 +8389,10 @@ fn evaluate_spec_integer_if_paths_in(
                     proposition_as_single_condition(&condition_path.proposition)
                         .or_else(|| compound_spec_value_condition(&condition_path.proposition))
                         .ok_or(ExecutionLimit::Paths)?;
+                // Each arm's obligations are owed only where it is selected,
+                // as [`evaluate_spec_if_paths_in`] scopes a scalar arm's.
+                let lowered_condition = &condition_path.proposition;
+                let negated_condition = negated_lowered_condition(lowered_condition);
                 let then_paths = evaluate_spec_integer_expression_paths_in(
                     scope,
                     then_branch,
@@ -8343,12 +8407,24 @@ fn evaluate_spec_integer_if_paths_in(
                 )?;
                 let mut branch_paths = Vec::new();
                 for then_path in then_paths {
+                    let then_obligations = obligations_owed_under(
+                        &then_path.obligations,
+                        lowered_condition,
+                        |guard, owed| Proposition::Implies(Box::new(guard), Box::new(owed)),
+                    );
                     for else_path in &else_paths {
+                        let else_obligations = obligations_owed_under(
+                            &else_path.obligations,
+                            &negated_condition,
+                            |_, owed| {
+                                Proposition::Or(Box::new(lowered_condition.clone()), Box::new(owed))
+                            },
+                        );
                         let Some((facts, obligations)) = merge_execution_pure_facts_and_obligations(
                             &then_path.facts,
-                            &then_path.obligations,
+                            &then_obligations,
                             &else_path.facts,
-                            &else_path.obligations,
+                            &else_obligations,
                             &branch_assumptions,
                         ) else {
                             continue;
