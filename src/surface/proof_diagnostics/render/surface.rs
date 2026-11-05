@@ -553,15 +553,22 @@ impl Printer<'_> {
                     body?.text
                 )))
             }
-            // Viewability is about an object's extent and lifetime, not the
-            // values in its cells, so the memory it was checked in is not
-            // part of its spelling.
+            // Viewability is about an object's extent and lifetime, and a
+            // lifetime can end between two points, so a fact checked in an
+            // earlier memory keeps its point: `at(point, viewable(..))`, as a
+            // proof writes it to carry the fact forward.
             Proposition::CMemoryLoadable {
-                base, bytes, wide, ..
-            } => Some(atom(format!(
-                "viewable({})",
-                self.byte_range(base, bytes, *wide, depth)
-            ))),
+                memory,
+                base,
+                bytes,
+                wide,
+            } => {
+                let fact = atom(format!(
+                    "viewable({})",
+                    self.byte_range(base, bytes, *wide, depth)
+                ));
+                self.qualify_fact(memory, fact)
+            }
             Proposition::CMemoryCanStore {
                 pointer,
                 byte_width,
@@ -1809,6 +1816,28 @@ impl Printer<'_> {
     }
 
     /// `place` read in `memory`.
+    /// A fact checked in `memory`, spelled as a proof writes it: when the
+    /// report has a current state and `memory` is another recorded point,
+    /// `at(point, fact)`; otherwise bare. Unlike a read, a fact at entry is
+    /// `at(function.entry, fact)`: `old` takes a value.
+    fn qualify_fact(&mut self, memory: &CMemory, fact: Spelled) -> Option<Spelled> {
+        let has_current = self
+            .labels
+            .source_memories
+            .iter()
+            .any(|(_, point, _)| point == "current");
+        let point = self
+            .labels
+            .source_memory_context(memory)
+            .map(|(point, _)| point.to_owned());
+        Some(match point.as_deref() {
+            Some(point) if has_current && point != "current" => {
+                atom(format!("at({point}, {})", fact.text))
+            }
+            _ => fact,
+        })
+    }
+
     fn qualify(&mut self, memory: &CMemory, place: Spelled) -> Option<Spelled> {
         let point = self
             .labels

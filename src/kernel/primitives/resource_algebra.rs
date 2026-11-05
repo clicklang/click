@@ -134,6 +134,17 @@ pub(crate) fn memory_interval_nodes(
     range: &CMemoryRange,
 ) -> Option<Vec<ResourceMemoryIntervalNode>> {
     let (start, end) = concrete_memory_range_bounds(range)?;
+    memory_interval_nodes_for_coordinates(&range.base().block, start, end)
+}
+
+pub(in crate::kernel) fn memory_interval_nodes_for_coordinates(
+    block: &PointerBlock,
+    start: i64,
+    end: i64,
+) -> Option<Vec<ResourceMemoryIntervalNode>> {
+    if start < i64::from(i32::MIN) || end > i64::from(i32::MAX) {
+        return None;
+    }
     let start = start.checked_sub(i64::from(i32::MIN))?;
     let end = end.checked_sub(i64::from(i32::MIN))?;
     if start < 0 || end <= start || end > (1_i64 << 32) {
@@ -151,7 +162,7 @@ pub(crate) fn memory_interval_nodes(
         let magnitude = 63 - (end - cursor).leading_zeros();
         let level = alignment.min(magnitude).min(32) as u8;
         nodes.push(ResourceMemoryIntervalNode {
-            block: range.base().block.clone(),
+            block: block.clone(),
             level,
             start: ((cursor >> level) << level) as u32,
         });
@@ -380,7 +391,9 @@ fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i128>, Opti
 /// Key constant ranges by their symbolic base and exact byte coordinates.
 /// Pointer construction combines trailing constant translations; peel just
 /// that explicit displacement, without traversing offsets or consulting facts.
-fn constant_memory_coordinates(range: &CMemoryRange) -> Option<(Pointer, i128, i128)> {
+pub(in crate::kernel) fn constant_memory_coordinates(
+    range: &CMemoryRange,
+) -> Option<(Pointer, i128, i128)> {
     let (start, end) = constant_relative_byte_endpoints(range);
     let (start, end) = (start?, end?);
     let original = range.base();
@@ -6017,6 +6030,13 @@ impl ResourceContext {
         self.constant_owned_neighbors(&origin, start, end, members)
     }
 
+    /// Cached key count proves absence without enumerating pointer aliases.
+    /// A key exists exactly when its block has at least one memory owner.
+    fn has_owned_memory_outside_block(&self, block: &PointerBlock) -> bool {
+        let blocks = &self.storage.index.owned_memory_by_block;
+        blocks.len() > usize::from(blocks.contains_key(block))
+    }
+
     /// The owned memory entries whose overlap with `range` the facts could
     /// prove, in entry order: the owned ranges of its block at a root related
     /// to its base or to a same-block exact alias of it
@@ -6048,6 +6068,11 @@ impl ResourceContext {
         let index = &self.storage.index;
         let base = range.base();
         let mut candidates = BTreeSet::new();
+        // The caller has already covered skip_block. If it is the only
+        // owned block, aliases cannot nominate any remaining candidates.
+        if skip_block.is_some_and(|block| !self.has_owned_memory_outside_block(block)) {
+            return candidates;
+        }
         // Same-block aliases can nominate only members of this block. When
         // there are fewer owned members than aliases, checking the complete
         // block is cheaper than expanding the aliases' equality classes.
@@ -11383,19 +11408,45 @@ pub(crate) fn memory_ranges_proven_overlapping_ignoring_separation(
     memory_ranges_proven_overlapping_with_separation(left, right, assumptions, false)
 }
 
+/// Exact geometry in a shared coordinate system. None means the bases or
+/// bounds need other reasoning, not that the ranges are disjoint.
+pub(in crate::kernel) fn constant_memory_overlap(
+    left: &CMemoryRange,
+    right: &CMemoryRange,
+) -> Option<bool> {
+    let (left_origin, a, b) = constant_memory_coordinates(left)?;
+    let (right_origin, c, d) = constant_memory_coordinates(right)?;
+    (left_origin == right_origin).then_some(a < b && c < d && a < d && c < b)
+}
+
 fn memory_ranges_proven_overlapping_with_separation(
     left: &CMemoryRange,
     right: &CMemoryRange,
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
+    // Literal byte coordinates already settle this pair. Do not construct
+    // aliases or search their Cartesian product to rediscover the answer.
+    if let Some(overlap) = constant_memory_overlap(left, right) {
+        return overlap
+            && (!use_separation
+                || !assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        left, right,
+                    ));
+    }
     // Rebase through the indexed, directly stated equalities before asking
     // the same-block range relation. This catches equal addresses whose
     // pointer spellings live in different blocks.
     let aliases = |range: &CMemoryRange| {
         std::iter::once(range.base().clone())
-            .chain(assumptions.exact_pointer_aliases(range.base()).cloned())
-            .chain(assumptions.exact_pointer_offset_aliases(range.base()))
+            .chain(
+                assumptions
+                    .exact_pointer_aliases(range.base())
+                    .cloned()
+                    .chain(assumptions.exact_pointer_offset_aliases(range.base()))
+                    .inspect(|_| crate::instrumentation::record_deterministic_work(1)),
+            )
             .collect::<Vec<_>>()
     };
     //
@@ -11404,9 +11455,9 @@ fn memory_ranges_proven_overlapping_with_separation(
     // is the same address, so another pair restates the same question with a
     // symbolic displacement between two spellings of equal pointers, which
     // the endpoint decisions below can settle only by rediscovering that
-    // equality. Asking every pair cost the product of the two alias classes,
-    // and the classes grow along a path as it learns equalities, so a
-    // composition of the same footprint grew slower at every call.
+    // equality. This unresolved route still enumerates the product of the
+    // alias lists: the displacement filter bounds endpoint reasoning, not
+    // enumeration. The remaining walk is tracked in the smart-tactics roadmap.
     let left_aliases = aliases(left);
     let right_aliases = aliases(right);
     for (left_index, left_base) in left_aliases.iter().cloned().enumerate() {
@@ -11453,15 +11504,8 @@ fn memory_ranges_proven_overlapping_without_aliases(
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
     }
-    if let (Some((left_origin, a, b)), Some((right_origin, c, d))) = (
-        constant_memory_coordinates(left),
-        constant_memory_coordinates(right),
-    ) && left_origin == right_origin
-    {
-        return a < b
-            && c < d
-            && a < d
-            && c < b
+    if let Some(overlap) = constant_memory_overlap(left, right) {
+        return overlap
             && (!use_separation
                 || !assumptions
                     .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(

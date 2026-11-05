@@ -1727,9 +1727,10 @@ impl PureFactContext {
                     return self
                         .decide_citing(&ConditionTerm::uint64_equal(left.tag, right.tag), used);
                 }
-                let (Some(left_tag), Some(right_tag)) =
-                    (tag_bound(&left.tag), tag_bound(&right.tag))
-                else {
+                let (Some(left_tag), Some(right_tag)) = (
+                    tag_bound(MachineOperandView::Legacy(&left.tag)),
+                    tag_bound(MachineOperandView::Legacy(&right.tag)),
+                ) else {
                     return None;
                 };
                 let alignment = left_tag
@@ -1764,7 +1765,7 @@ impl PureFactContext {
                 if other.uint64_as_const() != Some(0) {
                     return None;
                 }
-                let tag = tag_bound(&form.tag)?;
+                let tag = tag_bound(MachineOperandView::Legacy(&form.tag))?;
                 let alignment = tag.checked_add(1)?.checked_next_power_of_two()?;
                 let nonnull = self.decide_citing(
                     &ConditionTerm::pointer_equal(form.pointer.clone(), Pointer::null()),

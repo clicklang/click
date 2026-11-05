@@ -1081,6 +1081,17 @@ pub(super) fn render_expansion_command(
             shell_quote(&key.claim),
             shell_quote(&key.source_path.display().to_string())
         )
+    } else if key.expand_enclosing_claim {
+        format!(
+            "--claim {} {}",
+            shell_quote(&format!(
+                "{}:{}:{}",
+                key.source_path.display(),
+                position.line,
+                position.column
+            )),
+            shell_quote(&key.source_path.display().to_string())
+        )
     } else {
         shell_quote(&format!(
             "{}:{}:{}",

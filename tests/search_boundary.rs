@@ -854,3 +854,83 @@ fn ownership_validity_rejects_mixed_access_buckets() {
         .is_ok()
     );
 }
+
+#[test]
+fn owner_absence_rejects_alias_and_resource_enumeration() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "filter",
+        "flat_map",
+        "for_each",
+        "exact_pointer_aliases",
+        "exact_pointer_offset_aliases",
+        "owned_validity_candidates",
+        "facts",
+    ] {
+        let source = format!("fn has_owned_memory_outside_block(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}
+
+#[test]
+fn constant_overlap_rejects_alias_and_premise_enumeration() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "filter",
+        "flat_map",
+        "for_each",
+        "exact_pointer_aliases",
+        "exact_pointer_offset_aliases",
+        "memory_ranges_proven_overlapping",
+        "memory_ranges_proven_overlapping_without_aliases",
+        "facts",
+    ] {
+        let source = format!("fn constant_memory_overlap(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}
+
+#[test]
+fn cache_protection_rejects_loan_enumeration() {
+    for name in [
+        "iter",
+        "collect",
+        "unindexed_memory",
+        "permits_memory_access",
+        "permits_memory_access_with_assumptions",
+        "active_memory_overlaps",
+        "protected_range_proven_overlapping",
+    ] {
+        let source = format!("fn has_indexed_memory_overlap(c: C) {{ c.{name}(); }}");
+        assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
+    }
+}
+
+#[test]
+fn havoc_cache_retention_cannot_restore_the_write_barrier_scan() {
+    for function in [
+        "loan_preserving_havoc_keeps_cell",
+        "loan_preserving_havoc_keeps_run",
+    ] {
+        for name in [
+            "permits_memory_access",
+            "permits_memory_access_with_assumptions",
+            "active_memory_overlaps",
+        ] {
+            let source = format!("fn {function}(c: C) {{ c.{name}(); }}");
+            assert!(
+                boundary::check_source("src/kernel/primitives/memory_state.rs", &source).is_err()
+            );
+        }
+    }
+}

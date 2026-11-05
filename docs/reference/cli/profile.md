@@ -36,7 +36,7 @@ proofs.
 
 | Option | Default | Meaning |
 | --- | ---: | --- |
-| `--smart-threshold DURATION` | `2s` | Report a completed smart tactic in a verified proof as an expansion candidate. |
+| `--smart-threshold DURATION` | `100ms` | Report a completed smart tactic in a verified proof as an expansion candidate. |
 | `--simple-threshold DURATION` | `500ms` | Report a slow simple tactic as a verifier performance defect. |
 | `--control-threshold DURATION` | `2s` | Report a slow control-tactic container and its nested work. |
 | `--threshold DURATION` | none | Set all three tactic-class thresholds together. It cannot be combined with a class-specific threshold. |
@@ -79,6 +79,13 @@ Expansion removes the successful smart site's planning and search, not the
 unavoidable parsing and semantic checking of its emitted proof. The expanded
 proof should therefore approach the cost of direct simple checking; it is not a
 way to hide a slow simple operation.
+
+The default 100ms smart threshold includes the smaller searches whose aggregate
+cost can dominate a project. It is a reporting threshold, not a verification
+budget. A smart-budget row can cover a mixed proof container whose nested
+smart tactics are individually selectable but whose whole body is not. Its
+recommendation uses `--claim PATH:LINE:COLUMN` to expand the enclosing claim.
+An implicit loop closer is anchored at its loop and recommends claim expansion.
 
 An incomplete or failing target never receives an expansion recommendation.
 Profile a non-verifying target only when a timeout or unexpected slowness is

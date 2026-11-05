@@ -46,15 +46,28 @@ facts do not establish flat cost as the queried class or bucket grows.
    through same-block alias/root discovery. Literal constant translations and
    directly stated cross-block aliases use neighbor selection when the root's
    coordinate index is complete, even beside unrelated roots. Alias/root
-   discovery itself still needs a measured checking caller before choosing
-   its next removal. Exact-base owner buckets exclude read-only views; grow
-   owners or alias relationships when measuring these remaining scans.
+   discovery still needs measurement where multiple blocks own memory or
+   same-block candidate selection cannot finish the check. The owned-block
+   count skips cross-block discovery when the already-checked block contains
+   every owner. Exact-base owner buckets exclude read-only views; grow owners
+   or alias relationships when measuring the remaining scans.
+   `memory_ranges_proven_overlapping_with_separation` still enumerates alias
+   pairs when shared constant byte coordinates cannot settle the comparison.
+   Measure symbolic bounds or different origins with a fixed neighboring owner
+   before choosing the remaining removal.
 
    Keep complete-operation controls: a flat call query does not establish flat
    folding, and a flat constant-range fold does not establish bounded symbolic
    range checking. Prefer indexed, selected-piece construction or an
    explicit proof repair; do not restore implicit candidate search in loan
    planning or move it into another non-expandable tactic.
+
+2. **Symbolic-loan write barriers.**
+   `LoanLedger::permits_memory_access_with_assumptions` still compares a selected
+   write with symbolic loans in the query's block and exact-alias blocks.
+   Cache preservation no longer calls this barrier. Measure the actual write
+   caller separately before changing its permission semantics; the exact-origin
+   cache index is positive retention evidence, not permission to write.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).

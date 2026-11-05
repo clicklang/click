@@ -1297,3 +1297,29 @@ fn call_fragment_composition_stops_at_a_fixed_gap() {
         );
     }
 }
+
+#[test]
+fn cache_protection_does_not_enumerate_overlapping_loans() {
+    let mut samples = Vec::new();
+    for count in [4, 16, 64] {
+        let (mut ledger, holder, _) = participants();
+        let view = memory(0, 8, false);
+        let resources = ResourceContext::new().unchecked_with_fact(view.clone());
+        let support = resources.occurrences_for_fact(&view)[0];
+        for _ in 0..count {
+            let opening = ledger
+                .borrowed_contract_input(holder, support, view.clone(), None)
+                .unwrap();
+            ledger = ledger.apply(&opening.transition).unwrap();
+        }
+        let (protected, work) = crate::instrumentation::measure_deterministic_work(|| {
+            ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap())
+        });
+        assert!(protected);
+        samples.push((count, work));
+    }
+    assert!(
+        samples.iter().all(|(_, work)| *work == samples[0].1),
+        "cache protection enumerated a loan bucket: {samples:?}"
+    );
+}

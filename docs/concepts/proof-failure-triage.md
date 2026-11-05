@@ -60,6 +60,14 @@ two memories therefore never print alike. Different states do not by
 themselves establish unequal values: the proof may establish that their reads
 agree.
 
+A `viewable` fact names its memory too, since an object's lifetime can end
+between two points. In a report about a program state, a fact from an earlier
+recorded point is `at(point, viewable(p[0..n]))`, including
+`at(function.entry, ...)` for entry, because `old` takes a value, not a fact.
+Written back, that spelling is the premise the checker holds; carry it forward
+with `transport`. A fact of the reported state, or in a report with no program
+state such as a contract check, is bare (`viewable(p[0..n])`).
+
 A value no current local holds but a local held at a point this path
 recorded reads at that point: inside a loop body, after `i = i + 1`, the
 value `i` had when the iteration began is `at(region(N).entry, i)`, where

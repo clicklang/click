@@ -335,8 +335,25 @@ Remaining groups to audit and migrate:
   exact Integer congruence, compound machine-source replacement and typed
   variable substitution. Exact congruence preserves raw operators and casts;
   selected source/replacement imports are cached per numeric interpretation.
-  Conditional reductions and opaque leaves outside the shared operand fragment
-  still require a parity/no-export audit of the compatibility bridge.
+  Conditional narrowing and remainder reductions now retain shared operands
+  and consult only their selected guards. Native order premises reuse the
+  existing retained-bound index, including promoted narrow readings; structural
+  matches retain the original cast premise before checking reads through it.
+  This lookup stays within the selected rewrite context: indexing native orders
+  in the general observation lookup changed unrelated automatic search and
+  exhausted the false-loop-invariant fixture's budget. Unrelated equality and
+  literal queries keep their existing fast paths. Equivalent 32-bit literal
+  spellings share an operand key while retaining their original source facts. A cached syntax
+  summary lets conditional queries skip unchanged arithmetic prefixes.
+  Tests cover native/shared parity, omitted and refuted guards, full-width
+  bounds, source withdrawal and changing-context scaling without exports.
+  Structural pointer-tag bounds now read operand views and memoize shared DAG
+  nodes, including misses. Guarded tag bounds read exact retained order edges
+  and retain their original sources; signed carriers still require both a
+  nonnegative lower bound and a small upper bound. This migrates the bound
+  consumers, not the surrounding tagged-address form or wide equality dispatch.
+  Opaque leaves outside the shared operand fragment still require a
+  parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
   matches direct path facts by shared comparison identity. Its 32-bit guards
   have no-export coverage; unresolved 64-bit guards still reach the general

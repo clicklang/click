@@ -43,6 +43,86 @@ struct Boundary<'a> {
 impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
+        if self.path == "src/kernel/primitives/memory_state.rs"
+            && matches!(
+                self.function.as_str(),
+                "loan_preserving_havoc_keeps_cell" | "loan_preserving_havoc_keeps_run"
+            )
+            && matches!(
+                name,
+                "permits_memory_access"
+                    | "permits_memory_access_with_assumptions"
+                    | "active_memory_overlaps"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: cache retention must not search loan protection ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/loans.rs"
+            && self.function == "has_indexed_memory_overlap"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "unindexed_memory"
+                    | "permits_memory_access"
+                    | "permits_memory_access_with_assumptions"
+                    | "active_memory_overlaps"
+                    | "protected_range_proven_overlapping"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: cache protection must use interval bucket occupancy ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "constant_memory_overlap"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "flat_map"
+                    | "for_each"
+                    | "exact_pointer_aliases"
+                    | "exact_pointer_offset_aliases"
+                    | "memory_ranges_proven_overlapping"
+                    | "memory_ranges_proven_overlapping_without_aliases"
+                    | "facts"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: constant overlap must compare explicit byte coordinates ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "has_owned_memory_outside_block"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "flat_map"
+                    | "for_each"
+                    | "exact_pointer_aliases"
+                    | "exact_pointer_offset_aliases"
+                    | "owned_validity_candidates"
+                    | "facts"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: owner absence must use cached block counts ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "owned_validity_candidates"
             && matches!(name, "memory_by_base" | "memory_by_block")

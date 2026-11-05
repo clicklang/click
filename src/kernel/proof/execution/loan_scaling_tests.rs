@@ -128,6 +128,24 @@ fn cells_in_the_symbolic_block(count: usize) -> CMemory {
     memory
 }
 
+#[test]
+fn symbolic_loan_retains_its_exact_cached_value_without_a_search() {
+    let ledger = symbolic_contract_input_ledger(1);
+    let range = parameter_view(0).memory_range().unwrap().clone();
+    assert!(ledger.permits_memory_access(&range).is_err());
+    let pointer = range.base().clone();
+    let before = CMemory::new().store(pointer.clone(), int32(7));
+    let after = before.clone().with_loop_memory_havoc_preserving_loans(
+        Variable(7),
+        &BTreeSet::new(),
+        None,
+        Some(&ledger),
+    );
+    assert!(before.has_known_cell_at(&pointer));
+    assert!(after.has_known_cell_at(&pointer));
+    assert!(ledger.permits_memory_access(&range).is_err());
+}
+
 #[cfg(test)]
 mod scaling_tests {
     include!("../../../scaling_tests/kernel/proof/execution/loan_scaling_tests.rs");

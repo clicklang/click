@@ -318,18 +318,19 @@ charged to visible semantic output rather than hidden ambient state:
   path theorems list (completion indexes each path's facts once to list
   them).
 
+Loan-preserving cache havoc uses a maintained interval index keyed by exact
+coordinate origins, including symbolic pointer expressions. Unknown relative
+bounds forget the cached value; they never authorize a write. The write barrier retains its independent loan checks. Interval queries
+ask whether a bucket is nonempty, without enumerating the loans it contains.
+`loop_head_havoc_work_over_cells_and_symbolic_loans` enforces near-linear work
+as cached cells and unrelated symbolic loans grow together. The write barrier's
+symbolic-loan comparison is a separate remaining checking caller; cache
+retention evidence must not be used to grant write permission.
+
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 Their mechanisms are described here; their cost is not accepted.
 
-- **Loan-preserving havoc.** A havoc at a loop head or interface join decides,
-  per surviving cell, whether an active loan protects it. Concrete protected
-  ranges answer from the dyadic index; a range with a symbolic base or bounds
-  is found by walking its block's symbolic bucket, so the havoc costs cells
-  times symbolic loans in that block
-  (`loop_head_havoc_work_over_cells_and_symbolic_loans` pins the measurement).
-  A secondary index over symbolic base terms, or a havoc narrowed to a checked
-  write set, would remove it.
 - **Interface-join binding inheritance.** The successor's bindings are
   compared with the arms' through one membership index over binding values,
   linear in the binding count, which grows with proof length
@@ -445,7 +446,15 @@ selection; a merely related root must not discard its displacement. This
 selection adds no separation facts and still uses the ordinary pair-overlap
 rule. Exact-base candidate buckets contain only owners, maintained on
 resource insertion and consumption, so unresolved interval checks do not scan
-read-only views before checking the owners. Symbolic bounds, incompletely indexed roots, and other related bases
+read-only views before checking the owners. Once same-block neighbors
+have been checked, the cached number of owned blocks can prove there are no
+owners elsewhere. That case skips cross-block alias discovery entirely,
+regardless of how many aliases the fact context holds. Pair-overlap checks
+also compare exact constant byte coordinates before constructing alias lists.
+The same coordinate rule handles translated bases, mixed element widths,
+and narrow or native bounds. Explicit-separation queries use it to reject
+literal overlap without alias discovery; a separation certificate cannot undo
+that overlap. Unknown bounds or different origins still require other reasoning. Symbolic bounds, incompletely indexed roots, and other related bases
 still enumerate candidates: a known violation of the fast-part rule
 (see "Fast-part scans" in
 [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).

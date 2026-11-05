@@ -511,12 +511,47 @@ impl PureFactContext {
                 delta.clone(),
                 held.clone(),
             )) == Some(true)
-            && self.decide(&ConditionTerm::uint64_less_equal(
-                bytes.clone(),
-                MachineTerm::uint64_subtract(held.clone(), delta),
-            )) == Some(true)
+            && self.window_fits_after(&delta, bytes, held)
             && before.read_region_identity(source) == memory.read_region_identity(source)
             && memory_range_still_available(before, memory, source, self)
+    }
+
+    /// Whether `bytes` from `delta` stay inside `held`, given `delta <=
+    /// held`: `bytes <= held - delta`. A window `p[a..b]` is `b - a` bytes
+    /// from `a`; when `a` is itself a sum that comparison is not decided
+    /// directly, so its own bounds decide it: `a <= b` (no underflow) and
+    /// `b <= held`, as a proof lists them.
+    fn window_fits_after(
+        &self,
+        delta: &MachineTerm,
+        bytes: &MachineTerm,
+        held: &MachineTerm,
+    ) -> bool {
+        let holds = |condition: ConditionTerm| self.decide(&condition) == Some(true);
+        if holds(ConditionTerm::uint64_less_equal(
+            bytes.clone(),
+            MachineTerm::uint64_subtract(held.clone(), delta.clone()),
+        )) {
+            return true;
+        }
+        let MachineTerm::Binary {
+            op: MachineBinaryOp::Subtract,
+            format: MachineIntegerType::UInt64,
+            left: end,
+            right: start,
+        } = bytes
+        else {
+            return false;
+        };
+        start.as_ref() == delta
+            && holds(ConditionTerm::uint64_less_equal(
+                delta.clone(),
+                end.as_ref().clone(),
+            ))
+            && holds(ConditionTerm::uint64_less_equal(
+                end.as_ref().clone(),
+                held.clone(),
+            ))
     }
 
     pub(crate) fn proves_memory_loadable(
@@ -2517,20 +2552,8 @@ impl PureFactContext {
         // Exact byte overlap cannot be undone by a separation certificate.
         // Coverage and call transfer frequently ask this of a held range and
         // its own subrange; do not search unrelated authority for that pair.
-        if left.base() == right.base() {
-            let interval = |range: &CMemoryRange| {
-                let width = i64::from(range.element_width());
-                let start = range.signed_constant_start()?.checked_mul(width)?;
-                let end = range.signed_constant_end()?.checked_mul(width)?;
-                (start < end).then_some((start, end))
-            };
-            if let (Some((left_start, left_end)), Some((right_start, right_end))) =
-                (interval(left), interval(right))
-                && left_start < right_end
-                && right_start < left_end
-            {
-                return false;
-            }
+        if crate::kernel::primitives::constant_memory_overlap(left, right) == Some(true) {
+            return false;
         }
         if self.memory_ranges_overlap_after_base_equality(left, right) {
             return false;

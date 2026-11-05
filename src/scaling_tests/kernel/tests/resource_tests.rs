@@ -1511,6 +1511,132 @@ fn translated_owner_insertion_uses_interval_neighbors() {
 }
 
 #[test]
+fn constant_neighbor_overlap_checks_do_not_walk_pointer_alias_pairs() {
+    for native in [false, true] {
+        let mut samples = Vec::new();
+        for size in [4usize, 16, 64] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let p = Pointer::symbolic(Variable(995_850));
+            let mut assumptions = PureFactContext::new();
+            for i in 0..size {
+                assumptions = assumptions.assume_condition(
+                    ConditionTerm::pointer_equal(
+                        p.clone(),
+                        Pointer::symbolic(Variable(995_851 + i as u64)),
+                    ),
+                    true,
+                );
+            }
+            let owned = |start: u32| {
+                CResourceFact::own_memory(if native {
+                    CMemoryRange::new_wide(
+                        p.clone(),
+                        MachineTerm::uint64_constant(u64::from(start)),
+                        MachineTerm::uint64_constant(u64::from(start + 1)),
+                        4,
+                    )
+                } else {
+                    CMemoryRange::new_with_element_width(
+                        p.clone(),
+                        start.into(),
+                        (start + 1).into(),
+                        4,
+                    )
+                })
+            };
+            let context =
+                ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(owned(0));
+            context.synchronize_memory_equalities(&assumptions);
+            let mut work = Vec::new();
+            for (start, accepted) in [(1, true), (0, false)] {
+                for _ in 0..3 {
+                    let (result, units) =
+                        crate::instrumentation::measure_deterministic_work(|| {
+                            context
+                                .clone()
+                                .try_compose_into_valid_context_delaying_normalization(
+                                    [owned(start)],
+                                    &assumptions,
+                                )
+                        });
+                    assert_eq!(result.is_ok(), accepted);
+                    assert_eq!(context.facts().len(), 1);
+                    work.push(units);
+                }
+            }
+            samples.push((size, work));
+        }
+        eprintln!("constant neighbor overlap, native={native}: {samples:?}");
+        assert!(
+            samples.windows(2).all(|pair| pair[0]
+                .1
+                .iter()
+                .zip(&pair[1].1)
+                .all(|(small, large)| *large <= *small + 24)),
+            "constant neighbor comparison walks alias pairs: {samples:?}"
+        );
+    }
+}
+
+#[test]
+fn owner_insertion_does_not_walk_aliases_into_unowned_blocks() {
+    let mut samples = Vec::new();
+    for size in [4usize, 16, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(995_730));
+        let mut assumptions = PureFactContext::new();
+        for i in 0..size {
+            assumptions = assumptions.assume_condition(
+                ConditionTerm::pointer_equal(
+                    p.clone(),
+                    Pointer::symbolic(Variable(995_731 + i as u64)),
+                ),
+                true,
+            );
+        }
+        let context = ResourceContext::new_with_equalities(&assumptions).unchecked_with_fact(
+            CResourceFact::view_memory(CMemoryRange::new_with_element_width(
+                p.clone(),
+                0u32.into(),
+                1u32.into(),
+                4,
+            )),
+        );
+        context.synchronize_memory_equalities(&assumptions);
+        let required = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+            p,
+            0u32.into(),
+            1u32.into(),
+            4,
+        ));
+        let mut work = Vec::new();
+        for _ in 0..3 {
+            let (result, units) = crate::instrumentation::measure_deterministic_work(|| {
+                context
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [required.clone()],
+                        &assumptions,
+                    )
+            });
+            assert!(result.is_ok());
+            assert_eq!(context.facts().len(), 1);
+            work.push(units);
+        }
+        samples.push((size, work));
+    }
+    eprintln!("owner insertion beside unowned aliases: {samples:?}");
+    assert!(
+        samples.windows(2).all(|pair| pair[0]
+            .1
+            .iter()
+            .zip(&pair[1].1)
+            .all(|(small, large)| *large <= *small + 24)),
+        "owner insertion walks aliases into unowned blocks: {samples:?}"
+    );
+}
+
+#[test]
 fn ownership_alias_checks_do_not_filter_read_only_views() {
     for has_owner in [false, true] {
         let mut samples = Vec::new();

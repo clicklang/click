@@ -7359,3 +7359,168 @@ fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
     let without_view = parent.without_exact_representation(&view).unwrap();
     assert!(refuses(without_view));
 }
+
+#[test]
+fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(995_800));
+    let q = Pointer::symbolic(Variable(995_801));
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    for native in [false, true] {
+        let range = |base, start: u32| {
+            if native {
+                CMemoryRange::new_wide(
+                    base,
+                    MachineTerm::uint64_constant(u64::from(start)),
+                    MachineTerm::uint64_constant(u64::from(start + 1)),
+                    4,
+                )
+            } else {
+                CMemoryRange::new_with_element_width(base, start.into(), (start + 1).into(), 4)
+            }
+        };
+        let p_owner = CResourceFact::own_memory(range(p.clone(), 0));
+        let q_owner = CResourceFact::own_memory(range(q.clone(), 0));
+        let views = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            CResourceFact::view_memory(range(p.clone(), 0)),
+            CResourceFact::view_memory(range(q.clone(), 0)),
+        ]);
+        assert!(
+            views
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [p_owner.clone()],
+                    &assumptions,
+                )
+                .is_ok()
+        );
+        // Two owners introduced in the same batch still conflict across aliases.
+        assert!(
+            views
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [p_owner.clone(), q_owner.clone()],
+                    &assumptions,
+                )
+                .is_err()
+        );
+        for held in [p_owner.clone(), q_owner.clone()] {
+            let parent = views.clone().unchecked_with_fact(held.clone());
+            assert!(
+                parent
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [p_owner.clone()],
+                        &assumptions,
+                    )
+                    .is_err()
+            );
+            // Adjacent cells remain admissible, whether the held owner is
+            // local or in the explicitly aliased block.
+            assert!(
+                parent
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [CResourceFact::own_memory(range(p.clone(), 1))],
+                        &assumptions,
+                    )
+                    .is_ok()
+            );
+            let child = parent.clone().without_exact_representation(&held).unwrap();
+            assert!(
+                child
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [p_owner.clone()],
+                        &assumptions,
+                    )
+                    .is_ok()
+            );
+            assert!(
+                parent
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [p_owner.clone()],
+                        &assumptions,
+                    )
+                    .is_err()
+            );
+        }
+    }
+}
+
+#[test]
+fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(995_950));
+    let q = Pointer::symbolic(Variable(995_951));
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    for native in [false, true] {
+        let range = |base, start: u32, end: u32, width| {
+            if native {
+                CMemoryRange::new_wide(
+                    base,
+                    MachineTerm::uint64_constant(u64::from(start)),
+                    MachineTerm::uint64_constant(u64::from(end)),
+                    width,
+                )
+            } else {
+                CMemoryRange::new_with_element_width(base, start.into(), end.into(), width)
+            }
+        };
+        let held = range(p.clone(), 0, 1, 4);
+        for (query, overlaps) in [
+            (range(p.offset_by_bytes(2), 0, 1, 1), true),
+            (range(p.offset_by_bytes(4), 0, 1, 1), false),
+            (range(p.clone(), 0, 0, 4), false),
+            (range(q.clone(), 0, 1, 4), true),
+            (range(q.clone(), 1, 2, 4), false),
+        ] {
+            assert_eq!(
+                memory_ranges_proven_overlapping(&held, &query, &assumptions),
+                overlaps
+            );
+            assert_eq!(
+                memory_ranges_proven_overlapping(&query, &held, &assumptions),
+                overlaps
+            );
+            if overlaps {
+                let stated_separate =
+                    assumptions
+                        .clone()
+                        .assume_proposition(Proposition::CResourceSeparate {
+                            left: Box::new(CResource::Memory(held.clone())),
+                            right: Box::new(CResource::Memory(query.clone())),
+                        });
+                assert!(memory_ranges_proven_overlapping(
+                    &held,
+                    &query,
+                    &stated_separate
+                ));
+            }
+        }
+    }
+    // These byte coordinates exceed i64; they must not be narrowed before
+    // comparing a partial overlap and an adjacent translated interval.
+    let high = 1u64 << 63;
+    let wide = |base| {
+        CMemoryRange::new_wide(
+            base,
+            MachineTerm::uint64_constant(high),
+            MachineTerm::uint64_constant(high + 1),
+            8,
+        )
+    };
+    let held = wide(p.clone());
+    for (displacement, overlaps) in [(4, true), (8, false)] {
+        let query = wide(p.offset_by_bytes(displacement));
+        assert_eq!(
+            memory_ranges_proven_overlapping(&held, &query, &assumptions),
+            overlaps
+        );
+        assert_eq!(
+            memory_ranges_proven_overlapping(&query, &held, &assumptions),
+            overlaps
+        );
+    }
+}

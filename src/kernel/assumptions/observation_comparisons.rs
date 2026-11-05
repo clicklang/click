@@ -154,7 +154,7 @@ pub(in crate::kernel) fn same_comparison(
 
 /// The intrinsic rules formerly reached through the native comparison
 /// constructors. Read shared roots and exact format ranges, never export.
-pub(super) fn constant_observation_value(condition: &ConditionTerm) -> Option<bool> {
+pub(in crate::kernel) fn constant_observation_value(condition: &ConditionTerm) -> Option<bool> {
     let view = native_comparison_view(condition, true)?;
     constant_reading(&view, &key(&view))
 }
@@ -445,6 +445,83 @@ mod compound_observation_lookup_tests {
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
 
     #[test]
+    fn native_order_sources_retain_polarity_scope_and_withdrawal() {
+        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+        use crate::kernel::{KernelTermImport, MachineOperandView as V};
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for truth in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let operand = MachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: MachineTerm::Variable(Variable(989101)).into(),
+                    right: MachineTerm::Variable(Variable(989102)).into(),
+                };
+                let bound = crate::kernel::machine_integer::range::constant_word(
+                    format,
+                    &num_bigint::BigInt::from(5),
+                )
+                .unwrap();
+                let native = ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::LessThan,
+                    operand.clone(),
+                    bound.clone(),
+                );
+                let root = KernelTermImport::default()
+                    .machine_arithmetic(format, &operand)
+                    .unwrap();
+                let query = condition_for_operand_views(
+                    format,
+                    CompareRelation::LessThan,
+                    [V::Shared(&root), V::Legacy(&bound)],
+                );
+                let parent = PureFactContext::new();
+                let mut child = parent.clone();
+                child.adjust_signed_order_bound(&native, truth, true);
+                let exports = KernelTermExport::machine_export_count();
+                let raw = comparison_view(&native, truth).unwrap();
+                let observed =
+                    crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                        &query, truth,
+                    )
+                    .unwrap();
+                let keys = |view: &NativeComparisonView<'_>| {
+                    view.operands.each_ref().map(|operand| {
+                        ScalarOperandKey::for_format(view.format, operand.operand_view())
+                    })
+                };
+                assert_eq!(
+                    keys(&raw),
+                    keys(&observed),
+                    "format={format:?} truth={truth}, raw literals={:?}, observed literals={:?}",
+                    raw.operands
+                        .each_ref()
+                        .map(|operand| operand.operand_view().literal()),
+                    observed
+                        .operands
+                        .each_ref()
+                        .map(|operand| operand.operand_view().literal())
+                );
+                assert_eq!(
+                    child.selected_comparison_source(&query, truth),
+                    Some(&Proposition::ConditionIs(native.clone(), truth))
+                );
+                assert!(child.selected_comparison_source(&query, !truth).is_none());
+                assert!(parent.selected_comparison_source(&query, truth).is_none());
+                child.adjust_signed_order_bound(&native, truth, false);
+                assert!(child.selected_comparison_source(&query, truth).is_none());
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
+
+    #[test]
     fn compound_comparison_lookup_is_bidirectional_and_tracks_source_withdrawal() {
         let _session = crate::kernel::VerificationSession::enter();
         let ty = MachineIntegerType::Int32;
@@ -502,5 +579,75 @@ mod compound_observation_lookup_tests {
         assert!(!none.proves_exact(&native_guard));
         assert!(!none.proves_exact(&shared_guard));
         assert!(both.proves_exact(&shared_guard));
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../../scaling_tests/kernel/assumptions/observation_comparisons.rs");
+}
+
+impl PureFactContext {
+    /// Read the selected guard of a conditional rewrite, retaining its exact
+    /// supporting premise. General condition decision keeps its own lookup.
+    pub(in crate::kernel) fn rewrite_guard_value(&self, condition: &ConditionTerm) -> Option<bool> {
+        for truth in [true, false] {
+            if let Some(source) = self.selected_comparison_source(condition, truth) {
+                record_implicit_reasoning_provenance(self, source);
+                return Some(truth);
+            }
+        }
+        self.exact_condition_value(condition)
+    }
+
+    /// Select an exact comparison premise from indexes already maintained by
+    /// admission. Shared order queries reuse the retained endpoint index;
+    /// native-only facts need no duplicate observation index. This is for an
+    /// explicitly selected rewrite guard, not general condition decision:
+    /// exposing these aliases globally changes unrelated automatic search.
+    pub(in crate::kernel) fn selected_comparison_source(
+        &self,
+        condition: &ConditionTerm,
+        truth: bool,
+    ) -> Option<&Proposition> {
+        use crate::kernel::machine_integer::comparison::structural_native_comparison_view;
+        let order = matches!(
+            condition,
+            ConditionTerm::IntegerLessThan(..)
+                | ConditionTerm::IntegerLessEqual(..)
+                | ConditionTerm::IntegerGreaterThan(..)
+                | ConditionTerm::IntegerGreaterEqual(..)
+        );
+        let exact = |view: &NativeComparisonView<'_>| {
+            let index = match view.format {
+                MachineIntegerType::Int32 => &self.signed_order_bounds,
+                MachineIntegerType::UInt32 => &self.uint32_order_bounds,
+                MachineIntegerType::Int64 => &self.int64_signed_order_bounds,
+                MachineIntegerType::UInt64 => &self.uint64_order_bounds,
+                _ => return None,
+            };
+            let [left, right] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view());
+            index.exact_source(left, right, view.relation == Relation::Less)
+        };
+        // Retain the written carrier's source before a value reading through
+        // casts can select a different, derived bound.
+        if order
+            && let Some(view) = structural_native_comparison_view(condition, truth)
+            && let Some(source) = exact(&view)
+        {
+            return Some(source);
+        }
+        self.observation_comparisons
+            .source(condition, truth)
+            .or_else(|| {
+                if !order {
+                    return None;
+                }
+                let view = native_comparison_view(condition, truth)?;
+                exact(&view).or_else(|| view.widened().and_then(|view| exact(&view)))
+            })
     }
 }
