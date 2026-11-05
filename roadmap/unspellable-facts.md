@@ -473,7 +473,7 @@ Fold empty/append laws and predecessor construction now retain machine
 endpoints, including the checked increment bound and item observations. Their
 checking-only ±1 reconstruction shares the arithmetic-comparison memo and
 preserves the existing native constructor readings. Exact premise matching
-recognizes a retained observation and a native comparison of the same typed
+recognizes a retained order observation and a native comparison of the same typed
 operands, without exporting arithmetic or consulting proof facts; wrong bounds
 and opposite polarity remain unavailable. The existing explicit `peel ... using`
 regression covers the full-width unsigned bound. Both endpoint widths have
