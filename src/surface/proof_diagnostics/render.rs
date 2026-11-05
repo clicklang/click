@@ -57,6 +57,9 @@ pub(crate) struct SnapshotLabels {
     pointer_values: HashMap<Pointer, usize>,
     pointer_sources: HashMap<Pointer, String>,
     source_memories: Vec<(CMemory, String, std::sync::Arc<NamingTables>)>,
+    /// Persistent source-point index, consulted only while printing. Older
+    /// loop heads must not lose their name when the recent display fills up.
+    recorded_snapshots: Option<crate::surface::RecordedSnapshots>,
     source_names: HashMap<Variable, String>,
     source_types: HashMap<Variable, crate::kernel::CType>,
     anonymous_names: HashMap<Variable, String>,
@@ -371,6 +374,24 @@ impl SnapshotLabels {
         }
     }
 
+    pub(in crate::surface) fn recorded_snapshots(
+        &mut self,
+        snapshots: &crate::surface::RecordedSnapshots,
+    ) {
+        self.recorded_snapshots = Some(snapshots.clone());
+    }
+
+    fn recorded_memory_point(&self, memory: &CMemory) -> Option<String> {
+        let memory = crate::kernel::intern_c_memory_ref(memory);
+        let (selector, _) = self
+            .recorded_snapshots
+            .as_ref()?
+            .point_reading_memory(&memory)?;
+        Some(crate::surface::diagnostics::describe_snapshot_selector(
+            selector,
+        ))
+    }
+
     pub(crate) fn source_state(&mut self, state: &CState, point: String) {
         if self.source_memories.len() < MAX_SNAPSHOT_LABELS {
             let tables = crate::surface::diagnostics::local_naming_tables(state);
@@ -436,7 +457,17 @@ impl SnapshotLabels {
     /// One state in source terms: the program event that produced it.
     fn describe_state(&mut self, memory: &CMemory) -> String {
         use crate::kernel::{CMemoryConstructionKind, CMemoryDerivation};
-        if memory.is_initial_diagnostic_memory() {
+        if !matches!(
+            memory.diagnostic_construction(),
+            Some(CMemoryConstructionKind::Transform {
+                operation: "project memory for pointer read",
+                ..
+            })
+        ) && let Some(point) = self.recorded_memory_point(memory)
+        {
+            return format!("the program bytes recorded at `{point}`");
+        }
+        if memory.diagnostic_construction().is_none() && memory.is_initial_diagnostic_memory() {
             return "the memory before the function runs".into();
         }
         let edge = match memory.diagnostic_construction() {
@@ -447,7 +478,7 @@ impl SnapshotLabels {
             Some(CMemoryConstructionKind::Transform {
                 operation: "project memory for pointer read",
                 sources,
-                ..
+                arguments,
             }) if sources.len() == 1 => {
                 let source = sources[0].clone();
                 let described = match self
@@ -459,7 +490,13 @@ impl SnapshotLabels {
                     Some(point) => format!("`{point}`"),
                     None => self.describe_state(&source),
                 };
-                return format!("{described}, projected for one read");
+                let read = match arguments.as_slice() {
+                    [value @ crate::kernel::CValue::Pointer(_)] => {
+                        surface::source_value(value, self)
+                    }
+                    _ => unreachable!("pointer-read projection records its selected pointer"),
+                };
+                return format!("{described}, projected for the pointer read at {read}");
             }
             Some(CMemoryConstructionKind::Transform { .. }) => {
                 return "a memory derived from another state for one read".into();
@@ -1284,6 +1321,19 @@ impl Renderer<'_> {
                 self.push(if *value { " is true" } else { " is false" });
             }
             Proposition::Predicate { name, arguments } => {
+                if name == &format!("{}1", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX)
+                    && let [origin, start, end] = arguments.as_slice()
+                {
+                    self.push("subobject bounds of ");
+                    self.term(origin);
+                    self.push(" cover bytes [");
+                    self.term(start);
+                    self.push(", ");
+                    self.term(end);
+                    self.push(")");
+                    self.depth -= 1;
+                    return;
+                }
                 if let Some(event) = name.strip_prefix("__click_volatile_write_") {
                     self.push("volatile-write-event#");
                     self.push(event);
@@ -2587,6 +2637,54 @@ mod tests {
     use super::render_internal_proposition_labeled as render_proposition_labeled;
     use super::*;
     use crate::kernel::SharedIntegerTerm;
+
+    #[test]
+    fn old_projected_reads_keep_the_recorded_point_and_selected_cell() {
+        use crate::surface::{CodeRegionRef, ProgramPointKind, ProgramPointRef, RecordedSnapshots};
+        let _session = crate::kernel::VerificationSession::enter();
+        let cell = Pointer::symbolic(Variable(989_100));
+        let memory = CMemory::new().with_block("unrelated", 4);
+        let projected = crate::kernel::canonical_c_memory_for_pointer_load(&memory, &cell);
+        let head = CState::new().with_memory(memory.clone());
+        let mut snapshots = RecordedSnapshots::new();
+        snapshots.insert(
+            ProgramPointRef {
+                region: CodeRegionRef::Loop(0),
+                kind: ProgramPointKind::Entry,
+            },
+            head,
+        );
+        let mut labels = SnapshotLabels::default();
+        // Fill the recent display with later, distinct memories. The exact
+        // read-identity index must still name the old iteration entry.
+        for index in 0..40 {
+            let state =
+                CState::new().with_memory(CMemory::new().with_block(format!("later{index}"), 4));
+            snapshots.insert(
+                ProgramPointRef {
+                    region: CodeRegionRef::Region(index),
+                    kind: ProgramPointKind::Exit,
+                },
+                state.clone(),
+            );
+            labels.source_state(&state, format!("region({index}).exit"));
+        }
+        labels.recorded_snapshots(&snapshots);
+        let description = labels.describe_state(&projected);
+        assert!(description.contains("loop(0).entry"), "{description}");
+        assert!(description.contains("pointer read at"), "{description}");
+        assert!(
+            !description.contains("projected for one read"),
+            "{description}"
+        );
+        labels.state_label(&projected);
+        let legend = labels.trace_legend();
+        assert!(legend.contains("loop(0).entry"), "{legend}");
+        // Source annotations embedded in a trace have their own context;
+        // they must not introduce a second numbered-label namespace.
+        assert!(!legend.contains("value#"), "{legend}");
+        assert!(!legend.contains("label definitions"), "{legend}");
+    }
 
     fn render_proposition(proposition: &Proposition) -> String {
         render_proposition_labeled(proposition, &mut SnapshotLabels::ambient())

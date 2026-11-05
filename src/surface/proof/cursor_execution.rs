@@ -2902,19 +2902,28 @@ fn execute_step_from_frontier_position_selecting_path(
                     .unwrap_or_else(|| available_pure_facts.context()),
                 &kind,
             );
+            let required = kind.required_goal().cloned();
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             let error = ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
-                describe_step_proof_context(
-                    available_pure_facts,
-                    context,
-                    &current_resources,
-                    parameter_binding,
-                    &[]
-                )
+                if required.is_some() {
+                    // The structured diagnostic supplies the facts/resources
+                    // with the goal's label map. An embedded context dump
+                    // would introduce a second, conflicting set of labels.
+                    String::new()
+                } else {
+                    describe_step_proof_context(
+                        available_pure_facts,
+                        context,
+                        &current_resources,
+                        parameter_binding,
+                        &[],
+                    )
+                }
             ));
+            let error = error.with_reported_assertion_goal(required);
             // The goal is the path condition of the one defined transition
             // that the available facts do not already state.
             let mut defined = transitions.iter().filter(|transition| {
@@ -3641,19 +3650,28 @@ fn execute_step_from_frontier_position_selecting_path(
                     .unwrap_or_else(|| available_pure_facts.context()),
                 &kind,
             );
+            let required = kind.required_goal().cloned();
             let outcome = CFunctionOutcome::UndefinedBehavior(kind);
             return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
                 describe_function_outcome(&outcome, parameter_binding),
                 crate::surface::diagnostics::describe_c_statement_site(),
-                describe_step_proof_context(
-                    available_pure_facts,
-                    context,
-                    &current_resources,
-                    parameter_binding,
-                    &execution_pure_facts
-                )
-            )));
+                if required.is_some() {
+                    // The structured diagnostic supplies the facts/resources
+                    // with the goal's label map. An embedded context dump
+                    // would introduce a second, conflicting set of labels.
+                    String::new()
+                } else {
+                    describe_step_proof_context(
+                        available_pure_facts,
+                        context,
+                        &current_resources,
+                        parameter_binding,
+                        &execution_pure_facts,
+                    )
+                }
+            ))
+            .with_reported_assertion_goal(required));
         }
         CStatementOutcome::RuntimeError(error) => {
             let kind = runtime_refusal_kind(&error);

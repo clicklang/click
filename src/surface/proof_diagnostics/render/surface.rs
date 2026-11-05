@@ -493,6 +493,22 @@ impl Printer<'_> {
             }
             _ if !self.source_mode() => None,
             Proposition::Predicate { name, arguments } => {
+                if name == &format!("{}1", crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX)
+                    && let [origin, start, end] = arguments.as_slice()
+                {
+                    if !self.source_mode() {
+                        return None;
+                    }
+                    // Diagnostic notation for the existing opaque-domain fact:
+                    // the origin is essential; address equality is insufficient.
+                    let origin = self.term(origin, depth)?;
+                    let start = self.term(start, depth)?;
+                    let end = self.term(end, depth)?;
+                    return Some(atom(format!(
+                        "subobject bounds of {} cover bytes [{}, {})",
+                        origin.text, start.text, end.text,
+                    )));
+                }
                 // Bookkeeping predicates have no Click spelling; their kernel
                 // name is the most honest rendering.
                 let surface = crate::kernel::predicate_source_name(name).unwrap_or(name);

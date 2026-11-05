@@ -840,7 +840,7 @@ fn advance_execution_proof_statement(
                         environment.function_block.signature().name(),
                         kind.description(),
                         crate::surface::diagnostics::describe_c_statement_site()
-                    )));
+                    )).with_reported_assertion_goal(kind.required_goal().cloned()));
                 }
                 CStatementOutcome::RuntimeError(error) => {
                     return Err(ClickError::new(format!(
