@@ -7359,3 +7359,91 @@ fn owner_only_base_buckets_follow_persistent_consumption_and_reinsertion() {
     let without_view = parent.without_exact_representation(&view).unwrap();
     assert!(refuses(without_view));
 }
+
+#[test]
+fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(995_800));
+    let q = Pointer::symbolic(Variable(995_801));
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    for native in [false, true] {
+        let range = |base, start: u32| {
+            if native {
+                CMemoryRange::new_wide(
+                    base,
+                    MachineTerm::uint64_constant(u64::from(start)),
+                    MachineTerm::uint64_constant(u64::from(start + 1)),
+                    4,
+                )
+            } else {
+                CMemoryRange::new_with_element_width(base, start.into(), (start + 1).into(), 4)
+            }
+        };
+        let p_owner = CResourceFact::own_memory(range(p.clone(), 0));
+        let q_owner = CResourceFact::own_memory(range(q.clone(), 0));
+        let views = ResourceContext::new_with_equalities(&assumptions).unchecked_with_facts([
+            CResourceFact::view_memory(range(p.clone(), 0)),
+            CResourceFact::view_memory(range(q.clone(), 0)),
+        ]);
+        assert!(
+            views
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [p_owner.clone()],
+                    &assumptions,
+                )
+                .is_ok()
+        );
+        // Two owners introduced in the same batch still conflict across aliases.
+        assert!(
+            views
+                .clone()
+                .try_compose_into_valid_context_delaying_normalization(
+                    [p_owner.clone(), q_owner.clone()],
+                    &assumptions,
+                )
+                .is_err()
+        );
+        for held in [p_owner.clone(), q_owner.clone()] {
+            let parent = views.clone().unchecked_with_fact(held.clone());
+            assert!(
+                parent
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [p_owner.clone()],
+                        &assumptions,
+                    )
+                    .is_err()
+            );
+            // Adjacent cells remain admissible, whether the held owner is
+            // local or in the explicitly aliased block.
+            assert!(
+                parent
+                    .clone()
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [CResourceFact::own_memory(range(p.clone(), 1))],
+                        &assumptions,
+                    )
+                    .is_ok()
+            );
+            let child = parent.clone().without_exact_representation(&held).unwrap();
+            assert!(
+                child
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [p_owner.clone()],
+                        &assumptions,
+                    )
+                    .is_ok()
+            );
+            assert!(
+                parent
+                    .try_compose_into_valid_context_delaying_normalization(
+                        [p_owner.clone()],
+                        &assumptions,
+                    )
+                    .is_err()
+            );
+        }
+    }
+}
