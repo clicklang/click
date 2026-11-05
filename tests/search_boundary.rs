@@ -1018,22 +1018,30 @@ fn new_operation_search_edges_are_rejected_even_through_aliases_and_macros() {
 }
 
 #[test]
-fn frozen_proof_search_inventory_has_no_stale_or_missing_references() {
-    use std::collections::{BTreeMap, BTreeSet};
-    let expected = proof_search_boundary::expected();
-    let paths: BTreeSet<_> = expected
-        .keys()
-        .map(|key| key.split('\t').next().unwrap())
-        .collect();
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let mut actual = BTreeMap::new();
-    for path in paths {
-        let source = std::fs::read_to_string(root.join(path)).unwrap();
-        let file = syn::parse_file(&source).unwrap();
-        actual.extend(proof_search_boundary::inventory(path, &file));
+fn frozen_proof_search_inventory_rejects_deleted_or_duplicated_references() {
+    let path = "src/kernel/publication.rs";
+    for (source, accepted) in [
+        ("fn release_store() { call_kept_ownership(); }", true),
+        ("fn release_store() {}", false),
+        (
+            "fn release_store() { call_kept_ownership(); call_kept_ownership(); }",
+            false,
+        ),
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert_eq!(
+            proof_search_boundary::check(path, &file).is_ok(),
+            accepted,
+            "{source}"
+        );
     }
-    assert_eq!(
-        actual, expected,
-        "update the reviewed inventory when deleting or relocating an edge"
-    );
+}
+
+#[test]
+fn frozen_proof_search_inventory_names_existing_files() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for key in proof_search_boundary::expected().keys() {
+        let path = key.split('\t').next().unwrap();
+        assert!(root.join(path).is_file(), "stale inventory path: {path}");
+    }
 }

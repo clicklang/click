@@ -225,9 +225,15 @@ pub fn check(path: &str, file: &syn::File) -> Result<(), Vec<String>> {
     let mut definitions = Inventory::default();
     definitions.visit_file(file);
     let mut errors = definitions.errors;
-    for (key, count) in inventory(path, file) {
-        if expected.get(&key).copied().unwrap_or(0) != count {
+    let actual = inventory(path, file);
+    for (key, count) in &actual {
+        if expected.get(key).copied().unwrap_or(0) != *count {
             errors.push(format!("unreviewed proof-search dependency: {key} ({count} references); preserve the frozen inventory or explicitly review this boundary change"));
+        }
+    }
+    for key in expected.keys() {
+        if key.split('\t').next() == Some(path) && !actual.contains_key(key) {
+            errors.push(format!("stale proof-search dependency: {key}; remove the reviewed record when deleting or relocating this edge"));
         }
     }
     if errors.is_empty() {
