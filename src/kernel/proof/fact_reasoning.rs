@@ -3,8 +3,7 @@ use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::*;
 use crate::kernel::{
-    bits32_constant, constant_i64, constant_u32, constant_u64, int32_constant, int64_constant,
-    uint64_constant,
+    constant_i64, constant_u32, constant_u64, int32_constant, int64_constant, uint64_constant,
 };
 
 pub(crate) fn normalizes_context_free(goal: &Proposition) -> bool {
@@ -845,12 +844,9 @@ fn offsets_equal_by_cited_index_sum(
 /// same term, so it never combines different terms the way `arithmetic`
 /// does.
 fn constant_comparison_subject(condition: &ConditionTerm) -> Option<ConstantComparisonSubject> {
-    let machine_constant = |term: &MachineTerm| {
-        matches!(
-            term,
-            bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)
-        )
-    };
+    // A constant of any format: an 8- or 16-bit comparison is native
+    // (rule K8) and keeps its own constant's format.
+    let machine_constant = |term: &MachineTerm| matches!(term, MachineTerm::Constant { .. });
     // σ keeps its operand's bits: a cited condition on `x` selects a
     // comparison of σ(x) and the reverse, decided in the selected context,
     // which relates the two (the difference graph's σ link, R0). The

@@ -293,20 +293,17 @@ fn standard_library_theorems_are_proved_by_their_own_entry_point() {
     let theorems = standard_library_theorem_definitions().unwrap();
     let verified = crate::surface::verify_standard_library()
         .unwrap_or_else(|error| panic!("standard library failed: {}", error.message()));
-    let ensure_count = theorems
+    // A kernel law over an index type is proved once per index type it
+    // admits, so compare the proved clauses rather than counting results.
+    let declared = theorems
         .iter()
-        .map(|theorem| theorem.ensures().len())
-        .sum::<usize>();
-    assert_eq!(verified.len(), ensure_count);
-    for theorem in theorems {
-        assert!(
-            verified
-                .iter()
-                .any(|result| result.theorem_definition.name() == theorem.name()),
-            "`{}` was not proved",
-            theorem.name()
-        );
-    }
+        .flat_map(|theorem| (0..theorem.ensures().len()).map(|index| (theorem.name(), index)))
+        .collect::<BTreeSet<_>>();
+    let proved = verified
+        .iter()
+        .map(|result| (result.theorem_definition.name(), result.ensure_index))
+        .collect::<BTreeSet<_>>();
+    assert_eq!(proved, declared);
 }
 
 fn proved_theorems_during(verify: impl FnOnce()) -> Vec<String> {
