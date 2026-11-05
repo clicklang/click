@@ -275,21 +275,6 @@ impl IntegerRangeFoldIndex {
             Self::Integer { .. } => None,
         }
     }
-
-    /// This range's kind over other machine endpoints.
-    ///
-    /// # Panics
-    ///
-    /// On a range of mathematical integers, which has no machine endpoint.
-    pub(crate) fn with_machine_endpoints(&self, start: MachineTerm, end: MachineTerm) -> Self {
-        let start = SharedIntegerRangeEndpoint::intern(start);
-        let end = SharedIntegerRangeEndpoint::intern(end);
-        match self {
-            Self::Int32 { .. } => Self::Int32 { start, end },
-            Self::UInt64 { .. } => Self::UInt64 { start, end },
-            Self::Integer { .. } => panic!("an Integer range has no machine endpoints"),
-        }
-    }
 }
 
 #[derive(Clone)]
