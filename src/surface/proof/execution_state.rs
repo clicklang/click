@@ -59,11 +59,24 @@ pub(super) struct CaseAssumption {
     pub(super) match_arm: Option<ProofMatchArmCase>,
 }
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub(super) struct ProofCertificateBuilder {
     pub(super) steps: Vec<ProofStep>,
     pub(super) blocker: Option<String>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
+}
+
+impl Clone for ProofCertificateBuilder {
+    fn clone(&self) -> Self {
+        crate::instrumentation::record_deterministic_work(
+            self.steps.len() + self.path_choices.len(),
+        );
+        Self {
+            steps: self.steps.clone(),
+            blocker: self.blocker.clone(),
+            path_choices: self.path_choices.clone(),
+        }
+    }
 }
 
 /// The path's surface record: what the constructed certificate's own check

@@ -1433,7 +1433,10 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
     let mut verified_by_theorem: BTreeMap<(bool, usize, Theorem), Vec<usize>> = BTreeMap::new();
     let mut captured_paths = Vec::new();
     let mut context_count = 0;
-    let mut claim_surface_builders: Vec<(VerifiedClaim, Vec<ProofCertificateBuilder>)> = Vec::new();
+    let mut claim_surface_builders: BTreeMap<
+        (bool, usize),
+        (VerifiedClaim, Vec<std::sync::Arc<ProofCertificateBuilder>>),
+    > = BTreeMap::new();
     for proof in units {
         context_count += 1;
         let view = proof.finalization_view()?;
@@ -1477,13 +1480,11 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
             },
         )?;
         for (claim, builder) in context_surface_builders {
-            match claim_surface_builders
-                .iter_mut()
-                .find(|(existing, _)| *existing == claim)
-            {
-                Some((_, builders)) => builders.push(builder),
-                None => claim_surface_builders.push((claim, vec![builder])),
-            }
+            claim_surface_builders
+                .entry(verified_claim_key(&claim))
+                .or_insert_with(|| (claim, Vec::new()))
+                .1
+                .push(builder);
         }
         for theorem in theorems {
             let claim_key = verified_claim_key(&theorem.claim);
@@ -1531,44 +1532,49 @@ pub(in crate::surface::proof) fn finish_ordered_proof_units<'a>(
             &function_block.contract_claim_label(),
             "surface context synthesis",
             || {
-                for (claim, builders) in claim_surface_builders {
-                    // Contexts that recorded branch choices keep their surface `if`
-                    // even when every case produced the same steps: check still
-                    // needs the case split to cross the branch statement. Contexts
-                    // without choices and identical records collapse to one record.
-                    let merged = if builders.iter().all(|builder| {
-                        builder.path_choices.is_empty() && builder.steps == builders[0].steps
-                    }) {
-                        builders
-                            .first()
-                            .and_then(|builder| builder.blocker.clone())
-                            .map(Err)
-                            .unwrap_or_else(|| Ok(builders[0].steps.clone()))
-                    } else {
-                        synthesize_surface_alternatives(builders)
-                    };
-                    // The claim's record is admitted once and shared by each
-                    // of its theorems; admitting it per theorem cost the
-                    // record's size times the claim's paths.
-                    let mut admitted = None;
-                    for position in verified_by_claim
-                        .get(&verified_claim_key(&claim))
-                        .map(Vec::as_slice)
-                        .unwrap_or_default()
-                    {
-                        let theorem = &mut verified[*position];
-                        if theorem.claim != claim {
-                            continue;
-                        }
-                        let admitted = admitted.get_or_insert_with(|| match &merged {
-                            // A merged record that is not a certificate blocks
-                            // this claim's expansion; it never becomes one.
-                            Ok(steps) => ProofCertificate::from_steps(steps.clone())
+                // Grouped claims share the same records. Merge and admit that
+                // exact sequence once, not once per claim. All input Arcs were
+                // allocated before this loop and remain owned by its map.
+                let mut merged_certificates = BTreeMap::new();
+                for (claim, builders) in claim_surface_builders.values() {
+                    let identity = builders
+                        .iter()
+                        .map(|builder| std::sync::Arc::as_ptr(builder) as usize)
+                        .collect::<Vec<_>>();
+                    let admitted = merged_certificates.entry(identity).or_insert_with(|| {
+                        // Keep recorded branch choices even when every case
+                        // produced the same steps: checking still needs the
+                        // case split to cross the branch statement.
+                        let merged = if builders.iter().all(|builder| {
+                            builder.path_choices.is_empty() && builder.steps == builders[0].steps
+                        }) {
+                            builders
+                                .first()
+                                .and_then(|builder| builder.blocker.clone())
+                                .map(Err)
+                                .unwrap_or_else(|| Ok(builders[0].steps.clone()))
+                        } else {
+                            synthesize_surface_alternatives(
+                                builders.iter().map(|builder| builder.as_ref().clone()).collect(),
+                            )
+                        };
+                        match merged {
+                            Ok(steps) => ProofCertificate::from_steps(steps)
                                 .map_err(|error| error.raw_summary().to_string()),
                             Err(message) => Err(format!(
                                 "could not merge the claim's surface record across branch contexts: {message}"
                             )),
-                        });
+                        }
+                    });
+                    for position in verified_by_claim
+                        .get(&verified_claim_key(claim))
+                        .map(Vec::as_slice)
+                        .unwrap_or_default()
+                    {
+                        let theorem = &mut verified[*position];
+                        if theorem.claim != *claim {
+                            continue;
+                        }
                         match admitted {
                             Ok(certificate) => {
                                 theorem.expanded_proof = Some(certificate.clone());

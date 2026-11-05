@@ -3014,7 +3014,7 @@ pub(super) fn finish_ordered_proof<'a>(
     function: &CFunction,
     arguments: &[CExpression],
     certificate_tactics: &std::sync::Arc<[ProofTactic]>,
-    claim_surface_builders: &mut Vec<(VerifiedClaim, ProofCertificateBuilder)>,
+    claim_surface_builders: &mut Vec<(VerifiedClaim, std::sync::Arc<ProofCertificateBuilder>)>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     let parameter_binding = ParameterBinding::new(parsed_function.parameters(), arguments);
     let proof_label = if require_explicit_closers {
@@ -5667,6 +5667,7 @@ pub(super) fn finish_ordered_proof<'a>(
             // Record exactly one builder per declared claim for this context;
             // tying builders to produced theorems silently dropped such arms
             // (and duplicated builders when a context certified many paths).
+            let expanded = std::sync::Arc::new(expanded);
             for claim in claims {
                 claim_surface_builders.push((claim.verified_claim(), expanded.clone()));
             }
@@ -5725,7 +5726,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         theorem.expansion_blocker = expanded.blocker.clone();
                     }
                 }
-                claim_surface_builders.push((verified_claim, expanded));
+                claim_surface_builders.push((verified_claim, std::sync::Arc::new(expanded)));
             }
         }
         if tactic_expansion_capture_is_active(expansion_capture.as_deref())

@@ -4403,7 +4403,15 @@ fn grouped_proof_theorems_share_one_proof_text() {
                 .proof_tactics
                 .as_ref()
                 .expect("a grouped script theorem retains its proof tactics");
+            let first_expanded = first.expanded_proof.as_ref().expect("grouped expansion");
             for theorem in &verified {
+                assert!(
+                    theorem
+                        .expanded_proof
+                        .as_ref()
+                        .is_some_and(|certificate| certificate.shares_steps_with(first_expanded)),
+                    "size {size}: grouped claims copied their shared expansion"
+                );
                 assert!(
                     std::sync::Arc::ptr_eq(&theorem.function_block, &first.function_block),
                     "size {size}: a theorem carries its own copy of the function block"
@@ -9871,7 +9879,7 @@ fn explicit_claim_closers_have_near_linear_finishing_work() {
         .collect::<Vec<_>>();
     let work = samples
         .iter()
-        .map(|sample| sample.named_work["operation `post-execution claim tactics`"])
+        .map(|sample| sample.named_work["operation `proof context finishing`"])
         .collect::<Vec<_>>();
     assert!(work.iter().all(|units| *units > 0));
     for pair in work.windows(2) {
