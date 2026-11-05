@@ -725,7 +725,8 @@ pub(crate) fn normalize_using_conditions(
 /// other, at one element width, are one displacement when a cited premise
 /// states that the one index's exact `Integer` value is the sum of the other
 /// two: `(p + i) + j` and `p + k` from `to_integer(k) == to_integer(i) +
-/// to_integer(j)`. Offsets are exact sums of index times width, so this holds
+/// to_integer(j)`. One of `i` and `j` may be a constant byte offset of whole
+/// elements. Offsets are exact sums of index times width, so this holds
 /// for every index type; a native sum would not, because it may wrap.
 /// Shared addends cancel in one pass over both offsets, and the premise is
 /// found by exact lookup in the cited-premises context, so nothing else is
@@ -802,8 +803,19 @@ fn offsets_equal_by_cited_index_sum(
         ([first, second], [single]) | ([single], [first, second]) => ([*first, *second], *single),
         _ => return false,
     };
-    let (Some((first, first_width)), Some((second, second_width)), Some((total, width))) =
-        (scaled(pair[0]), scaled(pair[1]), scaled(single))
+    let Some((total, width)) = scaled(single) else {
+        return false;
+    };
+    // A constant addend of the pair is a whole number of elements at the
+    // indices' width, `(p + i) + 3` for three bytes: its exact index.
+    let index = |offset: &PointerOffsetTerm| match offset {
+        PointerOffsetTerm::Constant(bytes) if *bytes >= 0 && bytes % width == 0 => {
+            Some((IntegerTerm::constant((bytes / width).into()), width))
+        }
+        offset => scaled(offset),
+    };
+    let (Some((first, first_width)), Some((second, second_width))) =
+        (index(pair[0]), index(pair[1]))
     else {
         return false;
     };
