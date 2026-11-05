@@ -1126,12 +1126,12 @@ cannot exclude unsigned wrapping.
 | `integer::uint64_to_integer_less_equal_implies_less_equal` | `A <= B` | `a <= b` |
 
 Here `A = to_integer(a)`, `B = to_integer(b)` and
-`UINT64_MAX = 18446744073709551615`. The multiply, divide and remainder laws
+`UINT64_MAX = 18446744073709551615`. The divide and remainder laws
 are kernel standard theorems with checked parameter types, declaration shape,
-exact premise and conclusion. The add and subtract laws are proved: their
-pinned proofs derive the Integer range of the exact result from the premise
-and the operand ranges and apply the `integer_operation_identity` certificate
-rule. The two order laws are proved by `assumption()`: a
+exact premise and conclusion. The add, multiply and subtract laws are proved:
+their pinned proofs derive the Integer range of the exact result from the
+premise and the operand ranges (`integer_product_bounds` for the product's
+lower bound) and apply the `integer_operation_identity` certificate rule. The two order laws are proved by `assumption()`: a
 machine comparison and the Integer comparison of its operands' observations
 lower to one fact, so each conclusion is its premise.
 These laws use the same observation model and theorem application path as the
