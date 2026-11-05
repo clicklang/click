@@ -7447,3 +7447,80 @@ fn skipping_unowned_alias_blocks_keeps_local_and_cross_block_refusals() {
         }
     }
 }
+
+#[test]
+fn direct_constant_overlap_keeps_byte_widths_translations_and_alias_refusals() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let p = Pointer::symbolic(Variable(995_950));
+    let q = Pointer::symbolic(Variable(995_951));
+    let assumptions = PureFactContext::new()
+        .assume_condition(ConditionTerm::pointer_equal(p.clone(), q.clone()), true);
+    for native in [false, true] {
+        let range = |base, start: u32, end: u32, width| {
+            if native {
+                CMemoryRange::new_wide(
+                    base,
+                    MachineTerm::uint64_constant(u64::from(start)),
+                    MachineTerm::uint64_constant(u64::from(end)),
+                    width,
+                )
+            } else {
+                CMemoryRange::new_with_element_width(base, start.into(), end.into(), width)
+            }
+        };
+        let held = range(p.clone(), 0, 1, 4);
+        for (query, overlaps) in [
+            (range(p.offset_by_bytes(2), 0, 1, 1), true),
+            (range(p.offset_by_bytes(4), 0, 1, 1), false),
+            (range(p.clone(), 0, 0, 4), false),
+            (range(q.clone(), 0, 1, 4), true),
+            (range(q.clone(), 1, 2, 4), false),
+        ] {
+            assert_eq!(
+                memory_ranges_proven_overlapping(&held, &query, &assumptions),
+                overlaps
+            );
+            assert_eq!(
+                memory_ranges_proven_overlapping(&query, &held, &assumptions),
+                overlaps
+            );
+            if overlaps {
+                let stated_separate =
+                    assumptions
+                        .clone()
+                        .assume_proposition(Proposition::CResourceSeparate {
+                            left: Box::new(CResource::Memory(held.clone())),
+                            right: Box::new(CResource::Memory(query.clone())),
+                        });
+                assert!(memory_ranges_proven_overlapping(
+                    &held,
+                    &query,
+                    &stated_separate
+                ));
+            }
+        }
+    }
+    // These byte coordinates exceed i64; they must not be narrowed before
+    // comparing a partial overlap and an adjacent translated interval.
+    let high = 1u64 << 63;
+    let wide = |base| {
+        CMemoryRange::new_wide(
+            base,
+            MachineTerm::uint64_constant(high),
+            MachineTerm::uint64_constant(high + 1),
+            8,
+        )
+    };
+    let held = wide(p.clone());
+    for (displacement, overlaps) in [(4, true), (8, false)] {
+        let query = wide(p.offset_by_bytes(displacement));
+        assert_eq!(
+            memory_ranges_proven_overlapping(&held, &query, &assumptions),
+            overlaps
+        );
+        assert_eq!(
+            memory_ranges_proven_overlapping(&query, &held, &assumptions),
+            overlaps
+        );
+    }
+}

@@ -44,6 +44,29 @@ impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
         if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "constant_memory_overlap"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "flat_map"
+                    | "for_each"
+                    | "exact_pointer_aliases"
+                    | "exact_pointer_offset_aliases"
+                    | "memory_ranges_proven_overlapping"
+                    | "memory_ranges_proven_overlapping_without_aliases"
+                    | "facts"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: constant overlap must compare explicit byte coordinates ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "has_owned_memory_outside_block"
             && matches!(
                 name,

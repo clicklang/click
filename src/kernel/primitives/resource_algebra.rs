@@ -11395,19 +11395,45 @@ pub(crate) fn memory_ranges_proven_overlapping_ignoring_separation(
     memory_ranges_proven_overlapping_with_separation(left, right, assumptions, false)
 }
 
+/// Exact geometry in a shared coordinate system. None means the bases or
+/// bounds need other reasoning, not that the ranges are disjoint.
+pub(in crate::kernel) fn constant_memory_overlap(
+    left: &CMemoryRange,
+    right: &CMemoryRange,
+) -> Option<bool> {
+    let (left_origin, a, b) = constant_memory_coordinates(left)?;
+    let (right_origin, c, d) = constant_memory_coordinates(right)?;
+    (left_origin == right_origin).then_some(a < b && c < d && a < d && c < b)
+}
+
 fn memory_ranges_proven_overlapping_with_separation(
     left: &CMemoryRange,
     right: &CMemoryRange,
     assumptions: &PureFactContext,
     use_separation: bool,
 ) -> bool {
+    // Literal byte coordinates already settle this pair. Do not construct
+    // aliases or search their Cartesian product to rediscover the answer.
+    if let Some(overlap) = constant_memory_overlap(left, right) {
+        return overlap
+            && (!use_separation
+                || !assumptions
+                    .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(
+                        left, right,
+                    ));
+    }
     // Rebase through the indexed, directly stated equalities before asking
     // the same-block range relation. This catches equal addresses whose
     // pointer spellings live in different blocks.
     let aliases = |range: &CMemoryRange| {
         std::iter::once(range.base().clone())
-            .chain(assumptions.exact_pointer_aliases(range.base()).cloned())
-            .chain(assumptions.exact_pointer_offset_aliases(range.base()))
+            .chain(
+                assumptions
+                    .exact_pointer_aliases(range.base())
+                    .cloned()
+                    .chain(assumptions.exact_pointer_offset_aliases(range.base()))
+                    .inspect(|_| crate::instrumentation::record_deterministic_work(1)),
+            )
             .collect::<Vec<_>>()
     };
     //
@@ -11416,9 +11442,9 @@ fn memory_ranges_proven_overlapping_with_separation(
     // is the same address, so another pair restates the same question with a
     // symbolic displacement between two spellings of equal pointers, which
     // the endpoint decisions below can settle only by rediscovering that
-    // equality. Asking every pair cost the product of the two alias classes,
-    // and the classes grow along a path as it learns equalities, so a
-    // composition of the same footprint grew slower at every call.
+    // equality. This unresolved route still enumerates the product of the
+    // alias lists: the displacement filter bounds endpoint reasoning, not
+    // enumeration. The remaining walk is tracked in the smart-tactics roadmap.
     let left_aliases = aliases(left);
     let right_aliases = aliases(right);
     for (left_index, left_base) in left_aliases.iter().cloned().enumerate() {
@@ -11465,15 +11491,8 @@ fn memory_ranges_proven_overlapping_without_aliases(
     if left.base().blocks_proven_distinct(right.base()) {
         return false;
     }
-    if let (Some((left_origin, a, b)), Some((right_origin, c, d))) = (
-        constant_memory_coordinates(left),
-        constant_memory_coordinates(right),
-    ) && left_origin == right_origin
-    {
-        return a < b
-            && c < d
-            && a < d
-            && c < b
+    if let Some(overlap) = constant_memory_overlap(left, right) {
+        return overlap
             && (!use_separation
                 || !assumptions
                     .memory_ranges_proven_disjoint_by_explicit_separation_for_memory_resolution(

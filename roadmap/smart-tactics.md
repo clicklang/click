@@ -51,15 +51,25 @@ facts do not establish flat cost as the queried class or bucket grows.
    count skips cross-block discovery when the already-checked block contains
    every owner. Exact-base owner buckets exclude read-only views; grow owners
    or alias relationships when measuring the remaining scans.
-   `memory_ranges_proven_overlapping_with_separation` also enumerates alias
-   pairs after candidate selection; measure it with a fixed neighboring owner
-   before choosing its removal.
+   `memory_ranges_proven_overlapping_with_separation` still enumerates alias
+   pairs when shared constant byte coordinates cannot settle the comparison.
+   Measure symbolic bounds or different origins with a fixed neighboring owner
+   before choosing the remaining removal.
 
    Keep complete-operation controls: a flat call query does not establish flat
    folding, and a flat constant-range fold does not establish bounded symbolic
    range checking. Prefer indexed, selected-piece construction or an
    explicit proof repair; do not restore implicit candidate search in loan
    planning or move it into another non-expandable tactic.
+
+2. **Loop-head havoc over symbolic loans.**
+   `with_loop_memory_havoc_preserving_loans` asks each cached cell about the
+   symbolic loans in its block. The existing
+   `loop_head_havoc_work_over_cells_and_symbolic_loans` scaling test records a
+   cells-times-loans curve and currently permits that known quadratic bound.
+   Use this concrete checking caller for a red near-linear regression and
+   design discussion; do not treat its current passing bound as evidence of
+   scalable checking.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
