@@ -408,6 +408,29 @@ Remaining groups to audit and migrate:
 5. `scripts/check.sh` passes, including expansion/rechecking and all ordinary
    scaling tests. No raised limits, weakened proofs or nightly run substitutes.
 
+**Compiler-guided accessor inventory (2026-11-05, `863cc08da` tree):** a
+throwaway build marked `SharedMachineIntegerTerm::value`,
+`SharedIntegerRangeEndpoint::value`, and the forwarding `MachineAtom::value`
+deprecated, then ran `cargo check --lib --features fast-gate
+--message-format=json`. It identified 107 distinct source-line sites: 58 machine
+observation, 40 fold endpoint, and 9 forwarded atom sites. These include guarded
+legacy reads and output adapters; classify each route against the completion
+criteria above. The temporary annotations are not part of the implementation.
+
+| Remaining audit group | Main consumers |
+| --- | --- |
+| Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
+| Fold checking and equality | empty/append/step rules in `api.rs`, fold guards in `spec.rs`, endpoint equality in `order_reasoning.rs`, exact equality rewriting |
+| Memory, dependency and identity walkers | memory-load collection in `assumptions.rs`, fold keys, all-variable and substitution collectors |
+| Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
+| Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
+| Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
+
+The intrinsic format-range check now reads the outer cast through an operand
+view. Its bound decisions retain true, false and unknown answers without
+exporting the observed arithmetic, including growing prefixes and narrow
+widenings.
+
 ### 2. Finish expression producers — after part 1
 
 - [ ] Enable nested signed arithmetic construction, collecting the existing
