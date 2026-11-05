@@ -854,3 +854,25 @@ fn ownership_validity_rejects_mixed_access_buckets() {
         .is_ok()
     );
 }
+
+#[test]
+fn owner_absence_rejects_alias_and_resource_enumeration() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "filter",
+        "flat_map",
+        "for_each",
+        "exact_pointer_aliases",
+        "exact_pointer_offset_aliases",
+        "owned_validity_candidates",
+        "facts",
+    ] {
+        let source = format!("fn has_owned_memory_outside_block(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}

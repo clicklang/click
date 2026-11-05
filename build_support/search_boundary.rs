@@ -44,6 +44,28 @@ impl Boundary<'_> {
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
         if self.path == "src/kernel/primitives/resource_algebra.rs"
+            && self.function == "has_owned_memory_outside_block"
+            && matches!(
+                name,
+                "iter"
+                    | "collect"
+                    | "find"
+                    | "find_map"
+                    | "filter"
+                    | "flat_map"
+                    | "for_each"
+                    | "exact_pointer_aliases"
+                    | "exact_pointer_offset_aliases"
+                    | "owned_validity_candidates"
+                    | "facts"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: owner absence must use cached block counts ({name})",
+                self.path, self.function
+            ));
+        }
+        if self.path == "src/kernel/primitives/resource_algebra.rs"
             && self.function == "owned_validity_candidates"
             && matches!(name, "memory_by_base" | "memory_by_block")
         {

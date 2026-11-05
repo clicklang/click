@@ -445,7 +445,10 @@ selection; a merely related root must not discard its displacement. This
 selection adds no separation facts and still uses the ordinary pair-overlap
 rule. Exact-base candidate buckets contain only owners, maintained on
 resource insertion and consumption, so unresolved interval checks do not scan
-read-only views before checking the owners. Symbolic bounds, incompletely indexed roots, and other related bases
+read-only views before checking the owners. Once same-block neighbors
+have been checked, the cached number of owned blocks can prove there are no
+owners elsewhere. That case skips cross-block alias discovery entirely,
+regardless of how many aliases the fact context holds. Symbolic bounds, incompletely indexed roots, and other related bases
 still enumerate candidates: a known violation of the fast-part rule
 (see "Fast-part scans" in
 [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).

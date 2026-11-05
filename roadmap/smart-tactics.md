@@ -46,9 +46,14 @@ facts do not establish flat cost as the queried class or bucket grows.
    through same-block alias/root discovery. Literal constant translations and
    directly stated cross-block aliases use neighbor selection when the root's
    coordinate index is complete, even beside unrelated roots. Alias/root
-   discovery itself still needs a measured checking caller before choosing
-   its next removal. Exact-base owner buckets exclude read-only views; grow
-   owners or alias relationships when measuring these remaining scans.
+   discovery still needs measurement where multiple blocks own memory or
+   same-block candidate selection cannot finish the check. The owned-block
+   count skips cross-block discovery when the already-checked block contains
+   every owner. Exact-base owner buckets exclude read-only views; grow owners
+   or alias relationships when measuring the remaining scans.
+   `memory_ranges_proven_overlapping_with_separation` also enumerates alias
+   pairs after candidate selection; measure it with a fixed neighboring owner
+   before choosing its removal.
 
    Keep complete-operation controls: a flat call query does not establish flat
    folding, and a flat constant-range fold does not establish bounded symbolic

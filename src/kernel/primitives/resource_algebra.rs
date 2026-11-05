@@ -6017,6 +6017,13 @@ impl ResourceContext {
         self.constant_owned_neighbors(&origin, start, end, members)
     }
 
+    /// Cached key count proves absence without enumerating pointer aliases.
+    /// A key exists exactly when its block has at least one memory owner.
+    fn has_owned_memory_outside_block(&self, block: &PointerBlock) -> bool {
+        let blocks = &self.storage.index.owned_memory_by_block;
+        blocks.len() > usize::from(blocks.contains_key(block))
+    }
+
     /// The owned memory entries whose overlap with `range` the facts could
     /// prove, in entry order: the owned ranges of its block at a root related
     /// to its base or to a same-block exact alias of it
@@ -6048,6 +6055,11 @@ impl ResourceContext {
         let index = &self.storage.index;
         let base = range.base();
         let mut candidates = BTreeSet::new();
+        // The caller has already covered skip_block. If it is the only
+        // owned block, aliases cannot nominate any remaining candidates.
+        if skip_block.is_some_and(|block| !self.has_owned_memory_outside_block(block)) {
+            return candidates;
+        }
         // Same-block aliases can nominate only members of this block. When
         // there are fewer owned members than aliases, checking the complete
         // block is cheaper than expanding the aliases' equality classes.
