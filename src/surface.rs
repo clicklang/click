@@ -10100,6 +10100,10 @@ impl ClickError {
                     "goal: {}",
                     proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
                 ));
+                let legend = labels.trace_legend();
+                if !legend.is_empty() {
+                    context.push(legend.trim().to_owned());
+                }
                 // A C statement's requirement is a goal at its pre-state.
                 if matches!(goal, Proposition::Predicate { name, .. }
                     if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX))

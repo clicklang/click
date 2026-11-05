@@ -491,8 +491,8 @@ impl SnapshotLabels {
                     None => self.describe_state(&source),
                 };
                 let read = match arguments.as_slice() {
-                    [crate::kernel::CValue::Pointer(pointer)] => {
-                        self.pointer_value_name(pointer.pointer())
+                    [value @ crate::kernel::CValue::Pointer(_)] => {
+                        surface::source_value(value, self)
                     }
                     _ => unreachable!("pointer-read projection records its selected pointer"),
                 };
@@ -2677,6 +2677,13 @@ mod tests {
             !description.contains("projected for one read"),
             "{description}"
         );
+        labels.state_label(&projected);
+        let legend = labels.trace_legend();
+        assert!(legend.contains("loop(0).entry"), "{legend}");
+        // Source annotations embedded in a trace have their own context;
+        // they must not introduce a second numbered-label namespace.
+        assert!(!legend.contains("value#"), "{legend}");
+        assert!(!legend.contains("label definitions"), "{legend}");
     }
 
     fn render_proposition(proposition: &Proposition) -> String {
