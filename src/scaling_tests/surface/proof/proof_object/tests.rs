@@ -6,7 +6,6 @@ use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
 use crate::kernel::{MachineCastSpelling, MachineTerm};
-use crate::surface::proof::driver::DriveProof as _;
 
 #[test]
 fn a_missing_premise_spelling_walks_recorded_history_only_once() {
