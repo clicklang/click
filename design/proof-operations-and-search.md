@@ -152,6 +152,15 @@ helper fast. The existing operation audit and scaling tests remain necessary.
 The separate target list includes compatibility entry points so a caller cannot
 hide an existing search merely by using the old wrapper.
 
+## Detailed caller classification
+
+The [caller audit](proof-boundary-classification.md) classifies all 19 mixed and
+15 operation-to-driver records by why they invoke search or interpretation.
+It distinguishes expected dispatch from hidden obligation callbacks, declaration
+validation, diagnostic execution, and the remaining primitive search dependencies.
+The proposed enforcement changes are for design review; no behavior changes or
+new scaling measurements accompany that classification.
+
 ## Next step
 
 For each operation dependency: reproduce its ambient cost with a red scaling
