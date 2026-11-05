@@ -282,7 +282,7 @@ click timing: function alpha 0.030000s
 fn function_residual_is_reported_as_verifier_core() {
     let output = r#"
 click timing: source examples/sample.click
-click timing: tactic example.contract 0 solve class smart statement 1 source 0 1.000000s
+click timing: tactic example.contract 0 solve class smart statement 1 source 0 0.050000s
 click timing: function example_function 20.000s
 "#;
     let profile = parse_profile("sample", output, Thresholds::default(), false)
@@ -291,7 +291,10 @@ click timing: function example_function 20.000s
         profile.slow_steps.is_empty(),
         "nothing here crosses a threshold; that is the point"
     );
-    assert_eq!(profile.accounting.verifier_core(), Duration::from_secs(19));
+    assert_eq!(
+        profile.accounting.verifier_core(),
+        Duration::from_millis(19_950)
+    );
     assert_eq!(profile.accounting.unattributed(), Duration::ZERO);
 
     let report = render_profiles(&[profile], Thresholds::default(), DEFAULT_TIME_LIMIT);
@@ -795,6 +798,7 @@ fn end_of_options_accepts_a_dash_prefixed_target() {
 fn generated_commands_quote_locations_and_artifacts() {
     let key = StepKey {
         prepared_import: false,
+        expand_enclosing_claim: false,
         source_tactic_path: None,
         source_path: PathBuf::from("examples/it's spaced.click"),
         claim: "claim".to_string(),
@@ -826,6 +830,7 @@ fn generated_commands_quote_locations_and_artifacts() {
     );
     let key = StepKey {
         prepared_import: true,
+        expand_enclosing_claim: false,
         ..key
     };
     output.clear();
@@ -855,6 +860,7 @@ fn generated_commands_quote_locations_and_artifacts() {
 fn an_implicit_auto_row_expands_its_claim() {
     let key = StepKey {
         prepared_import: false,
+        expand_enclosing_claim: false,
         source_tactic_path: None,
         source_path: PathBuf::from("examples/caller.click"),
         claim: "caller.contract".to_string(),
@@ -950,7 +956,7 @@ click timing: tactic example.contract 2 have class control statement 3 source 30
     assert!(report.contains("sample.expanded.click"), "{report}");
     assert!(report.contains("verify: click verify"), "{report}");
     assert!(report.contains("reprofile: click profile"), "{report}");
-    assert!(report.contains("--smart-threshold 2s"), "{report}");
+    assert!(report.contains("--smart-threshold 100ms"), "{report}");
 }
 
 #[test]
@@ -988,14 +994,12 @@ click timing: function example_function 5.300s
 
 #[test]
 fn diagnoses_large_healthy_aggregate_as_volume() {
-    let output = r#"
-click timing: source examples/sample.click
-click timing: tactic example.contract 0 solve class smart statement 1 source 0 0.400000s
-click timing: tactic example.contract 1 solve class smart statement 1 source 1 0.400000s
-click timing: tactic example.contract 2 solve class smart statement 1 source 2 0.400000s
-click timing: function example_function 1.200s
-"#;
-    let profile = parse_profile("sample", output, Thresholds::default(), false)
+    let mut output = String::from("click timing: source examples/sample.click\n");
+    for index in 0..24 {
+        output.push_str(&format!("click timing: tactic example.contract {index} solve class smart statement 1 source {index} 0.050000s\n"));
+    }
+    output.push_str("click timing: function example_function 1.200s\n");
+    let profile = parse_profile("sample", &output, Thresholds::default(), false)
         .expect("the current timing format should parse");
 
     let report = render_profiles(&[profile], Thresholds::default(), DEFAULT_TIME_LIMIT);
@@ -1244,4 +1248,75 @@ fn pure_proof_claim_accounting_keeps_tactic_and_core_time_disjoint() {
             .verifier_core,
         Duration::from_millis(5)
     );
+}
+
+#[test]
+fn profile_recommendations_expand_loop_closers_and_mixed_have_bodies() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("profile.md");
+    let source = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("mdtests/count_to_loop_initialize_by_auto_and_preserve.md"),
+    )
+    .unwrap()
+    .replace("            solve();\n", "")
+    .replace(
+        "verifying \"count_to_loop_initialize_by_auto_and_preserve.c\";",
+        r#"verifying "count_to_loop_initialize_by_auto_and_preserve.c";
+theorem mixed(x: int32) {
+    ensures x == 1 implies x == 1 by {
+        have x == 1 implies x == 1 by { intro(); solve(); }
+        assumption();
+    }
+}"#,
+    );
+    fs::write(&path, &source).unwrap();
+    let targets = profile_targets(&path).unwrap();
+    let thresholds = Thresholds {
+        smart: Duration::ZERO,
+        ..Thresholds::default()
+    };
+    let profile = profile_target(&targets[0], thresholds, test_limits()).unwrap();
+    assert_eq!(profile.verification_failure, None);
+    let closer = profile
+        .slow_steps
+        .iter()
+        .find(|step| {
+            step.key.claim == "count_to.contract"
+                && step.key.tactic_name == click::instrumentation::IMPLICIT_AUTO_TACTIC
+        })
+        .expect("the implicit loop closer must be identified as such");
+    let position = closer.key.position.as_ref().unwrap();
+    assert_eq!(
+        source.lines().nth(position.line - 1).unwrap().trim(),
+        "loop {"
+    );
+    let mixed = profile
+        .slow_steps
+        .iter()
+        .find(|step| step.key.claim == "mixed.ensures_0" && step.key.tactic_name == "have")
+        .expect("the mixed have body still reports its smart work");
+    for (number, step) in [closer, mixed].iter().enumerate() {
+        let position = step.key.position.clone().unwrap();
+        let mut command = String::new();
+        render_expansion_command(&mut command, &step.key, position.clone(), thresholds);
+        assert!(command.contains("--claim"), "{command}");
+        let selector = if step.key.tactic_name == click::instrumentation::IMPLICIT_AUTO_TACTIC {
+            step.key.claim.clone()
+        } else {
+            format!("{}:{}:{}", path.display(), position.line, position.column)
+        };
+        crate::expand::entry_with([
+            "--claim".into(),
+            selector,
+            "--output".into(),
+            directory
+                .path()
+                .join(format!("expanded-{number}.md"))
+                .display()
+                .to_string(),
+            path.display().to_string(),
+        ])
+        .unwrap_or_else(|error| panic!("recommendation failed: {command}\n{error}"));
+    }
 }
