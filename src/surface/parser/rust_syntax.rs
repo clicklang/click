@@ -173,6 +173,7 @@ impl Parser {
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
                 rust_slice_parameters.push(parameter_name.clone());
+                self.implied_library_modules.insert(super::SLICE_MODULE);
                 parameters.push(
                     self.parse_parameter_array_suffix(parameter_name, element)?
                         .parameter,

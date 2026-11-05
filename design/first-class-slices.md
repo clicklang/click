@@ -158,6 +158,31 @@ Existing proofs keep working unchanged.
   C or C++ surface could later adopt it (for a `T* p, size_t n` pair), but
   that is not part of this proposal.
 
+## Representation by position (adopted)
+
+Status: adopted after a probe. Reading a slice through a `match` on
+`Slice<T>` works in a plain pure function, but not yet inside a range fold,
+under a cast, or in `peel`'s defining equations. So one representation
+everywhere would mean fixing all of those before today's proofs keep
+working.
+
+A slice is therefore one concept at the surface with two internal
+representations, chosen by position:
+
+- **Pair:** the data pointer and the length, as today. It is used where the
+  machinery already works on pairs: `fn` slice parameters and pure-function
+  slice parameters, including folds and `peel`.
+- **Value:** a `Slice<T>` from `library/rust/slice.click`. It is used where a
+  pair cannot go: results, `Option` payloads, enum fields, and library
+  contracts such as iterator items.
+
+Where the two meet, the lowering converts mechanically. A pair becomes the
+value `Slice::Slice(p, n)`, and a value becomes the pair of its two field
+projections. Proof text never depends on the choice: a slice is always one
+argument and one name, printed in Rust spellings. Migration flips a position
+from pair to value one PR at a time, fixing that position's gaps, until the
+pair representation can be deleted.
+
 ## Importer
 
 There are two stages.

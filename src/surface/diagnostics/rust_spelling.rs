@@ -15,6 +15,56 @@ thread_local! {
     /// The loop whose phases are being checked, whose iterator a proof
     /// there names bare `iter`.
     static CURRENT_LOOP: std::cell::Cell<Option<usize>> = const { std::cell::Cell::new(None) };
+    /// For each pure function that takes a slice, the positions in its
+    /// lowered arguments where a slice's pointer is, its length following.
+    static PURE_FUNCTION_SLICES: std::cell::RefCell<
+        std::collections::BTreeMap<String, std::rc::Rc<[usize]>>,
+    > = const { std::cell::RefCell::new(std::collections::BTreeMap::new()) };
+}
+
+/// Records that the pure function `name` takes slices at the written
+/// parameter positions `written`, so a call prints each slice as one
+/// argument, as it is written.
+pub(crate) fn record_pure_function_slices(name: &str, written: &[usize]) {
+    let lowered: std::rc::Rc<[usize]> = written
+        .iter()
+        .enumerate()
+        .map(|(before, position)| position + before)
+        .collect();
+    PURE_FUNCTION_SLICES.with(|slot| {
+        slot.borrow_mut().insert(name.to_string(), lowered);
+    });
+}
+
+/// The spelled arguments of a call to the pure function `name`, with each
+/// slice, lowered as its pointer and its length, written as one argument
+/// again: the parameter it is (`bytes`, `old(bytes)`), or
+/// `slice::from_raw_parts(p, n)` for another pointer and length.
+pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Vec<String> {
+    let Some(slices) = PURE_FUNCTION_SLICES.with(|slot| slot.borrow().get(name).cloned()) else {
+        return arguments;
+    };
+    if !slices.iter().all(|position| position + 1 < arguments.len()) {
+        return arguments;
+    }
+    for &position in slices.iter().rev() {
+        let length = arguments.remove(position + 1);
+        let pointer = &arguments[position];
+        let parameter = pointer
+            .strip_prefix("old(")
+            .or_else(|| {
+                pointer
+                    .strip_prefix("at(")
+                    .and_then(|rest| rest.split_once(", ").map(|(_, inner)| inner))
+            })
+            .and_then(|inner| inner.strip_suffix(')'))
+            .unwrap_or(pointer);
+        let own_length = [format!("{parameter}.len()"), format!("{parameter}_len")];
+        if !own_length.contains(&length) {
+            arguments[position] = format!("slice::from_raw_parts({pointer}, {length})");
+        }
+    }
+    arguments
 }
 
 /// While it lives, loop `index`'s phases are being checked: its iterator's

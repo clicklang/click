@@ -39,7 +39,8 @@ pub(in crate::surface) use cpp_model::{CapturedModelAccessors, ModelAccessorScop
 pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object_fields};
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
-    LoopPhaseSpelling, enter_rust_spelling, rust_spelling, rust_variable_spelling,
+    LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_spelling,
+    rust_variable_spelling, slice_call_arguments,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -6941,11 +6942,11 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         ),
         ContractExpression::Call { name, arguments } => format!(
             "{name}({})",
-            arguments
-                .iter()
-                .map(describe_contract_expression)
-                .collect::<Vec<_>>()
-                .join(", ")
+            slice_call_arguments(
+                name,
+                arguments.iter().map(describe_contract_expression).collect()
+            )
+            .join(", ")
         ),
     }
 }

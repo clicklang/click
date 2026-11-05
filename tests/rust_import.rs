@@ -6262,3 +6262,49 @@ fn charon_stack_transport_repairs_expand_and_replay() {
         .unwrap_or_else(|error| panic!("{directory}: {error}\n{expanded}"));
     }
 }
+
+/// A slice is one argument of a pure-function call: the parameter, the
+/// parameter at another point, or `slice::from_raw_parts(p, n)`. Passing a
+/// pointer and a length as two arguments is refused, and a printed call
+/// writes the slice as one argument again.
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+fn rust_pure_function_slice_arguments_are_one_value() {
+    let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = |proof: &str| {
+        format!(
+            "import click::rust::slice;\nverifying \"borrow.rs\";\n\
+             function head(bytes: &[u8]) -> u8 {{ bytes[0] }}\n\
+             fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4;\n    views bytes[0..4];\n    ensures result == old(head(bytes));\n}} by {{\n{proof}\n}}\n"
+        )
+    };
+    let accepted = sidecar(
+        "    have head(slice::from_raw_parts(bytes, bytes.len())) == head(bytes);\n    \
+         have old(head(bytes)) == head(old(bytes));\n    \
+         step_until(function.exit);\n    solve();",
+    );
+    C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    let spread = sidecar(
+        "    have head(bytes, bytes.len()) == head(bytes);\n    step_until(function.exit);\n    solve();",
+    );
+    let error = C0VerificationSession::new_program_prepared(&spread, &prepared)
+        .err()
+        .expect("two arguments for one slice must be refused")
+        .to_string();
+    assert!(
+        error.contains("each slice is one argument") && error.contains("slice::from_raw_parts"),
+        "{error}"
+    );
+    let failing =
+        sidecar("    have head(bytes) == 7u8;\n    step_until(function.exit);\n    solve();");
+    let error = C0VerificationSession::new_program_prepared(&failing, &prepared)
+        .err()
+        .expect("an unproved fact must fail")
+        .to_string();
+    assert!(
+        !error.contains("bytes.len())"),
+        "a slice prints as one argument: {error}"
+    );
+}

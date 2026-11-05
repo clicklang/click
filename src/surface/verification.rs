@@ -4881,11 +4881,11 @@ pub(in crate::surface) fn termination_measure_source(expression: &ContractExpres
         }
         ContractExpression::Call { name, arguments } => format!(
             "{name}({})",
-            arguments
-                .iter()
-                .map(termination_measure_source)
-                .collect::<Vec<_>>()
-                .join(", ")
+            crate::surface::diagnostics::slice_call_arguments(
+                name,
+                arguments.iter().map(termination_measure_source).collect()
+            )
+            .join(", ")
         ),
         ContractExpression::ResourceField(access) => {
             format!("{}.{}", access.owner, access.field)
