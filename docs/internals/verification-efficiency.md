@@ -327,6 +327,14 @@ as cached cells and unrelated symbolic loans grow together. The write barrier's
 symbolic-loan comparison is a separate remaining checking caller; cache
 retention evidence must not be used to grant write permission.
 
+Concrete loan write barriers select one indexed conflict witness instead of
+collecting all overlapping loan IDs. Each dyadic bucket contributes only its
+least member; taking the minimum across those buckets preserves the diagnostic's
+loan choice. Both checking and refusal diagnostics use this selection. The
+`write_barrier_does_not_enumerate_overlapping_loans` regression grows overlapping
+loans around one fixed write, including covering and adjacent queries and repeats.
+Symbolic-loan and alias candidate discovery remain separate checking costs.
+
 The following are known violations of the fast-part rule, listed under
 "Fast-part scans" in [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md).
 Their mechanisms are described here; their cost is not accepted.

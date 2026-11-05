@@ -5777,9 +5777,45 @@ impl LoanLedger {
         Arc::ptr_eq(&self.storage, &other.storage)
     }
 
+    /// Select the least conflicting loan ID from the concrete write index.
+    /// Each fixed-width dyadic bucket contributes only its first member;
+    /// selecting the minimum preserves the diagnostic's existing loan choice.
+    fn first_active_memory_overlap(
+        &self,
+        range: &CMemoryRange,
+    ) -> Result<Option<LoanId>, LoanRefusal> {
+        if memory_range_is_empty(range) {
+            return Ok(None);
+        }
+        let Some(nodes) = memory_interval_nodes(range) else {
+            return if self.storage.data.active_memory_loans == 0 {
+                Ok(None)
+            } else {
+                Err(LoanRefusal::UnsupportedPartition)
+            };
+        };
+        let mut selected: Option<LoanId> = None;
+        let mut consider = |bucket: Option<&PersistentSet<LoanId>>| {
+            crate::instrumentation::record_deterministic_work(1);
+            // PersistentSet's iterator descends to the least key lazily.
+            // Taking one member does not enumerate or collect the bucket.
+            if let Some(loan) = bucket.and_then(|bucket| bucket.iter().next()).copied() {
+                selected = Some(selected.map_or(loan, |previous| previous.min(loan)));
+            }
+        };
+        for node in nodes {
+            for ancestor in memory_interval_ancestors(&node) {
+                consider(self.storage.data.active_memory_index.get(&ancestor));
+            }
+            consider(self.storage.data.active_memory_subtree.get(&node));
+        }
+        Ok(selected)
+    }
+
     /// Return active memory loans whose concrete byte footprints overlap the
     /// query. The dyadic index visits logarithmically many buckets plus the
     /// returned loan IDs; it never scans the ledger.
+    #[cfg(test)]
     pub(crate) fn active_memory_overlaps(
         &self,
         range: &CMemoryRange,
@@ -5816,20 +5852,20 @@ impl LoanLedger {
         Ok(loans.iter().copied().collect())
     }
 
-    fn active_memory_overlaps_with_assumptions(
+    fn first_active_memory_overlap_with_assumptions(
         &self,
         range: &CMemoryRange,
         assumptions: &PureFactContext,
-    ) -> Result<Vec<LoanId>, LoanRefusal> {
-        let mut loans = PersistentSet::default();
+    ) -> Result<Option<LoanId>, LoanRefusal> {
+        let mut selected: Option<LoanId> = None;
         for alias in memory_range_aliases(range, assumptions) {
-            if memory_interval_nodes(&alias).is_some() {
-                for loan in self.active_memory_overlaps(&alias)? {
-                    loans = loans.with_value(loan);
-                }
+            if memory_interval_nodes(&alias).is_some()
+                && let Some(loan) = self.first_active_memory_overlap(&alias)?
+            {
+                selected = Some(selected.map_or(loan, |previous| previous.min(loan)));
             }
         }
-        Ok(loans.iter().copied().collect())
+        Ok(selected)
     }
 
     /// Whether a write, free, or havoc of `range` is compatible with every
@@ -5860,7 +5896,7 @@ impl LoanLedger {
             for alias in &aliases {
                 if memory_interval_nodes(alias).is_some() {
                     indexed_alias_exists = true;
-                    if !self.active_memory_overlaps(alias)?.is_empty() {
+                    if self.first_active_memory_overlap(alias)?.is_some() {
                         return Err(LoanRefusal::ActiveDependency);
                     }
                 }
@@ -5940,21 +5976,17 @@ impl LoanLedger {
             let record = self.storage.data.loans.get(&loan)?;
             Some((loan, protected.clone(), origin_kind(&record.origin)))
         };
-        if let Ok(loans) = self.active_memory_overlaps_with_assumptions(range, assumptions) {
-            for loan in loans {
-                let Some(record) = self.storage.data.loans.get(&loan) else {
-                    continue;
-                };
-                let protected = record
-                    .memory_backing
-                    .iter()
-                    .find(|protected| {
-                        protected_range_proven_overlapping(range, protected, assumptions)
-                    })
-                    .or_else(|| record.memory_backing.first());
-                if let Some(protected) = protected {
-                    return described(loan, protected);
-                }
+        if let Ok(Some(loan)) =
+            self.first_active_memory_overlap_with_assumptions(range, assumptions)
+            && let Some(record) = self.storage.data.loans.get(&loan)
+        {
+            let protected = record
+                .memory_backing
+                .iter()
+                .find(|protected| protected_range_proven_overlapping(range, protected, assumptions))
+                .or_else(|| record.memory_backing.first());
+            if let Some(protected) = protected {
+                return described(loan, protected);
             }
         }
         let mut checked_blocks = BTreeSet::new();
