@@ -408,20 +408,23 @@ Remaining groups to audit and migrate:
 5. `scripts/check.sh` passes, including expansion/rechecking and all ordinary
    scaling tests. No raised limits, weakened proofs or nightly run substitutes.
 
-**Compiler-guided accessor inventory (2026-11-05, `863cc08da` tree):** a
+**Compiler-guided accessor inventory (2026-11-05, `136f64774` tree):** a
 throwaway build marked `SharedMachineIntegerTerm::value`,
 `SharedIntegerRangeEndpoint::value`, and the forwarding `MachineAtom::value`
 deprecated, then ran `cargo check --lib --features fast-gate
---message-format=json`. It identified 107 distinct source-line sites: 58 machine
-observation, 40 fold endpoint, and 9 forwarded atom sites. These include guarded
-legacy reads and output adapters; classify each route against the completion
-criteria above. The temporary annotations are not part of the implementation.
+--message-format=json`. It identified 74 distinct source-line sites (down from
+107 at `863cc08da`). These include guarded legacy reads, native reconstruction
+and explicit output adapters; the count is not a count of defects. Classify each
+route against the completion criteria above. The temporary annotations are not
+part of the implementation. Checked rewritten-load evidence in `proof/facts.rs`
+also still exports observed arithmetic and belongs to the remaining memory
+comparison audit.
 
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
 | Fold checking and equality | exact equality rewriting; native-output reconstruction boundaries |
-| Dependency and selected-atom walkers | selected-atom collection in `proof/facts.rs`; native-carrier reconstruction boundaries |
+| Dependency and selected-atom walkers | native-carrier reconstruction boundaries; verify remaining guarded legacy reads |
 | Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
 | Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
 | Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
@@ -478,6 +481,15 @@ operands, without exporting arithmetic or consulting proof facts; wrong bounds
 and opposite polarity remain unavailable. The existing explicit `peel ... using`
 regression covers the full-width unsigned bound. Both endpoint widths have
 cold growing-DAG no-export coverage.
+
+Selected equality-atom collection now reads retained machine observations.
+Syntax-only persistent summaries retain written variables and 32-bit constants;
+wide literals and Integer conversion payloads keep the native collector's opaque
+rules. Load-address atoms are resolved against the current registry after the
+syntax-cache borrow ends. Growing prefixes and cold doubled DAGs reuse shared
+summaries without exports; clearing the registry cannot preserve old address
+atoms. Existing indexed candidate-bucket enumeration is unchanged by this
+representation migration and retains its separate search/scaling audit.
 
 ### 2. Finish expression producers — after part 1
 
