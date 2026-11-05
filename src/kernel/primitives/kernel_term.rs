@@ -147,6 +147,7 @@ struct NodeKeyData {
     shared_machine_operand: bool,
     opaque_observation_boundary: bool,
     machine_conversions: bool,
+    machine_reads: bool,
     conditional_machine_rewrites: bool,
     machine_constant: Option<KernelMachineLiteral>,
 }
@@ -224,6 +225,15 @@ impl NodeKey {
             | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_conversions(),
             _ => false,
         };
+        let machine_reads = match &node {
+            KernelTermNode::MemoryLoad { .. } => true,
+            KernelTermNode::MachineBinary { arguments, .. } => {
+                arguments.iter().any(KernelTerm::has_machine_reads)
+            }
+            KernelTermNode::MachineUnary { operand, .. }
+            | KernelTermNode::MachineCast { operand, .. } => operand.has_machine_reads(),
+            _ => false,
+        };
         // Conditional rewriting leaves ordinary arithmetic untouched. Retain
         // this syntax summary so each query skips unchanged shared prefixes.
         let conditional_machine_rewrites = match &node {
@@ -250,6 +260,7 @@ impl NodeKey {
             shared_machine_operand,
             opaque_observation_boundary,
             machine_conversions,
+            machine_reads,
             conditional_machine_rewrites,
             ty,
             node,
@@ -343,6 +354,12 @@ impl KernelTerm {
 
     pub(crate) fn has_opaque_observation_boundary(&self) -> bool {
         self.0.key.0.opaque_observation_boundary
+    }
+
+    /// Reads in the machine arithmetic fragment. Integer conversion payloads
+    /// are separate carrier leaves and retain their own scoped traversal.
+    pub(crate) fn has_machine_reads(&self) -> bool {
+        self.0.key.0.machine_reads
     }
 
     pub(crate) fn has_machine_conversions(&self) -> bool {

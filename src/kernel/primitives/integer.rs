@@ -14,7 +14,7 @@ mod operand_correspondence;
 use crate::kernel::CompareRelation;
 pub(crate) use machine_view::{
     MachineOperandView, clear_shared_machine_variable_cache, shared_machine_conversion_leaves,
-    shared_machine_syntax_variables,
+    shared_machine_read_leaves, shared_machine_read_uses, shared_machine_syntax_variables,
 };
 use num_bigint::BigInt;
 #[cfg(test)]
