@@ -876,3 +876,26 @@ fn owner_absence_rejects_alias_and_resource_enumeration() {
         );
     }
 }
+
+#[test]
+fn constant_overlap_rejects_alias_and_premise_enumeration() {
+    for name in [
+        "iter",
+        "collect",
+        "find",
+        "find_map",
+        "filter",
+        "flat_map",
+        "for_each",
+        "exact_pointer_aliases",
+        "exact_pointer_offset_aliases",
+        "memory_ranges_proven_overlapping",
+        "memory_ranges_proven_overlapping_without_aliases",
+        "facts",
+    ] {
+        let source = format!("fn constant_memory_overlap(c: C) {{ c.{name}(); }}");
+        assert!(
+            boundary::check_source("src/kernel/primitives/resource_algebra.rs", &source).is_err()
+        );
+    }
+}

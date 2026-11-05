@@ -448,7 +448,12 @@ resource insertion and consumption, so unresolved interval checks do not scan
 read-only views before checking the owners. Once same-block neighbors
 have been checked, the cached number of owned blocks can prove there are no
 owners elsewhere. That case skips cross-block alias discovery entirely,
-regardless of how many aliases the fact context holds. Symbolic bounds, incompletely indexed roots, and other related bases
+regardless of how many aliases the fact context holds. Pair-overlap checks
+also compare exact constant byte coordinates before constructing alias lists.
+The same coordinate rule handles translated bases, mixed element widths,
+and narrow or native bounds. Explicit-separation queries use it to reject
+literal overlap without alias discovery; a separation certificate cannot undo
+that overlap. Unknown bounds or different origins still require other reasoning. Symbolic bounds, incompletely indexed roots, and other related bases
 still enumerate candidates: a known violation of the fast-part rule
 (see "Fast-part scans" in
 [the smart-tactics roadmap item](https://github.com/clicklang/click/blob/master/roadmap/smart-tactics.md)).
