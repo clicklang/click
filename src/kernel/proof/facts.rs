@@ -1,6 +1,8 @@
 //! Persistent semantic fact state for checked proofs.
 
+mod rewritten_loads;
 mod selected_atoms;
+pub(in crate::kernel) use rewritten_loads::clear_rewritten_load_syntax_cache;
 pub(in crate::kernel) use selected_atoms::clear_selected_atom_cache;
 
 use super::fact_keys::{IntegerConditionAlphaKey, integer_condition_alpha_key};
@@ -568,6 +570,7 @@ impl ProofFacts {
                     pending.push((b, d));
                 }
                 (Proposition::ConditionIs(a, p), Proposition::ConditionIs(b, q)) if p == q => {
+                    let mut retained_leaves = Vec::new();
                     let pairs = match (a, b) {
                         (
                             ConditionTerm::Compare {
@@ -689,7 +692,42 @@ impl ProofFacts {
                                 {
                                     return None;
                                 }
-                                pairs.push((left.value(), right.value()));
+                                if let (Some(a), Some(b)) =
+                                    (left.shared_operand(), right.shared_operand())
+                                {
+                                    let differences = rewritten_loads::differences(a, b)?;
+                                    if !bound_variables.is_empty()
+                                        && !differences.is_empty()
+                                        && [left.operand_view(), right.operand_view()]
+                                            .into_iter()
+                                            .any(|v| {
+                                                v.variable().is_none()
+                                                    && !matches!(
+                                                        v.literal(),
+                                                        Some(bits32_constant!(_))
+                                                    )
+                                            })
+                                    {
+                                        return None;
+                                    }
+                                    for (_, (a, b)) in differences.iter() {
+                                        // A differing shared leaf must actually name a registered
+                                        // load before constructing any native evidence operand.
+                                        if ![a, b].into_iter().any(|term| {
+                                            MachineOperandView::Shared(term).variable().is_some_and(|v| {
+                                                crate::kernel::registered_load_kind_for_variable(v).is_some()
+                                            })
+                                        }) {
+                                            return None;
+                                        }
+                                        retained_leaves.push((
+                                            rewritten_loads::evidence_operand(a),
+                                            rewritten_loads::evidence_operand(b),
+                                        ));
+                                    }
+                                } else {
+                                    pairs.push((left.value(), right.value()));
+                                }
                             }
                             pairs
                         }
@@ -697,6 +735,7 @@ impl ProofFacts {
                         _ => return None,
                     };
                     let mut pairs = pairs;
+                    pairs.extend(retained_leaves.iter().map(|(a, b)| (a, b)));
                     while let Some((a, b)) = pairs.pop() {
                         crate::instrumentation::record_deterministic_work(1);
                         // A load atom is independent of a surrounding binder.
