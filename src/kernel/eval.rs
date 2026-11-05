@@ -94,6 +94,7 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
+pub(crate) use memory_loads::registered_scalar_read_term;
 pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
 pub(in crate::kernel) use memory_loads::term_mentions_a_memory_load;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
