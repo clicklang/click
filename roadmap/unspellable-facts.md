@@ -420,8 +420,8 @@ criteria above. The temporary annotations are not part of the implementation.
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |
-| Fold checking and equality | empty/append/step rules in `api.rs`, fold guards in `spec.rs`, exact equality rewriting |
-| Dependency and selected-atom walkers | fold-bound substitution collector, shared substitution replacements, selected-atom collection in `proof/facts.rs` |
+| Fold checking and equality | empty/append/step rules in `api.rs`, exact equality rewriting |
+| Dependency and selected-atom walkers | selected-atom collection in `proof/facts.rs`; native-carrier reconstruction boundaries |
 | Numeric checking helpers | modular reconstruction, operation mappings and signed-arithmetic adapters |
 | Explicit compatibility output | Surface bound/planning adapters, diagnostics and affine-offset spelling; check their callers before treating a path as output |
 | Guarded legacy branches | imports, cast readers, graph interning and collector branches that already retain shared inputs |
@@ -457,6 +457,17 @@ reuse constant spines and previously checked Add/Sub child equalities across
 proof contexts; exact fact-derived answers never enter those memos. Operand
 keys reuse the session's admitted arithmetic imports, avoiding a second tree
 walk when a native equality enters the selected-pair index.
+
+
+Fold item-range guards now use the common retained comparison constructor.
+Fold-bound dependency collection preserves endpoint outer scopes, initial-value
+variables and conversion payloads without expanding shared arithmetic. Checked
+fold-step substitution accepts a retained replacement operand; shared machine
+observations and nested binders keep that operand through capture-avoiding
+rewriting. Native output carriers still require a written machine term, and
+that output conversion remains explicit at reconstruction rather than occurring
+unconditionally before substitution. Its mixed-carrier callers remain part of
+the compatibility audit.
 
 ### 2. Finish expression producers — after part 1
 

@@ -42,9 +42,19 @@ pub(crate) fn clear_arithmetic_comparison_cache() {
 }
 
 fn collect_machine_carriers(machine: &SharedMachineIntegerTerm, variables: &mut CarrierVariables) {
-    let Some(root) = machine.shared_operand() else {
-        collect_bitvector_carriers(machine.value(), variables);
-        return;
+    collect_machine_operand_carriers(machine.operand_view(), variables);
+}
+
+fn collect_machine_operand_carriers(
+    operand: MachineOperandView<'_>,
+    variables: &mut CarrierVariables,
+) {
+    let root = match operand {
+        MachineOperandView::Shared(root) => root,
+        MachineOperandView::Legacy(term) => {
+            collect_bitvector_carriers(term, variables);
+            return;
+        }
     };
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
@@ -1535,7 +1545,7 @@ pub(crate) struct TermRewrite<'a> {
     // identities. Ordinary equality rewrites retain the written nodes.
     comparison_arithmetic: bool,
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
-    bitvector: Option<(&'a MachineTerm, &'a MachineTerm)>,
+    bitvector: Option<(&'a MachineTerm, MachineOperandView<'a>)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
     pointer_addresses_only: bool,
@@ -1779,12 +1789,16 @@ impl<'a> TermRewrite<'a> {
 
     pub(crate) fn for_bits(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
-        Self::for_bits_with_budget(from, to, false)
+        Self::for_bits_with_budget(from, MachineOperandView::Legacy(to), false)
     }
 
-    fn for_bits_with_budget(from: &'a MachineTerm, to: &'a MachineTerm, budgeted: bool) -> Self {
+    fn for_bits_with_budget(
+        from: &'a MachineTerm,
+        to: MachineOperandView<'a>,
+        budgeted: bool,
+    ) -> Self {
         let mut replacement_carriers = CarrierVariables::for_rewrite(budgeted);
-        collect_bitvector_carriers(to, &mut replacement_carriers);
+        collect_machine_operand_carriers(to, &mut replacement_carriers);
         let CarrierVariables {
             integer: integer_replacement_variables,
             c: bitvector_replacement_variables,
@@ -1859,6 +1873,13 @@ impl<'a> TermRewrite<'a> {
     /// collection and the subsequent traversal share the tactic's bounded
     /// work state, so a partial term is never accepted as a checked result.
     pub(crate) fn for_bits_checked(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
+        Self::for_machine_operand_checked(from, MachineOperandView::Legacy(to))
+    }
+
+    pub(crate) fn for_machine_operand_checked(
+        from: &'a MachineTerm,
+        to: MachineOperandView<'a>,
+    ) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
         let mut rewrite = Self::for_bits_with_budget(from, to, true);
         rewrite.enforce_integer_work_limit = true;
@@ -4521,7 +4542,7 @@ impl<'a> TermRewrite<'a> {
         if !variables.exhausted()
             && let Some((_, to)) = self.bitvector
         {
-            collect_bitvector_carriers(to, &mut variables);
+            collect_machine_operand_carriers(to, &mut variables);
         }
         if !variables.exhausted()
             && let Some((_, to)) = self.algebraic
@@ -5307,7 +5328,15 @@ impl<'a> TermRewrite<'a> {
             && v == from
         {
             self.changed = true;
-            return to.clone();
+            // Native output carriers still require a written machine term.
+            // Shared observation rewrites replace the retained node directly
+            // before entering this legacy-output construction.
+            return match to {
+                MachineOperandView::Legacy(term) => term.clone(),
+                MachineOperandView::Shared(root) => {
+                    KernelTermExport::machine(root).expect("shared machine replacement")
+                }
+            };
         }
         if self.resolve_registered_loads
             && let MachineTerm::Variable(variable) = v
