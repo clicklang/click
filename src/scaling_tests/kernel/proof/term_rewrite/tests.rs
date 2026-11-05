@@ -1482,3 +1482,91 @@ fn shared_machine_fold_endpoints_rewrite_in_linear_dag_work() {
         assert!(pair[1] <= pair[0] * 5, "shared endpoint work: {work:?}");
     }
 }
+
+#[test]
+fn retained_rewrite_sources_do_not_expand_growing_dags() {
+    let mut work = Vec::new();
+    for size in [16usize, 64, 256] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let mut source = KernelTerm::variable(KernelType::C(CType::Int32), Variable(992550));
+        let replacement = MachineTerm::Variable(Variable(992551));
+        let expected = IntegerTerm::from_machine(format, replacement.clone()).unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                source = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [source.clone(), source.clone()],
+                );
+                let goal = IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(format, source.clone()).unwrap(),
+                );
+                let mut rewrite = TermRewrite::for_machine_operands_checked(
+                    MachineOperandView::Shared(&source),
+                    MachineOperandView::Legacy(&replacement),
+                );
+                assert_eq!(rewrite.integer(&goal), expected);
+                assert!(rewrite.changed);
+                assert!(rewrite.refusal().is_none());
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work.push(measured);
+    }
+    for pair in work.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "retained source work: {work:?}");
+    }
+}
+
+#[test]
+fn retained_rewrite_replacements_do_not_reindex_growing_prefixes() {
+    let mut work = Vec::new();
+    for size in [16usize, 64, 256] {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let source = KernelTerm::variable(KernelType::C(CType::Int32), Variable(992560));
+        let goal = IntegerTerm::Machine(
+            SharedMachineIntegerTerm::from_shared(format, source.clone()).unwrap(),
+        );
+        let mut replacement = KernelTerm::variable(KernelType::C(CType::Int32), Variable(992561));
+        let exports = KernelTermExport::machine_export_count();
+        let (_, measured) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                replacement = KernelTerm::machine_binary_shared(
+                    format,
+                    MachineBinaryOp::Add,
+                    [
+                        replacement.clone(),
+                        KernelTerm::variable(
+                            KernelType::C(CType::Int32),
+                            Variable(992562 + index as u64),
+                        ),
+                    ],
+                );
+                let mut rewrite = TermRewrite::for_machine_operands_checked(
+                    MachineOperandView::Shared(&source),
+                    MachineOperandView::Shared(&replacement),
+                );
+                let result = rewrite.integer(&goal);
+                assert!(rewrite.changed);
+                assert!(rewrite.refusal().is_none());
+                let IntegerTerm::Machine(result) = result else {
+                    panic!("machine result")
+                };
+                assert!(
+                    matches!(result.operand_view(), MachineOperandView::Shared(root) if root == &replacement)
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        work.push(measured);
+    }
+    for pair in work.windows(2) {
+        assert!(
+            pair[1] <= pair[0] * 5,
+            "retained replacement work: {work:?}"
+        );
+    }
+}
