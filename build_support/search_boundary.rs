@@ -267,6 +267,17 @@ impl Boundary<'_> {
                 self.path, self.function
             ));
         }
+        if self.path == "src/kernel/functions.rs"
+            && matches!(
+                name,
+                "add_normalized_verified_ensure_facts" | "resolve_load_along_memory_derivations"
+            )
+        {
+            self.errors.push(format!(
+                "{}: {}: call postconditions must not derive constants by implicit memory-history reasoning ({name})",
+                self.path, self.function
+            ));
+        }
         if self.path == "src/kernel/functions.rs" && name == "with_coalesced_owned_memory" {
             self.errors.push(format!(
                 "{}: {}: call preparation must not search fragment coverage",

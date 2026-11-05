@@ -53,8 +53,8 @@ fn wide_loop_invariant_bundle_expansion_work_scales_with_members() {
 #[ignore = "nightly: arena free loop closure work regression"]
 fn expanded_arena_loop_reuses_published_invariant_facts() {
     use crate::instrumentation::{VerificationEvent, collect};
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("examples/arena/arena_cells.click");
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/arena/arena_cells.click");
     let (_, project, input) = crate::cli::load_sidecar_inputs(&path, None).unwrap();
     let (result, events) = collect(|| {
         crate::surface::verify_project_functions(
@@ -68,7 +68,10 @@ fn expanded_arena_loop_reuses_published_invariant_facts() {
         .iter()
         .filter_map(|event| match event {
             VerificationEvent::OperationFinished { name, work, .. }
-                if name == "close invariants: members" => Some(*work),
+                if name == "close invariants: members" =>
+            {
+                Some(*work)
+            }
             _ => None,
         })
         .sum();

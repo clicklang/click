@@ -9180,13 +9180,6 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
                     &[],
                 )));
             }
-            add_normalized_verified_ensure_facts(
-                facts,
-                &ensure_path.proposition,
-                &ensure_assumptions,
-                &ensure_path.facts,
-                &ensure_path.obligations,
-            );
         }
         // Preserve the source identity of a named predicate ensure. The
         // expanded `ensure` above is the operational authority; this exact
@@ -9216,122 +9209,6 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
         }
     }
     Ok(())
-}
-
-/// Publishes direct constant equalities that are consequences of a verified
-/// callee ensure and the caller's already-established path facts. Modular
-/// calls intentionally havoc mutable memory, so a later call may see a
-/// symbolic load rather than the previous call's materialized cell. Keeping
-/// the original ensure is sound but can leave the surface certificate with an
-/// arithmetic chain it cannot express as an exact assumption. These derived
-/// equalities preserve the callee's post-state transition without retaining a
-/// pre-havoc cell. Read-only calls also publish these consequences: a named
-/// load of a known input cell must remain usable by later arithmetic checks.
-fn add_normalized_verified_ensure_facts(
-    facts: &mut ExecutionFacts,
-    ensure: &Proposition,
-    ensure_assumptions: &PureFactContext,
-    ensure_facts: &(impl ExecutionFactSource + ?Sized),
-    ensure_obligations: &[ProofObligation],
-) {
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format:
-                format @ (MachineIntegerType::Int8
-                | MachineIntegerType::UInt8
-                | MachineIntegerType::Int16
-                | MachineIntegerType::UInt16
-                | MachineIntegerType::Int32
-                | MachineIntegerType::UInt32),
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        },
-        true,
-    ) = ensure
-    else {
-        return;
-    };
-    if !ensure_obligations.is_empty()
-        || !crate::kernel::eval::proposition_mentions_registered_load_variable(ensure)
-    {
-        return;
-    }
-    let assumptions = assumptions_with_path_context(ensure_assumptions, ensure_facts, &[])
-        .assume_proposition(ensure.clone());
-    // A constant of an 8- or 16-bit equality's own format, read at its root.
-    let narrow_constant = |term: &MachineTerm| {
-        (format.format().bits() < 32)
-            .then(|| format.constant_from_term(term)?.to_i128())
-            .flatten()
-            .and_then(|value| i64::try_from(value).ok())
-    };
-    let constant_value = |term: &MachineTerm| {
-        assumptions
-            .known_signed_constant_after_normalization(term)
-            .or_else(|| {
-                let MachineTerm::Variable(variable) = term else {
-                    return None;
-                };
-                let MachineTerm::MemoryLoad(origin, pointer, kind) =
-                    crate::kernel::eval::registered_load_origin_term_for_variable(variable)?
-                else {
-                    return None;
-                };
-                let value = super::memory_provenance::resolve_load_along_memory_derivations(
-                    &origin,
-                    &pointer,
-                    kind,
-                    &assumptions,
-                )?;
-                assumptions
-                    .known_signed_constant_after_normalization(&value)
-                    .or_else(|| narrow_constant(&value))
-            })
-    };
-    let left_value = constant_value(left);
-    let right_value = constant_value(right);
-    // The verified ensure is an equality: resolving either side establishes
-    // the value of both. Preserve each load's defining snapshot and type.
-    let value = match (left_value, right_value) {
-        (Some(left), Some(right)) if left == right => left,
-        (Some(value), None) | (None, Some(value)) => value,
-        _ => return,
-    };
-    // An 8- or 16-bit equality states its constant at its own format.
-    let narrow = format.format().bits() < 32;
-    let (constant, format) = if narrow {
-        let bits = (i128::from(value) as u128) & ((1u128 << format.format().bits()) - 1);
-        (MachineTerm::narrow_constant(*format, bits), *format)
-    } else {
-        (
-            MachineTerm::constant(value as i32 as u32),
-            MachineIntegerType::Int32,
-        )
-    };
-    for term in [left.as_ref(), right.as_ref()] {
-        if signed_bitvector_constant(term).is_some()
-            || (narrow && format.constant_from_term(term).is_some())
-        {
-            continue;
-        }
-        let normalized = wrap_path_context(
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(term.clone()),
-                    right: Box::new(constant.clone()),
-                },
-                true,
-            ),
-            ensure_facts,
-            &[],
-        );
-        // At most two consequences per ensure. Publishing an equal pure fact
-        // twice is harmless; scanning all earlier outputs here was quadratic.
-        facts.push(ExecutionPureFact::certified(normalized));
-    }
 }
 
 /// No fixture in either harness reaches the refutation below; the kernel
@@ -21620,9 +21497,6 @@ mod retained_aggregate_resource_values_tests;
 
 #[cfg(test)]
 mod resource_reference_tests;
-
-#[cfg(test)]
-mod verified_read_normalization_tests;
 
 #[cfg(test)]
 mod inline_loop_boundary_tests;

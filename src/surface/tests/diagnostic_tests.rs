@@ -4571,3 +4571,40 @@ diagnostic_batches! {
         child_argument_goal_reports_scalar_indices,
     ],
 }
+
+#[test]
+fn explicit_call_constant_proofs_reject_changed_values() {
+    for (name, markdown, before, after) in [
+        (
+            "call_read_constant_explicit.md",
+            include_str!("../../../mdtests/call_read_constant_explicit.md"),
+            "*p = 7",
+            "*p = 8",
+        ),
+        (
+            "call_byte_constant_explicit.md",
+            include_str!("../../../mdtests/call_byte_constant_explicit.md"),
+            "{3}",
+            "{4}",
+        ),
+    ] {
+        let fixture = crate::cli::parse_mdtest(std::path::Path::new(name), markdown).unwrap();
+        let changed: Vec<_> = fixture
+            .c_sources
+            .iter()
+            .map(|(name, source)| {
+                let changed = source.replace(before, after);
+                assert_ne!(&changed, source);
+                (name.as_str(), changed)
+            })
+            .collect();
+        let sources: Vec<_> = changed
+            .iter()
+            .map(|(name, source)| (*name, source.as_str()))
+            .collect();
+        assert!(
+            verify_c0_sources(fixture.click_source.as_deref().unwrap(), &sources).is_err(),
+            "the explicit proof must not retain the old constant: {name}"
+        );
+    }
+}
