@@ -2427,7 +2427,7 @@ pub(in crate::surface::proof) fn preservation_smart_step<'a>(
 ) -> Result<Proof<'a>, ClickError> {
     let mut retried_requirements = std::collections::BTreeSet::new();
     match crate::kernel::search::ProofSearch::try_smart_statement_step(
-        &(proof),
+        proof,
         ProofStep::Step,
         &mut retried_requirements,
     )? {

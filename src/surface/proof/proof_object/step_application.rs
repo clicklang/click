@@ -828,7 +828,7 @@ impl<'a> Proof<'a> {
             let scope = crate::surface::proof::attempt::search_scope("spellability census");
             let spelled = crate::instrumentation::without_charging(|| {
                 crate::kernel::search::ProofSearch::resolve_solve_premises(
-                    &(next),
+                    next,
                     std::slice::from_ref(fact),
                     &[],
                 )
@@ -1228,7 +1228,7 @@ impl<'a> Proof<'a> {
         // step, recorded as the `apply` step it is.
         if let ProofStep::ArithmeticUsing(premises) = &step
             && let Some(proof) =
-                crate::kernel::search::ProofSearch::try_unsigned_order_step_using(&(self), premises)
+                crate::kernel::search::ProofSearch::try_unsigned_order_step_using(self, premises)
         {
             return Ok(proof);
         }
@@ -1246,13 +1246,12 @@ impl<'a> Proof<'a> {
             // A disequality `a != b` holds when the listed premises refute
             // `a == b`; its refutation's reason is the one reported.
             if let Some(refuted) =
-                crate::kernel::search::ProofSearch::disequality_by_refutation(&(self), premises)
+                crate::kernel::search::ProofSearch::disequality_by_refutation(self, premises)
             {
                 return refuted;
             }
             return match crate::kernel::search::ProofSearch::try_wide_arithmetic_using(
-                &(self),
-                premises,
+                self, premises,
             ) {
                 Ok(proof) => Ok(proof),
                 Err(Some(reason)) => Err(self.step_error(format!(

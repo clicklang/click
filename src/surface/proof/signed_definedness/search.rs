@@ -23,12 +23,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             for (width, left, right) in outermost_overflow_conjuncts(goal) {
                 let operands = [(left, surface_left), (right, surface_right)];
                 if let Some(closed) =
-                    crate::kernel::search::ProofSearch::try_signed_definedness_with_operand_definedness(&(search_input), width, operands)?
+                    crate::kernel::search::ProofSearch::try_signed_definedness_with_operand_definedness(search_input, width, operands)?
                 {
                     return Ok(Some(closed));
                 }
                 if let Some(closed) =
-                    crate::kernel::search::ProofSearch::try_signed_definedness_after_operand_substitution(&(search_input), width, operands)?
+                    crate::kernel::search::ProofSearch::try_signed_definedness_after_operand_substitution(search_input, width, operands)?
                 {
                     return Ok(Some(closed));
                 }
@@ -36,7 +36,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let premises = crate::kernel::search::ProofSearch::signed_operand_bound_premises(
-            &(search_input),
+            search_input,
             width,
             [(left, surface_left), (right, surface_right)],
         );
@@ -44,7 +44,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         crate::kernel::search::ProofSearch::try_signed_definedness_after_operand_substitution(
-            &(search_input),
+            search_input,
             width,
             [(left, surface_left), (right, surface_right)],
         )
@@ -84,7 +84,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         operands: [(&MachineTerm, &ContractExpression); 2],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let mut premises = crate::kernel::search::ProofSearch::signed_operand_bound_premises(
-            &(search_input),
+            search_input,
             width,
             operands,
         );

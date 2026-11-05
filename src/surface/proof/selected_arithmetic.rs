@@ -352,7 +352,7 @@ impl Carried {
                 };
                 let unsigned = |proof: &Proof<'a>| -> Result<Option<Proof<'a>>, ClickError> {
                     let Some(bounded) =
-                        crate::kernel::search::ProofSearch::prove_stated_fact(&(proof), &lower)?
+                        crate::kernel::search::ProofSearch::prove_stated_fact(proof, &lower)?
                     else {
                         return Ok(None);
                     };
@@ -371,7 +371,7 @@ impl Carried {
                     return unsigned(&next);
                 }
                 let Some(next) =
-                    crate::kernel::search::ProofSearch::prove_stated_fact(&(proof), &guard)?
+                    crate::kernel::search::ProofSearch::prove_stated_fact(proof, &guard)?
                 else {
                     return Ok(None);
                 };

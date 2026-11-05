@@ -1335,11 +1335,8 @@ pub(in crate::surface::proof) fn certified_fact_transport_reaches(
         target,
         Proposition::CMemoryLoadable { .. } | Proposition::CMemoryReadDefined { .. }
     ) {
-        return crate::kernel::search::ProofSearch::derive_atomic_proposition(
-            &(assumptions),
-            target,
-        )
-        .is_some();
+        return crate::kernel::search::ProofSearch::derive_atomic_proposition(assumptions, target)
+            .is_some();
     }
     // A reflexive source adds no information. Match the target directly in
     // this context rather than comparing both copies of the source's load

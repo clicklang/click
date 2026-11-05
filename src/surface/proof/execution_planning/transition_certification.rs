@@ -896,7 +896,7 @@ fn certified_transitions_from_execution(
                                 Proposition::CResourceContains { .. }
                                     | Proposition::CResourceSeparate { .. }
                                     | Proposition::CMemoryLoadable { .. }
-                            ) && crate::kernel::search::ProofSearch::derive_atomic_proposition(&(prerequisite_assumptions), proposition)
+                            ) && crate::kernel::search::ProofSearch::derive_atomic_proposition(prerequisite_assumptions, proposition)
                                 .is_some()
                                 && {
                                     // Reached only after every exact check

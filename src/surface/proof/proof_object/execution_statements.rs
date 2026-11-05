@@ -2769,7 +2769,7 @@ impl<'a> Proof<'a> {
         };
         let source = self.lower_surface_proposition_direct(surface_source, "`transport` source")?;
         if crate::kernel::search::ProofSearch::derive_proposition(
-            &(self.facts().assumptions()),
+            self.facts().assumptions(),
             &source,
         )
         .is_none()

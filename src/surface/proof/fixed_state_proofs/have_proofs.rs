@@ -810,9 +810,10 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                     Some(&states.entry_state),
                     assumptions,
                 )?;
-            if obligations.iter().any(|o| {
-                !crate::kernel::search::ProofSearch::proves(&(assumptions), o.proposition())
-            }) {
+            if obligations
+                .iter()
+                .any(|o| !crate::kernel::search::ProofSearch::proves(assumptions, o.proposition()))
+            {
                 return Err("fold initializer has unproved evaluation obligations".into());
             }
             if value.c_type() != *expected {

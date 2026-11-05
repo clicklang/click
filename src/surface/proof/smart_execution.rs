@@ -13,10 +13,8 @@ impl<'a> Proof<'a> {
         &self,
         application: &TheoremApplication,
     ) -> Result<Self, ClickError> {
-        let Some(step) = crate::kernel::search::ProofSearch::select_theorem_application_step(
-            &(self),
-            application,
-        )?
+        let Some(step) =
+            crate::kernel::search::ProofSearch::select_theorem_application_step(self, application)?
         else {
             return Err(self.step_error(
                 "theorem application requires a result-sensitive fixed-state proof after function exit",

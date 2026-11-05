@@ -2910,10 +2910,10 @@ impl<'a> Proof<'a> {
             return self.structural_goal_spelling(goal);
         }
         let recorded = (self).premise_surface_facts()?;
-        crate::kernel::search::ProofSearch::available_surface_fact(&(self), recorded, None, goal)
+        crate::kernel::search::ProofSearch::available_surface_fact(self, recorded, None, goal)
             .or_else(|| {
                 crate::kernel::search::ProofSearch::available_surface_fact(
-                    &(self),
+                    self,
                     self.local_surface_facts(),
                     None,
                     goal,

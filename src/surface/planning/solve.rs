@@ -217,10 +217,7 @@ pub(in crate::surface) fn plan_solve_certificate(
         Some(SolveEvidence::Normalize)
     } else {
         Some(SolveEvidence::Derivation(
-            crate::kernel::search::ProofSearch::derive_solve_proposition(
-                &(assumptions),
-                proposition,
-            )?,
+            crate::kernel::search::ProofSearch::derive_solve_proposition(assumptions, proposition)?,
         ))
     }
 }

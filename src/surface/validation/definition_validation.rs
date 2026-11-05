@@ -3036,8 +3036,8 @@ fn symbolic_segment_covers_range(
     else {
         return false;
     };
-    crate::kernel::search::ProofSearch::proves(&(assumptions), &lower_bound)
-        && crate::kernel::search::ProofSearch::proves(&(assumptions), &upper_bound)
+    crate::kernel::search::ProofSearch::proves(assumptions, &lower_bound)
+        && crate::kernel::search::ProofSearch::proves(assumptions, &upper_bound)
 }
 
 fn symbolic_segment_covers_index(
@@ -3077,8 +3077,8 @@ fn symbolic_segment_covers_index(
     let Ok(upper_bound) = comparison_proposition(index, ComparisonOperator::LessThan, end) else {
         return false;
     };
-    crate::kernel::search::ProofSearch::proves(&(assumptions), &lower_bound)
-        && crate::kernel::search::ProofSearch::proves(&(assumptions), &upper_bound)
+    crate::kernel::search::ProofSearch::proves(assumptions, &lower_bound)
+        && crate::kernel::search::ProofSearch::proves(assumptions, &upper_bound)
 }
 
 fn constant_segment_covers_index(

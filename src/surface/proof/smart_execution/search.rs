@@ -13,7 +13,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<(Proof<'a>, Vec<Proposition>)>, ClickError> {
         if let CodeRegionRef::BackEdge(loop_index) = region {
             return crate::kernel::search::ProofSearch::try_execute_to_back_edge_descendant(
-                &(search_input),
+                search_input,
                 *loop_index,
             );
         }
@@ -47,7 +47,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         let mut introduced_facts = Vec::new();
         let Some(proof) = crate::kernel::search::ProofSearch::try_focused_execute_to_exit_within(
-            &(search_input),
+            search_input,
             Vec::new(),
             &mut BTreeSet::new(),
             &mut 0,
@@ -150,11 +150,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         region: &CodeRegionRef,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         Ok(
-            crate::kernel::search::ProofSearch::try_execute_until_descendant(
-                &(search_input),
-                region,
-            )?
-            .map(|(proof, _)| proof),
+            crate::kernel::search::ProofSearch::try_execute_until_descendant(search_input, region)?
+                .map(|(proof, _)| proof),
         )
     }
 
@@ -202,7 +199,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         Ok(
-            crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(&(search_input))?
+            crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(search_input)?
                 .map(|(proof, _)| proof),
         )
     }
@@ -230,7 +227,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ));
         }
         crate::kernel::search::ProofSearch::try_fact_transport_from_candidates(
-            &(search_input),
+            search_input,
             source,
             target,
             candidates,
@@ -307,7 +304,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         Ok(
             crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
-                &(search_input),
+                search_input,
                 source,
                 target,
             )?
@@ -347,7 +344,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Err(None));
         }
         match crate::kernel::search::ProofSearch::fact_transport_candidate_search(
-            &(search_input),
+            search_input,
             source,
             target,
             std::iter::once(source.clone()),
@@ -385,7 +382,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         Ok(
             crate::kernel::search::ProofSearch::fact_transport_candidate_search(
-                &(search_input),
+                search_input,
                 source,
                 target,
                 candidates,
@@ -478,7 +475,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             ));
         };
         crate::kernel::search::ProofSearch::select_theorem_application_step_in_fixed_state(
-            &(search_input),
+            search_input,
             application,
             context.parameter_binding,
             context.fixed_state,
@@ -507,7 +504,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let pre_state =
             context.old_reference_state(&execution.core.frontier, &execution.core.state);
         crate::kernel::search::ProofSearch::select_theorem_application_step_in_fixed_state(
-            &(search_input),
+            search_input,
             application,
             context.parameter_binding(),
             FixedStateFrame::new(
@@ -565,13 +562,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         match search_input.context.as_ref() {
             ProofContext::Pure(_) => {
                 crate::kernel::search::ProofSearch::select_pure_theorem_application_step(
-                    &(search_input),
+                    search_input,
                     application,
                 )
             }
             ProofContext::FixedState(_) => {
                 crate::kernel::search::ProofSearch::select_fixed_state_theorem_application_step(
-                    &(search_input),
+                    search_input,
                     application,
                 )
             }
@@ -582,7 +579,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .outcome_fixed_state_view_with_effects(OutcomeEffectContext::Frontier)
                     .expect("a focused outcome judgment resolves its fixed-state view");
                 crate::kernel::search::ProofSearch::select_theorem_application_step_in_fixed_state(
-                    &(search_input),
+                    search_input,
                     application,
                     view.parameter_binding,
                     view.fixed_state,
@@ -593,7 +590,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             ProofContext::Execution(_) if !search_input.is_at_function_exit() => {
                 crate::kernel::search::ProofSearch::select_execution_theorem_application_step(
-                    &(search_input),
+                    search_input,
                     application,
                 )
             }
@@ -885,7 +882,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
 
         premises.extend(crate::kernel::search::ProofSearch::argument_guard_premises(
-            &(search_input),
+            search_input,
             theorem,
             application,
             &application_context,
@@ -1091,7 +1088,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         premises.extend(crate::kernel::search::ProofSearch::argument_guard_premises(
-            &(search_input),
+            search_input,
             &theorem,
             application,
             &application_context,

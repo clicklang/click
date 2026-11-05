@@ -73,7 +73,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premises: &[ClickProposition],
     ) -> Option<Result<Proof<'a>, ClickError>> {
         let (_, equality) =
-            crate::kernel::search::ProofSearch::disequality_goal_equality(&(search_input))?;
+            crate::kernel::search::ProofSearch::disequality_goal_equality(search_input)?;
         let introduced = match search_input.apply_step(ProofStep::Intro) {
             Ok(introduced) => introduced,
             Err(error) => return Some(Err(error)),
@@ -90,7 +90,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let Some((_, ClickProposition::Comparison { left, right, .. })) =
-            crate::kernel::search::ProofSearch::disequality_goal_equality(&(search_input))
+            crate::kernel::search::ProofSearch::disequality_goal_equality(search_input)
         else {
             return Ok(None);
         };
@@ -147,7 +147,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let mut carried =
-            crate::kernel::search::ProofSearch::carried_machine_facts(&(search_input), &candidates);
+            crate::kernel::search::ProofSearch::carried_machine_facts(search_input, &candidates);
         // Every sum or difference an `Integer` claim observes, from the
         // goal, the carried facts, and the connected `defined(...)` facts,
         // and every one nested inside an observed operation: each gets its
@@ -157,7 +157,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operations.extend(proposition_operations(&item.surface));
         }
         operations.extend(crate::kernel::search::ProofSearch::defined_operations(
-            &(search_input),
+            search_input,
             &candidates,
         ));
         let mut seen: Vec<ContractExpression> = Vec::new();
@@ -331,7 +331,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(None);
         }
-        crate::kernel::search::ProofSearch::try_equality_by_bounds(&(search_input))
+        crate::kernel::search::ProofSearch::try_equality_by_bounds(search_input)
     }
 
     /// Close an `Integer` equality goal `l == r` by proving `l <= r` and
@@ -340,7 +340,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_equality_by_bounds(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
-        crate::kernel::search::ProofSearch::equality_by_bounds(&(search_input), false)
+        crate::kernel::search::ProofSearch::equality_by_bounds(search_input, false)
     }
 
     /// [`Self::try_equality_by_bounds`], also for a plain 32-bit
@@ -423,7 +423,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = match lower_alone {
             Some(_) => search_input.clone(),
             None => match crate::kernel::search::ProofSearch::with_goal_operation_identities(
-                &(search_input),
+                search_input,
                 &observed,
             )? {
                 // A goal that is one of the identities needs no bounds.
@@ -463,7 +463,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_auto_proof_closure(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
-        crate::kernel::search::ProofSearch::try_solve_closure(&(search_input))
+        crate::kernel::search::ProofSearch::try_solve_closure(search_input)
     }
 
     /// A goal that restates an available fact through one connected
@@ -496,7 +496,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             check_verification_deadline()?;
             let Some(surface) = crate::kernel::search::ProofSearch::available_rewrite_equality(
-                &(search_input),
+                search_input,
                 equality,
             ) else {
                 continue;
@@ -586,7 +586,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 break;
             }
             let Some(surface) = crate::kernel::search::ProofSearch::available_rewrite_equality(
-                &(search_input),
+                search_input,
                 equality,
             ) else {
                 continue;
@@ -613,7 +613,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             solve_closures: REWRITE_SOLVE_CLOSURES,
         };
         crate::kernel::search::ProofSearch::rewrite_search(
-            &(search_input),
+            search_input,
             &candidates,
             &mut vec![false; candidates.len()],
             REWRITE_DEPTH,
@@ -651,7 +651,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             solve_closures: REWRITE_SOLVE_CLOSURES,
         };
         crate::kernel::search::ProofSearch::rewrite_search(
-            &(search_input),
+            search_input,
             &candidates,
             &mut vec![false; candidates.len()],
             candidates.len(),
@@ -699,7 +699,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             let Some((_, surface)) = crate::kernel::search::ProofSearch::resolve_solve_premises(
-                &(search_input),
+                search_input,
                 std::slice::from_ref(equality),
                 &[],
             )
@@ -791,7 +791,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for equality in &equalities {
             check_verification_deadline()?;
             let Some((kernel, fact)) = crate::kernel::search::ProofSearch::resolve_solve_premises(
-                &(search_input),
+                search_input,
                 std::slice::from_ref(equality),
                 &[],
             )
@@ -929,7 +929,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let mut leaves = 0;
                 let mut meets_goal = false;
                 let Some(plan) = crate::kernel::search::ProofSearch::definition_condition_plan(
-                    &(search_input),
+                    search_input,
                     definition_body,
                     &environment,
                     &goal_forms,
@@ -1078,7 +1078,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 {
                     *meets_goal = true;
                     return crate::kernel::search::ProofSearch::definition_condition_plan(
-                        &(search_input),
+                        search_input,
                         else_branch,
                         environment,
                         goal,
@@ -1089,7 +1089,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     );
                 }
                 let then_plan = crate::kernel::search::ProofSearch::definition_condition_plan(
-                    &(search_input),
+                    search_input,
                     then_branch,
                     environment,
                     goal,
@@ -1099,7 +1099,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     unfolds,
                 )?;
                 let else_plan = crate::kernel::search::ProofSearch::definition_condition_plan(
-                    &(search_input),
+                    search_input,
                     else_branch,
                     environment,
                     goal,
@@ -1128,7 +1128,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let mut environment = environment.clone();
                 environment.extend(arm.bindings.iter().cloned().zip(arguments));
                 crate::kernel::search::ProofSearch::definition_condition_plan(
-                    &(search_input),
+                    search_input,
                     &arm.body,
                     &environment,
                     goal,
@@ -1159,7 +1159,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     arguments,
                 });
                 crate::kernel::search::ProofSearch::definition_condition_plan(
-                    &(search_input),
+                    search_input,
                     definition.body()?,
                     &inner,
                     goal,
@@ -1352,7 +1352,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             return Ok(
                 crate::kernel::search::ProofSearch::try_typed_atomic_solve_from_selected_premises(
-                    &(search_input),
+                    search_input,
                     premise_pairs,
                 )
                 .filter(closes),
@@ -1363,10 +1363,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         } = closers
         {
             if let Some(closed) =
-                crate::kernel::search::ProofSearch::try_direct_logical_closure(&(search_input))?
+                crate::kernel::search::ProofSearch::try_direct_logical_closure(search_input)?
                     .or_else(|| {
                         crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(
-                            &(search_input),
+                            search_input,
                         )
                     })
                     .or_else(|| {
@@ -1383,16 +1383,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             budget.solve_closures -= 1;
             return crate::kernel::search::ProofSearch::try_function_unfold_solve_closure(
-                &(search_input),
+                search_input,
                 &[],
             );
         }
         if let RewriteClosers::Selected = closers {
             let closed =
-                crate::kernel::search::ProofSearch::try_direct_logical_closure(&(search_input))?
+                crate::kernel::search::ProofSearch::try_direct_logical_closure(search_input)?
                     .or_else(|| {
                         crate::kernel::search::ProofSearch::try_typed_atomic_solve_closure(
-                            &(search_input),
+                            search_input,
                         )
                     })
                     .or_else(|| {
@@ -1414,7 +1414,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(closed));
         }
         if let Some(closed) =
-            crate::kernel::search::ProofSearch::try_direct_logical_closure(&(search_input))
+            crate::kernel::search::ProofSearch::try_direct_logical_closure(search_input)
                 .ok()
                 .flatten()
         {
@@ -1424,7 +1424,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         }
         budget.solve_closures -= 1;
-        Ok(crate::kernel::search::ProofSearch::try_solve_closure(&(search_input))?.filter(closes))
+        Ok(crate::kernel::search::ProofSearch::try_solve_closure(search_input)?.filter(closes))
     }
 
     /// Prove the arithmetic subgoal `fact` where the proof stands, by
@@ -1523,7 +1523,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         crate::kernel::search::ProofSearch::try_machine_goal_through_integer_for(
-            &(search_input),
+            search_input,
             false,
         )
     }
@@ -1535,10 +1535,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_wide_equality_through_integer(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
-        crate::kernel::search::ProofSearch::try_machine_goal_through_integer_for(
-            &(search_input),
-            true,
-        )
+        crate::kernel::search::ProofSearch::try_machine_goal_through_integer_for(search_input, true)
     }
 
     pub(in crate::surface::proof) fn try_machine_goal_through_integer_for(
@@ -1702,7 +1699,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             crate::instrumentation::record_deterministic_work(1);
             let Some(spelled) = crate::kernel::search::ProofSearch::resolve_solve_premises(
-                &(search_input),
+                search_input,
                 std::slice::from_ref(candidate),
                 &[],
             ) else {

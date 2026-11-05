@@ -22,7 +22,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             if search_input.facts().contains(consequent)
-                || crate::kernel::search::ProofSearch::antecedent_is_refuted(&(search_input), guard)
+                || crate::kernel::search::ProofSearch::antecedent_is_refuted(search_input, guard)
             {
                 continue;
             }
@@ -36,7 +36,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let surface_consequent =
                 super::smart_closures::observed_native_arithmetic(consequent, &surface_consequent);
             let Some(with_guard) =
-                crate::kernel::search::ProofSearch::prove_guard(&(search_input), &surface_guard)?
+                crate::kernel::search::ProofSearch::prove_guard(search_input, &surface_guard)?
             else {
                 continue;
             };

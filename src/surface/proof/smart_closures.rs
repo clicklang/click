@@ -2684,7 +2684,7 @@ impl<'a> Proof<'a> {
                 return known.clone();
             }
             let resolved = crate::kernel::search::ProofSearch::resolve_solve_premises(
-                &(self),
+                self,
                 std::slice::from_ref(fact),
                 &[],
             )
@@ -3085,10 +3085,10 @@ impl<'a> Proof<'a> {
     /// a smart tactic: the search writes a `have` of it.
     fn spelled_goal_for_search(&self, goal: &Proposition) -> Option<ClickProposition> {
         let recorded = (self).premise_surface_facts()?;
-        crate::kernel::search::ProofSearch::available_surface_fact(&(self), recorded, None, goal)
+        crate::kernel::search::ProofSearch::available_surface_fact(self, recorded, None, goal)
             .or_else(|| {
                 crate::kernel::search::ProofSearch::available_surface_fact(
-                    &(self),
+                    self,
                     self.local_surface_facts(),
                     None,
                     goal,
@@ -3143,7 +3143,7 @@ impl<'a> Proof<'a> {
         match self.context.as_ref() {
             ProofContext::Pure(context) => {
                 crate::kernel::search::ProofSearch::available_surface_fact(
-                    &(self),
+                    self,
                     &context.theorem_context.surface_requirements,
                     None,
                     kernel,
@@ -3151,7 +3151,7 @@ impl<'a> Proof<'a> {
             }
             ProofContext::FixedState(context) => {
                 crate::kernel::search::ProofSearch::available_surface_fact(
-                    &(self),
+                    self,
                     context.surface_propositions,
                     context.premise_anchor.as_ref(),
                     kernel,
@@ -3160,7 +3160,7 @@ impl<'a> Proof<'a> {
             ProofContext::Execution(_) => {
                 if let Some(data) = self.focused_outcome_data() {
                     crate::kernel::search::ProofSearch::available_surface_fact(
-                        &(self),
+                        self,
                         &data.surface_propositions,
                         data.premise_anchor.as_ref(),
                         kernel,
@@ -3169,7 +3169,7 @@ impl<'a> Proof<'a> {
                     let execution = self.execution()?;
                     let anchor = frontier_premise_anchor(execution);
                     crate::kernel::search::ProofSearch::available_surface_fact(
-                        &(self),
+                        self,
                         &execution.presentation.surface_propositions,
                         anchor.as_ref(),
                         kernel,

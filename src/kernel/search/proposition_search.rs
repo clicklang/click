@@ -153,17 +153,7 @@ fn connected_trial(
     decided
 }
 
-/// The logical search over a kernel fact context, as Surface planning.
-///
-/// Import this trait to plan with a [`PureFactContext`]; the kernel itself
-/// never does.
-
-/// A simple tactic's check of a premise: the exact lookup, then the
-/// kernel's condition decision, the one a step's fast path makes. The
-/// decision is checking, bounded per query by its fuel, not proof search: it
-/// selects no premises and tries no alternative rules. A premise it misses is
-/// stated first, by a `have`.
-
+/// Logical proposition discovery over the supplied kernel fact context.
 impl super::ProofSearch<PureFactContext> {
     pub(crate) fn proves(context: &PureFactContext, proposition: &Proposition) -> bool {
         if reasoning_interrupted() {
@@ -182,7 +172,7 @@ impl super::ProofSearch<PureFactContext> {
 
         if let Some(rule) =
             crate::kernel::search::ProofSearch::derive_by_algebraic_constructor_rules(
-                &(context),
+                context,
                 proposition,
                 false,
             )
@@ -223,18 +213,16 @@ impl super::ProofSearch<PureFactContext> {
                     || context.proves_condition_from_facts(SearchPermission::new(), condition, *value)
             }
             Proposition::And(left, right) => {
-                crate::kernel::search::ProofSearch::proves(&(context), left)
-                    && crate::kernel::search::ProofSearch::proves(&(context), right)
+                crate::kernel::search::ProofSearch::proves(context, left)
+                    && crate::kernel::search::ProofSearch::proves(context, right)
             }
             Proposition::Or(left, right) => {
-                crate::kernel::search::ProofSearch::proves(&(context), left)
-                    || crate::kernel::search::ProofSearch::proves(&(context), right)
+                crate::kernel::search::ProofSearch::proves(context, left)
+                    || crate::kernel::search::ProofSearch::proves(context, right)
             }
-            Proposition::Not(body) => {
-                crate::kernel::search::ProofSearch::proves_not(&(context), body)
-            }
+            Proposition::Not(body) => crate::kernel::search::ProofSearch::proves_not(context, body),
             Proposition::Implies(left, right) => {
-                crate::kernel::search::ProofSearch::proves_not(&(context), left)
+                crate::kernel::search::ProofSearch::proves_not(context, left)
                     || crate::kernel::search::ProofSearch::proves(
                         &(context.clone().assume_proposition(left.as_ref().clone())),
                         right,
@@ -246,9 +234,9 @@ impl super::ProofSearch<PureFactContext> {
                 body,
                 ..
             } => {
-                crate::kernel::search::ProofSearch::proves_finite_forall(&(context), proposition)
+                crate::kernel::search::ProofSearch::proves_finite_forall(context, proposition)
                     || crate::kernel::search::ProofSearch::derive_forall_rule(
-                        &(context),
+                        context,
                         proposition,
                         *var,
                         body,
@@ -301,7 +289,7 @@ impl super::ProofSearch<PureFactContext> {
                 "proposition proof: singleton substitution",
                 || {
                     crate::kernel::search::ProofSearch::proves_by_singleton_substitution(
-                        &(context),
+                        context,
                         proposition,
                     )
                 },
@@ -322,7 +310,7 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        crate::kernel::search::ProofSearch::derive_proposition_using(&(context), proposition, false)
+        crate::kernel::search::ProofSearch::derive_proposition_using(context, proposition, false)
             .map(|derivation| *derivation)
     }
 
@@ -330,7 +318,7 @@ impl super::ProofSearch<PureFactContext> {
         context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        crate::kernel::search::ProofSearch::derive_proposition_using(&(context), proposition, true)
+        crate::kernel::search::ProofSearch::derive_proposition_using(context, proposition, true)
             .map(|derivation| *derivation)
     }
 
@@ -343,13 +331,13 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
         if let Some(derivation) =
-            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), proposition)
+            crate::kernel::search::ProofSearch::derive_solve_proposition(context, proposition)
             && !derivation.context_premises().contains(proposition)
         {
             return Some(derivation);
         }
         crate::kernel::search::ProofSearch::atomic_derivation_premises(
-            &(context),
+            context,
             proposition,
             true,
             true,
@@ -377,7 +365,7 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
         crate::kernel::search::ProofSearch::derive_atomic_proposition_using(
-            &(context),
+            context,
             proposition,
             false,
         )
@@ -389,7 +377,7 @@ impl super::ProofSearch<PureFactContext> {
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
         crate::kernel::search::ProofSearch::derive_atomic_proposition_using(
-            &(context),
+            context,
             proposition,
             true,
         )
@@ -404,7 +392,7 @@ impl super::ProofSearch<PureFactContext> {
             return None;
         }
         crate::kernel::search::ProofSearch::atomic_derivation_premises(
-            &(context),
+            context,
             proposition,
             extended_rules,
             false,
@@ -850,7 +838,7 @@ impl super::ProofSearch<PureFactContext> {
         }
         if let Some(rule) =
             crate::kernel::search::ProofSearch::derive_by_algebraic_constructor_rules(
-                &(context),
+                context,
                 proposition,
                 extended_rules,
             )
@@ -858,7 +846,7 @@ impl super::ProofSearch<PureFactContext> {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
         let direct = crate::kernel::search::ProofSearch::derive_structural_rule(
-            &(context),
+            context,
             proposition,
             extended_rules,
         );
@@ -866,14 +854,14 @@ impl super::ProofSearch<PureFactContext> {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
         if let Some(rule) = crate::kernel::search::ProofSearch::derive_by_singleton_substitution(
-            &(context),
+            context,
             proposition,
             extended_rules,
         ) {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
         if let Some(rule) = crate::kernel::search::ProofSearch::derive_by_disjunction_cases(
-            &(context),
+            context,
             proposition,
             extended_rules,
         ) {
@@ -904,7 +892,7 @@ impl super::ProofSearch<PureFactContext> {
         if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
             .is_some()
             && let Some(rule) = crate::kernel::search::ProofSearch::derive_atomic_rule(
-                &(context),
+                context,
                 proposition,
                 extended_rules,
             )
@@ -913,13 +901,13 @@ impl super::ProofSearch<PureFactContext> {
         }
         match proposition {
             Proposition::And(left, right) => crate::kernel::search::ProofSearch::derive_and_rule(
-                &(context),
+                context,
                 left,
                 right,
                 extended_rules,
             ),
             Proposition::Or(left, right) => crate::kernel::search::ProofSearch::derive_or_rule(
-                &(context),
+                context,
                 left,
                 right,
                 extended_rules,
@@ -927,20 +915,20 @@ impl super::ProofSearch<PureFactContext> {
             Proposition::Not(body) => match body.as_ref() {
                 Proposition::Not(inner) => {
                     crate::kernel::search::ProofSearch::derive_double_negation_rule(
-                        &(context),
+                        context,
                         inner,
                         extended_rules,
                     )
                 }
                 _ => crate::kernel::search::ProofSearch::derive_atomic_rule(
-                    &(context),
+                    context,
                     proposition,
                     extended_rules,
                 ),
             },
             Proposition::Implies(left, right) => {
                 crate::kernel::search::ProofSearch::derive_implies_rule(
-                    &(context),
+                    context,
                     left,
                     right,
                     extended_rules,
@@ -948,7 +936,7 @@ impl super::ProofSearch<PureFactContext> {
             }
             Proposition::ForAll { var, body, .. } => {
                 crate::kernel::search::ProofSearch::derive_forall_rule(
-                    &(context),
+                    context,
                     proposition,
                     *var,
                     body,
@@ -958,29 +946,20 @@ impl super::ProofSearch<PureFactContext> {
             Proposition::Exists {
                 var, sort, body, ..
             } => crate::kernel::search::ProofSearch::derive_exists_from_witness(
-                &(context),
-                *var,
-                sort,
-                body,
+                context, *var, sort, body,
             )
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_exists_from_fact(
-                    &(context),
-                    *var,
-                    sort,
-                    body,
+                    context, *var, sort, body,
                 )
             })
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_exists_loadable_range(
-                    &(context),
-                    *var,
-                    sort,
-                    body,
+                    context, *var, sort, body,
                 )
             }),
             _ => crate::kernel::search::ProofSearch::derive_atomic_rule(
-                &(context),
+                context,
                 proposition,
                 extended_rules,
             ),
@@ -994,19 +973,15 @@ impl super::ProofSearch<PureFactContext> {
         right: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        crate::kernel::search::ProofSearch::derive_proposition_using(
-            &(context),
-            left,
-            extended_rules,
-        )
-        .zip(
-            crate::kernel::search::ProofSearch::derive_proposition_using(
-                &(context),
-                right,
-                extended_rules,
-            ),
-        )
-        .map(|(left, right)| PropositionDerivationRule::And { left, right })
+        crate::kernel::search::ProofSearch::derive_proposition_using(context, left, extended_rules)
+            .zip(
+                crate::kernel::search::ProofSearch::derive_proposition_using(
+                    context,
+                    right,
+                    extended_rules,
+                ),
+            )
+            .map(|(left, right)| PropositionDerivationRule::And { left, right })
     }
 
     #[inline(never)]
@@ -1025,34 +1000,30 @@ impl super::ProofSearch<PureFactContext> {
                 if actual != expected
         ) {
             return crate::kernel::search::ProofSearch::derive_proposition_using(
-                &(context),
+                context,
                 right,
                 extended_rules,
             )
             .map(PropositionDerivationRule::OrRight)
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_proposition_using(
-                    &(context),
+                    context,
                     left,
                     extended_rules,
                 )
                 .map(PropositionDerivationRule::OrLeft)
             });
         }
-        crate::kernel::search::ProofSearch::derive_proposition_using(
-            &(context),
-            left,
-            extended_rules,
-        )
-        .map(PropositionDerivationRule::OrLeft)
-        .or_else(|| {
-            crate::kernel::search::ProofSearch::derive_proposition_using(
-                &(context),
-                right,
-                extended_rules,
-            )
-            .map(PropositionDerivationRule::OrRight)
-        })
+        crate::kernel::search::ProofSearch::derive_proposition_using(context, left, extended_rules)
+            .map(PropositionDerivationRule::OrLeft)
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_proposition_using(
+                    context,
+                    right,
+                    extended_rules,
+                )
+                .map(PropositionDerivationRule::OrRight)
+            })
     }
 
     #[inline(never)]
@@ -1061,12 +1032,8 @@ impl super::ProofSearch<PureFactContext> {
         inner: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        crate::kernel::search::ProofSearch::derive_proposition_using(
-            &(context),
-            inner,
-            extended_rules,
-        )
-        .map(PropositionDerivationRule::DoubleNegation)
+        crate::kernel::search::ProofSearch::derive_proposition_using(context, inner, extended_rules)
+            .map(PropositionDerivationRule::DoubleNegation)
     }
 
     #[inline(never)]
@@ -1080,7 +1047,7 @@ impl super::ProofSearch<PureFactContext> {
         let negated_antecedent = Proposition::Not(Box::new(antecedent.clone()));
         if context.proves_exact(&negated_antecedent) {
             crate::kernel::search::ProofSearch::derive_proposition_using(
-                &(context),
+                context,
                 &negated_antecedent,
                 extended_rules,
             )
@@ -1097,7 +1064,7 @@ impl super::ProofSearch<PureFactContext> {
             })
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_proposition_using(
-                    &(context),
+                    context,
                     &negated_antecedent,
                     extended_rules,
                 )
@@ -1116,7 +1083,7 @@ impl super::ProofSearch<PureFactContext> {
     ) -> Option<PropositionDerivationRule> {
         let body_uses_binder = crate::kernel::proposition_has_free_bitvector_variable(body, var);
         let body_derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
-            &(context),
+            context,
             body,
             extended_rules,
         )
@@ -1130,20 +1097,20 @@ impl super::ProofSearch<PureFactContext> {
         body_derivation
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_forall_loadable_range(
-                    &(context),
+                    context,
                     proposition,
                 )
             })
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_finite_forall(
-                    &(context),
+                    context,
                     proposition,
                     extended_rules,
                 )
             })
             .or_else(|| {
                 crate::kernel::search::ProofSearch::derive_atomic_rule(
-                    &(context),
+                    context,
                     proposition,
                     extended_rules,
                 )
@@ -1157,7 +1124,7 @@ impl super::ProofSearch<PureFactContext> {
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         crate::kernel::search::ProofSearch::atomic_derivation_premises(
-            &(context),
+            context,
             proposition,
             extended_rules,
             false,
@@ -1185,7 +1152,7 @@ impl super::ProofSearch<PureFactContext> {
                 .iter()
                 .map(|field| {
                     crate::kernel::search::ProofSearch::derive_proposition_using(
-                        &(context),
+                        context,
                         field,
                         extended_rules,
                     )
@@ -1215,7 +1182,7 @@ impl super::ProofSearch<PureFactContext> {
         instances
             .map(|instance| {
                 crate::kernel::search::ProofSearch::derive_proposition_using(
-                    &(context),
+                    context,
                     &instance,
                     extended_rules,
                 )
@@ -1305,7 +1272,7 @@ impl super::ProofSearch<PureFactContext> {
             let witness = MachineTerm::Variable(variable);
             let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
             let derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
-                &(context),
+                context,
                 &instantiated,
                 false,
             );
@@ -1405,7 +1372,7 @@ impl super::ProofSearch<PureFactContext> {
             return None;
         }
         let body = crate::kernel::search::ProofSearch::derive_proposition_using(
-            &(context),
+            context,
             &instantiated,
             extended_rules,
         )?;
@@ -1537,7 +1504,7 @@ impl super::ProofSearch<PureFactContext> {
 
         let mut values = Vec::with_capacity(variables.len());
         crate::kernel::search::ProofSearch::proves_finite_forall_instantiations(
-            &(context),
+            context,
             body,
             &variables,
             &ranges,
@@ -1561,18 +1528,14 @@ impl super::ProofSearch<PureFactContext> {
                     &signed_i64_bitvector_constant(*value),
                 );
             }
-            return crate::kernel::search::ProofSearch::proves(&(context), &instantiated);
+            return crate::kernel::search::ProofSearch::proves(context, &instantiated);
         }
 
         let range = &ranges[values.len()];
         for value in range.lower..=range.upper {
             values.push(value);
             if !crate::kernel::search::ProofSearch::proves_finite_forall_instantiations(
-                &(context),
-                body,
-                variables,
-                ranges,
-                values,
+                context, body, variables, ranges, values,
             ) {
                 values.pop();
                 return false;
@@ -1607,7 +1570,7 @@ impl super::ProofSearch<PureFactContext> {
         if instantiated == *proposition {
             return false;
         }
-        crate::kernel::search::ProofSearch::proves(&(context), &instantiated)
+        crate::kernel::search::ProofSearch::proves(context, &instantiated)
     }
 
     pub(crate) fn proves_not(context: &PureFactContext, proposition: &Proposition) -> bool {
@@ -1615,7 +1578,7 @@ impl super::ProofSearch<PureFactContext> {
             Proposition::ConditionIs(condition, value) => {
                 context.decide(condition) == Some(!*value)
             }
-            Proposition::Not(body) => crate::kernel::search::ProofSearch::proves(&(context), body),
+            Proposition::Not(body) => crate::kernel::search::ProofSearch::proves(context, body),
             _ => {
                 context.contains_proposition_fact(&Proposition::Not(Box::new(proposition.clone())))
             }

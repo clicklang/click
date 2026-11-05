@@ -19,7 +19,7 @@ impl Proof<'_> {
             true,
         );
         let surface = crate::kernel::search::ProofSearch::available_surface_fact(
-            &(self),
+            self,
             view.surface_propositions,
             None,
             &fact,
@@ -30,7 +30,7 @@ impl Proof<'_> {
                 true,
             );
             crate::kernel::search::ProofSearch::available_surface_fact(
-                &(self),
+                self,
                 view.surface_propositions,
                 None,
                 &reversed,
@@ -43,7 +43,7 @@ impl Proof<'_> {
                 kind: ProgramPointKind::Entry,
             };
             crate::kernel::search::ProofSearch::available_surface_fact(
-                &(self),
+                self,
                 view.surface_propositions,
                 Some(&anchor),
                 &fact,

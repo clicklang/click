@@ -27,14 +27,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // families' refusal, which names the listed premises.
             if carrier == Carrier::UInt32 {
                 return crate::kernel::search::ProofSearch::wide_arithmetic_with(
-                    &(search_input),
+                    search_input,
                     carrier,
                     surface_premises,
                 )
                 .map_err(|_| None);
             }
             return crate::kernel::search::ProofSearch::wide_arithmetic_with(
-                &(search_input),
+                search_input,
                 carrier,
                 surface_premises,
             );
@@ -80,13 +80,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .or_else(|| surface_premises.iter().find_map(written));
         if let Some(carrier) = stated {
             return crate::kernel::search::ProofSearch::wide_arithmetic_with(
-                &(search_input),
+                search_input,
                 carrier,
                 surface_premises,
             );
         }
         let unsigned = match crate::kernel::search::ProofSearch::wide_arithmetic_with(
-            &(search_input),
+            search_input,
             Carrier::UInt64,
             surface_premises,
         ) {
@@ -94,7 +94,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             Err(reason) => reason,
         };
         let signed = match crate::kernel::search::ProofSearch::wide_arithmetic_with(
-            &(search_input),
+            search_input,
             Carrier::Int64,
             surface_premises,
         ) {

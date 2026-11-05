@@ -3494,7 +3494,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         continue;
                                     }
                                     if crate::kernel::search::ProofSearch::derive_proposition(
-                                        &(assumptions),
+                                        assumptions,
                                         proposition,
                                     )
                                     .is_some_and(|derivation| derivation.check(assumptions))

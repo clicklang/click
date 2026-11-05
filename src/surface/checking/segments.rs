@@ -246,13 +246,13 @@ pub(in crate::surface) fn segment_contains_pointer(
         return false;
     };
     crate::kernel::search::ProofSearch::proves(
-        &(assumptions),
+        assumptions,
         &Proposition::ConditionIs(
             signed_less_equal(segment.start.clone(), index.clone()),
             true,
         ),
     ) && crate::kernel::search::ProofSearch::proves(
-        &(assumptions),
+        assumptions,
         &Proposition::ConditionIs(signed_less_than(index, segment.end.clone()), true),
     )
 }
