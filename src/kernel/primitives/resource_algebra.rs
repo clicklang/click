@@ -134,6 +134,17 @@ pub(crate) fn memory_interval_nodes(
     range: &CMemoryRange,
 ) -> Option<Vec<ResourceMemoryIntervalNode>> {
     let (start, end) = concrete_memory_range_bounds(range)?;
+    memory_interval_nodes_for_coordinates(&range.base().block, start, end)
+}
+
+pub(in crate::kernel) fn memory_interval_nodes_for_coordinates(
+    block: &PointerBlock,
+    start: i64,
+    end: i64,
+) -> Option<Vec<ResourceMemoryIntervalNode>> {
+    if start < i64::from(i32::MIN) || end > i64::from(i32::MAX) {
+        return None;
+    }
     let start = start.checked_sub(i64::from(i32::MIN))?;
     let end = end.checked_sub(i64::from(i32::MIN))?;
     if start < 0 || end <= start || end > (1_i64 << 32) {
@@ -151,7 +162,7 @@ pub(crate) fn memory_interval_nodes(
         let magnitude = 63 - (end - cursor).leading_zeros();
         let level = alignment.min(magnitude).min(32) as u8;
         nodes.push(ResourceMemoryIntervalNode {
-            block: range.base().block.clone(),
+            block: block.clone(),
             level,
             start: ((cursor >> level) << level) as u32,
         });
@@ -380,7 +391,9 @@ fn constant_relative_byte_endpoints(range: &CMemoryRange) -> (Option<i128>, Opti
 /// Key constant ranges by their symbolic base and exact byte coordinates.
 /// Pointer construction combines trailing constant translations; peel just
 /// that explicit displacement, without traversing offsets or consulting facts.
-fn constant_memory_coordinates(range: &CMemoryRange) -> Option<(Pointer, i128, i128)> {
+pub(in crate::kernel) fn constant_memory_coordinates(
+    range: &CMemoryRange,
+) -> Option<(Pointer, i128, i128)> {
     let (start, end) = constant_relative_byte_endpoints(range);
     let (start, end) = (start?, end?);
     let original = range.base();
