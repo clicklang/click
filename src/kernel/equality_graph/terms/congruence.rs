@@ -551,6 +551,7 @@ impl TermClasses {
             RememberInteger(crate::kernel::SharedIntegerTerm),
             Field(&'a crate::kernel::AlgebraicValue),
             Machine(&'a T, W),
+            RetainedMachine(&'a crate::kernel::SharedMachineIntegerTerm, W),
             OpaqueCount(&'a T),
             Argument(&'a A),
             Value(&'a CValue),
@@ -751,12 +752,24 @@ impl TermClasses {
                             pending.push(Work::Integer(initial));
                             match index {
                                 crate::kernel::IntegerRangeFoldIndex::Int32 { start, end } => {
-                                    pending.push(Work::Machine(end.value(), W::Bits32));
-                                    pending.push(Work::Machine(start.value(), W::Bits32));
+                                    pending.push(Work::RetainedMachine(
+                                        end.machine_operand(),
+                                        W::Bits32,
+                                    ));
+                                    pending.push(Work::RetainedMachine(
+                                        start.machine_operand(),
+                                        W::Bits32,
+                                    ));
                                 }
                                 crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
-                                    pending.push(Work::Machine(end.value(), W::Bits64));
-                                    pending.push(Work::Machine(start.value(), W::Bits64));
+                                    pending.push(Work::RetainedMachine(
+                                        end.machine_operand(),
+                                        W::Bits64,
+                                    ));
+                                    pending.push(Work::RetainedMachine(
+                                        start.machine_operand(),
+                                        W::Bits64,
+                                    ));
                                 }
                                 crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
                                     pending.push(Work::Integer(end));
@@ -857,6 +870,14 @@ impl TermClasses {
                             pending.push(Work::Wrap(ArgumentTag::Integer));
                             pending.push(Work::Integer(term));
                         }
+                    }
+                    continue;
+                }
+                Work::RetainedMachine(term, width) => {
+                    if let Some(root) = term.shared_operand() {
+                        values.push(self.intern_shared_machine(root, width));
+                    } else {
+                        pending.push(Work::Machine(term.value(), width));
                     }
                     continue;
                 }

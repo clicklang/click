@@ -503,11 +503,11 @@ fn collect_integer_carriers(
             match index {
                 IntegerRangeFoldIndex::Int32 { start, end }
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    collect_bitvector_carriers(start.value(), variables);
+                    collect_machine_carriers(start.machine_operand(), variables);
                     if variables.exhausted() {
                         return;
                     }
-                    collect_bitvector_carriers(end.value(), variables);
+                    collect_machine_carriers(end.machine_operand(), variables);
                 }
                 IntegerRangeFoldIndex::Integer { start, end } => {
                     collect_integer_shared_carriers(start, variables, seen);
@@ -3792,12 +3792,20 @@ impl<'a> TermRewrite<'a> {
         let index = match index {
             IntegerRangeFoldIndex::Int32 { start, end }
             | IntegerRangeFoldIndex::UInt64 { start, end } => {
-                let start = self.bits(start.value());
+                let start = self.range_endpoint(start);
                 if self.checked_work_exhausted() {
                     return IntegerTerm::constant_i64(0);
                 }
-                let end = self.bits(end.value());
-                index.with_machine_endpoints(start, end)
+                let end = self.range_endpoint(end);
+                match index {
+                    IntegerRangeFoldIndex::Int32 { .. } => {
+                        IntegerRangeFoldIndex::Int32 { start, end }
+                    }
+                    IntegerRangeFoldIndex::UInt64 { .. } => {
+                        IntegerRangeFoldIndex::UInt64 { start, end }
+                    }
+                    IntegerRangeFoldIndex::Integer { .. } => unreachable!(),
+                }
             }
             IntegerRangeFoldIndex::Integer { start, end } => {
                 let start = self.integer_shared(start).into();
@@ -5256,6 +5264,23 @@ impl<'a> TermRewrite<'a> {
             result
         }
     }
+    fn range_endpoint(
+        &mut self,
+        endpoint: &SharedIntegerRangeEndpoint,
+    ) -> SharedIntegerRangeEndpoint {
+        if let Some(root) = endpoint.machine_operand().shared_operand()
+            && let Some(rewritten) = self.shared_machine_operand(root)
+        {
+            return endpoint
+                .with_shared_operand(rewritten)
+                .expect("range endpoint carrier");
+        }
+        if self.checked_work_exhausted() {
+            return endpoint.clone();
+        }
+        SharedIntegerRangeEndpoint::intern(self.bits(endpoint.value()))
+    }
+
     pub(crate) fn bits(&mut self, v: &MachineTerm) -> MachineTerm {
         self.reserve_bitvector_variables_once(v);
         if self.checked_work_exhausted() {
@@ -6875,6 +6900,102 @@ mod tests {
         assert!(matches!(integer.as_ref(), IntegerTerm::Constant(value) if value == &7.into()));
         assert!(matches!(machine.as_ref(), IntegerTerm::Machine(machine)
             if machine.value() == &MachineTerm::Variable(source)));
+    }
+
+    #[test]
+    fn machine_fold_endpoint_rewrite_retains_shared_operands_and_scope() {
+        for unsigned in [false, true] {
+            let _session = VerificationSession::enter();
+            let source = Variable(989901);
+            let item = Variable(989902);
+            let source_term = MachineTerm::Variable(source);
+            let replacement = MachineTerm::Variable(item);
+            let format = if unsigned {
+                MachineIntegerType::UInt64
+            } else {
+                MachineIntegerType::Int32
+            };
+            let sum = |value: MachineTerm| MachineTerm::Binary {
+                format,
+                op: MachineBinaryOp::Add,
+                left: value.into(),
+                right: if unsigned {
+                    MachineTerm::uint64_constant(1)
+                } else {
+                    MachineTerm::constant(1)
+                }
+                .into(),
+            };
+            let root = KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &sum(source_term.clone()))
+                .unwrap();
+            let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0))
+                .with_shared_operand(root)
+                .unwrap();
+            let index = if unsigned {
+                IntegerRangeFoldIndex::UInt64 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                }
+            } else {
+                IntegerRangeFoldIndex::Int32 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                }
+            };
+            let body = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                format,
+                MachineTerm::Variable(item),
+            ));
+            let fold = IntegerTerm::range_fold(
+                index,
+                IntegerTerm::constant_i64(0),
+                Variable(989903),
+                item,
+                body,
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let mut rewrite = TermRewrite::for_bits_checked(&source_term, &replacement);
+            let output = rewrite.term(&Term::Integer(fold));
+            assert!(rewrite.refusal().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let Term::Integer(IntegerTerm::RangeFold {
+                index,
+                item: fresh,
+                body,
+                ..
+            }) = output
+            else {
+                panic!("fold")
+            };
+            assert_ne!(
+                fresh, item,
+                "body binder must avoid capturing the replacement"
+            );
+            let (start, end) = match index {
+                IntegerRangeFoldIndex::Int32 { start, end } => {
+                    assert!(!unsigned);
+                    (start, end)
+                }
+                IntegerRangeFoldIndex::UInt64 { start, end } => {
+                    assert!(unsigned);
+                    (start, end)
+                }
+                _ => panic!("machine range"),
+            };
+            let expected = KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &sum(replacement.clone()))
+                .unwrap();
+            assert_eq!(start.machine_operand().shared_operand(), Some(&expected));
+            assert_eq!(end.machine_operand().shared_operand(), Some(&expected));
+            let IntegerTerm::Machine(body) = body.as_ref() else {
+                panic!("body observation")
+            };
+            assert_eq!(
+                MachineOperandView::Shared(body.shared_operand().unwrap()).variable(),
+                Some(&fresh)
+            );
+        }
     }
 
     #[test]

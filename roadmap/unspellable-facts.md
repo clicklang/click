@@ -366,6 +366,13 @@ Remaining groups to audit and migrate:
   without exporting surrounding arithmetic. Different widths or signednesses
   still need their ordinary range evidence. This closes the missing inverse
   identity inside larger arithmetic; it does not migrate opaque term storage.
+  The scoped term rewriter retains machine fold endpoints during carrier
+  collection and substitution, including capture-avoiding binder renaming.
+  Fold congruence also interns retained endpoints directly at the range's
+  machine width. Shared endpoint DAGs no longer export for these traversals.
+  The separate
+  exact-equality rewrite adapter still needs its own parity audit; its native
+  canonical-load and pointer-address matching rules must be preserved.
   Opaque leaves outside the shared operand fragment still require a
   parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
