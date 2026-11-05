@@ -1045,3 +1045,41 @@ fn frozen_proof_search_inventory_names_existing_files() {
         assert!(root.join(path).is_file(), "stale inventory path: {path}");
     }
 }
+
+#[test]
+fn extracted_legacy_search_retains_the_existing_operation_guards() {
+    for (path, source) in [
+        (
+            "src/kernel/loans/legacy_search.rs",
+            "impl ProofSearch<P> { fn loan_access(c: C) { c.active_memory_overlaps(); } }",
+        ),
+        (
+            "src/kernel/loans/legacy_search.rs",
+            "fn loan_aliases(c: C) { c.changed_facts_since(); }",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra/legacy_search.rs",
+            "impl ProofSearch<P> { fn ownership_validity_candidates(c: C) { c.memory_by_base(); } }",
+        ),
+        (
+            "src/kernel/primitives/resource_algebra/legacy_search.rs",
+            "impl ProofSearch<P> { fn ownership_validity_candidates(c: C) { c.memory_by_block(); } }",
+        ),
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "{path}: {source}"
+        );
+    }
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    for path in [
+        "src/kernel/loans/legacy_search.rs",
+        "src/kernel/primitives/resource_algebra/legacy_search.rs",
+        "src/kernel/assumptions/condition_reasoning/decision/legacy_search.rs",
+        "src/kernel/assumptions/legacy_search.rs",
+        "src/kernel/functions/legacy_search.rs",
+    ] {
+        let source = std::fs::read_to_string(root.join(path)).unwrap();
+        boundary::check_source(path, &source).unwrap();
+    }
+}
