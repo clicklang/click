@@ -1,6 +1,6 @@
-# Projects whose sidecars form the auto eval's corpus, one per line,
+# Projects whose sidecars form the solve eval's corpus, one per line,
 # relative to the repository root. Change the list deliberately and
-# rewrite the baseline in the same change (evals/auto.py --write-baseline).
+# rewrite the baseline in the same change (evals/solve.py --write-baseline).
 #
 # Left out: examples/multifile-registry (quarantined in tests/examples.rs)
 # and examples/basic-cpp (needs the C++ exporter and a prepare step).

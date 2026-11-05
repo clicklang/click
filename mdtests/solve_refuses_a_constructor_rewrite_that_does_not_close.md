@@ -4,13 +4,13 @@ Rewriting `Walk::At(wd, rest)` to `c.model` leaves `black(c.model) == 0`,
 which contradicts the requirement rather than following from it. No chain of
 connected equalities closes the goal, so the implicit closer fails.
 
-```c filename=auto_refuses_a_constructor_rewrite_that_does_not_close.c
+```c filename=solve_refuses_a_constructor_rewrite_that_does_not_close.c
 void touch(int32 n) {
 }
 ```
 
 ```click
-verifying "auto_refuses_a_constructor_rewrite_that_does_not_close.c";
+verifying "solve_refuses_a_constructor_rewrite_that_does_not_close.c";
 
 spec enum Walk { At(Integer, Walk), Done }
 

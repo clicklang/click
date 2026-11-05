@@ -656,7 +656,8 @@ fn checked_surface_comparison_fact_in_state_with_availability(
 
 fn have_proof_is_smart_solve(proof: &SourceProof) -> bool {
     match proof {
-        SourceProof::Default | SourceProof::Tactic(SmartTactic::Auto | SmartTactic::Solve) => true,
+        SourceProof::Default
+        | SourceProof::Tactic(SmartTactic::ImplicitTail | SmartTactic::Solve) => true,
         SourceProof::Script(tactics) => matches!(
             tactics.as_slice(),
             [ProofTactic::Solve] | [ProofTactic::SolveUsing(_)]

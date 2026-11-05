@@ -6,12 +6,12 @@ and `1`. To show it stays nonnegative, the implicit closer relates it to the Int
 spelled `old(*p)`, the entry reading of the written `*p`. The requirement
 `*p >= 1` is a native bound, read as `1 <= to_integer(old(*p))`.
 
-```c filename=auto_spells_a_replaced_value_at_function_entry.c
+```c filename=solve_spells_a_replaced_value_at_function_entry.c
 void decrement(int *p) { *p = *p - 1; }
 ```
 
 ```click
-verifying "auto_spells_a_replaced_value_at_function_entry.c";
+verifying "solve_spells_a_replaced_value_at_function_entry.c";
 
 void decrement(int32 *p) {
     owns *p;

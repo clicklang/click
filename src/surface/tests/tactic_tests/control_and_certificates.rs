@@ -1060,7 +1060,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
 }
 
 #[test]
-fn tactic_certificate_treats_an_omitted_nested_proof_as_auto() {
+fn tactic_certificate_treats_an_omitted_nested_proof_as_solve() {
     let tactics = [ProofTactic::Have(ProofHave {
         proposition: ClickProposition::Comparison {
             left: current_var("x"),
@@ -1071,7 +1071,7 @@ fn tactic_certificate_treats_an_omitted_nested_proof_as_auto() {
     })];
 
     let error = ProofCertificate::from_proof_tactics(&tactics)
-        .expect_err("an omitted nested proof is smart auto");
+        .expect_err("an omitted nested proof is smart solve");
 
     assert_eq!(
         error.tactic_class(),

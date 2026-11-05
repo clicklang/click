@@ -6,7 +6,7 @@ operand, `to_integer(b) <= 4294967296 * to_integer(b >> 32) + 4294967295`,
 so `b < 4294967296u64` follows. The certificate spells the shift from the
 negated comparison's own operands, as it spells one from a comparison.
 
-```c filename=auto_reads_a_shift_bound_from_a_negated_condition.c
+```c filename=solve_reads_a_shift_bound_from_a_negated_condition.c
 unsigned long g(unsigned long b)
 {
 	if (b >> 32)
@@ -16,7 +16,7 @@ unsigned long g(unsigned long b)
 ```
 
 ```click
-verifying "auto_reads_a_shift_bound_from_a_negated_condition.c";
+verifying "solve_reads_a_shift_bound_from_a_negated_condition.c";
 
 uint64 g(uint64 b) {
     ensures result < 4294967296u64;

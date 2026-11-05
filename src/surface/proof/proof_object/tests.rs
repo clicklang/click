@@ -5128,29 +5128,6 @@ fn smart_retry_uses_static_local_array_qualified_source() {
 }
 
 #[test]
-fn retained_have_conjunct_collection_is_iterative_and_bounded() {
-    let leaf = ClickProposition::Comparison {
-        left: ContractExpression::CFragment(CExpression::Value(int32(1))),
-        operator: ComparisonOperator::Equal,
-        right: ContractExpression::CFragment(CExpression::Value(int32(1))),
-    };
-    let within_limit = (0..2047).fold(leaf.clone(), |body, _| {
-        ClickProposition::And(Box::new(leaf.clone()), Box::new(body))
-    });
-    let leaves = crate::surface::proof::smart_closures::collect_bounded_surface_conjunct_leaves(
-        &within_limit,
-    )
-    .expect("a 4095-node conjunction should fit the retained-have bound");
-    assert_eq!(leaves.len(), 2048);
-
-    let over_limit = ClickProposition::And(Box::new(leaf), Box::new(within_limit));
-    let error =
-        crate::surface::proof::smart_closures::collect_bounded_surface_conjunct_leaves(&over_limit)
-            .expect_err("retained-have collection must propagate structural exhaustion");
-    assert!(error.message().contains("structural limit"));
-}
-
-#[test]
 fn nested_have_accepts_trailing_assumption_after_closure() {
     let click_file = crate::surface::parse(
         r#"

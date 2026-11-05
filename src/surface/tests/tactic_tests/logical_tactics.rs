@@ -2,10 +2,10 @@ use super::*;
 
 #[test]
 #[ignore = "nightly: composite native arithmetic proofs and missing-definedness controls"]
-fn auto_composite_machine_equalities_require_defined_operations() {
+fn solve_composite_machine_equalities_require_defined_operations() {
     let fixture = crate::cli::parse_mdtest(
-        std::path::Path::new("auto_proves_a_conservation_equation.md"),
-        include_str!("../../../../mdtests/auto_proves_a_conservation_equation.md"),
+        std::path::Path::new("solve_proves_a_conservation_equation.md"),
+        include_str!("../../../../mdtests/solve_proves_a_conservation_equation.md"),
     )
     .unwrap();
     let source = fixture.click_source.as_deref().unwrap();
@@ -146,12 +146,12 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
     let without_definedness =
         click_source.replace("                have defined(value + amount);\n", "");
     assert_ne!(without_definedness, click_source);
-    // Definedness is a requirement the implicit `auto` proves under a bare
+    // Definedness is a requirement the implicit `solve` proves under a bare
     // `step()`; checked cold, as an expansion is, the simple step alone
     // must not rediscover the omitted overflow proof.
     verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
-        .expect("the implicit `auto` proves the step's definedness requirement");
-    let error = crate::surface::proof::without_implicit_auto(|| {
+        .expect("the implicit `solve` proves the step's definedness requirement");
+    let error = crate::surface::proof::without_implicit_solve(|| {
         verify_c0_sources(&without_definedness, &[("add_nonnegative.c", c_source)])
     })
     .expect_err("a simple statement step must not rediscover the omitted overflow proof");

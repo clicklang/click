@@ -19,11 +19,11 @@ theorem restrict_again(A: Resource, B: Resource, a: Resource, b: Resource) {
 
 #[test]
 fn resource_parameters_apply_explicit_axiom_and_expand() {
-    without_implicit_auto(|| verify_click_theorems(ABSTRACT_PROOF)).unwrap();
+    without_implicit_solve(|| verify_click_theorems(ABSTRACT_PROOF)).unwrap();
     let expanded =
         expand_c0_claim_source_by_label(ABSTRACT_PROOF, &[], "restrict_again.ensures_0").unwrap();
     assert!(expanded.contains("Resource"));
-    without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
 }
 
 #[test]
@@ -31,12 +31,12 @@ fn resource_parameters_require_every_listed_premise() {
     for premise in ["separate(A, B);", "contains(A, a);", "contains(B, b);"] {
         let missing = ABSTRACT_PROOF.replace(&format!("            {premise}"), "");
         assert!(
-            without_implicit_auto(|| verify_click_theorems(&missing)).is_err(),
+            without_implicit_solve(|| verify_click_theorems(&missing)).is_err(),
             "{premise}"
         );
     }
     let wrong = ABSTRACT_PROOF.replace("restrict(A, B, a, b)", "restrict(A, B, A, b)");
-    assert!(without_implicit_auto(|| verify_click_theorems(&wrong)).is_err());
+    assert!(without_implicit_solve(|| verify_click_theorems(&wrong)).is_err());
 }
 
 #[test]
@@ -52,7 +52,7 @@ fn resource_parameters_prove_field_separation_without_search() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
 }
 
 #[test]
@@ -69,7 +69,7 @@ fn resource_parameters_capture_simultaneously() {
         }
     }
     "#;
-    without_implicit_auto(|| verify_click_theorems(&format!("{ABSTRACT_PROOF}{client}"))).unwrap();
+    without_implicit_solve(|| verify_click_theorems(&format!("{ABSTRACT_PROOF}{client}"))).unwrap();
 }
 
 #[test]
@@ -90,9 +90,9 @@ fn resource_parameters_accept_declared_descriptors() {
         }
     }
     "#;
-    without_implicit_auto(|| verify_click_theorems(source)).unwrap();
+    without_implicit_solve(|| verify_click_theorems(source)).unwrap();
     let expanded = expand_c0_claim_source_by_label(source, &[], "declared.ensures_0").unwrap();
-    without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+    without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
 }
 
 #[test]
@@ -113,14 +113,14 @@ fn resource_parameters_do_not_grant_ownership_or_numeric_values() {
 fn generic_pointer_parameters_subrange_and_expansion() {
     let (source, sources) = mdtest_sources("mdtests/generic_pointer_theorem_parameters.md");
     assert!(sources.is_empty());
-    without_implicit_auto(|| verify_click_theorems(&source)).unwrap();
+    without_implicit_solve(|| verify_click_theorems(&source)).unwrap();
     for label in [
         "integers.ensures_0",
         "bytes.ensures_0",
         "pointers.ensures_0",
     ] {
         let expanded = expand_c0_claim_source_by_label(&source, &[], label).unwrap();
-        without_implicit_auto(|| verify_click_theorems(&expanded)).unwrap();
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
     }
     for premise in ["lo <= a;", "a <= b;", "b <= hi;"] {
         let missing = source.replace(
@@ -130,7 +130,7 @@ fn generic_pointer_parameters_subrange_and_expansion() {
                 "lo <= a; a <= b; b <= hi;".replace(premise, "")
             ),
         );
-        assert!(without_implicit_auto(|| verify_click_theorems(&missing)).is_err());
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
     }
 }
 
@@ -161,13 +161,13 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
     for label in ["inspect.contract", "padded.ensures_0"] {
         let expanded = expand_c0_claim_source_by_label(&source, &sources, label).unwrap();
-        without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
     let verified =
-        without_implicit_auto(|| verify_click_theorems_with_c_sources(&source, &sources)).unwrap();
+        without_implicit_solve(|| verify_click_theorems_with_c_sources(&source, &sources)).unwrap();
     let padded = verified
         .iter()
         .find(|theorem| theorem.theorem_definition.name() == "padded")
@@ -188,7 +188,7 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
 
     let no_origin = source.replace("theorem identity<T>", "theorem requires_item(p: struct item*) { ensures p == p by { normalize(); } }\ntheorem identity<T>")
         .replace("have p == p by { apply(identity(p)) using {}; }", "have p == p by { apply(identity(p)) using {}; }\n    have p == p by { apply(requires_item(p)) using {}; }");
-    let error = without_implicit_auto(|| verify_c0_sources(&no_origin, &sources)).unwrap_err();
+    let error = without_implicit_solve(|| verify_c0_sources(&no_origin, &sources)).unwrap_err();
     assert!(
         error.report().contains("requires original object class"),
         "{}",
@@ -201,7 +201,7 @@ fn generic_pointer_struct_parameters_apply_and_expand() {
             "theorem identity<T>(p: T*, q: T*)",
         )
         .replace("apply(identity(p))", "apply(identity(p, q))");
-    let error = without_implicit_auto(|| verify_c0_sources(&wrong, &sources)).unwrap_err();
+    let error = without_implicit_solve(|| verify_c0_sources(&wrong, &sources)).unwrap_err();
     assert!(
         error.report().contains("type parameter"),
         "{}",
@@ -236,10 +236,10 @@ fn elements_separation_applies_and_expands_without_implicit_search() {
             .iter()
             .map(|(name, text)| (name.as_str(), text.as_str()))
             .collect::<Vec<_>>();
-        without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+        without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
         for label in labels {
             let expanded = expand_c0_claim_source_by_label(&source, &sources, label).unwrap();
-            without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+            without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
         }
     }
 }
@@ -259,7 +259,7 @@ fn elements_separation_requires_distinct_indices() {
             }}
         "#
             );
-            assert!(without_implicit_auto(|| verify_click_theorems(&source)).is_err());
+            assert!(without_implicit_solve(|| verify_click_theorems(&source)).is_err());
         }
     }
 }
@@ -271,18 +271,18 @@ fn equal_array_base_separation_restricts_and_replays_without_search() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
     let expanded =
         expand_c0_claim_source_by_label(&source, &sources, "selected.ensures_0").unwrap();
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     let missing_alias = source.replace("    requires p == q;", "");
-    let error = without_implicit_auto(|| verify_c0_sources(&missing_alias, &sources)).unwrap_err();
+    let error = without_implicit_solve(|| verify_c0_sources(&missing_alias, &sources)).unwrap_err();
     assert!(error.report().contains("rewrite"), "{}", error.report());
     let out_of_range = source.replace(
         "ensures separate(A, memory(q[i]))",
         "ensures separate(A, memory(q[cap]))",
     );
-    assert!(without_implicit_auto(|| verify_c0_sources(&out_of_range, &sources)).is_err());
+    assert!(without_implicit_solve(|| verify_c0_sources(&out_of_range, &sources)).is_err());
 }
 
 #[test]
@@ -296,7 +296,7 @@ fn elements_separation_does_not_widen_byte_cells() {
             }
         }
     "#;
-    assert!(without_implicit_auto(|| verify_click_theorems(source)).is_err());
+    assert!(without_implicit_solve(|| verify_click_theorems(source)).is_err());
 }
 
 #[test]
@@ -306,10 +306,10 @@ fn separating_conjunction_laws_expand_without_implicit_search() {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect::<Vec<_>>();
-    without_implicit_auto(|| verify_c0_sources(&source, &inputs)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&source, &inputs)).unwrap();
     for claim in ["frame.ensures_0", "components.ensures_0", "empty.ensures_0"] {
         let expanded = expand_c0_claim_source_by_label(&source, &inputs, claim).unwrap();
-        without_implicit_auto(|| verify_c0_sources(&expanded, &inputs)).unwrap();
+        without_implicit_solve(|| verify_c0_sources(&expanded, &inputs)).unwrap();
     }
 }
 

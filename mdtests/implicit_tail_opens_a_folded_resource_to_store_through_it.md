@@ -9,7 +9,7 @@ folds `flat(p)` again. `click expand` writes the opening out as
 write (design/proof-reuse.md, R4). A written `step()` never opens a resource
 ([`a_written_step_does_not_open_a_folded_resource.md`](a_written_step_does_not_open_a_folded_resource.md)).
 
-```c filename=auto_opens_a_folded_resource_to_store_through_it.c
+```c filename=implicit_tail_opens_a_folded_resource_to_store_through_it.c
 struct cell {
     int32 value;
     int32 other;
@@ -27,7 +27,7 @@ resource flat(p: struct cell*) {
     owns p->other;
 }
 
-verifying "auto_opens_a_folded_resource_to_store_through_it.c";
+verifying "implicit_tail_opens_a_folded_resource_to_store_through_it.c";
 
 void bump(struct cell* p) {
     owns flat(p);

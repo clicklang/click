@@ -383,7 +383,7 @@ theorem only_element(v: int32, x: int32) {
             "only_element.ensures_0",
         )
         .unwrap();
-        crate::surface::proof::without_implicit_auto(|| {
+        crate::surface::proof::without_implicit_solve(|| {
             crate::surface::verify_click_theorems(&expanded).unwrap();
         });
     }
@@ -432,7 +432,7 @@ theorem only_element(v: int32, x: int32) {
             "chosen_positive.ensures_0",
         )
         .unwrap();
-        crate::surface::proof::without_implicit_auto(|| {
+        crate::surface::proof::without_implicit_solve(|| {
             crate::surface::verify_click_theorems(&expanded).unwrap();
         });
     }
@@ -451,7 +451,7 @@ theorem only_element(v: int32, x: int32) {
             "#
             );
             let lines = capture(|| {
-                crate::surface::proof::without_implicit_auto(|| {
+                crate::surface::proof::without_implicit_solve(|| {
                     crate::surface::verify_click_theorems(&source).unwrap();
                 });
             });
@@ -481,7 +481,7 @@ theorem only_element(v: int32, x: int32) {
             }
         "#;
         let checked = capture(|| {
-            crate::surface::proof::without_implicit_auto(|| {
+            crate::surface::proof::without_implicit_solve(|| {
                 crate::surface::verify_click_theorems(source).unwrap();
             });
         });

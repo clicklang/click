@@ -1,7 +1,7 @@
 # The implicit closer does not read a narrowing cast outside its range
 
 The negative of
-[`auto_reads_a_narrowing_cast_inside_its_range.md`](auto_reads_a_narrowing_cast_inside_its_range.md).
+[`solve_reads_a_narrowing_cast_inside_its_range.md`](solve_reads_a_narrowing_cast_inside_its_range.md).
 `x` may be `4294967296`, whose `(uint32)` cast is `0`, so `1u32 <= y` is false
 for some `x` and the cast identity's upper bound cannot be proved.
 

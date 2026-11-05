@@ -394,7 +394,7 @@ fn prove_claims_by_checked_tactics(
     tactics: &[ProofTactic],
     tactic_source: ProofTacticSource,
 ) -> Result<ClaimProofResult, ClickError> {
-    let _automation_scope = super::implicit_auto_scope::ClaimScope::enter(proof_label);
+    let _automation_scope = super::implicit_solve_scope::ClaimScope::enter(proof_label);
     let _local_layouts =
         super::surface_synthesis::LocalStructLayoutScope::enter(parsed_function, function_block);
     let program = build_internal_proof_with_source(tactics, proof_label, tactic_source)?;
@@ -669,7 +669,7 @@ fn prove_claims_by_checked_tactics(
 }
 
 #[allow(clippy::too_many_arguments)]
-pub(in crate::surface) fn prove_claims_by_grouped_auto(
+pub(in crate::surface) fn prove_claims_by_implicit_tail(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
@@ -683,7 +683,7 @@ pub(in crate::surface) fn prove_claims_by_grouped_auto(
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
     let mut tactics = vec![ProofTactic::SmartExecute];
     if !claims.is_empty() {
-        tactics.push(ProofTactic::AutoClose);
+        tactics.push(ProofTactic::ImplicitSolve);
     }
 
     let verified = prove_claims_by_grouped_tactics(
@@ -717,7 +717,7 @@ pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, 
     let ends_linearly = !matches!(
         tactics.last(),
         None | Some(
-            ProofTactic::AutoClose
+            ProofTactic::ImplicitSolve
                 | ProofTactic::Match(_)
                 | ProofTactic::CallOutcomes(_)
                 | ProofTactic::Both(_)
@@ -725,7 +725,7 @@ pub(super) fn with_implicit_tail(tactics: &[ProofTactic]) -> (Vec<ProofTactic>, 
         )
     );
     if ends_linearly {
-        tactics.push(ProofTactic::AutoClose);
+        tactics.push(ProofTactic::ImplicitSolve);
     }
     (tactics, ends_linearly)
 }
@@ -1340,8 +1340,6 @@ enum ClaimClosureSearch<'p> {
     Restricted(&'p [ClickProposition]),
     /// The direct logical closure, then `solve`.
     Solve,
-    /// `solve`, then the rest of `auto`'s search.
-    Auto,
 }
 
 fn close_claim_directly_from_outcome<'a>(
@@ -1930,6 +1928,20 @@ fn fold_produced_resources<'a>(
             continue;
         };
         let current = required_outcome(outcome_proof)?;
+        // An already-held exact resource needs no new fold or certificate
+        // node. This lookup only selects whether to attempt a new operation.
+        if let (ProofContext::Execution(context), CFunctionOutcome::Return { state, value }) =
+            (current.context.as_ref(), &*outcome)
+            && let Ok(held) = lower_resource_clause_at_state_with_result(
+                resource,
+                context.parameter_binding(),
+                state,
+                value,
+            )
+            && state.resources().contains_exact_representation(&held)
+        {
+            continue;
+        }
         let before = current.checkpoint();
         let Ok(folded) = current.driver().apply_step(step) else {
             check_verification_deadline()?;
@@ -1948,8 +1960,8 @@ fn fold_produced_resources<'a>(
     Ok(())
 }
 
-/// Closes claims after execution with a written `solve`, `solve() using` or
-/// `auto`, or with the implicit `auto` that ends a proof: a claim proof the
+/// Closes claims after execution with written or implicit `solve`, or
+/// with `solve() using`: a claim proof the
 /// earlier tactics opened, a divergent path's claims, the claims of a
 /// grouped proof together, and then each claim on its own. `Ok(())` means
 /// the path's tactics continue after this closer; a closer that leaves a
@@ -1995,35 +2007,29 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     };
     let closer_name = if restricted_premises.is_some() {
         "solve() using"
-    } else if matches!(post_tactic, PostExecutionTactic::AutoClose) {
+    } else if matches!(post_tactic, PostExecutionTactic::ImplicitSolve) {
         "implicit tail"
     } else {
         "solve"
     };
-    // `auto` tries `solve` first on each pending
-    // claim, then the rest of its search on a claim
-    // `solve` leaves open.
-    let auto_closer = matches!(post_tactic, PostExecutionTactic::AutoClose);
+    // An implicit tail schedules the same solver for each pending claim.
+    let implicit_closer = matches!(post_tactic, PostExecutionTactic::ImplicitSolve);
     // The closer an omitted one stands for has
     // nothing to do on a path whose own tactics
     // already closed every claim.
-    if auto_closer && closures.iter().all(|closure| closure.is_closed()) {
+    if implicit_closer && closures.iter().all(|closure| closure.is_closed()) {
         return Ok(());
     }
-    // `solve` acts on the first open goal;
-    // `auto` is the catch-all that closes every
-    // goal still open.
+    // A written solve selects one goal; the implicit tail schedules all goals.
     let main_claim = main_goal_claim(outcome_proof, closures)?;
-    let acts_on = |claim_index: usize| auto_closer || Some(claim_index) == main_claim;
+    let acts_on = |claim_index: usize| implicit_closer || Some(claim_index) == main_claim;
     let capturing_this_tactic =
         path_capture.is_some_and(|capture| capture.tactic_index == *tactic_index);
-    // The closer an omitted proof stands for folds
-    // a resource the contract produces when the
-    // path holds its body but not the resource: the
-    // `fold` a script would write after execution.
+    // Unrestricted solve folds a produced resource when the path holds
+    // its body. Written and implicit solves use the same preparation.
     // A fold that does not check leaves the path as
     // it was, and the claim reports what is missing.
-    if auto_closer
+    if restricted_premises.is_none()
         && !*resource_transition_applied
         && matches!(outcome, CFunctionOutcome::Return { .. })
     {
@@ -2723,7 +2729,6 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     if !require_explicit_closers {
         let search = match restricted_premises {
             Some(premises) => ClaimClosureSearch::Restricted(premises),
-            None if auto_closer => ClaimClosureSearch::Auto,
             None => ClaimClosureSearch::Solve,
         };
         for (claim_index, claim) in claims.iter().enumerate() {
@@ -2782,7 +2787,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
     {
         return Ok(());
     }
-    // The implicit `auto` at the end of a
+    // The implicit `solve` at the end of a
     // per-claim proof leaves a claim it does not
     // close for the path-end check, which names
     // it. A written closer that leaves a claim it
@@ -3665,11 +3670,11 @@ pub(super) fn finish_ordered_proof<'a>(
                         .map(|deferred| deferred.tactic_index + 1)
                         .max()
                         .unwrap_or(0);
-                    let implicit_auto_closer = DeferredPostExecutionTactic {
+                    let implicit_closer = DeferredPostExecutionTactic {
                         lexical_bindings: None,
                         tactic_index: implicit_closer_index,
                         source_index: usize::MAX,
-                        tactic: PostExecutionTactic::AutoClose,
+                        tactic: PostExecutionTactic::ImplicitSolve,
                     };
                     // Only an ordered drain that has no closing `solve` and no
                     // further resource operation of its own needs the
@@ -3684,7 +3689,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 | PostExecutionTactic::CallOutcomes { .. }
                                 | PostExecutionTactic::Match { .. }
                                 | PostExecutionTactic::Solve
-                                | PostExecutionTactic::AutoClose
+                                | PostExecutionTactic::ImplicitSolve
                                 | PostExecutionTactic::SolveUsing(_)
                                 | PostExecutionTactic::Leaf(
                                     ProofTactic::FoldResource(_)
@@ -3720,14 +3725,14 @@ pub(super) fn finish_ordered_proof<'a>(
                         }
                     }
                     // A whole-contract script that ends without closing every
-                    // claim ends with `auto`, as an omitted proof does: the
-                    // path's last step is the `auto` closer, which does
+                    // claim ends with `solve`, as an omitted proof does: the
+                    // path's last step is the `solve` closer, which does
                     // nothing when the script's own tactics closed every
                     // claim. Its checked steps join the path's closers, so an
                     // expanded proof writes them out.
                     let mut pending_post_execution_tactics = Vec::new();
                     if require_explicit_closers {
-                        pending_post_execution_tactics.push((&implicit_auto_closer, 0, None));
+                        pending_post_execution_tactics.push((&implicit_closer, 0, None));
                     }
                     pending_post_execution_tactics.extend(
                         post_execution_tactics
@@ -4840,7 +4845,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                 "post-execution branch selection must flatten control nodes before checking leaf tactics"
                             ),
                             PostExecutionTactic::Solve
-                            | PostExecutionTactic::AutoClose
+                            | PostExecutionTactic::ImplicitSolve
                             | PostExecutionTactic::SolveUsing(_) => {
                                 close_post_execution_claims_with_solve(
                                     post_tactic,
@@ -5160,7 +5165,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     execution.paths(),
                                     parameter_binding,
                                     spec_definitions,
-                                    ClaimClosureSearch::Auto,
+                                    ClaimClosureSearch::Solve,
                                     None,
                                 )? {
                                     Ok(completed) => {

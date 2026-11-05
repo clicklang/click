@@ -7,13 +7,13 @@ rest of the implicit closer's search. Here the claim needs the requirement
 left, which the implicit closer finds and `solve` does not (`a_contract_script_ending_in_solve_does_not_search.md`). `click expand`
 writes the closer out as checked steps at the end of the script.
 
-```c filename=a_contract_script_without_a_closer_ends_with_auto.c
+```c filename=a_contract_script_without_a_closer_ends_with_solve.c
 void touch(int32 n) {
 }
 ```
 
 ```click
-verifying "a_contract_script_without_a_closer_ends_with_auto.c";
+verifying "a_contract_script_without_a_closer_ends_with_solve.c";
 
 spec enum Walk { At(Integer, Walk), Done }
 

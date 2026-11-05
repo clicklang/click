@@ -7,13 +7,13 @@ through its Integer reading, `to_integer(result) <= 50`, citing the callee's
 postcondition and the caller's requirements; the Integer fact then supplies
 the native bound.
 
-```c filename=auto_reads_a_call_postcondition_for_a_machine_bound.c
+```c filename=solve_reads_a_call_postcondition_for_a_machine_bound.c
 int inc(int x) { return x + 1; }
 int g(int y) { int a = inc(y); return a; }
 ```
 
 ```click
-verifying "auto_reads_a_call_postcondition_for_a_machine_bound.c";
+verifying "solve_reads_a_call_postcondition_for_a_machine_bound.c";
 
 int32 inc(int32 x) {
     requires x < 100;

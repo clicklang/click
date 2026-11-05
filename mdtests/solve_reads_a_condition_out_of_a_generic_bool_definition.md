@@ -1,7 +1,7 @@
 # The implicit closer reads a condition out of a generic `bool` definition
 
 The definition reading of
-[`auto_reads_a_condition_out_of_a_definition.md`](auto_reads_a_condition_out_of_a_definition.md)
+[`solve_reads_a_condition_out_of_a_definition.md`](solve_reads_a_condition_out_of_a_definition.md)
 also applies to a generic function, to a `bool` result, and through an end
 that applies a function its arguments decide. `list::contains` is generic and
 returns `bool`; at `Cons(v, Nil)` its `else` end is `list::contains(Nil, x)`,

@@ -30,7 +30,7 @@ pub(crate) enum IntegerRefutation {
     },
     /// The premises and the negated goal have a rational solution, given as
     /// atom values. The goal does not follow from these premises by linear
-    /// arithmetic. The `auto` diagnostics (stage-1 milestone 5) will report
+    /// arithmetic. The `solve` diagnostics (stage-1 milestone 5) will report
     /// it; until then only the tests read the values.
     #[cfg_attr(not(test), allow(dead_code))]
     Counterexample(Vec<(IntegerAffineAtom, Rational)>),

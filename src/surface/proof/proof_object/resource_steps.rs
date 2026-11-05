@@ -3131,13 +3131,13 @@ fn describe_missing_fold_guards(
 }
 
 impl<'a> Proof<'a> {
-    /// `auto`'s automatic opening (design/proof-reuse.md R4): the `unfold`
+    /// `solve`'s automatic opening (design/proof-reuse.md R4): the `unfold`
     /// of the one folded resource whose body holds `missing`, applied, so
-    /// that `auto` can retry a C operation refused for want of it. `None`
-    /// when no held resource's body holds it, or more than one does: `auto`
+    /// that `solve` can retry a C operation refused for want of it. `None`
+    /// when no held resource's body holds it, or more than one does: `solve`
     /// never chooses which resource to open. A written `step()` never calls
     /// this.
-    pub(in crate::surface::proof) fn auto_open_for_missing_resource(
+    pub(in crate::surface::proof) fn solve_open_for_missing_resource(
         &self,
         missing: &CResourceFact,
     ) -> Result<Option<Self>, ClickError> {

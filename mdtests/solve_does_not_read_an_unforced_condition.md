@@ -3,7 +3,7 @@
 The implicit closer reads a condition out of a fact `f(args) == k` only when every way
 through `f`'s definition that fails the condition ends in a constant other
 than `k`
-([`auto_reads_a_condition_out_of_a_definition.md`](auto_reads_a_condition_out_of_a_definition.md)).
+([`solve_reads_a_condition_out_of_a_definition.md`](solve_reads_a_condition_out_of_a_definition.md)).
 Here `balanced(...) == 0` holds on every way that fails a condition, so the
 fact forces none of them, and the implicit closer fails promptly.
 

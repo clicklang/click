@@ -30,13 +30,13 @@ mod execution_planning;
 pub(in crate::surface) use execution_planning::probe_open_obligations;
 pub(in crate::surface) mod fact_reasoning;
 pub(in crate::surface) mod fixed_state_proofs;
-mod implicit_auto_scope;
-pub use implicit_auto_scope::without_implicit_auto_for_claim;
+mod implicit_solve_scope;
+pub use implicit_solve_scope::without_implicit_solve_for_claim;
 pub(in crate::surface) mod driver;
 mod language_context;
 mod proof_object;
 
-pub use proof_object::without_implicit_auto;
+pub use proof_object::without_implicit_solve;
 #[cfg(test)]
 pub(in crate::surface) use proof_object::{
     count_checked_execution_interface_joins, count_checked_expanded_execution_ifs,
@@ -73,7 +73,7 @@ pub(in crate::surface) use crate::kernel::proof::{
 };
 use claim_proofs::finish_ordered_proof;
 pub(super) use claim_proofs::{
-    prove_claim_by_tactics, prove_claims_by_grouped_auto, prove_claims_by_grouped_script,
+    prove_claim_by_tactics, prove_claims_by_grouped_script, prove_claims_by_implicit_tail,
 };
 pub(in crate::surface) use cursor_execution::surface_snapshot_selector;
 use cursor_execution::*;
@@ -683,7 +683,7 @@ mod certificate_tests {
     }
 
     #[test]
-    fn direct_pure_auto_and_solve_retain_checked_simple_proofs() {
+    fn direct_pure_solve_and_solve_retain_checked_simple_proofs() {
         let file = parse(
             r#"
                 theorem required(x: int32) {
@@ -2974,7 +2974,7 @@ fn install_borrowed_contract_inputs(
     })
 }
 
-pub(super) fn prove_claim_by_auto(
+pub(super) fn prove_claim_by_implicit_tail(
     expansion_capture: Option<&mut ExpansionCapture>,
     source_path: &str,
     function_block: &FunctionBlock,
@@ -2987,8 +2987,8 @@ pub(super) fn prove_claim_by_auto(
     theorem_environment: &TheoremEnvironment,
     function_source_registry: Arc<FunctionSourceRegistry>,
 ) -> Result<Vec<VerifiedCTheorem>, ClickError> {
-    // `auto` is exactly the script `step_until(function.exit); solve();`.
-    let tactics = [ProofTactic::SmartExecute, ProofTactic::AutoClose];
+    // The implicit tail executes the remaining C, then solves each goal.
+    let tactics = [ProofTactic::SmartExecute, ProofTactic::ImplicitSolve];
     let mut theorems = prove_claim_by_tactics(
         expansion_capture,
         source_path,

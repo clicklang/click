@@ -1,6 +1,6 @@
 # Automatic call prerequisites prove the original true disjunctions
 
-Correcting failure attribution must preserve the implicit auto behavior.
+Correcting failure attribution must preserve the implicit solve behavior.
 
 ```c filename=pair.c
 int32 first(int32 x, int32 y) { return x; }

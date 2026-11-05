@@ -4,7 +4,7 @@
 its own (design/proof-reuse.md, R4). The store to `p->value` is refused while
 `flat(p)` holds it folded, and the refusal names the missing fact. With the
 proof omitted, the implicit tail opens `flat(p)` for the same store
-([`auto_opens_a_folded_resource_to_store_through_it.md`](auto_opens_a_folded_resource_to_store_through_it.md)).
+([`implicit_tail_opens_a_folded_resource_to_store_through_it.md`](implicit_tail_opens_a_folded_resource_to_store_through_it.md)).
 
 ```c filename=a_written_step_does_not_open_a_folded_resource.c
 struct cell {

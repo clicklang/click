@@ -8,7 +8,7 @@ so the product's exact value is affine and its two bounds follow from the
 operand's. It does so at every width with a product: `int`, `unsigned`,
 `long` and `unsigned long`.
 
-```c filename=auto_observes_a_product_by_a_constant.c
+```c filename=solve_observes_a_product_by_a_constant.c
 int triple(int x) { return x * 3; }
 unsigned twice(unsigned x) { return x * 2u; }
 long scale(long x) { return x * 1000; }
@@ -16,7 +16,7 @@ unsigned long words(unsigned long n) { return n * 8ul; }
 ```
 
 ```click
-verifying "auto_observes_a_product_by_a_constant.c";
+verifying "solve_observes_a_product_by_a_constant.c";
 
 int32 triple(int32 x) {
     requires -1000 <= x;

@@ -30,7 +30,6 @@ use num_bigint::BigInt;
 use num_traits::{One, Signed, ToPrimitive, Zero};
 use proof_object::{collect_surface_conjunct_leaves, frontier_premise_anchor};
 
-const MAX_DIRECT_CALLER_BINDING_NAMES: usize = 4096;
 const MAX_SOLVE_SOURCE_PREMISES: usize = 64;
 
 /// Constant bounds on the goal's own variables, without relational bounds
@@ -3340,7 +3339,6 @@ impl<'a> Proof<'a> {
                 .is_ok_and(|lowered| lowered_states_requirement(&lowered, requirement))
                 .then(|| RequirementSpelling {
                     surface: surface.clone(),
-                    direct_caller: None,
                 }));
         }
         let non_execution_surface = match self.context.as_ref() {
@@ -3388,10 +3386,7 @@ impl<'a> Proof<'a> {
                     "a proof definedness requirement does not round-trip; this is a spellability defect",
                 ));
             }
-            return Ok(Some(RequirementSpelling {
-                surface,
-                direct_caller: None,
-            }));
+            return Ok(Some(RequirementSpelling { surface }));
         }
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return Ok(None);
@@ -3422,15 +3417,17 @@ impl<'a> Proof<'a> {
             return Ok(self
                 .lower_surface_goal(&surface, "asserted condition")
                 .is_ok()
-                .then_some(RequirementSpelling {
-                    surface,
-                    direct_caller: None,
-                }));
+                .then_some(RequirementSpelling { surface }));
         }
-        if requirement.call_site.is_some()
-            && let Some(registry_surface) =
+        if requirement.call_site.is_some() {
+            // A call requirement must retain its authoritative call source.
+            // Synthesis may restate an admitted source, never replace missing
+            // or mismatching call metadata.
+            let Some(registry_surface) =
                 source_backed_call_requirement_surface(requirement, step, execution, context)
-        {
+            else {
+                return Ok(None);
+            };
             let direct_caller =
                 source_backed_direct_caller_requirement(requirement, step, execution, context);
             let candidate = match &direct_caller {
@@ -3447,10 +3444,7 @@ impl<'a> Proof<'a> {
                 None => registry_surface.proposition,
             };
             if let Some(surface) = admit(candidate) {
-                return Ok(Some(RequirementSpelling {
-                    surface,
-                    direct_caller,
-                }));
+                return Ok(Some(RequirementSpelling { surface }));
             }
         }
         check_verification_deadline()?;
@@ -3473,14 +3467,11 @@ impl<'a> Proof<'a> {
             };
             admit(surface).or_else(|| conjuncts.into_iter().find_map(admit))
         })
-        .map(|surface| RequirementSpelling {
-            surface,
-            direct_caller: None,
-        }))
+        .map(|surface| RequirementSpelling { surface }))
     }
 }
 
-/// How many resources `auto` opens for one C statement before it reports
+/// How many resources `solve` opens for one C statement before it reports
 /// the statement's refusal. A statement touches a bounded number of places,
 /// and each opening must hold one of them.
 const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
@@ -3707,37 +3698,6 @@ fn quantified_external_range_goal(goal: &Proposition) -> bool {
         }
     }
     saw_range
-}
-
-/// Collect conjunction leaves for a retained Have without allowing a deeply
-/// nested source proposition to evade the verifier's work bound.  The full
-/// proposition remains the first closure surface; each leaf is then offered
-/// to the existing checked solve closure.
-pub(in crate::surface::proof) fn collect_bounded_surface_conjunct_leaves(
-    proposition: &ClickProposition,
-) -> Result<Vec<ClickProposition>, ClickError> {
-    const MAX_NODES: usize = 4096;
-    let mut work = vec![proposition];
-    let mut leaves = Vec::new();
-    let mut visited = 0usize;
-    while let Some(current) = work.pop() {
-        visited = visited.saturating_add(1);
-        crate::instrumentation::record_deterministic_work(1);
-        check_verification_deadline()?;
-        if visited > MAX_NODES {
-            return Err(ClickError::new(format!(
-                "retained-have conjunction exceeded structural limit {MAX_NODES}"
-            )));
-        }
-        match current {
-            ClickProposition::And(left, right) => {
-                work.push(right);
-                work.push(left);
-            }
-            _ => leaves.push(current.clone()),
-        }
-    }
-    Ok(leaves)
 }
 
 /// Compare retained-have round-trip forms while applying the kernel's load
@@ -4697,74 +4657,9 @@ fn unsigned_order_parts(
     Some((order, left.as_ref().clone(), right.as_ref().clone()))
 }
 
-/// Closes a `have` of a step requirement the way smart execution does: the
-/// bounded solve closure over the requirement and its conjunct leaves, and for
-/// an `int32` existential a witness of 0 first. This is the implicit `auto`
-/// a step runs for an obligation nothing written proves.
-pub(in crate::surface::proof) fn close_requirement_have_by_auto<'a>(
-    have: ProofScope<'a>,
-    surface: &ClickProposition,
-) -> Result<Option<ProofScope<'a>>, ClickError> {
-    let mut surfaces = vec![surface.clone()];
-    surfaces.extend(collect_bounded_surface_conjunct_leaves(surface)?);
-    let closed = (have).driver().try_solve_closure_with_surfaces(&surfaces)?;
-    if closed.is_some() {
-        return Ok(closed);
-    }
-    let ClickProposition::Exists {
-        click_type: ClickType::C(syntax::C0Type::Int32),
-        name,
-        written_name,
-        ..
-    } = surface
-    else {
-        return Ok(None);
-    };
-    let witnessed = attempt::candidate_outcome(have.driver().apply_step(ProofStep::Witness(
-        ProofWitness::single(
-            written_name.as_ref().unwrap_or(name).clone(),
-            ContractExpression::CFragment(CExpression::Value(CValue::Int32(
-                MachineTerm::constant(0),
-            ))),
-        ),
-    )))?;
-    match witnessed {
-        Some(witnessed) => (witnessed)
-            .driver()
-            .try_solve_closure_with_surfaces(&surfaces),
-        None => Ok(None),
-    }
-}
-
 /// A step requirement spelled in Surface syntax.
 pub(in crate::surface::proof) struct RequirementSpelling {
     pub(in crate::surface::proof) surface: ClickProposition,
-    /// When the requirement is the caller's own predicate requirement passed
-    /// through the call: the predicate to unfold and the requirement to
-    /// project, as smart execution's retry proves it.
-    pub(in crate::surface::proof) direct_caller: Option<(String, CallerRequirementSelection)>,
-}
-
-/// Proves a requirement's `have` by the implicit `auto`: the caller's own
-/// requirement by unfolding its predicate and projecting it, anything else by
-/// [`close_requirement_have_by_auto`].
-pub(in crate::surface::proof) fn close_requirement_spelling_by_auto<'a>(
-    have: ProofScope<'a>,
-    spelling: &RequirementSpelling,
-) -> Result<Option<ProofScope<'a>>, ClickError> {
-    let Some((predicate_name, selection)) = &spelling.direct_caller else {
-        return close_requirement_have_by_auto(have, &spelling.surface);
-    };
-    let Some(unfolded) = attempt::candidate_outcome(
-        have.driver()
-            .apply_step(ProofStep::UnfoldPredicate(predicate_name.clone())),
-    )?
-    else {
-        return Ok(None);
-    };
-    (unfolded)
-        .driver()
-        .try_direct_caller_requirement_closure(selection)
 }
 
 /// The disjuncts of a disjunction, flattened.

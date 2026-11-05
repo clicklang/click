@@ -723,7 +723,6 @@ fn resource_match_rejects_unknown_cases_missing_memory_and_invalid_folds() {
             "requires c.model == Maybe<int32>::None;",
         ),
         ("unfold(c);", ""),
-        ("fold(c); solve();", "solve();"),
         ("fold(c); solve();", "fold(c); fold(c); solve();"),
         ("result == expected", "result == 42"),
     ] {
@@ -874,8 +873,6 @@ fn guarded_instance_return_paths_expand_and_recheck() {
 fn guarded_instance_return_paths_reject_invalid_folds() {
     for body in [
         "unfold(c); step_until(function.exit); fold(c); solve();",
-        "if p == 0 { unfold(c); step_until(function.exit); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }",
-        "if p == 0 { unfold(c); step_until(function.exit); fold(c); solve(); } else { unfold(c); step_until(function.exit); solve(); }",
         "if p == 0 { unfold(c); step_until(function.exit); fold(c); fold(c); solve(); } else { unfold(c); step_until(function.exit); fold(c); solve(); }",
     ] {
         assert!(
@@ -1251,10 +1248,6 @@ fn named_instance_memory_body_rejects_invalid_folds() {
         ),
         (
             "step_until(function.exit); solve();",
-            "int32 read(int32* p) { return *p; }",
-        ),
-        (
-            "unfold(c); step_until(function.exit); solve();",
             "int32 read(int32* p) { return *p; }",
         ),
         (
@@ -3079,3 +3072,33 @@ fn named_contract_output_patterns_round_trip_and_check_binders() {
 mod resource_parameters;
 
 mod transport_certificates;
+
+#[test]
+fn solve_folds_returned_instances_and_expands_to_explicit_folds() {
+    let match_body = "by { unfold(c); step_until(function.exit); solve(); }";
+    let guarded_body = "by { if p == 0 { unfold(c); step_until(function.exit); solve(); } else { unfold(c); step_until(function.exit); solve(); } }";
+    for (source, body, c) in [
+        (
+            MATCH_CELL_SOURCE.replace(
+                "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
+                match_body,
+            ),
+            match_body,
+            "int32 read(int32* p, int32 expected) { return *p; }",
+        ),
+        (
+            GUARDED_CELL_SOURCE.replace("by { BODY }", guarded_body),
+            guarded_body,
+            GUARDED_CELL_C,
+        ),
+    ] {
+        let sources = [("read.c", c)];
+        let verified = verify_c0_sources(&source, &sources).unwrap();
+        let expanded = verified[0].expanded_proof_source().unwrap();
+        assert!(expanded.contains("fold("), "{expanded}");
+        crate::surface::proof::without_implicit_solve(|| {
+            verify_c0_sources(&source.replace(body, &expanded), &sources)
+        })
+        .unwrap();
+    }
+}

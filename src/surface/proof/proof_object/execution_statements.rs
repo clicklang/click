@@ -1332,7 +1332,7 @@ impl<'a> Proof<'a> {
     fn apply_fast_simple_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
         match step {
             ProofStep::FoldResource(_) => {
-                without_implicit_auto(|| self.driver().apply_step(step.clone()))
+                without_implicit_solve(|| self.driver().apply_step(step.clone()))
             }
             _ => self.apply_execution_statement_step_with_policy(
                 step.clone(),
@@ -2124,30 +2124,30 @@ fn distinct_requirements(recorded: Vec<UnresolvedRequirement>) -> Vec<Unresolved
 }
 
 thread_local! {
-    static IMPLICIT_AUTO_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static IMPLICIT_SOLVE_DISABLED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-pub(in crate::surface::proof) fn implicit_auto_disabled() -> bool {
-    IMPLICIT_AUTO_DISABLED.with(std::cell::Cell::get)
-        || super::super::implicit_auto_scope::selected_claim_is_strict()
+pub(in crate::surface::proof) fn implicit_solve_disabled() -> bool {
+    IMPLICIT_SOLVE_DISABLED.with(std::cell::Cell::get)
+        || super::super::implicit_solve_scope::selected_claim_is_strict()
 }
 
-/// Runs `operation` with the implicit `auto` off: a step gets only its fast
+/// Runs `operation` with the implicit `solve` off: a step gets only its fast
 /// path and its written obligation proofs, with no search, so an obligation
 /// nothing written proves is refused with its structured requirement.
 /// The implicit tail is off with it: a script that leaves C to run, or a
 /// goal open, at its end is refused instead of finished by search. This is
 /// unconditional across all proof units. Audit uses
-/// [`crate::surface::without_implicit_auto_for_claim`] when untouched proof
+/// [`crate::surface::without_implicit_solve_for_claim`] when untouched proof
 /// units are also visited during targeted verification.
-pub fn without_implicit_auto<R>(operation: impl FnOnce() -> R) -> R {
+pub fn without_implicit_solve<R>(operation: impl FnOnce() -> R) -> R {
     struct Restore(bool);
     impl Drop for Restore {
         fn drop(&mut self) {
-            IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.set(self.0));
+            IMPLICIT_SOLVE_DISABLED.with(|disabled| disabled.set(self.0));
         }
     }
-    let _restore = Restore(IMPLICIT_AUTO_DISABLED.with(|disabled| disabled.replace(true)));
+    let _restore = Restore(IMPLICIT_SOLVE_DISABLED.with(|disabled| disabled.replace(true)));
     operation()
 }
 

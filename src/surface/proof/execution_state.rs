@@ -1490,9 +1490,9 @@ pub(super) enum PostExecutionTactic {
         source: Arc<ProofMatch>,
         arms: Vec<DeferredArm>,
     },
-    /// `auto` closing the pending claims: `solve`, then the rest of
-    /// `auto`'s search on each claim `solve` leaves open.
-    AutoClose,
+    /// `solve` closing the pending claims: `solve`, then the rest of
+    /// `solve`'s search on each claim `solve` leaves open.
+    ImplicitSolve,
     Solve,
     SolveUsing(ProofSolveUsing),
 }
@@ -1843,7 +1843,7 @@ pub(super) fn post_execution_tactic_timing(
         ),
         PostExecutionTactic::Transport { .. } => ("transport", "smart"),
         PostExecutionTactic::Solve | PostExecutionTactic::SolveUsing(_) => ("solve", "smart"),
-        PostExecutionTactic::AutoClose => ("implicit tail", "smart"),
+        PostExecutionTactic::ImplicitSolve => ("implicit tail", "smart"),
         // `arithmetic()` searches for its certificate.
         PostExecutionTactic::Leaf(tactic @ ProofTactic::ArithmeticUsing(_)) => {
             (tactic_name(tactic), "smart")

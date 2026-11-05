@@ -1243,9 +1243,9 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 
 /// A bare `step()` whose call precondition no fact states exactly
 /// (`memcmp`'s per-byte `defined` requirement, from the caller's viewed
-/// range) proves it by the implicit `auto` and records no hidden derivation.
+/// range) proves it by the implicit `solve` and records no hidden derivation.
 #[test]
-fn bare_step_proves_an_open_obligation_by_implicit_auto() {
+fn bare_step_proves_an_open_obligation_by_implicit_solve() {
     let c_source = r#"
             int32 compare_self(uint8 bytes[]) {
                 return memcmp(bytes, bytes, 2);
@@ -1264,10 +1264,10 @@ fn bare_step_proves_an_open_obligation_by_implicit_auto() {
     });
     verified.expect("the catalog memcmp call should verify");
     assert_eq!(planning_transitions, vec![]);
-    crate::surface::proof::without_implicit_auto(|| {
+    crate::surface::proof::without_implicit_solve(|| {
         verify_c0_sources(click_source, &[("compare.c", c_source)])
     })
-    .expect_err("with the implicit `auto` off, the open obligation is refused");
+    .expect_err("with the implicit `solve` off, the open obligation is refused");
 }
 
 #[test]
@@ -1334,7 +1334,7 @@ void change(struct node *g, struct node *source, struct node *t) {
         CProofClaim::Grouped,
     )
     .expect("the tagged-pointer proof should expand");
-    crate::surface::proof::without_implicit_auto(|| {
+    crate::surface::proof::without_implicit_solve(|| {
         verify_c0_sources(&expanded, &[("join.c", c_source)])
     })
     .expect("the expanded proof should check independently");
@@ -1432,7 +1432,7 @@ int32 caller(int32 a, int32 b) {
         let result = if implicit {
             check()
         } else {
-            crate::surface::without_implicit_auto(check)
+            crate::surface::without_implicit_solve(check)
         };
         result.expect_err("every omitted slot must be discharged before publication");
     }

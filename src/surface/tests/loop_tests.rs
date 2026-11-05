@@ -358,7 +358,7 @@ fn unsigned_integer_ranking_expands_without_search() {
         expanded.contains("integer_operation_identity"),
         "{expanded}"
     );
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
 /// A stored byte counter also needs the cast identity for its narrowing;
@@ -374,7 +374,7 @@ fn promoted_integer_ranking_expands_without_search() {
         "{expanded}"
     );
     assert!(expanded.contains("integer_cast_identity"), "{expanded}");
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
 
 /// A tuple measure's decrease member is a disjunction over pivots, so the
@@ -785,7 +785,7 @@ fn observed_member_closure_expands_to_direct_assumptions() {
         .unwrap_or_else(|error| panic!("{}", error.message()));
     assert!(!expanded.contains("solve();"), "{expanded}");
     assert!(expanded.contains("assumption();"), "{expanded}");
-    without_implicit_auto(|| verify_c0_sources(&expanded, &sources))
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
         .unwrap_or_else(|error| panic!("{}", error.message()));
 }
 

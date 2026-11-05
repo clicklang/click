@@ -5,12 +5,12 @@ A `have ...;` with its proof omitted that the implicit closer cannot prove insid
 not declined to the enclosing claim. The `have` is false: nothing bounds
 `word & 1`.
 
-```c filename=a_refused_have_by_auto_reports_its_own_goal.c
+```c filename=a_refused_have_by_solve_reports_its_own_goal.c
 void unused(void) {}
 ```
 
 ```click
-verifying "a_refused_have_by_auto_reports_its_own_goal.c";
+verifying "a_refused_have_by_solve_reports_its_own_goal.c";
 
 theorem have_goal(word: uint64, base: uint64) {
     requires to_integer(word) == to_integer(base);

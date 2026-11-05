@@ -1,19 +1,19 @@
 #!/usr/bin/env python3
-"""How much of the examples' hand-written `have` statements `auto` covers.
+"""How much of the examples' hand-written `have` statements `solve` covers.
 
-    evals/auto.py [--jobs N] [--per-file N] [--only SUBSTRING]
+    evals/solve.py [--jobs N] [--per-file N] [--only SUBSTRING]
                   [--out results.jsonl] [--write-baseline]
 
 The corpus is every `.click` sidecar of the projects listed in
-`evals/auto/corpus.txt`. A site is a `have P ...;` statement whose `have` line
+`evals/solve/corpus.txt`. A site is a `have P ...;` statement whose `have` line
 holds the whole proposition: a one-line `have` or one with a `by { ... }`
 block. Each site is measured twice, in a scratch copy of the project:
 
 - deletable: with the whole statement deleted, the proof unit that contained
-  it still verifies. The proof's own automation (`auto` at the claims,
-  `solve`, the steps after it) finds the fact, and no later step names it.
+  it still verifies. The proof's own automation (implicit and written `solve`,
+  and the steps after it) finds the fact, and no later step names it.
 - by solve(): with its justification replaced by `by solve();`, the proof unit
-  still verifies. `auto` proves the fact where it is stated, whether or not
+  still verifies. `solve` proves the fact where it is stated, whether or not
   later steps cite it.
 
 `click verify FILE:LINE:COLUMN` checks only the proof unit that contains the
@@ -22,7 +22,7 @@ reason is kept as a label for reading, never as the verdict.
 
 Each file contributes at most `--per-file` sites (default 20), chosen with a
 fixed seed so the sample is the same on every run. Results are compared with
-`evals/auto/baseline.json`; `--write-baseline` replaces it. A file whose
+`evals/solve/baseline.json`; `--write-baseline` replaces it. A file whose
 unmodified sidecar does not verify is reported and skipped.
 
 Uses the optimized verifier at `$CARGO_TARGET_DIR/profiling/click` (built here
@@ -44,7 +44,7 @@ import tempfile
 import time
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-EVAL_DIR = os.path.join(ROOT, "evals", "auto")
+EVAL_DIR = os.path.join(ROOT, "evals", "solve")
 CORPUS = os.path.join(EVAL_DIR, "corpus.txt")
 BASELINE = os.path.join(EVAL_DIR, "baseline.json")
 SITE_TIME_LIMIT = "5m"
@@ -52,7 +52,7 @@ SITE_TIME_LIMIT = "5m"
 FILE_TIME_LIMIT = "30m"
 HAVE = re.compile(r"^(\s*)have (.+?)( by \{| by [a-z_]+(\(.*\))?;\s*$|;\s*$)")
 # Each measure and the field holding its failure label.
-MEASURES = [("deletable", "reason"), ("by_auto", "auto_reason")]
+MEASURES = [("deletable", "reason"), ("by_solve", "solve_reason")]
 REASONS = [
     ("budget", "exhausted"),
     ("timeout", "time limit"),
@@ -165,9 +165,9 @@ def verdict(click, path, edited, line):
 
 def evaluate_file(click, project, relative, chosen):
     """Verifies `relative` unmodified, then with each chosen site deleted
-    and with each proved by `auto`, in a private copy of the examples."""
+    and with each proved by `solve`, in a private copy of the examples."""
     results = []
-    with tempfile.TemporaryDirectory(prefix="click-auto-eval-") as scratch:
+    with tempfile.TemporaryDirectory(prefix="click-solve-eval-") as scratch:
         # Copy every example, not only this project: a sidecar may import
         # another project's declarations by a relative path.
         shutil.copytree(os.path.join(ROOT, "examples"), os.path.join(scratch, "examples"))
@@ -187,7 +187,7 @@ def evaluate_file(click, project, relative, chosen):
                 click, path, text[:by] + text[end:], line - 1
             )
             indent = " " * (column - 1)
-            by_auto, auto_reason, auto_seconds = verdict(
+            by_solve, solve_reason, solve_seconds = verdict(
                 click,
                 path,
                 text[:by] + f"{indent}have {proposition};\n" + text[end:],
@@ -201,9 +201,9 @@ def evaluate_file(click, project, relative, chosen):
                     "proposition": proposition,
                     "deletable": deletable,
                     "reason": reason,
-                    "by_auto": by_auto,
-                    "auto_reason": auto_reason,
-                    "seconds": round(deleted_seconds + auto_seconds, 2),
+                    "by_solve": by_solve,
+                    "solve_reason": solve_reason,
+                    "seconds": round(deleted_seconds + solve_seconds, 2),
                 }
             )
         with open(path, "w") as source:
@@ -261,7 +261,7 @@ def main():
     )
     times = sorted(result["seconds"] for result in measured)
     files = len({result["file"] for result in measured})
-    print(f"auto eval: {files} files, {len(measured)} sites, {elapsed / 60:.0f}m")
+    print(f"solve eval: {files} files, {len(measured)} sites, {elapsed / 60:.0f}m")
     for measure, reason_field in MEASURES:
         held = [result for result in measured if result[measure]]
         reasons = {}

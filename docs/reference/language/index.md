@@ -1132,7 +1132,7 @@ by the in-range operation identity. A signed definedness fact
 `defined(a + b)` (or `-`, `*`) is exactly the two bounds
 `to_integer(a) + to_integer(b) <= MAX` and `>= MIN`, and `solve` may cite it as
 either bound
-(`mdtests/auto_reads_a_definedness_premise_as_integer_bounds.md`). `solve`
+(`mdtests/solve_reads_a_definedness_premise_as_integer_bounds.md`). `solve`
 selects Integer equalities over machine observations as rewrite candidates,
 as it selects native equalities. An Integer count premise at entry serves a
 `fold` over the grown count as its machine form does

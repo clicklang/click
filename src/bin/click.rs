@@ -433,7 +433,7 @@ mod tests {
     /// Every refused statement names its goal: the requirement it could not
     /// establish at its pre-state, in source names, with the explicit form
     /// that proves it. A refused call precondition, and an overflow that the
-    /// implicit `auto` did not rule out, read alike; a trace repeats the goal
+    /// implicit `solve` did not rule out, read alike; a trace repeats the goal
     /// in its failed check and leaves out verifier bookkeeping no proof can
     /// cite.
     #[test]
@@ -467,7 +467,7 @@ mod tests {
             call.contains(&format!("\ngoal: n >= 0\n{help}\n")),
             "{call}"
         );
-        // A written `step()` is simple, but the implicit `auto` proves its
+        // A written `step()` is simple, but the implicit `solve` proves its
         // open requirements, so the refusal is that smart tactic's miss.
         assert!(
             call.contains(
@@ -505,7 +505,7 @@ mod tests {
         assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
 
         // Definedness is one of a statement's requirements: under a written
-        // `step()` the implicit `auto` proves it, so an unprovable one is
+        // `step()` the implicit `solve` proves it, so an unprovable one is
         // that smart tactic's miss.
         let overflow = run(
             "int32 next(int32 x) {\n    requires x >= 0;\n    ensures result == x + 1;\n} by {\n    step(); solve();\n}\n",

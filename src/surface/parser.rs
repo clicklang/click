@@ -8767,7 +8767,7 @@ impl Parser {
             return Ok(proof);
         }
 
-        // `auto()` uses whole-proof automation. Other single calls are one-step scripts.
+        // `solve()` uses whole-proof automation. Other single calls are one-step scripts.
         if self.starts_standalone_smart_proof() {
             let first = self.position;
             let tactic = self.parse_tactic()?;
@@ -9593,8 +9593,8 @@ impl Parser {
                 proof: have_proof_as_written_in_full(SourceProof::Tactic(SmartTactic::Solve)),
             }));
         }
-        // `have P by auto();` proves the fact where it is stated: with no C
-        // to run toward the fact, `auto` is `solve`.
+        // `have P by solve();` proves the fact where it is stated: with no C
+        // to run toward the fact, `solve` is `solve`.
         let binder_scope = self.loop_proof_value_names.clone();
         self.remember_loop_goal_binders(&proposition);
         let proof = self.parse_by_clause();

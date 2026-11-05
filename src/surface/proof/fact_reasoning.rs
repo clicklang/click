@@ -323,7 +323,7 @@ pub(in crate::surface) fn asserted_condition<'s>(
 
 /// The goal an assertion's false-path truthiness obligation (`0 == 1`)
 /// stands for: its condition as the pre-state evaluates it, which the
-/// implicit `auto` tries and a proof states with `have`.
+/// implicit `solve` tries and a proof states with `have`.
 pub(in crate::surface) fn asserted_condition_goal(
     state: &CState,
     condition: &CExpression,

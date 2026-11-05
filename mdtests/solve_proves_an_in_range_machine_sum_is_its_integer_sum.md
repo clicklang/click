@@ -8,13 +8,13 @@ applies `integer_operation_identity`, and closes the goal, with no bridge
 lemma (`mdtests/an_in_range_machine_difference_is_its_integer_difference.md`
 writes that certificate by hand).
 
-```c filename=auto_proves_an_in_range_machine_sum_is_its_integer_sum.c
+```c filename=solve_proves_an_in_range_machine_sum_is_its_integer_sum.c
 unsigned decrement(unsigned x) { return x - 1u; }
 int add(int a, int b) { return a + b; }
 ```
 
 ```click
-verifying "auto_proves_an_in_range_machine_sum_is_its_integer_sum.c";
+verifying "solve_proves_an_in_range_machine_sum_is_its_integer_sum.c";
 
 uint32 decrement(uint32 x) {
     requires 1 <= x;

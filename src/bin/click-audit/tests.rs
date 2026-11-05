@@ -96,7 +96,7 @@ fn execution_theorem_contract_labels_expand_and_audit() {
             expand_claim_with_source(&path, &source, &legacy).unwrap()
         );
         let rewritten = rewritten_click_source(&source, &expanded).unwrap();
-        click::surface::without_implicit_auto(|| {
+        click::surface::without_implicit_solve(|| {
             verify_rewritten_with_inputs(&source, &claim, &rewritten)
         })
         .unwrap_or_else(|error| panic!("{claim}: {error}"));
@@ -270,7 +270,7 @@ fn static_call_snapshot_paths_expand_and_audit() {
     assert!(rewritten.contains("call(add_one, 1)"), "{rewritten}");
     assert!(!rewritten.contains("#inline:"), "{rewritten}");
     assert!(!rewritten.contains("#file-static:"), "{rewritten}");
-    click::surface::without_implicit_auto(|| {
+    click::surface::without_implicit_solve(|| {
         verify_rewritten_with_inputs(&source, claim, &rewritten)
     })
     .expect("the printed call occurrences resolve to their original regions");
@@ -1202,15 +1202,15 @@ void object_retain_many(struct object* obj, int32 amount) {
     fs::remove_dir_all(directory).unwrap();
 }
 
-/// A claim whose only automation is the implicit `auto` proving a bare
+/// A claim whose only automation is the implicit `solve` proving a bare
 /// step's obligation holds no smart site, but its expansion must still verify
-/// without the implicit `auto`, so discovery makes it a site of its own. A
+/// without the implicit `solve`, so discovery makes it a site of its own. A
 /// claim with smart sites is already expanded as a whole and is left to them.
 #[test]
 #[ignore = "nightly: 2s in the parallel gate"]
-fn a_claim_proved_only_by_the_implicit_auto_is_audited() {
+fn a_claim_proved_only_by_the_implicit_solve_is_audited() {
     let directory =
-        std::env::temp_dir().join(format!("click-audit-implicit-auto-{}", std::process::id()));
+        std::env::temp_dir().join(format!("click-audit-implicit-solve-{}", std::process::id()));
     if directory.exists() {
         fs::remove_dir_all(&directory).unwrap();
     }
@@ -1253,7 +1253,7 @@ int32 compare_smart(uint8 bytes[]) {
             .all(|site| site.claim == "compare_smart.ensures_0"),
         "{smart:?}"
     );
-    let (implicit, failures) = implicit_auto_sites(
+    let (implicit, failures) = implicit_solve_sites(
         std::slice::from_ref(&click_path),
         &smart,
         AuditLimits::default().session,
@@ -1262,15 +1262,15 @@ int32 compare_smart(uint8 bytes[]) {
     .unwrap();
     assert!(failures.is_empty(), "{failures:?}");
     let [site] = implicit.as_slice() else {
-        panic!("one claim proved only by the implicit `auto`: {implicit:?}");
+        panic!("one claim proved only by the implicit `solve`: {implicit:?}");
     };
     assert_eq!(site.claim, "compare_self.ensures_0");
     assert_eq!(
         site.tactic_name,
-        click::instrumentation::IMPLICIT_AUTO_TACTIC
+        click::instrumentation::IMPLICIT_SOLVE_TACTIC
     );
     entry_with([click_path.display().to_string()])
-        .expect("both claims' expansions verify without the implicit `auto`");
+        .expect("both claims' expansions verify without the implicit `solve`");
     fs::remove_dir_all(directory).unwrap();
 }
 
@@ -2162,11 +2162,11 @@ mod scaling_tests {
     include!("../../scaling_tests/bin/click-audit/tests.rs");
 }
 
-/// A selected `solve` leaves the earlier steps' implicit automation intact.
+/// A selected `solve` leaves the earlier steps' implicit solving intact.
 /// A whole-claim candidate that omits that automation must be refused instead.
 #[test]
 #[ignore = "nightly: partial and whole claim cold-verification policy"]
-fn partial_claim_audit_keeps_auto_but_whole_claim_requires_its_certificate() {
+fn partial_claim_audit_keeps_solve_but_whole_claim_requires_its_certificate() {
     let directory = tempfile::tempdir().unwrap();
     let c_source = "int32 compare(uint8 bytes[]) { return memcmp(bytes, bytes, 2); }";
     let click_source = r#"verifying "compare.c";
@@ -2189,23 +2189,23 @@ int32 compare(uint8 bytes[]) {
     let deadline = Instant::now() + limits.session.time;
     let mut worker = AuditSessionWorker::start(&path, limits.session).unwrap();
     audit_selected_claim_rewrite(&sites, &mut worker, &limits, deadline)
-        .expect("a partial rewrite must preserve the unselected steps' implicit auto");
+        .expect("a partial rewrite must preserve the unselected steps' implicit solve");
     drop(worker);
 
     // Supply an incomplete expansion at the session boundary. It is valid
-    // with implicit auto and has no smart sites, so only the whole-claim
+    // with implicit solve and has no smart sites, so only the whole-claim
     // cold check can detect the omitted evidence.
     let incomplete =
         click_source.replace("solve();", "have 1 == 1 by { normalize(); } assumption();");
     verify_c0_sources(&incomplete, &[("compare.c", c_source)]).unwrap();
     // Even an unchanged candidate must fail if a bare step still relies on
-    // implicit automation. Exercise both changed and byte-identical replies.
+    // implicit solving. Exercise both changed and byte-identical replies.
     for original in [click_source, incomplete.as_str()] {
         let source = load_audit_source_from_text(&path, original.to_string()).unwrap();
-        let expected_error = click::surface::without_implicit_auto(|| {
+        let expected_error = click::surface::without_implicit_solve(|| {
             verify_rewritten_with_inputs(&source, &sites[0].claim, &incomplete)
         })
-        .expect_err("the incomplete expansion needs implicit auto");
+        .expect_err("the incomplete expansion needs implicit solve");
         let (requests, receiver) = mpsc::channel::<SessionRequest>();
         let (responses, response_receiver) = mpsc::channel();
         let expansion = incomplete.clone();
@@ -2233,7 +2233,7 @@ int32 compare(uint8 bytes[]) {
             },
         };
         let error = audit_claim_rewrite(&sites[0], &mut worker, &limits, deadline)
-            .expect_err("a whole-claim rewrite must include the implicit auto's evidence");
+            .expect_err("a whole-claim rewrite must include the implicit solve's evidence");
         assert_eq!(error, expected_error);
     }
 }
@@ -2284,24 +2284,24 @@ fn whole_claim_audits_allow_unexpanded_neighbors_and_workers() {
 #[test]
 #[ignore = "nightly: strict selected-proof refusals and scope restoration"]
 fn cold_claim_scope_keeps_selected_proofs_strict_and_refuses_unknown_labels() {
-    use click::surface::{without_implicit_auto, without_implicit_auto_for_claim};
+    use click::surface::{without_implicit_solve, without_implicit_solve_for_claim};
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/statement_at_snapshots.md");
     let source = load_audit_source(&path).unwrap();
     let check = || {
         verify_rewritten_with_inputs(&source, "set_first_twice.final_exit", &source.click_source)
     };
-    let error = without_implicit_auto_for_claim("set_first_twice.final_exit", check).unwrap_err();
+    let error = without_implicit_solve_for_claim("set_first_twice.final_exit", check).unwrap_err();
     assert!(error.contains("set_first_twice.final_exit"), "{error}");
     assert!(error.contains("implicit tail is off"), "{error}");
     assert!(!error.contains("set_first_twice.prefix_exit"), "{error}");
     check().expect("a refused selected proof must restore the ordinary policy");
-    let error = without_implicit_auto_for_claim("missing.claim", check).unwrap_err();
+    let error = without_implicit_solve_for_claim("missing.claim", check).unwrap_err();
     assert!(
         error.contains("did not visit selected proof `missing.claim`"),
         "{error}"
     );
-    let error = without_implicit_auto(|| {
-        without_implicit_auto_for_claim("set_first_twice.final_exit", check)
+    let error = without_implicit_solve(|| {
+        without_implicit_solve_for_claim("set_first_twice.final_exit", check)
     })
     .unwrap_err();
     assert!(
@@ -2494,13 +2494,13 @@ fn body_safety_proofs_have_one_auditable_source_site() {
 
 /// A written script may already close every obligation before its implicit
 /// tail is observed. A byte-identical expansion must still satisfy the full
-/// audit, including cold verification with implicit automation disabled.
+/// audit, including cold verification with implicit solving disabled.
 #[test]
 fn a_fully_explicit_script_has_an_auditable_fixed_point() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/simple_statement_step.md");
     let source = load_audit_source(&path).unwrap();
     let claim = "identity.contract";
-    click::surface::without_implicit_auto(|| {
+    click::surface::without_implicit_solve(|| {
         verify_rewritten_with_inputs(&source, claim, &source.click_source)
     })
     .expect("the original script is already explicit");

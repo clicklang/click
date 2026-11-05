@@ -31,7 +31,7 @@ pub(super) fn verify_execution_theorem(
     function_source_registry: std::sync::Arc<FunctionSourceRegistry>,
 ) -> Result<VerifiedPureTheorem, ClickError> {
     let _automation_scope =
-        super::super::implicit_auto_scope::ClaimScope::enter(&theorem.ensure_claim_label(0));
+        super::super::implicit_solve_scope::ClaimScope::enter(&theorem.ensure_claim_label(0));
     let execution = theorem.executes.as_ref().expect("execution declaration");
     let error = |message: &str| {
         ClickError::new(format!("theorem `{}` executes: {message}", theorem.name()))
