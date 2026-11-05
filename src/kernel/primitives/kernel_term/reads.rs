@@ -12,9 +12,6 @@ impl KernelTermImport {
             MachineTerm::MemoryLoad(memory, address, kind) => {
                 KernelTerm::scalar_read_descriptor(format, memory, address, *kind)
             }
-            MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
-                crate::kernel::eval::registered_scalar_read_term(variable, format)
-            }
             _ => None,
         }
     }
@@ -146,7 +143,7 @@ mod tests {
             LoadKind::Int32,
         );
         let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
-        let term = KernelTermImport::default().machine(format, &MachineTerm::Variable(name));
+        let term = crate::kernel::eval::registered_scalar_read_term(&name, format).unwrap();
         assert!(matches!(term.node(), KernelTermNode::MemoryLoad { .. }));
         assert_eq!(
             term,
@@ -155,6 +152,27 @@ mod tests {
         crate::kernel::eval::clear_load_variable_registry();
         assert_eq!(KernelTermExport::machine(&term).unwrap(), descriptor);
     }
+    #[test]
+    fn named_read_import_agrees_with_arithmetic_storage_until_producer_migration() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::UInt32;
+        let raw = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(Pointer::symbolic(Variable(993126))),
+            LoadKind::UInt32,
+        );
+        let (name, _) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
+        let named = MachineTerm::Variable(name);
+        let arithmetic = KernelTermImport::default()
+            .machine_arithmetic(format, &named)
+            .unwrap();
+        let general = KernelTermImport::default().machine(format, &named);
+        assert_eq!(general, arithmetic);
+        assert_eq!(KernelTermExport::machine(&general).unwrap(), named);
+        crate::kernel::eval::clear_load_variable_registry();
+        assert_eq!(KernelTermImport::default().machine(format, &named), general);
+    }
+
     #[test]
     fn registered_read_cache_follows_registry_capture_and_restore() {
         let _session = VerificationSession::enter();
@@ -165,13 +183,15 @@ mod tests {
             LoadKind::Int32,
         );
         let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
-        let named = MachineTerm::Variable(name);
-        let term = KernelTermImport::default().machine(format, &named);
+        let term = crate::kernel::eval::registered_scalar_read_term(&name, format).unwrap();
         let registry = crate::kernel::eval::capture_load_variable_registry();
         crate::kernel::eval::clear_load_variable_registry();
         assert!(crate::kernel::eval::registered_scalar_read_term(&name, format).is_none());
         crate::kernel::eval::restore_load_variable_registry(&registry);
-        assert_eq!(KernelTermImport::default().machine(format, &named), term);
+        assert_eq!(
+            crate::kernel::eval::registered_scalar_read_term(&name, format).unwrap(),
+            term
+        );
         assert_eq!(KernelTermExport::machine(&term).unwrap(), descriptor);
     }
 

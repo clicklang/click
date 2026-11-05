@@ -451,8 +451,10 @@ not remove that projection's native output boundary yet.
 
 Scalar reads now have an owned `KernelTermNode::MemoryLoad` descriptor: shared
 memory version, address and read kind. Generic import retains that structure
-instead of a producer-local opaque load or a reserved read variable. Registered
-read handles cache the descriptor per format, so repeated import does not walk
+instead of a producer-local opaque load. Reserved variables retain their existing
+identity in both generic imports and arithmetic storage until the producer switch;
+changing only one loses matching across these paths. The explicit registered-read
+bridge caches the descriptor per format, so repeated conversion does not walk
 the address again; the retained term survives registry clearing and cache state
 travels with registry capture/restore. Native export and existing typed Surface
 read spelling preserve the descriptor. Stored values, observation origins and

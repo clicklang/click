@@ -3794,8 +3794,17 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
         panic!("read comparison")
     };
+    // Surface lowering still produces a named native read during migration.
+    // Use the explicit descriptor bridge until both producers and checker
+    // observations switch representations together.
+    let MachineTerm::Variable(name) = left.as_ref() else {
+        panic!("named read boundary")
+    };
     assert_eq!(
-        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &left),
+        crate::kernel::KernelTermImport::default().machine(
+            MachineIntegerType::Int32,
+            &crate::kernel::registered_load_term_for_variable(name).unwrap(),
+        ),
         root
     );
 }

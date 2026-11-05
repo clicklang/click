@@ -415,12 +415,17 @@ fn retained_named_reads_do_not_rewalk_their_address_on_each_import() {
             LoadKind::Int32,
         );
         let (name, _) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
-        let named = MachineTerm::Variable(name);
-        let expected = KernelTermImport::default().machine(MachineIntegerType::Int32, &named);
+        let expected =
+            crate::kernel::eval::registered_scalar_read_term(&name, MachineIntegerType::Int32)
+                .unwrap();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for _ in 0..size {
                 assert_eq!(
-                    KernelTermImport::default().machine(MachineIntegerType::Int32, &named),
+                    crate::kernel::eval::registered_scalar_read_term(
+                        &name,
+                        MachineIntegerType::Int32
+                    )
+                    .unwrap(),
                     expected,
                 );
             }
