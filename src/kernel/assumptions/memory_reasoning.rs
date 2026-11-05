@@ -511,12 +511,47 @@ impl PureFactContext {
                 delta.clone(),
                 held.clone(),
             )) == Some(true)
-            && self.decide(&ConditionTerm::uint64_less_equal(
-                bytes.clone(),
-                MachineTerm::uint64_subtract(held.clone(), delta),
-            )) == Some(true)
+            && self.window_fits_after(&delta, bytes, held)
             && before.read_region_identity(source) == memory.read_region_identity(source)
             && memory_range_still_available(before, memory, source, self)
+    }
+
+    /// Whether `bytes` from `delta` stay inside `held`, given `delta <=
+    /// held`: `bytes <= held - delta`. A window `p[a..b]` is `b - a` bytes
+    /// from `a`; when `a` is itself a sum that comparison is not decided
+    /// directly, so its own bounds decide it: `a <= b` (no underflow) and
+    /// `b <= held`, as a proof lists them.
+    fn window_fits_after(
+        &self,
+        delta: &MachineTerm,
+        bytes: &MachineTerm,
+        held: &MachineTerm,
+    ) -> bool {
+        let holds = |condition: ConditionTerm| self.decide(&condition) == Some(true);
+        if holds(ConditionTerm::uint64_less_equal(
+            bytes.clone(),
+            MachineTerm::uint64_subtract(held.clone(), delta.clone()),
+        )) {
+            return true;
+        }
+        let MachineTerm::Binary {
+            op: MachineBinaryOp::Subtract,
+            format: MachineIntegerType::UInt64,
+            left: end,
+            right: start,
+        } = bytes
+        else {
+            return false;
+        };
+        start.as_ref() == delta
+            && holds(ConditionTerm::uint64_less_equal(
+                delta.clone(),
+                end.as_ref().clone(),
+            ))
+            && holds(ConditionTerm::uint64_less_equal(
+                end.as_ref().clone(),
+                held.clone(),
+            ))
     }
 
     pub(crate) fn proves_memory_loadable(
