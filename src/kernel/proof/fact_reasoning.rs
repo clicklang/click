@@ -699,7 +699,7 @@ pub(crate) fn normalize_using_conditions(
     }
     let reduced = super::term_rewrite::TermRewrite::for_cited_conditions_with_context(
         &conditions,
-        &selected.equality_graph,
+        &selected,
         facts.assumptions(),
     )
     .proposition(goal);

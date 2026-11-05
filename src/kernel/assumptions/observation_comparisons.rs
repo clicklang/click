@@ -154,7 +154,7 @@ pub(in crate::kernel) fn same_comparison(
 
 /// The intrinsic rules formerly reached through the native comparison
 /// constructors. Read shared roots and exact format ranges, never export.
-pub(super) fn constant_observation_value(condition: &ConditionTerm) -> Option<bool> {
+pub(in crate::kernel) fn constant_observation_value(condition: &ConditionTerm) -> Option<bool> {
     let view = native_comparison_view(condition, true)?;
     constant_reading(&view, &key(&view))
 }
@@ -246,6 +246,9 @@ fn constant_reading(view: &NativeComparisonView<'_>, key: &Key) -> Option<bool> 
 pub(in crate::kernel) struct ObservationComparisons {
     keys_by_source: PersistentMap<Proposition, Vec<Key>>,
     sources: PersistentMap<Key, PersistentSet<Proposition>>,
+    // Written order premises must not make an unrelated equality query build
+    // an observation key when no observed premises have been admitted.
+    native_orders: PersistentMap<Key, PersistentSet<Proposition>>,
     // The existing four-byte offset rule, indexed separately so admission
     // does not alter unrelated observation/constant-query work.
     scaled_words: PersistentMap<Key, PersistentSet<Proposition>>,
@@ -312,9 +315,20 @@ impl ObservationComparisons {
                     truth,
                 )]
             } else {
-                let Some(view) = native_comparison_view(condition, truth) else {
+                // Written and observed premises share the same exact key.
+                // Build it at admission, never by scanning the selected context
+                // when a conditional rewrite asks for its guard.
+                let Some(view) = comparison_view(condition, truth) else {
                     return;
                 };
+                // Native equalities already have their source in the equality
+                // graph. This index supplies the exact order premises used
+                // by shared guards, without reindexing equality arithmetic.
+                if matches!(condition, ConditionTerm::Compare { .. })
+                    && matches!(view.relation, Relation::Equal | Relation::NotEqual)
+                {
+                    return;
+                }
                 let comparison = key(&view);
                 let mut keys = vec![comparison.clone()];
                 let cancelled_view = view.clone().cancelled_form();
@@ -343,18 +357,23 @@ impl ObservationComparisons {
             self.keys_by_source = self.keys_by_source.without_key(&source);
             keys
         };
+        let index = if matches!(condition, ConditionTerm::Compare { .. }) {
+            &mut self.native_orders
+        } else {
+            &mut self.sources
+        };
         for key in keys {
             crate::instrumentation::record_deterministic_work(1);
-            let sources = self.sources.get(&key).cloned().unwrap_or_default();
+            let sources = index.get(&key).cloned().unwrap_or_default();
             let sources = if insert {
                 sources.with_value(source.clone())
             } else {
                 sources.without_value(&source)
             };
-            self.sources = if sources.is_empty() {
-                self.sources.without_key(&key)
+            *index = if sources.is_empty() {
+                index.without_key(&key)
             } else {
-                self.sources.with_inserted(key, sources)
+                index.with_inserted(key, sources)
             };
         }
     }
@@ -416,7 +435,11 @@ impl ObservationComparisons {
     }
 
     pub(super) fn false_source(&self) -> Option<&Proposition> {
-        self.sources.get(&Key::Truth(false))?.iter().next()
+        self.sources
+            .get(&Key::Truth(false))
+            .or_else(|| self.native_orders.get(&Key::Truth(false)))?
+            .iter()
+            .next()
     }
 
     pub(in crate::kernel) fn source(
@@ -424,18 +447,84 @@ impl ObservationComparisons {
         condition: &ConditionTerm,
         truth: bool,
     ) -> Option<&Proposition> {
-        if self.sources.is_empty() {
+        if self.sources.is_empty()
+            && (self.native_orders.is_empty()
+                || !matches!(
+                    condition,
+                    ConditionTerm::IntegerLessThan(..)
+                        | ConditionTerm::IntegerLessEqual(..)
+                        | ConditionTerm::IntegerGreaterThan(..)
+                        | ConditionTerm::IntegerGreaterEqual(..)
+                        | ConditionTerm::Compare {
+                            relation: CompareRelation::LessThan
+                                | CompareRelation::LessEqual
+                                | CompareRelation::GreaterThan
+                                | CompareRelation::GreaterEqual,
+                            ..
+                        }
+                ))
+        {
+            return None;
+        }
+        // Non-numeric queries do not use this index. Reject them before
+        // opening a checking scope, regardless of unrelated recorded orders.
+        if !matches!(
+            condition,
+            ConditionTerm::Constant(_)
+                | ConditionTerm::Compare { .. }
+                | ConditionTerm::IntegerEqual(..)
+                | ConditionTerm::IntegerNotEqual(..)
+                | ConditionTerm::IntegerLessThan(..)
+                | ConditionTerm::IntegerLessEqual(..)
+                | ConditionTerm::IntegerGreaterThan(..)
+                | ConditionTerm::IntegerGreaterEqual(..)
+        ) {
             return None;
         }
         let _checking =
             crate::instrumentation::CheckingWorkScope::new("read observation comparison source", 1);
         crate::instrumentation::record_deterministic_work(1);
-        let key = if let ConditionTerm::Constant(value) = condition {
+        // Prefer the exact written carrier before checking reads through
+        // casts. Otherwise a derived bound on a cast's operand can displace
+        // the original selected premise and change certificate provenance.
+        if !self.native_orders.is_empty()
+            && !matches!(condition, ConditionTerm::Compare { .. })
+            && let Some(written) =
+                crate::kernel::machine_integer::comparison::structural_native_comparison_view(
+                    condition, truth,
+                )
+            && let Some(source) = self
+                .native_orders
+                .get(&key(&written))
+                .and_then(|sources| sources.iter().next())
+        {
+            return Some(source);
+        }
+        let view = if matches!(condition, ConditionTerm::Constant(_)) {
+            None
+        } else {
+            Some(comparison_view(condition, truth)?)
+        };
+        let comparison = if let ConditionTerm::Constant(value) = condition {
             Key::Truth(*value == truth)
         } else {
-            key(&comparison_view(condition, truth)?)
+            key(view.as_ref().expect("comparison reading"))
         };
-        self.sources.get(&key)?.iter().next()
+        self.sources
+            .get(&comparison)
+            .or_else(|| self.native_orders.get(&comparison))
+            .and_then(|sources| sources.iter().next())
+            .or_else(|| {
+                // Value readings can remove an 8/16-bit promotion. Its
+                // original source may still state the promoted comparison.
+                let widened = view.as_ref()?.widened()?;
+                let comparison = key(&widened);
+                self.sources
+                    .get(&comparison)
+                    .or_else(|| self.native_orders.get(&comparison))?
+                    .iter()
+                    .next()
+            })
     }
 }
 
@@ -443,6 +532,60 @@ impl ObservationComparisons {
 mod compound_observation_lookup_tests {
     use super::*;
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn native_order_sources_retain_polarity_scope_and_withdrawal() {
+        use crate::kernel::machine_integer::comparison::condition_for_operand_views;
+        use crate::kernel::{KernelTermImport, MachineOperandView as V};
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            for truth in [false, true] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let operand = MachineTerm::Binary {
+                    format,
+                    op: MachineBinaryOp::Add,
+                    left: MachineTerm::Variable(Variable(989101)).into(),
+                    right: MachineTerm::Variable(Variable(989102)).into(),
+                };
+                let bound = crate::kernel::machine_integer::range::constant_word(
+                    format,
+                    &num_bigint::BigInt::from(5),
+                )
+                .unwrap();
+                let native = ConditionTerm::machine_compare(
+                    format,
+                    CompareRelation::LessThan,
+                    operand.clone(),
+                    bound.clone(),
+                );
+                let root = KernelTermImport::default()
+                    .machine_arithmetic(format, &operand)
+                    .unwrap();
+                let query = condition_for_operand_views(
+                    format,
+                    CompareRelation::LessThan,
+                    [V::Shared(&root), V::Legacy(&bound)],
+                );
+                let parent = ObservationComparisons::default();
+                let mut child = parent.clone();
+                child.adjust(&native, truth, true);
+                let exports = KernelTermExport::machine_export_count();
+                assert_eq!(
+                    child.source(&query, truth),
+                    Some(&Proposition::ConditionIs(native.clone(), truth))
+                );
+                assert!(child.source(&query, !truth).is_none());
+                assert!(parent.source(&query, truth).is_none());
+                child.adjust(&native, truth, false);
+                assert!(child.source(&query, truth).is_none());
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
 
     #[test]
     fn compound_comparison_lookup_is_bidirectional_and_tracks_source_withdrawal() {
