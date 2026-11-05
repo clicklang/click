@@ -311,7 +311,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             let surface = spelling.surface.clone();
             current.debug_assert_spelling_relowers(requirement, &surface);
             let checkpoint = current.checkpoint();
-            let Ok(have) = current.begin_have(surface.clone()) else {
+            let Ok(have) = current.driver().open_have(surface.clone()) else {
                 return Ok(Err(index));
             };
             let Some(closed) = have.driver().try_solve_closure()? else {
@@ -629,7 +629,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         {
             let mut proof = driver_proof.clone();
             for surface in surfaces {
-                let nested = proof.begin_have(surface)?;
+                let nested = proof.driver().open_have(surface)?;
                 let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
                 let closed = nested.plan_invariant_bundle_closure();
                 IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
@@ -808,7 +808,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 };
                 let checkpoint = driver_proof.checkpoint();
                 let proved = driver_proof
-                    .begin_have(spelling.surface.clone())?.driver().try_authoritative_linear_script(body)?
+                    .driver().open_have(spelling.surface.clone())?.driver().try_authoritative_linear_script(body)?
                     .ok_or_else(|| {
                         driver_proof.step_error(format!(
                             "the `by` after `open` does not prove `{}`, the body fact {scope} leaves open",

@@ -49,3 +49,7 @@ try_solve_closure
 try_solve_closure_with_surfaces
 try_split_source_successor_if
 with_proved_lowering_requirements
+open_have
+open_source_have
+open_have_with_goal_observations
+open_have_with_presentation

@@ -806,7 +806,7 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
         return Err(proof.step_error("obligation proofs follow a `step` form"));
     };
     let solve = |proof: &Proof<'a>, have: &ProofHave| -> Result<Proof<'a>, ClickError> {
-        let nested = proof.begin_source_have(have)?;
+        let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;
         let selected = solve_nested_have(nested, have, &mut failed_check)
@@ -1186,7 +1186,7 @@ fn apply_frontier_source_tactic<'a>(
         }
     } else if let Some(have) = frontier_have(&indexed.tactic) {
         let have = have.as_ref();
-        let nested = proof.begin_source_have(have)?;
+        let nested = proof.driver().open_source_have(have)?;
         let goal = nested.goal().cloned();
         let mut failed_check = None;
         let selected = solve_nested_have(nested, have, &mut failed_check)
@@ -5012,7 +5012,7 @@ fn advance_linear_open_scope<'a>(
         // here too; without this the site verifies and then reports that the
         // proof has no such source tactic.
         let checkpoint = scope.checkpoint();
-        let nested = scope.begin_source_have(have)?;
+        let nested = scope.driver().open_source_have(have)?;
         let mut failed_check = None;
         let selected = solve_nested_have(nested, have, &mut failed_check)?;
         let Some(selected) = selected else {

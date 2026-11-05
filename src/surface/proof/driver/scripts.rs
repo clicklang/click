@@ -467,7 +467,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     proof = closed;
                 }
                 ProofTactic::Have(have) => {
-                    let scope = proof.begin_have(have.proposition.clone())?;
+                    let scope = proof.driver().open_have(have.proposition.clone())?;
                     let source_proof = have.checking_proof();
                     let selected = match source_proof.as_ref() {
                         SourceProof::Tactic(SmartTactic::ImplicitTail) => {

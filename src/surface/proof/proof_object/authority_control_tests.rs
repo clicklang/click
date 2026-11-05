@@ -109,7 +109,8 @@ fn opening_control_retains_loaded_pointer_facts() {
         .apply_step(ProofStep::UnfoldResource(parent.clone()))
         .unwrap();
     let named = unfolded
-        .begin_have(have.proposition.clone())
+        .driver()
+        .open_have(have.proposition.clone())
         .unwrap()
         .driver()
         .apply_step(ProofStep::Assumption)

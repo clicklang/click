@@ -103,7 +103,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             relate(right.clone(), left.clone(), Relation::Less),
         ] {
             check_verification_deadline()?;
-            let Ok(scope) = search_input.begin_have(order.clone()) else {
+            let Ok(scope) = search_input.driver().open_have(order.clone()) else {
                 continue;
             };
             // An order that is itself a fact is not among the premises the
@@ -422,7 +422,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Otherwise the goal's identities are proved once, here, rather than
         // once inside each bound's `have`, where the first bound's proof of
         // them would be dropped when its `have` closes.
-        let Ok(scope) = search_input.begin_have(lower.clone()) else {
+        let Ok(scope) = search_input.driver().open_have(lower.clone()) else {
             return Ok(None);
         };
         let mut lower_alone = scope
@@ -450,7 +450,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let closed = match lower_alone.take() {
                 Some(closed) => closed,
                 None => {
-                    let Ok(scope) = proof.begin_have(bound.clone()) else {
+                    let Ok(scope) = proof.driver().open_have(bound.clone()) else {
                         return Ok(None);
                     };
                     let Some(closed) = (scope).driver().try_arithmetic_fact_closure()? else {
@@ -1449,7 +1449,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
         fact: &ClickProposition,
     ) -> Result<Option<Proof<'a>>, ClickError> {
-        let Ok(scope) = search_input.begin_have(fact.clone()) else {
+        let Ok(scope) = search_input.driver().open_have(fact.clone()) else {
             return Ok(None);
         };
         let Some(closed) = (scope).driver().try_arithmetic_fact_closure()? else {

@@ -109,9 +109,9 @@ Roles distinguish the work remaining:
 | `mixed` | Mixed drivers and auxiliary planners still requiring caller-level classification. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 599 records: 7 legacy bridges, 22 kernel callers,
-14 Surface operation dependencies, 15 operation-to-driver dependencies,
-93 driver records, 1 other dispatch record, 6 presentation records,
+The current inventory contains 600 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 14 operation-to-driver dependencies,
+95 driver records, 1 other dispatch record, 6 presentation records,
 420 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
@@ -152,10 +152,27 @@ helper fast. The existing operation audit and scaling tests remain necessary.
 The separate target list includes compatibility entry points so a caller cannot
 hide an existing search merely by using the old wrapper.
 
+## Have prerequisite boundary
+
+`Proof::begin_have` opens a nested goal or reports ordinary lowering
+requirements; it does not acquire a driver or schedule their proofs.
+`ProofDriver::open_have` (and its source-proof adapters) owns the existing
+lowering-obligation probe, invokes the shared obligation solver when needed,
+and opens the scope with the resulting facts. Strict replay takes the direct
+operation path. No new obligation format or proof rechecker is introduced.
+The existing probe/retry behavior is preserved; this change does not claim to
+remove repeated preparation or the separate separation-observation costs.
+
+The source boundary rejects driver and registered search references inside
+`begin_have`. The primitive regression leaves implicit solving enabled and
+requires raw opening to report a prerequisite; driver opening succeeds and
+retains the prerequisite proof. Scoped-conversion expansion replays with
+implicit solving disabled. Other operation-to-driver records remain pending.
+
 ## Detailed caller classification
 
-The [caller audit](proof-boundary-classification.md) classifies all 19 mixed and
-15 operation-to-driver records by why they invoke search or interpretation.
+The [caller audit](proof-boundary-classification.md) classifies the original 19 mixed and
+15 operation-to-driver records (14 remain after the have extraction) by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation, diagnostic execution, and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or

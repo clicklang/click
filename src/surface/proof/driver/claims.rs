@@ -2389,7 +2389,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 } else {
                     surface_goal.clone()
                 };
-                let mut scope = match direct_proof.begin_have(scope_surface_goal) {
+                let mut scope = match direct_proof.driver().open_have(scope_surface_goal) {
                     Ok(scope) => scope,
                     Err(error) => {
                         check_verification_deadline()?;
@@ -4141,7 +4141,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                         let before = prepared.checkpoint();
                                         // The same checked `have` the execution
                                         // frontier runs, with its diagnostics.
-                                        let nested = prepared.begin_source_have(have)?;
+                                        let nested = prepared.driver().open_source_have(have)?;
                                         let goal = nested.goal().cloned();
                                         let mut failed_check = None;
                                         let closed = super::checked_drivers::solve_nested_have(
