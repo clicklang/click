@@ -3548,6 +3548,10 @@ id = "library.theorem.format::pow10_9"
 path = "reference/library/index.md#formatpow10_9"
 
 [[item]]
+id = "library.theorem.format::pow10_nonzero"
+path = "reference/library/index.md#formatpow10_nonzero"
+
+[[item]]
 id = "library.theorem.format::decimal_length_1"
 path = "reference/library/index.md#formatdecimal_length_1"
 
@@ -3586,6 +3590,10 @@ path = "reference/library/index.md#formatdecimal_length_9"
 [[item]]
 id = "library.theorem.format::decimal_length_10"
 path = "reference/library/index.md#formatdecimal_length_10"
+
+[[item]]
+id = "library.theorem.format::decimal_digit_power_nonzero"
+path = "reference/library/index.md#formatdecimal_digit_power_nonzero"
 
 [[item]]
 id = "library.theorem.format::decimal_digit_of_length"
