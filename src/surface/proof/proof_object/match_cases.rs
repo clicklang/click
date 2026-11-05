@@ -614,7 +614,9 @@ impl<'a> Proof<'a> {
                     crate::surface::diagnostics::describe_click_proposition(surface)
                 ))
             })?;
-        let closed = self.apply_step_at(ProofStep::Contradiction(surface.clone()), source_index)?;
+        let closed = self
+            .driver()
+            .apply_step_at(ProofStep::Contradiction(surface.clone()), source_index)?;
         plan.excluded[index] = Some(closed.execution_match_arm_certificate(entered)?);
         closed.record_execution_match_arm_trace(plan, index, entered);
         plan.partition = partition;

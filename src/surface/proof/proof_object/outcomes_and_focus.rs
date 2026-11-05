@@ -656,7 +656,9 @@ impl<'a> Proof<'a> {
                 );
                 requirements.refusals.push(error);
             }
-            root = root.discharge_entry_requirements(surface, &requirements)?;
+            root = root
+                .driver()
+                .discharge_entry_requirements(surface, &requirements)?;
         }
         let mut focused = root.focus_fixed_state_goal_for_claim(
             goal.proposition().clone(),

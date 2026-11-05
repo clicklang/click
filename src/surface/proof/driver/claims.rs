@@ -1297,13 +1297,18 @@ fn begin_outcome_existence_proof<'a>(
     );
     let mut proof = focus_claim_goal(&root, kernel_goal, &surface_goal)?;
     for equality in &rewrite_claim_equalities[claim_index] {
-        proof = proof.apply_step(ProofStep::Rewrite(equality.clone()))?;
+        proof = proof
+            .driver()
+            .apply_step(ProofStep::Rewrite(equality.clone()))?;
     }
     // These steps make the retained nested body independently surface
     // checkable. An unfold already inherited by the outcome is harmlessly
     // skipped, matching the former checked-scope behavior.
     for name in unfolded_predicates {
-        match proof.apply_step(ProofStep::UnfoldPredicate(name.clone())) {
+        match proof
+            .driver()
+            .apply_step(ProofStep::UnfoldPredicate(name.clone()))
+        {
             Ok(next) => proof = next,
             Err(_) => check_verification_deadline()?,
         }
@@ -1412,7 +1417,10 @@ fn close_claim_directly_from_outcome<'a>(
     };
     if failed_attempt.is_none() {
         for equality in rewrite_equalities {
-            proof = match proof.apply_step(ProofStep::Rewrite(equality.clone())) {
+            proof = match proof
+                .driver()
+                .apply_step(ProofStep::Rewrite(equality.clone()))
+            {
                 Ok(next) => next,
                 Err(error) => {
                     check_verification_deadline()?;
@@ -1425,7 +1433,10 @@ fn close_claim_directly_from_outcome<'a>(
             };
         }
         for name in unfolded_predicates {
-            match proof.apply_step(ProofStep::UnfoldPredicate(name.clone())) {
+            match proof
+                .driver()
+                .apply_step(ProofStep::UnfoldPredicate(name.clone()))
+            {
                 Ok(next) => proof = next,
                 Err(_) => check_verification_deadline()?,
             }
@@ -1888,7 +1899,9 @@ fn apply_post_execution_arithmetic_using<'a>(
                 }
             }
         };
-        focused.apply_step(ProofStep::ArithmeticCertificate(certificate))
+        focused
+            .driver()
+            .apply_step(ProofStep::ArithmeticCertificate(certificate))
     })())
 }
 
@@ -1918,7 +1931,7 @@ fn fold_produced_resources<'a>(
         };
         let current = required_outcome(outcome_proof)?;
         let before = current.checkpoint();
-        let Ok(folded) = current.apply_step(step) else {
+        let Ok(folded) = current.driver().apply_step(step) else {
             check_verification_deadline()?;
             continue;
         };
@@ -2338,7 +2351,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 if !tried_predicates.insert(name.clone()) {
                     continue;
                 }
-                match direct_proof.apply_step(
+                match direct_proof.driver().apply_step(
                     ProofStep::UnfoldPredicate(name.clone()),
                 ) {
                     Ok(unfolded) => direct_proof = unfolded,
@@ -2414,7 +2427,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 };
                 let mut rewrites_applied = true;
                 for equality in equalities {
-                    match scope.apply_step(ProofStep::Rewrite(
+                    match scope.driver().apply_step(ProofStep::Rewrite(
                         equality.clone(),
                     )) {
                         Ok(next) => scope = next,
@@ -2431,13 +2444,13 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 }
                 let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
                     Ok(if let Some(premises) = restricted_premises {
-                    let selected = (scope).try_restricted_solve_closure(premises);
+                    let selected = (scope).driver().try_restricted_solve_closure(premises);
                     check_verification_deadline()?;
                     selected
-                } else if let Some(scope) = (scope).try_direct_logical_closure()? {
+                } else if let Some(scope) = (scope).driver().try_direct_logical_closure()? {
                     Some(scope)
                 } else {
-                    (scope).try_solve_closure()?
+                    (scope).driver().try_solve_closure()?
                 })
                 });
                 let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
@@ -2544,7 +2557,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                         )
                     })
                     .collect::<Vec<_>>();
-                direct_proof.complete_fixed_state_obligations_since(
+                direct_proof.driver().complete_fixed_state_obligations_since(
                     &direct_base,
                     &surface_goals,
                     &claim_goals,
@@ -2562,7 +2575,7 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                     rewritten_claim_proofs[*index]
                         .as_ref()
                         .is_some_and(|(proof, _)| {
-                            proof.apply_step(ProofStep::Normalize).is_ok()
+                            proof.driver().apply_step(ProofStep::Normalize).is_ok()
                         })
                 })
             {
@@ -3560,8 +3573,9 @@ pub(super) fn finish_ordered_proof<'a>(
                     let mut unfolded_predicates = direct_view.unfolded_predicates.clone();
                     if let Some(mut root) = outcome_proof.take() {
                         for name in &unfolded_predicates {
-                            if let Ok(unfolded) =
-                                root.apply_step(ProofStep::UnfoldPredicate(name.clone()))
+                            if let Ok(unfolded) = root
+                                .driver()
+                                .apply_step(ProofStep::UnfoldPredicate(name.clone()))
                             {
                                 root = unfolded;
                             } else {
@@ -3945,7 +3959,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     .proof
                                     .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
                                 let before = refreshed.checkpoint();
-                                let proof = refreshed.apply_step(step)?;
+                                let proof = refreshed.driver().apply_step(step)?;
                                 let certificate = proof.certificate_since(&before)?;
                                 let introduces_scope = opened.introduces_scope
                                     || matches!(
@@ -3975,8 +3989,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                 let evolving = outcome_proof.take().ok_or_else(|| ClickError::new(
                                     format!("`{proof_label}` path {path_index}: resource scope has no outcome Proof")
                                 ))?;
-                                let (closed, close_proof) = evolving
-                                    .close_scope_with_body_fact_proof(
+                                let (closed, close_proof) =
+                                    evolving.driver().close_scope_with_body_fact_proof(
                                         resource,
                                         written_close_proof.as_deref(),
                                         &|proof| {
@@ -4232,7 +4246,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let prepared = evolving.with_outcome_store_consequences()?;
                                     let before = prepared.checkpoint();
                                     let transported = if let Some(step) = written {
-                                        prepared.apply_step(step)
+                                        prepared.driver().apply_step(step)
                                     } else {
                                         match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(prepared),
                                             source, target,
@@ -4330,9 +4344,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                     path_index,
                                     |proof| {
                                         if let PostExecutionTactic::Both(both) = post_tactic {
-                                            proof.apply_both_source(both)
+                                            proof.driver().apply_both_source(both)
                                         } else {
-                                            proof.apply_step(closer_step.clone())
+                                            proof.driver().apply_step(closer_step.clone())
                                         }
                                     },
                                 )
@@ -4513,6 +4527,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                                         original,
                                                         surface_goal,
                                                     )?
+                                                    .driver()
                                                     .apply_step(ProofStep::Assumption);
                                                 if let Ok(proof) = candidate {
                                                     retained_certificate =
@@ -4582,16 +4597,21 @@ pub(super) fn finish_ordered_proof<'a>(
                                             if let PostExecutionTactic::Both(both) = post_tactic {
                                                 return Ok(focused
                                                     .at_source_tactic(*source_index)
+                                                    .driver()
                                                     .apply_both_source(both));
                                             }
                                             let PostExecutionTactic::Leaf(
                                                 ProofTactic::ArithmeticUsing(surface_premises),
                                             ) = post_tactic
                                             else {
-                                                return Ok(focused.apply_step(closer_step.clone()));
+                                                return Ok(focused
+                                                    .driver()
+                                                    .apply_step(closer_step.clone()));
                                             };
                                             if origin == ClaimProofOrigin::Rewritten {
-                                                return Ok(focused.apply_step(closer_step.clone()));
+                                                return Ok(focused
+                                                    .driver()
+                                                    .apply_step(closer_step.clone()));
                                             }
                                             apply_post_execution_arithmetic_using(
                                                 focused,
@@ -4757,7 +4777,9 @@ pub(super) fn finish_ordered_proof<'a>(
                                                 })
                                             })
                                         },
-                                        |proof, _| Ok(proof.apply_step(rewrite_step.clone())),
+                                        |proof, _| {
+                                            Ok(proof.driver().apply_step(rewrite_step.clone()))
+                                        },
                                     )?;
                                     let (rewritten_result, last_error) = match applied {
                                         Ok(ClaimStepApplied { proof, certificate }) => (
@@ -4883,7 +4905,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     format!("`{proof_label}` path {path_index}, tactic {tactic_index}: the typed outcome goal for this path is unavailable")
                                 ))?;
                                 let before = evolving.checkpoint();
-                                let applied = evolving.apply_step(step)?;
+                                let applied = evolving.driver().apply_step(step)?;
                                 if matches!(
                                     tactic,
                                     ProofTactic::FoldResource(_) | ProofTactic::UnfoldResource(_)
@@ -6107,7 +6129,7 @@ mod tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!("../../scaling_tests/surface/proof/claim_proofs/tests.rs");
+        include!("../../../scaling_tests/surface/proof/claim_proofs/tests.rs");
     }
 }
 

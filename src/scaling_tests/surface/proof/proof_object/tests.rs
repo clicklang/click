@@ -359,11 +359,12 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
                 let left_done = split_proof
                     .focus_branch(ids[0])
                     .unwrap()
+                    .driver()
                     .apply_step(ProofStep::Normalize)
                     .unwrap();
                 let right = left_done.focus_branch(ids[1]).unwrap();
                 assert!(!right.facts().contains(&truth));
-                let done = right.apply_step(ProofStep::Normalize).unwrap();
+                let done = right.driver().apply_step(ProofStep::Normalize).unwrap();
                 let joined = done.join_focused_both(&marker, split, ids).unwrap();
                 (joined, split_proof, left_done, marker, split, ids)
             });
@@ -373,6 +374,7 @@ fn both_and_scopes_are_isolated_check_provenance_and_scale() {
         let done = left_done
             .focus_branch(ids[1])
             .unwrap()
+            .driver()
             .apply_step(ProofStep::Normalize)
             .unwrap();
         assert!(
@@ -452,7 +454,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
             .begin_loop_entry_goal(surface.clone(), &obligation)
             .unwrap();
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
-            (scope).try_solve_closure().unwrap().unwrap()
+            (scope).driver().try_solve_closure().unwrap().unwrap()
         });
         assert_eq!(
             checked.body().certificate().steps(),
@@ -488,7 +490,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
         let missing = missing
             .begin_loop_entry_goal(surface.clone(), &obligation)
             .unwrap();
-        assert!(missing.apply_step(ProofStep::Assumption).is_err());
+        assert!(missing.driver().apply_step(ProofStep::Assumption).is_err());
         assert!(missing.join().is_err());
     }
 }
@@ -607,6 +609,7 @@ fn choose_projection_walk_is_deterministic_across_selected_body_sizes() {
         );
         CHOSEN_PROJECTION_WALK_WORK.with(|count| count.set((0, 0)));
         let chosen = root
+            .driver()
             .apply_step(ProofStep::Choose(ProofChoice {
                 name: "candidate".to_string(),
                 source: ProofFactSource::Requirement(0),
@@ -759,12 +762,13 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
             SpecDefinitions::new(&predicates, &click_functions),
             &theorems,
         )
+        .driver()
         .apply_step(ProofStep::UnfoldPredicate("selected".into()))
         .unwrap();
         let body_kernel = root.lower_surface_goal(&body_surface, "test body").unwrap();
         let scope = root.begin_have(surface.clone()).unwrap();
         assert!(scope.clone().join().is_err());
-        let closed = scope.apply_step(ProofStep::Normalize).unwrap();
+        let closed = scope.driver().apply_step(ProofStep::Normalize).unwrap();
         let (joined, work) =
             crate::instrumentation::measure_deterministic_work(|| closed.join().unwrap());
         samples.push(work);
@@ -781,6 +785,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
                 .is_some()
         );
         let explicit = root
+            .driver()
             .apply_step(ProofStep::Have {
                 proposition: surface.clone(),
                 proof: Box::new(ProofCertificate::from_steps(vec![ProofStep::Normalize]).unwrap()),
@@ -789,6 +794,7 @@ fn explicit_loop_have_retains_checked_body_and_complete_invariant_bundle() {
         assert!(explicit.facts().contains(&body_kernel));
         assert!(joined.certify_loop_invariant_bundle(&checks, &[]).is_err());
         let prepared = joined
+            .driver()
             .prepare_loop_invariant_bundle(
                 &CState::new(),
                 &CState::new(),
@@ -881,7 +887,8 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
             &theorems,
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.apply_close_invariants_body(&[ProofTactic::Normalize])
+            root.driver()
+                .apply_close_invariants_body(&[ProofTactic::Normalize])
                 .unwrap()
         });
         assert!(root.certificate().steps().is_empty());
@@ -923,10 +930,11 @@ fn explicit_invariant_body_scales_and_supplies_kernel_validation() {
         closed.certify_loop_invariant_bundle(&checks, &[]).unwrap();
         assert!(
             closed
+                .driver()
                 .apply_close_invariants_body(&[ProofTactic::Normalize])
                 .is_err()
         );
-        assert!(root.apply_close_invariants_body(&[]).is_err());
+        assert!(root.driver().apply_close_invariants_body(&[]).is_err());
         work
     });
     for pair in samples.windows(2) {
@@ -1009,10 +1017,12 @@ fn cursor_execution_load_binding_work_is_deterministic_and_output_sized() {
         let advanced = split
             .focus_split_arm(&record, true)
             .expect("then scaling arm should be open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("then scaling load should execute")
             .focus_split_arm(&record, false)
             .expect("else scaling arm should be open")
+            .driver()
             .apply_step(ProofStep::Step)
             .expect("else scaling load should execute");
         let joined = advanced
@@ -1554,7 +1564,7 @@ fn loop_entry_wide_extent_guard_retains_its_own_source_and_scales() {
                 .begin_loop_entry_goal(surface.clone(), &obligation)
                 .unwrap();
             let before = scope.body().clone();
-            let completed = before.apply_step(ProofStep::Assumption).unwrap();
+            let completed = before.driver().apply_step(ProofStep::Assumption).unwrap();
             let retained = before.retain_completed_goal(&completed, &[]).unwrap();
             assert!(retained.facts().contains(&goal));
         });
@@ -1622,7 +1632,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
                 .unwrap(),
             old_goal
         );
-        let completed = root.apply_step(ProofStep::Assumption).unwrap();
+        let completed = root.driver().apply_step(ProofStep::Assumption).unwrap();
         let (retained, units) = crate::instrumentation::measure_deterministic_work(|| {
             root.retain_completed_goal(&completed, &[]).unwrap()
         });
@@ -1645,7 +1655,7 @@ fn completed_goal_retention_validates_current_source_after_stale_recording() {
             &[],
             &[],
         );
-        let completed = wrong.apply_step(ProofStep::Assumption).unwrap();
+        let completed = wrong.driver().apply_step(ProofStep::Assumption).unwrap();
         assert!(wrong.retain_completed_goal(&completed, &[]).is_err());
     }
     assert!(

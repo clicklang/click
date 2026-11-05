@@ -238,7 +238,9 @@ impl Carried {
         match &self.establish {
             Establish::Steps(steps) => Ok(steps
                 .iter()
-                .try_fold(proof.clone(), |proof, step| proof.apply_step(step.clone()))
+                .try_fold(proof.clone(), |proof, step| {
+                    proof.driver().apply_step(step.clone())
+                })
                 .ok()),
             Establish::Operation {
                 operation,
@@ -273,6 +275,7 @@ impl Carried {
                 // are facts.
                 let observe = |proof: &Proof<'a>| {
                     proof
+                        .driver()
                         .apply_step(have(
                             self.surface.clone(),
                             vec![operation_identity(
@@ -292,6 +295,7 @@ impl Carried {
                             .into_iter()
                             .try_fold(proof.clone(), |proof, bound| {
                                 proof
+                                    .driver()
                                     .apply_step(have(bound.clone(), vec![ProofStep::Assumption]))
                                     .ok()
                             });
@@ -323,8 +327,9 @@ impl Carried {
                                 Relation::LessEqual,
                             ),
                         ] {
-                            if let Ok(next) =
-                                ranged.apply_step(have(bound.clone(), vec![type_range(bound)]))
+                            if let Ok(next) = ranged
+                                .driver()
+                                .apply_step(have(bound.clone(), vec![type_range(bound)]))
                             {
                                 ranged = next;
                             }
@@ -366,7 +371,9 @@ impl Carried {
                 let Some(_operation_scope) = OperationBridgeScope::enter(operation) else {
                     return Ok(None);
                 };
-                if let Ok(next) = proof.apply_step(have(guard.clone(), vec![ProofStep::Assumption]))
+                if let Ok(next) = proof
+                    .driver()
+                    .apply_step(have(guard.clone(), vec![ProofStep::Assumption]))
                 {
                     return unsigned(&next);
                 }

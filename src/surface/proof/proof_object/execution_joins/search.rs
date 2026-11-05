@@ -146,7 +146,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             }
             if let Some(target) = until {
-                return match proof.apply_step(ProofStep::Step) {
+                return match proof.driver().apply_step(ProofStep::Step) {
                     Err(error) => Err(step_until_refusal(&proof, target, error)?),
                     Ok(_) => Err(proof.step_error(format!(
                         "`step_until({})` could not advance this statement",
@@ -163,7 +163,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .split_focused_execution_branch()
                     .map(|(proof, record)| Some((proof, record, false)))
             } else {
-                match proof.apply_step(ProofStep::Step) {
+                match proof.driver().apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => return Ok(None),
                 }

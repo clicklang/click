@@ -1,0 +1,989 @@
+//! Proof script orchestration; explicit operations remain on Proof.
+use super::*;
+use crate::surface::proof::driver::ProofDriver;
+
+impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    pub(in crate::surface::proof) fn apply_execution_statement_step(
+        &self,
+        step: ProofStep,
+    ) -> Result<Proof<'a>, ClickError> {
+        let driver_proof = self.proof;
+        #[cfg(test)]
+        let hidden_before = crate::instrumentation::hidden_prerequisites_on_thread();
+        let result = driver_proof.driver().apply_bare_statement_step(step);
+        #[cfg(test)]
+        if crate::instrumentation::hidden_prerequisites_on_thread() > hidden_before {
+            crate::surface::proof::cursor_execution::record_planning_statement_transition(
+                driver_proof.context.claim_label(),
+                driver_proof.node.depth,
+                "step",
+            );
+        }
+        result
+    }
+
+    /// Check the written proof immediately against the exact lowered goals.
+    /// The kernel owns the scope and retains its completed proof as bound
+    /// closure evidence; finalization validates it without reproving it.
+    /// Applies `step` with explicit proofs of the obligations its fast path
+    /// leaves open. A plain `by` (`entries` is
+    /// `None`) proves the one open obligation; `requires` entries each prove
+    /// the open obligation their proposition states. `prove` checks one proof
+    /// as a `have` at this pre-state, through whichever driver reads the
+    /// written body, and returns the joined Proof; `None` as its index means
+    /// the plain `by` body.
+    ///
+    /// Obligations nothing written proves keep today's checking until the
+    /// implicit `auto` lands.
+    pub(in crate::surface::proof) fn apply_step_with_obligation_proofs(
+        &self,
+        step: ProofStep,
+        entries: Option<&[(Option<String>, ClickProposition)]>,
+        prove: &mut dyn FnMut(
+            &Proof<'a>,
+            ClickProposition,
+            Option<usize>,
+        ) -> Result<Proof<'a>, ClickError>,
+    ) -> Result<Proof<'a>, ClickError> {
+        let driver_proof = self.proof;
+        if !matches!(step, ProofStep::FoldResource(_)) {
+            driver_proof.require_execution_frontier("a step's obligation proofs")?;
+        }
+        let this = if matches!(step, ProofStep::FoldResource(_)) {
+            "this `fold`"
+        } else {
+            "this step"
+        };
+        let (probe, recorded) = driver_proof.prepare_step(&step);
+        // A successful preparation is conditional on every recorded requirement.
+        // Keep it private while those requirements are proved at `self`, never
+        // in the candidate's post-state. A failed preparation needs recovery.
+        if recorded.recorded.is_empty() {
+            probe.as_ref().map_err(Clone::clone)?;
+        }
+        let refusals = recorded.refusals;
+        let recorded_requirements = recorded.recorded;
+        let open = distinct_requirements(recorded_requirements.clone());
+        let spelling = |requirement: &UnresolvedRequirement| -> Result<String, ClickError> {
+            Ok(
+                match driver_proof.requirement_surface(requirement, &step)? {
+                    Some(spelling) => {
+                        crate::surface::printing::source_click_proposition(&spelling.surface)
+                    }
+                    None => format!(
+                        "{} (no Surface spelling: report this as a bug)",
+                        driver_proof
+                            .execution()
+                            .map(|execution| {
+                                crate::surface::diagnostics::describe_stated_fact_over_locals(
+                                    &requirement.proposition,
+                                    &execution.core.state,
+                                )
+                            })
+                            .unwrap_or_else(|| format!("{:?}", requirement.proposition))
+                    ),
+                },
+            )
+        };
+        let open_list = || -> Result<String, ClickError> {
+            Ok(open
+                .iter()
+                .map(|requirement| spelling(requirement).map(|spelled| format!("`{spelled}`")))
+                .collect::<Result<Vec<_>, _>>()?
+                .join(", "))
+        };
+        let mut current = driver_proof.clone();
+        let proof = match entries {
+            None => {
+                let [requirement] = open.as_slice() else {
+                    if open.is_empty() {
+                        return Err(driver_proof.step_error(format!(
+                            "{this}'s `by` is superfluous: its fast path leaves no obligation open; write it without `by`",
+                        )));
+                    }
+                    let entries = open
+                        .iter()
+                        .map(|requirement| {
+                            spelling(requirement)
+                                .map(|spelled| format!("    requires {spelled} by solve();"))
+                        })
+                        .collect::<Result<Vec<_>, _>>()?
+                        .join("\n");
+                    return Err(driver_proof.step_error(format!(
+                        "a `by` proves its one open obligation, but {this} leaves {} open; write one `requires` entry for each:\n{{\n{entries}\n}}",
+                        open.len()
+                    )));
+                };
+                let Some(surface) = driver_proof
+                    .requirement_surface(requirement, &step)?
+                    .map(|spelling| spelling.surface)
+                else {
+                    return Err(driver_proof.step_error(format!(
+                        "{this}'s open obligation {} cannot be proved by `by`",
+                        spelling(requirement)?
+                    )));
+                };
+                let checkpoint = current.checkpoint();
+                current = prove(&current, surface, None)?;
+                StepProofCertificate::By(Box::new(retained_have_body(
+                    &current.certificate_since(&checkpoint)?,
+                )?))
+            }
+            Some(entries) => {
+                let mut claimed: Vec<Option<usize>> = vec![None; open.len()];
+                let mut proved = Vec::with_capacity(entries.len());
+                for (index, (label, proposition)) in entries.iter().enumerate() {
+                    let written = crate::surface::printing::source_click_proposition(proposition);
+                    let lowered = current.lower_surface_goal(proposition, "`requires` entry")?;
+                    let Some(slot) = open.iter().position(|requirement| {
+                        driver_proof.written_states_requirement(&lowered, requirement)
+                    }) else {
+                        let open_now = if open.is_empty() {
+                            "it leaves none open".to_string()
+                        } else {
+                            format!("it leaves open {}", open_list()?)
+                        };
+                        return Err(driver_proof.step_error(format!(
+                            "`requires {written}` matches no obligation {this} leaves open: its fast path already closes it or it does not require it; {open_now}"
+                        )));
+                    };
+                    if let Some(earlier) = claimed[slot] {
+                        return Err(driver_proof.step_error(format!(
+                            "`requires {written}` proves the same obligation as `requires` entry {}",
+                            earlier + 1
+                        )));
+                    }
+                    claimed[slot] = Some(index);
+                    let checkpoint = current.checkpoint();
+                    current = prove(&current, proposition.clone(), Some(index))?;
+                    proved.push(StepRequirementCertificate {
+                        label: label.clone(),
+                        proposition: proposition.clone(),
+                        proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
+                    });
+                }
+                // The obligations no entry writes go to the implicit `auto`;
+                // expansion prints each one it proves as an entry.
+                let unwritten = open
+                    .iter()
+                    .zip(&claimed)
+                    .filter(|(_, claimed)| claimed.is_none())
+                    .map(|(requirement, _)| requirement)
+                    // A written entry can also establish another slot as an
+                    // exact fact (for example by proving a conjunction).
+                    .filter(|requirement| {
+                        !current
+                            .facts()
+                            .assumptions()
+                            .states_required_goal(&requirement.proposition)
+                    })
+                    .collect::<Vec<_>>();
+                if !unwritten.is_empty() {
+                    let result = if implicit_auto_disabled() {
+                        Err(0)
+                    } else {
+                        current
+                            .driver()
+                            .prove_obligations_by_auto_or_name_the_first_missed(&step, &unwritten)?
+                    };
+                    match result {
+                        Ok((proved_by_auto, entries)) => {
+                            current = proved_by_auto;
+                            proved.extend(entries);
+                        }
+                        Err(missed) => {
+                            let position = recorded_requirements
+                                .iter()
+                                .position(|requirement| {
+                                    crate::kernel::proof::propositions_are_alpha_equal(
+                                        &requirement.proposition,
+                                        &unwritten[missed].proposition,
+                                    )
+                                })
+                                .expect("an open requirement came from preparation");
+                            return Err(refusals[position].clone());
+                        }
+                    }
+                }
+                StepProofCertificate::Requires(proved)
+            }
+        };
+        // Both written and unwritten obligation slots have been discharged.
+        let stepped = driver_proof.finish_prepared_step(probe, &current, &step)?;
+        Ok(driver_proof.step_proved_successor(stepped, step, proof))
+    }
+
+    /// A bare step: the fast path, then the
+    /// implicit `auto` for each obligation it leaves open, recorded so that
+    /// expansion prints the step with a `by` or `requires` entries. A step
+    /// never searches the proof context: when the implicit `auto` cannot spell
+    /// or prove an obligation, the fast path refuses the step at it.
+    pub(in crate::surface::proof) fn apply_bare_statement_step(
+        &self,
+        step: ProofStep,
+    ) -> Result<Proof<'a>, ClickError> {
+        let driver_proof = self.proof;
+        if implicit_auto_disabled() {
+            return driver_proof.apply_fast_simple_step(&step);
+        }
+        // An obligation the implicit `auto` cannot spell or prove refuses the
+        // step with the fast path's own diagnostic, naming that obligation.
+        let refused = || driver_proof.apply_fast_simple_step(&step);
+        let (probe, recorded) = driver_proof.prepare_step(&step);
+        if recorded.recorded.is_empty() {
+            // With nothing recorded, the probe ran the ordinary checked step.
+            return probe;
+        }
+        let refusals = recorded.refusals;
+        let recorded = recorded.recorded;
+        let open = distinct_requirements(recorded.clone());
+        let open = open.iter().collect::<Vec<_>>();
+        let (proved, mut entries) = match driver_proof
+            .driver()
+            .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+        {
+            Ok(proved) => proved,
+            // Refuse at the obligation the implicit `auto` missed, with
+            // the fast path's own diagnostic for it; another open
+            // obligation it did prove is not what is wrong.
+            Err(missed) => {
+                let refused = match recorded.iter().position(|requirement| {
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        &requirement.proposition,
+                        &open[missed].proposition,
+                    )
+                }) {
+                    Some(position) if position > 0 => Err(refusals[position].clone()),
+                    _ => refused(),
+                };
+                return refused.map_err(|error| {
+                    // The numeric count carrier can also be a C field
+                    // read. Name the authoritative source requirement.
+                    let Ok(Some(spelling)) = driver_proof.requirement_surface(open[missed], &step)
+                    else {
+                        return error;
+                    };
+                    if matches!(
+                        &spelling.surface,
+                        ClickProposition::Comparison {
+                            left: ContractExpression::ResourceCount(_),
+                            ..
+                        } | ClickProposition::Comparison {
+                            right: ContractExpression::ResourceCount(_),
+                            ..
+                        }
+                    ) {
+                        error.with_missing_tactic_requirement(
+                            crate::surface::printing::authored_click_proposition(&spelling.surface),
+                        )
+                    } else {
+                        error
+                    }
+                });
+            }
+        };
+        let stepped = driver_proof.finish_prepared_step(probe, &proved, &step)?;
+        let proof = if entries.len() == 1 {
+            StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
+        } else {
+            StepProofCertificate::Requires(entries)
+        };
+        Ok(driver_proof.step_proved_successor(stepped, step, proof))
+    }
+
+    /// Proves each requirement at this pre-state, or returns the index of
+    /// the first requirement it could not spell or prove.
+    pub(in crate::surface::proof) fn prove_obligations_by_auto_or_name_the_first_missed(
+        &self,
+        step: &ProofStep,
+        requirements: &[&UnresolvedRequirement],
+    ) -> Result<Result<(Proof<'a>, Vec<StepRequirementCertificate>), usize>, ClickError> {
+        let driver_proof = self.proof;
+        let _implicit_auto = crate::surface::proof::timing::TacticTiming::implicit_auto();
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit auto"));
+        let mut current = driver_proof.clone();
+        let mut entries = Vec::with_capacity(requirements.len());
+        for (index, requirement) in requirements.iter().enumerate() {
+            let Some(spelling) = current.requirement_surface(requirement, step)? else {
+                return Ok(Err(index));
+            };
+            let surface = spelling.surface.clone();
+            current.debug_assert_spelling_relowers(requirement, &surface);
+            let checkpoint = current.checkpoint();
+            let Ok(have) = current.begin_have(surface.clone()) else {
+                return Ok(Err(index));
+            };
+            let Some(closed) =
+                crate::surface::proof::smart_closures::close_requirement_spelling_by_auto(
+                    have, &spelling,
+                )?
+            else {
+                return Ok(Err(index));
+            };
+            current = closed.join()?;
+            entries.push(StepRequirementCertificate {
+                label: None,
+                proposition: surface,
+                proof: retained_have_body(&current.certificate_since(&checkpoint)?)?,
+            });
+        }
+        Ok(Ok((current, entries)))
+    }
+
+    pub(in crate::surface::proof) fn apply_close_invariants_body(
+        &self,
+        body: &[ProofTactic],
+    ) -> Result<Proof<'a>, ClickError> {
+        let driver_proof = self.proof;
+        driver_proof.require_execution_frontier("`close_invariants() by`")?;
+        if body.is_empty() {
+            return Err(
+                driver_proof.step_error("`close_invariants() by` requires a nonempty proof body")
+            );
+        }
+        if driver_proof
+            .execution()
+            .is_some_and(|execution| execution.core.frontier.loop_control.is_exit())
+        {
+            // A `break` leaves the loop with whatever the path established.
+            // There is no back edge here and the invariants are not owed, so
+            // closing them would certify an obligation the rule never asks
+            // for and report success for a path the loop exports as an exit.
+            return Err(driver_proof.step_error(
+                "`close_invariants` has no back edge on a `break` path: a `break` exits the loop",
+            ));
+        }
+        if !driver_proof.is_at_region_boundary() {
+            return Err(
+                driver_proof.step_error("`close_invariants() by` requires the loop back edge")
+            );
+        }
+        let ProofContext::Execution(context) = driver_proof.context.as_ref() else {
+            return Err(driver_proof.step_error("`close_invariants() by` requires a loop proof"));
+        };
+        let Some(bundle) = context.constants.invariant_body_context.as_deref() else {
+            return Err(driver_proof
+                .step_error("`close_invariants() by` requires a loop invariant context"));
+        };
+        let execution = driver_proof
+            .execution()
+            .ok_or_else(|| driver_proof.step_error("missing loop execution state"))?;
+        if execution.core.region_invariants_close_requested {
+            return Err(driver_proof
+                .step_error("the invariant bundle was closed more than once on one path"));
+        }
+        // The C branches this path took, recorded when it took them. They are
+        // read here, before the bundle scope opens, so the closer names this
+        // path's decisions and no sibling arm's.
+        //
+        // Each is named twice, exactly as a declared invariant is: once
+        // re-read at iteration entry, where it shares the invariants' own
+        // spelling so one arithmetic certificate can pair the two, and once
+        // at the statement that branched, which is the spelling that still
+        // holds when the body has since written the cells the condition read.
+        // The closer keeps whichever lowers exactly and cites the fact once.
+        let mut path_branch_premises = Vec::new();
+        for recorded in execution.presentation.path_branch_premises.iter() {
+            if let Some(selector) = bundle.iteration_entry_selector.as_ref()
+                && let Ok(at_iteration_entry) = surface_at_snapshot(recorded, selector)
+            {
+                path_branch_premises.push(at_iteration_entry);
+            }
+            path_branch_premises.push(recorded.clone());
+        }
+        let prepare_timing = crate::instrumentation::OperationTiming::new(
+            "surface",
+            "close invariants",
+            "close invariants: prepare checked bundle",
+        );
+        let (state, scope) = driver_proof
+            .state
+            .open_invariant_body(
+                &bundle.loop_entry_state,
+                &bundle.iteration_entry_state,
+                bundle
+                    .iterations
+                    .as_ref()
+                    .ok_or_else(|| driver_proof.step_error("loop invariant bundle lost its pass count"))?,
+                &bundle.checks,
+                &bundle.ranking_measures,
+                &bundle.binders,
+                context.function.composite_resource_definitions(),
+                |goal, introductions| {
+                    let both_children = if introductions.len() == 2
+                        && bundle.checks.len() == 2
+                        && bundle.declared_invariant_surfaces.len() == 2
+                    {
+                        match goal {
+                            Proposition::And(left, right) => Some(std::sync::Arc::new([
+                                BothChildPresentation {
+                                    kernel: left.as_ref().clone(),
+                                    surface: bundle.declared_invariant_surfaces.first().cloned(),
+                                    introductions: introductions[0]
+                                        .clone()
+                                        .unwrap_or_else(|| std::sync::Arc::new(Vec::new())),
+                                },
+                                BothChildPresentation {
+                                    kernel: right.as_ref().clone(),
+                                    surface: bundle.declared_invariant_surfaces.get(1).cloned(),
+                                    introductions: introductions[1]
+                                        .clone()
+                                        .unwrap_or_else(|| std::sync::Arc::new(Vec::new())),
+                                },
+                            ])),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                    // The whole bundle's spelling names each quantified
+                    // member's binder as its invariant wrote it; the surface
+                    // is validated by lowering wherever a proof relies on it.
+                    let presentation_timing = crate::instrumentation::OperationTiming::new(
+                        "surface", "close invariants", "close invariants: source presentation",
+                    );
+                    let presentation = PropositionPresentation {
+                        surface: crate::surface::proof::surface_synthesis::with_synthesis_binder_names(
+                            &bundle.binder_names,
+                            || crate::surface::proof::surface_synthesis::synthesize_surface_proposition_at_entry_post_and_snapshot(
+                                goal,
+                                context.parameter_binding(),
+                                context.old_reference_state(&execution.core.frontier, &execution.core.state),
+                                &execution.core.state,
+                                bundle
+                                    .iteration_entry_selector
+                                    .as_ref()
+                                    .map(|selector| (&bundle.iteration_entry_state, selector)),
+                            ),
+                        )
+                        .map(Arc::new),
+                        surface_bindings: PersistentMap::default(),
+                        both_children,
+                    ..PropositionPresentation::default()
+                    };
+                    drop(presentation_timing);
+                    presentation
+                },
+            )
+            .map_err(|message| driver_proof.step_error(message))?;
+        drop(prepare_timing);
+        let root = Proof {
+            site: driver_proof.site.clone(),
+            context: driver_proof.context.clone(),
+            state,
+            node: Arc::new(ProofNode {
+                path_memo: Default::default(),
+                parent: None,
+                step: None,
+                focused_branch: BranchId::ROOT,
+                depth: 0,
+                split_branches: Vec::new(),
+            }),
+        };
+        // The bundle's proof reads the head's pass count as `iterations`.
+        let root = match &bundle.iterations {
+            Some(count) => root.with_loop_iterations(count),
+            None => root,
+        };
+        if let Some(parent_lineage) = driver_proof.trace_lineage(driver_proof.claim_label()) {
+            // Diagnostics cross the scope boundary; certificates remain
+            // rooted here. Retain both chains after the lazy lineage is read
+            // so another attempt cannot recycle their pointer identities.
+            crate::surface::proof_trace::register_scope(
+                Arc::as_ptr(&root.node) as usize,
+                parent_lineage,
+                Box::new((root.node.clone(), driver_proof.node.clone())),
+            );
+        }
+        let mut search = attempt::search_scope("close invariants body");
+        let checkpoint = root.checkpoint();
+        // A bare `close_invariants()` closes each member with `solve()`; an
+        // explicit source body runs through the source driver exactly once.
+        let _ = take_unclosed_bundle_member();
+        // Catch every error here; `?` must not skip the obligation
+        // diagnostic below.
+        let attempted = {
+            if body == [ProofTactic::Solve] {
+                crate::instrumentation::measure_operation(
+                    "surface",
+                    "close invariants",
+                    "close invariants: members",
+                    || root.plan_invariant_bundle_closure(),
+                )
+            } else {
+                // A written body that ran every step and still left a goal open
+                // names that goal, as the member planner names the member it
+                // stopped at.
+                let mut unfinished = None;
+                let attempted = crate::instrumentation::measure_operation(
+                    "surface",
+                    "close invariants",
+                    "close invariants: explicit body",
+                    || {
+                        root.driver()
+                            .try_authoritative_linear_script_leaving_open(body, &mut unfinished)
+                    },
+                );
+                if matches!(attempted, Ok(None))
+                    && let Some(unfinished) = unfinished
+                {
+                    record_unclosed_bundle_member(unfinished.bundle_member_spelling());
+                }
+                attempted
+            }
+        };
+        let attempted = match attempted {
+            Ok(attempted) => attempted,
+            Err(error) => {
+                let error = describe_invariant_closure_error(error);
+                let detail = ranking_member_diagnostic(&bundle.ranking_measures);
+                let error = if detail.is_empty() {
+                    error
+                } else {
+                    error.with_context(detail)
+                };
+                return Err(error.with_search_failures(search.finish()));
+            }
+        };
+        let Some(completed) = attempted else {
+            // The member planner stops at the first bundle member it cannot
+            // close, so that member is the one to name.
+            let open_member = take_unclosed_bundle_member()
+                .map(|member| format!(": `{member}` remained open"))
+                .unwrap_or_default();
+            let rejoined = if let Some(cases) = crate::surface::proof::preservation_cases_rejoined()
+            {
+                format!(
+                    ". This path left the `cases` at tactic {cases}, whose arms rejoined at the back edge, and the rejoined path is closed again with only the facts every arm proved, so a fact one arm established is gone here. To keep it, prove the same proposition in every arm, such as the invariants at the next iteration"
+                )
+            } else {
+                String::new()
+            };
+            let branch_join = if matches!(
+                driver_proof.node.step.as_deref(),
+                Some(ProofStep::Branch { then_proof, else_proof, .. })
+                    if !then_proof.is_pruned_execution_arm() && !else_proof.is_pruned_execution_arm()
+            ) {
+                ". The obligation is checked after the `branch` join, which keeps only facts both arms agree on. Use `branch ensuring { ... }` to carry a shared fact across the join, or a proof `if` to keep the cases apart"
+            } else {
+                ""
+            };
+            let error = root.step_error(format!(
+                "closure body did not prove every invariant obligation{open_member}{}{rejoined}{branch_join}",
+                ranking_member_diagnostic(&bundle.ranking_measures)
+            ));
+            return Err(error.with_search_failures(search.finish()));
+        };
+        search.succeed();
+        let retain_timing = crate::instrumentation::OperationTiming::new(
+            "surface",
+            "close invariants",
+            "close invariants: retain checked body",
+        );
+        let certificate = completed.certificate_since(&checkpoint)?;
+        let state = driver_proof
+            .state
+            .retain_invariant_body(scope, &completed.state)
+            .map_err(|message| driver_proof.step_error(message))?;
+        drop(retain_timing);
+        Ok(Proof {
+            site: driver_proof.site.clone(),
+            context: driver_proof.context.clone(),
+            state,
+            node: ProofNode::step_child(
+                &driver_proof.node,
+                driver_proof.focused_branch_id(),
+                Arc::new(ProofStep::CloseInvariantsBy(Box::new(certificate))),
+            ),
+        })
+    }
+}
+
+impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    pub(in crate::surface::proof) fn plan_invariant_bundle_member_closure(
+        &self,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let mut scope = attempt::search_scope("loop invariant bundle closure");
+        check_verification_deadline()?;
+        let Some(goal) = driver_proof.goal() else {
+            return Ok(None);
+        };
+        // Expanded preservation proofs already publish their invariant facts.
+        // Use that evidence before spelling members and rebuilding their
+        // nested proofs. The kernel checks exact availability (including
+        // conjunction leaves); a miss continues with bounded planning below.
+        if let Some(closed) =
+            attempt::candidate_outcome(driver_proof.driver().apply_step(ProofStep::Assumption))?
+        {
+            scope.succeed();
+            return Ok(Some(closed));
+        }
+        // The generated invariant bundle can have no Surface spelling. Its
+        // conjunction and implication structure is nevertheless checked by
+        // the kernel, so descend that structure directly and retain the
+        // ordinary Both/Intro certificate nodes.
+        // The bundle is closed member by member, `have m by { ... }` for
+        // each and then `assumption`, as a function's exit closes its
+        // `ensures`; expansion writes those `have`s at the back edge. A
+        // member's own proof does not take this path again.
+        if !IN_BUNDLE_MEMBER_HAVE.with(std::cell::Cell::get)
+            && let Some(surfaces) = driver_proof.conjunction_leaf_surfaces(1)
+        {
+            let mut proof = driver_proof.clone();
+            for surface in surfaces {
+                let nested = proof.begin_have(surface)?;
+                let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
+                let closed = nested.plan_invariant_bundle_closure();
+                IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
+                let Some(closed) = closed? else {
+                    return Ok(None);
+                };
+                proof = closed.join()?;
+            }
+            if let Some(closed) =
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))?
+            {
+                return Ok(Some(closed));
+            }
+            // A member's `have` publishes its written spelling as lowered,
+            // which can differ from the kernel member in form, as a
+            // quantified read projected at the back edge does. The bundle
+            // then closes member by member from those facts.
+            let previous = IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.replace(true));
+            let closed = proof.plan_invariant_bundle_closure();
+            IN_BUNDLE_MEMBER_HAVE.with(|flag| flag.set(previous));
+            return closed;
+        }
+        if matches!(goal, Proposition::And(_, _)) {
+            let (split_proof, split, ids) = driver_proof.split_focused_both()?;
+            let marker = split_proof.checkpoint();
+            let Some(left) = split_proof
+                .focus_branch(ids[0])?
+                .plan_invariant_bundle_closure()?
+            else {
+                return Ok(None);
+            };
+            let Some(right) = left.focus_branch(ids[1])?.plan_invariant_bundle_closure()? else {
+                return Ok(None);
+            };
+            let result = attempt::candidate_outcome(right.join_focused_both(&marker, split, ids));
+            if matches!(&result, Ok(Some(_))) {
+                scope.succeed();
+            }
+            return result;
+        }
+        if matches!(goal, Proposition::Implies(_, _)) {
+            // Later invariant declarations can have a long prefix of guards
+            // from earlier declarations. Introduce that spine iteratively;
+            // one native planner frame per guard overflows before a bounded
+            // tactic can return, even though the certificate is sequential.
+            let mut introduced = driver_proof.clone();
+            while matches!(introduced.goal(), Some(Proposition::Implies(_, _))) {
+                let Some(next) =
+                    attempt::candidate_outcome(introduced.driver().apply_step(ProofStep::Intro))?
+                else {
+                    return Ok(None);
+                };
+                introduced = next;
+            }
+            let result = introduced.plan_invariant_bundle_closure()?;
+            if result.is_some() {
+                scope.succeed();
+                return Ok(result);
+            }
+            // A leaf the introduced premises contradict, as a guarded member
+            // `done implies ...` is on a path whose test said `!done`: the
+            // contradiction is between a premise and the context, so the
+            // member closes whole, as `have` would close it.
+            let whole = driver_proof.close_bundle_member_by_solve()?;
+            if whole.is_some() {
+                scope.succeed();
+            }
+            return Ok(whole);
+        }
+        let result = driver_proof.close_bundle_member_by_solve()?;
+        if result.is_none() {
+            // Keep one bounded, lazy diagnostic for the actual kernel leaf.
+            // It is recorded only after `solve()` has declined; it does not
+            // turn a miss into an error.
+            let diagnostic =
+                driver_proof.step_error("checked loop invariant bundle leaf remained open");
+            attempt::record_unclosed_goal("loop invariant bundle leaf", &diagnostic);
+        }
+        if result.is_some() {
+            scope.succeed();
+        }
+        Ok(result)
+    }
+
+    /// Closes an `open(resource)` scope by `close`, its closing fold, with a
+    /// proof of the one body fact the fold leaves open: `written`, from the
+    /// source's `open(r) { ... } by { ... }`, or else the implicit `auto`,
+    /// returned so that expansion prints it as that `by`. This Proof is
+    /// where the scope closes; `close` closes it from this Proof or from one
+    /// that has proved the fact. A close that leaves several facts open, or
+    /// one that cannot be spelled or that `auto` does not prove, is refused
+    /// with the fold's own diagnostic.
+    pub(in crate::surface::proof) fn close_scope_with_body_fact_proof<T>(
+        &self,
+        resource: &ResourceClause,
+        written: Option<&[ProofTactic]>,
+        close: &dyn Fn(&Proof<'a>) -> Result<T, ClickError>,
+    ) -> Result<(T, Option<Box<ProofCertificate>>), ClickError> {
+        let driver_proof = self.proof;
+        if written.is_none() && implicit_auto_disabled() {
+            return Ok((close(driver_proof)?, None));
+        }
+        let scope = format!(
+            "closing `open({})`",
+            crate::surface::printing::format_resource_call(resource)
+        );
+        let (probe, recorded) = probe_open_obligations(|| close(driver_proof));
+        if recorded.recorded.is_empty() {
+            let closed = probe?;
+            if written.is_some() {
+                return Err(driver_proof.step_error(format!(
+                    "the `by` after `open` is superfluous: {scope} leaves no body fact open; write the `open` without it"
+                )));
+            }
+            return Ok((closed, None));
+        }
+        let refusals = recorded.refusals;
+        let recorded = recorded.recorded;
+        let open = distinct_requirements(recorded.clone());
+        let step = ProofStep::FoldResource(resource.clone());
+        // The fold's own diagnostic for an open fact.
+        let refused = |requirement: &UnresolvedRequirement| {
+            let position = recorded
+                .iter()
+                .position(|recorded| {
+                    crate::kernel::proof::propositions_are_alpha_equal(
+                        &recorded.proposition,
+                        &requirement.proposition,
+                    )
+                })
+                .unwrap_or(0);
+            refusals[position].clone()
+        };
+        // Without a written proof, the implicit `auto` proves each open fact
+        // or the close is refused at the first it misses.
+        let proved_by_auto = match written {
+            Some(_) => None,
+            None => {
+                let open = open.iter().collect::<Vec<_>>();
+                match driver_proof
+                    .driver()
+                    .prove_obligations_by_auto_or_name_the_first_missed(&step, &open)?
+                {
+                    Ok(proved) => Some(proved),
+                    Err(missed) => return Err(refused(open[missed])),
+                }
+            }
+        };
+        let [requirement] = open.as_slice() else {
+            let facts = open
+                .iter()
+                .map(|requirement| {
+                    Ok(
+                        match driver_proof.requirement_surface(requirement, &step)? {
+                            Some(spelling) => format!(
+                                "`{}`",
+                                crate::surface::printing::source_click_proposition(
+                                    &spelling.surface
+                                )
+                            ),
+                            None => format!("{:?}", requirement.proposition),
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>, ClickError>>()?
+                .join(", ");
+            return Err(driver_proof.step_error(format!(
+                "{scope} leaves {} body facts open ({facts}), but its `by` proves one; prove the others with `have` in the block",
+                open.len()
+            )));
+        };
+        let (proved, body) = match written {
+            Some(body) => {
+                let Some(spelling) = driver_proof.requirement_surface(requirement, &step)? else {
+                    return Err(refused(requirement));
+                };
+                let checkpoint = driver_proof.checkpoint();
+                let proved = driver_proof
+                    .begin_have(spelling.surface.clone())?.driver().try_authoritative_linear_script(body)?
+                    .ok_or_else(|| {
+                        driver_proof.step_error(format!(
+                            "the `by` after `open` does not prove `{}`, the body fact {scope} leaves open",
+                            crate::surface::printing::source_click_proposition(&spelling.surface)
+                        ))
+                    })?
+                    .join()?;
+                let body = retained_have_body(&proved.certificate_since(&checkpoint)?)?;
+                (proved, body)
+            }
+            None => {
+                let (proved, mut entries) =
+                    proved_by_auto.expect("the implicit closer proved every open fact");
+                (proved, entries.pop().expect("one entry").proof)
+            }
+        };
+        Ok((close(&proved)?, Some(Box::new(body))))
+    }
+
+    /// Discharge a theorem's retained entry requirements before its main
+    /// proof. Explicit leading haves are already in the indexed fact store;
+    /// otherwise the ordinary implicit solver produces those same haves.
+    pub(in crate::surface::proof) fn discharge_entry_requirements(
+        &self,
+        surface_goal: &ClickProposition,
+        requirements: &super::super::execution_planning::OpenObligationProbe,
+    ) -> Result<Proof<'a>, ClickError> {
+        let driver_proof = self.proof;
+        let pending = requirements
+            .recorded
+            .iter()
+            .enumerate()
+            .filter(|(_, requirement)| {
+                !driver_proof
+                    .facts()
+                    .assumptions()
+                    .states_required_goal(&requirement.proposition)
+            })
+            .collect::<Vec<_>>();
+        if pending.is_empty() {
+            return Ok(driver_proof.clone());
+        }
+        if implicit_auto_disabled() {
+            return Err(requirements.refusals[pending[0].0].clone());
+        }
+        let step = ProofStep::Have {
+            proposition: surface_goal.clone(),
+            proof: Box::new(ProofCertificate::from_proof_tactics(&[]).expect("empty certificate")),
+        };
+        let references = pending
+            .iter()
+            .map(|(_, requirement)| *requirement)
+            .collect::<Vec<_>>();
+        match driver_proof
+            .driver()
+            .prove_obligations_by_auto_or_name_the_first_missed(&step, &references)?
+        {
+            Ok((proved, _)) => Ok(proved),
+            Err(missed) => Err(requirements.refusals[pending[missed].0].clone()),
+        }
+    }
+
+    /// Lowering requirements of a proof operation are proved at its input
+    /// state. Keep the resulting `have` certificates before the operation,
+    /// so expansion uses existing explicit proof syntax without searching.
+    pub(in crate::surface::proof) fn with_proved_lowering_requirements<T>(
+        &self,
+        step: &ProofStep,
+        operation: impl Fn(&Proof<'a>) -> Result<T, ClickError>,
+    ) -> Result<T, ClickError> {
+        let driver_proof = self.proof;
+        let fast = || without_implicit_auto(|| operation(driver_proof));
+        let (probe, recorded) = probe_open_obligations(fast);
+        if recorded.recorded.is_empty() {
+            return probe;
+        }
+        let open = distinct_requirements(recorded.recorded.clone());
+        let references = open.iter().collect::<Vec<_>>();
+        match driver_proof
+            .driver()
+            .prove_obligations_by_auto_or_name_the_first_missed(step, &references)?
+        {
+            Ok((proved, _)) => without_implicit_auto(|| operation(&proved)),
+            Err(missed) => {
+                let position = recorded
+                    .recorded
+                    .iter()
+                    .position(|requirement| {
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &requirement.proposition,
+                            &open[missed].proposition,
+                        )
+                    })
+                    .expect("a distinct requirement came from the probe");
+                Err(recorded.refusals[position].clone())
+            }
+        }
+    }
+
+    /// Prepare complete back-edge lowering evidence for the loop planner.
+    /// `None` denotes a checked do-while exit with no continuing back edge.
+    ///
+    /// An exact completed closure body supplies both value and safety
+    /// evidence. Automatic preservation plans that body through checked
+    /// Surface operations; existing evidence is validated without discovery.
+    /// Ordinary value facts alone do not replace the lowering's safety evidence.
+    pub(in crate::surface::proof) fn prepare_loop_invariant_bundle(
+        &self,
+        loop_entry_state: &CState,
+        loop_head_state: &CState,
+        head_iterations: &crate::kernel::IntegerTerm,
+        condition: &CExpression,
+        invariant_checks: &[CLoopInvariantCheck],
+        ranking_measures: &[crate::kernel::CRankingComponent],
+        structural_measure: Option<&str>,
+        invariant_surfaces: &[ClickProposition],
+        binders: &[crate::kernel::CLoopBinder],
+        composite_resource_definitions: &[CCompositeResourceDefinition],
+        do_while: bool,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        driver_proof.check_loop_state_join(
+            loop_entry_state,
+            loop_head_state,
+            head_iterations,
+            condition,
+            invariant_checks,
+            binders,
+            structural_measure,
+            composite_resource_definitions,
+        )?;
+        if !matches!(driver_proof.context.as_ref(), ProofContext::Execution(_)) {
+            return Err(
+                driver_proof.step_error("loop invariant closure requires an execution proof")
+            );
+        }
+        driver_proof.require_execution_frontier("loop invariant closure")?;
+        let execution = driver_proof.execution().ok_or_else(|| {
+            driver_proof.step_error("loop invariant closure lost its execution state")
+        })?;
+        if execution.core.frontier.region != ExecutionRegionKind::LoopBody {
+            return Err(
+                driver_proof.step_error("loop invariant closure requires a loop-region proof")
+            );
+        }
+
+        if do_while {
+            let condition_may_continue = crate::kernel::c_loop_condition_may_continue(
+                &execution.core.state,
+                condition,
+                &driver_proof.back_edge_assumptions(execution),
+            )
+            .map_err(|message| {
+                driver_proof.step_error(format!("loop condition classification: {message}"))
+            })?;
+            if !condition_may_continue {
+                return Ok(None);
+            }
+        }
+        if invariant_surfaces.len() != invariant_checks.len() {
+            return Err(driver_proof.step_error(
+                "explicit invariant evidence does not align with the invariant bundle",
+            ));
+        }
+        let proof = if execution.core.checked_invariant_lowerings.is_some() {
+            driver_proof.clone()
+        } else {
+            driver_proof
+                .driver()
+                .apply_close_invariants_body(&[ProofTactic::Solve])?
+        };
+        proof.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
+        Ok(Some(proof))
+    }
+}

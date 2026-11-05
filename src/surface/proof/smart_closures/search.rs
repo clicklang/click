@@ -34,7 +34,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         ConditionTerm::Constant(false),
                         true,
                     ))
-                && let Some(closed) = attempt::candidate_outcome(proof.apply_step(
+                && let Some(closed) = attempt::candidate_outcome(proof.driver().apply_step(
                     ProofStep::Contradiction(ClickProposition::Comparison {
                         // Machine literals cannot be shadowed by C parameters
                         // named `false` or `true` when the certificate is read.
@@ -85,13 +85,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ) if normalization_refutes(antecedent) => Some(surface.as_ref().clone()),
                 _ => None,
             };
-            match attempt::candidate_outcome(proof.apply_step(ProofStep::Intro))? {
+            match attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Intro))? {
                 Some(introduced) => proof = introduced,
                 None => return Ok(None),
             }
             if let Some(antecedent) = refuted
                 && let Some(closed) = attempt::candidate_outcome(
-                    proof.apply_step(ProofStep::Contradiction(antecedent)),
+                    proof
+                        .driver()
+                        .apply_step(ProofStep::Contradiction(antecedent)),
                 )?
             {
                 scope.succeed();
@@ -146,14 +148,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .facts()
                         .contains_discharged_implication_consequent(&kernel)
                         && let Some(extracted) = attempt::candidate_outcome(
-                            search_input.apply_step(ProofStep::Extract(mirrored)),
+                            search_input
+                                .driver()
+                                .apply_step(ProofStep::Extract(mirrored)),
                         )?
                     {
                         if extracted.focused_discharged() {
                             return Ok(Some(extracted));
                         }
                         return Ok(attempt::candidate_outcome(
-                            extracted.apply_step(ProofStep::Assumption),
+                            extracted.driver().apply_step(ProofStep::Assumption),
                         )?
                         .filter(Proof::focused_discharged));
                     }
@@ -166,7 +170,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             );
         }
         Ok(attempt::candidate_outcome(
-            search_input.apply_step(ProofStep::Extract(surface.clone())),
+            search_input
+                .driver()
+                .apply_step(ProofStep::Extract(surface.clone())),
         )?
         .filter(Proof::focused_discharged))
     }
@@ -220,18 +226,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             },
             None => spelled,
         };
-        let Some(extracted) =
-            attempt::candidate_outcome(search_input.apply_step(ProofStep::Extract(spelled)))?
+        let Some(extracted) = attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_step(ProofStep::Extract(spelled)),
+        )?
         else {
             return Ok(None);
         };
         if extracted.is_complete() || extracted.focused_discharged() {
             return Ok(Some(extracted));
         }
-        Ok(
-            attempt::candidate_outcome(extracted.apply_step(ProofStep::Extract(surface.clone())))?
-                .filter(Proof::focused_discharged),
-        )
+        Ok(attempt::candidate_outcome(
+            extracted
+                .driver()
+                .apply_step(ProofStep::Extract(surface.clone())),
+        )?
+        .filter(Proof::focused_discharged))
     }
 
     /// Weakening a guarded universal by dropping conjuncts of its conclusion:
@@ -287,13 +298,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         ]);
         let mut proof = search_input.clone();
         for step in steps {
-            let Some(next) = attempt::candidate_outcome(proof.apply_step(step))? else {
+            let Some(next) = attempt::candidate_outcome(proof.driver().apply_step(step))? else {
                 return Ok(None);
             };
             proof = next;
         }
         if !proof.focused_discharged() {
-            let Some(closed) = attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))?
+            let Some(closed) =
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))?
             else {
                 return Ok(None);
             };
@@ -408,14 +420,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut proof = search_input.clone();
             for surface in surfaces {
                 let scope = proof.begin_have(surface)?;
-                let Some(closed) =
-                    (scope).try_direct_structural_closure_with_quantified(quantified)?
+                let Some(closed) = (scope)
+                    .driver()
+                    .try_direct_structural_closure_with_quantified(quantified)?
                 else {
                     return Ok(None);
                 };
                 proof = closed.join()?;
             }
-            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption));
         }
         if matches!(search_input.goal(), Some(Proposition::And(_, _))) {
             let Some((split_proof, split, ids)) =
@@ -451,7 +464,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut introduced = search_input.clone();
             while matches!(introduced.goal(), Some(Proposition::Implies(_, _))) {
                 let Some(next) =
-                    attempt::candidate_outcome(introduced.apply_step(ProofStep::Intro))?
+                    attempt::candidate_outcome(introduced.driver().apply_step(ProofStep::Intro))?
                 else {
                     return Ok(None);
                 };
@@ -462,7 +475,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 quantified,
             );
         }
-        match attempt::candidate_outcome(search_input.apply_step(ProofStep::Intro))? {
+        match attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Intro))? {
             Some(introduced) => {
                 crate::kernel::search::ProofSearch::try_direct_structural_closure_inner(
                     &(introduced),
@@ -829,14 +842,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(scope) = search_input.begin_have(spelled) else {
                 continue;
             };
-            let Some(closed) = (scope).try_selected_arithmetic()? else {
+            let Some(closed) = (scope).driver().try_selected_arithmetic()? else {
                 continue;
             };
             let Ok(proof) = closed.join() else {
                 continue;
             };
             if let Some(closed) =
-                attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))?
+                attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))?
             {
                 return Ok(Some(closed));
             }
@@ -869,7 +882,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             &written,
             None,
         )? {
-            return attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption));
+            return attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption));
         }
         Ok(None)
     }
@@ -1035,9 +1048,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         ) else {
             return Ok(None);
         };
-        attempt::candidate_outcome(search_input.apply_step(ProofStep::ArithmeticCertificate(
-            ArithmeticCertificate::integer(surface),
-        )))
+        attempt::candidate_outcome(search_input.driver().apply_step(
+            ProofStep::ArithmeticCertificate(ArithmeticCertificate::integer(surface)),
+        ))
     }
 
     /// Close the goal with in-range machine `+` and `-` identities. A
@@ -1241,14 +1254,19 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let closed = if let Some(listed) = listed {
                     let mut premises = listed.to_vec();
                     premises.extend(established.iter().map(|(_, surface)| surface.clone()));
-                    scope.apply_step(ProofStep::ArithmeticUsing(premises)).ok()
-                } else if let Some(closed) = (scope).try_direct_logical_closure()? {
+                    scope
+                        .driver()
+                        .apply_step(ProofStep::ArithmeticUsing(premises))
+                        .ok()
+                } else if let Some(closed) = (scope).driver().try_direct_logical_closure()? {
                     // A complete arithmetic domain already contains these
                     // ordinary bounds. Use the available fact before a
                     // refutation search, which excludes the exact goal.
                     Some(closed)
                 } else {
-                    scope.try_selected_arithmetic_without_identities()?
+                    scope
+                        .driver()
+                        .try_selected_arithmetic_without_identities()?
                 };
                 let Some(closed) = closed else {
                     return Ok(Err(failed.clone()));
@@ -1285,7 +1303,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     conclusion: 0,
                 },
             ));
-            let Ok(closed) = scope.apply_step(step) else {
+            let Ok(closed) = scope.driver().apply_step(step) else {
                 return Ok(Err(failed.clone()));
             };
             proof = closed.join()?;
@@ -1344,12 +1362,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = search_input.clone();
         for surface in surfaces {
             let scope = proof.begin_have(surface)?;
-            let Some(closed) = (scope).try_solve_closure_with_surfaces(introduced_surfaces)? else {
+            let Some(closed) = (scope)
+                .driver()
+                .try_solve_closure_with_surfaces(introduced_surfaces)?
+            else {
                 return Ok(None);
             };
             proof = closed.join()?;
         }
-        attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))
     }
 
     pub(in crate::surface::proof) fn try_solve_closure_strategies(
@@ -1388,7 +1409,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         }
         if matches!(search_input.context.as_ref(), ProofContext::Pure(_))
             && let Some(surface) = search_input.surface_goal()
-            && let Ok(proof) = search_input.apply_step(ProofStep::Extract(surface.clone()))
+            && let Ok(proof) = search_input
+                .driver()
+                .apply_step(ProofStep::Extract(surface.clone()))
             && proof.focused_discharged()
         {
             scope.succeed();
@@ -1399,7 +1422,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             && let Some(surface_goal) = search_input.surface_goal()
             && let Ok(source) =
                 surface_at_snapshot(surface_goal, &SnapshotSelector::ProgramPoint(anchor))
-            && let Ok(proof) = search_input.apply_step(ProofStep::Extract(source))
+            && let Ok(proof) = search_input.driver().apply_step(ProofStep::Extract(source))
             && proof.is_complete()
         {
             scope.succeed();
@@ -1472,13 +1495,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(scope) = attempt::candidate_outcome(search_input.begin_have(surface))? else {
             return Ok(None);
         };
-        let Some(closed) = (scope).try_solve_closure()? else {
+        let Some(closed) = (scope).driver().try_solve_closure()? else {
             return Ok(None);
         };
         let Some(proof) = attempt::candidate_outcome(closed.join())? else {
             return Ok(None);
         };
-        attempt::candidate_outcome(proof.apply_step(ProofStep::Assumption))
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Assumption))
     }
 
     /// `solve`'s strategy over the facts connected to the goal: read
@@ -1601,13 +1624,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Ok(scope) = search_input.begin_have(strict.clone()) else {
             return Ok(None);
         };
-        let Some(proved) = (scope).try_solve_closure()? else {
+        let Some(proved) = (scope).driver().try_solve_closure()? else {
             return Ok(None);
         };
         let Ok(joined) = proved.join() else {
             return Ok(None);
         };
         Ok(joined
+            .driver()
             .apply_step(ProofStep::ArithmeticUsing(vec![strict]))
             .ok()
             .filter(|proof| proof.is_complete() || proof.goal() != search_input.goal()))
@@ -1808,9 +1832,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }],
                 conclusion: 0,
             };
-            if let Ok(proof) = search_input.apply_step(ProofStep::ArithmeticCertificate(
-                ArithmeticCertificate::integer(certificate),
-            )) {
+            if let Ok(proof) = search_input
+                .driver()
+                .apply_step(ProofStep::ArithmeticCertificate(
+                    ArithmeticCertificate::integer(certificate),
+                ))
+            {
                 return Ok(Some(proof));
             }
         }
@@ -2020,7 +2047,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if matches!(search_input.context.as_ref(), ProofContext::Pure(_)) {
             for (_, surface) in &anchored_pairs {
                 if let Some(contradiction) = attempt::candidate_outcome(
-                    search_input.apply_step(ProofStep::Contradiction(surface.clone())),
+                    search_input
+                        .driver()
+                        .apply_step(ProofStep::Contradiction(surface.clone())),
                 )? {
                     return Ok(Some(contradiction));
                 }
@@ -2044,9 +2073,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     plan_arithmetic(engine, goal, &kernels).and_then(ArithmeticPlan::integer_affine)
                     && let Some(certificate) =
                         integer_plan_to_surface_certificate(&plan, &anchored_pairs, surface_goal)
-                    && let Ok(proof) = search_input.apply_step(ProofStep::ArithmeticCertificate(
-                        ArithmeticCertificate::integer(certificate),
-                    ))
+                    && let Ok(proof) =
+                        search_input
+                            .driver()
+                            .apply_step(ProofStep::ArithmeticCertificate(
+                                ArithmeticCertificate::integer(certificate),
+                            ))
                 {
                     return Ok(Some(proof));
                 }
@@ -2297,8 +2329,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 let certificate =
                     special_plan_to_surface_certificate(&plan, &surfaces, surface_goal);
-                if let Ok(proof) =
-                    search_input.apply_step(ProofStep::ArithmeticCertificate(certificate))
+                if let Ok(proof) = search_input
+                    .driver()
+                    .apply_step(ProofStep::ArithmeticCertificate(certificate))
                 {
                     return Ok(Some(proof));
                 }
@@ -2327,8 +2360,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 &anchored_pairs,
                 surface_goal,
             )
-            && let Ok(proof) =
-                search_input.apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
+            && let Ok(proof) = search_input
+                .driver()
+                .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
                     family: ArithmeticCertificateFamily::SignedInt32(certificate),
                 }))
         {
@@ -2529,7 +2563,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
                 .collect::<Option<Vec<_>>>();
             if let Some(spelled) = spelled
-                && let Ok(proof) = search_input.apply_step(ProofStep::ArithmeticUsing(spelled))
+                && let Ok(proof) = search_input
+                    .driver()
+                    .apply_step(ProofStep::ArithmeticUsing(spelled))
             {
                 return Some(proof);
             }
@@ -2779,6 +2815,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let certificate =
             search_input.signed_plan_to_surface_certificate(&plan, &pairs, surface_goal)?;
         search_input
+            .driver()
             .apply_step(ProofStep::ArithmeticCertificate(ArithmeticCertificate {
                 family: ArithmeticCertificateFamily::SignedInt32(certificate),
             }))
@@ -2845,7 +2882,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ConditionTerm::PointerEqual(..) | ConditionTerm::PointerValueEqual(..),
                 true
             ))
-        ) && let Ok(proof) = search_input.apply_step(ProofStep::NormalizeUsing(Vec::new()))
+        ) && let Ok(proof) = search_input
+            .driver()
+            .apply_step(ProofStep::NormalizeUsing(Vec::new()))
             && proof.is_complete()
         {
             return Some(proof);
@@ -2946,6 +2985,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return None;
         }
         search_input
+            .driver()
             .apply_step(ProofStep::NormalizeUsing(premises))
             .ok()
             .filter(Proof::is_complete)
@@ -2965,7 +3005,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 std::iter::once(surface.clone()).chain(reverse_surface_equality(surface))
             {
                 let Some(rewritten) = attempt::candidate_outcome(
-                    search_input.apply_step(ProofStep::Rewrite(oriented)),
+                    search_input
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(oriented)),
                 )?
                 else {
                     continue;
@@ -3020,7 +3062,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut unfolded_any = false;
         let mut proof = search_input.clone();
         for application in applications {
-            let attempted = proof.apply_step(ProofStep::UnfoldFunction(application));
+            let attempted = proof
+                .driver()
+                .apply_step(ProofStep::UnfoldFunction(application));
             let Some(unfolded) = attempt::candidate_outcome(attempted)? else {
                 continue;
             };
@@ -3111,7 +3155,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let mut next = None;
             for application in pure_theorems::click_function_applications(surface_goal, &[]) {
                 if let Some(unfolded) = attempt::candidate_outcome(
-                    proof.apply_step(ProofStep::UnfoldFunction(application)),
+                    proof
+                        .driver()
+                        .apply_step(ProofStep::UnfoldFunction(application)),
                 )? {
                     next = Some(unfolded);
                     break;
@@ -3148,7 +3194,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if next.is_none() {
                 for equation in &constructor_equations {
                     if let Some(rewritten) = attempt::candidate_outcome(
-                        proof.apply_step(ProofStep::Rewrite(equation.clone())),
+                        proof
+                            .driver()
+                            .apply_step(ProofStep::Rewrite(equation.clone())),
                     )? && rewritten.surface_goal() != proof.surface_goal()
                     {
                         next = Some(rewritten);
@@ -3406,8 +3454,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let disequality = surface_split_disequality(&condition)
                 .expect("an upper-bound split condition is a strict comparison");
             let disequality_scope = then_branch.begin_have(disequality.clone())?;
-            let disequality_done =
-                (disequality_scope).try_solve_closure_with_surfaces(&then_surfaces)?;
+            let disequality_done = (disequality_scope)
+                .driver()
+                .try_solve_closure_with_surfaces(&then_surfaces)?;
             let Some(disequality_done) = disequality_done else {
                 continue;
             };
@@ -3432,6 +3481,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let equality_scope = else_branch.begin_have(equality.clone())?;
             let nonstrict_scope = equality_scope.begin_have(nonstrict.clone())?;
             let nonstrict_done = nonstrict_scope
+                .driver()
                 .try_solve_closure_with_surfaces(&else_surfaces)?
                 .or_else(|| {
                     // `x < pivot + 1` gives `x <= pivot` by arithmetic once
@@ -3453,6 +3503,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 .chain(headroom)
                                 .collect();
                             nonstrict_scope
+                                .driver()
                                 .apply_step(ProofStep::ArithmeticUsing(premises))
                                 .ok()
                         })
@@ -3462,8 +3513,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             let equality_scope = equality_scope.join_nested(nonstrict_done)?;
             else_surfaces.push(nonstrict);
-            let Some(equality_done) =
-                (equality_scope).try_solve_closure_with_surfaces(&else_surfaces)?
+            let Some(equality_done) = (equality_scope)
+                .driver()
+                .try_solve_closure_with_surfaces(&else_surfaces)?
             else {
                 continue;
             };
@@ -3492,7 +3544,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .flatten()
                 })
                 .filter(Proof::focused_discharged);
-            let rewritten_else = match else_branch.apply_step(ProofStep::Rewrite(equality.clone()))
+            let rewritten_else = match else_branch
+                .driver()
+                .apply_step(ProofStep::Rewrite(equality.clone()))
             {
                 Ok(rewritten) if rewritten.focused_discharged() => Some(rewritten),
                 Ok(rewritten) => {
@@ -3581,7 +3635,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         operator: ComparisonOperator::GreaterEqual,
                         right: first.clone(),
                     };
-                    let Ok(applied) = search_input.have_by_integer_arithmetic(
+                    let Ok(applied) = search_input.driver().have_by_integer_arithmetic(
                         composed,
                         vec![second_surface.clone(), first_surface.clone()],
                     ) else {
@@ -3678,13 +3732,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         operator: ComparisonOperator::LessEqual,
                         right: observed_sum(lower_value),
                     };
-                    let Ok(applied) = search_input.have_by_integer_arithmetic(
+                    let Ok(applied) = search_input.driver().have_by_integer_arithmetic(
                         theorem_conclusion.clone(),
                         vec![lower_surface.clone(), upper_surface.clone()],
                     ) else {
                         continue;
                     };
                     if let Some(closed) = applied
+                        .driver()
                         .apply_step(ProofStep::TransportUsing {
                             source: theorem_conclusion,
                             target: surface_goal.clone(),
@@ -4029,18 +4084,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = (scope).try_direct_model_equality_rewrite_closure() else {
+        let Some(proved) = (scope).driver().try_direct_model_equality_rewrite_closure() else {
             check_verification_deadline()?;
             return Ok(None);
         };
         let Some(joined) = attempt::candidate_outcome(proved.join())? else {
             return Ok(None);
         };
-        let Some(introduced) = attempt::candidate_outcome(joined.apply_step(ProofStep::Intro))?
+        let Some(introduced) =
+            attempt::candidate_outcome(joined.driver().apply_step(ProofStep::Intro))?
         else {
             return Ok(None);
         };
-        attempt::candidate_outcome(introduced.apply_step(ProofStep::Contradiction(opposite)))
+        attempt::candidate_outcome(
+            introduced
+                .driver()
+                .apply_step(ProofStep::Contradiction(opposite)),
+        )
     }
 
     // Walk consecutive implication guards without retaining a dispatcher
@@ -4057,7 +4117,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut available_surfaces = introduced_surfaces.to_vec();
         loop {
             let Some(mut introduced) =
-                attempt::candidate_outcome(base.apply_step(ProofStep::Intro))?
+                attempt::candidate_outcome(base.driver().apply_step(ProofStep::Intro))?
             else {
                 return Ok(None);
             };
@@ -4080,12 +4140,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let negated_antecedent = negate_click_proposition(&antecedent);
             if let Some(scope) =
                 attempt::candidate_outcome(base.begin_have(negated_antecedent.clone()))?
-                && let Some(proved) = (scope).try_solve_closure()?
+                && let Some(proved) = (scope).driver().try_solve_closure()?
                 && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
                 && let Some(with_antecedent) =
-                    attempt::candidate_outcome(with_opposite.apply_step(ProofStep::Intro))?
+                    attempt::candidate_outcome(with_opposite.driver().apply_step(ProofStep::Intro))?
                 && let Some(closed) = attempt::candidate_outcome(
-                    with_antecedent.apply_step(ProofStep::Contradiction(negated_antecedent)),
+                    with_antecedent
+                        .driver()
+                        .apply_step(ProofStep::Contradiction(negated_antecedent)),
                 )?
             {
                 return Ok(Some(closed));
@@ -4096,7 +4158,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             for conjunct in &conjuncts {
                 let Some(extracted) = attempt::candidate_outcome(
-                    introduced.apply_step(ProofStep::Extract(conjunct.clone())),
+                    introduced
+                        .driver()
+                        .apply_step(ProofStep::Extract(conjunct.clone())),
                 )?
                 else {
                     return Ok(None);
@@ -4127,7 +4191,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let mut current = &premise;
                 while let ClickProposition::Implies(_, consequent) = current {
                     let Some(extracted) = attempt::candidate_outcome(
-                        introduced.apply_step(ProofStep::Extract(consequent.as_ref().clone())),
+                        introduced
+                            .driver()
+                            .apply_step(ProofStep::Extract(consequent.as_ref().clone())),
                     )?
                     else {
                         break;
@@ -4427,8 +4493,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         check_verification_deadline()?;
         let witness = ProofWitness::single(name.to_string(), spelled);
-        let Some(introduced) =
-            attempt::candidate_outcome(search_input.apply_step(ProofStep::Witness(witness)))?
+        let Some(introduced) = attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_step(ProofStep::Witness(witness)),
+        )?
         else {
             return Ok(None);
         };
@@ -4466,8 +4535,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for value in candidates {
             check_verification_deadline()?;
             let witness = ProofWitness::single(name.to_string(), value);
-            let Some(introduced) =
-                attempt::candidate_outcome(search_input.apply_step(ProofStep::Witness(witness)))?
+            let Some(introduced) = attempt::candidate_outcome(
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Witness(witness)),
+            )?
             else {
                 continue;
             };
@@ -4495,7 +4567,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         )? {
             return Ok(Some(enumerated));
         }
-        match attempt::candidate_outcome(search_input.apply_step(ProofStep::Intro))? {
+        match attempt::candidate_outcome(search_input.driver().apply_step(ProofStep::Intro))? {
             Some(introduced) => {
                 crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
                     &(introduced),
@@ -4537,7 +4609,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         match attempt::candidate_outcome(
-            search_input.apply_step(ProofStep::UnfoldPredicate(name.to_string())),
+            search_input
+                .driver()
+                .apply_step(ProofStep::UnfoldPredicate(name.to_string())),
         )? {
             Some(unfolded) => crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
                 &(unfolded),
@@ -4561,14 +4635,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else {
                     return Ok(None);
                 };
-                let Some(scope) = (scope).try_solve_closure_with_surfaces(introduced_surfaces)?
+                let Some(scope) = (scope)
+                    .driver()
+                    .try_solve_closure_with_surfaces(introduced_surfaces)?
                 else {
                     return Ok(None);
                 };
                 let Some(joined) = attempt::candidate_outcome(scope.join())? else {
                     return Ok(None);
                 };
-                attempt::candidate_outcome(joined.apply_step(ProofStep::Assumption))
+                attempt::candidate_outcome(joined.driver().apply_step(ProofStep::Assumption))
             })();
             if let Some(selected) = selected? {
                 return Ok(Some(selected));
@@ -4668,7 +4744,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             else {
                 return Ok(None);
             };
-            let Some(scope) = (scope).try_solve_closure()? else {
+            let Some(scope) = (scope).driver().try_solve_closure()? else {
                 return Ok(None);
             };
             let Some(joined) = attempt::candidate_outcome(scope.join())? else {
@@ -4676,7 +4752,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             };
             proof = joined;
         }
-        attempt::candidate_outcome(proof.apply_step(ProofStep::Enumerate))
+        attempt::candidate_outcome(proof.driver().apply_step(ProofStep::Enumerate))
     }
 
     /// Closes from the just-introduced antecedent and one exact indexed
@@ -4705,7 +4781,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         if let Some(closed) = attempt::candidate_outcome(
-            search_input.apply_step(ProofStep::Contradiction(surface_antecedent.clone())),
+            search_input
+                .driver()
+                .apply_step(ProofStep::Contradiction(surface_antecedent.clone())),
         )? {
             return Ok(Some(closed));
         }
@@ -4730,7 +4808,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         for surface in surfaces {
             if let Some(closed) = attempt::candidate_outcome(
-                search_input.apply_step(ProofStep::Contradiction(surface)),
+                search_input
+                    .driver()
+                    .apply_step(ProofStep::Contradiction(surface)),
             )? {
                 return Ok(Some(closed));
             }
@@ -5814,7 +5894,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 ))),
             };
             let scope = search_input.begin_have(surface.clone()).ok()?;
-            let closed = (scope).try_direct_logical_closure().ok()??;
+            let closed = (scope).driver().try_direct_logical_closure().ok()??;
             return Some((surface, closed.join().ok()?));
         }
         None
@@ -5983,7 +6063,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 if crate::instrumentation::deadline_exceeded() {
                     return Continue(());
                 }
-                let rewrite = proof.apply_step(ProofStep::Rewrite(oriented));
+                let rewrite = proof.driver().apply_step(ProofStep::Rewrite(oriented));
                 let Ok(rewritten) = rewrite else {
                     continue;
                 };
@@ -6049,6 +6129,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .any(|(kernel, _)| selected_premise_contains_goal(kernel, &goal))
         {
             return search_input
+                .driver()
                 .apply_step(ProofStep::Assumption)
                 .ok()
                 .filter(Proof::is_complete);
@@ -6059,6 +6140,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .collect::<Vec<_>>();
         match plan_solve_certificate(&goal, &assumptions_from_propositions(&restricted))? {
             SolveEvidence::Normalize => search_input
+                .driver()
                 .apply_step(ProofStep::Normalize)
                 .ok()
                 .filter(Proof::is_complete),
@@ -6199,7 +6281,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(scope) = search_input.begin_have(bound_surface.clone()) else {
                 continue;
             };
-            let Some(scope) = (scope).try_direct_logical_closure().ok().flatten() else {
+            let Some(scope) = (scope).driver().try_direct_logical_closure().ok().flatten() else {
                 continue;
             };
             let Ok(proof) = scope.join() else {
@@ -6208,7 +6290,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(scope) = proof.begin_have(link_surface.clone()) else {
                 continue;
             };
-            let Some(scope) = scope.try_direct_logical_closure().ok().flatten() else {
+            let Some(scope) = scope.driver().try_direct_logical_closure().ok().flatten() else {
                 continue;
             };
             let Ok(proof) = scope.join() else {
@@ -6219,8 +6301,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator,
                 right: surface_goal_constant.clone(),
             };
-            let Ok(applied) =
-                proof.have_by_integer_arithmetic(composed, vec![bound_surface, link_surface])
+            let Ok(applied) = proof
+                .driver()
+                .have_by_integer_arithmetic(composed, vec![bound_surface, link_surface])
             else {
                 continue;
             };
@@ -6322,6 +6405,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right,
             };
             let applied = search_input
+                .driver()
                 .have_by_integer_arithmetic(conclusion, vec![surface])
                 .ok()?;
             crate::kernel::search::ProofSearch::try_direct_logical_closure(&(applied))
@@ -6340,7 +6424,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     if let Some((proof, premise, _, value)) =
                         search_input.unsigned_strict_fact(&zero, &right, surface_fact)
                     {
-                        return proof.close_with_unsigned_lemma(
+                        return proof.driver().close_with_unsigned_lemma(
                             "click::integer::uint32_positive_predecessor_strictly_decreases",
                             vec![value],
                             premise,
@@ -6376,8 +6460,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             operator: ComparisonOperator::LessThan,
                             right: difference.clone(),
                         };
-                        let proof = proof
-                            .apply_step(ProofStep::ApplyTheoremUsing {
+                        let proof = proof.driver().apply_step(ProofStep::ApplyTheoremUsing {
                                 application: TheoremApplication {
                                     name: "click::integer::uint32_less_than_implies_positive_difference"
                                         .to_string(),
@@ -6386,7 +6469,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 premises: vec![premise],
                             })
                             .ok()?;
-                        return proof.close_with_unsigned_lemma(
+                        return proof.driver().close_with_unsigned_lemma(
                             "click::integer::uint32_positive_predecessor_strictly_decreases",
                             vec![difference],
                             positive,
@@ -6411,7 +6494,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     && let Some((proof, premise, value, bound)) =
                         search_input.unsigned_strict_fact(value, right_offset, surface_fact)
                 {
-                    return proof.close_with_unsigned_lemma(
+                    return proof.driver().close_with_unsigned_lemma(
                         "click::integer::uint32_difference_decreases_after_increment",
                         vec![value, bound],
                         premise,
@@ -6429,7 +6512,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     && let Some((proof, premise, value, upper)) =
                         search_input.unsigned_strict_fact(value, &right, surface_fact)
                 {
-                    return proof.close_with_unsigned_lemma(
+                    return proof.driver().close_with_unsigned_lemma(
                         "click::integer::uint32_increment_upper_bound",
                         vec![value, upper],
                         premise,
@@ -6529,10 +6612,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             for equality in orientations {
                 let scope = search_input.begin_have(nonnegative_surface.clone()).ok()?;
-                let Ok(scope) = scope.apply_step(ProofStep::Rewrite(equality)) else {
+                let Ok(scope) = scope.driver().apply_step(ProofStep::Rewrite(equality)) else {
                     continue;
                 };
-                let Some(scope) = (scope).try_direct_logical_closure().ok().flatten() else {
+                let Some(scope) = (scope).driver().try_direct_logical_closure().ok().flatten()
+                else {
                     continue;
                 };
                 let joined = scope.join().ok()?;
@@ -6556,7 +6640,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 else {
                     continue;
                 };
-                let Ok(applied) = joined.apply_step(ProofStep::ArithmeticCertificate(certificate))
+                let Ok(applied) = joined
+                    .driver()
+                    .apply_step(ProofStep::ArithmeticCertificate(certificate))
                 else {
                     continue;
                 };
@@ -6703,6 +6789,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     break;
                 };
                 let selected = focused_branch
+                    .driver()
                     .apply_step(ProofStep::Contradiction(assumed_surface.clone()))
                     .ok()
                     .or_else(|| {
@@ -6716,11 +6803,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         let selected_goal = if index == 0 { goal_left } else { goal_right };
                         let scope = focused_branch.begin_have(selected_goal).ok()?;
                         let rewritten = scope
+                            .driver()
                             .apply_step(ProofStep::Rewrite(assumed_surface.clone()))
                             .ok()?;
-                        let closed = (rewritten).try_direct_logical_closure().ok().flatten()?;
+                        let closed = (rewritten)
+                            .driver()
+                            .try_direct_logical_closure()
+                            .ok()
+                            .flatten()?;
                         let joined = closed.join().ok()?;
-                        joined.apply_step(ProofStep::Assumption).ok()
+                        joined.driver().apply_step(ProofStep::Assumption).ok()
                     });
                 let Some(selected) = selected else {
                     complete = false;
@@ -6780,7 +6872,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 },
             )
         })?;
-        search_input.try_planned_explicit_steps(&tactics)
+        search_input.driver().try_planned_explicit_steps(&tactics)
     }
 
     /// Tries only universal facts introduced by checked predicate unfolds when
@@ -7126,16 +7218,18 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         continue;
                     }
                     let instantiated_proof =
-                        match search_input.apply_step(ProofStep::InstantiateUsing {
-                            quantified: surface.clone(),
-                            argument: argument.clone(),
-                            premises: Some(
-                                guard_facts
-                                    .iter()
-                                    .map(|(_, surface)| surface.clone())
-                                    .collect(),
-                            ),
-                        }) {
+                        match search_input
+                            .driver()
+                            .apply_step(ProofStep::InstantiateUsing {
+                                quantified: surface.clone(),
+                                argument: argument.clone(),
+                                premises: Some(
+                                    guard_facts
+                                        .iter()
+                                        .map(|(_, surface)| surface.clone())
+                                        .collect(),
+                                ),
+                            }) {
                             Ok(proof) => proof,
                             Err(_) => continue,
                         };
@@ -7255,11 +7349,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .any(|tactic| matches!(tactic, ProofTactic::Have(_)))
         {
             search_input
+                .driver()
                 .try_generated_linear_script(&tactics)
                 .ok()
                 .flatten()
         } else {
-            search_input.try_planned_explicit_steps(&tactics)
+            search_input.driver().try_planned_explicit_steps(&tactics)
         }
     }
 
@@ -7278,7 +7373,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut proof = search_input.clone();
         let mut introduced_forall = false;
         while let ClickProposition::ForAll { body, .. } = cursor {
-            proof = proof.apply_step(ProofStep::Intro).ok()?;
+            proof = proof.driver().apply_step(ProofStep::Intro).ok()?;
             cursor = body;
             introduced_forall = true;
         }
@@ -7288,11 +7383,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let ClickProposition::Implies(antecedent, _) = cursor else {
             return None;
         };
-        proof = proof.apply_step(ProofStep::Intro).ok()?;
+        proof = proof.driver().apply_step(ProofStep::Intro).ok()?;
         let mut guard_surfaces = Vec::new();
         collect_surface_conjunct_leaves(antecedent, &mut guard_surfaces);
         for guard in &guard_surfaces {
-            proof = proof.apply_step(ProofStep::Extract(guard.clone())).ok()?;
+            proof = proof
+                .driver()
+                .apply_step(ProofStep::Extract(guard.clone()))
+                .ok()?;
         }
         let target = proof.surface_goal()?.clone();
         let source = old_reflexive_transport_source(&target)?;
@@ -7486,6 +7584,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 })
                 .ok_or(())?;
             let successor = proof
+                .driver()
                 .apply_step(ProofStep::Extract(source))
                 .map_err(|_| ())?;
             // `extract(source)` proves only the proposition to which `source`
@@ -7530,6 +7629,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // contradictory ones. It comes last so a goal they close keeps its
         // expansion.
         search_input
+            .driver()
             .apply_step(ProofStep::ArithmeticUsing(surfaces.to_vec()))
             .ok()
             .filter(|closed| closed.is_complete() || closed.focused_discharged())
@@ -7583,6 +7683,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let mut premises = surfaces.to_vec();
         premises.extend(established.into_iter().map(|(_, surface)| surface));
         Ok(proof
+            .driver()
             .apply_step(ProofStep::ArithmeticUsing(premises))
             .ok()
             .filter(|closed| closed.is_complete() || closed.focused_discharged()))
@@ -7601,7 +7702,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 .iter()
                 .filter(|surface| matches!(surface, ClickProposition::Loadable { .. }))
             {
-                if let Ok(closed) = search_input.apply_step(ProofStep::TransportUsing {
+                if let Ok(closed) = search_input.driver().apply_step(ProofStep::TransportUsing {
                     source: source.clone(),
                     target: surface_goal.clone(),
                     premises: surfaces.to_vec(),
@@ -7645,11 +7746,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             for conjunct in [left, right] {
                 let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
                 proof = (scope)
+                    .driver()
                     .try_restricted_solve_closure(surfaces)?
                     .join()
                     .ok()?;
             }
             return proof
+                .driver()
                 .apply_step(ProofStep::Assumption)
                 .ok()
                 .filter(Proof::is_complete);
@@ -7671,7 +7774,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 && !normalizes_context_free(&kernel)
                 && proof.facts().contains_proper_conjunct(&kernel)
             {
-                proof = proof.apply_step(ProofStep::Extract(surface.clone())).ok()?;
+                proof = proof
+                    .driver()
+                    .apply_step(ProofStep::Extract(surface.clone()))
+                    .ok()?;
                 if proof.is_complete() {
                     return Some(proof);
                 }
@@ -7715,12 +7821,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 if consequent.as_ref() == goal
                     && premise_pairs.iter().any(|(selected, _)| selected == antecedent.as_ref()))
         }) && let Some(surface_goal) = proof.surface_goal()
-            && let Ok(extracted) = proof.apply_step(ProofStep::Extract(surface_goal.clone()))
+            && let Ok(extracted) = proof
+                .driver()
+                .apply_step(ProofStep::Extract(surface_goal.clone()))
         {
             if extracted.is_complete() {
                 return Some(extracted);
             }
-            if let Ok(closed) = extracted.apply_step(ProofStep::Assumption)
+            if let Ok(closed) = extracted.driver().apply_step(ProofStep::Assumption)
                 && closed.is_complete()
             {
                 return Some(closed);
@@ -7781,7 +7889,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     &crate::kernel::proof::ProofFacts::from_ordered(&restricted),
                 )
                 .is_ok()
-                && let Ok(closed) = proof.apply_step(ProofStep::NormalizeUsing(conditions))
+                && let Ok(closed) = proof
+                    .driver()
+                    .apply_step(ProofStep::NormalizeUsing(conditions))
                 && closed.is_complete()
             {
                 return Some(closed);
@@ -7803,7 +7913,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .collect::<Vec<_>>(),
                 surface_goal,
             );
-            if let Ok(closed) = proof.apply_step(ProofStep::ArithmeticCertificate(certificate))
+            if let Ok(closed) = proof
+                .driver()
+                .apply_step(ProofStep::ArithmeticCertificate(certificate))
                 && closed.is_complete()
             {
                 return Some(closed);
@@ -7823,7 +7935,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
 .and_then(ArithmeticPlan::integer_affine)
             && let Some(certificate) =
                 integer_plan_to_surface_certificate(&plan, &premise_pairs, surface_goal)
-            && let Ok(closed) = proof.apply_step(ProofStep::ArithmeticCertificate(
+            && let Ok(closed) = proof.driver().apply_step(ProofStep::ArithmeticCertificate(
                 ArithmeticCertificate::integer(certificate),
             ))
             && closed.is_complete()
@@ -7924,7 +8036,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 for oriented in
                     std::iter::once(spelling.clone()).chain(reverse_surface_equality(&spelling))
                 {
-                    let Ok(rewritten) = search_input.apply_step(ProofStep::Rewrite(oriented))
+                    let Ok(rewritten) = search_input
+                        .driver()
+                        .apply_step(ProofStep::Rewrite(oriented))
                     else {
                         continue;
                     };
@@ -8264,7 +8378,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Apply those through the same recursive Proof driver used by
         // authoritative source scripts; the plan is provenance input, not an
         // independently interpreted semantic certificate.
-        let checked = search_input.try_generated_linear_script(&tactics);
+        let checked = search_input.driver().try_generated_linear_script(&tactics);
         if matches!(goal, Proposition::CMemoryLoadable { .. })
             && let Err(error) = &checked
         {
@@ -8342,11 +8456,13 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
             cited.push(premise.clone());
         }
-        search_input.apply_step(ProofStep::ApplyInductionUsing {
-            hypothesis: hypothesis.to_string(),
-            arguments: arguments.to_vec(),
-            premises: cited,
-        })
+        search_input
+            .driver()
+            .apply_step(ProofStep::ApplyInductionUsing {
+                hypothesis: hypothesis.to_string(),
+                arguments: arguments.to_vec(),
+                premises: cited,
+            })
     }
 
     /// Applies one statement step, retaining one newly proved non-load
@@ -8366,7 +8482,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // ordinary checked step after publishing its `have`.
         // Use the same checked-step entry point as written `step()` so
         // smart execution retains its fact deltas in the opt-in trace too.
-        let initial = search_input.apply_step(step.clone());
+        let initial = search_input.driver().apply_step(step.clone());
         crate::kernel::search::ProofSearch::retry_statement_after_refusal(
             search_input,
             step,
@@ -8397,7 +8513,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 break;
             };
             proof = opened;
-            match proof.apply_step(step.clone()) {
+            match proof.driver().apply_step(step.clone()) {
                 Ok(stepped) => return Ok(stepped),
                 Err(next) if next.missing_resource().is_some() => refusal = next,
                 Err(next) => {
@@ -8543,7 +8659,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     };
                     if let Some((predicate_name, _)) = &direct_caller {
                         let Some(unfolded) = attempt::candidate_outcome(
-                            proof.apply_step(ProofStep::UnfoldPredicate(predicate_name.clone())),
+                            proof
+                                .driver()
+                                .apply_step(ProofStep::UnfoldPredicate(predicate_name.clone())),
                         )?
                         else {
                             return Err(error);
@@ -8560,7 +8678,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let closed = match direct_caller {
                         Some((predicate_name, selection)) => {
                             let _ = predicate_name;
-                            match (have).try_direct_caller_requirement_closure(&selection) {
+                            match (have)
+                                .driver()
+                                .try_direct_caller_requirement_closure(&selection)
+                            {
                                 Ok(closed) => closed,
                                 Err(_) => {
                                     check_verification_deadline()?;
@@ -8578,7 +8699,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // future StepContract follows precisely the same contract
                     // selection and certificate provenance as the refused step.
                     proof = closed.join()?;
-                    match proof.apply_step(step.clone()) {
+                    match proof.driver().apply_step(step.clone()) {
                         Ok(next) => return Ok(next),
                         Err(next_error) => {
                             let Some(next_requirement) =
@@ -8616,7 +8737,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     ) -> Result<Option<Proof<'a>>, ClickError> {
         crate::kernel::search::ProofSearch::try_statement_step_with_apply(
             &(search_input),
-            |proof| proof.apply_step(ProofStep::Step),
+            |proof| proof.driver().apply_step(ProofStep::Step),
         )
     }
 
@@ -8702,7 +8823,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 body: Box::new(body),
             }),
         };
-        let Some(chosen) = attempt::candidate_outcome(search_input.apply_step(
+        let Some(chosen) = attempt::candidate_outcome(search_input.driver().apply_step(
             ProofStep::LetSatisfy(ProofLetSatisfy {
                 bindings: vec![(choice_name.clone(), click_type)],
                 proposition: source,
@@ -8732,12 +8853,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let witness_name = written_name.as_ref().unwrap_or(name).clone();
-        let Some(witnessed) = attempt::candidate_outcome(chosen.apply_step(ProofStep::Witness(
-            ProofWitness::single(
+        let Some(witnessed) = attempt::candidate_outcome(chosen.driver().apply_step(
+            ProofStep::Witness(ProofWitness::single(
                 witness_name,
                 ContractExpression::CFragment(CExpression::Variable(choice_name)),
-            ),
-        )))?
+            )),
+        ))?
         else {
             return Ok(None);
         };
@@ -8747,8 +8868,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             if proof.focused_discharged() {
                 return Ok(Some(proof));
             }
-            let Some(extracted) =
-                attempt::candidate_outcome(proof.apply_step(ProofStep::Extract(source.clone())))?
+            let Some(extracted) = attempt::candidate_outcome(
+                proof
+                    .driver()
+                    .apply_step(ProofStep::Extract(source.clone())),
+            )?
             else {
                 return Ok(None);
             };
@@ -8854,7 +8978,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         for step in steps {
-            let Some(next) = attempt::candidate_outcome(scope.apply_step(step))? else {
+            let Some(next) = attempt::candidate_outcome(scope.driver().apply_step(step))? else {
                 return Ok(None);
             };
             scope = next;

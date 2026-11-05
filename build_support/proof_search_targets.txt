@@ -201,3 +201,4 @@ try_wide_arithmetic_using
 try_wide_equality_through_integer
 wide_arithmetic_with
 with_goal_operation_identities
+driver

@@ -826,8 +826,10 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
         selected.join()
     };
     match step_proof {
-        StepProof::By(body) => {
-            proof.apply_step_with_obligation_proofs(step, None, &mut |proof, proposition, _| {
+        StepProof::By(body) => proof.driver().apply_step_with_obligation_proofs(
+            step,
+            None,
+            &mut |proof, proposition, _| {
                 solve(
                     proof,
                     &ProofHave {
@@ -835,16 +837,20 @@ pub(in crate::surface::proof) fn apply_source_step_proofs<'a>(
                         proof: SourceProof::Script(body.clone()),
                     },
                 )
-            })
-        }
+            },
+        ),
         StepProof::Requires(entries) => {
             let written = entries
                 .iter()
                 .map(|entry| (entry.label.clone(), entry.have.proposition.clone()))
                 .collect::<Vec<_>>();
-            proof.apply_step_with_obligation_proofs(step, Some(&written), &mut |proof, _, index| {
-                solve(proof, &entries[index.expect("a `requires` entry")].have)
-            })
+            proof.driver().apply_step_with_obligation_proofs(
+                step,
+                Some(&written),
+                &mut |proof, _, index| {
+                    solve(proof, &entries[index.expect("a `requires` entry")].have)
+                },
+            )
         }
     }
 }
@@ -878,6 +884,7 @@ pub(in crate::surface::proof) fn apply_written_theorem<'a>(
     application: &TheoremApplication,
 ) -> Result<Proof<'a>, ClickError> {
     proof
+        .driver()
         .apply_theorem_application(application)
         .map_err(|error| {
             if crate::instrumentation::deadline_exceeded() {
@@ -1133,9 +1140,12 @@ fn apply_frontier_source_tactic<'a>(
     let _origin = crate::surface::proof::timing::trace_origin(&indexed.tactic);
     let checkpoint = proof.checkpoint();
     let next = if matches!(indexed.tactic, ProofTactic::CloseInvariants) {
-        proof.apply_close_invariants_body(&[ProofTactic::Solve])?
+        proof
+            .driver()
+            .apply_close_invariants_body(&[ProofTactic::Solve])?
     } else if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
         proof
+            .driver()
             .apply_step_at(step, indexed.source_index)
             .inspect_err(|_| {
                 if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
@@ -1149,11 +1159,15 @@ fn apply_frontier_source_tactic<'a>(
     {
         apply_source_step_proofs(&proof, step, step_proof, indexed.index)?
     } else if let ProofTactic::CloseInvariantsBy(body) = &indexed.tactic {
-        proof.apply_close_invariants_body(body)?
+        proof.driver().apply_close_invariants_body(body)?
     } else if let ProofTactic::Choose(choice) = &indexed.tactic {
-        proof.apply_step_at(ProofStep::Choose(choice.clone()), indexed.source_index)?
+        proof
+            .driver()
+            .apply_step_at(ProofStep::Choose(choice.clone()), indexed.source_index)?
     } else if let ProofTactic::LetSatisfy(binding) = &indexed.tactic {
-        proof.apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
+        proof
+            .driver()
+            .apply_step_at(ProofStep::LetSatisfy(binding.clone()), indexed.source_index)?
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
@@ -2148,7 +2162,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 // their leading steps are not folded into the split.
                 let arm_steps = arm_steps.filter(|_| ensuring.is_none());
                 let product = if let Some(arm_steps) = arm_steps.as_ref() {
-                    let exact = proof.try_split_source_successor_if(
+                    let exact = proof.driver().try_split_source_successor_if(
                         condition,
                         [
                             (arm_steps[0].0, arm_steps[0].1),
@@ -2353,9 +2367,11 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
         crate::surface::proof_diagnostics::capture_check_observations(
             || -> Result<_, ClickError> {
                 Ok(match source_proof.as_ref() {
-                    SourceProof::Tactic(SmartTactic::Auto) => nested.try_auto_fact_closure()?,
+                    SourceProof::Tactic(SmartTactic::Auto) => {
+                        nested.driver().try_auto_fact_closure()?
+                    }
                     SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
-                        (nested).try_solve_closure()?
+                        (nested).driver().try_solve_closure()?
                     }
                     SourceProof::Script(body) => {
                         // An explicit script is checked by its proof steps alone: a
@@ -2363,7 +2379,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                         // rescue. The checked scope reports the exact declining step.
                         let mut declined = None;
                         let mut unfinished = None;
-                        let selected = nested.try_authoritative_linear_script_reporting(
+                        let selected = nested.driver().try_authoritative_linear_script_reporting(
                             body,
                             &mut declined,
                             &mut unfinished,
@@ -2432,7 +2448,7 @@ pub(in crate::surface::proof) fn preservation_smart_step<'a>(
         &mut retried_requirements,
     )? {
         Some(stepped) => Ok(stepped),
-        None => proof.apply_step(ProofStep::Step),
+        None => proof.driver().apply_step(ProofStep::Step),
     }
 }
 
@@ -2762,7 +2778,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             .iter()
                             .any(|choice| choice.match_arm.is_some());
                         let proof = proof.start_source_tactic(indexed.source_index)?;
-                        let proof = proof.apply_step_at(
+                        let proof = proof.driver().apply_step_at(
                             ProofStep::Contradiction(surface.clone()),
                             indexed.source_index,
                         )?;
@@ -2846,7 +2862,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                             let _origin =
                                 crate::surface::proof::timing::trace_origin(&indexed.tactic);
                             let checkpoint = proof.checkpoint();
-                            proof = proof.apply_step(ProofStep::Step)?;
+                            proof = proof.driver().apply_step(ProofStep::Step)?;
                             if indexed.source_index != owning_source_index
                                 && let Some(site) = proof_site
                                 && capture_selects_source(
@@ -4313,7 +4329,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 // their leading steps are not folded into the split.
                 let arm_steps = arm_steps.filter(|_| ensuring.is_none());
                 let product = if let Some(arm_steps) = arm_steps.as_ref() {
-                    let product = proof_at_if.try_split_source_successor_if(
+                    let product = proof_at_if.driver().try_split_source_successor_if(
                         condition,
                         [
                             (arm_steps[0].0, arm_steps[0].1),
@@ -4905,7 +4921,7 @@ fn advance_linear_open_scope<'a>(
             continue;
         }
         if let Some(step) = SourceContext::ExecutionFrontier.leaf_step(&indexed.tactic) {
-            scope = scope.apply_step(step).inspect_err(|_| {
+            scope = scope.driver().apply_step(step).inspect_err(|_| {
                 if matches!(indexed.tactic, ProofTactic::TransportUsing { .. }) {
                     scope.record_certification_failure_trace();
                 }
@@ -4914,7 +4930,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(applied) = scope.apply_theorem_application(application)? else {
+            let Some(applied) = scope.driver().apply_theorem_application(application)? else {
                 return decline();
             };
             scope = applied;
@@ -4933,7 +4949,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::Transport { source, target } = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(transported) = scope.try_fact_transport(source, target)? else {
+            let Some(transported) = scope.driver().try_fact_transport(source, target)? else {
                 return decline();
             };
             scope = transported;
@@ -4952,7 +4968,7 @@ fn advance_linear_open_scope<'a>(
         }
         if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = (scope).try_execute_to_exit()? else {
+            let Some(executed) = (scope).driver().try_execute_to_exit()? else {
                 return decline();
             };
             scope = executed;
@@ -4971,7 +4987,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = (scope).try_execute_until(region)? else {
+            let Some(executed) = (scope).driver().try_execute_until(region)? else {
                 return decline();
             };
             scope = executed;

@@ -3207,7 +3207,9 @@ impl<'a> Proof<'a> {
         let Some(clause) = opening else {
             return Ok(None);
         };
-        super::super::attempt::candidate_outcome(self.apply_step(ProofStep::UnfoldResource(clause)))
+        super::super::attempt::candidate_outcome(
+            self.driver().apply_step(ProofStep::UnfoldResource(clause)),
+        )
     }
 }
 

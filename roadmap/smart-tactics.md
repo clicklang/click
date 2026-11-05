@@ -22,8 +22,11 @@ have been audited, or that every candidate below is a reproduced defect.
 The interface refactor now exposes discovery through `kernel::search::ProofSearch`
 without changing its behavior. The frozen
 [dependency inventory](../build_support/proof_search_edges.tsv) records existing
-callers and separates operation dependencies from dispatch, adapters and
-unclassified mixed drivers. No new scaling measurements accompany that split.
+callers and separates operation dependencies from the explicit `ProofDriver`
+and unclassified mixed callers. The driver owns proof interpretation and the
+choice between explicit obligation proofs and implicit solving. Its 15
+operation-to-driver reference records remain a separate migration list;
+implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
 Existing test names below identify evidence to retain and inspect, not new
 measurements. The contract lives in [Verifier design](../docs/internals/verifier-design.md)
 and [Verification efficiency](../docs/internals/verification-efficiency.md).

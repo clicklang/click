@@ -24,6 +24,7 @@
 use super::proof_object::Proof;
 use crate::surface::ClickError;
 use crate::surface::ProofStep;
+use crate::surface::proof::driver::DriveProof as _;
 use std::cell::RefCell;
 
 const MAX_SEARCH_FAILURES: usize = 8;
@@ -376,7 +377,7 @@ pub(super) fn try_steps<'a>(
     steps: impl IntoIterator<Item = ProofStep>,
 ) -> Result<Option<Proof<'a>>, ClickError> {
     first_success(root, budget, steps, |root, step| {
-        candidate_outcome(root.apply_step(step))
+        candidate_outcome(root.driver().apply_step(step))
     })
 }
 
@@ -396,7 +397,7 @@ pub(super) fn try_sequence<'a>(
     }
     let mut proof = root.clone();
     for step in steps {
-        match candidate_outcome(proof.apply_step(step.clone()))? {
+        match candidate_outcome(proof.driver().apply_step(step.clone()))? {
             Some(next) => proof = next,
             None => return Ok(None),
         }

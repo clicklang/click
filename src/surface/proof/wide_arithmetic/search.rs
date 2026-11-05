@@ -133,11 +133,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 goal_relation,
             );
             return search_input
+                .driver()
                 .apply_step(have(
                     forward,
                     vec![ProofStep::ArithmeticUsing(surface_premises.to_vec())],
                 ))
-                .and_then(|proof| proof.apply_step(ProofStep::Assumption))
+                .and_then(|proof| proof.driver().apply_step(ProofStep::Assumption))
                 .map_err(|error| Some(error.raw_summary().to_string()));
         }
 
@@ -246,9 +247,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let lower = order(literal(&minimum), to_integer(atom), false);
                 let upper = order(to_integer(atom), literal(&maximum), false);
                 let Ok(next) = proof
+                    .driver()
                     .apply_step(have(lower.clone(), vec![type_range(lower.clone())]))
                     .and_then(|proof| {
-                        proof.apply_step(have(upper.clone(), vec![type_range(upper.clone())]))
+                        proof
+                            .driver()
+                            .apply_step(have(upper.clone(), vec![type_range(upper.clone())]))
                     })
                 else {
                     continue;
@@ -299,7 +303,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         // A premise written over exact observations is
                         // already that order, in the spelling that reads it.
                         let restated = if premise != &stated && !compares_observations(premise) {
-                            proof.apply_step(have(stated.clone(), vec![ProofStep::Assumption]))
+                            proof
+                                .driver()
+                                .apply_step(have(stated.clone(), vec![ProofStep::Assumption]))
                         } else {
                             Ok(proof.clone())
                         };
@@ -308,7 +314,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         // order is the stated premise itself.
                         let carried = vec![ProofStep::Assumption];
                         restated
-                            .and_then(|proof| proof.apply_step(have(observed.clone(), carried)))
+                            .and_then(|proof| {
+                                proof.driver().apply_step(have(observed.clone(), carried))
+                            })
                             .map(|proof| (proof, observed))
                             .map_err(|error| {
                                 format!(
@@ -344,6 +352,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         };
                         let prove = |proof: &Proof<'a>, proposition: &ClickProposition| {
                             proof
+                                .driver()
                                 .apply_step(have(
                                     proposition.clone(),
                                     vec![ProofStep::ArithmeticUsing(facts.clone())],
@@ -376,6 +385,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                     expression: operation.clone(),
                                 };
                                 proof
+                                    .driver()
                                     .apply_step(have(defined, vec![ProofStep::Assumption]))
                                     .map_err(|error| {
                                         format!("{}: {}", out_of_range(&upper), error.raw_summary())
@@ -389,6 +399,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                                 right: exact.clone(),
                             };
                             proof
+                                .driver()
                                 .apply_step(have(
                                     equation.clone(),
                                     vec![operation_identity(lower, upper, equation.clone())],
@@ -420,9 +431,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                             let lower = order(literal(&minimum), to_integer(operation), false);
                             let upper = order(to_integer(operation), literal(&maximum), false);
                             if let Ok(next) = proof
+                                .driver()
                                 .apply_step(have(lower.clone(), vec![type_range(lower.clone())]))
                                 .and_then(|proof| {
-                                    proof.apply_step(have(
+                                    proof.driver().apply_step(have(
                                         upper.clone(),
                                         vec![type_range(upper.clone())],
                                     ))
@@ -468,8 +480,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             to_integer(&goal_upper),
             goal_relation,
         );
-        proof = proof
-            .apply_step(have(
+        proof = proof.driver().apply_step(have(
                 observed_goal.clone(),
                 vec![ProofStep::ArithmeticUsing(facts)],
             ))
@@ -486,12 +497,15 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // The observed goal is the native goal's own form, so the fact just
         // proved closes it.
         let _ = (goal_lower, goal_upper);
-        let applied = proof.apply_step(ProofStep::Assumption).map_err(|error| {
-            Some(format!(
-                "the Integer claim could not be carried back: {}",
-                error.raw_summary()
-            ))
-        })?;
+        let applied = proof
+            .driver()
+            .apply_step(ProofStep::Assumption)
+            .map_err(|error| {
+                Some(format!(
+                    "the Integer claim could not be carried back: {}",
+                    error.raw_summary()
+                ))
+            })?;
         if applied.is_complete() || applied.goal() != search_input.goal() {
             return Ok(applied);
         }

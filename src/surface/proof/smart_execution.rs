@@ -5,24 +5,6 @@ use super::*;
 use std::collections::BTreeSet;
 
 impl<'a> Proof<'a> {
-    /// Applies one bare theorem application without treating an unavailable
-    /// candidate as a smart-search miss. Source adapters that have already
-    /// committed to `apply(...)` use this strict form and retain the original
-    /// selector diagnostic, while still sharing the sole checked transition.
-    pub(in crate::surface::proof) fn apply_theorem_application(
-        &self,
-        application: &TheoremApplication,
-    ) -> Result<Self, ClickError> {
-        let Some(step) =
-            crate::kernel::search::ProofSearch::select_theorem_application_step(self, application)?
-        else {
-            return Err(self.step_error(
-                "theorem application requires a result-sensitive fixed-state proof after function exit",
-            ));
-        };
-        self.apply_selected_theorem_application(step)
-    }
-
     /// The refusal for a requirement an execution-frontier `apply` cannot
     /// discharge: the written clause, what its parameters were bound to, its
     /// instantiation spelled through the proof's names, and for a `viewable`
@@ -174,18 +156,6 @@ impl<'a> Proof<'a> {
             ));
         }
         note
-    }
-
-    pub(super) fn apply_selected_theorem_application(
-        &self,
-        step: ProofStep,
-    ) -> Result<Self, ClickError> {
-        self.apply_step(step).map_err(|error| {
-            self.step_error(format!(
-                "theorem search selected a simple candidate that Proof rejected: {}",
-                error.raw_summary()
-            ))
-        })
     }
 
     /// Consult only the guard's indexed spellings and containing source facts.
@@ -346,3 +316,6 @@ mod scaling_tests {
 
 // Source spelling adapters for the kernel ProofSearch interface.
 mod search;
+
+#[path = "driver/theorems.rs"]
+mod driver;

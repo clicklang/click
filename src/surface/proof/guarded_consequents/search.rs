@@ -41,7 +41,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 continue;
             };
             let Some(extracted) = attempt::candidate_outcome(
-                with_guard.apply_step(ProofStep::Extract(surface_consequent.clone())),
+                with_guard
+                    .driver()
+                    .apply_step(ProofStep::Extract(surface_consequent.clone())),
             )?
             else {
                 continue;
@@ -66,7 +68,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     true
                 )
             ) && let Some(rewritten) = attempt::candidate_outcome(
-                extracted.apply_step(ProofStep::Rewrite(surface_consequent.clone())),
+                extracted
+                    .driver()
+                    .apply_step(ProofStep::Rewrite(surface_consequent.clone())),
             )? {
                 if rewritten.focused_discharged() {
                     return Ok(Some(rewritten));
@@ -122,9 +126,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let proved = if others.is_empty() {
                 None
             } else {
-                (scope).try_restricted_solve_closure(&others)
+                (scope).driver().try_restricted_solve_closure(&others)
             }
-            .or_else(|| (scope).try_solve_closure().ok().flatten());
+            .or_else(|| (scope).driver().try_solve_closure().ok().flatten());
             let Some(proved) = proved else {
                 continue;
             };
@@ -132,6 +136,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let surface_consequent =
                 super::smart_closures::observed_native_arithmetic(consequent, surface_consequent);
             let extracted = with_guard
+                .driver()
                 .apply_step(ProofStep::Extract(surface_consequent.clone()))
                 .ok()?;
             if extracted.focused_discharged() {
@@ -187,7 +192,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         else {
             return Ok(None);
         };
-        let Some(proved) = (scope).try_solve_closure()? else {
+        let Some(proved) = (scope).driver().try_solve_closure()? else {
             return Ok(None);
         };
         attempt::candidate_outcome(proved.join())

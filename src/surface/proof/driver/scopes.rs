@@ -1,0 +1,420 @@
+//! Proof script orchestration; explicit operations remain on Proof.
+use super::*;
+use crate::surface::proof::driver::ProofDriver;
+
+impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Applies one checked step inside the nested body. Failed
+    /// candidates leave the enclosing scope value unchanged.
+    pub(in crate::surface::proof) fn apply_step(
+        &self,
+        step: ProofStep,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        let driver_proof = self.proof;
+        let mut next = driver_proof.clone();
+        let body = driver_proof
+            .body
+            .driver()
+            .apply_step_with_origin(step, None)?;
+        if matches!(
+            driver_proof.structure.as_ref(),
+            ProofScopeStructure::Open { .. }
+        ) {
+            for fact in body.added_facts() {
+                if !next.introduced_facts.contains(fact) {
+                    next.introduced_facts.push(fact.clone());
+                }
+            }
+        }
+        next.body = body;
+        Ok(next)
+    }
+
+    /// Runs the implicit tail's search inside this scope.
+    ///
+    /// Each selected statement is checked and retained by
+    /// `Proof::try_statement_step`; the search never mutates a second
+    /// semantic context or reconstructs steps from its aftermath. A partial
+    /// advance is discarded unless the checked descendant reaches function
+    /// exit, so unsupported frontiers return a bounded miss to the caller.
+    pub(in crate::surface::proof) fn try_execute_to_exit(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some((body, added_facts)) =
+            crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(
+                &(driver_proof.body),
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut introduced_facts = driver_proof.introduced_facts.clone();
+        for fact in added_facts {
+            if !introduced_facts.contains(&fact) {
+                introduced_facts.push(fact);
+            }
+        }
+        let mut next = driver_proof.clone();
+        next.introduced_facts = introduced_facts;
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Runs bare fact-transport search on the scope's current checked body.
+    /// Failed candidate descendants are discarded by `Proof`; the enclosing
+    /// scope receives only the successful retained `TransportUsing` node.
+    pub(in crate::surface::proof) fn try_fact_transport(
+        &self,
+        source: &ClickProposition,
+        target: &ClickProposition,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        if driver_proof.body.is_at_function_exit() {
+            return Ok(None);
+        }
+        let Some(body) = crate::kernel::search::ProofSearch::try_execution_fact_transport(
+            &(driver_proof.body),
+            source,
+            target,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        for fact in body.added_facts() {
+            if !next.introduced_facts.contains(fact) {
+                next.introduced_facts.push(fact.clone());
+            }
+        }
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Runs `step_until` on checked descendants and stops before the
+    /// selected source statement.
+    pub(in crate::surface::proof) fn try_execute_until(
+        &self,
+        region: &CodeRegionRef,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some((body, added_facts)) =
+            crate::kernel::search::ProofSearch::try_execute_until_descendant(
+                &(driver_proof.body),
+                region,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut introduced_facts = driver_proof.introduced_facts.clone();
+        for fact in added_facts {
+            if !introduced_facts.contains(&fact) {
+                introduced_facts.push(fact);
+            }
+        }
+        let mut next = driver_proof.clone();
+        next.introduced_facts = introduced_facts;
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Runs the small shared smart closure search inside the nested proof.
+    /// Every accepted candidate still advances through `Proof::apply_step`.
+    pub(in crate::surface::proof) fn try_direct_logical_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_direct_logical_closure(&(driver_proof.body))?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Keep the direct structural candidate and its loop-specific universal
+    /// closer inside a named leaf of a wide conjunction.
+    pub(in crate::surface::proof) fn try_direct_structural_closure_with_quantified(
+        &self,
+        quantified: &mut dyn FnMut(&Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_direct_structural_closure_with_quantified(
+                &(driver_proof.body),
+                quantified,
+            )?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Closes the body's `int32` or `int64` definedness goal from the
+    /// operands' indexed constant bounds.
+    pub(in crate::surface::proof) fn try_signed_definedness_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = crate::kernel::search::ProofSearch::try_signed_definedness_closure(
+            &(driver_proof.body),
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_direct_model_equality_rewrite_closure(
+        &self,
+    ) -> Option<ProofScope<'a>> {
+        let driver_proof = self.proof;
+        let body = crate::kernel::search::ProofSearch::try_direct_model_equality_rewrite_closure(
+            &(driver_proof.body),
+        )?;
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Some(next)
+    }
+
+    pub(in crate::surface::proof) fn try_solve_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(mut body) =
+            crate::kernel::search::ProofSearch::try_solve_closure(&(driver_proof.body))?
+        else {
+            return Ok(None);
+        };
+        // At an outcome or in a pure proof a bare assumption may cite an ambient
+        // fact the certificate cannot spell, so a derivation from spelled
+        // premises is preferred. Mid-execution and at loop entry, an available
+        // fact is its own spelling:
+        // `assumption();` checks by re-checking the judgment, and the
+        // frontier derivation exists for what the direct closer cannot
+        // prove, not to replace what it can.
+        let mid_execution = matches!(
+            driver_proof.body.context.as_ref(),
+            ProofContext::Execution(_)
+        ) && driver_proof.body.focused_outcome_data().is_none();
+        if body.node.depth == 1
+            && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
+            && !mid_execution
+            && driver_proof.loop_entry_goal.is_none()
+            && let Some(checkable) =
+                crate::kernel::search::ProofSearch::try_solve_closure_after_direct(
+                    &(driver_proof.body),
+                    true,
+                )?
+        {
+            body = checkable;
+        }
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// A stated arithmetic subgoal closed by arithmetic alone
+    /// (the body's `try_arithmetic_fact_closure`).
+    pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_arithmetic_fact_closure(&(driver_proof.body))?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// Selected-premise arithmetic without operation identities, for the bounds and
+    /// goal an identity closure proves inside its own `have`s.
+    pub(in crate::surface::proof) fn try_selected_arithmetic_without_identities(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = crate::kernel::search::ProofSearch::selected_arithmetic(
+            &(driver_proof.body),
+            false,
+            &[],
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_selected_arithmetic(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_selected_arithmetic(&(driver_proof.body))?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_restricted_solve_closure(
+        &self,
+        surfaces: &[ClickProposition],
+    ) -> Option<ProofScope<'a>> {
+        let driver_proof = self.proof;
+        let body = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+            &(driver_proof.body),
+            surfaces,
+        )?;
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Some(next)
+    }
+
+    pub(in crate::surface::proof) fn try_solve_closure_with_surfaces(
+        &self,
+        introduced_surfaces: &[ClickProposition],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
+            &(driver_proof.body),
+            introduced_surfaces,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_direct_caller_requirement_closure(
+        &self,
+        selection: &CallerRequirementSelection,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = crate::kernel::search::ProofSearch::try_direct_caller_requirement_closure(
+            &(driver_proof.body),
+            selection,
+        )?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+}
+
+impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// `auto` on a stated fact: it executes no C, so it is `solve`.
+    pub(in crate::surface::proof) fn try_auto_fact_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        (driver_proof).driver().try_solve_closure()
+    }
+
+    /// Checks a source body after its enclosing driver has selected Proof as
+    /// the authority for this scope. Explicit failures remain checked errors
+    /// through every nested scope and logical arm.
+    pub(in crate::surface::proof) fn try_authoritative_linear_script(
+        &self,
+        tactics: &[ProofTactic],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = driver_proof
+            .body
+            .driver()
+            .try_authoritative_linear_script(tactics)?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    /// [`Self::try_authoritative_linear_script`] for a body whose driver
+    /// knows where each tactic was written: `sites[index]` addresses
+    /// `tactics[index]`.
+    pub(in crate::surface::proof) fn try_addressed_linear_script(
+        &self,
+        tactics: &[ProofTactic],
+        sites: &[ProofStepSite],
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = driver_proof
+            .body
+            .driver()
+            .try_addressed_linear_script(tactics, sites, &mut None, None)?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
+    pub(in crate::surface::proof) fn try_authoritative_linear_script_reporting(
+        &self,
+        tactics: &[ProofTactic],
+        declined: &mut Option<crate::surface::proof::smart_closures::LinearScriptDecline>,
+        unfinished: &mut Option<Proof<'a>>,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        let Some(body) = driver_proof
+            .body
+            .driver()
+            .try_authoritative_linear_script_reporting(tactics, declined, Some(unfinished))?
+        else {
+            return Ok(None);
+        };
+        let mut next = driver_proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+}
+
+impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Checks an explicit theorem application on the scope's current body.
+    /// Preserve a missing-premise diagnostic instead of treating the written
+    /// application as a search miss. Function-exit applications remain
+    /// outcome-local ordered-finalization operations.
+    pub(in crate::surface::proof) fn apply_theorem_application(
+        &self,
+        application: &TheoremApplication,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let driver_proof = self.proof;
+        if driver_proof.body.is_at_function_exit() {
+            return Ok(None);
+        }
+        let body = driver_proof
+            .body
+            .driver()
+            .apply_theorem_application(application)?;
+        let mut next = driver_proof.clone();
+        if matches!(
+            driver_proof.structure.as_ref(),
+            ProofScopeStructure::Open { .. }
+        ) {
+            for fact in body.added_facts() {
+                if !next.introduced_facts.contains(fact) {
+                    next.introduced_facts.push(fact.clone());
+                }
+            }
+        }
+        next.body = body;
+        Ok(Some(next))
+    }
+}

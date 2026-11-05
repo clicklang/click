@@ -1,12 +1,12 @@
 # Separate proof operations from proof search
 
-Status: step 1 implemented as a behavior-preserving interface refactor.
+Status: behavior-preserving proof/search split and explicit proof driver implemented.
 The next step is to remove the inventoried operation-to-search dependencies
 one at a time. The general fast-operation guarantee is not established yet.
 
 ## Design check
 
-- **Parts:** proof operations, discovery, source adapters, persistent state.
+- **Parts:** proof operations, discovery, proof-script driver, persistent state.
 - **Boundary:** explicit operations remain on `kernel::proof::ProofObject` and
   its Surface `Proof` wrapper; discovery is exposed through `kernel::search::ProofSearch`.
 - **Cost:** this refactor does not change algorithms, indexes, budgets or costs.
@@ -41,19 +41,49 @@ inputs each method needs:
 
 The explicit Surface `Proof` interface no longer owns the extracted discovery
 methods. Its remaining calls to search are visible in the dependency inventory.
-`ProofScope` still has search forwarding adapters; these are recorded separately
-from primitive operations. Direct helpers such as indexed fact lookup and
+`ProofScope` search forwarding adapters now belong to `ProofDriver<ProofScope>`. Direct helpers such as indexed fact lookup and
 retrieving the retained spelling map stay outside the search interface.
 
 The existing `PropositionDerivation` representation and its checking lifecycle
 are unchanged. Moving its discovery code does not endorse producer/checker
 revalidation as a design for new operations.
 
+## Driver and obligations
+
+`surface::proof::driver::ProofDriver` borrows a `Proof` or `ProofScope`. It
+interprets source proof steps, nested scripts, theorem applications and closure
+bodies, choosing explicit operations or `ProofSearch` at each frontier. This
+is one interpreter, not separate fast and slow passes. `proof.driver()` borrows
+the existing persistent state without allocating or copying it.
+
+The implementations live in `surface/proof/driver/`. Existing helper modules
+mount those files as private child modules to retain helper visibility. Claims
+and execution orchestration are also housed there, with their existing logical
+module names preserved. The kernel's semantic `ProofObject` and `ProofSearch`
+remain kernel interfaces; this source interpreter belongs in Surface because
+it consumes parsed Click proofs, source locations and expansion records.
+
+For statement obligations:
+
+1. `Proof::prepare_step` runs the existing operation under its obligation probe,
+   returning the existing conditional candidate and recorded requirements.
+2. The driver proves those requirements at the original frontier, using the
+   supplied `by`/`requires` blocks or implicit search when no block was written.
+3. `Proof::finish_prepared_step` resumes with the proved requirements using the
+   existing candidate/retry behavior. The candidate cannot prove its own inputs.
+
+Obligation generation is intended to be fast; implicit solving is legitimately
+slow and expandable. This extraction preserves existing fold dispatch and
+failed-preparation retries. It does not introduce a second checker, change
+acceptance or remove a walk. In particular, `apply_fast_simple_step` still
+re-enters the driver for folds with implicit auto disabled; this compatibility
+edge is inventoried rather than claimed search-free.
+
 ## Dependency inventory and enforcement
 
 [`build_support/proof_search_edges.tsv`](../build_support/proof_search_edges.tsv)
 is the frozen production reference inventory. Columns are source path, caller
-role, owner/function, search target and number of references. Repeated calls
+role, owner/function, search or driver target and number of references. Repeated calls
 from one function to one target share a record. It is a lexical reference
 inventory, not a type-resolved or transitive Rust call graph.
 
@@ -64,23 +94,28 @@ Roles distinguish the work remaining:
 | `legacy-bridge` | Seven preserved kernel forwarding boundaries into extracted traversals. |
 | `legacy-caller` | Kernel dependencies on those old entry points; these expose propagation beyond the seven bridges. |
 | `operation` | Source operation, transport, validation or transition construction still calls discovery. |
-| `scope-adapter` | Existing scope wrappers forward explicit search requests. |
+| `driver` | Explicit proof interpretation, including legitimate implicit obligation solving. |
+| `operation-to-driver` | Remaining proof-operation calls into orchestration; inspect their transitive behavior. |
 | `dispatch` | Source drivers explicitly select a smart tactic or implicit closing. |
 | `presentation` | Spelling and trace helpers depend on discovery helpers. Audit independently of semantic steps. |
 | `search` | Calls made within the extracted search interface or planning modules. |
 | `mixed` | Mixed drivers and auxiliary planners still requiring caller-level classification. |
 | `import` | Named import, not a runtime invocation. |
 
-The initial inventory contains 439 records: 7 legacy bridges, 22 kernel callers
-of those bridges, 14 Surface operation dependencies, 16 scope adapters,
-13 dispatch dependencies, 6 presentation dependencies, 338 search-internal
-records, 21 mixed records and 2 imports. These are reference records, not
-individual invocation counts or independent performance defects.
+The current inventory contains 605 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 15 operation-to-driver dependencies,
+94 driver records, 1 other dispatch record, 6 presentation records,
+415 search-internal records, 29 mixed records and 2 imports. These are reference
+records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
 callers reach the same traversal; dispatch and search-to-search calls are
-expected. The `operation` and legacy rows are the concrete migration list;
-`mixed` rows are explicitly unresolved, not silently declared fast.
+expected. The `operation`, `operation-to-driver` and legacy rows are the migration list;
+`mixed` rows are explicitly unresolved, not silently declared fast. Four of the
+operation records belong to explicit tactic/theorem handlers now implemented
+on `ProofDriver`: moving dispatch must not hide those search dependencies or
+reclassify them as legitimate implicit solving. Driver placement alone is not
+an efficiency guarantee.
 
 Seven kernel bridges preserve these implementations:
 
@@ -97,7 +132,9 @@ Seven kernel bridges preserve these implementations:
 `build_support/proof_search_boundary.rs`, invoked by the normal build boundary
 check, rejects new references to the registered search entry points and new
 unclassified `ProofSearch` methods. It also rejects returning a registered
-search method to `Proof`. Tests pin the exact inventory, including deletions,
+search method to `Proof`. It also registers the driver methods, rejects moving
+them back to `Proof`/`ProofScope`, and inventories `.driver()` acquisition so
+new operation-to-driver dependencies require explicit review. Tests pin the exact inventory, including deletions,
 and exercise direct calls, function references, type aliases and macro tokens.
 Changing the inventory is a reviewable architecture change, not an automatic
 regeneration to make the build pass.

@@ -1094,3 +1094,44 @@ fn extracted_legacy_search_retains_the_existing_operation_guards() {
         boundary::check_source(path, &source).unwrap();
     }
 }
+
+#[test]
+fn driver_boundary_rejects_new_backedges_and_misplaced_orchestration() {
+    for source in [
+        "impl Proof { fn new_operation(&self) { self.driver().apply_step(); } }",
+        "impl Proof { fn apply_step(&self) {} }",
+        "impl ProofScope { fn apply_theorem_application(&self) {} }",
+        "impl ProofDriver<P> { fn unclassified_dispatch(&self) {} }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert!(
+            proof_search_boundary::check("src/new_operation.rs", &file).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn file_module_path_attributes_are_relative_to_the_source_directory() {
+    let temp = tempfile::tempdir().unwrap();
+    let kernel = temp.path().join("src/kernel");
+    std::fs::create_dir_all(kernel.join("helpers")).unwrap();
+    std::fs::write(kernel.join("mod.rs"), "mod operations;").unwrap();
+    std::fs::write(
+        kernel.join("operations.rs"),
+        r#"#[path = "helpers/../moved.rs"] mod moved;"#,
+    )
+    .unwrap();
+    std::fs::write(kernel.join("moved.rs"), "fn harmless() {}").unwrap();
+    assert!(boundary::check_tree(temp.path(), "src/kernel/mod.rs").is_ok());
+    std::fs::write(kernel.join("moved.rs"), "use crate::surface as s;").unwrap();
+    assert!(boundary::check_tree(temp.path(), "src/kernel/mod.rs").is_err());
+}
+
+#[test]
+fn moving_explicit_dispatch_to_the_driver_does_not_hide_operation_search() {
+    let file = syn::parse_file("impl ProofDriver<P> { fn apply_theorem_application(&self) { ProofSearch::select_theorem_application_step(self.proof); } }").unwrap();
+    let edges = proof_search_boundary::inventory("src/surface/proof/driver/theorems.rs", &file);
+    assert!(edges.keys().all(|key| key.contains("\toperation\t")));
+    assert_eq!(edges.len(), 1);
+}

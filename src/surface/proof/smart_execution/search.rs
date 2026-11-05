@@ -134,7 +134,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 proof = next;
                 retried.clear();
             } else {
-                return match proof.apply_step(ProofStep::Step) {
+                return match proof.driver().apply_step(ProofStep::Step) {
                     Err(error) => Err(error),
                     Ok(_) => Err(proof
                         .step_error("`back_edge()` found no checked advance from this frontier")),
@@ -281,7 +281,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             Err(error) if crate::instrumentation::deadline_exceeded() => return Err(error),
             Err(_) => return Ok(None),
         };
-        match search_input.apply_step(ProofStep::TransportUsing {
+        match search_input.driver().apply_step(ProofStep::TransportUsing {
             source: source.clone(),
             target: target.clone(),
             premises,
@@ -401,7 +401,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         candidates: impl IntoIterator<Item = ClickProposition>,
     ) -> Result<Result<Proof<'a>, Option<ClickError>>, ClickError> {
         let apply = |premises: Vec<ClickProposition>| {
-            search_input.apply_step(ProofStep::TransportUsing {
+            search_input.driver().apply_step(ProofStep::TransportUsing {
                 source: source.clone(),
                 target: target.clone(),
                 premises,
@@ -542,6 +542,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             Err(_) => return Ok(None),
         };
         search_input
+            .driver()
             .apply_selected_theorem_application(step)
             .map(Some)
     }

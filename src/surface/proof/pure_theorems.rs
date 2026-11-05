@@ -1268,7 +1268,7 @@ fn check_pure_structural_induction(
             .sum::<usize>();
         let sites = claim_script_sites(&root, &prepared, first_source_index);
         let mut unfinished = None;
-        let attempted = match root.try_addressed_linear_script(
+        let attempted = match root.driver().try_addressed_linear_script(
             &prepared,
             &sites,
             &mut None,
@@ -1932,7 +1932,8 @@ fn verify_theorem_ensure(
             spec_definitions,
             theorem_environment,
         );
-        root.discharge_entry_requirements(surface_goal, &entry_requirements)?;
+        root.driver()
+            .discharge_entry_requirements(surface_goal, &entry_requirements)?;
         return Ok(VerifiedPureTheorem {
             theorem_definition: theorem.clone(),
             ensure_index,
@@ -1959,7 +1960,8 @@ fn verify_theorem_ensure(
             spec_definitions,
             theorem_environment,
         );
-        root.discharge_entry_requirements(surface_goal, &entry_requirements)?;
+        root.driver()
+            .discharge_entry_requirements(surface_goal, &entry_requirements)?;
         return verify_kernel_standard_theorem_axiom(
             theorem,
             ensure_index,
@@ -2393,7 +2395,7 @@ fn verify_contract_refinement_theorem(
         theorem_environment,
     );
     let mut search = super::attempt::search_scope("contract refinement");
-    let attempted = match root.try_authoritative_linear_script(proof_tactics) {
+    let attempted = match root.driver().try_authoritative_linear_script(proof_tactics) {
         Ok(attempted) => attempted,
         Err(error) => {
             return Err(error
@@ -2542,7 +2544,9 @@ fn check_direct_pure_goal_with_proof(
         theorem_environment,
     )
     .with_recorded_goal_introductions(Some(goal_introductions.clone()));
-    let root = root.discharge_entry_requirements(surface_goal, entry_requirements)?;
+    let root = root
+        .driver()
+        .discharge_entry_requirements(surface_goal, entry_requirements)?;
     let mut search = super::attempt::search_scope("pure theorem solve");
     // Default proof search has a budget and timing, but no written tactic
     // occurrence. Its failure belongs to the declaration, not a fabricated
@@ -3002,7 +3006,7 @@ fn check_pure_script_with_proof(
         root
     } else {
         let mut unfinished = None;
-        let completed = root.try_addressed_linear_script(
+        let completed = root.driver().try_addressed_linear_script(
             &tactics[..prefix],
             &all_sites[..prefix],
             &mut None,
@@ -3016,13 +3020,15 @@ fn check_pure_script_with_proof(
         unfinished
             .ok_or_else(|| ClickError::new("theorem entry requirement prelude did not complete"))?
     };
-    let root = root.discharge_entry_requirements(surface_goal, entry_requirements)?;
+    let root = root
+        .driver()
+        .discharge_entry_requirements(surface_goal, entry_requirements)?;
     let tactics = &tactics[prefix..];
     let mut search = super::attempt::search_scope("pure theorem script");
     let mut declined = None;
     let sites = &all_sites[prefix..];
     let mut unfinished = None;
-    let checked = match root.try_addressed_linear_script(
+    let checked = match root.driver().try_addressed_linear_script(
         tactics,
         sites,
         &mut declined,
@@ -4019,7 +4025,10 @@ mod tests {
             )
             .unwrap();
             let before = crate::persistent::persistent_node_allocations();
-            let instantiated = root.apply_step(certificate.steps()[0].clone()).unwrap();
+            let instantiated = root
+                .driver()
+                .apply_step(certificate.steps()[0].clone())
+                .unwrap();
             allocations.push(crate::persistent::persistent_node_allocations() - before);
             // The instantiation adds the goal, which closes it.
             assert!(instantiated.is_complete());

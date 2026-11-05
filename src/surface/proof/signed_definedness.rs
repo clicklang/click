@@ -77,7 +77,8 @@ impl<'a> Proof<'a> {
             conclusion: 0,
         });
         let Some(proof) = attempt::candidate_outcome(
-            self.apply_step(ProofStep::ArithmeticCertificate(certificate)),
+            self.driver()
+                .apply_step(ProofStep::ArithmeticCertificate(certificate)),
         )?
         else {
             return Ok(None);
