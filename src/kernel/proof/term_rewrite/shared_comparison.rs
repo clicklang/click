@@ -82,12 +82,18 @@ impl TermRewrite<'_> {
             // rather than rebuilding it at every shared occurrence.
             if !self.source_disabled
                 && let Some((from, to)) = self.bitvector
-                && (!matches!(from, MachineTerm::Variable(_))
-                    || matches!(to, MachineOperandView::Shared(_)))
-                && !matches!(from, MachineTerm::Variable(variable) if self.scope.c.contains_key(variable))
+                && (from.variable().is_none() || matches!(to, MachineOperandView::Shared(_)))
+                && !from
+                    .variable()
+                    .is_some_and(|variable| self.scope.c.contains_key(variable))
             {
-                let source = sources.entry(format).or_insert_with(|| {
-                    KernelTermImport::default().machine_arithmetic(format, from)
+                let source = sources.entry(format).or_insert_with(|| match from {
+                    MachineOperandView::Legacy(from) => {
+                        KernelTermImport::default().machine_arithmetic(format, from)
+                    }
+                    MachineOperandView::Shared(from) => {
+                        Some(from.with_machine_observation_type(format))
+                    }
                 });
                 if source.as_ref() == Some(&term) {
                     let replacement = replacements

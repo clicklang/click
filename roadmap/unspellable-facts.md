@@ -437,6 +437,18 @@ prefixes cover both observations and fold endpoints without boxed exports.
 Opaque replacements that leave the shared producer fragment still reach the
 native reconstruction boundary and must be migrated before part 1 is complete.
 
+Scoped machine rewriting now accepts shared source operands as well as shared
+replacements. Native output carriers compare the selected source syntax through
+operand views; shared observations match retained nodes without exporting the
+source. Variable shadowing, capture avoidance and composite-source binder
+refusals retain the native rules. Shared replacement capture summaries are
+collected when a binder or fresh name needs them, avoiding repeated variable
+enumeration for growing replacements in ordinary rewrites. Differential tests
+cover source syntax and binder behavior; growing source DAGs and replacements
+with distinct variables have no-export scaling regressions. This provides the
+source interface needed by the pending modular projection migration; it does
+not remove that projection's native output boundary yet.
+
 | Remaining audit group | Main consumers |
 | --- | --- |
 | Wide equality, tagged addresses and mixed opaque operands | comparison dispatch, pointer-tag forms, shared rewrite compatibility, arithmetic reconstruction |

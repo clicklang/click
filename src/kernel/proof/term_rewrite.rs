@@ -25,6 +25,8 @@ mod integer_conditional_tests;
 #[cfg(test)]
 mod pointer_application_tests;
 mod shared_comparison;
+#[cfg(test)]
+mod shared_source_tests;
 mod shared_wide_syntax;
 mod spec_rewrite;
 
@@ -1545,7 +1547,7 @@ pub(crate) struct TermRewrite<'a> {
     // identities. Ordinary equality rewrites retain the written nodes.
     comparison_arithmetic: bool,
     algebraic: Option<(&'a AlgebraicTerm, &'a AlgebraicTerm)>,
-    bitvector: Option<(&'a MachineTerm, MachineOperandView<'a>)>,
+    bitvector: Option<(MachineOperandView<'a>, MachineOperandView<'a>)>,
     integer_exact: Option<(&'a SharedIntegerTerm, &'a SharedIntegerTerm)>,
     pointer_variable: Option<(Variable, &'a Pointer)>,
     pointer_addresses_only: bool,
@@ -1789,16 +1791,25 @@ impl<'a> TermRewrite<'a> {
 
     pub(crate) fn for_bits(from: &'a MachineTerm, to: &'a MachineTerm) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
-        Self::for_bits_with_budget(from, MachineOperandView::Legacy(to), false)
+        Self::for_bits_with_budget(
+            MachineOperandView::Legacy(from),
+            MachineOperandView::Legacy(to),
+            false,
+        )
     }
 
     fn for_bits_with_budget(
-        from: &'a MachineTerm,
+        from: MachineOperandView<'a>,
         to: MachineOperandView<'a>,
         budgeted: bool,
     ) -> Self {
         let mut replacement_carriers = CarrierVariables::for_rewrite(budgeted);
-        collect_machine_operand_carriers(to, &mut replacement_carriers);
+        // Shared replacements may be growing DAG prefixes. Capture information
+        // is needed only when entering a binder, not for an ordinary rewrite.
+        let defer_capture = matches!(to, MachineOperandView::Shared(_));
+        if !defer_capture {
+            collect_machine_operand_carriers(to, &mut replacement_carriers);
+        }
         let CarrierVariables {
             integer: integer_replacement_variables,
             c: bitvector_replacement_variables,
@@ -1832,8 +1843,10 @@ impl<'a> TermRewrite<'a> {
             pointer_origin_cache: HashMap::new(),
             scope_renaming_max: 0,
             integer_body_summaries: HashMap::new(),
-            integer_replacement_variables: Some(integer_replacement_variables),
-            bitvector_replacement_variables: Some(bitvector_replacement_variables),
+            integer_replacement_variables: (!defer_capture)
+                .then_some(integer_replacement_variables),
+            bitvector_replacement_variables: (!defer_capture)
+                .then_some(bitvector_replacement_variables),
             integer_replacement_variable_max,
             bitvector_replacement_variable_max,
             integer_renaming_max: None,
@@ -1878,6 +1891,13 @@ impl<'a> TermRewrite<'a> {
 
     pub(crate) fn for_machine_operand_checked(
         from: &'a MachineTerm,
+        to: MachineOperandView<'a>,
+    ) -> Self {
+        Self::for_machine_operands_checked(MachineOperandView::Legacy(from), to)
+    }
+
+    pub(crate) fn for_machine_operands_checked(
+        from: MachineOperandView<'a>,
         to: MachineOperandView<'a>,
     ) -> Self {
         let _collection_scope = crate::instrumentation::CheckedCollectionScope::new();
@@ -3731,10 +3751,19 @@ impl<'a> TermRewrite<'a> {
             return IntegerTerm::constant_i64(0);
         }
         let integer_source = self.integer_variables.as_ref().map(|mapping| mapping.from);
-        let c_source = self.bitvector.and_then(|(from, _)| match from {
-            MachineTerm::Variable(variable) => Some(*variable),
-            _ => None,
-        });
+        let c_source = self
+            .bitvector
+            .and_then(|(from, _)| from.variable().copied());
+
+        if self.bitvector.is_some() && self.bitvector_replacement_variables.is_none() {
+            self.ensure_replacement_carriers();
+            if let Some(variables) = &self.replacement_carriers {
+                self.integer_replacement_variable_max = variables.integer.last().map(|v| v.0);
+                self.bitvector_replacement_variable_max = variables.c.last().map(|v| v.0);
+                self.integer_replacement_variables = Some(variables.integer.clone());
+                self.bitvector_replacement_variables = Some(variables.c.clone());
+            }
+        }
 
         // Typed substitutions use the same carrier-aware replacement summary
         // as algebraic matches.  In particular, a C variable with the same
@@ -4373,7 +4402,7 @@ impl<'a> TermRewrite<'a> {
 
     fn has_composite_bitvector_source(&self) -> bool {
         self.bitvector
-            .is_some_and(|(source, _)| !matches!(source, MachineTerm::Variable(_)))
+            .is_some_and(|(source, _)| source.variable().is_none())
     }
 
     fn reserve_algebraic_match_variables(
@@ -4423,12 +4452,11 @@ impl<'a> TermRewrite<'a> {
     fn binding_shadows_source(&self, carrier: BindingCarrier, variable: Variable) -> bool {
         match carrier {
             BindingCarrier::C => {
-                matches!(
-                    self.bitvector,
-                    Some((MachineTerm::Variable(source), _)) if *source == variable
-                ) || self
-                    .pointer_variable
-                    .is_some_and(|(source, _)| source == variable)
+                self.bitvector
+                    .is_some_and(|(source, _)| source.variable() == Some(&variable))
+                    || self
+                        .pointer_variable
+                        .is_some_and(|(source, _)| source == variable)
                     || self
                         .typed_variables
                         .as_ref()
@@ -4614,6 +4642,9 @@ impl<'a> TermRewrite<'a> {
     }
 
     fn fresh_variable(&mut self) -> Option<Variable> {
+        if self.bitvector.is_some() && self.bitvector_replacement_variables.is_none() {
+            self.ensure_replacement_carriers();
+        }
         if self.integer_work_exhausted {
             return None;
         }
@@ -5302,6 +5333,105 @@ impl<'a> TermRewrite<'a> {
         SharedIntegerRangeEndpoint::intern(self.bits(endpoint.value()))
     }
 
+    /// Match a retained source against an explicit native output carrier.
+    /// Visit only the selected syntax; no source is exported for inspection.
+    fn matches_machine_source(
+        &mut self,
+        native: &MachineTerm,
+        source: MachineOperandView<'_>,
+    ) -> bool {
+        let MachineOperandView::Shared(root) = source else {
+            let MachineOperandView::Legacy(source) = source else {
+                unreachable!()
+            };
+            return native == source;
+        };
+        let mut pending = vec![(native, root)];
+        while let Some((native, shared)) = pending.pop() {
+            self.visit();
+            if self.checked_work_exhausted() {
+                return false;
+            }
+            let view = MachineOperandView::Legacy(native);
+            match shared.node() {
+                KernelTermNode::Variable(variable) => {
+                    if view.variable() != Some(variable) {
+                        return false;
+                    }
+                }
+                KernelTermNode::MachineLiteral(literal) => {
+                    if *native != literal.legacy_term() {
+                        return false;
+                    }
+                }
+                KernelTermNode::MachineBinary {
+                    format,
+                    operator,
+                    arguments,
+                } => {
+                    let Some((
+                        actual_format,
+                        actual_operator,
+                        [MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)],
+                    )) = view.binary()
+                    else {
+                        return false;
+                    };
+                    if *format != actual_format || *operator != actual_operator {
+                        return false;
+                    }
+                    pending.push((b, &arguments[1]));
+                    pending.push((a, &arguments[0]));
+                }
+                KernelTermNode::MachineUnary {
+                    format,
+                    operator,
+                    operand,
+                } => {
+                    let Some((actual_format, actual_operator, MachineOperandView::Legacy(value))) =
+                        view.unary()
+                    else {
+                        return false;
+                    };
+                    if *format != actual_format || *operator != actual_operator {
+                        return false;
+                    }
+                    pending.push((value, operand));
+                }
+                KernelTermNode::MachineCast {
+                    encoding,
+                    source,
+                    destination,
+                    operand,
+                } => {
+                    let Some((
+                        actual_encoding,
+                        actual_source,
+                        actual_destination,
+                        MachineOperandView::Legacy(value),
+                    )) = view.cast()
+                    else {
+                        return false;
+                    };
+                    if *encoding != actual_encoding
+                        || *source != actual_source
+                        || *destination != actual_destination
+                    {
+                        return false;
+                    }
+                    pending.push((value, operand));
+                }
+                KernelTermNode::IntegerToMachine { .. } => {
+                    if shared.machine_conversion_leaf() != Some(native) {
+                        return false;
+                    }
+                }
+                _ => return false,
+            }
+        }
+        true
+    }
+
     pub(crate) fn bits(&mut self, v: &MachineTerm) -> MachineTerm {
         self.reserve_bitvector_variables_once(v);
         if self.checked_work_exhausted() {
@@ -5325,7 +5455,7 @@ impl<'a> TermRewrite<'a> {
         }
         if let Some((from, to)) = self.bitvector
             && !self.source_disabled
-            && v == from
+            && self.matches_machine_source(v, from)
         {
             self.changed = true;
             // Native output carriers still require a written machine term.
