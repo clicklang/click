@@ -226,6 +226,11 @@ complete-operation scaling controls; neither mechanism alone proves the rule.
 
 ## Next design/build cycle and completion
 
+The proposed architectural migration is in
+[Separate proof operations from proof search](../design/proof-operations-and-search.md).
+Review its interfaces and explicit exception boundary before implementing more
+isolated optimizations. The measurements below feed that migration.
+
 1. Review this inventory, then measure L1 through an actual write: it has a
    concrete checking caller and isolates aliases from symbolic-loan growth.
    Discuss the representation or explicit-proof fix after obtaining red curves.

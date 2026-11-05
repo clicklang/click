@@ -6,6 +6,10 @@ with source context and proof provenance. Together they let explicit tactics
 and smart search share one checked-transition boundary while keeping semantic
 authority separate from the record used to explain or expand the result.
 
+The [proof operations/search proposal](https://github.com/clicklang/click/blob/master/design/proof-operations-and-search.md)
+specifies a migration to separate fast operations from session-owned discovery.
+It is a proposal, not a description of an already enforced efficiency boundary.
+
 ## Persistent proof state
 
 The kernel `ProofObject` owns an immutable `ProofState` and the focused branch
