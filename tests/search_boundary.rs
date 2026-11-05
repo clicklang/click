@@ -1162,3 +1162,22 @@ fn proof_driver_inventory_ignores_unrelated_local_driver_variables() {
     assert!(key.contains("::proof\tdriver"));
     assert_eq!(*count, 2);
 }
+
+#[test]
+fn have_primitive_cannot_schedule_proofs_or_search() {
+    let path = "src/surface/proof/proof_object/splits_and_scopes.rs";
+    for source in [
+        "impl Proof { fn begin_have(&self) { self.driver().open_have(goal); } }",
+        "impl Proof { fn begin_have(&self) { ProofSearch::proves(facts, goal); } }",
+        "impl Proof { fn begin_have(&self) { invoke!(self.driver()); } }",
+        "impl Proof { fn begin_have(&self) { let run = ProofDriver::open_have; } }",
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+    assert!(boundary::check_source(path,
+        "impl Proof { fn begin_have(&self) { self.lower_surface_goal_recording_introductions(goal); } }"
+    ).is_ok());
+}

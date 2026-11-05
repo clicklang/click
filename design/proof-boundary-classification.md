@@ -6,6 +6,16 @@ This classifies all 19 `mixed` and 15 `operation-to-driver` reference records in
 machine inventory. A classified call is not a complexity proof for its callee.
 No new scaling measurements were made for this audit.
 
+## Current migration status
+
+The have prerequisite callback described below has been extracted:
+`Proof::begin_have` now reports requirements without scheduling their proofs;
+`ProofDriver::open_have` owns the ordinary obligation-solving orchestration.
+The enforced inventory now contains 14 operation-to-driver records. The tables
+below retain their explicitly identified audit snapshot; focusing and resource
+scope completion still have the other two obligation callbacks. This extraction
+does not resolve the separate cost of separation observation during have setup.
+
 ## Findings
 
 The old categories describe code placement, not the reason search runs. Most

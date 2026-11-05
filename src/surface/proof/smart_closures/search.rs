@@ -419,7 +419,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         if let Some(surfaces) = search_input.wide_conjunction_surfaces() {
             let mut proof = search_input.clone();
             for surface in surfaces {
-                let scope = proof.begin_have(surface)?;
+                let scope = proof.driver().open_have(surface)?;
                 let Some(closed) = (scope)
                     .driver()
                     .try_direct_structural_closure_with_quantified(quantified)?
@@ -839,7 +839,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(spelled) = search_input.spell_integer_comparison(&reading, &written) else {
                 continue;
             };
-            let Ok(scope) = search_input.begin_have(spelled) else {
+            let Ok(scope) = search_input.driver().open_have(spelled) else {
                 continue;
             };
             let Some(closed) = (scope).driver().try_selected_arithmetic()? else {
@@ -1250,7 +1250,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 },
             );
             for bound in [&lower, &upper] {
-                let scope = proof.begin_have(bound.clone())?;
+                let scope = proof.driver().open_have(bound.clone())?;
                 let closed = if let Some(listed) = listed {
                     let mut premises = listed.to_vec();
                     premises.extend(established.iter().map(|(_, surface)| surface.clone()));
@@ -1285,7 +1285,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 right: spelled_value,
             };
             let identity_surface = identity.clone();
-            let scope = proof.begin_have(identity.clone())?;
+            let scope = proof.driver().open_have(identity.clone())?;
             let step = ProofStep::ArithmeticCertificate(ArithmeticCertificate::special(
                 SpecialArithmeticCertificate {
                     premises: vec![lower, upper],
@@ -1361,7 +1361,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         };
         let mut proof = search_input.clone();
         for surface in surfaces {
-            let scope = proof.begin_have(surface)?;
+            let scope = proof.driver().open_have(surface)?;
             let Some(closed) = (scope)
                 .driver()
                 .try_solve_closure_with_surfaces(introduced_surfaces)?
@@ -1670,7 +1670,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             _ => vec![transport(conjunct)],
         };
         let Some(mut scope) =
-            attempt::candidate_outcome(search_input.begin_have(conjunct.clone()))?
+            attempt::candidate_outcome(search_input.driver().open_have(conjunct.clone()))?
         else {
             return Ok(None);
         };
@@ -1814,7 +1814,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(surface) = search_input.spelled_goal_for_search(&resolved) else {
             return Ok(None);
         };
-        let Some(scope) = attempt::candidate_outcome(search_input.begin_have(surface))? else {
+        let Some(scope) = attempt::candidate_outcome(search_input.driver().open_have(surface))?
+        else {
             return Ok(None);
         };
         let Some(closed) = (scope).driver().try_solve_closure()? else {
@@ -1943,7 +1944,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             operator: ComparisonOperator::LessThan,
             right: successor,
         };
-        let Ok(scope) = search_input.begin_have(strict.clone()) else {
+        let Ok(scope) = search_input.driver().open_have(strict.clone()) else {
             return Ok(None);
         };
         let Some(proved) = (scope).driver().try_solve_closure()? else {
@@ -3775,7 +3776,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let then_branch = split_proof.focus_branch(ids[0])?;
             let disequality = surface_split_disequality(&condition)
                 .expect("an upper-bound split condition is a strict comparison");
-            let disequality_scope = then_branch.begin_have(disequality.clone())?;
+            let disequality_scope = then_branch.driver().open_have(disequality.clone())?;
             let disequality_done = (disequality_scope)
                 .driver()
                 .try_solve_closure_with_surfaces(&then_surfaces)?;
@@ -3800,8 +3801,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let nonstrict = surface_split_nonstrict_bound(&condition)
                 .expect("an upper-bound split condition is a strict comparison");
             let else_branch = then_done.focus_branch(ids[1])?;
-            let equality_scope = else_branch.begin_have(equality.clone())?;
-            let nonstrict_scope = equality_scope.begin_have(nonstrict.clone())?;
+            let equality_scope = else_branch.driver().open_have(equality.clone())?;
+            let nonstrict_scope = equality_scope.driver().open_have(nonstrict.clone())?;
             let nonstrict_done = nonstrict_scope
                 .driver()
                 .try_solve_closure_with_surfaces(&else_surfaces)?
@@ -4402,7 +4403,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(None);
         };
         let opposite = negate_click_proposition(&antecedent);
-        let Some(scope) = attempt::candidate_outcome(search_input.begin_have(opposite.clone()))?
+        let Some(scope) =
+            attempt::candidate_outcome(search_input.driver().open_have(opposite.clone()))?
         else {
             return Ok(None);
         };
@@ -4461,7 +4463,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             // contradiction checks the two explicit facts.
             let negated_antecedent = negate_click_proposition(&antecedent);
             if let Some(scope) =
-                attempt::candidate_outcome(base.begin_have(negated_antecedent.clone()))?
+                attempt::candidate_outcome(base.driver().open_have(negated_antecedent.clone()))?
                 && let Some(proved) = (scope).driver().try_solve_closure()?
                 && let Some(with_opposite) = attempt::candidate_outcome(proved.join())?
                 && let Some(with_antecedent) =
@@ -4953,7 +4955,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         for surface in [surface_left, surface_right] {
             let selected = (|| {
                 let Some(scope) =
-                    attempt::candidate_outcome(search_input.begin_have(surface.clone()))?
+                    attempt::candidate_outcome(search_input.driver().open_have(surface.clone()))?
                 else {
                     return Ok(None);
                 };
@@ -5062,7 +5064,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 }
                 _ => surface_instance,
             };
-            let Some(scope) = attempt::candidate_outcome(proof.begin_have(surface_instance))?
+            let Some(scope) =
+                attempt::candidate_outcome(proof.driver().open_have(surface_instance))?
             else {
                 return Ok(None);
             };
@@ -6215,7 +6218,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     MachineTerm::constant(constant_u32(*value)),
                 ))),
             };
-            let scope = search_input.begin_have(surface.clone()).ok()?;
+            let scope = search_input.driver().open_have(surface.clone()).ok()?;
             let closed = (scope).driver().try_direct_logical_closure().ok()??;
             return Some((surface, closed.join().ok()?));
         }
@@ -6600,7 +6603,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 operator,
                 right: surface_goal_constant.clone(),
             };
-            let Ok(scope) = search_input.begin_have(bound_surface.clone()) else {
+            let Ok(scope) = search_input.driver().open_have(bound_surface.clone()) else {
                 continue;
             };
             let Some(scope) = (scope).driver().try_direct_logical_closure().ok().flatten() else {
@@ -6609,7 +6612,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Ok(proof) = scope.join() else {
                 continue;
             };
-            let Ok(scope) = proof.begin_have(link_surface.clone()) else {
+            let Ok(scope) = proof.driver().open_have(link_surface.clone()) else {
                 continue;
             };
             let Some(scope) = scope.driver().try_direct_logical_closure().ok().flatten() else {
@@ -6933,7 +6936,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 orientations.push(reverse);
             }
             for equality in orientations {
-                let scope = search_input.begin_have(nonnegative_surface.clone()).ok()?;
+                let scope = search_input
+                    .driver()
+                    .open_have(nonnegative_surface.clone())
+                    .ok()?;
                 let Ok(scope) = scope.driver().apply_step(ProofStep::Rewrite(equality)) else {
                     continue;
                 };
@@ -7123,7 +7129,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         let (goal_left, goal_right) =
                             surface_logical_children(focused_branch.surface_goal()?, false)?;
                         let selected_goal = if index == 0 { goal_left } else { goal_right };
-                        let scope = focused_branch.begin_have(selected_goal).ok()?;
+                        let scope = focused_branch.driver().open_have(selected_goal).ok()?;
                         let rewritten = scope
                             .driver()
                             .apply_step(ProofStep::Rewrite(assumed_surface.clone()))
@@ -8066,7 +8072,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             let mut proof = search_input.clone();
             for conjunct in [left, right] {
-                let scope = proof.begin_have(conjunct.as_ref().clone()).ok()?;
+                let scope = proof.driver().open_have(conjunct.as_ref().clone()).ok()?;
                 proof = (scope)
                     .driver()
                     .try_restricted_solve_closure(surfaces)?
@@ -8884,7 +8890,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     let Some(spelling) = proof.requirement_surface(&requirement, &step)? else {
                         return Err(error);
                     };
-                    let have = match proof.begin_have(spelling.surface) {
+                    let have = match proof.driver().open_have(spelling.surface) {
                         Ok(have) => have,
                         Err(_) => {
                             check_verification_deadline()?;

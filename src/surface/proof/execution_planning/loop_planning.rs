@@ -456,7 +456,7 @@ pub(in crate::surface::proof) fn verify_loop_initialization_pure_proof(
                 .driver()
                 .apply_step(ProofStep::UnfoldPredicate(name.clone()))?,
             ProofTactic::Have(have) => {
-                let scope = phase.begin_have(have.proposition.clone())?;
+                let scope = phase.driver().open_have(have.proposition.clone())?;
                 check_initialization_body(&scope, &have.checking_proof(), None)?.join()?
             }
             _ => unreachable!("only unfold and have steps are phase helpers"),
@@ -1314,7 +1314,7 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
                 ));
             }
             for (index, invariant) in invariant_surfaces.iter().enumerate() {
-                let scope = leaf.begin_have(invariant.clone())?;
+                let scope = leaf.driver().open_have(invariant.clone())?;
                 let Some(proved) = (scope)
                     .driver()
                     .try_solve_closure_with_surfaces(&invariant_premise_surfaces[..=index])?

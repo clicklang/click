@@ -631,8 +631,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
         let observe_goal = !matches!(proof.steps(), [ProofStep::TransportUsing { .. }]);
-        let mut scope =
-            driver_proof.begin_have_with_goal_observations(proposition.clone(), observe_goal)?;
+        let mut scope = driver_proof
+            .driver()
+            .open_have_with_goal_observations(proposition.clone(), observe_goal)?;
         for step in proof.steps() {
             scope = scope.driver().apply_step(step.clone())?;
         }

@@ -76,25 +76,6 @@ impl<'a> ProofScope<'a> {
             .begin_open(resource, source_index, written_close_proof)
     }
 
-    /// Opens one proposition subproof at the current scope body's frontier.
-    ///
-    /// The returned scope is rooted at this scope's current checked body. It
-    /// can only be incorporated back through `join_nested`, which verifies
-    /// that exact ancestry before advancing the outer scope.
-    pub(in crate::surface::proof) fn begin_have(
-        &self,
-        proposition: ClickProposition,
-    ) -> Result<ProofScope<'a>, ClickError> {
-        self.body.begin_have(proposition)
-    }
-
-    pub(in crate::surface::proof) fn begin_source_have(
-        &self,
-        have: &ProofHave,
-    ) -> Result<ProofScope<'a>, ClickError> {
-        self.body.begin_source_have(have)
-    }
-
     /// Associates the checked lowering metadata reported by a refused
     /// requirement with an already-open `have` body.
     ///
