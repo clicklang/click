@@ -3,9 +3,9 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use click::cli::{
-    CInput, DEFAULT_SIMPLE_TACTIC_LIMIT, DEFAULT_SMART_TACTIC_LIMIT, MdTestExpectation, RunLimits,
-    TargetSelection, format_duration, format_fractional_duration, load_sidecar_inputs,
-    looks_like_mdtest, parse_duration, parse_work_limit, prepare_mdtest_inputs, read_mdtest,
+    CInput, DEFAULT_SIMPLE_TACTIC_LIMIT, MdTestExpectation, RunLimits, TargetSelection,
+    format_duration, format_fractional_duration, load_sidecar_inputs, looks_like_mdtest,
+    parse_duration, parse_work_limit, prepare_mdtest_inputs, read_mdtest,
     read_mdtest_project_if_needed, select_targets, shell_quote, source_refs,
 };
 use click::instrumentation::{self, ActiveVerificationWork, TacticEvent, VerificationEvent};
@@ -44,7 +44,7 @@ profile a non-verifying target only when a timeout or unexpected slowness is
 itself the problem being diagnosed. Incomplete runs never offer expansion.
 
 defaults:
-  --smart-threshold 2s      smart tactics in verified proofs are expansion candidates
+  --smart-threshold 100ms   smart tactics in verified proofs are expansion candidates
   --simple-threshold 500ms  slow simple tactics are verifier bugs; do not expand them
   --control-threshold 2s    inspect slow control-tactic containers and their nested steps
   --work-limit 50000000     deterministic work budget per sidecar, as click verify
@@ -83,7 +83,7 @@ struct Thresholds {
 impl Default for Thresholds {
     fn default() -> Self {
         Self {
-            smart: DEFAULT_SMART_TACTIC_LIMIT,
+            smart: Duration::from_millis(100),
             simple: DEFAULT_SIMPLE_TACTIC_LIMIT,
             control: Duration::from_secs(2),
         }
@@ -130,6 +130,7 @@ impl TacticCategory {
 struct StepKey {
     source_path: PathBuf,
     prepared_import: bool,
+    expand_enclosing_claim: bool,
     claim: String,
     tactic_index: usize,
     source_index: usize,
@@ -624,22 +625,8 @@ fn count_smart_source_sites(
         .into_iter()
         .try_fold(0usize, |total, path| {
             let source = sources.get(path)?;
-            let sites = match (&source.project, &source.inputs) {
-                (Some(project), inputs) => {
-                    project_smart_tactic_source_sites(project, &inputs.program_inputs())
-                }
-                (None, inputs) => {
-                    smart_tactic_source_sites(&source.click_source, &inputs.program_inputs())
-                }
-            }
-            .map_err(|error| {
-                format!(
-                    "could not inventory `{}`: {}",
-                    path.display(),
-                    error.report()
-                )
-            })?;
-            Ok(total + sites.len())
+            let sites = source.smart_sites()?;
+            Ok(total + sites.count)
         })
 }
 
@@ -838,6 +825,7 @@ fn structured_step(tactic: &TacticEvent, source_path: &Path) -> Result<StepKey, 
     Ok(StepKey {
         source_path: source_path.to_path_buf(),
         prepared_import: false,
+        expand_enclosing_claim: false,
         claim: tactic.claim.clone(),
         tactic_index: tactic.tactic_index,
         source_index: tactic.source_index,
@@ -1470,6 +1458,7 @@ fn parse_step_key(rest: &str, source_path: &Path) -> Option<StepKey> {
     Some(StepKey {
         source_path: source_path.to_path_buf(),
         prepared_import: false,
+        expand_enclosing_claim: false,
         claim: fields[0].to_string(),
         tactic_index: fields[1].parse().ok()?,
         tactic_name: (!is_retired_internal_tactic_name(fields[2]))
@@ -1492,6 +1481,38 @@ struct ProfiledSource {
     /// file; the offset of the ```click block for an mdtest, so reported
     /// locations point into the markdown the user actually edits.
     line_offset: usize,
+    smart_sites: std::cell::OnceCell<Result<SmartSiteInventory, String>>,
+}
+
+struct SmartSiteInventory {
+    count: usize,
+    positions: BTreeSet<(usize, usize)>,
+}
+
+impl ProfiledSource {
+    fn smart_sites(&self) -> Result<&SmartSiteInventory, String> {
+        self.smart_sites
+            .get_or_init(|| {
+                match &self.project {
+                    Some(project) => {
+                        project_smart_tactic_source_sites(project, &self.inputs.program_inputs())
+                    }
+                    None => {
+                        smart_tactic_source_sites(&self.click_source, &self.inputs.program_inputs())
+                    }
+                }
+                .map(|sites| SmartSiteInventory {
+                    count: sites.len(),
+                    positions: sites
+                        .into_iter()
+                        .map(|site| (site.position.line, site.position.column))
+                        .collect(),
+                })
+                .map_err(|error| error.report())
+            })
+            .as_ref()
+            .map_err(Clone::clone)
+    }
 }
 
 /// Profiled sources loaded at most once per profile, with the project root
@@ -1536,6 +1557,7 @@ fn load_profiled_source(
             inputs,
             project,
             line_offset: mdtest.click_start_line.saturating_sub(1),
+            smart_sites: std::cell::OnceCell::new(),
         });
     }
     let (click_source, project, inputs) = load_sidecar_inputs(path, project_root)?;
@@ -1544,6 +1566,7 @@ fn load_profiled_source(
         inputs,
         project: Some(project),
         line_offset: 0,
+        smart_sites: std::cell::OnceCell::new(),
     })
 }
 
@@ -1611,6 +1634,15 @@ fn resolve_source_positions(
         });
         match position {
             Ok(position) => {
+                // A smart budget can cover a mixed container whose nested
+                // tactics are selectable, but whose body is not one smart
+                // site. Use expansion's own inventory, already collected
+                // for the report, to select its enclosing claim instead.
+                key.expand_enclosing_claim = key.category == TacticCategory::Smart
+                    && !source
+                        .smart_sites()?
+                        .positions
+                        .contains(&(position.line, position.column));
                 key.position = Some(SourcePosition {
                     line: position.line + source.line_offset,
                     column: position.column,

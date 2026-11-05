@@ -294,9 +294,10 @@ fn implicit_loop_closure_is_smart() {
     assert!(
         events.iter().any(|event| matches!(event,
             VerificationEvent::TacticStarted(tactic)
-                if tactic.tactic_name == "solve" && tactic.class == "smart"
+                if tactic.tactic_name == crate::instrumentation::IMPLICIT_AUTO_TACTIC
+                    && tactic.class == "smart" && tactic.source_index == 0
         )),
-        "missing smart solve: {events:?}"
+        "missing smart implicit closer at the owning loop: {events:?}"
     );
     assert!(
         !events.iter().any(|event| matches!(event,
