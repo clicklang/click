@@ -4141,7 +4141,7 @@ pub(crate) fn offsets_have_same_canonical_form(
 /// Whether a term contains any load atom the canonical form could rewrite.
 /// Load-free terms are fixed points of [`canonical_term`], which the
 /// comparators use to answer load-free mismatches without a walk.
-fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
+pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
     match term {
         bits32_constant!(_)
         | MachineTerm::Variable(_)
