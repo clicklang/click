@@ -46,9 +46,8 @@ fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
                 Some(&ledger),
             )
         });
-        // Validity: no cell was proven protected, so the havoc paid the
-        // complete query for each one. An early refusal would short the
-        // scan and make the curve look better than the checker is.
+        // None of the symbolic loans protects these concrete addresses.
+        // Before the removal, every cell searched the whole loan bucket.
         for index in 0..count {
             assert!(
                 !havoced.has_known_cell_at(&Pointer {
@@ -60,20 +59,37 @@ fn loop_head_havoc_work_over_cells_and_symbolic_loans() {
         }
         samples.push((count, work));
     }
-    // Measured, not aspirational: 65, 257, 1025, 4097 -- one query per
-    // cell, each walking every symbolic protected range in the block, so
-    // the curve is cells x symbolic loans and doubling costs four times
-    // as much. Nothing local fixes it: a symbolic base offset cannot
-    // enter the dyadic index, the block bucket already holds only the
-    // genuinely symbolic entries, and a cell's answer depends on the
-    // cell, so per-block hoisting cannot share it. This bound is recorded
-    // as a known violation in `docs/internals/verification-efficiency.md`;
-    // the assertion pins it from above so no further factor creeps in and
-    // so a later indexing change that makes it linear still passes.
+    // Before: 86, 287, 1071, 4175. Indexed retention: 30, 47, 79, 143.
+    assert_near_linear("loop-head havoc cells and symbolic loans", &samples);
     for (count, work) in &samples {
         assert!(
-            *work <= count * count + 4 * count + 16,
-            "loop-head havoc cells x symbolic loans exceeded its known quadratic bound: {samples:?}"
+            *work <= 4 * count + 16,
+            "loop-head havoc must not query every symbolic loan per cell: {samples:?}"
         );
     }
+}
+
+#[test]
+fn loop_head_havoc_symbolic_read_ignores_other_loans() {
+    let mut samples = Vec::new();
+    for count in [8, 16, 32, 64] {
+        let ledger = symbolic_contract_input_ledger(count);
+        let pointer = parameter_view(0).memory_range().unwrap().base().clone();
+        let memory = CMemory::new().store(pointer.clone(), int32(7));
+        let (havoced, work) = crate::instrumentation::measure_deterministic_work(|| {
+            memory.with_loop_memory_havoc_preserving_loans(
+                Variable(7),
+                &BTreeSet::new(),
+                None,
+                Some(&ledger),
+            )
+        });
+        assert!(havoced.has_known_cell_at(&pointer));
+        samples.push((count, work));
+    }
+    assert!(samples[0].1 > 0);
+    assert!(
+        samples.iter().all(|(_, work)| *work <= samples[0].1 + 8),
+        "one symbolic read must select its origin, not search other loans: {samples:?}"
+    );
 }

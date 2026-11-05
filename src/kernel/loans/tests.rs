@@ -298,6 +298,14 @@ fn rooted_parameter_view(
 fn symbolic_borrowed_contract_input_is_live_outside_the_concrete_index() {
     let assumptions = PureFactContext::new();
     let (ledger, holder, opening, _) = rooted_parameter_view(41);
+    assert!(
+        ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 1, 4)),
+        "an exact symbolic origin is indexed without a loan search"
+    );
+    assert!(ledger.has_indexed_memory_overlap(&parameter_range(41, 3, 4, 1)));
+    assert!(ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 8, 1)));
+    assert!(!ledger.has_indexed_memory_overlap(&parameter_range(41, 4, 8, 1)));
+    assert!(!ledger.has_indexed_memory_overlap(&parameter_range(42, 0, 1, 4)));
     assert!(ledger.invariant_holds());
     assert!(ledger.has_active_memory_loans());
     assert!(ledger.permits_view(
@@ -4356,6 +4364,11 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         .lend(owner, reader, backing(&owned_range), owned_range)
         .unwrap();
     let ledger = ledger.apply(&opening.transition).unwrap();
+    let protected_snapshot = ledger.clone();
+    assert!(ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
+    assert!(!ledger.has_indexed_memory_overlap(memory(8, 10, false).memory_range().unwrap()));
+    assert!(!ledger.has_indexed_memory_overlap(memory(8, 8, false).memory_range().unwrap()));
+    assert!(!ledger.has_indexed_memory_overlap(&parameter_range(41, 0, 1, 4)));
     assert_eq!(
         ledger
             .active_memory_overlaps(memory(2, 4, false).memory_range().unwrap())
@@ -4401,6 +4414,10 @@ fn active_memory_index_returns_only_overlapping_live_loans() {
         ledger
             .permits_memory_access(memory(2, 4, false).memory_range().unwrap())
             .is_ok()
+    );
+    assert!(!ledger.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap()));
+    assert!(
+        protected_snapshot.has_indexed_memory_overlap(memory(2, 4, false).memory_range().unwrap())
     );
     let _ = ledger.recover(opening.loan, owner).unwrap();
 }

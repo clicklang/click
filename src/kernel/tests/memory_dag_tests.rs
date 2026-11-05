@@ -1415,6 +1415,55 @@ fn loan_preserving_havoc_uses_the_full_cell_footprint() {
     assert!(retained.cells.contains_key(&pointer));
 }
 
+#[test]
+fn loan_havoc_may_forget_a_run_crossing_the_interval_index_boundary() {
+    let pointer = Pointer {
+        block: "local:loan-index-boundary".into(),
+        offset: PointerOffsetTerm::Constant(i64::from(i32::MAX) - 7),
+    };
+    let fact = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
+        pointer.clone(),
+        0u32.into(),
+        1u32.into(),
+        4,
+    ));
+    let support = ResourceContext::new()
+        .unchecked_with_fact(fact.clone())
+        .unique_owned_occurrence_for_fact(&fact)
+        .unwrap()
+        .0;
+    let ledger = crate::kernel::loans::LoanLedger::new();
+    let owner = ledger.fresh_participant().unwrap();
+    let reader = ledger.fresh_participant().unwrap();
+    let opening = ledger.lend(owner, reader, support, fact.clone()).unwrap();
+    let ledger = ledger.apply(&opening.transition).unwrap();
+    assert!(ledger.has_indexed_memory_overlap(fact.memory_range().unwrap()));
+    let original = intern_c_memory(CMemory::new());
+    let run = CellRun::new(
+        pointer.clone(),
+        4,
+        CType::Int32,
+        2,
+        original.clone(),
+        crate::kernel::primitives::IndexIntervals::default(),
+    );
+    let mut memory = original.memory().clone();
+    std::sync::Arc::make_mut(&mut memory.cells).add_run(run);
+    let after = memory.with_loop_memory_havoc_preserving_loans(
+        Variable(980115),
+        &BTreeSet::new(),
+        None,
+        Some(&ledger),
+    );
+    assert!(!after.has_known_cell_at(&pointer));
+    assert!(after.has_initialized_bytes_at(&pointer, 8));
+    assert!(
+        ledger
+            .permits_memory_access(fact.memory_range().unwrap())
+            .is_err()
+    );
+}
+
 /// Stage 4: the DAG-guided cell lookup answers load equality for snapshots
 /// that are *siblings*, which the stage-2 walk cannot do because it only ever
 /// asks whether one snapshot is reachable from the other.

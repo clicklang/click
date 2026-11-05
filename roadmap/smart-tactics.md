@@ -62,14 +62,12 @@ facts do not establish flat cost as the queried class or bucket grows.
    explicit proof repair; do not restore implicit candidate search in loan
    planning or move it into another non-expandable tactic.
 
-2. **Loop-head havoc over symbolic loans.**
-   `with_loop_memory_havoc_preserving_loans` asks each cached cell about the
-   symbolic loans in its block. The existing
-   `loop_head_havoc_work_over_cells_and_symbolic_loans` scaling test records a
-   cells-times-loans curve and currently permits that known quadratic bound.
-   Use this concrete checking caller for a red near-linear regression and
-   design discussion; do not treat its current passing bound as evidence of
-   scalable checking.
+2. **Symbolic-loan write barriers.**
+   `LoanLedger::permits_memory_access_with_assumptions` still compares a selected
+   write with symbolic loans in the query's block and exact-alias blocks.
+   Cache preservation no longer calls this barrier. Measure the actual write
+   caller separately before changing its permission semantics; the exact-origin
+   cache index is positive retention evidence, not permission to write.
 
 Memory-history traversal is also tracked in
 [Fact-aware frame walks](fact-aware-frame-walks.md).
