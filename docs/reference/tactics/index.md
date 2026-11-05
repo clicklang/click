@@ -1651,8 +1651,9 @@ cited premise is accepted:
   supplies program values, such as loads, that a proof cannot always name;
   specification values (`Integer` and algebraic) are cited instead.
 - A goal that compares a term with a constant closes when the cited
-  conditions on that term decide it, in every family: `a <= 5` or `a < 5`
-  gives `a <= 10`, and `n == 0` gives `n != 1`.
+  conditions on that term decide it, in every family, the 8- and 16-bit
+  types included: `a <= 5` or `a < 5` gives `a <= 10`, and `n == 0` gives
+  `n != 1`.
 - Two addresses in one block whose offsets differ, after their shared
   addends cancel, by two element indices on one side and one on the other at
   one element width are equal when a cited premise states the one index's

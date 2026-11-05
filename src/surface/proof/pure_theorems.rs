@@ -98,7 +98,10 @@ pub(in crate::surface) fn verify_theorem_definitions(
 
 /// Verifies one theorem, generic or not. A theorem with type parameters is
 /// checked once at rigid types, each parameter standing for an arbitrary
-/// type; that is the form [`verify_concrete_theorem_definition`] takes.
+/// type; that is the form [`verify_concrete_theorem_definition`] takes. A
+/// kernel law over an index type is the exception: a C index has no rigid
+/// type, so the law is checked at each index type its kernel rule admits
+/// ([`kernel_law_index_types`]).
 pub(in crate::surface) fn verify_theorem_definition(
     theorem: &TheoremDefinition,
     spec_definitions: SpecDefinitions<'_>,
@@ -141,15 +144,45 @@ pub(in crate::surface) fn verify_theorem_definition(
             )
         })
         .collect();
-    let mut symbolic =
-        generics::instantiate_theorem(theorem, &substitution).map_err(ClickError::new)?;
-    symbolic.name = theorem.name().to_string();
-    verify_concrete_theorem_definition(
-        &symbolic,
-        spec_definitions,
-        theorem_environment,
-        function_environment,
-    )
+    let instantiate = |substitution: &generics::TypeSubstitution| {
+        let mut symbolic =
+            generics::instantiate_theorem(theorem, substitution).map_err(ClickError::new)?;
+        symbolic.name = theorem.name().to_string();
+        verify_concrete_theorem_definition(
+            &symbolic,
+            spec_definitions,
+            theorem_environment,
+            function_environment,
+        )
+    };
+    let Some((index_parameter, index_types)) = kernel_law_index_types(theorem.name()) else {
+        return instantiate(&substitution);
+    };
+    let mut verified = Vec::new();
+    for index_type in index_types {
+        let mut instance = substitution.clone();
+        instance.insert(
+            index_parameter.to_string(),
+            generics::TypeArgument::from(ClickType::C(index_type)),
+        );
+        verified.extend(instantiate(&instance)?);
+    }
+    Ok(verified)
+}
+
+/// The index type parameter of a kernel law stated over C indices, and the
+/// index types its kernel rule admits. `separation::elements` builds its
+/// descriptors at an `int32`, `int64`, or `uint64` index, the formats
+/// [`crate::kernel::prove_separation_elements`] accepts.
+fn kernel_law_index_types(name: &str) -> Option<(&'static str, [C0Type; 3])> {
+    (name == "click::separation::elements").then_some((
+        "I",
+        [
+            C0Type::Int32,
+            C0Type::Int64(crate::languages::c::syntax::LongRank::Long),
+            C0Type::UInt64(crate::languages::c::syntax::LongRank::Long),
+        ],
+    ))
 }
 
 pub(in crate::surface) fn verify_concrete_theorem_definition(
@@ -4118,6 +4151,10 @@ mod tests {
     }
 
     fn verify_standard_declaration(source: &str) -> Result<(), ClickError> {
+        verify_standard_declarations(source).map(|_| ())
+    }
+
+    fn verify_standard_declarations(source: &str) -> Result<Vec<VerifiedPureTheorem>, ClickError> {
         let mut file = crate::surface::parser::parse_library_file_items(source)?;
         // The kernel checks a library theorem by its qualified identity, so
         // the test declaration is named as the library names it.
@@ -4134,13 +4171,32 @@ mod tests {
             .theorem_definitions()
             .first()
             .ok_or_else(|| ClickError::new("test source did not contain a theorem"))?;
-        verify_concrete_theorem_definition(
+        verify_theorem_definition(
             theorem,
             spec_definitions,
             &TheoremEnvironment::new(&[]),
             None,
         )
-        .map(|_| ())
+    }
+
+    /// A C index has no rigid type, so the generic element law's own entry
+    /// point checks it at each index type its kernel builder admits rather
+    /// than refusing the rigid index.
+    #[test]
+    fn generic_element_separation_law_is_checked_at_each_admitted_index_type() {
+        let source = "theorem click::separation::elements<T, I>(p: T*, i: I, j: I) { requires i != j; ensures separate(memory(p[i]), memory(p[j])); }";
+        let verified = verify_standard_declarations(source).expect("element separation law");
+        assert_eq!(verified.len(), 3);
+        assert!(verified.iter().all(|result| {
+            result.theorem_definition.name() == "click::separation::elements"
+                && result.ensure_index == 0
+        }));
+        for invalid in [
+            source.replace("requires i != j;", ""),
+            source.replace("memory(p[j])", "memory(p[i])"),
+        ] {
+            assert!(verify_standard_declarations(&invalid).is_err(), "{invalid}");
+        }
     }
 
     #[test]

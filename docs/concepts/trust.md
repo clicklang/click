@@ -141,7 +141,9 @@ checks each one, in one of two ways; the nightly suite runs it
   (`int32_remainder_to_integer`; the `uint32` and `uint64` divide and
   remainder laws; the 8 round trips; 16-bit packing; and the
   `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
-  conversion laws and 10 separation laws.
+  conversion laws and 10 separation laws. `separation::elements` is
+  generic over its index type, which has no rigid C form, so it is checked
+  at each index type its builder admits: `int32`, `int64` and `uint64`.
 
 Ordinary verification then applies every library theorem as a dependency
 without re-checking it, except that a C proof that cites an `int32` library
