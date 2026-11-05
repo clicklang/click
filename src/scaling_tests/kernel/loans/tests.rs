@@ -1097,7 +1097,7 @@ fn joint_fragment_reservation_does_not_scan_ambient_memory_with_scalar_equalitie
 }
 
 #[test]
-fn active_memory_candidates_ignore_unrelated_live_loans() {
+fn active_memory_witness_ignores_unrelated_live_loans() {
     let mut samples = Vec::new();
     for size in [16_usize, 32, 64, 128] {
         let (mut ledger, owner, reader) = participants();
@@ -1109,10 +1109,10 @@ fn active_memory_candidates_ignore_unrelated_live_loans() {
             ledger = ledger.apply(&opening.transition).unwrap();
         }
         let query = memory(0, 1, false).memory_range().unwrap().clone();
-        let (loans, work) = crate::instrumentation::measure_deterministic_work(|| {
-            ledger.active_memory_overlaps(&query).unwrap()
+        let (loan, work) = crate::instrumentation::measure_deterministic_work(|| {
+            ledger.first_active_memory_overlap(&query).unwrap()
         });
-        assert_eq!(loans.len(), 1);
+        assert!(loan.is_some());
         samples.push((size, work));
     }
     for pair in samples.windows(2) {
@@ -1322,4 +1322,78 @@ fn cache_protection_does_not_enumerate_overlapping_loans() {
         samples.iter().all(|(_, work)| *work == samples[0].1),
         "cache protection enumerated a loan bucket: {samples:?}"
     );
+}
+
+#[test]
+fn write_barrier_does_not_enumerate_overlapping_loans() {
+    for (name, start, end, blocked) in [
+        ("inside", 2, 4, true),
+        ("covering", 0, 16, true),
+        ("adjacent", 8, 10, false),
+    ] {
+        let mut samples = Vec::new();
+        let mut diagnostic_samples = Vec::new();
+        for count in [4, 16, 64, 256] {
+            let (mut ledger, holder, _) = participants();
+            let view = memory(0, 8, false);
+            let resources = ResourceContext::new().unchecked_with_fact(view.clone());
+            let support = resources.occurrences_for_fact(&view)[0];
+            let mut first = None;
+            for _ in 0..count {
+                let opening = ledger
+                    .borrowed_contract_input(holder, support, view.clone(), None)
+                    .unwrap();
+                first.get_or_insert(opening.loan);
+                ledger = ledger.apply(&opening.transition).unwrap();
+            }
+            let query = memory(start, end, false);
+            let assumptions = PureFactContext::new();
+            for repeat in 0..3 {
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    ledger.permits_memory_access_with_assumptions(
+                        query.memory_range().unwrap(),
+                        &assumptions,
+                    )
+                });
+                assert_eq!(
+                    result,
+                    if blocked {
+                        Err(LoanRefusal::ActiveDependency)
+                    } else {
+                        Ok(())
+                    }
+                );
+                samples.push((count, repeat, work));
+                let (diagnostic, diagnostic_work) =
+                    crate::instrumentation::measure_deterministic_work(|| {
+                        ledger.memory_access_refusal(
+                            query.memory_range().unwrap(),
+                            &assumptions,
+                            LoanRefusalOperation::MemoryAccess,
+                        )
+                    });
+                assert_eq!(
+                    diagnostic.as_ref().map(|d| d.category()),
+                    blocked.then_some(LoanRefusalCategory::ActiveDependency)
+                );
+                assert_eq!(
+                    diagnostic.map(|d| d.subject().loan_id()),
+                    blocked.then(|| first.map(|loan| (loan.arena, loan.ordinal)))
+                );
+                diagnostic_samples.push((count, repeat, diagnostic_work));
+            }
+        }
+        eprintln!("{name}: checking {samples:?}; diagnostics {diagnostic_samples:?}");
+        assert!(
+            diagnostic_samples
+                .iter()
+                .all(|(_, _, work)| *work <= diagnostic_samples[0].2 + 4),
+            "{name}: diagnosing one write must not enumerate matches: {diagnostic_samples:?}"
+        );
+        assert!(samples[0].2 > 0, "{name}: no work measured");
+        assert!(
+            samples.iter().all(|(_, _, work)| *work <= samples[0].2 + 4),
+            "{name}: one write must not enumerate all matching loans: {samples:?}"
+        );
+    }
 }
