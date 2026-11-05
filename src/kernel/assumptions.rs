@@ -2701,6 +2701,47 @@ fn collect_integer_memory_loads_with_width(
     collect_integer_node_memory_loads(term.as_ref(), current_memory, loads, width, seen_integers)
 }
 
+/// Shared arithmetic contains raw memory-bearing carriers only inside its
+/// Integer conversion leaves. Read that syntax summary, then resolve each
+/// payload against this query's snapshot; never cache memory-dependent results.
+fn collect_shared_machine_memory_loads(
+    value: &SharedMachineIntegerTerm,
+    current_memory: &CMemory,
+    loads: &mut Vec<(Pointer, u32)>,
+    width: Option<u32>,
+    seen_integers: &mut BTreeSet<u64>,
+) -> Result<(), String> {
+    let Some(root) = value.shared_operand() else {
+        return collect_bitvector_memory_loads_with_width(
+            value.value(),
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        );
+    };
+    let interrupted = || "memory-load collection exceeded its checking budget".to_string();
+    let leaves = crate::kernel::shared_machine_conversion_leaves(root, || {
+        !crate::instrumentation::deadline_exceeded()
+    })
+    .ok_or_else(interrupted)?;
+    for (_, leaf) in leaves.iter() {
+        if crate::instrumentation::deadline_exceeded() {
+            return Err(interrupted());
+        }
+        // A conversion establishes its own destination width before visiting
+        // the Integer payload, independently of surrounding arithmetic/casts.
+        collect_bitvector_memory_loads_with_width(
+            leaf.machine_conversion_leaf().expect("conversion leaf"),
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        )?;
+    }
+    Ok(())
+}
+
 fn collect_integer_node_memory_loads(
     term: &IntegerTerm,
     current_memory: &CMemory,
@@ -2710,8 +2751,8 @@ fn collect_integer_node_memory_loads(
 ) -> Result<(), String> {
     match term {
         IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => Ok(()),
-        IntegerTerm::Machine(value) => collect_bitvector_memory_loads_with_width(
-            value.value(),
+        IntegerTerm::Machine(value) => collect_shared_machine_memory_loads(
+            value,
             current_memory,
             loads,
             Some(match value.ty() {
@@ -2807,15 +2848,15 @@ fn collect_integer_node_memory_loads(
                     } else {
                         4
                     };
-                    collect_bitvector_memory_loads_with_width(
-                        start.value(),
+                    collect_shared_machine_memory_loads(
+                        start.machine_operand(),
                         current_memory,
                         loads,
                         Some(endpoint_width),
                         seen_integers,
                     )?;
-                    collect_bitvector_memory_loads_with_width(
-                        end.value(),
+                    collect_shared_machine_memory_loads(
+                        end.machine_operand(),
                         current_memory,
                         loads,
                         Some(endpoint_width),
@@ -11137,6 +11178,140 @@ mod dynamic_current_load_tests {
             current_memory_loads_in_term(&condition, &memory).unwrap(),
             vec![(pointer, 8)]
         );
+    }
+
+    fn conversion_root(
+        payload: SharedIntegerTerm,
+        format: MachineIntegerType,
+    ) -> crate::kernel::KernelTerm {
+        let payload = crate::kernel::KernelTermImport::default().integer(&payload);
+        crate::kernel::KernelTerm::integer_to_machine(format, payload).unwrap()
+    }
+
+    fn observed(root: crate::kernel::KernelTerm, format: MachineIntegerType) -> Term {
+        let value = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+        assert!(!value.has_boxed_operand());
+        Term::Integer(IntegerTerm::Machine(value).into())
+    }
+
+    fn load_payload(memory: &CMemory, format: MachineIntegerType) -> SharedIntegerTerm {
+        let load = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            format,
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(pointer()),
+                crate::kernel::LoadKind::Int32,
+            ),
+        ))
+        .into();
+        // An Integer conditional has a retained Integer identity. A bare raw
+        // machine load still has producer-local identity and correctly stays
+        // outside the shared arithmetic storage fragment.
+        IntegerTerm::If {
+            condition: Box::new(ConditionTerm::Constant(true)),
+            then_term: load,
+            else_term: IntegerTerm::constant_i64(0).into(),
+        }
+        .into()
+    }
+
+    #[test]
+    fn shared_conversion_loads_preserve_width_and_snapshot_without_exports() {
+        use crate::kernel::{KernelTerm, KernelTermExport, MachineBinaryOp, VerificationSession};
+        for format in [
+            MachineIntegerType::Int8,
+            MachineIntegerType::Int16,
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt64,
+            MachineIntegerType::Int128,
+        ] {
+            let _session = VerificationSession::enter();
+            let memory = CMemory::new();
+            let other = memory.clone().store(pointer(), CValue::Int32(1u32.into()));
+            let root = conversion_root(load_payload(&memory, format), MachineIntegerType::Int32);
+            let root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+            let term = observed(root, MachineIntegerType::Int32);
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                current_memory_loads_in_term(&term, &memory).unwrap(),
+                vec![(pointer(), format.format().byte_width())]
+            );
+            assert!(
+                current_memory_loads_in_term(&term, &other)
+                    .unwrap()
+                    .is_empty()
+            );
+            // The intervening query must not cache the historical result.
+            assert_eq!(
+                current_memory_loads_in_term(&term, &memory).unwrap().len(),
+                1
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn shared_conversion_keeps_opaque_memory_refusal() {
+        use crate::kernel::{KernelTermExport, SharedPureApplication, VerificationSession};
+        let _session = VerificationSession::enter();
+        let payload = IntegerTerm::PureFunctionApplication(SharedPureApplication::intern(
+            "opaque".into(),
+            vec![],
+        ))
+        .into();
+        let term = observed(
+            conversion_root(payload, MachineIntegerType::Int32),
+            MachineIntegerType::Int32,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(
+            current_memory_loads_in_term(&term, &CMemory::new()).unwrap_err(),
+            "opaque integer function may hide a current memory load"
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_fold_endpoints_keep_memory_dependencies() {
+        use crate::kernel::{KernelTermExport, VerificationSession};
+        let _session = VerificationSession::enter();
+        let memory = CMemory::new();
+        let root = conversion_root(
+            load_payload(&memory, MachineIntegerType::UInt64),
+            MachineIntegerType::UInt64,
+        );
+        let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(995001)))
+            .with_shared_operand(root.with_machine_observation_type(MachineIntegerType::Int32))
+            .unwrap();
+        assert!(!endpoint.machine_operand().has_boxed_operand());
+        let exports = KernelTermExport::machine_export_count();
+        let fold = Term::Integer(
+            IntegerTerm::RangeFold {
+                index: IntegerRangeFoldIndex::UInt64 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                },
+                initial: IntegerTerm::constant_i64(0).into(),
+                accumulator: Variable(995002),
+                item: Variable(995003),
+                body: IntegerTerm::constant_i64(0).into(),
+            }
+            .into(),
+        );
+        assert_eq!(
+            current_memory_loads_in_term(&fold, &memory).unwrap(),
+            vec![(pointer(), 8)]
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/assumptions/dynamic_current_load_tests.rs");
     }
 
     #[test]
