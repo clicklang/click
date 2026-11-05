@@ -1,6 +1,51 @@
 use super::*;
 use crate::kernel::spec::walk::{SpecNode, Visit, WalkBudget, walk_spec};
 
+/// Visit only the carrier-bearing leaves of shared machine arithmetic.
+/// Conversion payloads and registered loads keep each collector's existing
+/// scope rules; arithmetic nodes themselves introduce no variables or binders.
+fn visit_machine_carrier_leaves(
+    machine: &SharedMachineIntegerTerm,
+    mut visit: impl FnMut(&MachineTerm),
+) {
+    let Some(root) = machine.shared_operand() else {
+        visit(machine.value());
+        return;
+    };
+    if let Some(leaves) =
+        shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
+    {
+        for (_, leaf) in leaves.iter() {
+            if checked_collection_checkpoint() {
+                return;
+            }
+            visit(leaf.machine_conversion_leaf().expect("conversion leaf"));
+        }
+    }
+    if let Some(written) =
+        shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
+    {
+        for variable in written.iter() {
+            if checked_collection_checkpoint() {
+                return;
+            }
+            visit(&MachineTerm::Variable(*variable));
+        }
+    }
+}
+
+fn collect_machine_integer_variables(
+    machine: &SharedMachineIntegerTerm,
+    variables: &mut BTreeSet<Variable>,
+) {
+    // Distinct conversions may share a large Integer payload. Keep one seen
+    // set for the whole machine operand, as the native traversal does.
+    let mut seen = SeenTerms::default();
+    visit_machine_carrier_leaves(machine, |leaf| {
+        collect_bitvector_integer_variables_seen(leaf, variables, &mut seen);
+    });
+}
+
 #[derive(Default)]
 struct SeenTerms {
     integers: BTreeSet<u64>,
@@ -870,7 +915,7 @@ fn collect_integer_bound_identities(
             variables.insert(*variable);
         }
         IntegerTerm::Machine(value) => {
-            collect_bitvector_integer_variables(value.value(), variables);
+            collect_machine_integer_variables(value, variables);
         }
         IntegerTerm::PureFunctionApplication(application) => {
             for argument in application.arguments() {
@@ -914,8 +959,8 @@ fn collect_integer_bound_identities(
             match index {
                 IntegerRangeFoldIndex::Int32 { start, end }
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    collect_bitvector_integer_variables(start.value(), variables);
-                    collect_bitvector_integer_variables(end.value(), variables);
+                    collect_machine_integer_variables(start.machine_operand(), variables);
+                    collect_machine_integer_variables(end.machine_operand(), variables);
                 }
                 IntegerRangeFoldIndex::Integer { start, end } => {
                     collect_shared_integer_bound_identities(start, variables, integer_seen);
@@ -1906,9 +1951,9 @@ fn collect_integer_carrier_variables_seen(
     }
     match term {
         IntegerTerm::Constant(_) => {}
-        IntegerTerm::Machine(value) => {
-            collect_bitvector_integer_variables_seen(value.value(), variables, seen)
-        }
+        IntegerTerm::Machine(value) => visit_machine_carrier_leaves(value, |leaf| {
+            collect_bitvector_integer_variables_seen(leaf, variables, seen)
+        }),
         IntegerTerm::Variable(variable) => {
             variables.insert(*variable);
         }
@@ -1975,12 +2020,25 @@ fn collect_integer_carrier_variables_seen(
             item,
             body,
         } => {
-            if let IntegerRangeFoldIndex::Integer { start, end } = index {
-                collect_shared_integer_carrier_variables_seen(start, variables, seen);
-                if crate::instrumentation::checked_collection_exhausted() {
-                    return;
+            match index {
+                IntegerRangeFoldIndex::Integer { start, end } => {
+                    collect_shared_integer_carrier_variables_seen(start, variables, seen);
+                    if crate::instrumentation::checked_collection_exhausted() {
+                        return;
+                    }
+                    collect_shared_integer_carrier_variables_seen(end, variables, seen);
                 }
-                collect_shared_integer_carrier_variables_seen(end, variables, seen);
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
+                    for endpoint in [start, end] {
+                        visit_machine_carrier_leaves(endpoint.machine_operand(), |leaf| {
+                            collect_bitvector_integer_variables_seen(leaf, variables, seen);
+                        });
+                        if crate::instrumentation::checked_collection_exhausted() {
+                            return;
+                        }
+                    }
+                }
             }
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -2201,9 +2259,9 @@ fn collect_integer_free_variables_seen(
     }
     match term {
         IntegerTerm::Constant(_) => {}
-        IntegerTerm::Machine(value) => {
-            collect_bitvector_integer_variables_seen(value.value(), variables, seen)
-        }
+        IntegerTerm::Machine(value) => visit_machine_carrier_leaves(value, |leaf| {
+            collect_bitvector_integer_variables_seen(leaf, variables, seen)
+        }),
         IntegerTerm::Variable(variable) => {
             variables.insert(*variable);
         }
@@ -2283,12 +2341,25 @@ fn collect_integer_free_variables_seen(
             item,
             body,
         } => {
-            if let IntegerRangeFoldIndex::Integer { start, end } = index {
-                collect_shared_integer_variables_seen(start, variables, seen);
-                if crate::instrumentation::checked_collection_exhausted() {
-                    return;
+            match index {
+                IntegerRangeFoldIndex::Integer { start, end } => {
+                    collect_shared_integer_variables_seen(start, variables, seen);
+                    if crate::instrumentation::checked_collection_exhausted() {
+                        return;
+                    }
+                    collect_shared_integer_variables_seen(end, variables, seen);
                 }
-                collect_shared_integer_variables_seen(end, variables, seen);
+                IntegerRangeFoldIndex::Int32 { start, end }
+                | IntegerRangeFoldIndex::UInt64 { start, end } => {
+                    for endpoint in [start, end] {
+                        visit_machine_carrier_leaves(endpoint.machine_operand(), |leaf| {
+                            collect_bitvector_integer_variables_seen(leaf, variables, seen);
+                        });
+                        if crate::instrumentation::checked_collection_exhausted() {
+                            return;
+                        }
+                    }
+                }
             }
             if crate::instrumentation::checked_collection_exhausted() {
                 return;
@@ -2718,8 +2789,16 @@ fn collect_integer_variables_seen(
             match index {
                 crate::kernel::IntegerRangeFoldIndex::Int32 { start, end }
                 | crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    collect_bitvector_variables(start.value(), variables);
-                    collect_bitvector_variables(end.value(), variables);
+                    collect_integer_variables_seen(
+                        &IntegerTerm::Machine(start.machine_operand().clone()),
+                        variables,
+                        seen,
+                    );
+                    collect_integer_variables_seen(
+                        &IntegerTerm::Machine(end.machine_operand().clone()),
+                        variables,
+                        seen,
+                    );
                 }
                 crate::kernel::IntegerRangeFoldIndex::Integer { start, end } => {
                     collect_shared_integer_variables(start, variables, seen);
@@ -3455,15 +3534,19 @@ fn collect_integer_bitvector_capture_variables(
             match index {
                 IntegerRangeFoldIndex::Int32 { start, end }
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    collect_bitvector_capture_variables_seen(
-                        start.value(),
+                    collect_integer_bitvector_capture_variables(
+                        &IntegerTerm::Machine(start.machine_operand().clone()),
                         variables,
                         integer_seen,
                     );
                     if crate::instrumentation::checked_collection_exhausted() {
                         return;
                     }
-                    collect_bitvector_capture_variables_seen(end.value(), variables, integer_seen);
+                    collect_integer_bitvector_capture_variables(
+                        &IntegerTerm::Machine(end.machine_operand().clone()),
+                        variables,
+                        integer_seen,
+                    );
                 }
                 IntegerRangeFoldIndex::Integer { start, end } => {
                     collect_shared_integer_bitvector_capture_variables(
@@ -3572,6 +3655,51 @@ fn collect_integer_scope_summary_shared(
     summary
 }
 
+fn collect_machine_scope_summary(
+    machine: &SharedMachineIntegerTerm,
+    summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
+) -> IntegerScopeSummary {
+    let Some(root) = machine.shared_operand() else {
+        return collect_bitvector_scope_summary(machine.value(), summaries);
+    };
+    let mut summary = IntegerScopeSummary::default();
+    if let Some(leaves) =
+        shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
+    {
+        for (_, leaf) in leaves.iter() {
+            if checked_collection_checkpoint() {
+                return IntegerScopeSummary::default();
+            }
+            summary.merge(collect_bitvector_scope_summary(
+                leaf.machine_conversion_leaf().expect("conversion leaf"),
+                summaries,
+            ));
+        }
+    }
+    if let Some(written) =
+        shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
+    {
+        // The caller needs one maximum, not every arithmetic variable. Growing
+        // prefixes must not repeatedly enumerate their complete variable sets.
+        if let Some(variable) = written.last() {
+            summary.reserve(*variable);
+        }
+        let range = crate::kernel::eval::LOAD_VARIABLE_RANGE;
+        let mut previous = Variable(range.start - 1);
+        while let Some(variable) = written.get_greater_than(&previous) {
+            if variable.0 >= range.end || checked_collection_checkpoint() {
+                break;
+            }
+            summary.merge(collect_bitvector_scope_summary(
+                &MachineTerm::Variable(*variable),
+                summaries,
+            ));
+            previous = *variable;
+        }
+    }
+    summary
+}
+
 fn collect_integer_scope_summary(
     term: &IntegerTerm,
     summaries: &mut std::collections::HashMap<u64, IntegerScopeSummary>,
@@ -3582,7 +3710,7 @@ fn collect_integer_scope_summary(
     match term {
         IntegerTerm::Constant(_) => IntegerScopeSummary::default(),
         IntegerTerm::Variable(variable) => IntegerScopeSummary::integer_variable(*variable),
-        IntegerTerm::Machine(value) => collect_bitvector_scope_summary(value.value(), summaries),
+        IntegerTerm::Machine(value) => collect_machine_scope_summary(value, summaries),
         IntegerTerm::Negate(value) => collect_integer_scope_summary_shared(value, summaries),
         crate::kernel::binary_integer_term!(left, right) => {
             let mut summary = collect_integer_scope_summary_shared(left, summaries);
@@ -3644,11 +3772,15 @@ fn collect_integer_scope_summary(
             let mut summary = match index {
                 IntegerRangeFoldIndex::Int32 { start, end }
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    let mut summary = collect_bitvector_scope_summary(start.value(), summaries);
+                    let mut summary =
+                        collect_machine_scope_summary(start.machine_operand(), summaries);
                     if crate::instrumentation::checked_collection_exhausted() {
                         return IntegerScopeSummary::default();
                     }
-                    summary.merge(collect_bitvector_scope_summary(end.value(), summaries));
+                    summary.merge(collect_machine_scope_summary(
+                        end.machine_operand(),
+                        summaries,
+                    ));
                     summary
                 }
                 IntegerRangeFoldIndex::Integer { start, end } => {
@@ -4109,12 +4241,14 @@ fn collect_integer_binder_variables_seen(
     }
     match term {
         IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => {}
-        IntegerTerm::Machine(value) => collect_bitvector_binder_variables_seen(
-            value.value(),
-            integer_variables,
-            bitvector_variables,
-            integer_seen,
-        ),
+        IntegerTerm::Machine(value) => visit_machine_carrier_leaves(value, |leaf| {
+            collect_bitvector_binder_variables_seen(
+                leaf,
+                integer_variables,
+                bitvector_variables,
+                integer_seen,
+            )
+        }),
         IntegerTerm::PureFunctionApplication(application) => {
             for argument in application.arguments() {
                 if crate::instrumentation::checked_collection_exhausted() {
@@ -4222,21 +4356,25 @@ fn collect_integer_binder_variables_seen(
                 IntegerRangeFoldIndex::Int32 { start, end }
                 | IntegerRangeFoldIndex::UInt64 { start, end } => {
                     bitvector_variables.insert(*item);
-                    collect_bitvector_binder_variables_seen(
-                        start.value(),
-                        integer_variables,
-                        bitvector_variables,
-                        integer_seen,
-                    );
+                    visit_machine_carrier_leaves(start.machine_operand(), |leaf| {
+                        collect_bitvector_binder_variables_seen(
+                            leaf,
+                            integer_variables,
+                            bitvector_variables,
+                            integer_seen,
+                        )
+                    });
                     if crate::instrumentation::checked_collection_exhausted() {
                         return;
                     }
-                    collect_bitvector_binder_variables_seen(
-                        end.value(),
-                        integer_variables,
-                        bitvector_variables,
-                        integer_seen,
-                    );
+                    visit_machine_carrier_leaves(end.machine_operand(), |leaf| {
+                        collect_bitvector_binder_variables_seen(
+                            leaf,
+                            integer_variables,
+                            bitvector_variables,
+                            integer_seen,
+                        )
+                    });
                 }
                 IntegerRangeFoldIndex::Integer { start, end } => {
                     integer_variables.insert(*item);
@@ -6111,3 +6249,6 @@ mod heap_variable_projection_tests {
 
 #[cfg(test)]
 mod spec_walk_oracle_tests;
+
+#[cfg(test)]
+mod shared_machine_collector_tests;

@@ -373,6 +373,13 @@ Remaining groups to audit and migrate:
   The separate
   exact-equality rewrite adapter still needs its own parity audit; its native
   canonical-load and pointer-address matching rules must be preserved.
+  The carrier collectors also retain shared machine observations and fold
+  endpoints for Integer variables, binders and scope reservations. Conversion
+  payloads and registered loads use the original collector-specific callbacks.
+  Maximum-name queries read the syntax index's greatest member and selected
+  load names, rather than enumerating every variable of each growing prefix.
+  Mathematical variables inside a machine endpoint's conversion payload are
+  included even when the C item binder has the same numeric identity.
   Opaque leaves outside the shared operand fragment still require a
   parity/no-export audit of the compatibility bridge.
   `reasoning/path_facts.rs::decide_with_facts` retains comparison readings and
