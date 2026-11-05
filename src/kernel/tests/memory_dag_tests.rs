@@ -1,10 +1,7 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
 fn rewritten_load_store_witness_binds_value_address_and_snapshot() {
@@ -612,9 +609,11 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
         !symbolic_atomic.checks(&symbolic_goal, &PureFactContext::new()),
         "atomic check cannot borrow the missing exact inequality"
     );
-    let derivation = assumptions
-        .derive_atomic_proposition(&symbolic_goal)
-        .expect("atomic search returns the retained typed memory proof");
+    let derivation = crate::kernel::search::ProofSearch::derive_atomic_proposition(
+        &(assumptions),
+        &symbolic_goal,
+    )
+    .expect("atomic search returns the retained typed memory proof");
     assert!(matches!(
         &derivation.rule,
         PropositionDerivationRule::ContextualAtomic {
@@ -1557,9 +1556,13 @@ fn sibling_snapshots_resolve_one_cell_to_a_common_ancestor() {
     let goal =
         Proposition::ConditionIs(ConditionTerm::equal(load_in(&left), load_in(&right)), true);
     assert!(first.checks(&goal, &PureFactContext::new()));
-    let derivation =
-        with_extended_dag_bridging(|| PureFactContext::new().derive_atomic_proposition(&goal))
-            .expect("call-havoc range evidence flows out of the original decision");
+    let derivation = with_extended_dag_bridging(|| {
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+            &(PureFactContext::new()),
+            &goal,
+        )
+    })
+    .expect("call-havoc range evidence flows out of the original decision");
     assert!(matches!(
         &derivation.rule,
         PropositionDerivationRule::ContextualAtomic {
@@ -1665,9 +1668,10 @@ fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
         ConditionTerm::pointer_offset_equal(left_offset.clone(), right_offset.clone()),
         true,
     );
-    let offset_derivation =
-        with_extended_dag_bridging(|| assumptions.derive_atomic_proposition(&offset_goal))
-            .expect("pointer-offset structure retains the child load proof");
+    let offset_derivation = with_extended_dag_bridging(|| {
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(assumptions), &offset_goal)
+    })
+    .expect("pointer-offset structure retains the child load proof");
     assert!(matches!(
         &offset_derivation.rule,
         PropositionDerivationRule::ContextualAtomic {

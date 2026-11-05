@@ -1,11 +1,11 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::ResourceInstance;
+use crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{
     bits32_constant, constant_u32, int32_constant, int64_constant, uint64_constant,
 };
-use crate::surface::planning::proposition_search::holds_by_lookup_or_decision;
 use crate::surface::proof::execution_planning::refuse_or_record_open_obligation;
 use crate::surface::proof_diagnostics::render::{
     render_resource_fact_diagnostic, render_resource_facts_diagnostic,
@@ -3735,7 +3735,7 @@ fn unfold_composite_resource_with_facts<F: ResourcePureFacts>(
         // of the same instance already published them, so re-opening it
         // keeps exactly the facts that are still available.
         if already_unfolded
-            && !crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
+            && !crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(
                 available_pure_facts.assumptions(),
                 &lowered_fact,
             )

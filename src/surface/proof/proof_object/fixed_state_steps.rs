@@ -4,7 +4,6 @@
 use super::*;
 use crate::kernel::proof::fact_reasoning::InstanceArgument;
 use crate::kernel::proof::{CheckedProofCasePartition, OutcomeEvidenceFork, OutcomeForkArm};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 const MAX_CHOSEN_PROJECTION_WORK: usize = 4096;
 
@@ -455,10 +454,7 @@ fn partition_outcome_cases(
         },
     };
     let decided = |fact: &Proposition| {
-        crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
-            query.assumptions(),
-            fact,
-        )
+        crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(query.assumptions(), fact)
     };
     // A case the path's facts already decide selects its arm. For `cases`
     // that is a disjunct the facts establish.
@@ -3318,12 +3314,12 @@ impl<'a> Proof<'a> {
             self.lower_surface_proposition(&negative_surface, "post-execution `if` negation")?;
         let assumptions = self.facts().assumptions();
         let positive_holds = self.facts().contains(&positive)
-            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
+            || crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(
                 assumptions,
                 &positive,
             );
         let negative_holds = self.facts().contains(&negative)
-            || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
+            || crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(
                 assumptions,
                 &negative,
             )
@@ -3380,7 +3376,7 @@ impl<'a> Proof<'a> {
         for (surface, value) in [(&left, true), (&right, false)] {
             let fact = self.lower_surface_proposition(surface, "post-execution `cases` case")?;
             if self.facts().contains(&fact)
-                || crate::surface::planning::proposition_search::holds_by_lookup_or_decision(
+                || crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(
                     assumptions,
                     &fact,
                 )
@@ -3836,9 +3832,11 @@ impl<'a> Proof<'a> {
                 &selected_assumptions,
                 &[],
             )
-            && selected_assumptions
-                .derive_atomic_proposition(&source)
-                .is_none()
+            && crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                &(selected_assumptions),
+                &source,
+            )
+            .is_none()
         {
             return Err(self.step_error(format!(
                 "`transport using` requires a source derivable from its explicit facts: {}",

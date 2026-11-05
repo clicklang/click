@@ -2051,10 +2051,13 @@ fn store_union_forgets_aliased_raw_cell() {
     );
     assert!(memory.has_union_overlay_at(&base));
     assert_eq!(memory.known_value(&alias), None);
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::pointer_equal(alias.clone(), base.clone()),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(alias.clone(), base.clone()),
+            true,
+        )
+    ));
 
     let memory = CMemory::new()
         .store_union(base.clone(), CType::Int16, crate::kernel::int16(42))

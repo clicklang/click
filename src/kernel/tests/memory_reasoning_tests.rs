@@ -1,10 +1,7 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::CompareRelation;
 use crate::kernel::binary_node;
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 mod ordered_range_access_tests {
     use super::*;
@@ -933,21 +930,24 @@ fn mutable_frame_proves_unwritten_load_equal_across_stack_locals() {
             writes: vec![(written_cell, 4)],
         });
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(loop_exit_memory),
-                Box::new(first_cell.clone()),
-                crate::kernel::LoadKind::Int32,
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(loop_exit_memory),
+                    Box::new(first_cell.clone()),
+                    crate::kernel::LoadKind::Int32,
+                ),
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(old_memory),
+                    Box::new(first_cell),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(old_memory),
-                Box::new(first_cell),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -983,21 +983,24 @@ fn mutable_frame_transports_load_across_certified_effect_chain() {
             writes: vec![(second_write, 4)],
         });
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(after),
-                Box::new(preserved.clone()),
-                crate::kernel::LoadKind::Int32
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(after),
+                    Box::new(preserved.clone()),
+                    crate::kernel::LoadKind::Int32
+                ),
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(before),
+                    Box::new(preserved),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(before),
-                Box::new(preserved),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -1028,12 +1031,15 @@ fn loadability_transports_across_long_certified_effect_chain() {
         after = next;
     }
 
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: after,
-        base: loadable,
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: after,
+            base: loadable,
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -1137,21 +1143,24 @@ fn unrelated_external_cell_store_preserves_memory_load_with_stack_temporary() {
         )),
     );
 
-    assert!(PureFactContext::new().proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(current_memory),
-                Box::new(p1.clone()),
-                crate::kernel::LoadKind::Int32
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(current_memory),
+                    Box::new(p1.clone()),
+                    crate::kernel::LoadKind::Int32
+                ),
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(old_memory),
+                    Box::new(p1),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(old_memory),
-                Box::new(p1),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -1540,12 +1549,15 @@ fn memory_loadable_candidates_ignore_unrelated_pointer_blocks() {
         assumptions.memory_loadable_candidate_count(&target.block),
         1
     );
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory,
-        base: target,
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory,
+            base: target,
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -1575,7 +1587,10 @@ fn equivalent_memory_load_order_facts_can_be_inconsistent() {
         )
         .assume_condition(ConditionTerm::signed_less_than(stack_p0, old_p0), true);
 
-    assert!(assumptions.proves(&false_equals_true_proposition()));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &false_equals_true_proposition()
+    ));
 }
 
 #[test]
@@ -1618,7 +1633,10 @@ fn equivalent_condition_facts_with_different_truth_values_are_inconsistent() {
         .assume_condition(ConditionTerm::signed_less_than(left_a, right_a), true)
         .assume_condition(ConditionTerm::signed_less_than(left_b, right_b), false);
 
-    assert!(assumptions.proves(&false_equals_true_proposition()));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &false_equals_true_proposition()
+    ));
 }
 
 #[test]
@@ -1686,21 +1704,24 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
             writes: vec![(written_cell, 4)],
         });
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(after_memory),
-                Box::new(read_cell.clone()),
-                crate::kernel::LoadKind::Int32
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(after_memory),
+                    Box::new(read_cell.clone()),
+                    crate::kernel::LoadKind::Int32
+                ),
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(before_memory),
+                    Box::new(read_cell),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(before_memory),
-                Box::new(read_cell),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -1746,21 +1767,24 @@ fn disjoint_ranges_frame_metadata_across_symbolic_index_store() {
             writes: vec![(written_cell, 4)],
         });
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(after_memory),
-                Box::new(metadata_cell.clone()),
-                crate::kernel::LoadKind::Int32,
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(after_memory),
+                    Box::new(metadata_cell.clone()),
+                    crate::kernel::LoadKind::Int32,
+                ),
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(before_memory),
+                    Box::new(metadata_cell),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(before_memory),
-                Box::new(metadata_cell),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -1896,7 +1920,10 @@ fn equivalent_field_derived_bases_frame_symbolic_index_store() {
         ConditionTerm::signed_less_equal(next.clone(), capacity.clone()),
     ] {
         let fact = Proposition::ConditionIs(condition, true);
-        assert!(bounds.proves(&fact), "selected index bounds imply {fact:?}");
+        assert!(
+            crate::kernel::search::ProofSearch::proves(&(bounds), &fact),
+            "selected index bounds imply {fact:?}"
+        );
         assumptions = assumptions.assume_proposition(fact);
     }
     fn apply_law(law: Theorem, facts: &mut PureFactContext) -> Proposition {
@@ -2482,21 +2509,24 @@ fn covering_disjoint_fact_handles_shifted_mutable_range() {
             )],
         });
 
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(after_memory),
-                Box::new(src_cell.clone()),
-                crate::kernel::LoadKind::Int32
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(after_memory),
+                    Box::new(src_cell.clone()),
+                    crate::kernel::LoadKind::Int32
+                ),
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(before_memory),
+                    Box::new(src_cell),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(before_memory),
-                Box::new(src_cell),
-                crate::kernel::LoadKind::Int32
-            ),
-        ),
-        true,
-    )));
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -2566,7 +2596,7 @@ fn memory_load_equality_does_not_ignore_loop_havoc_identity() {
     );
 
     assert!(
-        !PureFactContext::new().proves(&equality),
+        !crate::kernel::search::ProofSearch::proves(&(PureFactContext::new()), &equality),
         "a havoced snapshot requires explicit frame evidence"
     );
 }
@@ -2715,7 +2745,10 @@ fn equality_fact_matching_transports_both_pointer_offset_endpoints() {
     );
     let assumptions = PureFactContext::new().assume_proposition(fact);
 
-    assert!(assumptions.proves(&target));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &target
+    ));
 }
 
 #[test]
@@ -2781,7 +2814,10 @@ fn memory_load_equality_combines_equal_pointer_base_and_zero_index() {
         true,
     );
 
-    assert!(assumptions.proves(&target));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &target
+    ));
 }
 
 #[test]
@@ -3227,18 +3263,21 @@ fn adjacent_disjoint_fact_ranges_cover_larger_disjoint_goal() {
             ))),
         });
 
-    assert!(assumptions.proves(&Proposition::CResourceSeparate {
-        left: Box::new(CResource::Memory(CMemoryRange::new(
-            p_base,
-            MachineTerm::constant(0),
-            MachineTerm::constant(2)
-        ))),
-        right: Box::new(CResource::Memory(CMemoryRange::new(
-            q_base,
-            MachineTerm::constant(0),
-            n_bits
-        )))
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CResourceSeparate {
+            left: Box::new(CResource::Memory(CMemoryRange::new(
+                p_base,
+                MachineTerm::constant(0),
+                MachineTerm::constant(2)
+            ))),
+            right: Box::new(CResource::Memory(CMemoryRange::new(
+                q_base,
+                MachineTerm::constant(0),
+                n_bits
+            )))
+        }
+    ));
 }
 
 #[test]
@@ -3258,18 +3297,20 @@ fn constant_non_overlapping_ranges_on_one_base_are_separate() {
         MachineTerm::constant(4),
     ));
 
-    assert!(
-        PureFactContext::new().proves(&Proposition::CResourceSeparate {
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::CResourceSeparate {
             left: Box::new(left.clone()),
             right: Box::new(right.clone()),
-        })
-    );
-    assert!(
-        PureFactContext::new().proves(&Proposition::CResourceSeparate {
+        }
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::CResourceSeparate {
             left: Box::new(right),
             right: Box::new(left),
-        })
-    );
+        }
+    ));
 }
 
 #[test]
@@ -3297,7 +3338,10 @@ fn symbolic_disjoint_fact_proves_itself() {
     };
     let assumptions = PureFactContext::new().assume_proposition(fact.clone());
 
-    assert!(assumptions.proves(&fact));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &fact
+    ));
 }
 
 #[test]
@@ -3355,7 +3399,7 @@ fn an_assumed_upper_bound_does_not_split_inside_kernel_search() {
         true,
     );
 
-    assert!(context.derive_proposition(&goal).is_none());
+    assert!(crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal).is_none());
 }
 
 #[test]
@@ -3482,18 +3526,18 @@ fn count_shaped_range_fold_split_is_proven_equal() {
     // holds for lo <= mid <= hi. Without that ordering it is unsound
     // (half-open ranges make an out-of-order mid over- or under-count),
     // so the rule must not fire on unconstrained bounds.
-    assert!(!PureFactContext::new().proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(whole.clone(), split.clone()),
-        true,
-    )));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::ConditionIs(ConditionTerm::equal(whole.clone(), split.clone()), true,)
+    ));
 
     let ordered = PureFactContext::new()
         .assume_condition(ConditionTerm::signed_less_equal(lo, mid.clone()), true)
         .assume_condition(ConditionTerm::signed_less_equal(mid, hi), true);
-    assert!(ordered.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(whole, split),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(ordered),
+        &Proposition::ConditionIs(ConditionTerm::equal(whole, split), true,)
+    ));
 }
 
 /// An `Integer`-carrier fold over an array cell, with the memory snapshot the
@@ -3549,12 +3593,14 @@ fn integer_range_fold_endpoints_are_congruent_under_an_equality() {
 
     // The two end endpoints are unrelated terms, so nothing equates the folds
     // until the equality is an available fact.
-    assert!(!PureFactContext::new().proves(&goal));
-    assert!(
-        PureFactContext::new()
-            .assume_condition(ConditionTerm::equal(a, b), true)
-            .proves(&goal)
-    );
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &goal
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new().assume_condition(ConditionTerm::equal(a, b), true)),
+        &goal
+    ));
 }
 
 #[test]
@@ -3585,10 +3631,10 @@ fn integer_range_fold_endpoint_congruence_normalizes_an_affine_endpoint() {
     );
     let right = integer_array_fold(&memory, lo, hi, Variable(124), Variable(125));
 
-    assert!(PureFactContext::new().proves(&Proposition::ConditionIs(
-        ConditionTerm::integer_equal(left, right),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &Proposition::ConditionIs(ConditionTerm::integer_equal(left, right), true,)
+    ));
 }
 
 #[test]
@@ -3622,18 +3668,18 @@ fn integer_range_fold_endpoint_congruence_rejects_a_free_binder_occurrence() {
         ConditionTerm::equal(a.value().clone(), b.value().clone()),
         true,
     );
-    assert!(!assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::integer_equal(bound.clone(), free),
-        true,
-    )));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(ConditionTerm::integer_equal(bound.clone(), free), true,)
+    ));
 
     // The same pair with the accumulator bound on both sides is equated, so
     // the refusal above is the free occurrence and not the shape.
     let also_bound = fold(&b, bound_accumulator);
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::integer_equal(bound, also_bound),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(ConditionTerm::integer_equal(bound, also_bound), true,)
+    ));
 }
 
 #[test]
@@ -3656,18 +3702,21 @@ fn integer_range_fold_endpoint_congruence_requires_one_memory_snapshot() {
     let left = integer_array_fold(&before, lo.clone(), a.clone(), Variable(133), Variable(134));
     let across_a_write =
         integer_array_fold(&after, lo.clone(), b.clone(), Variable(135), Variable(136));
-    assert!(!assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::integer_equal(left.clone(), across_a_write),
-        true,
-    )));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::integer_equal(left.clone(), across_a_write),
+            true,
+        )
+    ));
 
     // The same pair at one snapshot is equated, so the refusal above is the
     // snapshot check and not some other mismatch.
     let same_snapshot = integer_array_fold(&before, lo, b, Variable(135), Variable(136));
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::integer_equal(left, same_snapshot),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(ConditionTerm::integer_equal(left, same_snapshot), true,)
+    ));
 }
 
 /// A raw cell and a typed union overlay never both describe one pointer.
@@ -4666,40 +4715,49 @@ fn compact_composition_projects_symbolic_separation_without_pair_facts() {
         );
 
     assert!(
-        assumptions.proves(&Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(prefix.clone())),
-            right: Box::new(CResource::Memory(suffix.clone())),
-        }),
+        crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(prefix.clone())),
+                right: Box::new(CResource::Memory(suffix.clone())),
+            }
+        ),
         "the two owned ranges themselves are separate by composition"
     );
     assert!(
-        assumptions.proves(&Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(CMemoryRange::new(
-                base.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(1),
-            ))),
-            right: Box::new(CResource::Memory(CMemoryRange::new(
-                base.clone(),
-                len.clone(),
-                MachineTerm::add(len, MachineTerm::constant(1)),
-            ))),
-        }),
+        crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(CMemoryRange::new(
+                    base.clone(),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(1),
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new(
+                    base.clone(),
+                    len.clone(),
+                    MachineTerm::add(len, MachineTerm::constant(1)),
+                ))),
+            }
+        ),
         "subranges of distinct owned facts inherit the composition's separation"
     );
     assert!(
-        !assumptions.proves(&Proposition::CResourceSeparate {
-            left: Box::new(CResource::Memory(CMemoryRange::new(
-                base.clone(),
-                MachineTerm::constant(0),
-                MachineTerm::constant(2),
-            ))),
-            right: Box::new(CResource::Memory(CMemoryRange::new(
-                base,
-                MachineTerm::constant(1),
-                MachineTerm::constant(3),
-            ))),
-        }),
+        !crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::CResourceSeparate {
+                left: Box::new(CResource::Memory(CMemoryRange::new(
+                    base.clone(),
+                    MachineTerm::constant(0),
+                    MachineTerm::constant(2),
+                ))),
+                right: Box::new(CResource::Memory(CMemoryRange::new(
+                    base,
+                    MachineTerm::constant(1),
+                    MachineTerm::constant(3),
+                ))),
+            }
+        ),
         "overlapping subranges of one owned fact must not become separate"
     );
 }
@@ -5049,21 +5107,24 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
                 true,
             );
 
-        assert!(assumptions.proves(&Proposition::ConditionIs(
-            ConditionTerm::equal(
-                MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(base_memory.clone()),
-                    Box::new(pointer),
-                    crate::kernel::LoadKind::Int32
+        assert!(crate::kernel::search::ProofSearch::proves(
+            &(assumptions),
+            &Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    MachineTerm::MemoryLoad(
+                        crate::kernel::intern_c_memory(base_memory.clone()),
+                        Box::new(pointer),
+                        crate::kernel::LoadKind::Int32
+                    ),
+                    MachineTerm::MemoryLoad(
+                        crate::kernel::intern_c_memory(materialized_memory.clone()),
+                        Box::new(symbolic_src.clone()),
+                        crate::kernel::LoadKind::Int32,
+                    ),
                 ),
-                MachineTerm::MemoryLoad(
-                    crate::kernel::intern_c_memory(materialized_memory.clone()),
-                    Box::new(symbolic_src.clone()),
-                    crate::kernel::LoadKind::Int32,
-                ),
-            ),
-            true,
-        )));
+                true,
+            )
+        ));
     }
 }
 
@@ -5161,7 +5222,10 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
         )),
     );
 
-    assert!(!PureFactContext::new().proves(&proposition));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &proposition
+    ));
 }
 
 #[test]
@@ -5262,7 +5326,10 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
         )),
     );
 
-    assert!(!PureFactContext::new().proves(&proposition));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &proposition
+    ));
 }
 
 #[test]
@@ -5334,15 +5401,17 @@ fn added_composition_carrier_keeps_snapshot_premise_work_bounded() {
         assumptions
     };
     let four = context_with(4);
-    let (proved_four, work_four) =
-        crate::instrumentation::measure_deterministic_work(|| four.proves(&premise));
+    let (proved_four, work_four) = crate::instrumentation::measure_deterministic_work(|| {
+        crate::kernel::search::ProofSearch::proves(&(four), &premise)
+    });
     assert!(
         proved_four,
         "the framed premise should prove with four carriers"
     );
     let five = context_with(5);
-    let (proved_five, work_five) =
-        crate::instrumentation::measure_deterministic_work(|| five.proves(&premise));
+    let (proved_five, work_five) = crate::instrumentation::measure_deterministic_work(|| {
+        crate::kernel::search::ProofSearch::proves(&(five), &premise)
+    });
     assert!(
         proved_five,
         "adding an unrelated valid carrier must keep the premise provable"
@@ -5588,18 +5657,24 @@ fn quantified_load_witness_does_not_certify_loadability_in_a_freed_snapshot() {
         );
     let cell = base.offset_by_int32_elements(j);
 
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: live,
-        base: cell.clone(),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
-    assert!(!assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: freed,
-        base: cell,
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: live,
+            base: cell.clone(),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: freed,
+            base: cell,
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -5647,18 +5722,24 @@ fn freed_external_allocation_is_not_still_available() {
         bytes: MachineTerm::constant(8),
         wide: false,
     });
-    assert!(assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: live,
-        base: base.clone(),
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
-    assert!(!assumptions.proves(&Proposition::CMemoryLoadable {
-        memory: freed,
-        base,
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: live,
+            base: base.clone(),
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::CMemoryLoadable {
+            memory: freed,
+            base,
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 /// A concrete range fold unrolls over ranges of any length: the steps are
@@ -6986,17 +7067,24 @@ fn wide_effect_does_not_frame_an_overlapping_narrow_load() {
         after: after.clone(),
         writes: vec![(write, 8)],
     });
-    assert!(!assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::equal(
-            MachineTerm::MemoryLoad(
-                before.into(),
-                Box::new(read.clone()),
-                crate::kernel::LoadKind::Int32
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::equal(
+                MachineTerm::MemoryLoad(
+                    before.into(),
+                    Box::new(read.clone()),
+                    crate::kernel::LoadKind::Int32
+                ),
+                MachineTerm::MemoryLoad(
+                    after.into(),
+                    Box::new(read),
+                    crate::kernel::LoadKind::Int32
+                ),
             ),
-            MachineTerm::MemoryLoad(after.into(), Box::new(read), crate::kernel::LoadKind::Int32),
-        ),
-        true
-    )));
+            true
+        )
+    ));
 }
 
 #[test]

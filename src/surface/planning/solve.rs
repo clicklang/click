@@ -1,5 +1,5 @@
 //! Certificate and equality-rewrite planning for `solve`.
-use super::proposition_search::PropositionSearch;
+
 use crate::kernel::proof::equality_rewrite::rewrite_proposition_by_exact_equality;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::surface::*;
@@ -217,7 +217,7 @@ pub(in crate::surface) fn plan_solve_certificate(
         Some(SolveEvidence::Normalize)
     } else {
         Some(SolveEvidence::Derivation(
-            assumptions.derive_solve_proposition(proposition)?,
+            crate::kernel::search::ProofSearch::derive_solve_proposition(assumptions, proposition)?,
         ))
     }
 }

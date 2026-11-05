@@ -1,6 +1,5 @@
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 struct IterativeSpecPropositionDrop(Option<SpecProposition>);
 
@@ -813,7 +812,7 @@ pub(in crate::surface::proof) fn capture_resource_field_initializer(
                 )?;
             if obligations
                 .iter()
-                .any(|o| !assumptions.proves(o.proposition()))
+                .any(|o| !crate::kernel::search::ProofSearch::proves(assumptions, o.proposition()))
             {
                 return Err("fold initializer has unproved evaluation obligations".into());
             }

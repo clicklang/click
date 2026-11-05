@@ -6,9 +6,10 @@ with source context and proof provenance. Together they let explicit tactics
 and smart search share one checked-transition boundary while keeping semantic
 authority separate from the record used to explain or expand the result.
 
-The [proof operations/search proposal](https://github.com/clicklang/click/blob/master/design/proof-operations-and-search.md)
-specifies a migration to separate fast operations from session-owned discovery.
-It is a proposal, not a description of an already enforced efficiency boundary.
+The [proof operations/search split](https://github.com/clicklang/click/blob/master/design/proof-operations-and-search.md)
+separates explicit operations from the `kernel::search::ProofSearch` discovery
+interface over the same persistent state. A frozen reference inventory records
+remaining operation-to-search calls; this is not yet a complete efficiency boundary.
 
 ## Persistent proof state
 
@@ -552,14 +553,14 @@ A `PropositionDerivation` is *found* by planning and *validated* by the
 kernel. The logical search that finds one — the recursion over a goal's
 connectives, the disjunction arm choice, the antecedent assumption, the
 finite instantiation, the case split over disjunction facts, the singleton
-substitution — is Surface Click planning in
-`src/surface/planning/proposition_search.rs`. It advances state only through
+substitution — lives in `kernel::search::ProofSearch<PureFactContext>` in
+`src/kernel/search/proposition_search.rs`. It advances state only through
 checked kernel operations (`assume_proposition`, `restricted_to_facts`,
 `with_only_proposition_facts`) and public exact
 queries. The checker, `PropositionDerivation::check`, stays in the kernel:
 it is local, deterministic, and bounded by the derivation it was handed.
 
-Nothing under `src/kernel/` calls that planner. A kernel operation that
+Explicit kernel proof operations do not call that proposition planner. A kernel operation that
 needs to know whether a proposition holds uses an exact route — the fact
 index, the frozen condition checker on a bare condition, or the retained
 atomic memory and resource checkers — or emits the proposition as an

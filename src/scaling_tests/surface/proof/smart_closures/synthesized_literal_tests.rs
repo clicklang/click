@@ -52,7 +52,7 @@ fn speculative_solve_premise_spelling_declines_large_components_without_renderin
             })
             .collect::<Vec<_>>();
         let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            proof.resolve_solve_premises(&premises, &[])
+            crate::kernel::search::ProofSearch::resolve_solve_premises(&(proof), &premises, &[])
         });
         assert!(
             result.is_none(),
@@ -115,7 +115,12 @@ fn reflexive_pointer_metadata_does_not_search_snapshot_history() {
             let ((surface, events), work) =
                 crate::instrumentation::measure_deterministic_work(|| {
                     crate::instrumentation::collect(|| {
-                        root.available_surface_fact(&surfaces, Some(&anchor), fact)
+                        crate::kernel::search::ProofSearch::available_surface_fact(
+                            &(root),
+                            &surfaces,
+                            Some(&anchor),
+                            fact,
+                        )
                     })
                 });
             assert!(surface.is_none());

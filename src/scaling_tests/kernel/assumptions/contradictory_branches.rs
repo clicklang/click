@@ -7,7 +7,6 @@ fn equality() -> ConditionTerm {
 
 #[test]
 fn opposite_assumption_closes_only_its_branch_and_survives_reconstruction() {
-    use crate::surface::planning::proposition_search::PropositionSearch;
     let goal = Proposition::Predicate {
         name: "unrelated_goal".into(),
         arguments: vec![],
@@ -30,7 +29,8 @@ fn opposite_assumption_closes_only_its_branch_and_survives_reconstruction() {
                     .condition_facts
                     .shares_root_with(&parent.condition_facts)
             );
-            let proof = child.derive_proposition(&goal).expect("explosion proof");
+            let proof = crate::kernel::search::ProofSearch::derive_proposition(&(child), &goal)
+                .expect("explosion proof");
             assert!(proof.check(&child));
             assert_eq!(parent.condition_facts.get(&condition), Some(&first));
             if !matches!(condition, ConditionTerm::Constant(_)) {

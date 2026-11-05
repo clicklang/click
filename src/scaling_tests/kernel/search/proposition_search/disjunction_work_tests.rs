@@ -1,4 +1,4 @@
-// Scaling tests of `src/surface/planning/proposition_search.rs` (module `disjunction_work_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/search/proposition_search.rs` (module `disjunction_work_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -40,8 +40,7 @@ fn false_disjunct_does_not_scan_unrelated_context_before_available_bound() {
             );
         }
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context
-                .derive_proposition(&goal)
+            crate::kernel::search::ProofSearch::derive_proposition(&(context), &goal)
                 .expect("the bound is stated")
         });
         assert!(proof.check(&context));

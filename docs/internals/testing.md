@@ -1214,7 +1214,7 @@ decision (`holds_by_lookup_or_decision`), and a premise they miss is refused or
 left to a case split. A simple tactic may consult the proof context through the kernel's
 indexed, bounded decisions, as a step's fast path does: the condition
 decision and the checked load equality over recorded memory history. Those
-are not searches and are not counted; only a `PropositionSearch` is.
+are not searches and are not counted; only a proposition `ProofSearch` call is.
 
 ## Quarantine
 

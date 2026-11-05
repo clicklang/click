@@ -604,7 +604,7 @@ fn check_initialization_body<'a>(
     let checked = match source {
         SourceProof::Tactic(SmartTactic::Auto) => scope.try_auto_fact_closure()?,
         SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
-            scope.try_solve_closure()?
+            (scope).try_solve_closure()?
         }
         SourceProof::Script(tactics) => match sites {
             Some(sites) => scope.try_addressed_linear_script(tactics, sites)?,
@@ -1315,8 +1315,8 @@ pub(in crate::surface::proof) fn verify_one_loop_preservation_proof(
             }
             for (index, invariant) in invariant_surfaces.iter().enumerate() {
                 let scope = leaf.begin_have(invariant.clone())?;
-                let Some(proved) =
-                    scope.try_solve_closure_with_surfaces(&invariant_premise_surfaces[..=index])?
+                let Some(proved) = (scope)
+                    .try_solve_closure_with_surfaces(&invariant_premise_surfaces[..=index])?
                 else {
                     continue;
                 };

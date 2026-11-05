@@ -2,7 +2,6 @@
 //! C++ source admission is tested separately from these shared operations.
 use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 fn node_layout() -> CAggregateLayout {
     CAggregateLayout::new(
@@ -721,9 +720,11 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
     let result = symbolic_contract_result(function.contract_interface(), Variable(870_003));
     set_function_result(&mut state, &function, result);
     let context = PureFactContext::new();
-    let proof = context
-        .derive_solve_atomic_proposition(&equality(state.memory()))
-        .expect("a returned record leaves the caller's byte unchanged");
+    let proof = crate::kernel::search::ProofSearch::derive_solve_atomic_proposition(
+        &(context),
+        &equality(state.memory()),
+    )
+    .expect("a returned record leaves the caller's byte unchanged");
     assert!(proof.check(&context));
     assert!(proof.context_premises().is_empty());
 
@@ -732,9 +733,11 @@ fn aggregate_copy_result_preserves_unrelated_entry_byte_history() {
         .clone()
         .store(input.clone(), crate::kernel::uint8(7));
     assert!(
-        context
-            .derive_solve_atomic_proposition(&equality(&written))
-            .is_none()
+        crate::kernel::search::ProofSearch::derive_solve_atomic_proposition(
+            &(context),
+            &equality(&written)
+        )
+        .is_none()
     );
 }
 

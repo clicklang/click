@@ -1,6 +1,5 @@
 use super::*;
 // Surface planning; only this test reaches it from inside the kernel.
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
 fn pointee_const_return_rebinding_is_allowed_but_store_through_pointer_is_not() {
@@ -78,7 +77,10 @@ fn pointee_const_return_inline_call_preserves_pointer_identity() {
     assert!(matches!(result, CValue::Pointer(pointer) if pointer.pointee_constant()));
     let equality =
         c_value_comparison_proposition(result, CComparisonOperator::Equal, &value).unwrap();
-    assert!(PureFactContext::new().proves(&equality));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new()),
+        &equality
+    ));
     assert!(paths[0].obligations.is_empty());
 }
 

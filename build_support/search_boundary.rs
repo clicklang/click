@@ -2,6 +2,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
+#[path = "proof_search_boundary.rs"]
+mod proof_search_boundary;
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -36,11 +38,30 @@ fn allowance(path: &str, function: &str, name: &str) -> usize {
 
 struct Boundary<'a> {
     path: &'a str,
+    legacy_implementation: bool,
     function: String,
     counts: BTreeMap<(String, String), usize>,
     errors: Vec<String>,
 }
 impl Boundary<'_> {
+    fn function_name(&self, name: &syn::Ident) -> String {
+        let name = name.to_string();
+        if !self.legacy_implementation {
+            return name;
+        }
+        // Moving a legacy body must retain its existing operation-specific guards.
+        match name.as_str() {
+            "loan_aliases" => "memory_range_aliases",
+            "loan_access" => "permits_memory_access_with_assumptions",
+            "ownership_validity_candidates" => "owned_validity_candidates",
+            "ownership_overlap" => "memory_ranges_proven_overlapping_with_separation",
+            "owned_anchor_distinctness" => "pointers_distinct_by_owned_anchors",
+            "composition_context" => "compositions_only",
+            "call_frame" => "call_kept_ownership",
+            _ => return name,
+        }
+        .into()
+    }
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
         if self.path == "src/kernel/loans.rs"
@@ -614,6 +635,7 @@ impl Boundary<'_> {
             ));
         }
         if self.path.starts_with("src/kernel/")
+            && !self.path.starts_with("src/kernel/search/")
             && matches!(
                 name,
                 "search_memory_loadable_candidates_for_base"
@@ -696,7 +718,8 @@ impl<'ast> Visit<'ast> for Boundary<'_> {
         }
     }
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
-        let previous = std::mem::replace(&mut self.function, item.sig.ident.to_string());
+        let name = self.function_name(&item.sig.ident);
+        let previous = std::mem::replace(&mut self.function, name);
         syn::visit::visit_item_fn(self, item);
         self.function = previous;
     }
@@ -704,7 +727,8 @@ impl<'ast> Visit<'ast> for Boundary<'_> {
         if test_only(&item.attrs) {
             return;
         }
-        let previous = std::mem::replace(&mut self.function, item.sig.ident.to_string());
+        let name = self.function_name(&item.sig.ident);
+        let previous = std::mem::replace(&mut self.function, name);
         syn::visit::visit_impl_item_fn(self, item);
         self.function = previous;
     }
@@ -752,8 +776,14 @@ impl<'ast> Visit<'ast> for Boundary<'_> {
 pub fn check_source(path: &str, source: &str) -> Result<syn::File, Vec<String>> {
     let file = syn::parse_file(source)
         .map_err(|e| vec![format!("{path}: cannot audit Rust source: {e}")])?;
+    let legacy_origin = path
+        .strip_suffix("/legacy_search.rs")
+        .map(|parent| format!("{parent}.rs"));
+    let legacy_implementation = legacy_origin.is_some();
+    let path = legacy_origin.as_deref().unwrap_or(path);
     let mut boundary = Boundary {
         path,
+        legacy_implementation,
         function: String::new(),
         counts: BTreeMap::new(),
         errors: Vec::new(),
@@ -838,7 +868,12 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
         let source =
             std::fs::read_to_string(&path).map_err(|e| vec![format!("{relative}: {e}")])?;
         match check_source(&relative, &source) {
-            Ok(file) => external_modules(&file.items, &dir, &mut pending),
+            Ok(file) => {
+                if let Err(found) = proof_search_boundary::check(&relative, &file) {
+                    errors.extend(found);
+                }
+                external_modules(&file.items, &dir, &mut pending);
+            }
             Err(found) => errors.extend(found),
         }
     }

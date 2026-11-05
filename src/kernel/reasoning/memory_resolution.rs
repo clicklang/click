@@ -389,7 +389,7 @@ fn memoized_resolution_query(key: Option<ResolutionQueryKey>, run: impl FnOnce()
 #[test]
 fn expired_nested_reasoning_does_not_poison_resolution_memo() {
     // Surface planning; only this test reaches it from inside the kernel.
-    use crate::surface::planning::proposition_search::PropositionSearch;
+
     clear_memory_resolution_memos();
     let key = ResolutionQueryKey::BitvectorEqual(
         7_490_001,
@@ -402,10 +402,10 @@ fn expired_nested_reasoning_does_not_poison_resolution_memo() {
     assert!(!memoized_resolution_query(Some(key.clone()), || {
         crate::instrumentation::with_deadline(std::time::Duration::ZERO, || {
             let assumptions = PureFactContext::new();
-            assumptions.proves(&Proposition::ConditionIs(
-                ConditionTerm::Constant(true),
-                true,
-            ))
+            crate::kernel::search::ProofSearch::proves(
+                &(assumptions),
+                &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+            )
         })
     }));
     assert!(memoized_resolution_query(Some(key.clone()), || true));

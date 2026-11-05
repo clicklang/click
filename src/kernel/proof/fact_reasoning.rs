@@ -3978,3 +3978,22 @@ mod index_sum_offset_tests {
         include!("../../scaling_tests/kernel/proof/fact_reasoning/index_sum_offset_tests.rs");
     }
 }
+
+/// Decide the supplied proposition without premise discovery.
+pub(crate) fn holds_by_lookup_or_decision(
+    context: &PureFactContext,
+    proposition: &Proposition,
+) -> bool {
+    if context.proves_exact(proposition) {
+        return true;
+    }
+    match proposition {
+        Proposition::ConditionIs(condition, value) => context.decide(condition) == Some(*value),
+        Proposition::Not(body) => matches!(
+            body.as_ref(),
+            Proposition::ConditionIs(condition, value)
+                if context.decide(condition) == Some(!*value)
+        ),
+        _ => false,
+    }
+}
