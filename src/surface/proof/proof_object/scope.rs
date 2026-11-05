@@ -466,7 +466,9 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_execute_to_exit(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) = self.body.try_execute_to_exit_descendant()? else {
+        let Some((body, added_facts)) =
+            crate::kernel::search::ProofSearch::try_execute_to_exit_descendant(&(self.body))?
+        else {
             return Ok(None);
         };
         let mut introduced_facts = self.introduced_facts.clone();
@@ -516,7 +518,12 @@ impl<'a> ProofScope<'a> {
         if self.body.is_at_function_exit() {
             return Ok(None);
         }
-        let Some(body) = self.body.try_execution_fact_transport(source, target)? else {
+        let Some(body) = crate::kernel::search::ProofSearch::try_execution_fact_transport(
+            &(self.body),
+            source,
+            target,
+        )?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -535,7 +542,9 @@ impl<'a> ProofScope<'a> {
         &self,
         region: &CodeRegionRef,
     ) -> Result<Option<Self>, ClickError> {
-        let Some((body, added_facts)) = self.body.try_execute_until_descendant(region)? else {
+        let Some((body, added_facts)) =
+            crate::kernel::search::ProofSearch::try_execute_until_descendant(&(self.body), region)?
+        else {
             return Ok(None);
         };
         let mut introduced_facts = self.introduced_facts.clone();
@@ -555,7 +564,9 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_direct_logical_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_direct_logical_closure()? else {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_direct_logical_closure(&(self.body))?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -569,9 +580,11 @@ impl<'a> ProofScope<'a> {
         &self,
         quantified: &mut dyn FnMut(&Proof<'a>) -> Result<Option<Proof<'a>>, ClickError>,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self
-            .body
-            .try_direct_structural_closure_with_quantified(quantified)?
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_direct_structural_closure_with_quantified(
+                &(self.body),
+                quantified,
+            )?
         else {
             return Ok(None);
         };
@@ -613,7 +626,9 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_signed_definedness_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_signed_definedness_closure()? else {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_signed_definedness_closure(&(self.body))?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -624,14 +639,17 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_direct_model_equality_rewrite_closure(
         &self,
     ) -> Option<Self> {
-        let body = self.body.try_direct_model_equality_rewrite_closure()?;
+        let body = crate::kernel::search::ProofSearch::try_direct_model_equality_rewrite_closure(
+            &(self.body),
+        )?;
         let mut next = self.clone();
         next.body = body;
         Some(next)
     }
 
     pub(in crate::surface::proof) fn try_solve_closure(&self) -> Result<Option<Self>, ClickError> {
-        let Some(mut body) = self.body.try_solve_closure()? else {
+        let Some(mut body) = crate::kernel::search::ProofSearch::try_solve_closure(&(self.body))?
+        else {
             return Ok(None);
         };
         // At an outcome or in a pure proof a bare assumption may cite an ambient
@@ -647,7 +665,11 @@ impl<'a> ProofScope<'a> {
             && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
             && !mid_execution
             && self.loop_entry_goal.is_none()
-            && let Some(checkable) = self.body.try_solve_closure_after_direct(true)?
+            && let Some(checkable) =
+                crate::kernel::search::ProofSearch::try_solve_closure_after_direct(
+                    &(self.body),
+                    true,
+                )?
         {
             body = checkable;
         }
@@ -661,7 +683,9 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_arithmetic_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_arithmetic_fact_closure()? else {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::try_arithmetic_fact_closure(&(self.body))?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -673,7 +697,7 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_auto_fact_closure(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        self.try_solve_closure()
+        (self).try_solve_closure()
     }
 
     /// Selected-premise arithmetic without operation identities, for the bounds and
@@ -681,7 +705,9 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_selected_arithmetic_without_identities(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.selected_arithmetic(false, &[])? else {
+        let Some(body) =
+            crate::kernel::search::ProofSearch::selected_arithmetic(&(self.body), false, &[])?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -692,7 +718,8 @@ impl<'a> ProofScope<'a> {
     pub(in crate::surface::proof) fn try_selected_arithmetic(
         &self,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_selected_arithmetic()? else {
+        let Some(body) = crate::kernel::search::ProofSearch::try_selected_arithmetic(&(self.body))?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();
@@ -704,7 +731,10 @@ impl<'a> ProofScope<'a> {
         &self,
         surfaces: &[ClickProposition],
     ) -> Option<Self> {
-        let body = self.body.try_restricted_solve_closure(surfaces)?;
+        let body = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+            &(self.body),
+            surfaces,
+        )?;
         let mut next = self.clone();
         next.body = body;
         Some(next)
@@ -714,9 +744,10 @@ impl<'a> ProofScope<'a> {
         &self,
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self
-            .body
-            .try_solve_closure_with_surfaces(introduced_surfaces)?
+        let Some(body) = crate::kernel::search::ProofSearch::try_solve_closure_with_surfaces(
+            &(self.body),
+            introduced_surfaces,
+        )?
         else {
             return Ok(None);
         };
@@ -729,7 +760,11 @@ impl<'a> ProofScope<'a> {
         &self,
         selection: &CallerRequirementSelection,
     ) -> Result<Option<Self>, ClickError> {
-        let Some(body) = self.body.try_direct_caller_requirement_closure(selection)? else {
+        let Some(body) = crate::kernel::search::ProofSearch::try_direct_caller_requirement_closure(
+            &(self.body),
+            selection,
+        )?
+        else {
             return Ok(None);
         };
         let mut next = self.clone();

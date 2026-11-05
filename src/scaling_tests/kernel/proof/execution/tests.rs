@@ -587,7 +587,7 @@ fn return_instance_folds_are_indexed_and_do_not_copy_sibling_traces() {
         )
         .unwrap();
         assert!(
-            !retained.proves(&extra),
+            !crate::kernel::search::ProofSearch::proves(&(retained), &extra),
             "a fold must not publish unrelated snapshot assumptions"
         );
         let mut repeated = base.clone();
@@ -877,7 +877,7 @@ fn branch_fact_availability_is_exact_and_independent_of_ambient_history() {
             ));
         }
         assert!(
-            facts.assumptions().proves(&weak),
+            crate::kernel::search::ProofSearch::proves(&(facts.assumptions()), &weak),
             "the old general route could derive this missing fact"
         );
         let exact = facts.with_fact(weak.clone());

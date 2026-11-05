@@ -2,7 +2,6 @@ use super::*;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[cfg(test)]
 thread_local! {
@@ -3037,7 +3036,8 @@ fn symbolic_segment_covers_range(
     else {
         return false;
     };
-    assumptions.proves(&lower_bound) && assumptions.proves(&upper_bound)
+    crate::kernel::search::ProofSearch::proves(&(assumptions), &lower_bound)
+        && crate::kernel::search::ProofSearch::proves(&(assumptions), &upper_bound)
 }
 
 fn symbolic_segment_covers_index(
@@ -3077,7 +3077,8 @@ fn symbolic_segment_covers_index(
     let Ok(upper_bound) = comparison_proposition(index, ComparisonOperator::LessThan, end) else {
         return false;
     };
-    assumptions.proves(&lower_bound) && assumptions.proves(&upper_bound)
+    crate::kernel::search::ProofSearch::proves(&(assumptions), &lower_bound)
+        && crate::kernel::search::ProofSearch::proves(&(assumptions), &upper_bound)
 }
 
 fn constant_segment_covers_index(

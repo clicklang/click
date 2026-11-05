@@ -45,7 +45,12 @@ fn witness_collection_stops_when_its_work_budget_is_exhausted() {
         };
         let (found, work) = crate::instrumentation::with_run_work_limit(16, || {
             crate::instrumentation::measure_deterministic_work(|| {
-                context.derive_exists_from_witness(Variable(690_000), &Sort::CInt32, &body)
+                crate::kernel::search::ProofSearch::derive_exists_from_witness(
+                    &(context),
+                    Variable(690_000),
+                    &Sort::CInt32,
+                    &body,
+                )
             })
         });
         assert!(found.is_none());

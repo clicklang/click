@@ -1,7 +1,6 @@
 use super::*;
 use crate::kernel::ExecutionFactSource;
 use crate::kernel::proof::{CheckedBranchSplit, CheckedBranchSplitError};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Record only associations retained by the loop producer. Missing entries
 /// are normal when a break path does not retain an invariant at the exit.
@@ -302,7 +301,7 @@ pub(in crate::surface::proof) fn certified_proof_condition_split(
                 path_facts.push(proposition);
             }
             for obligation in path.obligations() {
-                if !crate::surface::planning::proposition_search::holds_by_lookup_or_decision(successor_facts.assumptions(), obligation.proposition()) {
+                if !crate::kernel::proof::fact_reasoning::holds_by_lookup_or_decision(successor_facts.assumptions(), obligation.proposition()) {
                     return Err(missing_condition_prerequisite_error(
                         context_label,
                         obligation,
@@ -897,8 +896,7 @@ fn certified_transitions_from_execution(
                                 Proposition::CResourceContains { .. }
                                     | Proposition::CResourceSeparate { .. }
                                     | Proposition::CMemoryLoadable { .. }
-                            ) && prerequisite_assumptions
-                                .derive_atomic_proposition(proposition)
+                            ) && crate::kernel::search::ProofSearch::derive_atomic_proposition(&(prerequisite_assumptions), proposition)
                                 .is_some()
                                 && {
                                     // Reached only after every exact check

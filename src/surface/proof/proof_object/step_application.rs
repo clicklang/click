@@ -827,8 +827,12 @@ impl<'a> Proof<'a> {
             // so the proof and its report are the run's without it.
             let scope = crate::surface::proof::attempt::search_scope("spellability census");
             let spelled = crate::instrumentation::without_charging(|| {
-                next.resolve_solve_premises(std::slice::from_ref(fact), &[])
-                    .is_some_and(|spelled| spelled.len() == 1)
+                crate::kernel::search::ProofSearch::resolve_solve_premises(
+                    &(next),
+                    std::slice::from_ref(fact),
+                    &[],
+                )
+                .is_some_and(|spelled| spelled.len() == 1)
             });
             drop(scope.finish());
             census::record(
@@ -1223,7 +1227,8 @@ impl<'a> Proof<'a> {
         // descent of a difference) is closed by the uint32 lemma for that
         // step, recorded as the `apply` step it is.
         if let ProofStep::ArithmeticUsing(premises) = &step
-            && let Some(proof) = self.try_unsigned_order_step_using(premises)
+            && let Some(proof) =
+                crate::kernel::search::ProofSearch::try_unsigned_order_step_using(&(self), premises)
         {
             return Ok(proof);
         }
@@ -1240,10 +1245,15 @@ impl<'a> Proof<'a> {
             }
             // A disequality `a != b` holds when the listed premises refute
             // `a == b`; its refutation's reason is the one reported.
-            if let Some(refuted) = self.disequality_by_refutation(premises) {
+            if let Some(refuted) =
+                crate::kernel::search::ProofSearch::disequality_by_refutation(&(self), premises)
+            {
                 return refuted;
             }
-            return match self.try_wide_arithmetic_using(premises) {
+            return match crate::kernel::search::ProofSearch::try_wide_arithmetic_using(
+                &(self),
+                premises,
+            ) {
                 Ok(proof) => Ok(proof),
                 Err(Some(reason)) => Err(self.step_error(format!(
                     "arithmetic read the current goal as a 64-bit comparison: {reason}"
@@ -1736,7 +1746,7 @@ impl<'a> Proof<'a> {
                             .any(|node| matches!(node, IntegerArithmeticNode::TypeRange { .. }))
                         {
                             let Some(ranges) =
-                                self.listed_premise_type_ranges(&plan, &pairs, surface_goal)
+                                (self).listed_premise_type_ranges(&plan, &pairs, surface_goal)
                             else {
                                 continue;
                             };

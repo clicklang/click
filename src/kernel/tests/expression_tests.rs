@@ -1,11 +1,8 @@
-// The proposition search these tests exercise is Surface planning now; see
-// `src/surface/planning/proposition_search.rs`. The kernel itself never
-// calls it, so the tests import the planner explicitly.
+// These tests exercise discovery explicitly through kernel::search::ProofSearch.
 use super::*;
 use crate::kernel::MachineCastSpelling;
 use crate::kernel::binary_node;
 use crate::kernel::{constant_u32, int32_constant};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 #[test]
 fn specification_pointer_values_do_not_adopt_fact_supplied_bounds() {
@@ -238,15 +235,26 @@ fn wide_equality_bounds_keep_width_sign_and_exact_premises() {
         ),
         true,
     );
-    assert!(facts.proves(&narrowed));
-    assert!(facts.derive_atomic_proposition(&narrowed).is_some());
-    assert!(facts.derive_solve_atomic_proposition(&narrowed).is_some());
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(facts),
+        &narrowed
+    ));
+    assert!(
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(facts), &narrowed)
+            .is_some()
+    );
+    assert!(
+        crate::kernel::search::ProofSearch::derive_solve_atomic_proposition(&(facts), &narrowed)
+            .is_some()
+    );
     // A 32-bit equality is not evidence about all 64 bits of a wide term.
     let narrow_facts = PureFactContext::new()
         .assume_condition(ConditionTerm::equal(x, MachineTerm::constant(0)), true);
     assert_eq!(narrow_facts.decide(&unsigned_bound), None);
     let proposition = Proposition::ConditionIs(signed_bound, true);
-    let derivation = facts.derive_atomic_proposition(&proposition).unwrap();
+    let derivation =
+        crate::kernel::search::ProofSearch::derive_atomic_proposition(&(facts), &proposition)
+            .unwrap();
     assert!(derivation.check(&facts));
     assert!(!derivation.check(&PureFactContext::new()));
 }
@@ -2886,10 +2894,13 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
         ConditionTerm::signed_greater_equal(i_bits.clone(), MachineTerm::constant(1)),
         true,
     );
-    assert!(!lower_only.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
-        true,
-    )));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(lower_only),
+        &Proposition::ConditionIs(
+            ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
+            true,
+        )
+    ));
 
     // Knowing `i < INT_MAX` rules out signed overflow of `i + 1`, so the
     // lower bound carries to the incremented value.
@@ -2897,14 +2908,20 @@ fn interval_arithmetic_uses_lower_bound_for_incremented_values() {
         ConditionTerm::signed_less_than(i_bits, MachineTerm::constant(i32::MAX as u32)),
         true,
     );
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
-        true,
-    )));
-    assert!(assumptions.proves(&Proposition::ConditionIs(
-        ConditionTerm::signed_greater_than(incremented, MachineTerm::constant(0)),
-        true,
-    )));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::signed_greater_equal(incremented.clone(), MachineTerm::constant(1),),
+            true,
+        )
+    ));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &Proposition::ConditionIs(
+            ConditionTerm::signed_greater_than(incremented, MachineTerm::constant(0)),
+            true,
+        )
+    ));
 }
 
 #[test]
@@ -2924,12 +2941,14 @@ fn nonnegative_successor_requires_no_overflow_evidence() {
         None,
     );
     assert!(
-        assumptions
-            .derive_solve_proposition(&Proposition::ConditionIs(
+        crate::kernel::search::ProofSearch::derive_solve_proposition(
+            &(assumptions),
+            &Proposition::ConditionIs(
                 ConditionTerm::signed_greater_equal(successor, MachineTerm::constant(0),),
                 true,
-            ))
-            .is_none()
+            )
+        )
+        .is_none()
     );
 }
 
@@ -3173,7 +3192,10 @@ fn excluded_small_integer_range_is_inconsistent() {
         )
         .assume_condition(ConditionTerm::equal(k, MachineTerm::constant(2)), false);
 
-    assert!(assumptions.proves(&false_equals_true_proposition()));
+    assert!(crate::kernel::search::ProofSearch::proves(
+        &(assumptions),
+        &false_equals_true_proposition()
+    ));
 }
 
 #[test]

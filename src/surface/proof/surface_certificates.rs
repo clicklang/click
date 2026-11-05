@@ -2,7 +2,6 @@ use super::*;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{bits32_constant, constant_u32};
-use crate::surface::planning::proposition_search::PropositionSearch;
 use crate::surface::planning::solve::plan_explicit_equality_rewrites_from;
 
 pub(super) fn surface_logical_children(
@@ -753,9 +752,11 @@ pub(super) fn plan_explicit_loadability_transport(
                 .iter()
                 .map(|(kernel, _)| kernel.clone())
                 .collect::<Vec<_>>();
-            assumptions_from_propositions(&propositions)
-                .derive_solve_proposition(goal)
-                .is_some()
+            crate::kernel::search::ProofSearch::derive_solve_proposition(
+                &(assumptions_from_propositions(&propositions)),
+                goal,
+            )
+            .is_some()
         };
         if !proves_goal(&selected) {
             super::attempt::record_search_note(
@@ -3677,8 +3678,10 @@ mod selected_premise_tests {
         // Give planning exactly the work needed to establish its candidate.
         // Repeating that query in a debug assertion then exhausts the budget.
         let (derivation, work) = measure_deterministic_work(|| {
-            assumptions_from_propositions(std::slice::from_ref(&goal))
-                .derive_solve_proposition(&goal)
+            crate::kernel::search::ProofSearch::derive_solve_proposition(
+                &(assumptions_from_propositions(std::slice::from_ref(&goal))),
+                &goal,
+            )
         });
         assert!(derivation.is_some());
         assert!(work > 0);

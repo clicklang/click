@@ -847,61 +847,9 @@ impl PureFactContext {
     /// literal storage never counts: two occurrences with identical bytes
     /// may be one object, so their ranges are deliberately never separated.
     fn pointers_distinct_by_owned_anchors(&self, left: &Pointer, right: &Pointer) -> Option<bool> {
-        if self.resource_compositions.is_empty() {
-            return None;
-        }
-        let lefts = self.pointer_equality_component(left);
-        let rights = self.pointer_equality_component(right);
-        if lefts
-            .iter()
-            .any(|(pointer, _)| rights.iter().any(|(other, _)| other == pointer))
-        {
-            // One equality chain connects the two sides: they are one
-            // address, and no owned member can say otherwise.
-            return None;
-        }
-        // A composition holding both members is listed under a key of each:
-        // a member's base, which a member lookup probes among the
-        // spelling's additive bases, or its block (`CompositionMemberIndex`).
-        let spellings = lefts.iter().chain(&rights).map(|(pointer, _)| pointer);
-        let bases = spellings
-            .clone()
-            .flat_map(super::super::memory_reasoning::additive_base_spellings)
-            .collect::<Vec<_>>();
-        let blocks = spellings.map(|pointer| &pointer.block).collect::<Vec<_>>();
-        for resources in self.composition_members.listed_under(&bases, blocks) {
-            for (left_index, (left_spelling, _)) in lefts.iter().enumerate() {
-                let Some(left_member) =
-                    self.owned_member_holding_access(resources, left_spelling, 1)
-                else {
-                    continue;
-                };
-                for (right_index, (right_spelling, _)) in rights.iter().enumerate() {
-                    let Some(right_member) =
-                        self.owned_member_holding_access(resources, right_spelling, 1)
-                    else {
-                        continue;
-                    };
-                    if left_member == right_member
-                        || matches!(left_member.base().block, PointerBlock::StringLiteral { .. })
-                        || matches!(
-                            right_member.base().block,
-                            PointerBlock::StringLiteral { .. }
-                        )
-                    {
-                        continue;
-                    }
-                    self.record_pointer_equality_path(&lefts, left_index)?;
-                    self.record_pointer_equality_path(&rights, right_index)?;
-                    record_implicit_reasoning_provenance(
-                        self,
-                        &Proposition::CResourceComposition(resources.clone()),
-                    );
-                    return Some(false);
-                }
-            }
-        }
-        None
+        crate::kernel::search::ProofSearch::<PureFactContext>::owned_anchor_distinctness(
+            self, left, right,
+        )
     }
 
     /// The same-block form of [`Self::pointers_distinct_by_owned_anchors`].
@@ -3548,3 +3496,5 @@ mod shared_singleton_bound_evidence_tests {
         assert!(!observation.has_boxed_operand());
     }
 }
+
+mod legacy_search;

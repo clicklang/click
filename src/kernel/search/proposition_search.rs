@@ -1,4 +1,4 @@
-//! The logical proposition search, as Surface Click planning.
+//! Logical proposition discovery over kernel terms.
 //!
 //! This is the prover that used to live in
 //! `src/kernel/assumptions/proposition_reasoning.rs`. It is a recursive
@@ -21,7 +21,7 @@
 //! stay in the kernel and are unchanged;
 //! see the kernel authority boundary in `docs/internals/proof-objects.md`.
 //!
-//! Nothing under `src/kernel/` may call into this module. A kernel
+//! Fast kernel proof operations may not call into this module. A kernel
 //! operation that needs to know whether a proposition holds uses an exact
 //! route or emits the proposition as an obligation.
 
@@ -157,207 +157,46 @@ fn connected_trial(
 ///
 /// Import this trait to plan with a [`PureFactContext`]; the kernel itself
 /// never does.
-pub(crate) trait PropositionSearch {
-    fn proves(&self, proposition: &Proposition) -> bool;
-
-    fn derive_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation>;
-
-    fn derive_solve_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation>;
-
-    fn derive_solve_proposition_without_exact_goal(
-        &self,
-        proposition: &Proposition,
-    ) -> Option<PropositionDerivation>;
-
-    fn derive_atomic_proposition(&self, proposition: &Proposition)
-    -> Option<PropositionDerivation>;
-
-    fn derive_solve_atomic_proposition(
-        &self,
-        proposition: &Proposition,
-    ) -> Option<PropositionDerivation>;
-
-    fn derive_atomic_proposition_using(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivation>;
-
-    fn atomic_derivation_premises(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-        exclude_exact_goal: bool,
-    ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)>;
-
-    fn derive_proposition_using(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<Box<PropositionDerivation>>;
-
-    fn derive_structural_rule(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_and_rule(
-        &self,
-        left: &Proposition,
-        right: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_or_rule(
-        &self,
-        left: &Proposition,
-        right: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_double_negation_rule(
-        &self,
-        inner: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_implies_rule(
-        &self,
-        left: &Proposition,
-        right: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_forall_rule(
-        &self,
-        proposition: &Proposition,
-        var: Variable,
-        body: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_atomic_rule(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_by_algebraic_constructor_rules(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_finite_forall(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_exists_from_fact(
-        &self,
-        var: Variable,
-        sort: &Sort,
-        body: &Proposition,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_exists_from_witness(
-        &self,
-        var: Variable,
-        sort: &Sort,
-        body: &Proposition,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_forall_loadable_range(
-        &self,
-        proposition: &Proposition,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_exists_loadable_range(
-        &self,
-        var: Variable,
-        sort: &Sort,
-        body: &Proposition,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_by_singleton_substitution(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn derive_by_disjunction_cases(
-        &self,
-        proposition: &Proposition,
-        extended_rules: bool,
-    ) -> Option<PropositionDerivationRule>;
-
-    fn proves_finite_forall(&self, proposition: &Proposition) -> bool;
-
-    fn proves_finite_forall_instantiations(
-        &self,
-        body: &Proposition,
-        variables: &[Variable],
-        ranges: &[FiniteForAllRange],
-        values: &mut Vec<i64>,
-    ) -> bool;
-
-    fn proves_by_singleton_substitution(&self, proposition: &Proposition) -> bool;
-
-    fn proves_not(&self, proposition: &Proposition) -> bool;
-}
 
 /// A simple tactic's check of a premise: the exact lookup, then the
 /// kernel's condition decision, the one a step's fast path makes. The
 /// decision is checking, bounded per query by its fuel, not proof search: it
 /// selects no premises and tries no alternative rules. A premise it misses is
 /// stated first, by a `have`.
-pub(crate) fn holds_by_lookup_or_decision(
-    context: &PureFactContext,
-    proposition: &Proposition,
-) -> bool {
-    if context.proves_exact(proposition) {
-        return true;
-    }
-    match proposition {
-        Proposition::ConditionIs(condition, value) => context.decide(condition) == Some(*value),
-        Proposition::Not(body) => matches!(
-            body.as_ref(),
-            Proposition::ConditionIs(condition, value)
-                if context.decide(condition) == Some(!*value)
-        ),
-        _ => false,
-    }
-}
 
-impl PropositionSearch for PureFactContext {
-    fn proves(&self, proposition: &Proposition) -> bool {
+impl super::ProofSearch<PureFactContext> {
+    pub(crate) fn proves(context: &PureFactContext, proposition: &Proposition) -> bool {
         if reasoning_interrupted() {
             return false;
         }
         // One id resolution up front so every decision this proof attempt
         // makes shares it instead of rehashing the fact set per decision.
-        let _id_scope = PureFactContextIdScope::enter(self);
+        let _id_scope = PureFactContextIdScope::enter(context);
         if solve_builtin_prop(proposition) {
             return true;
         }
 
-        if self.contains_proposition_fact(proposition) {
+        if context.contains_proposition_fact(proposition) {
             return true;
         }
 
-        if let Some(rule) = self.derive_by_algebraic_constructor_rules(proposition, false) {
+        if let Some(rule) =
+            crate::kernel::search::ProofSearch::derive_by_algebraic_constructor_rules(
+                &(context),
+                proposition,
+                false,
+            )
+        {
             let proof = proposition_derivation(proposition, rule);
-            if proof.check(self) {
-                record_implicit_reasoning_provenance(self, proposition);
+            if proof.check(context) {
+                record_implicit_reasoning_provenance(context, proposition);
                 return true;
             }
         }
 
         let direct = match proposition {
             Proposition::ConditionIs(condition, value) => {
-                self.decide(condition) == Some(*value)
+                context.decide(condition) == Some(*value)
                     // The memory DAG answers first where it can: a bounded
                     // walk over named derivation edges, ahead of the deep
                     // canonicalization below.
@@ -366,7 +205,7 @@ impl PropositionSearch for PureFactContext {
                             condition,
                             ConditionTerm::Compare { format: MachineIntegerType::Int32 | MachineIntegerType::UInt32, relation: CompareRelation::Equal, left, right }
                                 if atomic_loads_equal_along_memory_derivations(
-                                    left, right, self,
+                                    left, right, context,
                                 )
                         )
                     // Two terms for one value that differ only
@@ -381,17 +220,25 @@ impl PropositionSearch for PureFactContext {
                                 if canonicalize_atomic_loads(left)
                                         == canonicalize_atomic_loads(right)
                         )
-                    || self.proves_condition_from_facts(SearchPermission::new(), condition, *value)
+                    || context.proves_condition_from_facts(SearchPermission::new(), condition, *value)
             }
-            Proposition::And(left, right) => self.proves(left) && self.proves(right),
-            Proposition::Or(left, right) => self.proves(left) || self.proves(right),
-            Proposition::Not(body) => self.proves_not(body),
+            Proposition::And(left, right) => {
+                crate::kernel::search::ProofSearch::proves(&(context), left)
+                    && crate::kernel::search::ProofSearch::proves(&(context), right)
+            }
+            Proposition::Or(left, right) => {
+                crate::kernel::search::ProofSearch::proves(&(context), left)
+                    || crate::kernel::search::ProofSearch::proves(&(context), right)
+            }
+            Proposition::Not(body) => {
+                crate::kernel::search::ProofSearch::proves_not(&(context), body)
+            }
             Proposition::Implies(left, right) => {
-                self.proves_not(left)
-                    || self
-                        .clone()
-                        .assume_proposition(left.as_ref().clone())
-                        .proves(right)
+                crate::kernel::search::ProofSearch::proves_not(&(context), left)
+                    || crate::kernel::search::ProofSearch::proves(
+                        &(context.clone().assume_proposition(left.as_ref().clone())),
+                        right,
+                    )
             }
             Proposition::ForAll {
                 var,
@@ -399,58 +246,68 @@ impl PropositionSearch for PureFactContext {
                 body,
                 ..
             } => {
-                self.proves_finite_forall(proposition)
-                    || self
-                        .derive_forall_rule(proposition, *var, body, false)
-                        .is_some_and(|rule| proposition_derivation(proposition, rule).check(self))
+                crate::kernel::search::ProofSearch::proves_finite_forall(&(context), proposition)
+                    || crate::kernel::search::ProofSearch::derive_forall_rule(
+                        &(context),
+                        proposition,
+                        *var,
+                        body,
+                        false,
+                    )
+                    .is_some_and(|rule| proposition_derivation(proposition, rule).check(context))
             }
             Proposition::CMemoryReadDefined {
                 memory,
                 pointer,
                 value_type,
-            } => self.proves_memory_read_defined(memory, pointer, *value_type),
+            } => context.proves_memory_read_defined(memory, pointer, *value_type),
             Proposition::CMemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: true,
-            } => self.proves_native_memory_loadable(memory, base, bytes),
+            } => context.proves_native_memory_loadable(memory, base, bytes),
             Proposition::CMemoryLoadable {
                 memory,
                 base,
                 bytes,
                 wide: false,
-            } => self.proves_memory_loadable(memory, base, bytes),
+            } => context.proves_memory_loadable(memory, base, bytes),
             Proposition::CMemoryCanStore {
                 memory,
                 pointer,
                 byte_width,
-            } => self.proves_memory_access(memory, pointer, *byte_width),
+            } => context.proves_memory_access(memory, pointer, *byte_width),
             Proposition::CResourceSeparate { left, right } => {
-                self.contains_proposition_fact(proposition)
-                    || self.proves_resource_separate(left, right)
+                context.contains_proposition_fact(proposition)
+                    || context.proves_resource_separate(left, right)
             }
             Proposition::CResourceContains { parent, child } => {
-                self.contains_proposition_fact(proposition)
-                    || self.proves_resource_contains(parent, child)
+                context.contains_proposition_fact(proposition)
+                    || context.proves_resource_contains(parent, child)
             }
-            _ => self.contains_proposition_fact(proposition),
+            _ => context.contains_proposition_fact(proposition),
         };
         let proved = direct
             || crate::instrumentation::measure_operation(
                 "kernel",
                 "general proposition proof",
                 "proposition proof: context inconsistency",
-                || self.is_inconsistent(),
+                || context.is_inconsistent(),
             )
             || crate::instrumentation::measure_operation(
                 "kernel",
                 "general proposition proof",
                 "proposition proof: singleton substitution",
-                || self.proves_by_singleton_substitution(proposition),
+                || {
+                    crate::kernel::search::ProofSearch::proves_by_singleton_substitution(
+                        &(context),
+                        proposition,
+                    )
+                },
             );
         if proved {
-            record_implicit_reasoning_provenance(self, proposition);
+            record_implicit_reasoning_provenance(context, proposition);
         }
         proved
     }
@@ -461,13 +318,19 @@ impl PropositionSearch for PureFactContext {
     /// leaves retain the complete context used to check them; minimizing that
     /// context would require repeated arithmetic calls and is not part of proof
     /// correctness.
-    fn derive_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation> {
-        self.derive_proposition_using(proposition, false)
+    pub(crate) fn derive_proposition(
+        context: &PureFactContext,
+        proposition: &Proposition,
+    ) -> Option<PropositionDerivation> {
+        crate::kernel::search::ProofSearch::derive_proposition_using(&(context), proposition, false)
             .map(|derivation| *derivation)
     }
 
-    fn derive_solve_proposition(&self, proposition: &Proposition) -> Option<PropositionDerivation> {
-        self.derive_proposition_using(proposition, true)
+    pub(crate) fn derive_solve_proposition(
+        context: &PureFactContext,
+        proposition: &Proposition,
+    ) -> Option<PropositionDerivation> {
+        crate::kernel::search::ProofSearch::derive_proposition_using(&(context), proposition, true)
             .map(|derivation| *derivation)
     }
 
@@ -475,72 +338,89 @@ impl PropositionSearch for PureFactContext {
     /// ambient fact as a premise. Keep the ambient graph intact: dropping a
     /// fact from it would rebuild its equality closure just to avoid the
     /// circular `assumption()` candidate.
-    fn derive_solve_proposition_without_exact_goal(
-        &self,
+    pub(crate) fn derive_solve_proposition_without_exact_goal(
+        context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        if let Some(derivation) = self.derive_solve_proposition(proposition)
+        if let Some(derivation) =
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), proposition)
             && !derivation.context_premises().contains(proposition)
         {
             return Some(derivation);
         }
-        self.atomic_derivation_premises(proposition, true, true)
-            .and_then(|selected| reduce_solve_atomic_premises(proposition, true, selected))
-            .map(|(premises, premises_id, evidence)| {
-                proposition_derivation(
-                    proposition,
-                    PropositionDerivationRule::ContextualAtomic {
-                        premises: RetainedPremises::from_context(&premises),
-                        premises_id,
-                        extended_rules: true,
-                        evidence,
-                    },
-                )
-            })
+        crate::kernel::search::ProofSearch::atomic_derivation_premises(
+            &(context),
+            proposition,
+            true,
+            true,
+        )
+        .and_then(|selected| reduce_solve_atomic_premises(proposition, true, selected))
+        .map(|(premises, premises_id, evidence)| {
+            proposition_derivation(
+                proposition,
+                PropositionDerivationRule::ContextualAtomic {
+                    premises: RetainedPremises::from_context(&premises),
+                    premises_id,
+                    extended_rules: true,
+                    evidence,
+                },
+            )
+        })
     }
 
     /// Check one atomic theory consequence against this exact premise set.
     ///
     /// Unlike [`Self::derive_proposition`], this does not introduce logical
     /// structure or attempt finite case splits.
-    fn derive_atomic_proposition(
-        &self,
+    pub(crate) fn derive_atomic_proposition(
+        context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        self.derive_atomic_proposition_using(proposition, false)
+        crate::kernel::search::ProofSearch::derive_atomic_proposition_using(
+            &(context),
+            proposition,
+            false,
+        )
     }
 
     /// The simplifier's atomic theory check, without structural proof search.
-    fn derive_solve_atomic_proposition(
-        &self,
+    pub(crate) fn derive_solve_atomic_proposition(
+        context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivation> {
-        self.derive_atomic_proposition_using(proposition, true)
+        crate::kernel::search::ProofSearch::derive_atomic_proposition_using(
+            &(context),
+            proposition,
+            true,
+        )
     }
 
-    fn derive_atomic_proposition_using(
-        &self,
+    pub(crate) fn derive_atomic_proposition_using(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivation> {
         if solve_reasoning_interrupted() {
             return None;
         }
-        self.atomic_derivation_premises(proposition, extended_rules, false)
-            .and_then(|selected| {
-                reduce_solve_atomic_premises(proposition, extended_rules, selected)
-            })
-            .map(|(premises, premises_id, evidence)| {
-                proposition_derivation(
-                    proposition,
-                    PropositionDerivationRule::ContextualAtomic {
-                        premises: RetainedPremises::from_context(&premises),
-                        premises_id,
-                        extended_rules,
-                        evidence,
-                    },
-                )
-            })
+        crate::kernel::search::ProofSearch::atomic_derivation_premises(
+            &(context),
+            proposition,
+            extended_rules,
+            false,
+        )
+        .and_then(|selected| reduce_solve_atomic_premises(proposition, extended_rules, selected))
+        .map(|(premises, premises_id, evidence)| {
+            proposition_derivation(
+                proposition,
+                PropositionDerivationRule::ContextualAtomic {
+                    premises: RetainedPremises::from_context(&premises),
+                    premises_id,
+                    extended_rules,
+                    evidence,
+                },
+            )
+        })
     }
 
     /// Select the range fact that justified a memory-access consequence.
@@ -549,13 +429,13 @@ impl PropositionSearch for PureFactContext {
     /// A derivation must retain the successful choice so check does not repeat
     /// that candidate search. Other fact kinds remain available because
     /// pointer/snapshot equality can depend on explicit frame facts.
-    fn atomic_derivation_premises(
-        &self,
+    pub(crate) fn atomic_derivation_premises(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
         exclude_exact_goal: bool,
     ) -> Option<(PureFactContext, u64, AtomicPropositionDerivationEvidence)> {
-        if !exclude_exact_goal && self.proves_exact(proposition) {
+        if !exclude_exact_goal && context.proves_exact(proposition) {
             let exact = PureFactContext::new().assume_proposition(proposition.clone());
             let (evidence, premises_id) =
                 crate::kernel::SelectedFacts::for_search(&exact, SearchPermission::new())
@@ -567,7 +447,7 @@ impl PropositionSearch for PureFactContext {
         // A constant-pinned equality needs at most two indexed premises, even
         // when the same variable occurs in every preceding branch guard.
         // Recheck that small selection before trying the connected component.
-        if let Some(premises) = self.indexed_constant_equality_premises(proposition)
+        if let Some(premises) = context.indexed_constant_equality_premises(proposition)
             && (!exclude_exact_goal || !premises.contains(proposition))
         {
             let candidate = premises
@@ -583,7 +463,7 @@ impl PropositionSearch for PureFactContext {
             }
         }
         if let Proposition::ConditionIs(condition, _) = proposition
-            && let Some(selected) = self.widened_unsigned_sum_bound_premises(condition)
+            && let Some(selected) = context.widened_unsigned_sum_bound_premises(condition)
         {
             let candidate = selected
                 .into_iter()
@@ -608,7 +488,7 @@ impl PropositionSearch for PureFactContext {
             Proposition::Not(body) => matches!(body.as_ref(), Proposition::ConditionIs(_, _)),
             _ => false,
         };
-        if let Some(selected) = self.select_forall_int32_instantiation_evidence(proposition) {
+        if let Some(selected) = context.select_forall_int32_instantiation_evidence(proposition) {
             let mut candidate = PureFactContext::new().assume_proposition(selected.quantified);
             for premise in selected.guard_premises {
                 candidate = candidate.assume_proposition(premise);
@@ -633,7 +513,7 @@ impl PropositionSearch for PureFactContext {
                 proposition,
                 Proposition::ConditionIs(ConditionTerm::IntegerEqual(..), _)
             )
-            && crate::kernel::SelectedFacts::for_search(self, SearchPermission::new())
+            && crate::kernel::SelectedFacts::for_search(context, SearchPermission::new())
                 .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                 .0
                 .is_none()
@@ -642,14 +522,14 @@ impl PropositionSearch for PureFactContext {
         }
         if condition_goal {
             let (selected, _, _, _) = connected_atomic_premises(
-                self,
+                context,
                 selection_goal,
                 &[],
                 false,
                 true,
                 exclude_exact_goal,
             )?;
-            if let Some(found) = connected_trial(self, &selected, proposition, extended_rules) {
+            if let Some(found) = connected_trial(context, &selected, proposition, extended_rules) {
                 return Some(found);
             }
             condition_sources = selected
@@ -686,27 +566,28 @@ impl PropositionSearch for PureFactContext {
         // two memory ranges of the facts its block pair and the non-memory
         // residue hold. Those are the buckets the kernel's provers consult
         // directly.
-        let indexed =
-            match proposition {
-                _ if goal_base.is_some() => goal_base.map(|base| {
-                    self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
-                        .inspect(|_| record_candidate_visit())
-                        .filter(usable)
-                        .cloned()
-                        .collect::<Vec<_>>()
-                }),
-                Proposition::CMemoryReadDefined {
-                    pointer,
-                    value_type,
-                    ..
-                } => Some(
-                    self.search_memory_read_defined_candidates(
+        let indexed = match proposition {
+            _ if goal_base.is_some() => goal_base.map(|base| {
+                context
+                    .search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
+                    .inspect(|_| record_candidate_visit())
+                    .filter(usable)
+                    .cloned()
+                    .collect::<Vec<_>>()
+            }),
+            Proposition::CMemoryReadDefined {
+                pointer,
+                value_type,
+                ..
+            } => Some(
+                context
+                    .search_memory_read_defined_candidates(
                         SearchPermission::new(),
                         pointer,
                         *value_type,
                     )
                     .into_iter()
-                    .chain(self.search_memory_loadable_candidates_for_base(
+                    .chain(context.search_memory_loadable_candidates_for_base(
                         SearchPermission::new(),
                         pointer,
                     ))
@@ -714,19 +595,19 @@ impl PropositionSearch for PureFactContext {
                     .filter(usable)
                     .cloned()
                     .collect(),
-                ),
-                Proposition::CResourceSeparate { left, right } => self
-                    .resource_separation_candidates(left, right)
-                    .map(|facts| {
-                        facts
-                            .into_iter()
-                            .inspect(|_| record_candidate_visit())
-                            .filter(usable)
-                            .cloned()
-                            .collect()
-                    }),
-                _ => None,
-            };
+            ),
+            Proposition::CResourceSeparate { left, right } => context
+                .resource_separation_candidates(left, right)
+                .map(|facts| {
+                    facts
+                        .into_iter()
+                        .inspect(|_| record_candidate_visit())
+                        .filter(usable)
+                        .cloned()
+                        .collect()
+                }),
+            _ => None,
+        };
         // The rest of the family is a fallback, reached only when no indexed
         // source justified the goal: a read whose address is itself computed
         // from another read, or a separation entailed through containment in
@@ -740,7 +621,8 @@ impl PropositionSearch for PureFactContext {
                 return Vec::new();
             }
             let tried = tried.iter().collect::<BTreeSet<_>>();
-            self.proposition_facts(SearchPermission::new())
+            context
+                .proposition_facts(SearchPermission::new())
                 .inspect(|_| record_candidate_visit())
                 .filter(|fact| candidate_family(fact) && usable(fact) && !tried.contains(fact))
                 .cloned()
@@ -750,7 +632,7 @@ impl PropositionSearch for PureFactContext {
         // Every trial is rebuilt only from explicitly selected dependencies.
         // The kernel must establish the goal again in that restricted context.
         let trial = |sources: &[Proposition]| {
-            let direct = atomic_context_from_facts(self, &[], sources);
+            let direct = atomic_context_from_facts(context, &[], sources);
             let (evidence, premises_id) =
                 crate::kernel::SelectedFacts::for_search(&direct, SearchPermission::new())
                     .proves_atomic_for_derivation_with_id(proposition, extended_rules);
@@ -761,7 +643,8 @@ impl PropositionSearch for PureFactContext {
             // path, not every comparison connected to the source's length.
             if extended_rules
                 && sources.len() == 1
-                && let Some(premises) = native_view_prefix_premises(self, proposition, &sources[0])
+                && let Some(premises) =
+                    native_view_prefix_premises(context, proposition, &sources[0])
             {
                 let candidate = premises
                     .into_iter()
@@ -776,14 +659,14 @@ impl PropositionSearch for PureFactContext {
                 }
             }
             let (conditions, propositions, _, _) = connected_atomic_premises(
-                self,
+                context,
                 proposition,
                 sources,
                 false,
                 false,
                 exclude_exact_goal,
             )?;
-            let candidate = atomic_context_from_facts(self, &conditions, &propositions);
+            let candidate = atomic_context_from_facts(context, &conditions, &propositions);
             let (evidence, premises_id) =
                 crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
                     .proves_atomic_for_derivation_with_id(proposition, extended_rules);
@@ -814,7 +697,7 @@ impl PropositionSearch for PureFactContext {
             bytes,
             wide: false,
         } = proposition
-            && let Some(premises) = self.adjacent_loadable_region_facts(memory, base, bytes)
+            && let Some(premises) = context.adjacent_loadable_region_facts(memory, base, bytes)
             && (!exclude_exact_goal || !premises.contains(&proposition.clone()))
             && let Some(found) = trial(&premises)
         {
@@ -834,14 +717,14 @@ impl PropositionSearch for PureFactContext {
             && candidates.len() > 1
         {
             let (conditions, propositions, _, _) = connected_atomic_premises(
-                self,
+                context,
                 proposition,
                 &candidates,
                 false,
                 false,
                 exclude_exact_goal,
             )?;
-            let sources = atomic_context_from_facts(self, &conditions, &propositions);
+            let sources = atomic_context_from_facts(context, &conditions, &propositions);
             if let Some(premises) = sources.adjacent_loadable_region_facts(memory, base, bytes)
                 && let Some(found) = trial(&premises)
             {
@@ -881,7 +764,7 @@ impl PropositionSearch for PureFactContext {
                         _
                     )
                 )
-                && crate::kernel::SelectedFacts::for_search(self, SearchPermission::new())
+                && crate::kernel::SelectedFacts::for_search(context, SearchPermission::new())
                     .proves_atomic_for_derivation_with_id(proposition, extended_rules)
                     .0
                     .is_none()
@@ -915,7 +798,7 @@ impl PropositionSearch for PureFactContext {
             };
             for &widened in widths {
                 let selected = connected_atomic_premises(
-                    self,
+                    context,
                     proposition,
                     &condition_sources,
                     true,
@@ -931,7 +814,7 @@ impl PropositionSearch for PureFactContext {
                 {
                     continue;
                 }
-                let candidate = atomic_context_from_facts(self, conditions, propositions);
+                let candidate = atomic_context_from_facts(context, conditions, propositions);
                 let (evidence, premises_id) =
                     crate::kernel::SelectedFacts::for_search(&candidate, SearchPermission::new())
                         .proves_atomic_for_derivation_with_id(proposition, extended_rules);
@@ -939,7 +822,7 @@ impl PropositionSearch for PureFactContext {
                     return Some((candidate, premises_id, evidence));
                 }
                 if !widened
-                    && !atomic_widening_adds_dependencies(self, proposition, &candidate, reached)
+                    && !atomic_widening_adds_dependencies(context, proposition, &candidate, reached)
                 {
                     break;
                 }
@@ -950,12 +833,12 @@ impl PropositionSearch for PureFactContext {
     }
 
     #[inline(never)]
-    fn derive_proposition_using(
-        &self,
+    pub(crate) fn derive_proposition_using(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<Box<PropositionDerivation>> {
-        let _id_scope = PureFactContextIdScope::enter(self);
+        let _id_scope = PureFactContextIdScope::enter(context);
         if solve_reasoning_interrupted() {
             return None;
         }
@@ -965,36 +848,53 @@ impl PropositionSearch for PureFactContext {
                 PropositionDerivationRule::ContextFree,
             )));
         }
-        if let Some(rule) = self.derive_by_algebraic_constructor_rules(proposition, extended_rules)
+        if let Some(rule) =
+            crate::kernel::search::ProofSearch::derive_by_algebraic_constructor_rules(
+                &(context),
+                proposition,
+                extended_rules,
+            )
         {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        let direct = self.derive_structural_rule(proposition, extended_rules);
+        let direct = crate::kernel::search::ProofSearch::derive_structural_rule(
+            &(context),
+            proposition,
+            extended_rules,
+        );
         if let Some(rule) = direct {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        if let Some(rule) = self.derive_by_singleton_substitution(proposition, extended_rules) {
+        if let Some(rule) = crate::kernel::search::ProofSearch::derive_by_singleton_substitution(
+            &(context),
+            proposition,
+            extended_rules,
+        ) {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
-        if let Some(rule) = self.derive_by_disjunction_cases(proposition, extended_rules) {
+        if let Some(rule) = crate::kernel::search::ProofSearch::derive_by_disjunction_cases(
+            &(context),
+            proposition,
+            extended_rules,
+        ) {
             return Some(Box::new(proposition_derivation(proposition, rule)));
         }
         // A selected equality or case proof needs no global contradiction
         // search. Building consistency indexes first would charge a local
         // successful proof for unrelated ambient order facts.
-        self.is_inconsistent().then(|| {
+        context.is_inconsistent().then(|| {
             Box::new(proposition_derivation(
                 proposition,
                 PropositionDerivationRule::Explosion {
-                    premises: RetainedPremises::from_context(self),
+                    premises: RetainedPremises::from_context(context),
                 },
             ))
         })
     }
 
     #[inline(never)]
-    fn derive_structural_rule(
-        &self,
+    pub(crate) fn derive_structural_rule(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
@@ -1003,48 +903,115 @@ impl PropositionSearch for PureFactContext {
         // two bounds; retain the ordinary conjunction as their conclusion.
         if crate::kernel::machine_integer::definedness::ordinary_arithmetic_guard_view(proposition)
             .is_some()
-            && let Some(rule) = self.derive_atomic_rule(proposition, extended_rules)
+            && let Some(rule) = crate::kernel::search::ProofSearch::derive_atomic_rule(
+                &(context),
+                proposition,
+                extended_rules,
+            )
         {
             return Some(rule);
         }
         match proposition {
-            Proposition::And(left, right) => self.derive_and_rule(left, right, extended_rules),
-            Proposition::Or(left, right) => self.derive_or_rule(left, right, extended_rules),
+            Proposition::And(left, right) => crate::kernel::search::ProofSearch::derive_and_rule(
+                &(context),
+                left,
+                right,
+                extended_rules,
+            ),
+            Proposition::Or(left, right) => crate::kernel::search::ProofSearch::derive_or_rule(
+                &(context),
+                left,
+                right,
+                extended_rules,
+            ),
             Proposition::Not(body) => match body.as_ref() {
-                Proposition::Not(inner) => self.derive_double_negation_rule(inner, extended_rules),
-                _ => self.derive_atomic_rule(proposition, extended_rules),
+                Proposition::Not(inner) => {
+                    crate::kernel::search::ProofSearch::derive_double_negation_rule(
+                        &(context),
+                        inner,
+                        extended_rules,
+                    )
+                }
+                _ => crate::kernel::search::ProofSearch::derive_atomic_rule(
+                    &(context),
+                    proposition,
+                    extended_rules,
+                ),
             },
             Proposition::Implies(left, right) => {
-                self.derive_implies_rule(left, right, extended_rules)
+                crate::kernel::search::ProofSearch::derive_implies_rule(
+                    &(context),
+                    left,
+                    right,
+                    extended_rules,
+                )
             }
             Proposition::ForAll { var, body, .. } => {
-                self.derive_forall_rule(proposition, *var, body, extended_rules)
+                crate::kernel::search::ProofSearch::derive_forall_rule(
+                    &(context),
+                    proposition,
+                    *var,
+                    body,
+                    extended_rules,
+                )
             }
             Proposition::Exists {
                 var, sort, body, ..
-            } => self
-                .derive_exists_from_witness(*var, sort, body)
-                .or_else(|| self.derive_exists_from_fact(*var, sort, body))
-                .or_else(|| self.derive_exists_loadable_range(*var, sort, body)),
-            _ => self.derive_atomic_rule(proposition, extended_rules),
+            } => crate::kernel::search::ProofSearch::derive_exists_from_witness(
+                &(context),
+                *var,
+                sort,
+                body,
+            )
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_exists_from_fact(
+                    &(context),
+                    *var,
+                    sort,
+                    body,
+                )
+            })
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_exists_loadable_range(
+                    &(context),
+                    *var,
+                    sort,
+                    body,
+                )
+            }),
+            _ => crate::kernel::search::ProofSearch::derive_atomic_rule(
+                &(context),
+                proposition,
+                extended_rules,
+            ),
         }
     }
 
     #[inline(never)]
-    fn derive_and_rule(
-        &self,
+    pub(crate) fn derive_and_rule(
+        context: &PureFactContext,
         left: &Proposition,
         right: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.derive_proposition_using(left, extended_rules)
-            .zip(self.derive_proposition_using(right, extended_rules))
-            .map(|(left, right)| PropositionDerivationRule::And { left, right })
+        crate::kernel::search::ProofSearch::derive_proposition_using(
+            &(context),
+            left,
+            extended_rules,
+        )
+        .zip(
+            crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(context),
+                right,
+                extended_rules,
+            ),
+        )
+        .map(|(left, right)| PropositionDerivationRule::And { left, right })
     }
 
     #[inline(never)]
-    fn derive_or_rule(
-        &self,
+    pub(crate) fn derive_or_rule(
+        context: &PureFactContext,
         left: &Proposition,
         right: &Proposition,
         extended_rules: bool,
@@ -1057,105 +1024,157 @@ impl PropositionSearch for PureFactContext {
             Proposition::ConditionIs(ConditionTerm::Constant(actual), expected)
                 if actual != expected
         ) {
-            return self
-                .derive_proposition_using(right, extended_rules)
-                .map(PropositionDerivationRule::OrRight)
-                .or_else(|| {
-                    self.derive_proposition_using(left, extended_rules)
-                        .map(PropositionDerivationRule::OrLeft)
-                });
-        }
-        self.derive_proposition_using(left, extended_rules)
-            .map(PropositionDerivationRule::OrLeft)
+            return crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(context),
+                right,
+                extended_rules,
+            )
+            .map(PropositionDerivationRule::OrRight)
             .or_else(|| {
-                self.derive_proposition_using(right, extended_rules)
-                    .map(PropositionDerivationRule::OrRight)
-            })
+                crate::kernel::search::ProofSearch::derive_proposition_using(
+                    &(context),
+                    left,
+                    extended_rules,
+                )
+                .map(PropositionDerivationRule::OrLeft)
+            });
+        }
+        crate::kernel::search::ProofSearch::derive_proposition_using(
+            &(context),
+            left,
+            extended_rules,
+        )
+        .map(PropositionDerivationRule::OrLeft)
+        .or_else(|| {
+            crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(context),
+                right,
+                extended_rules,
+            )
+            .map(PropositionDerivationRule::OrRight)
+        })
     }
 
     #[inline(never)]
-    fn derive_double_negation_rule(
-        &self,
+    pub(crate) fn derive_double_negation_rule(
+        context: &PureFactContext,
         inner: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.derive_proposition_using(inner, extended_rules)
-            .map(PropositionDerivationRule::DoubleNegation)
+        crate::kernel::search::ProofSearch::derive_proposition_using(
+            &(context),
+            inner,
+            extended_rules,
+        )
+        .map(PropositionDerivationRule::DoubleNegation)
     }
 
     #[inline(never)]
-    fn derive_implies_rule(
-        &self,
+    pub(crate) fn derive_implies_rule(
+        context: &PureFactContext,
         left: &Proposition,
         right: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         let antecedent = left.clone();
         let negated_antecedent = Proposition::Not(Box::new(antecedent.clone()));
-        if self.proves_exact(&negated_antecedent) {
-            self.derive_proposition_using(&negated_antecedent, extended_rules)
-                .map(PropositionDerivationRule::ImpliesFalseAntecedent)
+        if context.proves_exact(&negated_antecedent) {
+            crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(context),
+                &negated_antecedent,
+                extended_rules,
+            )
+            .map(PropositionDerivationRule::ImpliesFalseAntecedent)
         } else {
-            self.clone()
-                .assume_proposition(antecedent.clone())
-                .derive_proposition_using(right, extended_rules)
-                .map(|body| PropositionDerivationRule::Implies {
-                    antecedent: Box::new(antecedent),
-                    body,
-                })
-                .or_else(|| {
-                    self.derive_proposition_using(&negated_antecedent, extended_rules)
-                        .map(PropositionDerivationRule::ImpliesFalseAntecedent)
-                })
+            crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(context.clone().assume_proposition(antecedent.clone())),
+                right,
+                extended_rules,
+            )
+            .map(|body| PropositionDerivationRule::Implies {
+                antecedent: Box::new(antecedent),
+                body,
+            })
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_proposition_using(
+                    &(context),
+                    &negated_antecedent,
+                    extended_rules,
+                )
+                .map(PropositionDerivationRule::ImpliesFalseAntecedent)
+            })
         }
     }
 
     #[inline(never)]
-    fn derive_forall_rule(
-        &self,
+    pub(crate) fn derive_forall_rule(
+        context: &PureFactContext,
         proposition: &Proposition,
         var: Variable,
         body: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
         let body_uses_binder = crate::kernel::proposition_has_free_bitvector_variable(body, var);
-        let body_derivation = self
-            .derive_proposition_using(body, extended_rules)
-            .filter(|proof| {
-                !body_uses_binder
-                    || proof.context_premises().iter().all(|premise| {
-                        !crate::kernel::proposition_has_free_bitvector_variable(premise, var)
-                    })
-            })
-            .map(PropositionDerivationRule::ForAllBody);
+        let body_derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
+            &(context),
+            body,
+            extended_rules,
+        )
+        .filter(|proof| {
+            !body_uses_binder
+                || proof.context_premises().iter().all(|premise| {
+                    !crate::kernel::proposition_has_free_bitvector_variable(premise, var)
+                })
+        })
+        .map(PropositionDerivationRule::ForAllBody);
         body_derivation
-            .or_else(|| self.derive_forall_loadable_range(proposition))
-            .or_else(|| self.derive_finite_forall(proposition, extended_rules))
-            .or_else(|| self.derive_atomic_rule(proposition, extended_rules))
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_forall_loadable_range(
+                    &(context),
+                    proposition,
+                )
+            })
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_finite_forall(
+                    &(context),
+                    proposition,
+                    extended_rules,
+                )
+            })
+            .or_else(|| {
+                crate::kernel::search::ProofSearch::derive_atomic_rule(
+                    &(context),
+                    proposition,
+                    extended_rules,
+                )
+            })
     }
 
     #[inline(never)]
-    fn derive_atomic_rule(
-        &self,
+    pub(crate) fn derive_atomic_rule(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        self.atomic_derivation_premises(proposition, extended_rules, false)
-            .and_then(|selected| {
-                reduce_solve_atomic_premises(proposition, extended_rules, selected)
-            })
-            .map(
-                |(premises, premises_id, evidence)| PropositionDerivationRule::ContextualAtomic {
-                    premises: RetainedPremises::from_context(&premises),
-                    premises_id,
-                    extended_rules,
-                    evidence,
-                },
-            )
+        crate::kernel::search::ProofSearch::atomic_derivation_premises(
+            &(context),
+            proposition,
+            extended_rules,
+            false,
+        )
+        .and_then(|selected| reduce_solve_atomic_premises(proposition, extended_rules, selected))
+        .map(|(premises, premises_id, evidence)| {
+            PropositionDerivationRule::ContextualAtomic {
+                premises: RetainedPremises::from_context(&premises),
+                premises_id,
+                extended_rules,
+                evidence,
+            }
+        })
     }
 
-    fn derive_by_algebraic_constructor_rules(
-        &self,
+    pub(crate) fn derive_by_algebraic_constructor_rules(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
@@ -1165,13 +1184,18 @@ impl PropositionSearch for PureFactContext {
             let fields = fields
                 .iter()
                 .map(|field| {
-                    self.derive_proposition_using(field, extended_rules)
-                        .map(|proof| *proof)
+                    crate::kernel::search::ProofSearch::derive_proposition_using(
+                        &(context),
+                        field,
+                        extended_rules,
+                    )
+                    .map(|proof| *proof)
                 })
                 .collect::<Option<Vec<_>>>()?;
             return Some(PropositionDerivationRule::AlgebraicConstructorCongruence { fields });
         }
-        self.algebraic_constructor_field_sources(proposition)
+        context
+            .algebraic_constructor_field_sources(proposition)
             .next()
             .map(|(source, field_index)| {
                 PropositionDerivationRule::AlgebraicConstructorInjectivity {
@@ -1181,17 +1205,21 @@ impl PropositionSearch for PureFactContext {
             })
     }
 
-    fn derive_finite_forall(
-        &self,
+    pub(crate) fn derive_finite_forall(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
-        let mut instances = self.finite_forall_instantiations(proposition).peekable();
+        let mut instances = context.finite_forall_instantiations(proposition).peekable();
         instances.peek()?;
         instances
             .map(|instance| {
-                self.derive_proposition_using(&instance, extended_rules)
-                    .map(|proof| *proof)
+                crate::kernel::search::ProofSearch::derive_proposition_using(
+                    &(context),
+                    &instance,
+                    extended_rules,
+                )
+                .map(|proof| *proof)
             })
             .collect::<Option<Vec<_>>>()
             .map(|instances| PropositionDerivationRule::FiniteForAll { instances })
@@ -1201,13 +1229,13 @@ impl PropositionSearch for PureFactContext {
     /// goal binder, and derive the goal body from the witness body's
     /// conjuncts. The selected fact is retained by the resulting rule; the
     /// witness conjuncts are local assumptions of its child proof.
-    fn derive_exists_from_fact(
-        &self,
+    pub(crate) fn derive_exists_from_fact(
+        context: &PureFactContext,
         var: Variable,
         sort: &Sort,
         body: &Proposition,
     ) -> Option<PropositionDerivationRule> {
-        let candidates = self
+        let candidates = context
             .proposition_facts(SearchPermission::new())
             .filter_map(|source| {
                 let Proposition::Exists {
@@ -1232,13 +1260,17 @@ impl PropositionSearch for PureFactContext {
             })
             .collect::<Vec<_>>();
         for (source, renamed_source_body) in candidates {
-            let mut witness_assumptions = self.clone();
+            let mut witness_assumptions = context.clone();
             let mut conjuncts = Vec::new();
             collect_proposition_conjuncts(&renamed_source_body, &mut conjuncts);
             for conjunct in conjuncts {
                 witness_assumptions = witness_assumptions.assume_proposition(conjunct);
             }
-            let derivation = witness_assumptions.derive_proposition_using(body, false);
+            let derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(witness_assumptions),
+                body,
+                false,
+            );
             if let Some(derivation) = derivation {
                 return Some(PropositionDerivationRule::ExistsFromFact {
                     source: Box::new(source),
@@ -1249,8 +1281,8 @@ impl PropositionSearch for PureFactContext {
         None
     }
 
-    fn derive_exists_from_witness(
-        &self,
+    pub(crate) fn derive_exists_from_witness(
+        context: &PureFactContext,
         var: Variable,
         sort: &Sort,
         body: &Proposition,
@@ -1259,7 +1291,7 @@ impl PropositionSearch for PureFactContext {
             return None;
         }
         let mut variables = BTreeSet::new();
-        for fact in self.memory_loadable_fact_propositions(SearchPermission::new()) {
+        for fact in context.memory_loadable_fact_propositions(SearchPermission::new()) {
             if reasoning_interrupted() {
                 return None;
             }
@@ -1272,7 +1304,11 @@ impl PropositionSearch for PureFactContext {
             }
             let witness = MachineTerm::Variable(variable);
             let instantiated = substitute_bitvector_variable_in_proposition(body, var, &witness);
-            let derivation = self.derive_proposition_using(&instantiated, false);
+            let derivation = crate::kernel::search::ProofSearch::derive_proposition_using(
+                &(context),
+                &instantiated,
+                false,
+            );
             if let Some(derivation) = derivation {
                 return Some(PropositionDerivationRule::ExistsFromWitness {
                     witness,
@@ -1288,8 +1324,8 @@ impl PropositionSearch for PureFactContext {
     /// arithmetic is delegated to the existing bounded loadability checker;
     /// this rule only adds the universal introduction and records the source
     /// range used by it.
-    fn derive_forall_loadable_range(
-        &self,
+    pub(crate) fn derive_forall_loadable_range(
+        context: &PureFactContext,
         proposition: &Proposition,
     ) -> Option<PropositionDerivationRule> {
         let (premises, conclusion) = forall_loadable_range_parts(proposition)?;
@@ -1299,7 +1335,8 @@ impl PropositionSearch for PureFactContext {
         if bytes.as_const() != Some(1) {
             return None;
         }
-        for source in self.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
+        for source in
+            context.search_memory_loadable_candidates_for_base(SearchPermission::new(), base)
         {
             let mut candidate = PureFactContext::new().assume_proposition(source.clone());
             for premise in &premises {
@@ -1315,8 +1352,8 @@ impl PropositionSearch for PureFactContext {
         None
     }
 
-    fn derive_exists_loadable_range(
-        &self,
+    pub(crate) fn derive_exists_loadable_range(
+        context: &PureFactContext,
         var: Variable,
         sort: &Sort,
         body: &Proposition,
@@ -1329,14 +1366,14 @@ impl PropositionSearch for PureFactContext {
         if !matches!(instantiated, Proposition::CMemoryLoadable { .. }) {
             return None;
         }
-        for source in self.search_memory_loadable_candidates_for_base(
+        for source in context.search_memory_loadable_candidates_for_base(
             SearchPermission::new(),
             match &instantiated {
                 Proposition::CMemoryLoadable { base, .. } => base,
                 _ => unreachable!(),
             },
         ) {
-            let candidate = self.with_only_proposition_facts(std::slice::from_ref(source));
+            let candidate = context.with_only_proposition_facts(std::slice::from_ref(source));
             if crate::kernel::api::loadable_covered_by_fact(&candidate, &instantiated) {
                 return Some(PropositionDerivationRule::ExistsLoadableRange {
                     source: Box::new(source.clone()),
@@ -1347,8 +1384,8 @@ impl PropositionSearch for PureFactContext {
         None
     }
 
-    fn derive_by_singleton_substitution(
-        &self,
+    pub(crate) fn derive_by_singleton_substitution(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
@@ -1357,7 +1394,8 @@ impl PropositionSearch for PureFactContext {
         let (variable, value, equality) = variables
             .into_iter()
             .filter_map(|variable| {
-                self.singleton_constant_equality_evidence(variable)
+                context
+                    .singleton_constant_equality_evidence(variable)
                     .map(|(value, evidence)| (variable, value, evidence))
             })
             .next()?;
@@ -1366,7 +1404,11 @@ impl PropositionSearch for PureFactContext {
         if instantiated == *proposition {
             return None;
         }
-        let body = self.derive_proposition_using(&instantiated, extended_rules)?;
+        let body = crate::kernel::search::ProofSearch::derive_proposition_using(
+            &(context),
+            &instantiated,
+            extended_rules,
+        )?;
         Some(PropositionDerivationRule::SingletonSubstitution {
             variable,
             value,
@@ -1375,8 +1417,8 @@ impl PropositionSearch for PureFactContext {
         })
     }
 
-    fn derive_by_disjunction_cases(
-        &self,
+    pub(crate) fn derive_by_disjunction_cases(
+        context: &PureFactContext,
         proposition: &Proposition,
         extended_rules: bool,
     ) -> Option<PropositionDerivationRule> {
@@ -1392,7 +1434,7 @@ impl PropositionSearch for PureFactContext {
         let mut goal_variables = BTreeSet::new();
         collect_proposition_bitvector_variables(proposition, &mut goal_variables);
         let goal_all_variables = crate::kernel::proposition_variables(proposition);
-        for disjunction in self.disjunction_fact_propositions(SearchPermission::new()) {
+        for disjunction in context.disjunction_fact_propositions(SearchPermission::new()) {
             let mut disjunction_variables = BTreeSet::new();
             collect_proposition_bitvector_variables(disjunction, &mut disjunction_variables);
             // A disjunction or goal over no machine variable (an algebraic
@@ -1418,10 +1460,9 @@ impl PropositionSearch for PureFactContext {
             if cases.len() < 2 {
                 continue;
             }
-            if cases
-                .iter()
-                .all(|case| self.contains_assumed_exact(&Proposition::Not(Box::new(case.clone()))))
-            {
+            if cases.iter().all(|case| {
+                context.contains_assumed_exact(&Proposition::Not(Box::new(case.clone())))
+            }) {
                 return Some(PropositionDerivationRule::RefutedDisjunction {
                     disjunction: Box::new(disjunction.clone()),
                 });
@@ -1429,13 +1470,16 @@ impl PropositionSearch for PureFactContext {
             // A branch retains the disjunction and adds its chosen case.
             // Once a case is present, splitting this disjunction again adds
             // nothing and would recurse on the same proof context.
-            if cases.iter().any(|case| self.contains_assumed_exact(case)) {
+            if cases
+                .iter()
+                .any(|case| context.contains_assumed_exact(case))
+            {
                 continue;
             }
             let Some(proofs) = cases
                 .iter()
                 .map(|case| {
-                    let context = self.clone().assume_proposition(case.clone());
+                    let context = context.clone().assume_proposition(case.clone());
                     let key = (
                         crate::kernel::assumptions::unsalted_assumptions_memo_id(&context),
                         proposition.clone(),
@@ -1447,7 +1491,11 @@ impl PropositionSearch for PureFactContext {
                         Some(known) => known,
                         None => {
                             let derived =
-                                context.derive_proposition_using(proposition, extended_rules);
+                                crate::kernel::search::ProofSearch::derive_proposition_using(
+                                    &(context),
+                                    proposition,
+                                    extended_rules,
+                                );
                             SPLIT_CASE_DERIVATIONS
                                 .with(|cases| cases.borrow_mut().insert(key, derived.clone()));
                             derived
@@ -1467,7 +1515,10 @@ impl PropositionSearch for PureFactContext {
         None
     }
 
-    fn proves_finite_forall(&self, proposition: &Proposition) -> bool {
+    pub(crate) fn proves_finite_forall(
+        context: &PureFactContext,
+        proposition: &Proposition,
+    ) -> bool {
         let mut variables = Vec::new();
         let body = collect_forall_chain(proposition, &mut variables);
         if variables.is_empty() {
@@ -1485,11 +1536,17 @@ impl PropositionSearch for PureFactContext {
         crate::instrumentation::record_deterministic_work(instantiation_count);
 
         let mut values = Vec::with_capacity(variables.len());
-        self.proves_finite_forall_instantiations(body, &variables, &ranges, &mut values)
+        crate::kernel::search::ProofSearch::proves_finite_forall_instantiations(
+            &(context),
+            body,
+            &variables,
+            &ranges,
+            &mut values,
+        )
     }
 
-    fn proves_finite_forall_instantiations(
-        &self,
+    pub(crate) fn proves_finite_forall_instantiations(
+        context: &PureFactContext,
         body: &Proposition,
         variables: &[Variable],
         ranges: &[FiniteForAllRange],
@@ -1504,13 +1561,19 @@ impl PropositionSearch for PureFactContext {
                     &signed_i64_bitvector_constant(*value),
                 );
             }
-            return self.proves(&instantiated);
+            return crate::kernel::search::ProofSearch::proves(&(context), &instantiated);
         }
 
         let range = &ranges[values.len()];
         for value in range.lower..=range.upper {
             values.push(value);
-            if !self.proves_finite_forall_instantiations(body, variables, ranges, values) {
+            if !crate::kernel::search::ProofSearch::proves_finite_forall_instantiations(
+                &(context),
+                body,
+                variables,
+                ranges,
+                values,
+            ) {
                 values.pop();
                 return false;
             }
@@ -1519,13 +1582,17 @@ impl PropositionSearch for PureFactContext {
         true
     }
 
-    fn proves_by_singleton_substitution(&self, proposition: &Proposition) -> bool {
+    pub(crate) fn proves_by_singleton_substitution(
+        context: &PureFactContext,
+        proposition: &Proposition,
+    ) -> bool {
         let mut variables = BTreeSet::new();
         collect_proposition_connection_variables(proposition, &mut variables);
         let Some((variable, value)) = variables
             .into_iter()
             .filter_map(|variable| {
-                self.singleton_constant_equality_evidence(variable)
+                context
+                    .singleton_constant_equality_evidence(variable)
                     .map(|(value, _)| (variable, value))
             })
             .next()
@@ -1540,14 +1607,18 @@ impl PropositionSearch for PureFactContext {
         if instantiated == *proposition {
             return false;
         }
-        self.proves(&instantiated)
+        crate::kernel::search::ProofSearch::proves(&(context), &instantiated)
     }
 
-    fn proves_not(&self, proposition: &Proposition) -> bool {
+    pub(crate) fn proves_not(context: &PureFactContext, proposition: &Proposition) -> bool {
         match proposition {
-            Proposition::ConditionIs(condition, value) => self.decide(condition) == Some(!*value),
-            Proposition::Not(body) => self.proves(body),
-            _ => self.contains_proposition_fact(&Proposition::Not(Box::new(proposition.clone()))),
+            Proposition::ConditionIs(condition, value) => {
+                context.decide(condition) == Some(!*value)
+            }
+            Proposition::Not(body) => crate::kernel::search::ProofSearch::proves(&(context), body),
+            _ => {
+                context.contains_proposition_fact(&Proposition::Not(Box::new(proposition.clone())))
+            }
         }
     }
 }
@@ -1583,8 +1654,7 @@ mod monotone_forall_tests {
         let facts = PureFactContext::new()
             .assume_proposition(old_is_zero.clone())
             .assume_proposition(old_equals_other);
-        let derivation = facts
-            .derive_proposition(&goal)
+        let derivation = crate::kernel::search::ProofSearch::derive_proposition(&(facts), &goal)
             .expect("a binder-free body may use the outer variable's facts");
         assert!(derivation.check(&facts));
 
@@ -1595,7 +1665,7 @@ mod monotone_forall_tests {
             body: Box::new(old_is_zero),
         };
         assert!(
-            facts.derive_proposition(&invalid).is_none(),
+            crate::kernel::search::ProofSearch::derive_proposition(&(facts), &invalid).is_none(),
             "an outer fact cannot establish a body that uses the new binder"
         );
     }
@@ -1705,7 +1775,9 @@ mod condition_premise_tests {
             ))));
         }
         reset_condition_selection_visits();
-        let proof = context.derive_atomic_proposition(&goal).unwrap();
+        let proof =
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
+                .unwrap();
         assert!(proof.check(&context));
         assert_eq!(condition_selection_visits(), 0);
         assert_eq!(
@@ -1719,21 +1791,27 @@ mod condition_premise_tests {
             assert!(!proof.check(&context.without_exact_fact(&premise)));
         }
         assert!(
-            context
-                .derive_atomic_proposition(&equal(term(1), MachineTerm::constant(8)))
-                .is_none()
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                &(context),
+                &equal(term(1), MachineTerm::constant(8))
+            )
+            .is_none()
         );
         let exact_constant_only = PureFactContext::new().assume_proposition(left.clone());
         assert!(
-            exact_constant_only
-                .derive_solve_proposition_without_exact_goal(&left)
-                .is_none()
+            crate::kernel::search::ProofSearch::derive_solve_proposition_without_exact_goal(
+                &(exact_constant_only),
+                &left
+            )
+            .is_none()
         );
         let exact_only = PureFactContext::new().assume_proposition(goal.clone());
         assert!(
-            exact_only
-                .derive_solve_proposition_without_exact_goal(&goal)
-                .is_none()
+            crate::kernel::search::ProofSearch::derive_solve_proposition_without_exact_goal(
+                &(exact_only),
+                &goal
+            )
+            .is_none()
         );
     }
 
@@ -1910,9 +1988,7 @@ mod condition_premise_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!(
-            "../../scaling_tests/surface/planning/proposition_search/condition_premise_tests.rs"
-        );
+        include!("../../scaling_tests/kernel/search/proposition_search/condition_premise_tests.rs");
     }
 }
 
@@ -2225,9 +2301,7 @@ mod disjunction_work_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!(
-            "../../scaling_tests/surface/planning/proposition_search/disjunction_work_tests.rs"
-        );
+        include!("../../scaling_tests/kernel/search/proposition_search/disjunction_work_tests.rs");
     }
 }
 
@@ -2409,9 +2483,11 @@ mod shared_atomic_premise_tests {
                     connected_atomic_premises(&context, &predicate(0), &[], true, false, false)
                         .expect("all variable buckets must lead to the same wide premise");
                 assert_eq!(selected, vec![source.clone()]);
-                let proof = context
-                    .derive_atomic_proposition(&source)
-                    .expect("the stated premise is available");
+                let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                    &(context),
+                    &source,
+                )
+                .expect("the stated premise is available");
                 assert!(proof.check(&context));
                 assert!(!proof.check(&context.without_exact_fact(&source)));
                 context
@@ -2430,7 +2506,7 @@ mod shared_atomic_premise_tests {
     #[cfg(test)]
     mod scaling_tests {
         include!(
-            "../../scaling_tests/surface/planning/proposition_search/shared_atomic_premise_tests.rs"
+            "../../scaling_tests/kernel/search/proposition_search/shared_atomic_premise_tests.rs"
         );
     }
 }
@@ -2514,14 +2590,12 @@ mod atomic_reduction_tests {
 
     #[cfg(test)]
     mod scaling_tests {
-        include!(
-            "../../scaling_tests/surface/planning/proposition_search/atomic_reduction_tests.rs"
-        );
+        include!("../../scaling_tests/kernel/search/proposition_search/atomic_reduction_tests.rs");
     }
 }
 
 #[cfg(test)]
 mod loadability_view_scaling_tests {
     use super::*;
-    include!("../../scaling_tests/surface/planning/proposition_search/loadability_view_tests.rs");
+    include!("../../scaling_tests/kernel/search/proposition_search/loadability_view_tests.rs");
 }

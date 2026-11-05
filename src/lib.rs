@@ -44,4 +44,4 @@ extern crate self as click;
 mod gate_tests;
 
 // The opaque type is available to checking without importing a planner.
-pub(crate) use surface::planning::SearchPermission;
+pub(crate) use kernel::search::SearchPermission;

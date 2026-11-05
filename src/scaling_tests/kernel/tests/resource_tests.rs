@@ -1330,12 +1330,13 @@ fn observable_structural_separation_does_not_materialize_owned_pairs() {
                 });
                 assert_eq!(facts.len(), 1, "size-{size} projection materialized pairs");
                 assert!(matches!(facts[0], Proposition::CResourceComposition(_)));
-                assert!(
-                    PureFactContext::new().proves(&Proposition::CResourceSeparate {
+                assert!(crate::kernel::search::ProofSearch::proves(
+                    &(PureFactContext::new()),
+                    &Proposition::CResourceSeparate {
                         left: Box::new(context.facts()[0].resource().clone()),
                         right: Box::new(context.facts()[size - 1].resource().clone()),
-                    })
-                );
+                    }
+                ));
                 (size, work)
             })
             .collect::<Vec<_>>();

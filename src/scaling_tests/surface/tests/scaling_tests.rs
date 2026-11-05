@@ -1836,10 +1836,10 @@ fn composite_definition_members_keep_separation_work_compact() {
 /// by repeated passes cost the whole context once per link.
 #[test]
 fn condition_premise_selection_walks_a_reversed_chain_once() {
-    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
-    use crate::surface::planning::proposition_search::{
-        PropositionSearch, condition_selection_visits, reset_condition_selection_visits,
+    use crate::kernel::search::proposition_search::{
+        condition_selection_visits, reset_condition_selection_visits,
     };
+    use crate::kernel::{ConditionTerm, MachineTerm, Proposition, Variable};
 
     let less = |left: u64, right: u64| {
         Proposition::ConditionIs(
@@ -1888,7 +1888,10 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
                 let assumptions = assumptions_from_propositions(&available);
                 let (derivation, units) =
                     crate::instrumentation::measure_deterministic_work(|| {
-                        assumptions.derive_atomic_proposition(&goal)
+                        crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                            &(assumptions),
+                            &goal,
+                        )
                     });
                 let derivation = derivation.expect("the chained order facts derive the goal");
                 assert!(derivation.check(&assumptions));
@@ -1902,9 +1905,11 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
             // A missing link leaves the goal underivable.
             let broken = context(LINKS, unrelated, Some(1), true);
             assert!(
-                assumptions_from_propositions(&broken)
-                    .derive_atomic_proposition(&goal)
-                    .is_none()
+                crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                    &(assumptions_from_propositions(&broken)),
+                    &goal
+                )
+                .is_none()
             );
             (unrelated, visits[0], work)
         })
@@ -1939,11 +1944,9 @@ fn condition_premise_selection_walks_a_reversed_chain_once() {
 /// of the whole family visited every unrelated fact and tried each one.
 #[test]
 fn loadable_candidate_selection_ignores_facts_about_other_objects() {
+    use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
         CMemory, MachineTerm, Pointer, PointerOffsetTerm, Proposition, PureFactContext, Variable,
-    };
-    use crate::surface::planning::proposition_search::{
-        PropositionSearch, candidate_visits, reset_candidate_visits,
     };
 
     let memory = CMemory::new();
@@ -1997,7 +2000,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
                 }
                 reset_candidate_visits();
                 let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    context.derive_atomic_proposition(&goal)
+                    crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
                 });
                 match cited {
                     Some(cited) => {
@@ -2041,7 +2044,7 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
             }
             let goal = loadable(at("goal", 0), 16);
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.derive_atomic_proposition(&goal)
+                crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
             });
             assert!(derivation.is_none());
             (unrelated, work)
@@ -2060,12 +2063,10 @@ fn loadable_candidate_selection_ignores_facts_about_other_objects() {
 /// the same candidates however many unrelated facts of the family exist.
 #[test]
 fn read_defined_and_separation_selection_try_indexed_sources_first() {
+    use crate::kernel::search::proposition_search::{candidate_visits, reset_candidate_visits};
     use crate::kernel::{
         CMemory, CMemoryRange, CResource, CType, ConditionTerm, MachineTerm, Pointer,
         PointerOffsetTerm, Proposition, PureFactContext, Variable,
-    };
-    use crate::surface::planning::proposition_search::{
-        PropositionSearch, candidate_visits, reset_candidate_visits,
     };
 
     let memory = CMemory::new().with_block("goal", 64);
@@ -2137,9 +2138,11 @@ fn read_defined_and_separation_selection_try_indexed_sources_first() {
                     context = context.assume_proposition(source.clone());
                 }
                 reset_candidate_visits();
-                let derivation = context
-                    .derive_atomic_proposition(&goal)
-                    .unwrap_or_else(|| panic!("{name}: goal not derived"));
+                let derivation = crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                    &(context),
+                    &goal,
+                )
+                .unwrap_or_else(|| panic!("{name}: goal not derived"));
                 assert!(
                     derivation
                         .context_premises()
@@ -4224,7 +4227,6 @@ fn solve_equality_chain_is_linear_and_unrelated_queries_are_flat() {
 #[test]
 fn failing_solve_derivation_ignores_unrelated_disjunctions() {
     use crate::kernel::{ConditionTerm, MachineTerm, Proposition, PureFactContext, Variable};
-    use crate::surface::planning::proposition_search::PropositionSearch;
 
     let equal = |variable: u64, value: u32| {
         Proposition::ConditionIs(
@@ -4258,7 +4260,7 @@ fn failing_solve_derivation_ignores_unrelated_disjunctions() {
                 true,
             );
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.derive_solve_proposition(&goal)
+                crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal)
             });
             assert!(derivation.is_none(), "nothing bounds the goal's variable");
             (size, work)
@@ -4282,7 +4284,6 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
         AlgebraicVariantType, ConditionTerm, MachineTerm, Proposition, PureFactContext, Term,
         Variable,
     };
-    use crate::surface::planning::proposition_search::PropositionSearch;
 
     let variants: std::sync::Arc<[AlgebraicVariantType]> = ["Red", "Black"]
         .into_iter()
@@ -4341,7 +4342,7 @@ fn failing_solve_derivation_ignores_unrelated_algebraic_disjunctions() {
                 true,
             );
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                context.derive_solve_proposition(&goal)
+                crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal)
             });
             assert!(derivation.is_none(), "nothing bounds the goal's variable");
             (size, work)
@@ -6654,7 +6655,6 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
         CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Variable,
     };
-    use crate::surface::planning::proposition_search::PropositionSearch;
 
     let memory = CMemory::new();
     // The address of element `variable` of the goal's array.
@@ -6747,7 +6747,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
                     context = context.assume_proposition(source.clone());
                 }
                 let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                    context.derive_atomic_proposition(&goal)
+                    crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
                 });
                 let mut check_work = 0;
                 let mut certificate_bytes = 0;
@@ -6810,7 +6810,6 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
         CMemory, CValue, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Variable,
     };
-    use crate::surface::planning::proposition_search::PropositionSearch;
 
     let index_cell = Pointer {
         block: "selected-index".into(),
@@ -6876,7 +6875,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
             .assume_proposition(source.clone())
             .assume_proposition(equality.clone());
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_atomic_proposition(&goal)
+            crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
         });
         let proof = proof.expect("the addressed index's equality should suffice");
         assert_eq!(proof.context_premises().len(), 2);
@@ -6908,7 +6907,6 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         CMemory, ConditionTerm, MachineTerm, Pointer, PointerOffsetTerm, Proposition,
         PureFactContext, Sort, Variable,
     };
-    use crate::surface::planning::proposition_search::PropositionSearch;
 
     let memory = CMemory::new();
     let load = |offset: PointerOffsetTerm| {
@@ -7000,7 +6998,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         .map(|unrelated| {
             let available = context(unrelated, true);
             let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-                available.derive_atomic_proposition(&goal)
+                crate::kernel::search::ProofSearch::derive_atomic_proposition(&(available), &goal)
             });
             let derivation = derivation.expect("the instantiated fact derives the goal");
             let premises = derivation.context_premises();
@@ -7015,9 +7013,11 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
             }
             // Without the bound the instantiation's guard is not known.
             assert!(
-                context(unrelated, false)
-                    .derive_atomic_proposition(&goal)
-                    .is_none()
+                crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                    &(context(unrelated, false)),
+                    &goal
+                )
+                .is_none()
             );
             (unrelated, work, check_work, certificate_bytes)
         })
@@ -7047,7 +7047,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
     // collections would still do quadratic work across this sequence.
     let extensions = [8usize, 16, 32, 64].map(|steps| {
         let mut available = context(0, true);
-        crate::surface::planning::proposition_search::reset_condition_selection_visits();
+        crate::kernel::search::proposition_search::reset_condition_selection_visits();
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for step in 0..steps {
                 available = available
@@ -7066,14 +7066,16 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                         bytes: MachineTerm::constant(16),
                         wide: false,
                     });
-                let proof = available
-                    .derive_atomic_proposition(&goal)
-                    .expect("connected fallback");
+                let proof = crate::kernel::search::ProofSearch::derive_atomic_proposition(
+                    &(available),
+                    &goal,
+                )
+                .expect("connected fallback");
                 assert_eq!(proof.context_premises().len(), 2);
                 assert!(proof.check(&available));
             }
         });
-        let visits = crate::surface::planning::proposition_search::condition_selection_visits();
+        let visits = crate::kernel::search::proposition_search::condition_selection_visits();
         assert!(
             visits <= steps * 4,
             "unrelated conditions visited: {steps}, {visits}"

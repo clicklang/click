@@ -42,7 +42,7 @@ removed, so it has to stay small.
 | Certificates | Check explicit arithmetic certificates and contract claims | fast | `src/kernel/proof/{integer_arithmetic,signed_arithmetic,arithmetic_special}.rs`, `src/surface/proof_certificate.rs` |
 | Termination | Plan recursion heights over the call graph, then check them | fast | `src/kernel/termination.rs` |
 | Smart tactics | `solve`, `step_until`, the implicit tail and its closer | slow | `src/surface/checking/{arithmetic_engine,simplex}.rs`, `src/surface/proof/{smart_closures,smart_execution,selected_arithmetic}.rs` |
-| Search helpers | Fill an elided premise, fact, resource instance, or guard | slow | `src/surface/planning/proposition_search.rs`, `src/surface/proof/fixed_state_proofs/` |
+| Search helpers | Fill an elided premise, fact, resource instance, or guard | slow | `src/kernel/search/proposition_search.rs`, `src/surface/proof/fixed_state_proofs/` |
 | Expansion and printing | Write a slow-part result as fast-part tactics, and print source | tools | `src/surface/expansion.rs`, `src/surface/printing.rs` |
 | Tools and budgets | `profile`, `audit`, traces, work accounting, and budgets | tools | `src/bin/`, `src/instrumentation.rs` |
 

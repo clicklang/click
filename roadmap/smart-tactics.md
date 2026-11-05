@@ -19,7 +19,11 @@ this guarantee for an operation's other routes.
 This is the operation inventory from source inspection at `5610ff660`.
 It organizes the next measurements; it is not a claim that all checking paths
 have been audited, or that every candidate below is a reproduced defect.
-No new scaling experiments or verifier changes accompany this inventory.
+The interface refactor now exposes discovery through `kernel::search::ProofSearch`
+without changing its behavior. The frozen
+[dependency inventory](../build_support/proof_search_edges.tsv) records existing
+callers and separates operation dependencies from dispatch, adapters and
+unclassified mixed drivers. No new scaling measurements accompany that split.
 Existing test names below identify evidence to retain and inspect, not new
 measurements. The contract lives in [Verifier design](../docs/internals/verifier-design.md)
 and [Verification efficiency](../docs/internals/verification-efficiency.md).
@@ -215,7 +219,7 @@ checking claim must disclose them until resolved.
 
 ## Prevention coverage
 
-`SearchPermission` gates ambient fact discovery through planning, and
+`kernel::search::SearchPermission` gates ambient fact discovery, and
 `build_support/search_boundary.rs` rejects selected forbidden calls and
 iterator patterns. These guards cover named APIs/functions, not arbitrary
 Rust iteration, allocation or structural comparison. `CheckingWorkScope`
@@ -226,10 +230,11 @@ complete-operation scaling controls; neither mechanism alone proves the rule.
 
 ## Next design/build cycle and completion
 
-The proposed architectural migration is in
+The behavior-preserving architectural split is described in
 [Separate proof operations from proof search](../design/proof-operations-and-search.md).
-Review its interfaces and explicit exception boundary before implementing more
-isolated optimizations. The measurements below feed that migration.
+Use its frozen dependency inventory to remove operation-to-search calls one
+route at a time. Mixed callers still need classification; no strict search-free
+execution guarantee is claimed. The measurements below feed that migration.
 
 1. Review this inventory, then measure L1 through an actual write: it has a
    concrete checking caller and isolates aliases from symbolic-loan growth.

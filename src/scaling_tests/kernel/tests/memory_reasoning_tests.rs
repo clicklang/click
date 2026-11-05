@@ -134,16 +134,14 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
         bytes: MachineTerm::constant(4),
         wide: false,
     };
-    assert!(
-        !PureFactContext::new()
-            .assume_proposition(equality.clone())
-            .proves(&goal)
-    );
-    assert!(
-        !PureFactContext::new()
-            .assume_proposition(view.clone())
-            .proves(&goal)
-    );
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new().assume_proposition(equality.clone())),
+        &goal
+    ));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(PureFactContext::new().assume_proposition(view.clone())),
+        &goal
+    ));
     let samples = [8, 32, 128].map(|size| {
         let mut context = PureFactContext::new()
             .assume_proposition(equality.clone())
@@ -159,15 +157,19 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
                 wide: false,
             });
         }
-        let (proved, work) =
-            crate::instrumentation::measure_deterministic_work(|| context.proves(&goal));
+        let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::search::ProofSearch::proves(&(context), &goal)
+        });
         assert!(proved);
-        assert!(!context.proves(&Proposition::CMemoryLoadable {
-            memory: memory.clone(),
-            base: result.offset_by_bytes(4),
-            bytes: MachineTerm::constant(4),
-            wide: false,
-        }));
+        assert!(!crate::kernel::search::ProofSearch::proves(
+            &(context),
+            &Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: result.offset_by_bytes(4),
+                bytes: MachineTerm::constant(4),
+                wide: false,
+            }
+        ));
         work
     });
     assert!(
@@ -189,12 +191,15 @@ fn loadability_transports_checked_aliases_without_scanning_unrelated_facts() {
             bytes: MachineTerm::constant(4),
             wide: false,
         });
-    assert!(!context.proves(&Proposition::CMemoryLoadable {
-        memory: after,
-        base: result,
-        bytes: MachineTerm::constant(4),
-        wide: false,
-    }));
+    assert!(!crate::kernel::search::ProofSearch::proves(
+        &(context),
+        &Proposition::CMemoryLoadable {
+            memory: after,
+            base: result,
+            bytes: MachineTerm::constant(4),
+            wide: false,
+        }
+    ));
 }
 
 #[test]
@@ -226,12 +231,15 @@ fn memory_loadable_query_ignores_same_block_unrelated_pointer_shapes() {
                 });
             }
             let (proved, work) = crate::instrumentation::measure_deterministic_work(|| {
-                assumptions.proves(&Proposition::CMemoryLoadable {
-                    memory: memory.clone(),
-                    base: target.clone(),
-                    bytes: MachineTerm::constant(4),
-                    wide: false,
-                })
+                crate::kernel::search::ProofSearch::proves(
+                    &(assumptions),
+                    &Proposition::CMemoryLoadable {
+                        memory: memory.clone(),
+                        base: target.clone(),
+                        bytes: MachineTerm::constant(4),
+                        wide: false,
+                    },
+                )
             });
             assert!(proved);
             (size, work)

@@ -1,4 +1,4 @@
-// Scaling tests of `src/surface/planning/proposition_search.rs` (module `condition_premise_tests`): deterministic work measured at several
+// Scaling tests of `src/kernel/search/proposition_search.rs` (module `condition_premise_tests`): deterministic work measured at several
 // input sizes. Included into its `scaling_tests` module; see "Scaling
 // tests" in `docs/internals/testing.md`.
 
@@ -27,7 +27,7 @@ fn refused_integer_equality_does_not_rebuild_connected_order_facts() {
         // bounded number of times; rebuilding the connected order facts per
         // fact would be quadratic.
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_solve_proposition(&goal)
+            crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal)
         });
         assert!(derivation.is_none());
         let bound = 512 + 4 * size as usize;
@@ -72,7 +72,7 @@ fn wide_condition_index_construction_charges_its_variable_entries() {
         });
         assert_eq!(
             context
-                .condition_fact_pairs(crate::surface::planning::SearchPermission::new())
+                .condition_fact_pairs(crate::kernel::search::SearchPermission::new())
                 .count(),
             1
         );
@@ -213,8 +213,7 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
                     "{length}: {work}"
                 );
                 let (proof, total) = crate::instrumentation::measure_deterministic_work(|| {
-                    context
-                        .derive_atomic_proposition(&goal)
+                    crate::kernel::search::ProofSearch::derive_atomic_proposition(&(context), &goal)
                         .expect("connected order chain proves goal")
                 });
                 assert!(proof.check(&context));
@@ -234,7 +233,10 @@ fn connected_condition_selection_scales_linearly_in_chain_and_context() {
                     chain_fact(length as u64 / 2),
                     true,
                 ));
-                assert!(broken.derive_atomic_proposition(&goal).is_none());
+                assert!(
+                    crate::kernel::search::ProofSearch::derive_atomic_proposition(&(broken), &goal)
+                        .is_none()
+                );
                 (work, total)
             })
             .join()
@@ -303,7 +305,8 @@ fn covering_loadability_avoids_unrelated_adjacency_search() {
             wide: false,
         };
         let (proof, work) = crate::instrumentation::measure_deterministic_work(|| {
-            context.derive_solve_atomic_proposition(&goal).unwrap()
+            crate::kernel::search::ProofSearch::derive_solve_atomic_proposition(&(context), &goal)
+                .unwrap()
         });
         assert_eq!(proof.context_premises(), vec![source]);
         samples.push(work);

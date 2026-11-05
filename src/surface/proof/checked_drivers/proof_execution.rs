@@ -1157,7 +1157,11 @@ fn apply_frontier_source_tactic<'a>(
     } else if let ProofTactic::ApplyTheorem(application) = &indexed.tactic {
         apply_written_theorem(&proof, application)?
     } else if let ProofTactic::Transport { source, target } = &indexed.tactic {
-        match proof.try_execution_fact_transport_or_refusal(source, target)? {
+        match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(
+            &(proof),
+            source,
+            target,
+        )? {
             Ok(transported) => transported,
             Err(source_refusal) => proof.apply_planned_fact_transport(
                 source,
@@ -1194,7 +1198,7 @@ fn apply_frontier_source_tactic<'a>(
             })?;
         selected.join()?
     } else if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
-        match proof.try_execute_until(region)? {
+        match crate::kernel::search::ProofSearch::try_execute_until(&(proof), region)? {
             Some(executed) => executed,
             None => {
                 // An arm of `branch` that does not return ends at the C
@@ -1211,7 +1215,7 @@ fn apply_frontier_source_tactic<'a>(
             }
         }
     } else if matches!(indexed.tactic, ProofTactic::SmartExecute) {
-        match proof.try_execute_to_exit()? {
+        match crate::kernel::search::ProofSearch::try_execute_to_exit(&(proof))? {
             Some(executed) => executed,
             None => {
                 // Terminal arms can succeed above. A continuing arm cannot
@@ -2351,7 +2355,7 @@ pub(in crate::surface::proof) fn solve_nested_have<'a>(
                 Ok(match source_proof.as_ref() {
                     SourceProof::Tactic(SmartTactic::Auto) => nested.try_auto_fact_closure()?,
                     SourceProof::Default | SourceProof::Tactic(SmartTactic::Solve) => {
-                        nested.try_solve_closure()?
+                        (nested).try_solve_closure()?
                     }
                     SourceProof::Script(body) => {
                         // An explicit script is checked by its proof steps alone: a
@@ -2422,7 +2426,11 @@ pub(in crate::surface::proof) fn preservation_smart_step<'a>(
     proof: &Proof<'a>,
 ) -> Result<Proof<'a>, ClickError> {
     let mut retried_requirements = std::collections::BTreeSet::new();
-    match proof.try_smart_statement_step(ProofStep::Step, &mut retried_requirements)? {
+    match crate::kernel::search::ProofSearch::try_smart_statement_step(
+        &(proof),
+        ProofStep::Step,
+        &mut retried_requirements,
+    )? {
         Some(stepped) => Ok(stepped),
         None => proof.apply_step(ProofStep::Step),
     }
@@ -4944,7 +4952,7 @@ fn advance_linear_open_scope<'a>(
         }
         if matches!(indexed.tactic, ProofTactic::SmartExecute) {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = scope.try_execute_to_exit()? else {
+            let Some(executed) = (scope).try_execute_to_exit()? else {
                 return decline();
             };
             scope = executed;
@@ -4963,7 +4971,7 @@ fn advance_linear_open_scope<'a>(
         }
         if let ProofTactic::ExecuteUntil(region) = &indexed.tactic {
             let checkpoint = scope.checkpoint();
-            let Some(executed) = scope.try_execute_until(region)? else {
+            let Some(executed) = (scope).try_execute_until(region)? else {
                 return decline();
             };
             scope = executed;

@@ -2,6 +2,8 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use syn::visit::Visit;
+#[path = "proof_search_boundary.rs"]
+mod proof_search_boundary;
 
 fn test_only(attrs: &[syn::Attribute]) -> bool {
     attrs.iter().any(|a| {
@@ -603,6 +605,7 @@ impl Boundary<'_> {
             ));
         }
         if self.path.starts_with("src/kernel/")
+            && !self.path.starts_with("src/kernel/search/")
             && matches!(
                 name,
                 "search_memory_loadable_candidates_for_base"
@@ -827,7 +830,12 @@ pub fn check_tree(root: &Path, relative: &str) -> Result<(), Vec<String>> {
         let source =
             std::fs::read_to_string(&path).map_err(|e| vec![format!("{relative}: {e}")])?;
         match check_source(&relative, &source) {
-            Ok(file) => external_modules(&file.items, &dir, &mut pending),
+            Ok(file) => {
+                if let Err(found) = proof_search_boundary::check(&relative, &file) {
+                    errors.extend(found);
+                }
+                external_modules(&file.items, &dir, &mut pending);
+            }
             Err(found) => errors.extend(found),
         }
     }

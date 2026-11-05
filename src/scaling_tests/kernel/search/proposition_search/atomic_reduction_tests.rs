@@ -1,4 +1,4 @@
-// Scaling tests of `src/surface/planning/proposition_search.rs` (module
+// Scaling tests of `src/kernel/search/proposition_search.rs` (module
 // `atomic_reduction_tests`): repeated selected-premise reduction work.
 use super::*;
 

@@ -60,7 +60,12 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             &[],
         );
         let (spelled, events) = crate::instrumentation::collect(|| {
-            root.available_surface_fact(&surfaces, Some(&anchor), &missing)
+            crate::kernel::search::ProofSearch::available_surface_fact(
+                &(root),
+                &surfaces,
+                Some(&anchor),
+                &missing,
+            )
         });
         assert!(spelled.is_none(), "no state names the missing variable");
         let walks = events
@@ -76,9 +81,13 @@ fn a_missing_premise_spelling_walks_recorded_history_only_once() {
             walks <= 1,
             "size {size}: a completed history miss must not restart ({walks} walks)"
         );
-        let spelled = root
-            .available_surface_fact(&surfaces, Some(&anchor), &named)
-            .expect("a named current value remains available");
+        let spelled = crate::kernel::search::ProofSearch::available_surface_fact(
+            &(root),
+            &surfaces,
+            Some(&anchor),
+            &named,
+        )
+        .expect("a named current value remains available");
         assert_eq!(
             root.lower_surface_proposition_direct(&spelled, "named control")
                 .unwrap(),
@@ -269,7 +278,7 @@ fn same_block_offset_rewrite_work(
         &[],
     );
     let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-        root.try_goal_equality_rewrite_closure()
+        crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
     });
     let closed = closed.expect("the offset's k == 4 fact should close the pointer equality");
     assert!(closed.is_complete());
@@ -443,7 +452,7 @@ fn loop_entry_solve_keeps_checked_unspellable_assumptions_and_scales() {
             .begin_loop_entry_goal(surface.clone(), &obligation)
             .unwrap();
         let (checked, work) = crate::instrumentation::measure_deterministic_work(|| {
-            scope.try_solve_closure().unwrap().unwrap()
+            (scope).try_solve_closure().unwrap().unwrap()
         });
         assert_eq!(
             checked.body().certificate().steps(),
@@ -1439,7 +1448,7 @@ fn wide_bound_direct_rewrite_ignores_connected_ambient_equalities() {
             &theorem_environment,
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.try_indexed_direct_equality_rewrite(false)
+            crate::kernel::search::ProofSearch::try_indexed_direct_equality_rewrite(&(root), false)
                 .break_value()
                 .flatten()
         });
@@ -1742,7 +1751,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
         );
         let ((closed, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                root.try_goal_equality_rewrite_closure()
+                crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
             })
         });
         assert!(
@@ -1794,8 +1803,7 @@ fn indexed_rewrite_does_not_spell_registered_read_definitions() {
                 &[],
             );
             assert_eq!(
-                proof
-                    .try_goal_equality_rewrite_closure()
+                crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(proof))
                     .is_some_and(|proof| proof.is_complete()),
                 expected
             );
@@ -1864,7 +1872,12 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
             &[],
         );
         let (surface, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.available_surface_fact(&surfaces, Some(&anchor), &current)
+            crate::kernel::search::ProofSearch::available_surface_fact(
+                &(root),
+                &surfaces,
+                Some(&anchor),
+                &current,
+            )
         });
         let surface = surface.expect("the current state names this selected fact");
         assert!(!proposition_contains_at_expression(&surface));
@@ -1876,9 +1889,13 @@ fn current_scalar_premise_spelling_ignores_unrelated_recorded_snapshots() {
         );
         // The same name has another value at entry. Its older fact must keep
         // that state instead of being reinterpreted as the current value.
-        let old_surface = root
-            .available_surface_fact(&surfaces, Some(&anchor), &old)
-            .expect("the entry state names the older selected fact");
+        let old_surface = crate::kernel::search::ProofSearch::available_surface_fact(
+            &(root),
+            &surfaces,
+            Some(&anchor),
+            &old,
+        )
+        .expect("the entry state names the older selected fact");
         assert!(
             proposition_contains_at_expression(&old_surface)
                 || proposition_contains_old_expression(&old_surface)
@@ -1973,7 +1990,12 @@ fn mixed_entry_and_current_premise_spelling_ignores_unrelated_snapshots() {
             &[],
         );
         let (spelled, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.available_surface_fact(&surfaces, Some(&anchor), &kernel)
+            crate::kernel::search::ProofSearch::available_surface_fact(
+                &(root),
+                &surfaces,
+                Some(&anchor),
+                &kernel,
+            )
         });
         let spelled = spelled.expect("entry and current states together name this fact");
         assert!(proposition_contains_old_expression(&spelled));
@@ -2154,7 +2176,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         );
         let ((closed, work), events) = crate::instrumentation::collect(|| {
             crate::instrumentation::measure_deterministic_work(|| {
-                root.try_goal_equality_rewrite_closure()
+                crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
             })
         });
         assert!(
@@ -2175,7 +2197,12 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
         );
         assert!(facts.iter().all(|fact| root.facts().contains(fact)));
         let (spelled, direct_events) = crate::instrumentation::collect(|| {
-            root.available_surface_fact(&surfaces, Some(&anchor), &facts[0])
+            crate::kernel::search::ProofSearch::available_surface_fact(
+                &(root),
+                &surfaces,
+                Some(&anchor),
+                &facts[0],
+            )
         });
         assert!(
             spelled.is_none(),
@@ -2231,8 +2258,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
             facts[0]
         );
         assert!(
-            recorded
-                .try_goal_equality_rewrite_closure()
+            crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&recorded)
                 .is_some_and(|proof| proof.is_complete()),
             "a retained store source must remain usable"
         );
@@ -2268,8 +2294,7 @@ fn indexed_rewrite_does_not_search_history_for_unrecorded_store_facts() {
                 &[],
             );
             assert_eq!(
-                proof
-                    .try_goal_equality_rewrite_closure()
+                crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(proof))
                     .is_some_and(|proof| proof.is_complete()),
                 expected
             );
@@ -2384,7 +2409,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             &theorems,
         );
         let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
-            root.try_goal_equality_rewrite_closure()
+            crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure(&(root))
         });
         assert!(closed.is_none(), "offset equality must remain rejected");
         costs.push(work);
@@ -2408,8 +2433,7 @@ fn check_impossible_offset_rewrite_search(already_intrinsic: bool, native: bool)
             &theorems,
         );
         assert!(
-            unreachable
-                .try_solve_closure()
+            crate::kernel::search::ProofSearch::try_solve_closure(&(unreachable))
                 .ok()
                 .flatten()
                 .is_some_and(|proof| proof.is_complete()),

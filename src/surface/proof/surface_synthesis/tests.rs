@@ -2,7 +2,6 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
-use crate::surface::planning::proposition_search::PropositionSearch;
 
 /// Compare structural lowering separately from proving the use site's debts.
 /// Ordinary proof operations still check those debts before admitting a fact.
@@ -2463,7 +2462,10 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
             right: ContractExpression::CFragment(CExpression::Value(value(selected.clone()))),
         };
         let lowered = relower_written_proposition(&equality, &state).unwrap();
-        assert!(PureFactContext::new().proves(&lowered), "{lowered:?}");
+        assert!(
+            crate::kernel::search::ProofSearch::proves(&(PureFactContext::new()), &lowered),
+            "{lowered:?}"
+        );
         let changed = state.with_memory(
             memory
                 .clone()

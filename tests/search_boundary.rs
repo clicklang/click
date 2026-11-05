@@ -56,7 +56,7 @@ fn module_walk_checks_production_files_even_when_named_tests() {
 fn only_planning_can_construct_search_permission() {
     let temp = tempfile::tempdir().unwrap();
     let permission =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/surface/planning/permission.rs");
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/kernel/search/permission.rs");
     for (body, succeeds) in [
         (
             "pub(crate) fn check(_: &crate::planning::SearchPermission) {}",
@@ -108,7 +108,7 @@ fn only_planning_can_construct_search_permission() {
 fn selected_reasoning_requires_explicit_premises_or_planner_permission() {
     let temp = tempfile::tempdir().unwrap();
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let permission = root.join("src/surface/planning/permission.rs");
+    let permission = root.join("src/kernel/search/permission.rs");
     let selected = root.join("src/kernel/assumptions/selected_facts.rs");
     for (body, succeeds) in [
         ("let _ = SelectedFacts::from_propositions(&[1, 2]);", true),
@@ -992,4 +992,48 @@ fn active_memory_loan_presence_cannot_scan_ledger_history_or_indices() {
         let source = format!("fn has_active_memory_loans(c: C) {{ c.{method}(); }}");
         assert!(boundary::check_source("src/kernel/loans.rs", &source).is_err());
     }
+}
+
+#[path = "../build_support/proof_search_boundary.rs"]
+mod proof_search_boundary;
+
+#[test]
+fn new_operation_search_edges_are_rejected_even_through_aliases_and_macros() {
+    for source in [
+        "fn step(p: P) { ProofSearch::try_solve_closure(p); }",
+        "fn step(p: P) { let f = ProofSearch::try_solve_closure; f(p); }",
+        "fn step(p: P) { hidden!(ProofSearch::try_solve_closure(p)); }",
+        "use crate::kernel::search::ProofSearch as S; fn step(p: P) { S::try_solve_closure(p); }",
+        "fn step(c: C) { c.compositions_only(); }",
+        "impl ProofSearch<P> { fn new_unclassified_strategy() {} }",
+        "impl Proof { fn try_solve_closure(&self) {} }",
+        "impl ProofObject { fn derive_proposition(&self) {} }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert!(
+            proof_search_boundary::check("src/new_operation.rs", &file).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn frozen_proof_search_inventory_has_no_stale_or_missing_references() {
+    use std::collections::{BTreeMap, BTreeSet};
+    let expected = proof_search_boundary::expected();
+    let paths: BTreeSet<_> = expected
+        .keys()
+        .map(|key| key.split('\t').next().unwrap())
+        .collect();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut actual = BTreeMap::new();
+    for path in paths {
+        let source = std::fs::read_to_string(root.join(path)).unwrap();
+        let file = syn::parse_file(&source).unwrap();
+        actual.extend(proof_search_boundary::inventory(path, &file));
+    }
+    assert_eq!(
+        actual, expected,
+        "update the reviewed inventory when deleting or relocating an edge"
+    );
 }

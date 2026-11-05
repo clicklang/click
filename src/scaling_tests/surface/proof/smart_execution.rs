@@ -116,7 +116,13 @@ fn model_argument_guard_selection_is_independent_of_unrelated_facts() {
         let ((result, persistent), work) =
             crate::instrumentation::measure_deterministic_work(|| {
                 crate::persistent::measure_persistent_work(|| {
-                    root.argument_guard_premises(theorem, &application, &application_context, &[])
+                    crate::kernel::search::ProofSearch::argument_guard_premises(
+                        &(root),
+                        theorem,
+                        &application,
+                        &application_context,
+                        &[],
+                    )
                 })
             });
         assert_eq!(result.unwrap(), vec![guard.clone()]);

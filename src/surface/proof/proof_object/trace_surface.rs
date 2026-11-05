@@ -18,22 +18,36 @@ impl Proof<'_> {
             ConditionTerm::pointer_equal(left.clone(), right.clone()),
             true,
         );
-        let surface = self
-            .available_surface_fact(view.surface_propositions, None, &fact)
-            .or_else(|| {
-                let reversed = Proposition::ConditionIs(
-                    ConditionTerm::pointer_equal(right.clone(), left.clone()),
-                    true,
-                );
-                self.available_surface_fact(view.surface_propositions, None, &reversed)
-            });
+        let surface = crate::kernel::search::ProofSearch::available_surface_fact(
+            &(self),
+            view.surface_propositions,
+            None,
+            &fact,
+        )
+        .or_else(|| {
+            let reversed = Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(right.clone(), left.clone()),
+                true,
+            );
+            crate::kernel::search::ProofSearch::available_surface_fact(
+                &(self),
+                view.surface_propositions,
+                None,
+                &reversed,
+            )
+        });
         let surface = surface.or_else(|| {
             let execution = self.branch_execution()?;
             let anchor = ProgramPointRef {
                 region: CodeRegionRef::Region(execution.core.frontier.next_statement_index),
                 kind: ProgramPointKind::Entry,
             };
-            self.available_surface_fact(view.surface_propositions, Some(&anchor), &fact)
+            crate::kernel::search::ProofSearch::available_surface_fact(
+                &(self),
+                view.surface_propositions,
+                Some(&anchor),
+                &fact,
+            )
         });
         let hints = match &surface {
             Some(ClickProposition::Comparison { left, right, .. }) => vec![left, right],

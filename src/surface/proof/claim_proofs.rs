@@ -2,7 +2,6 @@ use super::proof_object::ProofCheckpoint;
 use super::*;
 #[cfg(test)]
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::surface::planning::proposition_search::PropositionSearch;
 use std::sync::Arc;
 
 fn resource_receipts_jointly_available(
@@ -1461,7 +1460,8 @@ fn close_claim_directly_from_outcome<'a>(
     }
     let mut search = super::attempt::search_scope("claim outcome closure");
     if let ClaimClosureSearch::Restricted(premises) = closure_search {
-        let selected = proof.try_restricted_solve_closure(premises);
+        let selected =
+            crate::kernel::search::ProofSearch::try_restricted_solve_closure(&(proof), premises);
         check_verification_deadline()?;
         if let Some(completed) = selected
             && completed.is_complete()
@@ -1470,13 +1470,14 @@ fn close_claim_directly_from_outcome<'a>(
             return Ok(Ok(completed));
         }
     } else if closure_search != ClaimClosureSearch::None {
-        if let Some(completed) = proof.try_direct_logical_closure()?
+        if let Some(completed) =
+            crate::kernel::search::ProofSearch::try_direct_logical_closure(&(proof))?
             && completed.is_complete()
         {
             search.succeed();
             return Ok(Ok(completed));
         }
-        if let Some(completed) = proof.try_solve_closure()?
+        if let Some(completed) = crate::kernel::search::ProofSearch::try_solve_closure(&(proof))?
             && completed.is_complete()
         {
             search.succeed();
@@ -2099,13 +2100,18 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
             // only what follows them.
             let before_solve = proof.checkpoint();
             let selected = if let Some(premises) = restricted_premises {
-                let selected = proof.try_restricted_solve_closure(premises);
+                let selected = crate::kernel::search::ProofSearch::try_restricted_solve_closure(
+                    &(proof),
+                    premises,
+                );
                 check_verification_deadline()?;
                 selected
-            } else if let Some(completed) = proof.try_direct_logical_closure()? {
+            } else if let Some(completed) =
+                crate::kernel::search::ProofSearch::try_direct_logical_closure(&(proof))?
+            {
                 Some(completed)
             } else {
-                proof.try_solve_closure()?
+                crate::kernel::search::ProofSearch::try_solve_closure(&(proof))?
             };
             match selected {
                 Some(completed) => Some((claim_index, before_solve, completed)),
@@ -2452,13 +2458,13 @@ fn close_post_execution_claims_with_solve<'a, 'e>(
                 }
                 let (selected_scope, checks) = crate::surface::proof_diagnostics::capture_check_observations(|| -> Result<_, ClickError> {
                     Ok(if let Some(premises) = restricted_premises {
-                    let selected = scope.try_restricted_solve_closure(premises);
+                    let selected = (scope).try_restricted_solve_closure(premises);
                     check_verification_deadline()?;
                     selected
-                } else if let Some(scope) = scope.try_direct_logical_closure()? {
+                } else if let Some(scope) = (scope).try_direct_logical_closure()? {
                     Some(scope)
                 } else {
-                    scope.try_solve_closure()?
+                    (scope).try_solve_closure()?
                 })
                 });
                 let selected_scope = selected_scope.map_err(|error| error.with_check_observations(checks.clone()))?;
@@ -3487,9 +3493,11 @@ pub(super) fn finish_ordered_proof<'a>(
                                         refuted.push(obligation.clone());
                                         continue;
                                     }
-                                    if assumptions
-                                        .derive_proposition(proposition)
-                                        .is_some_and(|derivation| derivation.check(assumptions))
+                                    if crate::kernel::search::ProofSearch::derive_proposition(
+                                        &(assumptions),
+                                        proposition,
+                                    )
+                                    .is_some_and(|derivation| derivation.check(assumptions))
                                     {
                                         continue;
                                     }
@@ -4251,7 +4259,7 @@ pub(super) fn finish_ordered_proof<'a>(
                                     let transported = if let Some(step) = written {
                                         prepared.apply_step(step)
                                     } else {
-                                        match prepared.try_execution_fact_transport_or_refusal(
+                                        match crate::kernel::search::ProofSearch::try_execution_fact_transport_or_refusal(&(prepared),
                                             source, target,
                                         )? {
                                             Ok(transported) => Ok(transported),
@@ -5090,7 +5098,7 @@ pub(super) fn finish_ordered_proof<'a>(
                         let proof = opened
                             .proof
                             .refresh_outcome_from(required_outcome(&outcome_proof)?)?;
-                        match proof.try_direct_logical_closure()? {
+                        match crate::kernel::search::ProofSearch::try_direct_logical_closure(&(proof))? {
                             Some(completed) if completed.is_complete() => {
                                 // The source's choose/witness steps are already
                                 // retained in the path surface stream. The

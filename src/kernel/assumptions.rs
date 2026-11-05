@@ -6996,12 +6996,7 @@ impl PureFactContext {
     /// A context holding only this context's resource compositions: what
     /// ownership alone proves, independent of any condition or other fact.
     pub(crate) fn compositions_only(&self) -> Self {
-        let mut context = Self::new();
-        for resources in self.resource_compositions.scan_for_upkeep() {
-            context =
-                context.assume_proposition(Proposition::CResourceComposition(resources.clone()));
-        }
-        context
+        crate::kernel::search::ProofSearch::<PureFactContext>::composition_context(self)
     }
 
     /// Keep contextual loadability consequences as explicit proof obligations
@@ -13772,3 +13767,5 @@ mod shared_load_atom_comparison_tests {
         include!("../scaling_tests/kernel/assumptions/shared_load_atom_comparison_tests.rs");
     }
 }
+
+mod legacy_search;

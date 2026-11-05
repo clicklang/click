@@ -7011,7 +7011,7 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
 #[test]
 fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
     // Surface planning; only this test reaches it from inside the kernel.
-    use crate::surface::planning::proposition_search::PropositionSearch;
+
     let left = PointerOffsetTerm::Variable(Variable(911));
     let right = PointerOffsetTerm::Variable(Variable(912));
     let facts = PureFactContext::new().assume_condition(ConditionTerm::Constant(false), true);
@@ -7020,7 +7020,7 @@ fn effect_pointer_equality_does_not_use_general_context_inconsistency() {
         true,
     );
     assert!(
-        facts.proves(&goal),
+        crate::kernel::search::ProofSearch::proves(&(facts), &goal),
         "the old general fallback could close this query"
     );
     assert!(!c_pointer_offsets_proven_equal_for_effect(
