@@ -1258,6 +1258,13 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
+                    V::Shared(root) if root.machine_conversion_leaf().is_some() => {
+                        alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                            root.machine_conversion_leaf().expect("conversion leaf"),
+                            bindings,
+                            next_binder,
+                        )?
+                    }
                     V::Shared(_) => {
                         let term = if let Some(variable) = view.variable() {
                             MachineTerm::Variable(*variable)
@@ -1408,8 +1415,8 @@ enum AlphaIntegerNode {
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaIntegerRangeIndex {
-    Int32(AlphaBitvectorKey, AlphaBitvectorKey),
-    UInt64(AlphaBitvectorKey, AlphaBitvectorKey),
+    Int32(AlphaMachineKey, AlphaMachineKey),
+    UInt64(AlphaMachineKey, AlphaMachineKey),
     Integer(usize, usize),
 }
 
@@ -1707,13 +1714,13 @@ fn alpha_integer_node(
             let alpha_index = match index {
                 crate::kernel::IntegerRangeFoldIndex::Int32 { start, end }
                 | crate::kernel::IntegerRangeFoldIndex::UInt64 { start, end } => {
-                    let start = alpha_bitvector_key_with_bindings::<false>(
-                        start.value(),
+                    let start = alpha_machine_key::<false>(
+                        start.machine_operand().operand_view(),
                         bindings,
                         next_binder,
                     )?;
-                    let end = alpha_bitvector_key_with_bindings::<false>(
-                        end.value(),
+                    let end = alpha_machine_key::<false>(
+                        end.machine_operand().operand_view(),
                         bindings,
                         next_binder,
                     )?;
@@ -4037,6 +4044,106 @@ mod integer_alpha_scaling_tests {
             key(&captures_free_integer),
             "an Int32 item binder must not bind an Integer variable with the same id"
         );
+    }
+
+    fn shared_endpoint_fold(
+        variable: Variable,
+        format: MachineIntegerType,
+        depth: usize,
+    ) -> IntegerTerm {
+        use crate::kernel::{KernelTerm, KernelTermImport, MachineBinaryOp};
+        let payload: SharedIntegerTerm = IntegerTerm::var(variable).into();
+        let mut root =
+            KernelTerm::integer_to_machine(format, KernelTermImport::default().integer(&payload))
+                .unwrap();
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let endpoint = SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(997999)))
+            .with_shared_operand(root.with_machine_observation_type(MachineIntegerType::Int32))
+            .unwrap();
+        assert!(!endpoint.machine_operand().has_boxed_operand());
+        let index = if format == MachineIntegerType::UInt64 {
+            crate::kernel::IntegerRangeFoldIndex::UInt64 {
+                start: endpoint.clone(),
+                end: endpoint,
+            }
+        } else {
+            crate::kernel::IntegerRangeFoldIndex::Int32 {
+                start: endpoint.clone(),
+                end: endpoint,
+            }
+        };
+        IntegerTerm::RangeFold {
+            index,
+            initial: IntegerTerm::constant_i64(0).into(),
+            accumulator: Variable(997998),
+            item: variable,
+            body: IntegerTerm::var(Variable(997998)).into(),
+        }
+    }
+
+    #[test]
+    fn shared_endpoint_alpha_keys_preserve_conversions_and_outer_scope() {
+        use crate::kernel::{KernelTermExport, VerificationSession};
+        let _session = VerificationSession::enter();
+        let a = Variable(997001);
+        let b = Variable(997002);
+        let mut keys = Vec::new();
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let left = shared_endpoint_fold(a, format, 3);
+            let right = shared_endpoint_fold(b, format, 3);
+            let exports = KernelTermExport::machine_export_count();
+            let key = alpha_integer_key(&left, &mut BTreeMap::from([(a, 0)])).unwrap();
+            assert_eq!(
+                key,
+                alpha_integer_key(&right, &mut BTreeMap::from([(b, 0)])).unwrap()
+            );
+            assert_ne!(
+                key,
+                alpha_integer_key(&right, &mut BTreeMap::from([(a, 0)])).unwrap(),
+                "endpoints stay in outer scope even when the item binder uses that name"
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let mut written = MachineTerm::IntegerToMachine {
+                destination: format,
+                value: IntegerTerm::var(a).into(),
+            };
+            for _ in 0..3 {
+                written = MachineTerm::Binary {
+                    format,
+                    op: crate::kernel::MachineBinaryOp::Add,
+                    left: Box::new(written.clone()),
+                    right: Box::new(written),
+                };
+            }
+            let endpoint = SharedIntegerRangeEndpoint::intern(written);
+            let mut native = left.clone();
+            let IntegerTerm::RangeFold { index, .. } = &mut native else {
+                unreachable!()
+            };
+            *index = if format == MachineIntegerType::UInt64 {
+                crate::kernel::IntegerRangeFoldIndex::UInt64 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                }
+            } else {
+                crate::kernel::IntegerRangeFoldIndex::Int32 {
+                    start: endpoint.clone(),
+                    end: endpoint,
+                }
+            };
+            assert_eq!(
+                key,
+                alpha_integer_key(&native, &mut BTreeMap::from([(a, 0)])).unwrap()
+            );
+            keys.push(key);
+        }
+        assert_ne!(keys[0], keys[1], "index width remains part of identity");
     }
 
     #[cfg(test)]

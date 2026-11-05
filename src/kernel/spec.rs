@@ -2612,18 +2612,28 @@ fn integer_range_fold_item_domain(
 fn integer_range_fold_index_is_empty(index: &IntegerRangeFoldIndex) -> bool {
     match index {
         IntegerRangeFoldIndex::Int32 { start, end } => {
-            let Some(start) = start.value().as_const().map(|value| value as i32) else {
+            let Some(start) = start
+                .machine_operand()
+                .operand_view()
+                .word32_constant()
+                .map(|value| value as i32)
+            else {
                 return false;
             };
-            let Some(end) = end.value().as_const().map(|value| value as i32) else {
+            let Some(end) = end
+                .machine_operand()
+                .operand_view()
+                .word32_constant()
+                .map(|value| value as i32)
+            else {
                 return false;
             };
             start >= end
         }
         IntegerRangeFoldIndex::UInt64 { start, end } => {
             match (
-                start.value().uint64_as_const(),
-                end.value().uint64_as_const(),
+                start.machine_operand().operand_view().uint64_constant(),
+                end.machine_operand().operand_view().uint64_constant(),
             ) {
                 (Some(start), Some(end)) => start >= end,
                 _ => false,
@@ -2763,14 +2773,20 @@ fn integer_carrier_in_c_value(value: &CValue, variable: Variable) -> bool {
 }
 
 fn integer_carrier_in_integer(term: &IntegerTerm, variable: Variable) -> bool {
-    let mut variables = BTreeSet::new();
-    collect_integer_carrier_variables(term, &mut variables);
-    if variables.contains(&variable) {
-        return true;
-    }
     match term {
-        IntegerTerm::Constant(_) | IntegerTerm::Variable(_) => false,
-        IntegerTerm::Machine(machine) => integer_carrier_in_bitvector(machine.value(), variable),
+        IntegerTerm::Constant(_) => false,
+        IntegerTerm::Variable(candidate) => *candidate == variable,
+        IntegerTerm::Machine(machine) => {
+            let view = machine.operand_view();
+            if let Some(load) = view.variable() {
+                integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+            } else {
+                // The existing conservative rule keeps every composite carrier.
+                // Only a literal can be discarded here; inspecting descendants
+                // first cannot improve this answer and re-walks growing DAGs.
+                view.literal().is_none()
+            }
+        }
         // A composite Integer payload may contain a registered machine load
         // hidden below the shared carrier collector.  Preserve soundness
         // conservatively rather than recursively duplicating the full term
@@ -9379,5 +9395,84 @@ mod assumed_arithmetic_domain_tests {
         for (checked, assumed) in checked.obligations.iter().zip(&assumed.obligations) {
             assert_eq!(checked.proposition(), assumed.proposition());
         }
+    }
+}
+
+#[cfg(test)]
+mod shared_fold_operand_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
+        VerificationSession,
+    };
+
+    #[test]
+    fn empty_fold_literal_checks_retain_shared_endpoints() {
+        let _session = VerificationSession::enter();
+        for (format, start, end, empty) in [
+            (MachineIntegerType::Int32, 2, 1, true),
+            (MachineIntegerType::Int32, 1, 2, false),
+            (MachineIntegerType::UInt64, 2, 1, true),
+            (MachineIntegerType::UInt64, 1, 2, false),
+        ] {
+            let endpoint = |value| {
+                let literal = if format == MachineIntegerType::UInt64 {
+                    MachineTerm::uint64_constant(value)
+                } else {
+                    MachineTerm::constant(value as u32)
+                };
+                let root = KernelTermImport::default().machine(MachineIntegerType::Int32, &literal);
+                SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(998000)))
+                    .with_shared_operand(root)
+                    .unwrap()
+            };
+            let (start, end) = (endpoint(start), endpoint(end));
+            let index = if format == MachineIntegerType::UInt64 {
+                IntegerRangeFoldIndex::UInt64 { start, end }
+            } else {
+                IntegerRangeFoldIndex::Int32 { start, end }
+            };
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(integer_range_fold_index_is_empty(&index), empty);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn shared_carrier_query_keeps_conservative_composite_answer() {
+        let _session = VerificationSession::enter();
+        let format = MachineIntegerType::Int32;
+        let variable = Variable(998001);
+        let leaf = KernelTerm::variable(KernelType::C(CType::Int32), variable);
+        let root = KernelTerm::machine_binary_shared(
+            format,
+            MachineBinaryOp::Add,
+            [leaf.clone(), leaf.clone()],
+        );
+        let shared = SharedMachineIntegerTerm::from_shared(format, root).unwrap();
+        assert!(!shared.has_boxed_operand());
+        let exports = KernelTermExport::machine_export_count();
+        assert!(integer_carrier_in_integer(
+            &IntegerTerm::Machine(shared),
+            Variable(998002)
+        ));
+        assert!(!integer_carrier_in_integer(
+            &IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(format, leaf).unwrap()),
+            Variable(998002)
+        ));
+        assert!(integer_carrier_in_integer(
+            &IntegerTerm::Variable(variable),
+            variable
+        ));
+        assert!(!integer_carrier_in_integer(
+            &IntegerTerm::Variable(variable),
+            Variable(998002)
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/spec/shared_fold_operand_tests.rs");
     }
 }

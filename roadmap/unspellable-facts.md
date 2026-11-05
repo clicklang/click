@@ -431,6 +431,22 @@ view. Its bound decisions retain true, false and unknown answers without
 exporting the observed arithmetic, including growing prefixes and narrow
 widenings.
 
+Caller classification: `resource_tracker::collect_integer_node_reads` feeds
+`reads_of_proposition` and the version-mismatch diagnostic helpers, not proof
+admission; its export belongs to the output audit in part 4. The public
+`IntegerTerm::max_variable` compatibility helper has no in-repository callers.
+Neither is evidence of a remaining live checker export.
+
+Current-snapshot memory-load collection retains shared observations and fold
+endpoints. It visits cached conversion syntax, then applies the existing
+memory/width/opaque-carrier rules to the retained Integer payloads. Snapshot
+answers are recomputed per query; syntax caches contain no memory facts. Fold
+alpha identities also retain machine endpoints and recognize conversions nested
+inside shared arithmetic, retaining endpoint outer scopes and index widths. Constant
+endpoint emptiness checks inspect operand views. The conservative accumulator
+carrier check decides composite roots directly instead of collecting their
+variables before returning the same conservative answer.
+
 ### 2. Finish expression producers — after part 1
 
 - [ ] Enable nested signed arithmetic construction, collecting the existing
