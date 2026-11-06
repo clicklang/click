@@ -1878,10 +1878,7 @@ mod condition_premise_tests {
     fn condition_component_keeps_load_address_and_snapshot_variables() {
         let pointer = Pointer {
             block: "cell".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(term(40)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(term(40), 4),
         };
         let memory = CMemory::new().with_block("cell", 64).store(
             Pointer {

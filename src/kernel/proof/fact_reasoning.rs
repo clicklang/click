@@ -1225,10 +1225,9 @@ fn expand_load_variables_shallow(bits: &MachineTerm) -> MachineTerm {
 
 fn expand_offset_load_variables_shallow(value: &PointerOffsetTerm) -> PointerOffsetTerm {
     match value {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => PointerOffsetTerm::Int32Scaled {
-            value: Box::new(expand_load_variables_shallow(value)),
-            byte_width: *byte_width,
-        },
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+            PointerOffsetTerm::scaled_int32_node(expand_load_variables_shallow(value), *byte_width)
+        }
         PointerOffsetTerm::Add(left, right) => PointerOffsetTerm::Add(
             Box::new(expand_offset_load_variables_shallow(left)),
             Box::new(expand_offset_load_variables_shallow(right)),
@@ -2124,10 +2123,10 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                        byte_width: 4,
-                    }),
+                    Box::new(PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::Variable(Variable(100_000)),
+                        4,
+                    )),
                     Box::new(PointerOffsetTerm::Constant(8)),
                 )),
                 Box::new(PointerOffsetTerm::Constant(4)),
@@ -2139,10 +2138,7 @@ mod tests {
         let quantified = |snapshot: &crate::kernel::SharedCMemory, binder: Variable| {
             let pointer = Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(binder)),
-                    byte_width: 4,
-                },
+                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4),
             };
             let load = load_variable_for_cell_with_origin(
                 snapshot,
@@ -2441,10 +2437,7 @@ mod tests {
                 memory.clone(),
                 Box::new(Pointer {
                     block: "p".into(),
-                    offset: PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(MachineTerm::Variable(index)),
-                        byte_width: 4,
-                    },
+                    offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(index), 4),
                 }),
                 crate::kernel::LoadKind::Int32,
             )
@@ -2535,10 +2528,10 @@ mod tests {
     fn fold_body_separation_fact_matches_across_store_snapshots() {
         let owner_base = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_000)),
+                4,
+            ),
         };
         let owner_field = |bytes: i64| Pointer {
             block: PointerBlock::ExternalArgument,
@@ -2569,10 +2562,8 @@ mod tests {
                 CValue::Int32(load(&empty, &phase_field)),
             )
             .store(owner_base.clone(), CValue::Int32(load(&empty, &owner_base)));
-        let cell_element_offset = |memory: &CMemory| PointerOffsetTerm::Int32Scaled {
-            value: Box::new(load(memory, &cell_field)),
-            byte_width: 4,
-        };
+        let cell_element_offset =
+            |memory: &CMemory| PointerOffsetTerm::scaled_int32_node(load(memory, &cell_field), 4);
         // The fold-state form reads the cell pointer through a memory
         // that still carries the `owner->cell[0] = owner->phase` store, whose
         // written address is itself written through a loaded pointer, so no
@@ -4033,11 +4024,7 @@ mod index_sum_offset_tests {
     }
 
     pub(super) fn scaled(id: u64, byte_width: i64) -> PointerOffsetTerm {
-        PointerOffsetTerm::Int64Scaled {
-            value: Box::new(index(id)),
-            byte_width,
-            unsigned: true,
-        }
+        PointerOffsetTerm::scaled_int64_node(index(id), byte_width, true)
     }
 
     pub(super) fn observed(id: u64) -> IntegerTerm {
@@ -4046,10 +4033,7 @@ mod index_sum_offset_tests {
 
     /// `base + shared... + prefix + suffix` against `base + shared... + total`.
     pub(super) fn address_goal(shared: u64, width: i64) -> Proposition {
-        let mut common = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(index(990_000)),
-            byte_width: 1,
-        };
+        let mut common = PointerOffsetTerm::scaled_int32_node(index(990_000), 1);
         for addend in 0..shared {
             common =
                 PointerOffsetTerm::Add(Box::new(common), Box::new(scaled(991_000 + addend, 1)));

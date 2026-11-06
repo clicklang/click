@@ -58,6 +58,9 @@ fn collect_machine_operand_carriers(
             return;
         }
     };
+    if !variables.shared_machine_operands.insert(root.id()) {
+        return;
+    }
     if let Some(leaves) = shared_machine_conversion_leaves(root, || variables.visit()) {
         for (_, leaf) in leaves.iter() {
             collect_bitvector_carriers(
@@ -148,6 +151,7 @@ struct CarrierVariables {
     registered_loads: BTreeSet<Variable>,
     pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
     pointer_applications: BTreeSet<u64>,
+    shared_machine_operands: BTreeSet<u64>,
     pointer_terms: Option<Vec<Pointer>>,
     read_terms: Option<BTreeMap<((u32, u32), Pointer, LoadKind), MachineTerm>>,
 }
@@ -1164,7 +1168,7 @@ fn collect_pointer_offset_carriers(offset: &PointerOffsetTerm, variables: &mut C
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_carriers(value, variables)
+            collect_machine_carriers(value, variables)
         }
     }
 }
@@ -5223,6 +5227,28 @@ impl<'a> TermRewrite<'a> {
             offset,
         }
     }
+    fn index_bits(&mut self, value: &SharedMachineIntegerTerm) -> MachineTerm {
+        // These are already native leaves. Re-importing and exporting a
+        // renamed variable would add cold-cache work without any children.
+        if value.shared_operand().is_some_and(|root| {
+            matches!(
+                root.node(),
+                KernelTermNode::Variable(_) | KernelTermNode::MachineLiteral(_)
+            )
+        }) {
+            return self.bits(value);
+        }
+        if let Some(root) = value.shared_operand()
+            && let Some(rewritten) = self.shared_machine_operand(root)
+        {
+            return SharedMachineIntegerTerm::from_shared(value.ty(), rewritten)
+                .expect("rewritten index retains its machine carrier")
+                .structural_value()
+                .clone();
+        }
+        self.bits(value)
+    }
+
     fn offset(&mut self, v: &PointerOffsetTerm) -> PointerOffsetTerm {
         if let Some((from, to)) = self.pointer_offset_exact
             && v == from
@@ -5253,17 +5279,14 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                let value = self.bits(value);
+                let value = self.index_bits(value);
                 if self.resolve_registered_loads {
                     PointerOffsetTerm::scale_int32(
                         canonicalize_integer_to_machine_constant(value),
                         *byte_width,
                     )
                 } else {
-                    PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(value),
-                        byte_width: *byte_width,
-                    }
+                    PointerOffsetTerm::scaled_int32_node(value, *byte_width)
                 }
             }
             PointerOffsetTerm::Int64Scaled {
@@ -5271,7 +5294,7 @@ impl<'a> TermRewrite<'a> {
                 byte_width,
                 unsigned,
             } => {
-                let value = self.bits(value);
+                let value = self.index_bits(value);
                 let bounded = *unsigned
                     && self.conditions.is_some_and(|conditions| {
                         self.bounded_uint64_indices
@@ -5280,10 +5303,10 @@ impl<'a> TermRewrite<'a> {
                     });
                 if bounded {
                     self.changed = true;
-                    PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(MachineTerm::uint32_from_64(value)),
-                        byte_width: *byte_width,
-                    }
+                    PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::uint32_from_64(value),
+                        *byte_width,
+                    )
                 } else if self.resolve_registered_loads {
                     PointerOffsetTerm::scale_int64(
                         canonicalize_integer_to_machine_constant(value),
@@ -5291,11 +5314,7 @@ impl<'a> TermRewrite<'a> {
                         *unsigned,
                     )
                 } else {
-                    PointerOffsetTerm::Int64Scaled {
-                        value: Box::new(value),
-                        byte_width: *byte_width,
-                        unsigned: *unsigned,
-                    }
+                    PointerOffsetTerm::scaled_int64_node(value, *byte_width, *unsigned)
                 }
             }
         };
@@ -6579,13 +6598,13 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::IntegerToMachine {
+        let offset = PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        };
+            },
+            4,
+        );
         let rewritten = rewrite.term(&Term::PointerOffset(offset));
         assert!(matches!(
             rewritten,
@@ -6606,13 +6625,13 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::IntegerToMachine {
+        let offset = PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        };
+            },
+            4,
+        );
         let rewritten = rewrite.term(&Term::PointerOffset(offset));
         assert!(matches!(
             rewritten,
@@ -6632,13 +6651,13 @@ mod tests {
         let mut rewrite =
             TermRewrite::for_integer_variables(source, &replacement, false, &renamings);
         rewrite.enable_registered_load_resolution();
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::IntegerToMachine {
+        let offset = PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(source).into(),
                 destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        };
+            },
+            4,
+        );
         let rewritten = rewrite.term(&Term::PointerOffset(offset));
         assert_eq!(
             rewritten,
@@ -8175,10 +8194,7 @@ mod tests {
             memory: CMemory::new(),
             base: Pointer {
                 block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(source)),
-                    byte_width: 4,
-                },
+                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 4),
             },
             bytes: MachineTerm::constant(4),
             wide: false,
@@ -8678,10 +8694,7 @@ mod comparison_read_batch_tests {
             epoch: Some(123),
             mutex: Pointer {
                 block: "sealed".into(),
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(source)),
-                    byte_width: 1,
-                },
+                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 1),
             },
         });
         let input = Proposition::And(

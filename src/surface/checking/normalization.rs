@@ -986,14 +986,8 @@ mod tests {
 
     #[test]
     fn rewrite_uses_pointer_offset_equalities_inside_pointer_goals() {
-        let left = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(41))),
-            byte_width: 4,
-        };
-        let right = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(42))),
-            byte_width: 4,
-        };
+        let left = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
+        let right = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
         let equality = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,

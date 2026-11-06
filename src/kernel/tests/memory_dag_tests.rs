@@ -494,10 +494,7 @@ fn retained_store_hops_carry_locally_checkable_distinctness_proofs() {
     let base = CMemory::new().with_block("arg-memory", 32);
     let root = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100)), 4),
     };
 
     let constant_write = root.offset_by_int32_elements(MachineTerm::constant(1));
@@ -633,10 +630,7 @@ fn retained_common_base_store_hop_uses_a_stated_endpoint_order() {
     let base = CMemory::new().with_block("arg-memory", 64);
     let root = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(109))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(109)), 4),
     };
     let write_index = MachineTerm::Variable(Variable(110));
     let middle = MachineTerm::Variable(Variable(111));
@@ -715,10 +709,7 @@ fn store_hop_retains_direct_or_composed_separated_range_authority() {
     let base = CMemory::new().with_block("arg-memory", 64);
     let range_base = |variable| Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let write_base = range_base(110);
     let load_base = range_base(111);
@@ -933,10 +924,7 @@ fn separated_range_store_hop_retains_symbolic_membership_bounds() {
     let base = CMemory::new().with_block("arg-memory", 64);
     let range_base = |variable| Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let write_base = range_base(120);
     let load_base = range_base(121);
@@ -1590,17 +1578,11 @@ fn sibling_snapshots_resolve_one_cell_to_a_common_ancestor() {
 fn call_havoc_retains_exact_separation_and_positive_offset_steps() {
     let owner = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(201))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(201)), 4),
     };
     let data = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(202))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(202)), 4),
     };
     // An `int32` element read. The forward-offset route proves the havoc
     // range starts one element later, which clears a four-byte access; a
@@ -1768,10 +1750,7 @@ fn loadable_bound_check_bridges_len_forms_across_block_and_prune_edges() {
         block: "arg-memory".into(),
         offset: PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Constant(16)),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(len_at_later),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(len_at_later, 4)),
         ),
     };
     assert!(
@@ -2760,11 +2739,7 @@ fn an_exact_constant_gap_decides_bytes_at_every_anchor() {
 
     let bare = PureFactContext::new();
     let anchors = [
-        PointerOffsetTerm::Int64Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(97_101))),
-            byte_width: 8,
-            unsigned: false,
-        },
+        PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(Variable(97_101)), 8, false),
         PointerOffsetTerm::Variable(Variable(97_102)),
         PointerOffsetTerm::Constant(1 << 40),
     ];
@@ -2827,10 +2802,8 @@ fn a_gap_that_may_wrap_or_differ_is_not_decided() {
 
     let bare = PureFactContext::new();
     let block = "wrap-anchor-memory";
-    let scaled64 = |id: u64, byte_width: i64| PointerOffsetTerm::Int64Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(id))),
-        byte_width,
-        unsigned: false,
+    let scaled64 = |id: u64, byte_width: i64| {
+        PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(Variable(id)), byte_width, false)
     };
     let pointer = |offset: PointerOffsetTerm| Pointer {
         block: block.into(),
@@ -2857,15 +2830,12 @@ fn a_gap_that_may_wrap_or_differ_is_not_decided() {
         AccessByteOverlap::Unknown
     );
     let i = MachineTerm::Variable(Variable(97_203));
-    let next = pointer(PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::add(i.clone(), MachineTerm::constant(1))),
-        byte_width: 4,
-    });
+    let next = pointer(PointerOffsetTerm::scaled_int32_node(
+        MachineTerm::add(i.clone(), MachineTerm::constant(1)),
+        4,
+    ));
     let beside = pointer(PointerOffsetTerm::Add(
-        Box::new(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(i),
-            byte_width: 4,
-        }),
+        Box::new(PointerOffsetTerm::scaled_int32_node(i, 4)),
         Box::new(PointerOffsetTerm::Constant(2)),
     ));
     // `i + 1` sits 4 bytes past `i` when it does not wrap, so a 4-byte access
@@ -2938,10 +2908,7 @@ fn a_differing_cell_inside_a_read_stops_the_two_snapshots_matching() {
 fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
     let pointer = |variable| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let owner = pointer(211);
     let data = pointer(212);

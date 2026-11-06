@@ -1159,7 +1159,9 @@ fn proven_signed_le(
     assumptions: &PureFactContext,
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
-    if left == right {
+    if SharedMachineIntegerTerm::index(MachineIntegerType::Int32, left.clone())
+        == SharedMachineIntegerTerm::index(MachineIntegerType::Int32, right.clone())
+    {
         return true;
     }
     if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {

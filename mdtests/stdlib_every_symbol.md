@@ -1886,6 +1886,14 @@ theorem restricted_view(A: Resource, B: Resource) {
     }
 }
 
+
+theorem use_subslice_len(a: uint64, b: uint64, n: uint64) {
+    requires a <= b;
+    requires b <= n;
+    ensures slice::subslice_len(a, b, n) == b - a by {
+        solve();
+    }
+}
 ```
 
 ```expect

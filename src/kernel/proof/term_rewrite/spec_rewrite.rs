@@ -354,6 +354,13 @@ fn collect_spec_expression_carriers(
             }
             collect_spec_expression_carriers(else_branch, variables, integer_seen);
         }
+        SpecExpression::Requires { requirement, value } => {
+            collect_spec_proposition_carriers(requirement, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_expression_carriers(value, variables, integer_seen);
+        }
         SpecExpression::RangeFold {
             start,
             end,
@@ -1225,6 +1232,10 @@ impl<'a> TermRewrite<'a> {
                 condition: Box::new(self.rewrite_spec_proposition(condition)?),
                 then_branch: Box::new(self.rewrite_spec_expression(then_branch)?),
                 else_branch: Box::new(self.rewrite_spec_expression(else_branch)?),
+            },
+            SpecExpression::Requires { requirement, value } => SpecExpression::Requires {
+                requirement: Box::new(self.rewrite_spec_proposition(requirement)?),
+                value: Box::new(self.rewrite_spec_expression(value)?),
             },
             SpecExpression::RangeFold {
                 start,
@@ -2140,13 +2151,13 @@ mod tests {
         let memory: SharedCMemory = CMemory::new().into();
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(101)),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::IntegerToMachine {
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(Variable(0)).into(),
                     destination: MachineIntegerType::Int32,
-                }),
-                byte_width: 4,
-            },
+                },
+                4,
+            ),
         };
         // The visible C term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be

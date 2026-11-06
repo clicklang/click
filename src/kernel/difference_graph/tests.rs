@@ -975,10 +975,7 @@ fn a_load_spelled_as_itself_reads_facts_about_its_load_variable() {
 fn pointer_offsets_of_int32_elements_compare_as_indices() {
     use crate::kernel::PointerOffsetTerm as O;
     let (i, j) = (variable(0), variable(1));
-    let scaled = |value: &MachineTerm| O::Int32Scaled {
-        value: Box::new(value.clone()),
-        byte_width: 4,
-    };
+    let scaled = |value: &MachineTerm| O::scaled_int32_node(value.clone(), 4);
     let offsets_equal = |a: O, b: O| ConditionTerm::PointerOffsetEqual(Box::new(a), Box::new(b));
     let ordered = graph(&[(lt(&i, &j), true)]);
     assert_eq!(
@@ -1583,10 +1580,7 @@ fn pointer_equalities_and_disequalities_compose() {
     use crate::kernel::{Pointer, PointerOffsetTerm as O};
     let argument = |index| Pointer {
         block: crate::kernel::PointerBlock::ExternalArgument,
-        offset: O::Int32Scaled {
-            value: Box::new(variable(index)),
-            byte_width: 4,
-        },
+        offset: O::scaled_int32_node(variable(index), 4),
     };
     let null = Pointer {
         block: crate::kernel::PointerBlock::Concrete("null".into()),
@@ -1797,10 +1791,7 @@ fn low_bits_from_alignment_survive_tagged_word_arithmetic() {
         block: crate::kernel::PointerBlock::ExternalArgument,
         offset,
     };
-    let scaled = |index, byte_width| O::Int32Scaled {
-        value: Box::new(variable(index)),
-        byte_width,
-    };
+    let scaled = |index, byte_width| O::scaled_int32_node(variable(index), byte_width);
     let address = |pointer: Pointer| {
         T::PointerAddress(Box::new(pointer), crate::kernel::AddressObjectClass::NONE)
     };
@@ -1967,11 +1958,7 @@ fn wide_offset_equalities_retain_the_full_index_in_both_polarities() {
     use crate::kernel::PointerOffsetTerm as O;
     let i = variable(989_980);
     for unsigned in [false, true] {
-        let scaled = |value: MachineTerm| O::Int64Scaled {
-            value: Box::new(value),
-            byte_width: 8,
-            unsigned,
-        };
+        let scaled = |value: MachineTerm| O::scaled_int64_node(value, 8, unsigned);
         let equal = ConditionTerm::pointer_offset_equal(scaled(i.clone()), O::Constant(8));
         for polarity in [false, true] {
             let facts = graph(&[(equal.clone(), polarity)]);
@@ -2005,11 +1992,7 @@ fn excluding_one_masked_wide_table_slot_selects_the_other() {
         left: Box::new(variable(989_981)),
         right: Box::new(MachineTerm::uint32_constant(1)),
     });
-    let offset = O::Int64Scaled {
-        value: Box::new(index),
-        byte_width: 8,
-        unsigned: true,
-    };
+    let offset = O::scaled_int64_node(index, 8, true);
     for first in [0, 8] {
         let facts = graph(&[(
             ConditionTerm::pointer_offset_equal(offset.clone(), O::Constant(first)),

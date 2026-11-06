@@ -4797,9 +4797,9 @@ pub(crate) fn clear_canonical_form_caches() {
 
 /// Recursive `Hash` and `Eq` implementations make a whole-term cache key
 /// unsafe at arbitrary depth. This iterative preflight controls only whether
-/// memoization is used; canonicalization itself always traverses the complete
-/// term. Embedded snapshots hash by interned identity, so only the explicit
-/// term and pointer-offset structure matters here.
+/// memoization is used. Shared address indices are retained children whose
+/// keys hash by identity; this preflight does not reopen their expressions.
+/// The remaining explicit native term and offset structure determines depth.
 pub(crate) fn term_is_shallow_structural_cache_key(term: &MachineTerm) -> bool {
     const MAX_RECURSIVE_KEY_DEPTH: usize = 256;
     enum Node<'a> {
@@ -4929,10 +4929,9 @@ pub(crate) fn term_is_shallow_structural_cache_key(term: &MachineTerm) -> bool {
                     pending.push(Node::Offset(right, depth + 1));
                     pending.push(Node::Offset(left, depth + 1));
                 }
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                    pending.push(Node::Term(value, depth + 1));
-                }
+                // Scaled indices hash by retained identity, including legacy
+                // operands; they add no recursive native-key depth.
+                PointerOffsetTerm::Int32Scaled { .. } | PointerOffsetTerm::Int64Scaled { .. } => {}
             },
         }
     }
@@ -5565,6 +5564,14 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(right));
                     tasks.push(AtomicCanonicalizationTask::VisitOffset(left));
                 }
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. }
+                    if value.shared_operand().is_some() =>
+                {
+                    // A shared index retains its chosen read snapshots. Its
+                    // stored values are comparison evidence, not address syntax.
+                    offset_results.push(offset.clone());
+                }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     tasks.push(AtomicCanonicalizationTask::RebuildInt32Scaled(*byte_width));
                     tasks.push(AtomicCanonicalizationTask::Visit(value));
@@ -5714,7 +5721,7 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
     results.pop().unwrap()
 }
 
-/// Canonicalizes the loads inside a pointer's offset.
+/// Canonicalizes legacy offset operands while retaining shared index children.
 pub(super) fn canonicalize_pointer_loads(pointer: &Pointer) -> Pointer {
     enum OffsetTask<'a> {
         Visit(&'a PointerOffsetTerm),
@@ -5732,6 +5739,14 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Pointer) -> Pointer {
                     tasks.push(OffsetTask::RebuildAdd);
                     tasks.push(OffsetTask::Visit(right));
                     tasks.push(OffsetTask::Visit(left));
+                }
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. }
+                    if value.shared_operand().is_some() =>
+                {
+                    // A shared index retains its chosen read snapshots. Its
+                    // stored values are comparison evidence, not address syntax.
+                    results.push(offset.clone());
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     results.push(PointerOffsetTerm::scale_int32(
@@ -6569,10 +6584,16 @@ pub(super) fn normalize_exact_memory_loads_in_pointer_offset(
                         tasks.push(Task::Visit(*left));
                     }
                     PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                        results.push(PointerOffsetTerm::scale_int32(
-                            normalize_exact_memory_loads_in_bitvector(&value, assumptions),
-                            byte_width,
-                        ));
+                        let normalized =
+                            normalize_exact_memory_loads_in_bitvector(&value, assumptions);
+                        results.push(if let Some(bits) = normalized.as_const() {
+                            PointerOffsetTerm::Constant((bits as i32 as i64) * byte_width)
+                        } else {
+                            PointerOffsetTerm::Int32Scaled {
+                                value: value.with_mapped_index(normalized),
+                                byte_width,
+                            }
+                        });
                     }
                     PointerOffsetTerm::Int64Scaled {
                         value,
@@ -6949,10 +6970,7 @@ mod exact_load_normalization_tests {
         );
 
         let offset = (0..80).fold(
-            PointerOffsetTerm::Int32Scaled {
-                value: Box::new(load_chain(80, 7)),
-                byte_width: 4,
-            },
+            PointerOffsetTerm::scaled_int32_node(load_chain(80, 7), 4),
             |offset, _| {
                 PointerOffsetTerm::Add(Box::new(PointerOffsetTerm::Constant(0)), Box::new(offset))
             },
@@ -6972,14 +6990,14 @@ fn effect_pointer_equality_retains_exact_loads_and_explicit_offset_facts() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new().store(pointer.clone(), CValue::Int32(MachineTerm::constant(7)));
-    let loaded = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::MemoryLoad(
+    let loaded = PointerOffsetTerm::scaled_int32_node(
+        MachineTerm::MemoryLoad(
             intern_c_memory(memory),
             Box::new(pointer),
             crate::kernel::LoadKind::Int32,
-        )),
-        byte_width: 4,
-    };
+        ),
+        4,
+    );
     assert!(c_pointer_offsets_proven_equal_for_effect(
         &loaded,
         &PointerOffsetTerm::Constant(28),
@@ -7930,7 +7948,7 @@ mod canonical_numeric_run_tests {
     use crate::kernel::primitives::{CellRun, IndexIntervals, RunValueMode};
 
     #[test]
-    fn deep_canonicalization_rewrites_noncanonical_numeric_run_addresses() {
+    fn deep_canonicalization_retains_structural_numeric_run_addresses() {
         let _session = crate::kernel::VerificationSession::enter();
         let index_cell = Pointer {
             block: "canonical-index".into(),
@@ -7943,17 +7961,13 @@ mod canonical_numeric_run_tests {
         );
         let base = Pointer {
             block: "canonical-run".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::MemoryLoad(
-                    source.clone(),
-                    Box::new(index_cell),
-                    LoadKind::Int32,
-                )),
-                byte_width: 1,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::MemoryLoad(source.clone(), Box::new(index_cell), LoadKind::Int32),
+                1,
+            ),
         };
         let canonical_base = canonicalize_pointer_loads(&base);
-        assert_ne!(canonical_base, base);
+        assert_eq!(canonical_base, base);
         let mut holes = IndexIntervals::default();
         holes.insert(3);
         let run = CellRun::new(base, 1, CType::UInt8, 8, source, holes);

@@ -6325,6 +6325,20 @@ function from_raw_parts<T>(p: T*, n: uint64) -> Slice<T> {
 The slice with data `p` and length `n`, Rust's
 `core::slice::from_raw_parts(p, n)`.
 
+### `slice::subslice_len`
+
+```click
+function subslice_len(start: uint64, end: uint64, len: uint64) -> uint64 {
+    end - start
+}
+```
+
+The length of the subslice `s[start..end]` of a slice of length `len`. A
+call owes `start <= end` and `end <= len` where it is evaluated, guarded as
+every evaluation condition is, where Rust panics otherwise. A Rust sidecar's
+subslice `s[a..b]` is `Slice::Slice(s.as_ptr() + a, slice::subslice_len(a,
+b, s.len()))`, and prints as `s[a..b]`.
+
 ## Separation
 
 ### `separation::restrict`

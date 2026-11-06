@@ -2131,3 +2131,54 @@ fn symbolic_pointer_observations_scale_with_selected_cells() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn structural_index_read_chains_have_near_linear_producer_work() {
+    for (unrelated, cold) in [
+        (0, false),
+        (64, false),
+        (256, false),
+        (0, true),
+        (256, true),
+    ] {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut memory = CMemory::new();
+            for index in 0..unrelated {
+                memory = memory.store(
+                    Pointer {
+                        block: PointerBlock::Concrete(format!("unrelated{index}")),
+                        offset: PointerOffsetTerm::Constant(0),
+                    },
+                    CValue::Int32(MachineTerm::constant(0)),
+                );
+            }
+            let memory = intern_c_memory(memory);
+            let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut index = MachineTerm::constant(0);
+                for _ in 0..size {
+                    if cold {
+                        crate::kernel::memory_provenance::clear_canonical_form_caches();
+                    }
+                    let mut facts = ExecutionFacts::new();
+                    index = canonicalized_offset_index_term(index, &mut facts);
+                    let address = Pointer {
+                        block: PointerBlock::Concrete("array".into()),
+                        offset: PointerOffsetTerm::scaled_int32_node(index, 4),
+                    };
+                    index = canonical_form_of_load(memory.clone(), address, LoadKind::Int32);
+                }
+            });
+            eprintln!("chain size={size} unrelated={unrelated} cold={cold} work={work}");
+            assert!(
+                work <= 1000 * size,
+                "size={size} unrelated={unrelated} work={work}"
+            );
+            samples.push(work);
+        }
+        for pair in samples.windows(2) {
+            assert!(pair[1] <= 5 * pair[0], "unrelated={unrelated}: {samples:?}");
+        }
+    }
+}

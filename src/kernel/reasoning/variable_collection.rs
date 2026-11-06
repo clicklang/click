@@ -6398,10 +6398,10 @@ mod shared_read_walker_tests {
         let _session = crate::kernel::VerificationSession::enter();
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(994100)),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(994101))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(994101)),
+                4,
+            ),
         };
         let raw = MachineTerm::MemoryLoad(
             intern_c_memory(CMemory::new()),

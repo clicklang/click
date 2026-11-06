@@ -494,10 +494,7 @@ fn nested_read_address_import_is_linear_beside_unrelated_memory() {
                     memory.clone(),
                     Box::new(Pointer {
                         block: PointerBlock::Symbolic(Variable(996999)),
-                        offset: PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(raw),
-                            byte_width: 4,
-                        },
+                        offset: PointerOffsetTerm::scaled_int32_node(raw, 4),
                     }),
                     LoadKind::Int32,
                 );

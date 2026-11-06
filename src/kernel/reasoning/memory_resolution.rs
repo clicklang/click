@@ -1874,19 +1874,13 @@ fn stored_value_at_equal_pointer(
                 memory
                     .known_value(&Pointer {
                         block: pointer.block.clone(),
-                        offset: PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(member.clone()),
-                            byte_width: *byte_width,
-                        },
+                        offset: PointerOffsetTerm::scaled_int32_node(member.clone(), *byte_width),
                     })
                     .or_else(|| {
                         memory.known_union_value(
                             &Pointer {
                                 block: pointer.block.clone(),
-                                offset: PointerOffsetTerm::Int32Scaled {
-                                    value: Box::new(member),
-                                    byte_width: *byte_width,
-                                },
+                                offset: PointerOffsetTerm::scaled_int32_node(member, *byte_width),
                             },
                             CType::Int32,
                         )
@@ -2067,12 +2061,16 @@ fn bitvector_terms_equal_for_memory_resolution_unmemoized(
     if crate::kernel::api::atomic_loads_equal_along_memory_derivations(left, right, assumptions) {
         return true;
     }
-    if [1, 4].into_iter().any(|byte_width| {
-        assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
-            PointerOffsetTerm::scale_int32(left.clone(), byte_width),
-            PointerOffsetTerm::scale_int32(right.clone(), byte_width),
-        )) == Some(true)
-    }) {
+    // Do not construct scaled query operands when there are no exact offset
+    // equalities to select. Ordinary word equalities were queried above.
+    if assumptions.has_recorded_pointer_offset_equalities()
+        && [1, 4].into_iter().any(|byte_width| {
+            assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+                PointerOffsetTerm::scale_int32(left.clone(), byte_width),
+                PointerOffsetTerm::scale_int32(right.clone(), byte_width),
+            )) == Some(true)
+        })
+    {
         return true;
     }
     if let MachineTerm::MemoryLoad(memory, pointer, LoadKind::Int32) = left

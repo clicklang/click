@@ -99,10 +99,7 @@ fn read_validity_lookup_ignores_unrelated_cells() {
 fn unknown_read_validity_does_not_resolve_unrelated_cells() {
     let target = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(770))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(770)), 4),
     };
     let mut samples = Vec::new();
     for count in [0, 16, 64, 256] {

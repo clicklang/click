@@ -1688,12 +1688,10 @@ fn cell_value_recorded_on_path(
     value_type.read_cell(&value)
 }
 
-/// Reinterprets an int cell's loaded value as a pointer without letting the
-/// load enter the offset: a loaded index never enters a pointer offset as a
-/// `MemoryLoad` term. The loaded value is bound to a fresh verification
-/// variable whose defining equation joins the path's fact stream, so the
-/// offset arithmetic downstream works over a small term and the snapshot
-/// stays proof-side, consulted only through the defining fact.
+/// Reinterprets an int cell's loaded value as a pointer through the remaining
+/// registered-read interface. Its defining equation joins the path's fact
+/// stream. Address-index construction subsequently retains the structural
+/// read, including its snapshot and kind, in a shared child.
 fn canonicalized_pointer_value_from_int_cell(
     memory: &CMemory,
     pointer: &Pointer,
@@ -3620,8 +3618,8 @@ pub(crate) fn canonical_term(term: &MachineTerm) -> MachineTerm {
     result
 }
 
-/// The canonical form for a pointer offset: every scaled index takes its
-/// [`canonical_term`] form. The offset analogue of [`canonical_term`].
+/// The canonical form for a pointer offset. Shared scaled indices retain
+/// their structure; legacy indices take their [`canonical_term`] form.
 pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffsetTerm {
     enum Task<'a> {
         Visit(&'a PointerOffsetTerm),
@@ -3639,6 +3637,14 @@ pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffset
                     tasks.push(Task::RebuildAdd);
                     tasks.push(Task::Visit(right));
                     tasks.push(Task::Visit(left));
+                }
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. }
+                    if value.shared_operand().is_some() =>
+                {
+                    // This child was constructed already. Reopening its read
+                    // would change its identity and repeatedly walk its prefix.
+                    results.push(offset.clone());
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     results.push(PointerOffsetTerm::scale_int32(
@@ -3666,28 +3672,21 @@ pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffset
     results.pop().expect("canonicalization produces one offset")
 }
 
-/// Gives an index or endpoint term the model's stable representation before
-/// it enters pointer-offset or range arithmetic: every load atom is replaced
-/// by its load variable and each variable's defining equation joins
-/// the fact stream. Every producer that scales an integer term into an
-/// offset or evaluates a range endpoint must route the term through this,
-/// so a loaded index never enters a `PointerOffsetTerm` or a range bound as
-/// a raw `MemoryLoad`. Adoption is atomic across producers: naming one
-/// birth site while another emits load terms splits one load identity into
-/// two terms that only a proved equality could reconnect.
+/// Keep an index's read structure at the producer boundary. Existing read
+/// observations and defining facts are retained for unmigrated consumers;
+/// the index itself is no longer stored as their reserved variable.
 pub(crate) fn canonicalized_offset_index_term(
     bits: MachineTerm,
     facts: &mut ExecutionFacts,
 ) -> MachineTerm {
-    // An element index is a 32-bit word in `int32` index coordinates, so
-    // the address takes the index's word: a sign-cleared `unsigned` index's
-    // σ to `int32` indexes by the word itself (rule K3, kept inside an
-    // address until index coordinates are typed, decision G1).
     let bits = bits.into_index_word32();
-    if !term_mentions_a_memory_load(&bits) {
-        return bits;
-    }
-    substitute_load_variables(&bits, &mut Some(facts))
+    let observed = if term_mentions_a_memory_load(&bits) {
+        substitute_load_variables(&bits, &mut Some(facts))
+    } else {
+        bits
+    };
+    let index = SharedMachineIntegerTerm::index(MachineIntegerType::Int32, observed);
+    index.structural_value().clone()
 }
 
 /// The term for reading `pointer` from `memory` at a creation point with no
@@ -4097,6 +4096,14 @@ fn substitute_load_variables(
                     tasks.push(Task::VisitOffset(right));
                     tasks.push(Task::VisitOffset(left));
                 }
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. }
+                    if value.shared_operand().is_some() =>
+                {
+                    // This child was constructed already. Reopening its read
+                    // would change its identity and repeatedly walk its prefix.
+                    offset_results.push(offset.clone());
+                }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     tasks.push(Task::RebuildInt32Scaled(*byte_width));
                     tasks.push(Task::VisitTerm(value));
@@ -4246,6 +4253,13 @@ fn substitute_load_variables(
 /// canonicalization stages are bounded by explicit term size.
 pub(crate) fn terms_have_same_canonical_form(left: &MachineTerm, right: &MachineTerm) -> bool {
     if left == right {
+        return true;
+    }
+    // A registered name and its exact descriptor are one occurrence even
+    // when canonicalizing the descriptor would resolve a stored value.
+    if let (Some(left), Some(right)) = (viewed_as_memory_load(left), viewed_as_memory_load(right))
+        && left == right
+    {
         return true;
     }
     if !term_mentions_a_memory_load(left) && !term_mentions_a_memory_load(right) {
@@ -5839,10 +5853,10 @@ mod tests {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(Variable(944_021))),
-                    byte_width: 4,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(Variable(944_021)),
+                    4,
+                )),
                 Box::new(PointerOffsetTerm::Constant(16)),
             ),
         };
@@ -7076,10 +7090,10 @@ mod tests {
         };
         let argument = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(210_510))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(210_510)),
+                4,
+            ),
         };
         let target = Pointer::function("callback");
         let replacement = Pointer::function("replacement");
@@ -8581,11 +8595,7 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     );
     let pointer = |value| Pointer {
         block: Pointer::symbolic(Variable(989_785)).block,
-        offset: PointerOffsetTerm::Int64Scaled {
-            value: Box::new(value),
-            byte_width: 4,
-            unsigned: true,
-        },
+        offset: PointerOffsetTerm::scaled_int64_node(value, 4, true),
     };
     let memory = crate::kernel::intern_c_memory(CMemory::new());
     let read = |memory, value| {
@@ -8656,6 +8666,25 @@ fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
 mod structural_read_connective_tests {
     use super::*;
     use crate::kernel::VerificationSession;
+
+    #[test]
+    fn exact_read_occurrences_match_names_before_stored_value_folding() {
+        let _session = VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(989_032));
+        let memory =
+            intern_c_memory(CMemory::new().store(address.clone(), CValue::Int32(37u32.into())));
+        let name = load_variable_for_cell(&memory, &address, LoadKind::Int32);
+        let read = registered_load_term_for_variable(&name).unwrap();
+        let named = MachineTerm::Variable(name);
+        assert!(terms_have_same_canonical_form(&read, &named));
+        assert!(terms_have_same_canonical_form(&named, &read));
+        let other = MachineTerm::MemoryLoad(
+            memory,
+            Box::new(address.offset_by_bytes(4)),
+            LoadKind::Int32,
+        );
+        assert!(!terms_have_same_canonical_form(&other, &named));
+    }
 
     #[test]
     fn stored_structural_reads_compare_inside_logical_connectives() {

@@ -107,10 +107,7 @@ fn same_block_offset_rewrite_work(
     let theorems = TheoremEnvironment::new(&[]);
     let base = Pointer {
         block: crate::kernel::PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(8_179_100))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(8_179_100)), 4),
     };
     let remaining = MachineTerm::Variable(Variable(8_179_101));
     // `k as uint32 as int32`: σ of the low word, as written.
@@ -126,15 +123,15 @@ fn same_block_offset_rewrite_work(
         block: base.block.clone(),
         offset: PointerOffsetTerm::Add(
             Box::new(base.offset.clone()),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(binary_node!(
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                binary_node!(
                     Int32,
                     Subtract,
                     Box::new(MachineTerm::constant(4)),
                     Box::new(k.clone()),
-                )),
-                byte_width: 4,
-            }),
+                ),
+                4,
+            )),
         ),
     };
     let cursor = Pointer::symbolic(Variable(8_179_099));
@@ -155,15 +152,15 @@ fn same_block_offset_rewrite_work(
                             block: base.block.clone(),
                             offset: PointerOffsetTerm::Add(
                                 Box::new(base.offset.clone()),
-                                Box::new(PointerOffsetTerm::Int32Scaled {
-                                    value: Box::new(binary_node!(
+                                Box::new(PointerOffsetTerm::scaled_int32_node(
+                                    binary_node!(
                                         Int32,
                                         Subtract,
                                         Box::new(MachineTerm::constant(4)),
                                         Box::new(old.clone()),
-                                    )),
-                                    byte_width: 4,
-                                }),
+                                    ),
+                                    4,
+                                )),
                             ),
                         },
                         base.clone(),

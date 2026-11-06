@@ -6169,6 +6169,36 @@ impl AnnotationLowerer<'_> {
                 }
             }
 
+            // A subslice's length, `end - start`, owes `start <= end <= len`
+            // where it is evaluated, as Rust panics otherwise.
+            ContractExpression::Call { name, arguments }
+                if name == crate::surface::RUST_SUBSLICE_LEN
+                    && let [start, end, len] = arguments.as_slice() =>
+            {
+                let at_most = |left: &ContractExpression, right: &ContractExpression| {
+                    ClickProposition::Comparison {
+                        left: left.clone(),
+                        operator: ComparisonOperator::LessEqual,
+                        right: right.clone(),
+                    }
+                };
+                let requirement = ClickProposition::And(
+                    Box::new(at_most(start, end)),
+                    Box::new(at_most(end, len)),
+                );
+                Ok(SpecExpression::Requires {
+                    requirement: Box::new(
+                        self.click_proposition_to_spec_proposition(&requirement, environment)?,
+                    ),
+                    value: Box::new(self.lower_contract_expression_to_spec(
+                        &ContractExpression::Subtract(
+                            Box::new(end.clone()),
+                            Box::new(start.clone()),
+                        ),
+                        environment,
+                    )?),
+                })
+            }
             ContractExpression::Call { name, arguments }
                 if integer_conversion_target(name).is_some() =>
             {
@@ -8688,6 +8718,24 @@ impl AnnotationLowerer<'_> {
                     memory: environment.current_memory.clone(),
                     pointer: self.lower_contract_expression_to_spec(expression, environment)?,
                     element_type: self.contract_array_element_type(expression, environment),
+                })
+            }
+            // A pointer-valued pure call steps by its result's pointee:
+            // `slice::as_ptr::<uint8>(s)[1]` reads the byte at offset 1, not
+            // the `int32` at offset 4.
+            ContractExpression::Call { .. } => {
+                let element_type = match self
+                    .infer_unconstrained_call_argument_type(expression, environment)?
+                    .and_then(|result| result.c_type())
+                    .and_then(|result| result.pointee_type())
+                {
+                    Some(element_type) => element_type.to_kernel_type(),
+                    None => self.contract_array_element_type(expression, environment),
+                };
+                Ok(SpecArrayRef {
+                    memory: environment.current_memory.clone(),
+                    pointer: self.lower_contract_expression_to_spec(expression, environment)?,
+                    element_type,
                 })
             }
             _ => Ok(SpecArrayRef {

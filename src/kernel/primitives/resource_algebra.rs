@@ -233,21 +233,21 @@ pub(in crate::kernel) fn offset_root_atom(offset: &PointerOffsetTerm) -> Option<
                 if value.as_const().is_some() {
                     continue;
                 }
-                return Some(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(crate::kernel::eval::canonical_term(value)),
-                    byte_width: *byte_width,
-                });
+                return Some(PointerOffsetTerm::scaled_int32_node(
+                    crate::kernel::eval::canonical_term(value),
+                    *byte_width,
+                ));
             }
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
                 unsigned,
             } => {
-                return Some(PointerOffsetTerm::Int64Scaled {
-                    value: Box::new(crate::kernel::eval::canonical_term(value)),
-                    byte_width: *byte_width,
-                    unsigned: *unsigned,
-                });
+                return Some(PointerOffsetTerm::scaled_int64_node(
+                    crate::kernel::eval::canonical_term(value),
+                    *byte_width,
+                    *unsigned,
+                ));
             }
         }
     }
@@ -12541,10 +12541,10 @@ mod related_pointer_root_tests {
     fn external(index: u64) -> Pointer {
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(986_400 + index))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(986_400 + index)),
+                4,
+            ),
         }
     }
 

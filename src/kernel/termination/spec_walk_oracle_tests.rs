@@ -159,6 +159,7 @@ fn old_collect_spec_expression_c_variables(
         SpecExpression::ResourceField { .. } => Ok(()),
         SpecExpression::CountedResourceCount { .. } => Err("a counted-resource count"),
         SpecExpression::If { .. } => Err("a conditional `if` expression"),
+        SpecExpression::Requires { .. } => Err("a subslice's bounds requirement"),
         SpecExpression::RangeFold { .. } => Err("a range fold"),
         SpecExpression::Let { .. } => Err("a `let` expression"),
         SpecExpression::LoopEntrySnapshot(_) => Err("a loop-entry snapshot"),

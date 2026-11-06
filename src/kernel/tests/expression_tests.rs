@@ -2084,11 +2084,7 @@ fn pointer_addition_rejects_an_int32_index_beyond_the_object() {
 #[test]
 fn uint64_pointer_index_bounds_use_the_full_value() {
     let index = MachineTerm::Variable(Variable(93_815));
-    let offset = PointerOffsetTerm::Int64Scaled {
-        value: Box::new(index.clone()),
-        byte_width: 1,
-        unsigned: true,
-    };
+    let offset = PointerOffsetTerm::scaled_int64_node(index.clone(), 1, true);
     assert_eq!(byte_offset_from_pointer_offset(&offset), None);
 
     let base = Pointer {
@@ -2444,10 +2440,7 @@ fn pointer_subtraction_rejects_different_blocks_as_undefined_behavior() {
 fn pointer_order_and_subtraction_require_external_parameters_to_share_an_object() {
     let external = |variable| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let left = external(31_000);
     let right = external(31_001);
@@ -2546,10 +2539,7 @@ fn null_pointers_have_no_object_provenance_for_ordering_or_subtraction() {
 fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(31_050))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_050)), 4),
     };
     let state = CState::new().with_local("pointer", CValue::pointer(pointer));
 
@@ -2580,10 +2570,7 @@ fn an_external_pointer_does_not_share_an_object_with_itself_until_nonnull() {
 fn nonempty_loadability_establishes_external_pointer_object_provenance() {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(31_060))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_060)), 4),
     };
     let state = CState::new().with_local("pointer", CValue::pointer(pointer.clone()));
     let loadable = |bytes| Proposition::CMemoryLoadable {
@@ -2624,17 +2611,11 @@ fn nonempty_loadability_establishes_external_pointer_object_provenance() {
 fn pointer_arithmetic_preserves_external_object_identity() {
     let left = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(31_100))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_100)), 4),
     };
     let right = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(31_101))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(31_101)), 4),
     };
     let derived_left = left.offset_by_int32_elements(MachineTerm::Variable(Variable(31_102)));
     let derived_right = right.offset_by_int32_elements(MachineTerm::constant(1));

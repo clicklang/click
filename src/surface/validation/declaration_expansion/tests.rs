@@ -288,7 +288,6 @@ fn standard_library_cache_preserves_all_declarations() {
 /// verification that uses it. This is the gate's proof of every library
 /// theorem.
 #[test]
-#[ignore = "nightly: 0.8s in the parallel gate"]
 fn standard_library_theorems_are_proved_by_their_own_entry_point() {
     let theorems = standard_library_theorem_definitions().unwrap();
     let verified = crate::surface::verify_standard_library()

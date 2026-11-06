@@ -37,7 +37,7 @@ library module's own proofs are checked against the whole library.
 
 Each module is parsed with the declarations of the modules before it, and
 its diagnostics name its own file and line. Types, pure functions, and
-theorems use ordinary Click declarations. Of the 151 library theorems, 109
+theorems use ordinary Click declarations. Of the 153 library theorems, 111
 have checked proofs; 42 kernel standard theorems (21 machine-integer laws
 including `integer::uint32_from_le_bytes`, 5 Integer truncation laws, 6 `Nat`
 laws and 10 separation laws including `separation::restrict`) are backed by
@@ -55,7 +55,7 @@ A module is named by a `click::` path that mirrors its file:
 The library is checked on its own, like any dependency: `verify_standard_library`
 proves every library theorem that has a proof, checks each kernel standard
 theorem's declaration against its kernel builder
-([trust](../docs/concepts/trust.md#the-click-library)), and the nightly suite
+([trust](../docs/concepts/trust.md#the-click-library)), and the gate
 runs it in `standard_library_theorems_are_proved_by_their_own_entry_point`. Verifying a
 sidecar applies library theorems as dependency declarations and proves only
 the sidecar's own theorems. Whole-contract certification accepts a pure theorem

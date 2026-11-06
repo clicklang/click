@@ -68,13 +68,13 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         &memory,
         &Pointer {
             block: PointerBlock::Concrete("registered-load-capture".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::IntegerToMachine {
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::IntegerToMachine {
                     value: SharedIntegerTerm::from(IntegerTerm::Variable(free_integer)),
                     destination: MachineIntegerType::Int32,
-                }),
-                byte_width: 4,
-            },
+                },
+                4,
+            ),
         },
     );
     let load = exact_load(
@@ -131,10 +131,7 @@ fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
         &memory,
         &Pointer {
             block: PointerBlock::Concrete("registered-load-capture".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(free_c)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(free_c), 4),
         },
     );
     let fold = int32_fold(accumulator, free_c, machine_variable(source));
@@ -165,10 +162,7 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     let source = Variable(3_230_000);
     let inner_pointer = Pointer {
         block: PointerBlock::Concrete("registered-load-capture".into()),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(source)),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(source), 4),
     };
     let inner = exact_load(&memory, &inner_pointer);
     let outer = exact_load(
@@ -222,13 +216,13 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
     let source = Variable(3_240_000);
     let pointer = Pointer {
         block: PointerBlock::Concrete("registered-load-capture".into()),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::IntegerToMachine {
+        offset: PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::IntegerToMachine {
                 value: SharedIntegerTerm::from(IntegerTerm::var(source)),
                 destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        },
+            },
+            4,
+        ),
     };
     let load = exact_load(&memory, &pointer);
     let input = Term::Integer(machine_variable(load));
@@ -248,15 +242,11 @@ fn checked_integer_binding_rewrites_registered_load_at_exact_snapshot() {
     let Term::Integer(IntegerTerm::Machine(machine)) = output else {
         panic!("the Integer machine observation changed carrier")
     };
-    let MachineTerm::Variable(rewritten_load) = machine.value() else {
-        panic!("the checked rewrite expanded a registered load into a memory tree")
-    };
-    assert_ne!(*rewritten_load, load);
-    let (rewritten_memory, rewritten_pointer) =
-        crate::kernel::eval::registered_load_for_variable(rewritten_load)
-            .expect("the rewritten load must remain registered");
+    let (rewritten_memory, rewritten_pointer, kind) =
+        machine.operand_view().read().expect("structural read");
+    assert_eq!(kind, crate::kernel::LoadKind::Int32);
     assert_eq!(
-        rewritten_memory, memory,
+        rewritten_memory, &memory,
         "the proof snapshot must stay exact"
     );
     assert_eq!(

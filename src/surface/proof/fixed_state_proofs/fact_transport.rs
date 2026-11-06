@@ -999,10 +999,7 @@ pub(in crate::surface::proof) fn memory_erased_comparison(
                 PointerOffsetTerm::Add(Box::new(erase_offset(left)), Box::new(erase_offset(right)))
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(erase_term(value)),
-                    byte_width: *byte_width,
-                }
+                PointerOffsetTerm::scaled_int32_node(erase_term(value), *byte_width)
             }
             other => other.clone(),
         }
@@ -1442,14 +1439,8 @@ mod path_condition_tests {
 
     #[test]
     fn pointer_offset_path_equality_accepts_reversed_operands() {
-        let left = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(41))),
-            byte_width: 4,
-        };
-        let right = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(42))),
-            byte_width: 4,
-        };
+        let left = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
+        let right = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
         let forward = Proposition::ConditionIs(
             ConditionTerm::PointerOffsetEqual(Box::new(left.clone()), Box::new(right.clone())),
             true,

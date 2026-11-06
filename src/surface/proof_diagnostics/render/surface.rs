@@ -1880,6 +1880,33 @@ impl Printer<'_> {
                 atom(format!("byte_offset({}, {offset})", place.text))
             });
         }
+        // The result of a pointer-valued pure call is that call, and an
+        // address past it is that call plus an element offset, or a byte
+        // offset from it.
+        if let crate::kernel::PointerBlock::PureFunctionApplication(application) = &pointer.block {
+            let call = self.call(application.name(), application.arguments(), depth + 1)?;
+            return Some(match &pointer.offset {
+                PointerOffsetTerm::Constant(0) => call,
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                    let index = self.bitvector(value, None, depth + 1)?;
+                    spelled(
+                        format!("{} + {}", operand(call, ADD), operand(index, MULTIPLY)),
+                        ADD,
+                    )
+                }
+                PointerOffsetTerm::Constant(bytes)
+                    if let Some(width) = instance_element_width(application.name())
+                        && bytes % width == 0 =>
+                {
+                    spelled(format!("{} + {}", operand(call, ADD), bytes / width), ADD)
+                }
+                offset => {
+                    let offset = self.offset(offset, depth + 1);
+                    atom(format!("byte_offset({}, {offset})", call.text))
+                }
+            });
+        }
         if !self.source_mode() {
             return None;
         }
@@ -2525,7 +2552,9 @@ impl Printer<'_> {
                     && variant == "Slice"
                     && let [pointer, length] = spelled_fields.as_slice()
                 {
-                    return Some(atom(format!("slice::from_raw_parts({pointer}, {length})")));
+                    return Some(atom(crate::surface::diagnostics::slice_spelling(
+                        pointer, length,
+                    )));
                 }
                 let name = format!("{}::{variant}", value.algebraic_type.name);
                 Some(atom(if spelled_fields.is_empty() {
@@ -2778,12 +2807,39 @@ fn names_result(name: &str) -> bool {
     matches!(name, "result" | "&result")
 }
 
+/// The element width of the pointer a generic pure function's instance
+/// returns, read from its instance name: one byte for
+/// `click::rust::slice::as_ptr::<uint8>`.
+fn instance_element_width(name: &str) -> Option<i64> {
+    let (_, instance) = name.split_once("::<")?;
+    Some(match instance.strip_suffix('>')? {
+        "int8" | "uint8" => 1,
+        "int16" | "uint16" => 2,
+        "int32" | "uint32" => 4,
+        "int64" | "uint64" => 8,
+        _ => return None,
+    })
+}
+
 fn dereference(address: Spelled) -> String {
     if address.precedence == UNARY
         && let Some(place) = address.text.strip_prefix('&')
         && !place.contains(' ')
     {
         return place.to_owned();
+    }
+    // An element of a slice value, read through its data pointer, is
+    // written as Rust writes it: `x[i]`.
+    if let Some(slice) = address.text.strip_suffix(".as_ptr()")
+        && address.precedence == ATOM
+    {
+        return format!("{slice}[0]");
+    }
+    if address.precedence == ADD
+        && let Some((slice, index)) = address.text.split_once(".as_ptr() + ")
+        && !index.contains(' ')
+    {
+        return format!("{slice}[{index}]");
     }
     format!("*{}", operand(address, UNARY))
 }

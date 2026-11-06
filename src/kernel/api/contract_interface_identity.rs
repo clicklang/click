@@ -407,6 +407,10 @@ impl Names {
                 self.expression(then_branch);
                 self.expression(else_branch);
             }
+            Requires { requirement, value } => {
+                self.proposition(requirement);
+                self.expression(value);
+            }
             Let { name, value, body } => {
                 self.expression(value);
                 let original = self.bind(name);

@@ -93,16 +93,16 @@ fn unsigned_work_is_flat_beside_values_bounded_by_its_hub() {
         assert_eq!(answer, Some(true));
         let (answer, selected_slot) = graph_work(|| {
             let mut selected = graph.clone();
-            let offset = crate::kernel::PointerOffsetTerm::Int64Scaled {
-                value: Box::new(MachineTerm::uint64_from_32(MachineTerm::Binary {
+            let offset = crate::kernel::PointerOffsetTerm::scaled_int64_node(
+                MachineTerm::uint64_from_32(MachineTerm::Binary {
                     format: crate::kernel::MachineIntegerType::UInt32,
                     op: crate::kernel::MachineBinaryOp::BitwiseAnd,
                     left: Box::new(unbounded_divisor.clone()),
                     right: Box::new(MachineTerm::uint32_constant(1)),
-                })),
-                byte_width: 8,
-                unsigned: true,
-            };
+                }),
+                8,
+                true,
+            );
             selected.assume_condition(
                 &ConditionTerm::pointer_offset_equal(
                     offset.clone(),

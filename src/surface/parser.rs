@@ -8806,6 +8806,23 @@ impl Parser {
                 .unwrap_or(bound),
             _ => bound,
         };
+        let literal = |bound: &Option<ContractExpression>| match bound {
+            Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
+            Some(bound @ ContractExpression::CFragment(CExpression::Value(_))) => {
+                crate::surface::diagnostics::describe_contract_expression(bound)
+                    .strip_suffix("u64")?
+                    .parse::<u64>()
+                    .ok()
+            }
+            _ => None,
+        };
+        if let (Some(start), Some(end)) = (literal(&start), literal(&end))
+            && start > end
+        {
+            return Err(self.error(format!(
+                "the subslice `[{start}..{end}]` starts past its end; Rust panics on a reversed range"
+            )));
+        }
         let start = start.map(usize_bound);
         let end = end.map(usize_bound);
         let element = self
@@ -8821,13 +8838,20 @@ impl Parser {
                 Self::slice_value_field(slice, true, None),
             ),
         };
-        let end = end.unwrap_or(length);
-        let (pointer, count) = match start {
-            Some(start) => (
-                ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
-                ContractExpression::Subtract(Box::new(end), Box::new(start)),
-            ),
-            None => (pointer, end),
+        let end = end.unwrap_or_else(|| length.clone());
+        let zero = || {
+            ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
+                crate::kernel::MachineTerm::uint64_constant(0),
+            )))
+        };
+        let pointer = match &start {
+            Some(start) => ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
+            None => pointer,
+        };
+        // Its length owes `start <= end <= len`, as Rust panics otherwise.
+        let count = ContractExpression::Call {
+            name: crate::surface::RUST_SUBSLICE_LEN.to_string(),
+            arguments: vec![start.unwrap_or_else(zero), end, length],
         };
         // The constructor itself, so its fields select at once, at the
         // parameter's element type. A slice value's element type is not

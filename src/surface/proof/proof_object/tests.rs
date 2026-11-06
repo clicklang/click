@@ -14134,10 +14134,7 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
     let (c_type, read_local) = load_type(function.body()).expect("callback field is a typed load");
     let argument = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(210_520))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(210_520)), 4),
     };
     let table = Pointer {
         block: "global:callback-table".into(),

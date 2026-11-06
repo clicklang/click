@@ -2199,10 +2199,7 @@ fn observable_projection_tracks_supported_views_caches_and_owner_retirement() {
 fn argument_base(variable: u64) -> Pointer {
     Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     }
 }
 
