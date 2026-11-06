@@ -7,18 +7,37 @@ imports with `import click::...;`, and the modules those import:
 | Module | Seen | Contents |
 | --- | --- | --- |
 | `separation.click` | `import click::separation;` | Explicit separation-under-containment axiom over `Resource` descriptors |
-| `primitives.click` | implicit | Verifier primitives: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
+| `primitives.click` | implicit | Verifier primitives, part of the language: the abstract resources the kernel interprets (`mutex_guard`, `mutex_live`, `mutex_use`, `publisher`, `subscriber`, `authority`, `allocation`) |
 | `nat.click` | implicit | `Nat`, `to_nat`, `nat::add` and their laws |
 | `list.click` | implicit | `List<T>`, `list::append`, `list::contains`, `list::length` and their laws |
 | `option.click` | implicit | `Option<T>`, the value of a Rust `Option` |
+| `result.click` | implicit | `Result<T, E>`, the value of a Rust `Result` |
 | `permutation.click` | `import click::permutation;` | `permutation::count`, generic over the element type, and `permutation::permutation` over `int32[]` |
 | `bytes.click` | `import click::bytes;`, or with `c/string` | `bytes::count`, `bytes::equal` and the other byte-range predicates over `uint8[]` |
 | `cstr.click` | `import click::cstr;`, or with `c/string` | C-string predicates and theorems, and the C-string resource `cstr_at` |
-| `c/builtins.click` | implicit | `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
+| `c/builtins.click` | implicit | Verifier primitive `__click_constant_p_unknown`, the value of `__builtin_constant_p` |
 | `c/string.click` | when the C declares or calls one of its functions | `memcpy`, `memcmp`, `memset` and `strlen` contracts |
 | `integer.click` | `import click::integer;` | `integer::` order, increment and definedness lemmas over native integer widths, `to_integer` bridges for native arithmetic, unsigned wrapping operations, and `Integer` division laws |
 | `format.click` | `import click::format;`; the C front end's `snprintf` contracts name it by path | `format::decimal_length`, `format::decimal_digit` and the other decimal rendering functions `printf` writes, with evaluation theorems |
 | `rust/i8.click` ... `rust/usize.click` | `import click::rust::u32;`; the Rust importer's core-method contracts name them by path | One module per Rust integer type: `u32::min`, `u32::checked_add` and the other core methods the importer specifies |
+| `rust/vec.click` | `import click::rust::vec;` | The primitive type `Vec<T>`, its bodyless operations and their trusted axioms |
+| `rust/slice.click` | `import click::rust::slice;` | `Slice<T>`, a Rust slice as its data pointer and length |
+
+Each declaration is in one layer, which sets its trust:
+
+- **Verifier primitives** (`primitives.click`, `c/builtins.click`) are part of
+  the language. The kernel or the C front end gives them their meaning; they are
+  written here only so the parser declares them. The language reference
+  documents them (`docs/reference/language/index.md#verifier-primitives`), with
+  `primitive.` inventory IDs.
+- **Language library models** are assumed `extern` contracts for the C, C++ or
+  Rust library the verified code calls, listed in
+  [trust](../docs/concepts/trust.md#the-click-library). `c/string.click` is the
+  one written here; the allocator family and `snprintf` contracts are built into
+  the C front end, and the C++ catalog and Rust core-method contracts are
+  generated per use.
+- **The specification library** is every other module: checked types, pure
+  functions, predicates and theorems, plus the trusted `rust/vec.click` axioms.
 
 `integer::uint64_product_bound_from_division` turns the native nonzero-divisor bound
 `x <= 18446744073709551615u64 / y` into an exact Integer product bound. Combine
@@ -71,8 +90,10 @@ For a library addition:
 - Put positive and negative client examples in `mdtests/`. List clients live
   in `stdlib_list*.md` and should use the implicit library, not redeclare it.
 - Add a checked use to `mdtests/stdlib_every_symbol.md`.
-- Copy the exact declaration into `docs/reference/library/index.md` and add
-  its entry to `docs/reference/inventory.toml`. A module in
+- Copy the exact declaration into its module's section of
+  `docs/reference/library/index.md` and add its entry to
+  `docs/reference/inventory.toml`. A verifier primitive instead goes in the
+  language reference as inline code, with a `primitive.` inventory ID. A module in
   `QUALIFIED_MODULES` lists its functions, predicates and theorems by
   in-scope path, `library.function.bytes::count`. The documentation gate checks
   these against the source.

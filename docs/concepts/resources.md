@@ -1212,7 +1212,7 @@ storage validity, and protection against ordinary writes are not implemented
 yet. Automatic objects containing initialized mutexes must have them destroyed
 before scope exit, including abrupt exits; folded authority does not bypass
 this check. See the
-[library reference](../reference/library/index.md#mutex_live) for this boundary.
+[`mutex_live` primitive](../reference/language/index.md#mutex_live) for this boundary.
 
 A contract clause speaks about parameters, so `consumes t: tree_at(root);`
 names the tree at the entry argument. These tactics are not contract clauses:

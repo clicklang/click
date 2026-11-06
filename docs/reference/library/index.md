@@ -2,13 +2,62 @@
 
 The Click library is the public Surface Click API in the
 [`library/`](https://github.com/clicklang/click/tree/master/library) modules.
-It isn't the Rust crate's internal `pub` API. Every sidecar sees
-`click::primitives`, `click::nat`, `click::list`, `click::option` and
-`click::c::builtins`. A
-C program that declares or calls a `<string.h>` function Click specifies
-brings `click::c::string`, with `click::bytes` and `click::cstr`. Any other
-module's declarations need that module's `import click::...;` line; see
+It isn't the Rust crate's internal `pub` API. This page lists it one module
+per section.
+
+## Layers
+
+Each library declaration is in one of three layers, and its layer decides
+how far it is trusted:
+
+- **Verifier primitives** are part of the language, not the library. The
+  abstract resources `mutex_guard`, `mutex_live`, `mutex_use`, `publisher`,
+  `subscriber`, `authority` and `allocation`, and
+  `__click_constant_p_unknown`, are given their meaning by the kernel or the
+  C front end. Their declarations sit in `library/primitives.click` and
+  `library/c/builtins.click`, and are documented under
+  [verifier primitives](../language/index.md#verifier-primitives) in the
+  language reference, not here.
+- **Language library models** state what the C, C++ or Rust library the
+  verified code calls does. Each is an assumed `extern` contract, listed in
+  [trust](../../concepts/trust.md#the-click-library), and it comes with the
+  code that uses it, not with a sidecar import. `click::c::string` is written
+  in Click below. The C front end builds in the allocator family
+  ([heap allocation](../language/c.md#heap-allocation)) and writes the
+  `snprintf` contracts ([formatted output](../language/c.md#formatted-output)),
+  and the C++ and Rust importers write their catalog and core-method
+  contracts per use. The Rust core-method contracts state their results with
+  the `click::rust::` modules below.
+- **The specification library** is checked Click: types, pure functions,
+  predicates and theorems. A theorem is either proved or a kernel standard
+  theorem whose declaration is checked against its kernel builder. The
+  `click::rust::vec` axioms are trusted, not proved.
+
+## Modules
+
+| Module | Seen | Layer |
+| --- | --- | --- |
+| [`click::nat`](#clicknat) | implicit | specification |
+| [`click::list`](#clicklist) | implicit | specification |
+| [`click::option`](#clickoption) | implicit | specification |
+| [`click::result`](#clickresult) | implicit | specification |
+| [`click::integer`](#clickinteger) | `import click::integer;` | specification |
+| [`click::permutation`](#clickpermutation) | `import click::permutation;` | specification |
+| [`click::bytes`](#clickbytes) | `import click::bytes;`, or with `click::c::string` | specification |
+| [`click::cstr`](#clickcstr) | `import click::cstr;`, or with `click::c::string` | specification |
+| [`click::format`](#clickformat) | `import click::format;`; named by path in `snprintf` contracts | specification |
+| [`click::c::string`](#clickcstring) | when the C declares or calls one of its functions | C library model |
+| [`click::rust::i8` ... `click::rust::usize`](#clickrusti8-through-clickrustusize) | `import click::rust::u32;`; named by path in Rust core-method contracts | specification |
+| [`click::rust::vec`](#clickrustvec) | `import click::rust::vec;` | specification, with trusted axioms |
+| [`click::rust::slice`](#clickrustslice) | `import click::rust::slice;` | specification |
+| [`click::separation`](#clickseparation) | `import click::separation;` | specification |
+
+`click::primitives` and `click::c::builtins` are implicit too; they hold the
+verifier primitives. Any module not marked implicit needs its
+`import click::...;` line; see
 [Click library imports](../../concepts/sidecars.md#click-library-imports).
+
+## Checking this page
 
 Every declaration below is copied exactly from the library and checked by the
 documentation gate. The same gate compares declaration names bidirectionally,
@@ -25,195 +74,13 @@ this way.
 Pure function calls remain symbolic until explicitly unfolded. Predicates
 remain opaque until a proof explicitly unfolds them or applies a theorem that
 exposes the needed consequence. Theorems can be applied when their stated
-requirements are available. An abstract resource has no body to unfold.
+requirements are available.
 
-## Mutex acquisition authority
+## `click::nat`
 
-### `mutex_guard`
+Source: `library/nat.click`, implicit.
 
-```click
-abstract resource mutex_guard(mutex: void*);
-```
-
-**Meaning:** Owns one current acquisition of a modeled mutex. The built-in
-resource has exclusive unit ownership, no view, and no memory authority.
-Use `owns mutex_guard(mu)` inside a declared-resource body. Folding consumes
-the existing guard and unfolding returns it; proving `held(mu)` cannot create
-it. Contracts may preserve a direct `owns mutex_guard(mu)` input or a folded
-guard-bearing instance. Independently checked helpers can unfold and refold
-wrappers, but cannot change mutex protocols. Direct clauses return the entry
-acquisition. Named primitive binders and consumed/produced guards remain
-unsupported.
-
-**Verified use:** [`mdtests/mutex_guard_resource_body.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_guard_resource_body.md).
-
-## Mutex lifecycle authority
-
-### `mutex_live`
-
-```click
-abstract resource mutex_live(mutex: void*);
-```
-
-**Meaning:** Owns the lifecycle authority for one initialization of a modeled
-mutex. Initialization creates this exclusive unit resource. Locking currently
-requires it to be available; destruction consumes it. A previous initialization's
-owner cannot authorize operations after reinitialization at the same address.
-It supplies neither an acquisition nor memory access, and cannot be viewed or
-counted.
-
-Use `owns mutex_live(mu)` directly in a preserving contract or inside an
-exclusive declared-resource body. Folding consumes the owner; unfolding returns
-it. Preserving helpers retain the entry initialization and cannot change mutex
-protocols. Missing authority is reported as `Requires owns mutex_live(mu)`.
-
-Initialization requires owned, aligned storage and reserves it against ordinary
-writes until destruction. Synchronous helpers can borrow lifetime permission
-through `mutex_use`. Worker transfer, named primitive binders, and lifecycle
-`consumes`/`produces` contracts remain unsupported.
-
-Automatic objects containing initialized mutexes cannot leave scope until
-those mutexes are destroyed, even when their authority is folded away. This
-covers normal and abrupt scope exits. Ambiguous symbolic mutex pointers are
-refused conservatively rather than assumed separate from local storage.
-
-**Verified use:** [`mdtests/mutex_live_wrapper.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_live_wrapper.md)
-and [`mdtests/mutex_live_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_live_contract.md).
-
-## Borrowed mutex lifetime
-
-### `mutex_use`
-
-```click
-abstract resource mutex_use(mutex: void*);
-```
-
-**Meaning:** An owned permission to use an initialized mutex while its caller
-retains lifecycle responsibility. Use `owns mutex_use(mu);` in a preserving
-helper contract. Calls borrow an available `mutex_live(mu)` owner or reborrow
-an existing use permission; returning restores that exact source. A helper's
-input grants neither lifecycle ownership nor protected-memory access.
-
-The current implementation supports synchronous preserving helpers and nested
-calls, including contracts with ordinary owned memory and stable views. It
-retains the protocol freeze: initialization, destruction, acquisition, and
-release inside these helpers remain unsupported. `views`, quantities, named
-primitive binders, consumed/produced use permissions, and worker transfer are
-also unsupported. Missing call-site authority is reported as
-`Requires owns mutex_use(mu)`.
-
-**Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_contract.md)
-and [`mdtests/mutex_use_mixed.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_mixed.md).
-
-## One-shot publication rights
-
-### `publisher`
-
-```click
-abstract resource publisher(flag: void*);
-```
-
-**Meaning:** The right to publish one payload through the C11 `atomic_int`
-flag at `flag`, written `publisher(flag, P(args))` with the payload's resource
-type. `atomic_init(flag, 0)` with `{ payload: P(args) }` creates it in the
-modeled-pthread runtime. A release store of a nonzero value consumes it
-together with a folded `P(args)`. It is unique per flag, grants no memory
-access, and may be transferred to a worker. A second release store is reported
-as requiring `owns publisher(flag, P)`.
-
-**Verified use:** [`mdtests/publication_one_shot_handoff.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_one_shot_handoff.md)
-and [`mdtests/publication_second_release_store_has_no_publisher.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_second_release_store_has_no_publisher.md).
-
-### `subscriber`
-
-```click
-abstract resource subscriber(flag: void*);
-```
-
-**Meaning:** The right to receive the payload published through the flag at
-`flag`, written `subscriber(flag, P(args))`. An acquire load marks it as read
-through the loaded value. The C branch that knows the value is zero keeps the
-right, and the branch that knows it is nonzero receives an owned `P(args)` in
-its place. It is unique per flag and grants no memory access by itself. Loads
-without it receive nothing.
-
-**Verified use:** [`mdtests/publication_one_shot_handoff.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_one_shot_handoff.md)
-and [`mdtests/publication_unpublished_branch_does_not_receive.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_unpublished_branch_does_not_receive.md).
-
-## Population authority
-
-### `authority`
-
-```click
-abstract resource authority();
-```
-
-**Meaning:** `authority(reference(p))` is the exclusive control resource for
-one population of the declared resource type `reference(p)`. The empty
-population may be established with `fold(authority(reference(p)))` only in the
-execution proof that created `p`'s storage. It may be retired with
-`unfold(authority(reference(p)))` only when its member count is zero. Its
-members may be field-free with private owned memory, observed by their current
-`count(...)` and moved by direct authority/member helper contracts. An
-ordinary field-free control can package counter memory, authorities, and facts
-relating the memory to population counts. Ordinary helper contracts transfer
-these controls, concrete members, and checked symbolic groups.
-
-Local families can also have C or integer proof fields. For example,
-`authority(ticket(p))` governs separately named `ticket(p)` instances; their
-identities and field values remain distinct even when their arguments agree.
-`let first = fold(ticket(p), { serial: 1 });` creates one member, and
-`unfold(first)` consumes that exact member. Both operations require the matching
-owned authority. `count(ticket(p))` observes the population total, not field
-values or ownership of individual members. Retirement requires zero members.
-A wildcard authority such as `authority(ticket(pool, _))` governs all exact
-arguments of that local family. Both aggregate and exact counts include separate
-occurrences with equal arguments. Private bodies remain exclusive even when
-instances share their family arguments.
-
-Preserving helpers take a named member through ordinary `owns` contracts and
-retain its proof fields through explicit postconditions. They can unfold and
-restore its private body while the caller keeps the authority control closed;
-the same population occurrence stays reserved across the preserving call. A
-member alone does not permit observing `count(...)`. Verified helpers can
-create or consume named members when their checked input partition supplies the
-governing authority. Creation needs an increment bound; consumption needs the
-exact owned occurrence. Unary and wildcard imports preserve arbitrary entry
-totals and record relative effects without anonymous member rights. Assumed
-interfaces may preserve named ownership but cannot perform these lifecycle
-effects. Symbolic quantities of heterogeneous named instances remain unsupported.
-
-**Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
-
-**Verified use:** [`mdtests/authority_named_field_private_helper.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_private_helper.md).
-
-**Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
-
-A count and an equal C counter can have different checked term representations.
-To transfer increment definedness, explicitly rewrite the count to the counter
-using the control's equality and establish the nonnegative bound as needed.
-For example, `rewrite(count(item(pool, _)) == pool->checked_out)` can transport
-`defined(pool->checked_out + 1)` inside an opened control. Nonnegativity alone
-does not establish increment safety: the count can still be `2147483647`.
-
-**Verified use:** [`authority_count_defined_through_control.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_through_control.md)
-and [`authority_count_defined_at_max_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_at_max_rejected.md).
-
-## Allocation authority
-
-### `allocation`
-
-```click
-abstract resource allocation(base: int32*, bytes: int32);
-```
-
-**Meaning:** Owns the lifetime authority for the heap allocation whose base pointer is `base` and whose extent is `bytes`. The resource is abstract and cannot be unfolded.
-
-**Kind:** abstract resource. Parameter types, requirements, and guarantees are normative in the declaration above.
-
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
-
-## Natural numbers
+### Natural numbers
 
 `Nat` is an ordinary recursive logical datatype: `Zero` and `Succ(Nat)`.
 Its values are mathematical naturals, with no machine-width bound or wrapping.
@@ -473,8 +340,11 @@ theorem add_commutative(a: Nat, b: Nat) {
 
 **Verified use:** [`mdtests/stdlib_nat.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_nat.md).
 
+## `click::list`
 
-## Lists
+Source: `library/list.click`, implicit. `List` and its constructors keep bare names; functions and theorems are written `list::name`.
+
+### Lists
 
 `List<T>` is an immutable logical value, not a C layout or ownership resource.
 It preserves order and multiplicity. Use explicit constructors and the functions
@@ -769,8 +639,9 @@ theorem length_append<T>(xs: List<T>, ys: List<T>) {
 
 **Verified use:** [`mdtests/stdlib_list_length.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_list_length.md).
 
+## `click::option`
 
-## Options
+Source: `library/option.click`, implicit.
 
 ### `Option`
 
@@ -804,7 +675,9 @@ import.
 
 **Verified use:** [`design/charon-trial/option-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/option-values/options.click).
 
-## Results
+## `click::result`
+
+Source: `library/result.click`, implicit.
 
 ### `Result`
 
@@ -837,7 +710,11 @@ implicit; a sidecar writes `click::result::unwrap_or(r, d)` with no import.
 
 **Verified use:** [`design/charon-trial/result-values`](https://github.com/clicklang/click/blob/master/design/charon-trial/result-values/results.click).
 
-## Signed `int32` theorems
+## `click::integer`
+
+Source: `library/integer.click`, `import click::integer;`. Width-specific order, definedness and `to_integer` lemmas, unsigned wrapping operations, round trips through the `to_*` conversions, and `Integer` truncating-division laws. [Trust](../../concepts/trust.md#the-click-library) says which theorems are kernel standard theorems.
+
+### Order, definedness and conversion lemmas
 
 ### `integer::int32_increment_upper_bound`
 
@@ -2711,7 +2588,7 @@ theorem int32_less_equal_and_not_equal_implies_less_than(left: int32, right: int
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-## Unsigned wrapping arithmetic
+### Unsigned wrapping arithmetic
 
 `import click::integer;` provides the C operations on unsigned
 values, which wrap modulo `2^32` or `2^64`, as functions. A
@@ -2804,7 +2681,553 @@ function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-## Array specifications
+### Integer round trips
+
+### `integer::to_int8_round_trip`
+
+```click
+theorem to_int8_round_trip(z: Integer) {
+    requires z >= -128;
+    requires z <= 127;
+    ensures to_integer(to_int8(z)) == z;
+}
+```
+
+An Integer within the exact `int8` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+
+### `integer::to_int16_round_trip`
+
+```click
+theorem to_int16_round_trip(z: Integer) {
+    requires z >= -32768;
+    requires z <= 32767;
+    ensures to_integer(to_int16(z)) == z;
+}
+```
+
+An Integer within the exact `int16` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### `integer::to_int32_round_trip`
+
+```click
+theorem to_int32_round_trip(z: Integer) {
+    requires z >= -2147483648;
+    requires z <= 2147483647;
+    ensures to_integer(to_int32(z)) == z;
+}
+```
+
+An Integer within the exact `int32` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### `integer::to_uint8_round_trip`
+
+```click
+theorem to_uint8_round_trip(z: Integer) {
+    requires z >= 0;
+    requires z <= 255;
+    ensures to_integer(to_uint8(z)) == z;
+}
+```
+
+An Integer within the exact `uint8` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### `integer::to_uint16_round_trip`
+
+```click
+theorem to_uint16_round_trip(z: Integer) {
+    requires z >= 0;
+    requires z <= 65535;
+    ensures to_integer(to_uint16(z)) == z;
+}
+```
+
+An Integer within the exact `uint16` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### `integer::to_uint32_round_trip`
+
+```click
+theorem to_uint32_round_trip(z: Integer) {
+    requires z >= 0;
+    requires z <= 4294967295;
+    ensures to_integer(to_uint32(z)) == z;
+}
+```
+
+An Integer within the exact `uint32` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### `integer::to_int64_round_trip`
+
+```click
+theorem to_int64_round_trip(z: Integer) {
+    requires z >= -9223372036854775808;
+    requires z <= 9223372036854775807;
+    ensures to_integer(to_int64(z)) == z;
+}
+```
+
+An Integer within the exact `int64` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### `integer::to_uint64_round_trip`
+
+```click
+theorem to_uint64_round_trip(z: Integer) {
+    requires z >= 0;
+    requires z <= 18446744073709551615;
+    ensures to_integer(to_uint64(z)) == z;
+}
+```
+
+An Integer within the exact `uint64` range retains its value after conversion
+to that machine type and back. Both bounds are required.
+
+### Mathematical truncating division
+
+These Integer laws use truncation toward zero, independently of native machine
+widths and of the planned Euclidean `/` and `%` operators. They do not establish
+native division or narrowing safety.
+
+### `integer::truncation_identity`
+
+```click
+theorem truncation_identity(n: Integer, d: Integer) {
+    requires d != 0;
+    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
+}
+```
+
+### `integer::positive_divisor_remainder_lower`
+
+```click
+theorem positive_divisor_remainder_lower(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures 1 - d <= truncating_remainder(n, d);
+}
+```
+
+### `integer::positive_divisor_remainder_upper`
+
+```click
+theorem positive_divisor_remainder_upper(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 < d;
+    ensures truncating_remainder(n, d) <= d - 1;
+}
+```
+
+### `integer::nonnegative_dividend_remainder`
+
+```click
+theorem nonnegative_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires 0 <= n;
+    ensures 0 <= truncating_remainder(n, d);
+}
+```
+
+### `integer::nonpositive_dividend_remainder`
+
+```click
+theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
+    requires d != 0;
+    requires n <= 0;
+    ensures truncating_remainder(n, d) <= 0;
+}
+```
+
+
+### `integer::multiply_add`
+
+```click
+theorem multiply_add(a: Integer, b: Integer, c: Integer) {
+    ensures (a + b) * c == a * c + b * c by {
+        arithmetic_certificate rules {
+            integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
+            conclusion 0;
+        }
+    }
+}
+```
+
+
+### `integer::floor_from_remainder`
+
+```click
+theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+    requires 0 < d;
+    requires n == q * d + r;
+    requires 1 - d <= r;
+    requires r <= d - 1;
+    requires r < 0 implies value == q + -1;
+    requires 0 <= r implies value == q;
+    ensures value * d <= n by {
+        if r < 0 {
+            have value == q + -1;
+            apply(integer::multiply_add(q, -1, d));
+            rewrite(value == q + -1);
+            rewrite((q + -1) * d == q * d + -1 * d);
+            solve() using { n == q * d + r; 1 - d <= r; };
+        } else {
+            have 0 <= r by { solve() using { not (r < 0); }; }
+            have value == q;
+            rewrite(value == q);
+            solve() using { n == q * d + r; 0 <= r; };
+        }
+    }
+    ensures n < (value + 1) * d by {
+        if r < 0 {
+            have value == q + -1;
+            have value + 1 == q by { solve() using { value == q + -1; }; }
+            rewrite(value + 1 == q);
+            solve() using { n == q * d + r; r < 0; };
+        } else {
+            have 0 <= r by { solve() using { not (r < 0); }; }
+            have value == q;
+            apply(integer::multiply_add(q, 1, d));
+            rewrite(value == q);
+            rewrite((q + 1) * d == q * d + 1 * d);
+            solve() using { n == q * d + r; r <= d - 1; };
+        }
+    }
+}
+```
+
+
+### `integer::ceiling_from_remainder`
+
+```click
+theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
+    requires 0 < d;
+    requires n == q * d + r;
+    requires 1 - d <= r;
+    requires r <= d - 1;
+    requires 0 < r implies value == q + 1;
+    requires r <= 0 implies value == q;
+    ensures n <= value * d by {
+        if 0 < r {
+            have value == q + 1;
+            apply(integer::multiply_add(q, 1, d));
+            rewrite(value == q + 1);
+            rewrite((q + 1) * d == q * d + 1 * d);
+            solve() using { n == q * d + r; r <= d - 1; };
+        } else {
+            have r <= 0 by { solve() using { not (0 < r); }; }
+            have value == q;
+            rewrite(value == q);
+            solve() using { n == q * d + r; r <= 0; };
+        }
+    }
+    ensures (value + -1) * d < n by {
+        if 0 < r {
+            have value == q + 1;
+            have value + -1 == q by { solve() using { value == q + 1; }; }
+            rewrite(value + -1 == q);
+            solve() using { n == q * d + r; 0 < r; };
+        } else {
+            have r <= 0 by { solve() using { not (0 < r); }; }
+            have value == q;
+            apply(integer::multiply_add(q, -1, d));
+            rewrite(value == q);
+            rewrite((q + -1) * d == q * d + -1 * d);
+            solve() using { n == q * d + r; 1 - d <= r; };
+        }
+    }
+}
+```
+
+
+### `integer::positive_divisor_quotient_lower`
+
+```click
+theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound * d <= n;
+    ensures bound <= truncating_quotient(n, d) by {
+        arithmetic_certificate rules {
+            premise 0: bound * d <= n => bound * d <= n;
+            premise 1: 1 <= d => 1 <= d;
+            integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
+            conclusion 0;
+        }
+    }
+}
+```
+
+
+### `integer::positive_divisor_quotient_upper`
+
+```click
+theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires n <= bound * d;
+    ensures truncating_quotient(n, d) <= bound by {
+        arithmetic_certificate rules {
+            premise 0: n <= bound * d => n <= bound * d;
+            premise 1: 1 <= d => 1 <= d;
+            integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
+            conclusion 0;
+        }
+    }
+}
+```
+
+
+### `integer::positive_divisor_quotient_strict_lower`
+
+```click
+theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires bound < 0;
+    requires bound * d < n;
+    ensures bound < truncating_quotient(n, d) by {
+        have bound * d <= n by { solve() using { bound * d < n; }; }
+        apply(integer::positive_divisor_quotient_lower(n, d, bound));
+        if bound < truncating_quotient(n, d) {
+            assumption();
+        } else {
+            have truncating_quotient(n, d) == bound by { solve() using {
+                bound <= truncating_quotient(n, d); not (bound < truncating_quotient(n, d));
+            }; }
+            if n <= 0 {
+                have 0 < d by { solve() using { 1 <= d; }; }
+                apply(integer::nonpositive_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
+                have n == bound * d + truncating_remainder(n, d) by {
+                    rewrite(bound == truncating_quotient(n, d));
+                    assumption();
+                }
+                have not (bound * d < n) by { solve() using {
+                    n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
+                }; }
+                contradiction(bound * d < n);
+            } else {
+                have 0 <= n by { solve() using { not (n <= 0); }; }
+                have 0 * d <= n by { solve() using { 0 <= n; }; }
+                apply(integer::positive_divisor_quotient_lower(n, d, 0));
+                have not (bound < 0) by { solve() using {
+                    0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
+                }; }
+                contradiction(bound < 0);
+            }
+        }
+    }
+}
+```
+
+### `integer::positive_divisor_quotient_strict_upper`
+
+```click
+theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: Integer) {
+    requires d != 0;
+    requires 1 <= d;
+    requires 0 < bound;
+    requires n < bound * d;
+    ensures truncating_quotient(n, d) < bound by {
+        have n <= bound * d by { solve() using { n < bound * d; }; }
+        apply(integer::positive_divisor_quotient_upper(n, d, bound));
+        if truncating_quotient(n, d) < bound {
+            assumption();
+        } else {
+            have truncating_quotient(n, d) == bound by { solve() using {
+                truncating_quotient(n, d) <= bound; not (truncating_quotient(n, d) < bound);
+            }; }
+            if 0 <= n {
+                have 0 < d by { solve() using { 1 <= d; }; }
+                apply(integer::nonnegative_dividend_remainder(n, d));
+                apply(integer::truncation_identity(n, d));
+                have n == bound * d + truncating_remainder(n, d) by {
+                    rewrite(bound == truncating_quotient(n, d));
+                    assumption();
+                }
+                have not (n < bound * d) by { solve() using {
+                    n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
+                }; }
+                contradiction(n < bound * d);
+            } else {
+                have n <= 0 by { solve() using { not (0 <= n); }; }
+                have n <= 0 * d by { solve() using { n <= 0; }; }
+                apply(integer::positive_divisor_quotient_upper(n, d, 0));
+                have not (0 < bound) by { solve() using {
+                    truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
+                }; }
+                contradiction(0 < bound);
+            }
+        }
+    }
+}
+```
+
+### `integer::lower_correction_bound`
+
+```click
+theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
+    requires lower <= q;
+    requires lower * d <= n;
+    requires n == q * d + r;
+    requires r < 0;
+    ensures lower + 1 <= q by {
+        if lower + 1 <= q {
+            assumption();
+        } else {
+            have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
+            have n == lower * d + r by {
+                rewrite(lower == q);
+                assumption();
+            }
+            have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
+            contradiction(r < 0);
+        }
+    }
+}
+```
+
+
+### `integer::upper_correction_bound`
+
+```click
+theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, upper: Integer) {
+    requires q <= upper;
+    requires n <= upper * d;
+    requires n == q * d + r;
+    requires 0 < r;
+    ensures q <= upper + -1 by {
+        if q <= upper + -1 {
+            assumption();
+        } else {
+            have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
+            have n == upper * d + r by {
+                rewrite(upper == q);
+                assumption();
+            }
+            have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }
+            contradiction(0 < r);
+        }
+    }
+}
+```
+
+### `integer::multiply_order_nonnegative`
+
+```click
+theorem multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
+    requires a <= b;
+    requires 0 <= factor;
+    ensures a * factor <= b * factor by {
+        arithmetic_certificate rules {
+            premise 0: a <= b => a <= b;
+            premise 1: 0 <= factor => 0 <= factor;
+            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
+            conclusion 0;
+        }
+    }
+}
+```
+
+### `integer::multiply_order_nonpositive`
+
+```click
+theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
+    requires a <= b;
+    requires factor <= 0;
+    ensures b * factor <= a * factor by {
+        arithmetic_certificate rules {
+            premise 0: a <= b => a <= b;
+            premise 1: factor <= 0 => factor <= 0;
+            integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
+            conclusion 0;
+        }
+    }
+}
+```
+
+### `integer::scaled_product_bounds`
+
+```click
+theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
+    requires lower <= value;
+    requires value <= upper;
+    requires lower <= 0;
+    requires 0 <= upper;
+    requires 0 <= amount;
+    requires amount <= size;
+    ensures lower * size <= value * amount by {
+        apply(integer::multiply_order_nonnegative(lower, value, amount));
+        have lower * size <= lower * amount by {
+            arithmetic_certificate rules {
+                premise 0: amount <= size => amount <= size;
+                premise 1: lower <= 0 => lower <= 0;
+                integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
+                conclusion 0;
+            }
+        }
+        solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
+    }
+    ensures value * amount <= upper * size by {
+        apply(integer::multiply_order_nonnegative(value, upper, amount));
+        have upper * amount <= upper * size by {
+            arithmetic_certificate rules {
+                premise 0: amount <= size => amount <= size;
+                premise 1: 0 <= upper => 0 <= upper;
+                integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;
+                conclusion 0;
+            }
+        }
+        solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
+    }
+}
+```
+
+### `integer::int32_remainder_to_integer`
+
+```click
+theorem int32_remainder_to_integer(left: int32, right: int32) {
+    requires defined(left % right);
+    requires to_integer(right) != 0;
+    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
+}
+```
+
+Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.
+
+### `integer::uint32_from_le_bytes`
+
+```click
+theorem uint32_from_le_bytes(p: uint32*) {
+    requires little_endian();
+    views p[0..1];
+    requires defined(p[0]);
+    ensures p[0] ==
+        (((p as (uint8 *))[0] as uint32) |
+         ((p as (uint8 *))[1] as uint32) << 8u32 |
+         ((p as (uint8 *))[2] as uint32) << 16u32 |
+         ((p as (uint8 *))[3] as uint32) << 24u32);
+}
+```
+
+Relates one readable unsigned 32-bit object to its four character representation
+bytes at the same program point. `little_endian()` is a built-in target fact;
+C proofs receive it only from a little-endian execution environment. Pure
+theorems must state it as a premise. The rule does not grant read permission,
+initialize memory, or reinterpret pointer representations. Its kernel
+constructor constructs five reads and a fixed packing expression without
+searching memory history. Applications retain the named lemma in expansion.
+
+Checked use: [`integer_uint32_from_le_bytes_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_from_le_bytes_initialization.md).
+
+## `click::permutation`
+
+Source: `library/permutation.click`, `import click::permutation;`.
 
 ### `permutation::count`
 
@@ -2840,7 +3263,9 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(permutation::permutation)` when a proof needs the predicate body.
 
-## Byte-range specifications
+## `click::bytes`
+
+Source: `library/bytes.click`, `import click::bytes;`, or brought by `click::c::string`, in which case a sidecar without the import writes the full `click::bytes::` path.
 
 ### `bytes::count`
 
@@ -2938,7 +3363,9 @@ predicate all_not_equal(bytes: uint8[], lo: uint64, hi: uint64, value: uint8) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. Use `unfold(bytes::all_not_equal)` when a proof needs the predicate body.
 
-## C-string specifications
+## `click::cstr`
+
+Source: `library/cstr.click`, `import click::cstr;`, or brought by `click::c::string`.
 
 ### `cstr::prefix`
 
@@ -3211,7 +3638,11 @@ theorem len_has_terminator(bytes: uint8[], len: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-## Decimal formatting
+## `click::format`
+
+Source: `library/format.click`, `import click::format;`. The C front end's `snprintf` contracts name it by path.
+
+### Decimal formatting
 
 `click::format` states the characters C's `printf` family writes for an
 integer. The C front end writes the contract of each `snprintf` call with a
@@ -4477,28 +4908,15 @@ theorem padded_digit_lower_bound(v: uint64, width: uint64, k: uint64) {
 
 **Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
 
-## External C contracts
+## `click::c::string`
+
+Source: `library/c/string.click`, a C library model: it comes with a C declaration of, or call to, one of its functions, not with an import.
+
+### External C contracts
 
 These declarations cover the narrow byte-oriented libc slice supported by Click.
 They are body-less assumptions: callers must satisfy their requirements, and
 Click does not verify an implementation of the external function.
-
-### `__click_constant_p_unknown`
-
-```click
-extern int32 __click_constant_p_unknown() {
-    ensures result == 0 or result == 1;
-}
-```
-
-**Meaning:** The value of the GNU builtin `__builtin_constant_p`, which the C
-frontend lowers to a call of this function. Whether the compiler folds the
-builtin's operand to a constant depends on optimization, so nothing is known
-about the result beyond its being 0 or 1, and a proof covers both.
-
-**Kind:** external C contract. The declaration is an explicit verification assumption.
-
-**Verified use:** [`mdtests/c_builtin_constant_p.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_constant_p.md) checks that a claim must hold for both values.
 
 ### `memcpy`
 
@@ -4604,544 +5022,11 @@ names the string a call assembles; and
 [`mdtests/cstr_dynamic_indexed_read_requires_permission.md`](https://github.com/clicklang/click/blob/master/mdtests/cstr_dynamic_indexed_read_requires_permission.md)
 refuses a caller that holds only `cstr::readable`.
 
-## Namespace and extension rules
+## `click::rust::i8` through `click::rust::usize`
 
-Library functions, predicates and theorems have qualified names, such as
-`click::integer::multiply_add`, so a user declaration may share a library
-declaration's bare name; the file then writes the library's by its path. A
-selective import of a name the file also declares is refused. Library types,
-constructors and resources keep bare names, which a user definition can't
-redefine. A C function contract can have the same name as a library pure
-function when no user Click definition creates a conflict.
+Source: `library/rust/i8.click` through `library/rust/usize.click`, one module per Rust integer type, imported as `import click::rust::u32;`. The Rust importer's core-method contracts name them by path.
 
-To add a public symbol:
-
-1. Add its declaration to the `library/` module for its topic.
-2. Add a focused mdtest that uses it from an ordinary sidecar.
-3. Add its semantic entry here; the inventory and exact-declaration checks fail
-   until this page agrees with the source.
-4. Add general prover or kernel support only when the definition exposes a
-   reusable reasoning gap. Don't hard-code a domain-specific library name into
-   the kernel merely because it is useful.
-
-### `integer::to_int8_round_trip`
-
-```click
-theorem to_int8_round_trip(z: Integer) {
-    requires z >= -128;
-    requires z <= 127;
-    ensures to_integer(to_int8(z)) == z;
-}
-```
-
-An Integer within the exact `int8` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-
-### `integer::to_int16_round_trip`
-
-```click
-theorem to_int16_round_trip(z: Integer) {
-    requires z >= -32768;
-    requires z <= 32767;
-    ensures to_integer(to_int16(z)) == z;
-}
-```
-
-An Integer within the exact `int16` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-### `integer::to_int32_round_trip`
-
-```click
-theorem to_int32_round_trip(z: Integer) {
-    requires z >= -2147483648;
-    requires z <= 2147483647;
-    ensures to_integer(to_int32(z)) == z;
-}
-```
-
-An Integer within the exact `int32` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-### `integer::to_uint8_round_trip`
-
-```click
-theorem to_uint8_round_trip(z: Integer) {
-    requires z >= 0;
-    requires z <= 255;
-    ensures to_integer(to_uint8(z)) == z;
-}
-```
-
-An Integer within the exact `uint8` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-### `integer::to_uint16_round_trip`
-
-```click
-theorem to_uint16_round_trip(z: Integer) {
-    requires z >= 0;
-    requires z <= 65535;
-    ensures to_integer(to_uint16(z)) == z;
-}
-```
-
-An Integer within the exact `uint16` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-### `integer::to_uint32_round_trip`
-
-```click
-theorem to_uint32_round_trip(z: Integer) {
-    requires z >= 0;
-    requires z <= 4294967295;
-    ensures to_integer(to_uint32(z)) == z;
-}
-```
-
-An Integer within the exact `uint32` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-### `integer::to_int64_round_trip`
-
-```click
-theorem to_int64_round_trip(z: Integer) {
-    requires z >= -9223372036854775808;
-    requires z <= 9223372036854775807;
-    ensures to_integer(to_int64(z)) == z;
-}
-```
-
-An Integer within the exact `int64` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-### `integer::to_uint64_round_trip`
-
-```click
-theorem to_uint64_round_trip(z: Integer) {
-    requires z >= 0;
-    requires z <= 18446744073709551615;
-    ensures to_integer(to_uint64(z)) == z;
-}
-```
-
-An Integer within the exact `uint64` range retains its value after conversion
-to that machine type and back. Both bounds are required.
-
-## Mathematical truncating division
-
-These Integer laws use truncation toward zero, independently of native machine
-widths and of the planned Euclidean `/` and `%` operators. They do not establish
-native division or narrowing safety.
-
-### `integer::truncation_identity`
-
-```click
-theorem truncation_identity(n: Integer, d: Integer) {
-    requires d != 0;
-    ensures n == truncating_quotient(n, d) * d + truncating_remainder(n, d);
-}
-```
-
-### `integer::positive_divisor_remainder_lower`
-
-```click
-theorem positive_divisor_remainder_lower(n: Integer, d: Integer) {
-    requires d != 0;
-    requires 0 < d;
-    ensures 1 - d <= truncating_remainder(n, d);
-}
-```
-
-### `integer::positive_divisor_remainder_upper`
-
-```click
-theorem positive_divisor_remainder_upper(n: Integer, d: Integer) {
-    requires d != 0;
-    requires 0 < d;
-    ensures truncating_remainder(n, d) <= d - 1;
-}
-```
-
-### `integer::nonnegative_dividend_remainder`
-
-```click
-theorem nonnegative_dividend_remainder(n: Integer, d: Integer) {
-    requires d != 0;
-    requires 0 <= n;
-    ensures 0 <= truncating_remainder(n, d);
-}
-```
-
-### `integer::nonpositive_dividend_remainder`
-
-```click
-theorem nonpositive_dividend_remainder(n: Integer, d: Integer) {
-    requires d != 0;
-    requires n <= 0;
-    ensures truncating_remainder(n, d) <= 0;
-}
-```
-
-
-### `integer::multiply_add`
-
-```click
-theorem multiply_add(a: Integer, b: Integer, c: Integer) {
-    ensures (a + b) * c == a * c + b * c by {
-        arithmetic_certificate rules {
-            integer_polynomial_identity bounds [] => (a + b) * c == a * c + b * c;
-            conclusion 0;
-        }
-    }
-}
-```
-
-
-### `integer::floor_from_remainder`
-
-```click
-theorem floor_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
-    requires 0 < d;
-    requires n == q * d + r;
-    requires 1 - d <= r;
-    requires r <= d - 1;
-    requires r < 0 implies value == q + -1;
-    requires 0 <= r implies value == q;
-    ensures value * d <= n by {
-        if r < 0 {
-            have value == q + -1;
-            apply(integer::multiply_add(q, -1, d));
-            rewrite(value == q + -1);
-            rewrite((q + -1) * d == q * d + -1 * d);
-            solve() using { n == q * d + r; 1 - d <= r; };
-        } else {
-            have 0 <= r by { solve() using { not (r < 0); }; }
-            have value == q;
-            rewrite(value == q);
-            solve() using { n == q * d + r; 0 <= r; };
-        }
-    }
-    ensures n < (value + 1) * d by {
-        if r < 0 {
-            have value == q + -1;
-            have value + 1 == q by { solve() using { value == q + -1; }; }
-            rewrite(value + 1 == q);
-            solve() using { n == q * d + r; r < 0; };
-        } else {
-            have 0 <= r by { solve() using { not (r < 0); }; }
-            have value == q;
-            apply(integer::multiply_add(q, 1, d));
-            rewrite(value == q);
-            rewrite((q + 1) * d == q * d + 1 * d);
-            solve() using { n == q * d + r; r <= d - 1; };
-        }
-    }
-}
-```
-
-
-### `integer::ceiling_from_remainder`
-
-```click
-theorem ceiling_from_remainder(n: Integer, d: Integer, q: Integer, r: Integer, value: Integer) {
-    requires 0 < d;
-    requires n == q * d + r;
-    requires 1 - d <= r;
-    requires r <= d - 1;
-    requires 0 < r implies value == q + 1;
-    requires r <= 0 implies value == q;
-    ensures n <= value * d by {
-        if 0 < r {
-            have value == q + 1;
-            apply(integer::multiply_add(q, 1, d));
-            rewrite(value == q + 1);
-            rewrite((q + 1) * d == q * d + 1 * d);
-            solve() using { n == q * d + r; r <= d - 1; };
-        } else {
-            have r <= 0 by { solve() using { not (0 < r); }; }
-            have value == q;
-            rewrite(value == q);
-            solve() using { n == q * d + r; r <= 0; };
-        }
-    }
-    ensures (value + -1) * d < n by {
-        if 0 < r {
-            have value == q + 1;
-            have value + -1 == q by { solve() using { value == q + 1; }; }
-            rewrite(value + -1 == q);
-            solve() using { n == q * d + r; 0 < r; };
-        } else {
-            have r <= 0 by { solve() using { not (0 < r); }; }
-            have value == q;
-            apply(integer::multiply_add(q, -1, d));
-            rewrite(value == q);
-            rewrite((q + -1) * d == q * d + -1 * d);
-            solve() using { n == q * d + r; 1 - d <= r; };
-        }
-    }
-}
-```
-
-
-### `integer::positive_divisor_quotient_lower`
-
-```click
-theorem positive_divisor_quotient_lower(n: Integer, d: Integer, bound: Integer) {
-    requires d != 0;
-    requires 1 <= d;
-    requires bound * d <= n;
-    ensures bound <= truncating_quotient(n, d) by {
-        arithmetic_certificate rules {
-            premise 0: bound * d <= n => bound * d <= n;
-            premise 1: 1 <= d => 1 <= d;
-            integer_quotient_bound bounds [0, 1] => bound <= truncating_quotient(n, d);
-            conclusion 0;
-        }
-    }
-}
-```
-
-
-### `integer::positive_divisor_quotient_upper`
-
-```click
-theorem positive_divisor_quotient_upper(n: Integer, d: Integer, bound: Integer) {
-    requires d != 0;
-    requires 1 <= d;
-    requires n <= bound * d;
-    ensures truncating_quotient(n, d) <= bound by {
-        arithmetic_certificate rules {
-            premise 0: n <= bound * d => n <= bound * d;
-            premise 1: 1 <= d => 1 <= d;
-            integer_quotient_bound bounds [0, 1] => truncating_quotient(n, d) <= bound;
-            conclusion 0;
-        }
-    }
-}
-```
-
-
-### `integer::positive_divisor_quotient_strict_lower`
-
-```click
-theorem positive_divisor_quotient_strict_lower(n: Integer, d: Integer, bound: Integer) {
-    requires d != 0;
-    requires 1 <= d;
-    requires bound < 0;
-    requires bound * d < n;
-    ensures bound < truncating_quotient(n, d) by {
-        have bound * d <= n by { solve() using { bound * d < n; }; }
-        apply(integer::positive_divisor_quotient_lower(n, d, bound));
-        if bound < truncating_quotient(n, d) {
-            assumption();
-        } else {
-            have truncating_quotient(n, d) == bound by { solve() using {
-                bound <= truncating_quotient(n, d); not (bound < truncating_quotient(n, d));
-            }; }
-            if n <= 0 {
-                have 0 < d by { solve() using { 1 <= d; }; }
-                apply(integer::nonpositive_dividend_remainder(n, d));
-                apply(integer::truncation_identity(n, d));
-                have n == bound * d + truncating_remainder(n, d) by {
-                    rewrite(bound == truncating_quotient(n, d));
-                    assumption();
-                }
-                have not (bound * d < n) by { solve() using {
-                    n == bound * d + truncating_remainder(n, d); truncating_remainder(n, d) <= 0;
-                }; }
-                contradiction(bound * d < n);
-            } else {
-                have 0 <= n by { solve() using { not (n <= 0); }; }
-                have 0 * d <= n by { solve() using { 0 <= n; }; }
-                apply(integer::positive_divisor_quotient_lower(n, d, 0));
-                have not (bound < 0) by { solve() using {
-                    0 <= truncating_quotient(n, d); truncating_quotient(n, d) == bound;
-                }; }
-                contradiction(bound < 0);
-            }
-        }
-    }
-}
-```
-
-### `integer::positive_divisor_quotient_strict_upper`
-
-```click
-theorem positive_divisor_quotient_strict_upper(n: Integer, d: Integer, bound: Integer) {
-    requires d != 0;
-    requires 1 <= d;
-    requires 0 < bound;
-    requires n < bound * d;
-    ensures truncating_quotient(n, d) < bound by {
-        have n <= bound * d by { solve() using { n < bound * d; }; }
-        apply(integer::positive_divisor_quotient_upper(n, d, bound));
-        if truncating_quotient(n, d) < bound {
-            assumption();
-        } else {
-            have truncating_quotient(n, d) == bound by { solve() using {
-                truncating_quotient(n, d) <= bound; not (truncating_quotient(n, d) < bound);
-            }; }
-            if 0 <= n {
-                have 0 < d by { solve() using { 1 <= d; }; }
-                apply(integer::nonnegative_dividend_remainder(n, d));
-                apply(integer::truncation_identity(n, d));
-                have n == bound * d + truncating_remainder(n, d) by {
-                    rewrite(bound == truncating_quotient(n, d));
-                    assumption();
-                }
-                have not (n < bound * d) by { solve() using {
-                    n == bound * d + truncating_remainder(n, d); 0 <= truncating_remainder(n, d);
-                }; }
-                contradiction(n < bound * d);
-            } else {
-                have n <= 0 by { solve() using { not (0 <= n); }; }
-                have n <= 0 * d by { solve() using { n <= 0; }; }
-                apply(integer::positive_divisor_quotient_upper(n, d, 0));
-                have not (0 < bound) by { solve() using {
-                    truncating_quotient(n, d) <= 0; truncating_quotient(n, d) == bound;
-                }; }
-                contradiction(0 < bound);
-            }
-        }
-    }
-}
-```
-
-### `integer::lower_correction_bound`
-
-```click
-theorem lower_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, lower: Integer) {
-    requires lower <= q;
-    requires lower * d <= n;
-    requires n == q * d + r;
-    requires r < 0;
-    ensures lower + 1 <= q by {
-        if lower + 1 <= q {
-            assumption();
-        } else {
-            have q == lower by { solve() using { lower <= q; not (lower + 1 <= q); }; }
-            have n == lower * d + r by {
-                rewrite(lower == q);
-                assumption();
-            }
-            have not (r < 0) by { solve() using { lower * d <= n; n == lower * d + r; }; }
-            contradiction(r < 0);
-        }
-    }
-}
-```
-
-
-### `integer::upper_correction_bound`
-
-```click
-theorem upper_correction_bound(n: Integer, d: Integer, q: Integer, r: Integer, upper: Integer) {
-    requires q <= upper;
-    requires n <= upper * d;
-    requires n == q * d + r;
-    requires 0 < r;
-    ensures q <= upper + -1 by {
-        if q <= upper + -1 {
-            assumption();
-        } else {
-            have q == upper by { solve() using { q <= upper; not (q <= upper + -1); }; }
-            have n == upper * d + r by {
-                rewrite(upper == q);
-                assumption();
-            }
-            have not (0 < r) by { solve() using { n <= upper * d; n == upper * d + r; }; }
-            contradiction(0 < r);
-        }
-    }
-}
-```
-
-### `integer::multiply_order_nonnegative`
-
-```click
-theorem multiply_order_nonnegative(a: Integer, b: Integer, factor: Integer) {
-    requires a <= b;
-    requires 0 <= factor;
-    ensures a * factor <= b * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: 0 <= factor => 0 <= factor;
-            integer_multiply_order bounds [0, 1] => a * factor <= b * factor;
-            conclusion 0;
-        }
-    }
-}
-```
-
-### `integer::multiply_order_nonpositive`
-
-```click
-theorem multiply_order_nonpositive(a: Integer, b: Integer, factor: Integer) {
-    requires a <= b;
-    requires factor <= 0;
-    ensures b * factor <= a * factor by {
-        arithmetic_certificate rules {
-            premise 0: a <= b => a <= b;
-            premise 1: factor <= 0 => factor <= 0;
-            integer_multiply_order bounds [0, 1] => b * factor <= a * factor;
-            conclusion 0;
-        }
-    }
-}
-```
-
-### `integer::scaled_product_bounds`
-
-```click
-theorem scaled_product_bounds(value: Integer, amount: Integer, size: Integer, lower: Integer, upper: Integer) {
-    requires lower <= value;
-    requires value <= upper;
-    requires lower <= 0;
-    requires 0 <= upper;
-    requires 0 <= amount;
-    requires amount <= size;
-    ensures lower * size <= value * amount by {
-        apply(integer::multiply_order_nonnegative(lower, value, amount));
-        have lower * size <= lower * amount by {
-            arithmetic_certificate rules {
-                premise 0: amount <= size => amount <= size;
-                premise 1: lower <= 0 => lower <= 0;
-                integer_multiply_order bounds [0, 1] => lower * size <= lower * amount;
-                conclusion 0;
-            }
-        }
-        solve() using { lower * size <= lower * amount; lower * amount <= value * amount; };
-    }
-    ensures value * amount <= upper * size by {
-        apply(integer::multiply_order_nonnegative(value, upper, amount));
-        have upper * amount <= upper * size by {
-            arithmetic_certificate rules {
-                premise 0: amount <= size => amount <= size;
-                premise 1: 0 <= upper => 0 <= upper;
-                integer_multiply_order bounds [0, 1] => upper * amount <= upper * size;
-                conclusion 0;
-            }
-        }
-        solve() using { value * amount <= upper * amount; upper * amount <= upper * size; };
-    }
-}
-```
-
-### `integer::int32_remainder_to_integer`
-
-```click
-theorem int32_remainder_to_integer(left: int32, right: int32) {
-    requires defined(left % right);
-    requires to_integer(right) != 0;
-    ensures to_integer(left % right) == truncating_remainder(to_integer(left), to_integer(right));
-}
-```
-
-Connects a defined signed machine remainder to mathematical truncation. Native definedness excludes both a zero divisor and `INT32_MIN % -1`; a nonzero mathematical divisor alone does not establish that the C operation is defined.
-
-## Rust core methods
+### Rust core methods
 
 `click::rust::i8` through `click::rust::usize` define, for each Rust integer
 type, the core methods the Rust importer specifies: `min`, `max`,
@@ -6135,7 +6020,11 @@ function abs_diff(a: uint64, b: uint64) -> uint64 {
 }
 ```
 
-## Rust vectors
+## `click::rust::vec`
+
+Source: `library/rust/vec.click`, `import click::rust::vec;`.
+
+### Rust vectors
 
 `click::rust::vec` declares `Vec<T>`, the values a Rust vector holds, as a
 primitive library type, with four operations and the axioms that relate them.
@@ -6269,7 +6158,11 @@ axiom extensionality<T>(v: Vec<T>, w: Vec<T>) {
 
 **Axiom:** trusted, not proved.
 
-## Rust slices
+## `click::rust::slice`
+
+Source: `library/rust/slice.click`, `import click::rust::slice;`.
+
+### Rust slices
 
 `click::rust::slice` declares `Slice<T>`, a Rust slice as one value: its data
 pointer and its length. `==` on slices is identity, the same pointer and the
@@ -6327,7 +6220,9 @@ function from_raw_parts<T>(p: T*, n: uint64) -> Slice<T> {
 The slice with data `p` and length `n`, Rust's
 `core::slice::from_raw_parts(p, n)`.
 
-## Separation
+## `click::separation`
+
+Source: `library/separation.click`, `import click::separation;`.
 
 ### `separation::restrict`
 
@@ -6470,27 +6365,22 @@ conditions.
 
 **Verified use:** [`mdtests/generic_pointer_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_theorem_parameters.md) and [`mdtests/generic_pointer_struct_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/generic_pointer_struct_parameters.md), including padded structs and struct-pointer elements.
 
-### `integer::uint32_from_le_bytes`
+## Namespace and extension rules
 
-```click
-theorem uint32_from_le_bytes(p: uint32*) {
-    requires little_endian();
-    views p[0..1];
-    requires defined(p[0]);
-    ensures p[0] ==
-        (((p as (uint8 *))[0] as uint32) |
-         ((p as (uint8 *))[1] as uint32) << 8u32 |
-         ((p as (uint8 *))[2] as uint32) << 16u32 |
-         ((p as (uint8 *))[3] as uint32) << 24u32);
-}
-```
+Library functions, predicates and theorems have qualified names, such as
+`click::integer::multiply_add`, so a user declaration may share a library
+declaration's bare name; the file then writes the library's by its path. A
+selective import of a name the file also declares is refused. Library types,
+constructors and resources keep bare names, which a user definition can't
+redefine. A C function contract can have the same name as a library pure
+function when no user Click definition creates a conflict.
 
-Relates one readable unsigned 32-bit object to its four character representation
-bytes at the same program point. `little_endian()` is a built-in target fact;
-C proofs receive it only from a little-endian execution environment. Pure
-theorems must state it as a premise. The rule does not grant read permission,
-initialize memory, or reinterpret pointer representations. Its kernel
-constructor constructs five reads and a fixed packing expression without
-searching memory history. Applications retain the named lemma in expansion.
+To add a public symbol:
 
-Checked use: [`integer_uint32_from_le_bytes_initialization.md`](https://github.com/clicklang/click/blob/master/mdtests/integer_uint32_from_le_bytes_initialization.md).
+1. Add its declaration to the `library/` module for its topic.
+2. Add a focused mdtest that uses it from an ordinary sidecar.
+3. Add its semantic entry here; the inventory and exact-declaration checks fail
+   until this page agrees with the source.
+4. Add general prover or kernel support only when the definition exposes a
+   reusable reasoning gap. Don't hard-code a domain-specific library name into
+   the kernel merely because it is useful.

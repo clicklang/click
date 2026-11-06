@@ -164,7 +164,9 @@ constructors.
 
 The library also declares five `extern` contracts that are assumed, not
 proved: `memcpy`, `memcmp`, `memset` and `strlen` in `library/c/string.click`,
-and the internal `__click_constant_p_unknown` in `library/c/builtins.click`.
+and the verifier primitive `__click_constant_p_unknown` in
+`library/c/builtins.click`, the value of `__builtin_constant_p`
+([verifier primitives](../reference/language/index.md#verifier-primitives)).
 The C front end also writes one `extern` contract for each `snprintf` format
 a program uses, from the format string, and it is assumed the same way
 ([formatted output](../reference/language/c.md#formatted-output)).

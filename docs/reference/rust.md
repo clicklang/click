@@ -1589,7 +1589,7 @@ implementation and a box field ("destructor of a struct holding a box").
 ## Option values
 
 A Rust `Option<T>` of `i32`, `u8`, `u16`, `u32`, `usize` or `bool`, or in
-generic code of the function's own type parameter, is a value of the library's [`spec enum Option<T>`](library/index.md#options) at `T`,
+generic code of the function's own type parameter, is a value of the library's [`spec enum Option<T>`](library/index.md#clickoption) at `T`,
 imported like a crate enum (see [Enums and `match`](#enums-and-match)): `Some(x)`
 and `None` construct it, and `match`, `if let` and `matches!` on it step and
 split as on any enum. A sidecar writes the type as Rust does, `Option<u32>`,
@@ -1667,7 +1667,7 @@ a variable. The same fixture borrows a local of a type parameter in
 A Rust `Result<T, E>` whose `T` and `E` are each `i32`, `u8`, `u16`, `u32`,
 `usize` or `bool`, a non-generic enum of the selected file, or in generic code
 the function's own type parameters, is a value of the library's
-[`spec enum Result<T, E>`](library/index.md#results):
+[`spec enum Result<T, E>`](library/index.md#clickresult):
 `Ok(x)` and `Err(e)` construct it, and `match`, `if let` and `matches!` on it
 step and split as on any enum. A sidecar writes the type as Rust does,
 `Result<u32, u8>`, and constructs `Result<u32, u8>::Ok(x)`; a pattern is

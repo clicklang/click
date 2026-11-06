@@ -134,8 +134,10 @@ module, or a path outside the `click` root such as `std::list`, is refused at
 the import. A project file is always imported by a quoted path. A module's
 library imports reach the files that import it, like its other declarations.
 
-Without an import a file sees the implicit modules: `click::primitives`,
-`click::nat`, `click::list` and `click::c::builtins`. Library contracts come
+Without an import a file sees the implicit modules: `click::nat`,
+`click::list`, `click::option` and `click::result`, and the
+[verifier primitives](../reference/language/index.md#verifier-primitives),
+declared in `click::primitives` and `click::c::builtins`. Library contracts come
 with the code instead of an import: when the verified C declares or calls
 `memcpy`, `memcmp`, `memset` or `strlen`, through `<string.h>` or its own
 prototype, the file sees `click::c::string` and the modules its contracts are

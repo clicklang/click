@@ -3158,6 +3158,227 @@ signature, checks the preconditions, and performs the contract's ownership
 transition. The output pattern optionally names the C value and names every
 produced resource. Direct and function-pointer calls use the same rule.
 
+## Verifier primitives
+
+Verifier primitives are part of the language, not the Click library. The
+kernel or the C front end gives each one its meaning, so none can be
+implemented or unfolded in Click. Every sidecar sees them without an import.
+They are written in Click syntax in `library/primitives.click` and
+`library/c/builtins.click` only so that the parser declares them; the
+[library reference](../library/index.md) does not list them. The documentation
+gate checks each declaration below against that source.
+
+The seven resources are declared as
+[abstract resources](#read-and-write-resources), so none has a Click body
+and none grants memory access by itself. Unlike a file's own abstract
+resource, which only contracts and `construct` move, each one is created,
+consumed, transferred and counted by the kernel rules described under its
+entry: mutex operations, atomic publication, population folds, and heap
+allocation.
+
+### Mutex acquisition authority
+
+#### `mutex_guard`
+
+**Declaration:** `abstract resource mutex_guard(mutex: void*);`
+
+**Meaning:** Owns one current acquisition of a modeled mutex. The built-in
+resource has exclusive unit ownership, no view, and no memory authority.
+Use `owns mutex_guard(mu)` inside a declared-resource body. Folding consumes
+the existing guard and unfolding returns it; proving `held(mu)` cannot create
+it. Contracts may preserve a direct `owns mutex_guard(mu)` input or a folded
+guard-bearing instance. Independently checked helpers can unfold and refold
+wrappers, but cannot change mutex protocols. Direct clauses return the entry
+acquisition. Named primitive binders and consumed/produced guards remain
+unsupported.
+
+**Verified use:** [`mdtests/mutex_guard_resource_body.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_guard_resource_body.md).
+
+### Mutex lifecycle authority
+
+#### `mutex_live`
+
+**Declaration:** `abstract resource mutex_live(mutex: void*);`
+
+**Meaning:** Owns the lifecycle authority for one initialization of a modeled
+mutex. Initialization creates this exclusive unit resource. Locking currently
+requires it to be available; destruction consumes it. A previous initialization's
+owner cannot authorize operations after reinitialization at the same address.
+It supplies neither an acquisition nor memory access, and cannot be viewed or
+counted.
+
+Use `owns mutex_live(mu)` directly in a preserving contract or inside an
+exclusive declared-resource body. Folding consumes the owner; unfolding returns
+it. Preserving helpers retain the entry initialization and cannot change mutex
+protocols. Missing authority is reported as `Requires owns mutex_live(mu)`.
+
+Initialization requires owned, aligned storage and reserves it against ordinary
+writes until destruction. Synchronous helpers can borrow lifetime permission
+through `mutex_use`. Worker transfer, named primitive binders, and lifecycle
+`consumes`/`produces` contracts remain unsupported.
+
+Automatic objects containing initialized mutexes cannot leave scope until
+those mutexes are destroyed, even when their authority is folded away. This
+covers normal and abrupt scope exits. Ambiguous symbolic mutex pointers are
+refused conservatively rather than assumed separate from local storage.
+
+**Verified use:** [`mdtests/mutex_live_wrapper.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_live_wrapper.md)
+and [`mdtests/mutex_live_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_live_contract.md).
+
+### Borrowed mutex lifetime
+
+#### `mutex_use`
+
+**Declaration:** `abstract resource mutex_use(mutex: void*);`
+
+**Meaning:** An owned permission to use an initialized mutex while its caller
+retains lifecycle responsibility. Use `owns mutex_use(mu);` in a preserving
+helper contract. Calls borrow an available `mutex_live(mu)` owner or reborrow
+an existing use permission; returning restores that exact source. A helper's
+input grants neither lifecycle ownership nor protected-memory access.
+
+The current implementation supports synchronous preserving helpers and nested
+calls, including contracts with ordinary owned memory and stable views. It
+retains the protocol freeze: initialization, destruction, acquisition, and
+release inside these helpers remain unsupported. `views`, quantities, named
+primitive binders, consumed/produced use permissions, and worker transfer are
+also unsupported. Missing call-site authority is reported as
+`Requires owns mutex_use(mu)`.
+
+**Verified use:** [`mdtests/mutex_use_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_contract.md)
+and [`mdtests/mutex_use_mixed.md`](https://github.com/clicklang/click/blob/master/mdtests/mutex_use_mixed.md).
+
+### One-shot publication rights
+
+#### `publisher`
+
+**Declaration:** `abstract resource publisher(flag: void*);`
+
+**Meaning:** The right to publish one payload through the C11 `atomic_int`
+flag at `flag`, written `publisher(flag, P(args))` with the payload's resource
+type. `atomic_init(flag, 0)` with `{ payload: P(args) }` creates it in the
+modeled-pthread runtime. A release store of a nonzero value consumes it
+together with a folded `P(args)`. It is unique per flag, grants no memory
+access, and may be transferred to a worker. A second release store is reported
+as requiring `owns publisher(flag, P)`.
+
+**Verified use:** [`mdtests/publication_one_shot_handoff.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_one_shot_handoff.md)
+and [`mdtests/publication_second_release_store_has_no_publisher.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_second_release_store_has_no_publisher.md).
+
+#### `subscriber`
+
+**Declaration:** `abstract resource subscriber(flag: void*);`
+
+**Meaning:** The right to receive the payload published through the flag at
+`flag`, written `subscriber(flag, P(args))`. An acquire load marks it as read
+through the loaded value. The C branch that knows the value is zero keeps the
+right, and the branch that knows it is nonzero receives an owned `P(args)` in
+its place. It is unique per flag and grants no memory access by itself. Loads
+without it receive nothing.
+
+**Verified use:** [`mdtests/publication_one_shot_handoff.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_one_shot_handoff.md)
+and [`mdtests/publication_unpublished_branch_does_not_receive.md`](https://github.com/clicklang/click/blob/master/mdtests/publication_unpublished_branch_does_not_receive.md).
+
+### Population authority
+
+#### `authority`
+
+**Declaration:** `abstract resource authority();`
+
+**Meaning:** `authority(reference(p))` is the exclusive control resource for
+one population of the declared resource type `reference(p)`. The empty
+population may be established with `fold(authority(reference(p)))` only in the
+execution proof that created `p`'s storage. It may be retired with
+`unfold(authority(reference(p)))` only when its member count is zero. Its
+members may be field-free with private owned memory, observed by their current
+`count(...)` and moved by direct authority/member helper contracts. An
+ordinary field-free control can package counter memory, authorities, and facts
+relating the memory to population counts. Ordinary helper contracts transfer
+these controls, concrete members, and checked symbolic groups.
+
+Local families can also have C or integer proof fields. For example,
+`authority(ticket(p))` governs separately named `ticket(p)` instances; their
+identities and field values remain distinct even when their arguments agree.
+`let first = fold(ticket(p), { serial: 1 });` creates one member, and
+`unfold(first)` consumes that exact member. Both operations require the matching
+owned authority. `count(ticket(p))` observes the population total, not field
+values or ownership of individual members. Retirement requires zero members.
+A wildcard authority such as `authority(ticket(pool, _))` governs all exact
+arguments of that local family. Both aggregate and exact counts include separate
+occurrences with equal arguments. Private bodies remain exclusive even when
+instances share their family arguments.
+
+Preserving helpers take a named member through ordinary `owns` contracts and
+retain its proof fields through explicit postconditions. They can unfold and
+restore its private body while the caller keeps the authority control closed;
+the same population occurrence stays reserved across the preserving call. A
+member alone does not permit observing `count(...)`. Verified helpers can
+create or consume named members when their checked input partition supplies the
+governing authority. Creation needs an increment bound; consumption needs the
+exact owned occurrence. Unary and wildcard imports preserve arbitrary entry
+totals and record relative effects without anonymous member rights. Assumed
+interfaces may preserve named ownership but cannot perform these lifecycle
+effects. Symbolic quantities of heterogeneous named instances remain unsupported.
+
+**Verified use:** [`mdtests/authority_named_field_members.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_members.md).
+
+**Verified use:** [`mdtests/authority_named_field_private_helper.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_named_field_private_helper.md).
+
+**Verified use:** [`authority_control_wrapper_tracks_memory_and_member_count_through_open_scopes`](https://github.com/clicklang/click/blob/master/src/surface/tests/authority_private_body_tests.rs).
+
+A count and an equal C counter can have different checked term representations.
+To transfer increment definedness, explicitly rewrite the count to the counter
+using the control's equality and establish the nonnegative bound as needed.
+For example, `rewrite(count(item(pool, _)) == pool->checked_out)` can transport
+`defined(pool->checked_out + 1)` inside an opened control. Nonnegativity alone
+does not establish increment safety: the count can still be `2147483647`.
+
+**Verified use:** [`authority_count_defined_through_control.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_through_control.md)
+and [`authority_count_defined_at_max_rejected.md`](https://github.com/clicklang/click/blob/master/mdtests/authority_count_defined_at_max_rejected.md).
+
+### Allocation authority
+
+#### `allocation`
+
+**Declaration:** `abstract resource allocation(base: int32*, bytes: int32);`
+
+**Meaning:** Owns the lifetime authority for the live heap block whose base
+pointer is `base` and whose extent is `bytes` bytes. A successful `malloc`,
+`calloc` or `realloc` produces it beside ownership of the block's cells, and a
+nonnull `free(p)` consumes it with complete ownership of the block, and is
+refused when it is not held. The kernel names it
+`CResourceFact::ALLOCATION_RESOURCE_NAME`: it is an exclusive token with no
+body, it grants no read or write access by itself, and an owned positive
+instance supplies the fact that `base[0..bytes]` lies inside one block. The base
+argument accepts any modeled data, pointer-array or struct pointer; the owned
+range keeps the pointer's own element width. An `extern` allocator contract
+writes `produces allocation(result, bytes);`
+([C allocation](c.md#heap-allocation)).
+
+The byte count is an `int32`: the kernel's heap blocks have a checked 32-bit
+extent, so a symbolic `size_t` size is refused and a 64-bit size is accepted
+only when its value is concrete or reduced by exact `owns`/`views` clauses.
+Stating it as `size_t`, as `malloc` takes it, needs a 64-bit block extent and is
+open in [the library roadmap](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md).
+
+**Verified use:** [`mdtests/heap_malloc_struct_null_check_free.md`](https://github.com/clicklang/click/blob/master/mdtests/heap_malloc_struct_null_check_free.md)
+and [`mdtests/external_allocator_contract.md`](https://github.com/clicklang/click/blob/master/mdtests/external_allocator_contract.md).
+
+### `__builtin_constant_p`
+
+#### `__click_constant_p_unknown`
+
+**Declaration:** `extern int32 __click_constant_p_unknown() { ensures result == 0 or result == 1; }`
+
+**Meaning:** The value of the GNU builtin `__builtin_constant_p`, which the C
+frontend lowers to a call of this function. Whether the compiler folds the
+builtin's operand to a constant depends on optimization, so nothing is known
+about the result beyond its being 0 or 1, and a proof covers both.
+
+**Kind:** an `extern` contract, so its one guarantee is an explicit verification assumption, listed in [trust](../../concepts/trust.md).
+
+**Verified use:** [`mdtests/c_builtin_constant_p.md`](https://github.com/clicklang/click/blob/master/mdtests/c_builtin_constant_p.md) checks that a claim must hold for both values.
+
 ## User-defined tactics
 
 A `tactic` declaration names a reusable proof step with a contract. Its
