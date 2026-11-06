@@ -164,6 +164,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         } = &step
             && driver_proof.surface_goal() == Some(target)
             && let Some(steps) = multiple_statement_preservation_steps(source, target, premises)
+                .or_else(|| inequality_preservation_steps(source, target, premises))
         {
             let mut current = driver_proof.clone();
             for ordinary in steps {

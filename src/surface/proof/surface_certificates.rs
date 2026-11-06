@@ -754,6 +754,15 @@ pub(super) fn multiple_statement_preservation_steps(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
+    statement_preservation_steps(source, target, premises, 2)
+}
+
+fn statement_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+    minimum_links: usize,
+) -> Option<Vec<ProofStep>> {
     let (start, read) = preservation_read(source, target)?;
     let mut steps = Vec::new();
     let mut includes_start = false;
@@ -791,11 +800,61 @@ pub(super) fn multiple_statement_preservation_steps(
             ),
         });
     }
-    if !includes_start || steps.len() < 2 {
+    if !includes_start || steps.len() < minimum_links {
         return None;
     }
     steps.push(ProofStep::Assumption);
     Some(steps)
+}
+
+/// Carry a comparison whose one read operand changes snapshot. All selected
+/// footprints remain ordinary preservation steps; no ambient premise discovery.
+pub(super) fn inequality_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    let ClickProposition::Comparison { operator, .. } = source else {
+        return None;
+    };
+    if !matches!(
+        operator,
+        ComparisonOperator::LessThan
+            | ComparisonOperator::LessEqual
+            | ComparisonOperator::GreaterThan
+            | ComparisonOperator::GreaterEqual
+            | ComparisonOperator::NotEqual
+    ) {
+        return None;
+    }
+    let (historical, current) = comparison_snapshot_expression_pair(source, target)?;
+    let reflexive = ClickProposition::Comparison {
+        left: historical.clone(),
+        operator: ComparisonOperator::Equal,
+        right: historical.clone(),
+    };
+    let bridge = ClickProposition::Comparison {
+        left: current,
+        operator: ComparisonOperator::Equal,
+        right: historical,
+    };
+    let separations = premises
+        .iter()
+        .filter(|p| *p != source)
+        .cloned()
+        .collect::<Vec<_>>();
+    let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
+    let have = |proposition, steps| ProofStep::Have {
+        proposition,
+        proof: Box::new(ProofCertificate::from_steps(steps).expect("ordinary preservation proof")),
+    };
+    Some(vec![
+        // The written transport source is a premise, not a new assumption.
+        have(source.clone(), vec![ProofStep::Assumption]),
+        have(bridge.clone(), equality_steps),
+        ProofStep::Rewrite(bridge),
+        ProofStep::Assumption,
+    ])
 }
 
 /// Ordinary proof of a selected viewability restriction. This visits only
