@@ -244,9 +244,9 @@ reads `bytes[4 * iterations + 3]` under the function's `views *bytes`.
 2. **Length bound.** A Rust slice of `T` is at most `isize::MAX` bytes.
    Should every slice value carry that as a fact? Contract entry assumes it
    for parameters today.
-3. **Printing a slice with no source name.** Candidates are
-   `bytes[a..b]`, when its data is a known offset into a named slice, and
-   `slice::from_raw_parts(p, n)` otherwise. This is needed for spellability.
+3. **Printing a slice with no source name.** Resolved: `bytes[a..b]`,
+   `bytes[a..]` or `bytes[..b]` when its data is a slice's data or an offset
+   into it, and `slice::from_raw_parts(p, n)` otherwise.
 4. **Non-scalar elements** (records, slices of slices). These are deferred
    until a program needs them.
 

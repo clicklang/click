@@ -40,7 +40,7 @@ pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_spelling,
-    rust_variable_spelling, slice_call_arguments, slice_call_spelling,
+    rust_variable_spelling, slice_call_arguments, slice_call_spelling, slice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -6667,7 +6667,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                 && variant == "Slice"
                 && let [pointer, length] = arguments.as_slice()
             {
-                return format!("slice::from_raw_parts({pointer}, {length})");
+                return slice_spelling(pointer, length);
             }
             format!(
                 "{}{type_arguments}::{variant}({})",
