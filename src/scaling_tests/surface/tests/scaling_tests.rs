@@ -9971,3 +9971,50 @@ fn inequality_transport_replay_scales_with_explicit_links() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn known_value_transport_replay_scales_with_explicit_links() {
+    let mut costs = Vec::new();
+    for size in [2, 4, 8, 16] {
+        let c = format!(
+            "void keep(int *p, int *q) {{ {} }}",
+            (0..size).map(|i| format!("*p = {i};")).collect::<String>()
+        );
+        let separations = (0..size).map(|i| format!(
+            "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
+        )).collect::<String>();
+        let premises = (0..size)
+            .map(|i| format!("separate(statement({i}).footprint, memory(*q));"))
+            .collect::<String>();
+        let source = format!(
+            r#"
+            verifying "chain.c";
+            void keep(int32* p, int32* q) {{
+                owns *p; views *q; requires separate(memory(*p), memory(*q)); requires *q == 7;
+            }} by {{
+                {separations}
+                have *q == 7 by {{
+                    transport(at(statement(0).entry, *q) == 7, *q == 7) using {{ {premises} }};
+                }}
+                step();
+            }}
+        "#
+        );
+        let sources = [("chain.c", c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), size);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        });
+        verified.unwrap();
+        costs.push(work);
+    }
+    eprintln!("known-value replay work: {costs:?}");
+    assert!(costs.iter().all(|cost| *cost > 0));
+    assert!(
+        costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}
