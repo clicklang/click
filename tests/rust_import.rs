@@ -6308,3 +6308,57 @@ fn rust_pure_function_slice_arguments_are_one_value() {
         "a slice prints as one argument: {error}"
     );
 }
+
+/// A slice in a value position, a pure function's result, an `Option`
+/// payload or an enum field, is the library's `Slice<T>`. Rust's methods
+/// read it, `s.len()`, `s[i]` and `s.as_ptr()`, a slice parameter takes it
+/// as one argument, and a failure prints it in those spellings.
+#[cfg(not(feature = "fast-gate"))]
+#[test]
+fn rust_slice_values_read_with_rust_methods() {
+    let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = |claims: &str| {
+        format!(
+            "import click::rust::slice;\nverifying \"borrow.rs\";\n\
+             function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes, bytes.len() / 2u64) }}\n\
+             function some_half(bytes: &[u8]) -> Option<&[u8]> {{ Option::Some(half(bytes)) }}\n\
+             function size(bytes: &[u8]) -> usize {{ bytes.len() }}\n\
+             spec enum Window {{ Window(&[u8], usize), }}\n\
+             fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n}} by {{\n{claims}\n    step_until(function.exit);\n    solve();\n}}\n"
+        )
+    };
+    let accepted = sidecar(
+        "    have half(bytes).len() == bytes.len() / 2u64;\n    \
+         have half(bytes)[0] == bytes[0];\n    \
+         have half(bytes).as_ptr() == bytes;\n    \
+         have size(half(bytes)) == bytes.len() / 2u64;\n    \
+         have some_half(bytes) == Option::Some(half(bytes));",
+    );
+    C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    for (claim, printed) in [
+        (
+            "have half(bytes).len() == 3u64;",
+            "half(bytes).len() == 3u64",
+        ),
+        ("have half(bytes)[1] == 7u8;", "half(bytes)[1] == 7u8"),
+        (
+            "have half(bytes).as_ptr() == bytes + 1;",
+            "half(bytes).as_ptr() ==",
+        ),
+    ] {
+        let error = C0VerificationSession::new_program_prepared(&sidecar(claim), &prepared)
+            .err()
+            .unwrap_or_else(|| panic!("`{claim}` must fail"))
+            .to_string();
+        assert!(
+            error.contains(printed),
+            "`{claim}` prints as `{printed}`: {error}"
+        );
+        assert!(
+            !error.contains("__slice_"),
+            "no internal binder is printed: {error}"
+        );
+    }
+}

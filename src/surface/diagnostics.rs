@@ -40,7 +40,7 @@ pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_spelling,
-    rust_variable_spelling, slice_call_arguments,
+    rust_variable_spelling, slice_call_arguments, slice_call_spelling, slice_projection_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -6654,33 +6654,42 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .join(", ")
                 )
             };
+            let arguments = arguments
+                .iter()
+                .map(describe_contract_expression)
+                .collect::<Vec<_>>();
+            if algebraic_type.name == "Slice"
+                && variant == "Slice"
+                && let [pointer, length] = arguments.as_slice()
+            {
+                return format!("slice::from_raw_parts({pointer}, {length})");
+            }
             format!(
                 "{}{type_arguments}::{variant}({})",
                 algebraic_type.name,
-                arguments
-                    .iter()
-                    .map(describe_contract_expression)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                arguments.join(", ")
             )
         }
         ContractExpression::AlgebraicVariable { name, .. } | ContractExpression::Binding(name) => {
             name.clone()
         }
-        ContractExpression::AlgebraicMatch { scrutinee, arms } => format!(
-            "match {} {{ {} }}",
-            describe_contract_expression(scrutinee),
-            arms.iter()
-                .map(|arm| format!(
-                    "{}::{}({}) => {}",
-                    arm.type_name,
-                    arm.variant,
-                    arm.bindings.join(", "),
-                    describe_contract_expression(&arm.body)
-                ))
-                .collect::<Vec<_>>()
-                .join(", ")
-        ),
+        ContractExpression::AlgebraicMatch { scrutinee, arms } => {
+            let scrutinee = describe_contract_expression(scrutinee);
+            let arms = arms
+                .iter()
+                .map(|arm| {
+                    format!(
+                        "{}::{}({}) => {}",
+                        arm.type_name,
+                        arm.variant,
+                        arm.bindings.join(", "),
+                        describe_contract_expression(&arm.body)
+                    )
+                })
+                .collect::<Vec<_>>();
+            slice_projection_spelling(&scrutinee, &arms)
+                .unwrap_or_else(|| format!("match {scrutinee} {{ {} }}", arms.join(", ")))
+        }
         ContractExpression::SequenceLiteral(elements) => format!(
             "[{}]",
             elements
@@ -6940,14 +6949,14 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             describe_let_value(value),
             describe_let_value(body)
         ),
-        ContractExpression::Call { name, arguments } => format!(
-            "{name}({})",
-            slice_call_arguments(
+        ContractExpression::Call { name, arguments } => {
+            let arguments = slice_call_arguments(
                 name,
-                arguments.iter().map(describe_contract_expression).collect()
-            )
-            .join(", ")
-        ),
+                arguments.iter().map(describe_contract_expression).collect(),
+            );
+            slice_call_spelling(name, &arguments)
+                .unwrap_or_else(|| format!("{name}({})", arguments.join(", ")))
+        }
     }
 }
 

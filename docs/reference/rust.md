@@ -429,7 +429,18 @@ the length as two arguments is refused. Printed proofs write a call the same
 way, `size(old(bytes))`. The library's `Slice<T>`
 (`library/rust/slice.click`) is the slice as one value, with `slice::len` and
 `slice::as_ptr`; a slice parameter is lowered as its pointer and its length,
-and the two spellings are the same slice. The
+and the two spellings are the same slice.
+
+A slice in a value position is one `Slice<T>` value: the result of a pure
+function, `fn half(bytes: &[u8]) -> &[u8]`, a type argument, `Option<&[u8]>`,
+and an enum field, `Window(&[u8], usize)`. Rust's methods read it:
+`half(bytes).len()`, `half(bytes)[i]` (a read under the caller's `views`) and
+`half(bytes).as_ptr()`. They reduce without an `unfold` when the slice is
+built, so `half(bytes).len() == bytes.len() / 2u64` closes by `solve`. A
+slice value passes to a slice parameter as one argument,
+`size(half(bytes))`. Failures print these spellings, and a slice built from a
+pointer and a length prints as `slice::from_raw_parts(p, n)`. A slice bound
+by a `match` arm or a `let` is not yet read with these methods. The
 [byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
 sums a prefix with `function prefix(bytes: &[u8], end: usize) -> Integer`,
 whose body adds `to_integer(bytes[k] as i32)`, and calls it as

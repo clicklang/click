@@ -163,3 +163,41 @@ pub(super) fn rust_scalar_spelling(c_type: &CType) -> Option<&'static str> {
         _ => return None,
     })
 }
+
+/// A slice field projection the parser wrote for a Rust slice method, in
+/// the Rust spelling: given the scrutinee and the arms as printed, `x.len()`
+/// for `match x { Slice(_, __slice_len) => __slice_len }`, and `x[i]` for
+/// `match x { Slice(__slice_data, _) => __slice_data[i] }`. Patterns may be
+/// printed with or without their `Slice::` type prefix.
+pub(crate) fn slice_projection_spelling(scrutinee: &str, arms: &[String]) -> Option<String> {
+    let [arm] = arms else {
+        return None;
+    };
+    let arm = arm.strip_prefix("Slice::").unwrap_or(arm);
+    if arm == "Slice(_, __slice_len) => __slice_len" {
+        return Some(format!("{scrutinee}.len()"));
+    }
+    let index = arm
+        .strip_prefix("Slice(__slice_data, _) => __slice_data[")?
+        .strip_suffix(']')?;
+    Some(format!("{scrutinee}[{index}]"))
+}
+
+/// A call of the library's slice functions, or its slice constructor, in
+/// the Rust spelling: `x.len()`, `x.as_ptr()`, and
+/// `slice::from_raw_parts(p, n)`. `name` may carry the qualified path and
+/// an instance, `click::rust::slice::len::<uint8>`.
+pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<String> {
+    let base = name.split("::<").next().unwrap_or(name);
+    let method = base
+        .strip_prefix("click::rust::slice::")
+        .or_else(|| base.strip_prefix("slice::"))?;
+    match (method, arguments) {
+        ("len", [slice]) => Some(format!("{slice}.len()")),
+        ("as_ptr", [slice]) => Some(format!("{slice}.as_ptr()")),
+        ("from_raw_parts", [pointer, length]) => {
+            Some(format!("slice::from_raw_parts({pointer}, {length})"))
+        }
+        _ => None,
+    }
+}

@@ -1669,6 +1669,12 @@ impl Printer<'_> {
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
                 }
+                if let Some(projection) = crate::surface::diagnostics::slice_projection_spelling(
+                    &scrutinee.text,
+                    &spelled_arms,
+                ) {
+                    return Some(atom(projection));
+                }
                 Some(atom(format!(
                     "match {} {{ {} }}",
                     scrutinee.text,
@@ -2476,6 +2482,11 @@ impl Printer<'_> {
         }
         let spelled_arguments =
             crate::surface::diagnostics::slice_call_arguments(name, spelled_arguments);
+        if let Some(text) =
+            crate::surface::diagnostics::slice_call_spelling(name, &spelled_arguments)
+        {
+            return Some(atom(text));
+        }
         let text = format!("{name}({})", spelled_arguments.join(", "));
         (text.len() <= 2048 || self.source_mode()).then(|| atom(text))
     }
@@ -2512,6 +2523,12 @@ impl Printer<'_> {
                         .text,
                     );
                 }
+                if value.algebraic_type.name == "Slice"
+                    && variant == "Slice"
+                    && let [pointer, length] = spelled_fields.as_slice()
+                {
+                    return Some(atom(format!("slice::from_raw_parts({pointer}, {length})")));
+                }
                 let name = format!("{}::{variant}", value.algebraic_type.name);
                 Some(atom(if spelled_fields.is_empty() {
                     name
@@ -2547,6 +2564,12 @@ impl Printer<'_> {
                     let body = self.algebraic(&arm.body, depth + 1);
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
+                }
+                if let Some(projection) = crate::surface::diagnostics::slice_projection_spelling(
+                    &scrutinee.text,
+                    &spelled_arms,
+                ) {
+                    return Some(atom(projection));
                 }
                 Some(atom(format!(
                     "match {} {{ {} }}",
@@ -2668,6 +2691,12 @@ impl Printer<'_> {
                     let body = self.integer(&arm.body, depth);
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
+                }
+                if let Some(projection) = crate::surface::diagnostics::slice_projection_spelling(
+                    &scrutinee.text,
+                    &spelled_arms,
+                ) {
+                    return Some(atom(projection));
                 }
                 Some(atom(format!(
                     "match {} {{ {} }}",
