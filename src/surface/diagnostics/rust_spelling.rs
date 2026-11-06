@@ -305,6 +305,12 @@ pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<St
         ("len", [slice]) => Some(format!("{slice}.len()")),
         ("as_ptr", [slice]) => Some(format!("{slice}.as_ptr()")),
         ("from_raw_parts", [pointer, length]) => Some(slice_spelling(pointer, length)),
+        // A subslice's length is `end - start`; its bounds are the
+        // subslice's own, which the subslice spelling writes again.
+        ("subslice_len", [start, end, _]) => Some(match usize_bound(start).as_str() {
+            "0" => end.clone(),
+            _ => format!("{end} - {start}"),
+        }),
         _ => None,
     }
 }

@@ -126,6 +126,14 @@ fn validate_proposition_expression_types_one(
             validate_resource_subject_expression_types(left, variables, click_functions, context)?;
             validate_resource_subject_expression_types(right, variables, click_functions, context)
         }
+        ClickProposition::ResourceViewable { resource } => {
+            validate_resource_subject_expression_types(
+                resource,
+                variables,
+                click_functions,
+                context,
+            )
+        }
         ClickProposition::Contains { parent, child } => {
             validate_resource_subject_expression_types(
                 parent,
@@ -4191,6 +4199,9 @@ fn validate_predicate_calls_in_proposition_one(
             validate_resource_subject_calls(left, click_functions, context)?;
             validate_resource_subject_calls(right, click_functions, context)
         }
+        ClickProposition::ResourceViewable { resource } => {
+            validate_resource_subject_calls(resource, click_functions, context)
+        }
         ClickProposition::Contains { parent, child } => {
             validate_resource_subject_calls(parent, click_functions, context)?;
             validate_resource_subject_calls(child, click_functions, context)
@@ -4540,6 +4551,9 @@ fn validate_if_condition_proposition(
         ClickProposition::Separate { left, right } => {
             validate_resource_subject_calls(left, click_functions, context)?;
             validate_resource_subject_calls(right, click_functions, context)
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            validate_resource_subject_calls(resource, click_functions, context)
         }
         ClickProposition::Contains { parent, child } => {
             validate_resource_subject_calls(parent, click_functions, context)?;

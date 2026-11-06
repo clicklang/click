@@ -1712,9 +1712,14 @@ The descriptor grants no ownership and discovers no preservation facts.
 See `mdtests/saved_memory_bases_keep_current_indices.md` and
 `mdtests/saved_memory_indices_do_not_freeze_at_entry.md`.
 
-`viewable(base[start..end])` is the proposition form of memory viewability
-for a segment. Use it when the fact needs to appear where Click expects a
-proposition, such as a composite resource `fact`.
+`viewable(R)` is a pure, snapshot-dependent proposition for a resource
+descriptor `R`, including resource parameters, named resources, and separating
+conjunctions. It grants no ownership. The legacy segment spelling
+`viewable(base[start..end])` is equivalent to
+`viewable(memory(base[start..end]))`. Use it where Click expects a proposition,
+such as a composite resource `fact`. The axiom
+`separation::viewable_restrict(A, B)` derives `viewable(B)` from explicit
+`viewable(A)` and `contains(A, B)` premises.
 
 `defined(expression)` is a pure proposition stating that evaluating the C
 expression reaches a value rather than undefined behavior. Click elaborates it

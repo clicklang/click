@@ -189,10 +189,12 @@ is read through the library's projections: `.len()` is `slice::len`, and
 `.as_ptr()`, `[i]` and a value passed to a slice parameter go through
 `slice::as_ptr`. An inline projection `match` was tried first, but it does
 not lower under arithmetic (`s.len() - 1u64`) or as a pointer. A subslice
-`s[a..b]` is the constructed slice `Slice::Slice(s.as_ptr() + a, b - a)`,
-and `.len()` and `.as_ptr()` of a slice built by `slice::from_raw_parts(p, n)`
-are `n` and `p` as soon as they are parsed. The requirement
-`a <= b <= s.len()` is not yet checked: a reversed range's length wraps. Still
+`s[a..b]` is the constructed slice
+`Slice::Slice(s.as_ptr() + a, slice::subslice_len(a, b, s.len()))`, and
+`.len()` and `.as_ptr()` of a slice built by `slice::from_raw_parts(p, n)`
+are `n` and `p` as soon as they are parsed. `subslice_len` lowers to the
+kernel's `SpecExpression::Requires`, so it owes `a <= b <= s.len()` as an
+evaluation condition, guarded like signed arithmetic, where Rust panics. Still
 open: slices bound by `match` arms or `let`, and the importer's slice locals
 and returns.
 

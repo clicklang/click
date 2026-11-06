@@ -3970,6 +3970,14 @@ pub enum SpecExpression {
         pointer: Box<SpecExpression>,
         value_type: CType,
     },
+    /// `value`, defined only where `requirement` holds: its evaluation owes
+    /// `requirement`, guarded as every evaluation obligation is, and adds no
+    /// fact. A Rust subslice's length `b - a` requires `a <= b <= len`, where
+    /// Rust panics otherwise.
+    Requires {
+        requirement: Box<SpecProposition>,
+        value: Box<SpecExpression>,
+    },
 }
 
 impl SpecExpression {
@@ -5115,6 +5123,10 @@ pub enum SpecProposition {
     ResourceSeparate {
         left: SpecResource,
         right: SpecResource,
+    },
+    ResourceViewable {
+        memory: SpecMemory,
+        resource: SpecResource,
     },
     ResourceContains {
         parent: SpecResource,
@@ -12386,6 +12398,10 @@ pub enum Proposition {
     /// PureFactContext store this as indexed kernel authority rather than as an
     /// ambient proposition visible to proof search.
     CResourceComposition(ResourceContext),
+    CResourceViewable {
+        memory: CMemory,
+        resource: Box<CResource>,
+    },
     CResourceContains {
         parent: Box<CResource>,
         child: Box<CResource>,
@@ -12636,6 +12652,10 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             right.hash(state);
         }
         Proposition::CResourceComposition(resources) => resources.hash(state),
+        Proposition::CResourceViewable { memory, resource } => {
+            memory.hash(state);
+            resource.hash(state);
+        }
         Proposition::CResourceContains { parent, child } => {
             parent.hash(state);
             child.hash(state);
@@ -12941,6 +12961,10 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::CResourceComposition(resources) => {
             Proposition::CResourceComposition(resources.clone())
         }
+        Proposition::CResourceViewable { memory, resource } => Proposition::CResourceViewable {
+            memory: memory.clone(),
+            resource: resource.clone(),
+        },
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
             parent: parent.clone(),
             child: child.clone(),

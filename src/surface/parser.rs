@@ -6666,16 +6666,29 @@ impl Parser {
     }
 
     fn parse_loadable_requirement(&mut self) -> Result<Requirement, ClickError> {
-        match self.peek_ident() {
-            Some("viewable") => {
-                self.position += 1;
+        match self.parse_viewable_proposition()? {
+            ClickProposition::Loadable { segment } => Ok(Requirement::LoadableSegment { segment }),
+            proposition => {
+                self.expect(Token::Semicolon)?;
+                Ok(Requirement::Proposition(proposition))
             }
-            _ => return Err(self.error("expected `viewable` requirement")),
         }
+    }
+
+    fn parse_viewable_proposition(&mut self) -> Result<ClickProposition, ClickError> {
+        let saved = self.position;
+        self.expect_ident_spelling("viewable")?;
         self.expect(Token::LParen)?;
-        let segment = self.parse_current_contract_segment()?;
-        self.expect(Token::RParen)?;
-        Ok(Requirement::LoadableSegment { segment })
+        if let Ok(resource) = self.parse_resource_subject()
+            && self.peek() == Some(&Token::RParen)
+        {
+            self.position += 1;
+            return Ok(ClickProposition::ResourceViewable { resource });
+        }
+        self.position = saved;
+        Ok(ClickProposition::Loadable {
+            segment: self.parse_loadable_segment()?,
+        })
     }
 
     fn parse_resource_subject_pair(
@@ -8204,8 +8217,7 @@ impl Parser {
         }
 
         if self.peek_ident() == Some("viewable") && self.peek_next() == Some(&Token::LParen) {
-            let segment = self.parse_loadable_segment()?;
-            return Ok(ClickProposition::Loadable { segment });
+            return self.parse_viewable_proposition();
         }
 
         if self.peek_ident() == Some("aligned") && self.peek_next() == Some(&Token::LParen) {
@@ -8794,6 +8806,23 @@ impl Parser {
                 .unwrap_or(bound),
             _ => bound,
         };
+        let literal = |bound: &Option<ContractExpression>| match bound {
+            Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
+            Some(bound @ ContractExpression::CFragment(CExpression::Value(_))) => {
+                crate::surface::diagnostics::describe_contract_expression(bound)
+                    .strip_suffix("u64")?
+                    .parse::<u64>()
+                    .ok()
+            }
+            _ => None,
+        };
+        if let (Some(start), Some(end)) = (literal(&start), literal(&end))
+            && start > end
+        {
+            return Err(self.error(format!(
+                "the subslice `[{start}..{end}]` starts past its end; Rust panics on a reversed range"
+            )));
+        }
         let start = start.map(usize_bound);
         let end = end.map(usize_bound);
         let element = self
@@ -8809,13 +8838,20 @@ impl Parser {
                 Self::slice_value_field(slice, true, None),
             ),
         };
-        let end = end.unwrap_or(length);
-        let (pointer, count) = match start {
-            Some(start) => (
-                ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
-                ContractExpression::Subtract(Box::new(end), Box::new(start)),
-            ),
-            None => (pointer, end),
+        let end = end.unwrap_or_else(|| length.clone());
+        let zero = || {
+            ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
+                crate::kernel::MachineTerm::uint64_constant(0),
+            )))
+        };
+        let pointer = match &start {
+            Some(start) => ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
+            None => pointer,
+        };
+        // Its length owes `start <= end <= len`, as Rust panics otherwise.
+        let count = ContractExpression::Call {
+            name: crate::surface::RUST_SUBSLICE_LEN.to_string(),
+            arguments: vec![start.unwrap_or_else(zero), end, length],
         };
         // The constructor itself, so its fields select at once, at the
         // parameter's element type. A slice value's element type is not

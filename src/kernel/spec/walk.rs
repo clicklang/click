@@ -89,6 +89,7 @@ impl<'a> SpecNode<'a> {
                     visit(N::Resource(left));
                     visit(N::Resource(right));
                 }
+                SpecProposition::ResourceViewable { resource, .. } => visit(N::Resource(resource)),
                 SpecProposition::ResourceContains { parent, child } => {
                     visit(N::Resource(parent));
                     visit(N::Resource(child));
@@ -133,6 +134,10 @@ impl<'a> SpecNode<'a> {
                     visit(N::Proposition(condition));
                     visit(N::Expression(then_branch));
                     visit(N::Expression(else_branch));
+                }
+                SpecExpression::Requires { requirement, value } => {
+                    visit(N::Proposition(requirement));
+                    visit(N::Expression(value));
                 }
                 SpecExpression::RangeFold {
                     start,

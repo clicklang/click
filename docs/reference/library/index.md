@@ -6220,6 +6220,20 @@ function from_raw_parts<T>(p: T*, n: uint64) -> Slice<T> {
 The slice with data `p` and length `n`, Rust's
 `core::slice::from_raw_parts(p, n)`.
 
+### `slice::subslice_len`
+
+```click
+function subslice_len(start: uint64, end: uint64, len: uint64) -> uint64 {
+    end - start
+}
+```
+
+The length of the subslice `s[start..end]` of a slice of length `len`. A
+call owes `start <= end` and `end <= len` where it is evaluated, guarded as
+every evaluation condition is, where Rust panics otherwise. A Rust sidecar's
+subslice `s[a..b]` is `Slice::Slice(s.as_ptr() + a, slice::subslice_len(a,
+b, s.len()))`, and prints as `s[a..b]`.
+
 ## `click::separation`
 
 Source: `library/separation.click`, `import click::separation;`.
@@ -6242,6 +6256,26 @@ is backed by a trusted kernel constructor; application does not search memory
 history or discover containment facts.
 
 **Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
+
+### `separation::viewable_restrict`
+
+```click
+theorem viewable_restrict(A: Resource, B: Resource) {
+    requires viewable(A);
+    requires contains(A, B);
+    ensures viewable(B);
+}
+```
+
+**Meaning:** A contained part of a viewable resource is viewable at the same
+snapshot. This applies to arbitrary resource descriptors, including named
+resources and separating conjunctions. For memory,
+`viewable(memory(p[a..b]))` is the same fact as `viewable(p[a..b])`.
+The axiom grants no ownership and discovers neither containment nor history
+paths; both premises are explicit.
+
+**Verified use:** `mdtests/viewable_restrict_memory.md` and
+`mdtests/viewable_restrict_resources.md`.
 
 ### Separating conjunction laws
 

@@ -127,6 +127,9 @@ fn collect_spec_proposition_carriers(
                 }
             }
         }
+        SpecProposition::ResourceViewable { resource, .. } => {
+            collect_spec_resource_carriers(resource, variables, integer_seen)
+        }
         SpecProposition::ResourceSeparate { left, right }
         | SpecProposition::ResourceContains {
             parent: left,
@@ -350,6 +353,13 @@ fn collect_spec_expression_carriers(
                 return;
             }
             collect_spec_expression_carriers(else_branch, variables, integer_seen);
+        }
+        SpecExpression::Requires { requirement, value } => {
+            collect_spec_proposition_carriers(requirement, variables, integer_seen);
+            if variables.exhausted() {
+                return;
+            }
+            collect_spec_expression_carriers(value, variables, integer_seen);
         }
         SpecExpression::RangeFold {
             start,
@@ -1071,6 +1081,12 @@ impl<'a> TermRewrite<'a> {
                     right: self.rewrite_spec_resource(right)?,
                 }
             }
+            SpecProposition::ResourceViewable { memory, resource } => {
+                SpecProposition::ResourceViewable {
+                    memory: memory.clone(),
+                    resource: self.rewrite_spec_resource(resource)?,
+                }
+            }
             SpecProposition::ResourceContains { parent, child } => {
                 SpecProposition::ResourceContains {
                     parent: self.rewrite_spec_resource(parent)?,
@@ -1216,6 +1232,10 @@ impl<'a> TermRewrite<'a> {
                 condition: Box::new(self.rewrite_spec_proposition(condition)?),
                 then_branch: Box::new(self.rewrite_spec_expression(then_branch)?),
                 else_branch: Box::new(self.rewrite_spec_expression(else_branch)?),
+            },
+            SpecExpression::Requires { requirement, value } => SpecExpression::Requires {
+                requirement: Box::new(self.rewrite_spec_proposition(requirement)?),
+                value: Box::new(self.rewrite_spec_expression(value)?),
             },
             SpecExpression::RangeFold {
                 start,

@@ -231,6 +231,7 @@ pub(in crate::surface) fn proposition_contains_resource_count(
         }
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => false,
     }
@@ -251,6 +252,14 @@ pub(in crate::surface) fn proposition_contains_liveness_claim(
         ClickProposition::Loadable { segment } => {
             !owned_bases.iter().any(|base| **base == segment.base)
         }
+        ClickProposition::ResourceViewable { resource } => match resource {
+            ResourceSubject::Memory(segment) => {
+                !owned_bases.iter().any(|base| **base == segment.base)
+            }
+            // A descriptor alone supplies no authority to keep its contents
+            // live while a composite is lent out.
+            _ => true,
+        },
         ClickProposition::PredicateCall { name, .. } => {
             if !visited_predicates.insert(name.clone()) {
                 return false;
@@ -444,6 +453,7 @@ pub(in crate::surface) fn collect_resource_count_families(
         }
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
     }
@@ -480,6 +490,7 @@ pub(in crate::surface) fn collect_called_predicates(
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => {}
@@ -533,6 +544,9 @@ pub(in crate::surface) fn proposition_contains_old_expression(
         ClickProposition::Separate { left, right } => {
             resource_subject_contains_old_expression(left)
                 || resource_subject_contains_old_expression(right)
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            resource_subject_contains_old_expression(resource)
         }
         ClickProposition::Contains { parent, child } => {
             resource_subject_contains_old_expression(parent)
@@ -681,6 +695,9 @@ pub(in crate::surface) fn proposition_contains_at_expression(
         ClickProposition::Separate { left, right } => {
             resource_subject_contains_at_expression(left)
                 || resource_subject_contains_at_expression(right)
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            resource_subject_contains_at_expression(resource)
         }
         ClickProposition::Contains { parent, child } => {
             resource_subject_contains_at_expression(parent)
@@ -909,6 +926,9 @@ fn collect_click_function_calls_in_proposition_one(
         ClickProposition::Separate { left, right } => {
             collect_click_function_calls_in_resource_subject(left, calls);
             collect_click_function_calls_in_resource_subject(right, calls);
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            collect_click_function_calls_in_resource_subject(resource, calls)
         }
         ClickProposition::Contains { parent, child } => {
             collect_click_function_calls_in_resource_subject(parent, calls);
@@ -1503,6 +1523,18 @@ fn validate_recursive_calls_in_proposition(
             Ok(())
         }
         ClickProposition::Defined { expression: body } => expression(body),
+        ClickProposition::ResourceViewable { resource } => {
+            validate_recursive_calls_in_resource_subject(
+                caller,
+                resource,
+                lower_bounds,
+                structural_subterms,
+                definitions,
+                function_calls,
+                measures,
+                algebraic_definitions,
+            )
+        }
         ClickProposition::Separate { left, right }
         | ClickProposition::Contains {
             parent: left,

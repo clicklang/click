@@ -160,3 +160,33 @@ pub(crate) fn prove_resource_law(name: &str, args: &[CResource]) -> Option<Theor
             }),
     ))
 }
+
+/// Viewability is a pure state-indexed fact, not resource ownership. Memory
+/// descriptors use the existing atom so both Surface spellings coincide.
+pub(crate) fn resource_viewable(memory: &CMemory, resource: CResource) -> Proposition {
+    match resource {
+        CResource::Memory(range) => range.loadable_fact(memory),
+        resource => Proposition::CResourceViewable {
+            memory: memory.clone(),
+            resource: Box::new(resource),
+        },
+    }
+}
+
+pub(crate) fn prove_viewable_restrict(
+    memory: &CMemory,
+    parent: CResource,
+    child: CResource,
+) -> Theorem {
+    crate::instrumentation::record_deterministic_work(1);
+    Theorem::new(Proposition::Implies(
+        Box::new(resource_viewable(memory, parent.clone())),
+        Box::new(Proposition::Implies(
+            Box::new(Proposition::CResourceContains {
+                parent: Box::new(parent),
+                child: Box::new(child.clone()),
+            }),
+            Box::new(resource_viewable(memory, child)),
+        )),
+    ))
+}

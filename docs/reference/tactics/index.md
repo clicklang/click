@@ -3391,6 +3391,35 @@ pure theorem too, where the listed premises are all there is to read.
 
 It adds `Q` as a fact and closes the goal when `Q` is the goal.
 
+For current-snapshot `viewable(A)` to `viewable(B)` with explicitly cited
+`contains(A, B)`, expansion retains ordinary
+`apply(separation::viewable_restrict(A, B)) using { ... }` steps. When both
+are memory ranges with the same written base and int32 endpoints, citing
+`lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
+produces an explicit `have contains(...)` using `separation::subrange` first.
+These cases leave no `transport` or `transport_certificate` in the expansion.
+See `mdtests/viewable_restrict_transport_expansion.md`.
+
+At an execution frontier, a focused equality between a read now and the same
+read at a named statement's entry also expands to `preserve(separate(statement(...).footprint, R))`
+when that footprint separation is cited, the source is the earlier read's
+reflexive equality, and the statement's recorded exit is the current snapshot.
+This covers memory reads and abstract resource fields. The explicit footprint
+separation proof remains in the expanded script; no history search is needed
+for replay. See `mdtests/single_write_transport_expansion.md` and
+`mdtests/single_write_resource_transport_expansion.md`.
+
+For several statements, cite each footprint separation in `using`. Expansion
+writes one `have at(statement(i).exit, read) == at(statement(i).entry, read)`
+proved by `preserve` per cited footprint, then `assumption()` joins the
+endpoint equalities. The premises can be written in either order; they must
+cover the read's path to the current snapshot. No intermediate footprint or
+separation is discovered from history, and failure of ordinary equality closure is final rather
+than retrying a history search. Both memory reads and abstract resource fields
+use this form. See `mdtests/multi_write_transport_expansion.md` and
+`mdtests/multi_write_resource_transport_expansion.md`. Other transport routes
+still retain their existing form.
+
 The frame carries a fact across the steps between its snapshot and the
 target's when every cell it reads is unchanged. The structural frame does so
 read by read, including 64-bit equality, preserving the read kind, all eight

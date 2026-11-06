@@ -2823,6 +2823,7 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
     match proposition {
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => true,
@@ -4237,6 +4238,7 @@ impl AnnotationLowerer<'_> {
             | ClickProposition::FloatClassification { .. }
             | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::Defined { .. } => {
@@ -5040,6 +5042,12 @@ impl AnnotationLowerer<'_> {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,
             }),
+            ClickProposition::ResourceViewable { resource } => {
+                Ok(SpecProposition::ResourceViewable {
+                    memory: environment.current_memory.clone(),
+                    resource: self.lower_resource_subject_to_spec(resource, environment)?,
+                })
+            }
             ClickProposition::Contains { parent, child } => Ok(SpecProposition::ResourceContains {
                 parent: self.lower_resource_subject_to_spec(parent, environment)?,
                 child: self.lower_resource_subject_to_spec(child, environment)?,
@@ -6161,6 +6169,36 @@ impl AnnotationLowerer<'_> {
                 }
             }
 
+            // A subslice's length, `end - start`, owes `start <= end <= len`
+            // where it is evaluated, as Rust panics otherwise.
+            ContractExpression::Call { name, arguments }
+                if name == crate::surface::RUST_SUBSLICE_LEN
+                    && let [start, end, len] = arguments.as_slice() =>
+            {
+                let at_most = |left: &ContractExpression, right: &ContractExpression| {
+                    ClickProposition::Comparison {
+                        left: left.clone(),
+                        operator: ComparisonOperator::LessEqual,
+                        right: right.clone(),
+                    }
+                };
+                let requirement = ClickProposition::And(
+                    Box::new(at_most(start, end)),
+                    Box::new(at_most(end, len)),
+                );
+                Ok(SpecExpression::Requires {
+                    requirement: Box::new(
+                        self.click_proposition_to_spec_proposition(&requirement, environment)?,
+                    ),
+                    value: Box::new(self.lower_contract_expression_to_spec(
+                        &ContractExpression::Subtract(
+                            Box::new(end.clone()),
+                            Box::new(start.clone()),
+                        ),
+                        environment,
+                    )?),
+                })
+            }
             ContractExpression::Call { name, arguments }
                 if integer_conversion_target(name).is_some() =>
             {

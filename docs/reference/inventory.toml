@@ -4100,6 +4100,10 @@ id = "library.function.slice::from_raw_parts"
 path = "reference/library/index.md#slicefrom_raw_parts"
 
 [[item]]
+id = "library.function.slice::subslice_len"
+path = "reference/library/index.md#slicesubslice_len"
+
+[[item]]
 id = "library.type.Vec"
 path = "reference/library/index.md#vec"
 
@@ -4198,3 +4202,7 @@ path = "reference/tactics/index.md#preservation"
 [[item]]
 id = "tactic-form.preserve"
 path = "reference/tactics/index.md#preservation"
+
+[[item]]
+id = "library.theorem.separation::viewable_restrict"
+path = "reference/library/index.md#separationviewable_restrict"

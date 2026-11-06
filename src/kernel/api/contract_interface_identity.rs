@@ -407,6 +407,10 @@ impl Names {
                 self.expression(then_branch);
                 self.expression(else_branch);
             }
+            Requires { requirement, value } => {
+                self.proposition(requirement);
+                self.expression(value);
+            }
             Let { name, value, body } => {
                 self.expression(value);
                 let original = self.bind(name);
@@ -535,6 +539,7 @@ impl Names {
         self.visit();
         use SpecProposition::*;
         match proposition {
+            ResourceViewable { resource, .. } => self.resource(resource),
             ChangesOnly { resources, .. } => {
                 for r in resources {
                     self.resource(r);

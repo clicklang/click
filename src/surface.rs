@@ -2264,6 +2264,9 @@ pub enum ClickProposition {
         parent: ResourceSubject,
         child: ResourceSubject,
     },
+    ResourceViewable {
+        resource: ResourceSubject,
+    },
     Loadable {
         segment: ContractSegment,
     },
@@ -2355,6 +2358,9 @@ fn clone_click_proposition_atom(proposition: &ClickProposition) -> ClickProposit
         ClickProposition::Separate { left, right } => ClickProposition::Separate {
             left: left.clone(),
             right: right.clone(),
+        },
+        ClickProposition::ResourceViewable { resource } => ClickProposition::ResourceViewable {
+            resource: resource.clone(),
         },
         ClickProposition::Contains { parent, child } => ClickProposition::Contains {
             parent: parent.clone(),
@@ -3041,6 +3047,9 @@ fn collect_current_proposition_variables(
             ClickProposition::FloatClassification { expression, .. } => {
                 collect_current_contract_expression_variables(expression, names);
             }
+            ClickProposition::ResourceViewable { resource } => {
+                collect_current_resource_subject_variables(resource, names)
+            }
             ClickProposition::Separate { left, right }
             | ClickProposition::Contains {
                 parent: left,
@@ -3090,6 +3099,10 @@ fn collect_current_proposition_variables(
 
 /// Compatibility name while expression consumers migrate to `SurfaceTerm`.
 pub type ContractExpression = SurfaceTerm;
+
+/// The library function a Rust subslice's length lowers through; its call
+/// owes the subslice's bounds.
+pub(crate) const RUST_SUBSLICE_LEN: &str = "click::rust::slice::subslice_len";
 
 /// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
@@ -7464,6 +7477,7 @@ fn click_proposition_reads_memory(
         // predicates all observe the C state.
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::At { .. }

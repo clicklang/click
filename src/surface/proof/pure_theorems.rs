@@ -2627,6 +2627,7 @@ fn resource_law_shape(name: &str) -> Option<(usize, usize)> {
         "click::separation::contains_left" | "click::separation::contains_right" => (2, 0),
         "click::separation::contains_trans" | "click::separation::separate_star" => (3, 2),
         "click::separation::separate_symm" => (2, 1),
+        "click::separation::viewable_restrict" => (2, 2),
         _ => return None,
     })
 }
@@ -2781,7 +2782,16 @@ fn verify_kernel_standard_theorem_axiom(
         let args = (0..theorem.parameters().len())
             .map(|i| crate::kernel::CResource::Parameter(Variable(i as u64)))
             .collect::<Vec<_>>();
-        crate::kernel::prove_resource_law(theorem.name(), &args).expect("registered resource law")
+        if theorem.name() == "click::separation::viewable_restrict" {
+            crate::kernel::prove_viewable_restrict(
+                &context.memory,
+                args[0].clone(),
+                args[1].clone(),
+            )
+        } else {
+            crate::kernel::prove_resource_law(theorem.name(), &args)
+                .expect("registered resource law")
+        }
     } else if theorem.name() == "click::separation::restrict" {
         if theorem
             .parameters()
@@ -3227,6 +3237,7 @@ pub(super) fn click_function_applications(
             }
             ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
         }

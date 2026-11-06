@@ -615,6 +615,7 @@ impl Analysis<'_> {
             // into the enclosing function's result or lexical bindings.
             ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
         }

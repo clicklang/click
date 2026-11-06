@@ -89,7 +89,7 @@ mod resource_conjunction;
 pub(crate) use byte_representation_laws::prove_uint32_from_le_bytes;
 mod separation_laws;
 pub use resource_conjunction::ResourceConjunction;
-pub(crate) use separation_laws::prove_resource_law;
+pub(crate) use separation_laws::{prove_resource_law, prove_viewable_restrict, resource_viewable};
 pub(crate) use separation_laws::{
     prove_separation_elements, prove_separation_restrict, prove_separation_subrange,
 };

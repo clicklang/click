@@ -966,6 +966,7 @@ pub(in crate::surface) fn walk_written_expressions_in_proposition(
         }
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. } => {}
     }

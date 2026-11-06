@@ -2299,6 +2299,39 @@ fn synthesize_surface_atomic_proposition(
             arguments: call_arguments,
         });
     }
+    if let Proposition::CResourceViewable { memory, resource } = proposition {
+        let viewable = ClickProposition::ResourceViewable {
+            resource: synthesize_surface_resource_subject(
+                resource,
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
+        };
+        if state.memory() == memory {
+            return Some(viewable);
+        }
+        let selector = if SYNTHESIS_ENTRY_STATE.with(|slot| {
+            slot.borrow()
+                .as_ref()
+                .is_some_and(|entry| entry.memory() == memory)
+        }) {
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: CodeRegionRef::Function,
+                kind: ProgramPointKind::Entry,
+            })
+        } else {
+            SYNTHESIS_SNAPSHOT_STATE.with(|slot| {
+                let slot = slot.borrow();
+                let (snapshot, selector) = slot.as_ref()?;
+                (snapshot.memory() == memory).then(|| selector.clone())
+            })?
+        };
+        return Some(ClickProposition::At {
+            selector,
+            proposition: Box::new(viewable),
+        });
+    }
     if let Proposition::CResourceContains { parent, child } = proposition {
         return Some(ClickProposition::Contains {
             parent: synthesize_surface_resource_subject(

@@ -1388,6 +1388,13 @@ impl Renderer<'_> {
                 self.push(" separate ");
                 self.resource(right);
             }
+            Proposition::CResourceViewable { memory, resource } => {
+                self.push("viewable(");
+                self.resource(resource);
+                self.push(" in ");
+                self.memory(memory);
+                self.push(")");
+            }
             Proposition::CResourceContains { parent, child } => {
                 self.resource(parent);
                 self.push(" contains ");

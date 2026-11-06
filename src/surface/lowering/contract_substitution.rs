@@ -95,6 +95,9 @@ pub(in crate::surface) fn unfold_selected_predicates_in_proposition(
             parent: parent.clone(),
             child: child.clone(),
         }),
+        ClickProposition::ResourceViewable { resource } => Ok(ClickProposition::ResourceViewable {
+            resource: resource.clone(),
+        }),
         ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
             segment: segment.clone(),
         }),
@@ -391,6 +394,9 @@ fn substitute_click_proposition_nonlogical(
         ClickProposition::Contains { parent, child } => Ok(ClickProposition::Contains {
             parent: substitute_resource_subject(parent, substitutions)?,
             child: substitute_resource_subject(child, substitutions)?,
+        }),
+        ClickProposition::ResourceViewable { resource } => Ok(ClickProposition::ResourceViewable {
+            resource: substitute_resource_subject(resource, substitutions)?,
         }),
         ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
             segment: substitute_contract_segment(segment, substitutions)?,
@@ -781,6 +787,9 @@ fn collect_click_proposition_binding_names(
             collect_resource_subject_binding_names(parent, names);
             collect_resource_subject_binding_names(child, names);
         }
+        ClickProposition::ResourceViewable { resource } => {
+            collect_resource_subject_binding_names(resource, names);
+        }
         ClickProposition::Loadable { segment } => {
             collect_contract_segment_binding_names(segment, names);
         }
@@ -1143,6 +1152,11 @@ fn rewrite_click_proposition_expression(
                 ClickProposition::Separate { left, right },
                 left_changed || right_changed,
             )
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            let (resource, changed) =
+                rewrite_resource_subject_exact(resource, source, target, preserve_snapshots);
+            (ClickProposition::ResourceViewable { resource }, changed)
         }
         ClickProposition::Contains { parent, child } => {
             let (parent, parent_changed) =
@@ -2266,6 +2280,9 @@ fn apply_contract_let_expressions_inner(
             parent: apply_contract_lets_to_resource_subject(parent, bindings)?,
             child: apply_contract_lets_to_resource_subject(child, bindings)?,
         }),
+        ClickProposition::ResourceViewable { resource } => Ok(ClickProposition::ResourceViewable {
+            resource: apply_contract_lets_to_resource_subject(resource, bindings)?,
+        }),
         ClickProposition::Loadable { segment } => Ok(ClickProposition::Loadable {
             segment: apply_contract_lets_to_segment(segment, bindings)?,
         }),
@@ -2857,6 +2874,9 @@ fn collect_click_proposition_referenced_names_one(
         ClickProposition::Contains { parent, child } => {
             collect_resource_subject_referenced_names(parent, names);
             collect_resource_subject_referenced_names(child, names);
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            collect_resource_subject_referenced_names(resource, names);
         }
         ClickProposition::Loadable { segment } => {
             names.extend(contract_segment_referenced_names(segment));

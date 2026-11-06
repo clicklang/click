@@ -922,6 +922,7 @@ fn validate_contract_applications_in_proposition_one(
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => Ok(()),
@@ -1724,6 +1725,7 @@ fn collect_resource_fact_scalar_assumptions_from_proposition(
         }
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. } => Ok(()),
         ClickProposition::And(left, right) => {
             collect_resource_fact_scalar_assumptions_from_proposition(
@@ -1866,6 +1868,17 @@ fn collect_resource_fact_reads_from_proposition(
             )?;
             collect_resource_fact_reads_from_resource_subject(
                 right,
+                predicate_definitions,
+                click_function_definitions,
+                visited_predicates,
+                visited_functions,
+                reads,
+                resource_name,
+            )
+        }
+        ClickProposition::ResourceViewable { resource } => {
+            collect_resource_fact_reads_from_resource_subject(
+                resource,
                 predicate_definitions,
                 click_function_definitions,
                 visited_predicates,

@@ -897,6 +897,7 @@ fn surface_predicate_call_name(proposition: &ClickProposition) -> Option<&str> {
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,

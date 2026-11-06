@@ -141,3 +141,28 @@ fn conjunction_lowering_visits_written_operands_not_ambient_facts() {
         );
     }
 }
+
+#[test]
+fn viewable_restrict_does_not_walk_compositions_or_enumerate_memory() {
+    let costs = [4u32, 16, 64, 256].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut parent = CResource::Emp;
+        for i in 0..size {
+            parent = CResource::star(parent, CResource::Parameter(Variable(i as u64)));
+        }
+        let memory = CMemory::new();
+        let range = CResource::Memory(CMemoryRange::new_with_element_width(
+            Pointer::symbolic(Variable(8_390_100)),
+            0u32.into(),
+            size.into(),
+            4,
+        ));
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            prove_viewable_restrict(&memory, parent, CResource::Parameter(Variable(0)));
+            prove_viewable_restrict(&memory, range.clone(), range);
+        });
+        work
+    });
+    assert!(costs[0] > 0);
+    assert!(costs.iter().all(|cost| *cost == costs[0]), "{costs:?}");
+}
