@@ -486,3 +486,161 @@ fn preserve_step_supports_memory_and_resource_observations() {
         without_implicit_solve(|| verify_c0_sources(&rewritten, &sources)).unwrap();
     }
 }
+
+#[test]
+fn resource_viewability_restriction_expands_without_transport() {
+    for (fixture, claim) in [
+        ("viewable_restrict_memory.md", "first"),
+        ("viewable_restrict_resources.md", "view_component"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        without_implicit_solve(|| verify_c0_sources(&source, &sources))
+            .unwrap_or_else(|e| panic!("{fixture}: {}", e.report()));
+        let expanded = expand_c0_claim_source_by_label(
+            &source,
+            &sources,
+            if claim == "first" {
+                "first.contract"
+            } else {
+                "view_component.ensures_0"
+            },
+        )
+        .unwrap();
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
+
+#[test]
+fn viewability_transport_expands_to_ordinary_restriction() {
+    let (source, sources) = mdtest_sources("mdtests/viewable_restrict_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "first.contract").unwrap();
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("separation::subrange"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn generic_viewability_transport_expands_to_ordinary_restriction() {
+    let (source, _) = mdtest_sources("mdtests/viewable_restrict_resources.md");
+    let source = source.replace(
+        "apply(separation::viewable_restrict(A, B))",
+        "transport(viewable(A), viewable(B))",
+    );
+    verify_c0_sources(&source, &[]).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "restrict_view.ensures_0").unwrap();
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+}
+
+#[test]
+fn single_write_transport_expands_to_preserve_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let overlap = source.replace("have *q == at(statement(0).entry, *q)", "have *p == at(statement(0).entry, *p)")
+        .replace("transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),\n            *q == at(statement(0).entry, *q))", "transport(at(statement(0).entry, *p) == at(statement(0).entry, *p),\n            *p == at(statement(0).entry, *p))");
+    assert!(verify_c0_sources(&overlap, &sources).is_err());
+}
+
+#[test]
+fn single_write_resource_transport_expands_to_preserve_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn multiple_write_transport_expands_to_ordinary_equalities() {
+    let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for source in [source.clone(), source.replace(
+        "separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));",
+        "separate(statement(1).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*q));",
+    )] {
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), 2, "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
+
+#[test]
+fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
+    let (source, sources) = mdtest_sources("mdtests/multi_write_resource_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert_eq!(
+        expanded.matches("preserve(separate(").count(),
+        2,
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
+    let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
+    let c = sources[0].1.replace("*p = 1;", "*p = 1; *q = 2;");
+    let missing = source
+        .replace("    have *q ==", "    step();\n    have *q ==")
+        .replace("views *q;", "owns *q;");
+    assert!(verify_c0_sources(&missing, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    let c = sources[0].1.replace("*p = 1;", "*q = 1;");
+    let overlapping = source.replace("views *q;", "owns *q;");
+    assert!(verify_c0_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    let invalid = source.replace(
+        "            separate(statement(1).footprint, memory(*q));",
+        "            separate(statement(1).footprint, memory(*p));",
+    );
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    assert!(verify_c0_sources(&invalid, &sources).is_err());
+}

@@ -391,7 +391,7 @@ impl Gen {
         let choice = if depth == 0 {
             self.pick(2)
         } else {
-            self.pick(17)
+            self.pick(18)
         };
         match choice {
             0 => SpecProposition::Comparison {
@@ -465,6 +465,10 @@ impl Gen {
                 classification: CFloatClassification::Finite,
             },
             15 => SpecProposition::Or(Box::new(self.prop(d)), Box::new(self.prop(d))),
+            16 => SpecProposition::ResourceViewable {
+                memory: self.memory(),
+                resource: self.resource(d),
+            },
             _ => SpecProposition::ResourceContains {
                 parent: self.resource(d),
                 child: self.resource(d),

@@ -317,6 +317,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecProposition::IntegerComparison { .. } => Visit::Descend,
             SpecProposition::Predicate { .. }
             | SpecProposition::ResourceSeparate { .. }
+            | SpecProposition::ResourceViewable { .. }
             | SpecProposition::ResourceContains { .. }
             | SpecProposition::MemoryLoadable { .. } => Visit::Stop(()),
         },
@@ -603,6 +604,7 @@ pub(super) fn spec_reads_current_parameter(node: SpecNode<'_>, parameter_name: &
         }
         SpecNode::Expression(SpecExpression::MemoryLoad { memory, .. })
         | SpecNode::Proposition(SpecProposition::MemoryLoadable { memory, .. })
+        | SpecNode::Proposition(SpecProposition::ResourceViewable { memory, .. })
         | SpecNode::PredicateArgument(SpecPredicateArgument::ArrayRef { memory, .. })
         | SpecNode::Argument(SpecPureFunctionArgument::ArrayRef { memory, .. })
             if matches!(memory, SpecMemory::FunctionEntry | SpecMemory::Fixed(_)) =>

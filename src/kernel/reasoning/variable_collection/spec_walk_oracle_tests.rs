@@ -177,6 +177,10 @@ fn old_collect_spec_proposition_bitvector_variables(
                 }
             }
         }
+        SpecProposition::ResourceViewable { memory, resource } => {
+            old_collect_spec_memory_bitvector_variables(memory, variables);
+            old_collect_spec_resource_bitvector_variables(resource, variables)
+        }
         SpecProposition::ResourceSeparate { left, right }
         | SpecProposition::ResourceContains {
             parent: left,
@@ -667,6 +671,10 @@ fn old_collect_spec_proposition_bound_identities(
                     }
                 }
             }
+        }
+        SpecProposition::ResourceViewable { memory, resource } => {
+            old_collect_spec_memory_bound_identities(memory, variables, integer_seen);
+            old_collect_spec_resource_bound_identities(resource, variables, integer_seen)
         }
         SpecProposition::ResourceSeparate { left, right }
         | SpecProposition::ResourceContains {

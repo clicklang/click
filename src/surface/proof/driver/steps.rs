@@ -128,6 +128,94 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             )));
         }
 
+        // One explicitly selected statement can produce its read equality
+        // directly. A later landing snapshot belongs to history planning,
+        // not to this ordinary preserve operation.
+        if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        } = &step
+            && driver_proof.surface_goal() == Some(target)
+            && let Some(separation) =
+                single_statement_preservation_premise(source, target, premises)
+            && let Some(execution) = driver_proof.execution()
+        {
+            let fact = driver_proof
+                .lower_surface_proposition_direct(&separation, "transport separation")?;
+            if let Proposition::CResourceSeparate { left, .. } = fact
+                && let crate::kernel::CResource::Footprint(footprint) = left.as_ref()
+                && crate::kernel::CMemorySnapshotIdentity::of(&footprint.after)
+                    == crate::kernel::CMemorySnapshotIdentity::of(execution.core.state.memory())
+                && footprint
+                    .after_resources
+                    .shares_storage_with(execution.core.state.resources())
+            {
+                return self.apply_step(ProofStep::Preserve(separation));
+            }
+        }
+
+        // Each cited footprint contributes one ordinary read equality. The
+        // equality graph connects their named endpoints without a history walk.
+        if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        } = &step
+            && driver_proof.surface_goal() == Some(target)
+            && let Some(steps) = multiple_statement_preservation_steps(source, target, premises)
+        {
+            let mut current = driver_proof.clone();
+            for ordinary in steps {
+                current = current.driver().apply_step(ordinary)?;
+            }
+            return Ok(current);
+        }
+
+        // Retain the ordinary derivation, rather than an opaque transport
+        // node, when the written inputs identify a viewability restriction.
+        if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        } = &step
+            && let Some((steps, narrow_range)) =
+                viewability_restriction_steps(source, target, premises)
+        {
+            let source_fact =
+                driver_proof.lower_surface_proposition_direct(source, "transport source")?;
+            let target_fact =
+                driver_proof.lower_surface_proposition_direct(target, "transport target")?;
+            let same_snapshot = match (&source_fact, &target_fact) {
+                (
+                    Proposition::CMemoryLoadable {
+                        memory: left,
+                        wide: false,
+                        ..
+                    },
+                    Proposition::CMemoryLoadable {
+                        memory: right,
+                        wide: false,
+                        ..
+                    },
+                ) if narrow_range => left == right,
+                (
+                    Proposition::CResourceViewable { memory: left, .. }
+                    | Proposition::CMemoryLoadable { memory: left, .. },
+                    Proposition::CResourceViewable { memory: right, .. }
+                    | Proposition::CMemoryLoadable { memory: right, .. },
+                ) if !narrow_range => left == right,
+                _ => false,
+            };
+            if same_snapshot {
+                let mut current = driver_proof.clone();
+                for ordinary in steps {
+                    current = current.driver().apply_step(ordinary)?;
+                }
+                return Ok(current);
+            }
+        }
+
         // A witness for several binders instantiates them in the order
         // written and is recorded as the one step that was written.
         if let ProofStep::Witness(witness) = &step

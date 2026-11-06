@@ -679,6 +679,232 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
     None
 }
 
+/// Select the written separation for a single named statement's read equality.
+/// Selection is syntactic and bounded by the explicit premises. The driver
+/// checks the selected footprint's landing snapshot before invoking preserve.
+pub(super) fn single_statement_preservation_premise(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<ClickProposition> {
+    let (region, _) = preservation_read(source, target)?;
+    let separation = premises.iter().find(|premise| matches!(premise,
+        ClickProposition::Separate { left: ResourceSubject::Footprint(selected), .. } if selected == &region
+    ))?;
+    // The only other admitted citation is the reflexive source. Preserve
+    // establishes its observation's definedness along with the equality.
+    if !premises
+        .iter()
+        .all(|premise| premise == separation || premise == source)
+    {
+        return None;
+    }
+    Some(separation.clone())
+}
+
+/// The explicit old/current observation shared by preservation expansions.
+fn preservation_read(
+    source: &ClickProposition,
+    target: &ClickProposition,
+) -> Option<(CodeRegionRef, ContractExpression)> {
+    let ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    } = source
+    else {
+        return None;
+    };
+    if left != right {
+        return None;
+    }
+    let (historical, current) = comparison_snapshot_expression_pair(source, target)?;
+    // Preserve is the read-observation axiom. Constant equalities and
+    // arithmetic expressions use their existing ordinary reasoning routes.
+    if !matches!(current, ContractExpression::ResourceField(_))
+        && !matches!(
+            contract_expression_as_c_fragment(&current),
+            Some(CExpression::Load(_) | CExpression::TypedLoad { .. } | CExpression::Index(_, _))
+        )
+    {
+        return None;
+    }
+    let ContractExpression::At {
+        selector:
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region,
+                kind: ProgramPointKind::Entry,
+            }),
+        ..
+    } = historical
+    else {
+        return None;
+    };
+    if !matches!(region, CodeRegionRef::Region(_) | CodeRegionRef::Path(_)) {
+        return None;
+    }
+    Some((region, current))
+}
+
+/// Expand a written list of footprint separations into independent preservation
+/// equalities. Endpoint connectivity is ordinary equality reasoning; this reads
+/// no execution history and discovers no missing footprint or premise.
+pub(super) fn multiple_statement_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    let (start, read) = preservation_read(source, target)?;
+    let mut steps = Vec::new();
+    let mut includes_start = false;
+    for premise in premises {
+        if premise == source {
+            continue;
+        }
+        let ClickProposition::Separate {
+            left: ResourceSubject::Footprint(region),
+            ..
+        } = premise
+        else {
+            return None;
+        };
+        if !matches!(region, CodeRegionRef::Region(_) | CodeRegionRef::Path(_)) {
+            return None;
+        }
+        includes_start |= region == &start;
+        let at = |kind| ContractExpression::At {
+            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: region.clone(),
+                kind,
+            }),
+            expression: Box::new(read.clone()),
+        };
+        steps.push(ProofStep::Have {
+            proposition: ClickProposition::Comparison {
+                left: at(ProgramPointKind::Exit),
+                operator: ComparisonOperator::Equal,
+                right: at(ProgramPointKind::Entry),
+            },
+            proof: Box::new(
+                ProofCertificate::from_steps(vec![ProofStep::Preserve(premise.clone())])
+                    .expect("preserve is an ordinary certificate step"),
+            ),
+        });
+    }
+    if !includes_start || steps.len() < 2 {
+        return None;
+    }
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
+/// Ordinary proof of a selected viewability restriction. This visits only
+/// written descriptors and premises; no state, history, or ambient facts.
+pub(super) fn viewability_restriction_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<(Vec<ProofStep>, bool)> {
+    fn resource(proposition: &ClickProposition) -> Option<ResourceSubject> {
+        match proposition {
+            ClickProposition::Loadable { segment }
+                if segment.state == ContractSegmentState::Current =>
+            {
+                Some(ResourceSubject::Memory(segment.clone()))
+            }
+            ClickProposition::ResourceViewable { resource } => Some(resource.clone()),
+            _ => None,
+        }
+    }
+    if source == target || !premises.contains(source) {
+        return None;
+    }
+    let parent = resource(source)?;
+    let child = resource(target)?;
+    let containment = ClickProposition::Contains {
+        parent: parent.clone(),
+        child: child.clone(),
+    };
+    let mut steps = Vec::new();
+    let mut narrow_range = false;
+    if !premises.contains(&containment) {
+        let (ResourceSubject::Memory(parent), ResourceSubject::Memory(child)) = (&parent, &child)
+        else {
+            return None;
+        };
+        if parent.base != child.base || parent.state != child.state {
+            return None;
+        }
+        fn endpoints(
+            segment: &ContractSegment,
+        ) -> Option<(
+            &ContractExpression,
+            &ContractExpression,
+            &ContractExpression,
+        )> {
+            match &segment.surface {
+                ContractSegmentSurface::Range { base, start, end }
+                | ContractSegmentSurface::StructRange {
+                    base, start, end, ..
+                } => Some((base, start, end)),
+                _ => None,
+            }
+        }
+        let (base, lo, hi) = endpoints(parent)?;
+        let (child_base, inner_lo, inner_hi) = endpoints(child)?;
+        // Different rows of a global array can share a lowered base while
+        // their offsets live in the lowered bounds. The subrange application
+        // below uses written endpoints, so it must also use one written base.
+        if base != child_base {
+            return None;
+        }
+        let bounds = [(lo, inner_lo), (inner_lo, inner_hi), (inner_hi, hi)].map(|(left, right)| {
+            ClickProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: right.clone(),
+            }
+        });
+        // Other bound arguments remain the planner's responsibility. Do not
+        // smuggle arithmetic discovery into this elementary restriction.
+        if !bounds.iter().all(|bound| premises.contains(bound)) {
+            return None;
+        }
+        narrow_range = true;
+        steps.push(ProofStep::Have {
+            proposition: containment.clone(),
+            proof: Box::new(
+                ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
+                    application: TheoremApplication {
+                        name: "click::separation::subrange".into(),
+                        arguments: [base, lo, hi, inner_lo, inner_hi]
+                            .into_iter()
+                            .cloned()
+                            .collect(),
+                    },
+                    premises: bounds.to_vec(),
+                }])
+                .expect("ordinary theorem application is a certificate step"),
+            ),
+        });
+    }
+    let mut cited = premises.to_vec();
+    if !cited.contains(&containment) {
+        cited.push(containment);
+    }
+    steps.push(ProofStep::ApplyTheoremUsing {
+        application: TheoremApplication {
+            name: "click::separation::viewable_restrict".into(),
+            arguments: vec![
+                ContractExpression::Resource(Box::new(parent)),
+                ContractExpression::Resource(Box::new(child)),
+            ],
+        },
+        premises: cited,
+    });
+    Some((steps, narrow_range))
+}
+
 pub(super) fn plan_explicit_loadability_transport(
     goal: &Proposition,
     surface_goal: &ClickProposition,

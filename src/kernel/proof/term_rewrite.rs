@@ -1306,6 +1306,9 @@ fn collect_integer_substitution_variables_with_carriers(
                 }
                 collect_bitvector_carriers(bytes, carriers);
             }
+            Proposition::CResourceViewable { resource, .. } => {
+                collect_resource_carriers(resource, carriers)
+            }
             Proposition::CResourceContains { parent, child } => {
                 collect_resource_carriers(parent, carriers);
                 collect_resource_carriers(child, carriers);
@@ -3300,6 +3303,10 @@ impl<'a> TermRewrite<'a> {
                     left: Box::new(self.resource(left)),
                     right: Box::new(self.resource(right)),
                 }
+            }
+            Proposition::CResourceViewable { memory, resource } => {
+                self.reserve_resource_variables_once(&[resource]);
+                crate::kernel::resource_viewable(memory, self.resource(resource))
             }
             Proposition::CResourceContains { parent, child } => {
                 self.reserve_resource_variables_once(&[parent, child]);

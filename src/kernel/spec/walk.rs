@@ -89,6 +89,7 @@ impl<'a> SpecNode<'a> {
                     visit(N::Resource(left));
                     visit(N::Resource(right));
                 }
+                SpecProposition::ResourceViewable { resource, .. } => visit(N::Resource(resource)),
                 SpecProposition::ResourceContains { parent, child } => {
                     visit(N::Resource(parent));
                     visit(N::Resource(child));

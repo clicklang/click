@@ -2592,6 +2592,7 @@ fn collect_conjunctive_loadability_segments(
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Defined { .. }
         | ClickProposition::At { .. }
@@ -2891,6 +2892,7 @@ fn click_proposition_mentions_defined(proposition: &ClickProposition) -> bool {
         | ClickProposition::FloatClassification { .. }
         | ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::PredicateCall { .. } => false,

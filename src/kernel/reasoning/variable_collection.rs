@@ -508,6 +508,10 @@ fn collect_proposition_bitvector_variables_one(
         Proposition::CResourceComposition(resources) => {
             collect_resource_context_bitvector_variables(resources, variables);
         }
+        Proposition::CResourceViewable { memory, resource } => {
+            collect_memory_bitvector_variables(memory, variables);
+            collect_c_resource_bitvector_variables(resource, variables);
+        }
         Proposition::CResourceContains { parent, child } => {
             collect_c_resource_bitvector_variables(parent, variables);
             collect_c_resource_bitvector_variables(child, variables);

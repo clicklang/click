@@ -1291,6 +1291,7 @@ fn annotate_surface_at_snapshot(
         ClickProposition::Loadable { .. }
             | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
     ) {
         return Ok(ClickProposition::At {
@@ -1417,6 +1418,7 @@ fn annotate_surface_at_snapshot(
             }
             ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => proposition.clone(),
         }
@@ -1503,6 +1505,7 @@ pub(in crate::surface) fn surface_snapshot_selector(
         }
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => None,

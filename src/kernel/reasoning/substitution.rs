@@ -1314,6 +1314,9 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             left: Box::new(walk_c_resource(left, s)),
             right: Box::new(walk_c_resource(right, s)),
         },
+        Proposition::CResourceViewable { memory, resource } => {
+            crate::kernel::resource_viewable(&s.memory(memory), walk_c_resource(resource, s))
+        }
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
             parent: Box::new(walk_c_resource(parent, s)),
             child: Box::new(walk_c_resource(child, s)),
@@ -2371,6 +2374,10 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(memory, variables);
             collect_pointer_bound_variables(base, variables);
             collect_bitvector_bound_variables(bytes, variables);
+        }
+        Proposition::CResourceViewable { memory, resource } => {
+            collect_memory_bound_variables(memory, variables);
+            collect_resource_bound_variables(resource, variables);
         }
         Proposition::CResourceSeparate { left, right }
         | Proposition::CResourceContains {
@@ -7349,6 +7356,12 @@ fn substitute_pointer_variable_in_spec_proposition(
             left: substitute_pointer_variable_in_spec_resource(left, from, to),
             right: substitute_pointer_variable_in_spec_resource(right, from, to),
         },
+        SpecProposition::ResourceViewable { memory, resource } => {
+            SpecProposition::ResourceViewable {
+                memory: substitute_pointer_variable_in_spec_memory(memory, from, to),
+                resource: substitute_pointer_variable_in_spec_resource(resource, from, to),
+            }
+        }
         SpecProposition::ResourceContains { parent, child } => SpecProposition::ResourceContains {
             parent: substitute_pointer_variable_in_spec_resource(parent, from, to),
             child: substitute_pointer_variable_in_spec_resource(child, from, to),
