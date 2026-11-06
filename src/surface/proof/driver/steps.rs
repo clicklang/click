@@ -128,6 +128,33 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             )));
         }
 
+        // One explicitly selected statement can produce its read equality
+        // directly. A later landing snapshot belongs to history planning,
+        // not to this ordinary preserve operation.
+        if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        } = &step
+            && driver_proof.surface_goal() == Some(target)
+            && let Some(separation) =
+                single_statement_preservation_premise(source, target, premises)
+            && let Some(execution) = driver_proof.execution()
+        {
+            let fact = driver_proof
+                .lower_surface_proposition_direct(&separation, "transport separation")?;
+            if let Proposition::CResourceSeparate { left, .. } = fact
+                && let crate::kernel::CResource::Footprint(footprint) = left.as_ref()
+                && crate::kernel::CMemorySnapshotIdentity::of(&footprint.after)
+                    == crate::kernel::CMemorySnapshotIdentity::of(execution.core.state.memory())
+                && footprint
+                    .after_resources
+                    .shares_storage_with(execution.core.state.resources())
+            {
+                return self.apply_step(ProofStep::Preserve(separation));
+            }
+        }
+
         // Retain the ordinary derivation, rather than an opaque transport
         // node, when the written inputs identify a viewability restriction.
         if let ProofStep::TransportUsing {

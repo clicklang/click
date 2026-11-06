@@ -551,3 +551,36 @@ fn generic_viewability_transport_expands_to_ordinary_restriction() {
     assert!(!expanded.contains("transport("), "{expanded}");
     without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
 }
+
+#[test]
+fn single_write_transport_expands_to_preserve_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let overlap = source.replace("have *q == at(statement(0).entry, *q)", "have *p == at(statement(0).entry, *p)")
+        .replace("transport(at(statement(0).entry, *q) == at(statement(0).entry, *q),\n            *q == at(statement(0).entry, *q))", "transport(at(statement(0).entry, *p) == at(statement(0).entry, *p),\n            *p == at(statement(0).entry, *p))");
+    assert!(verify_c0_sources(&overlap, &sources).is_err());
+}
+
+#[test]
+fn single_write_resource_transport_expands_to_preserve_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}

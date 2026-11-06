@@ -679,6 +679,64 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
     None
 }
 
+/// Select the written separation for a single named statement's read equality.
+/// Selection is syntactic and bounded by the explicit premises. The driver
+/// checks the selected footprint's landing snapshot before invoking preserve.
+pub(super) fn single_statement_preservation_premise(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<ClickProposition> {
+    let ClickProposition::Comparison {
+        left,
+        operator: ComparisonOperator::Equal,
+        right,
+    } = source
+    else {
+        return None;
+    };
+    if left != right {
+        return None;
+    }
+    let (historical, current) = comparison_snapshot_expression_pair(source, target)?;
+    // Preserve is the read-observation axiom. Constant equalities and
+    // arithmetic expressions use their existing ordinary reasoning routes.
+    if !matches!(current, ContractExpression::ResourceField(_))
+        && !matches!(
+            contract_expression_as_c_fragment(&current),
+            Some(CExpression::Load(_) | CExpression::TypedLoad { .. } | CExpression::Index(_, _))
+        )
+    {
+        return None;
+    }
+    let ContractExpression::At {
+        selector:
+            SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region,
+                kind: ProgramPointKind::Entry,
+            }),
+        ..
+    } = historical
+    else {
+        return None;
+    };
+    if !matches!(region, CodeRegionRef::Region(_) | CodeRegionRef::Path(_)) {
+        return None;
+    }
+    let separation = premises.iter().find(|premise| matches!(premise,
+        ClickProposition::Separate { left: ResourceSubject::Footprint(selected), .. } if selected == &region
+    ))?;
+    // The only other admitted citation is the reflexive source. Preserve
+    // establishes its observation's definedness along with the equality.
+    if !premises
+        .iter()
+        .all(|premise| premise == separation || premise == source)
+    {
+        return None;
+    }
+    Some(separation.clone())
+}
+
 /// Ordinary proof of a selected viewability restriction. This visits only
 /// written descriptors and premises; no state, history, or ambient facts.
 pub(super) fn viewability_restriction_steps(

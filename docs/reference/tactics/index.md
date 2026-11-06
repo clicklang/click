@@ -3398,7 +3398,16 @@ are memory ranges with the same written base and int32 endpoints, citing
 `lo <= inner_lo`, `inner_lo <= inner_hi`, and `inner_hi <= hi` instead
 produces an explicit `have contains(...)` using `separation::subrange` first.
 These cases leave no `transport` or `transport_certificate` in the expansion.
-See `mdtests/viewable_restrict_transport_expansion.md`. Other transport routes
+See `mdtests/viewable_restrict_transport_expansion.md`.
+
+At an execution frontier, a focused equality between a read now and the same
+read at a named statement's entry also expands to `preserve(separate(statement(...).footprint, R))`
+when that footprint separation is cited, the source is the earlier read's
+reflexive equality, and the statement's recorded exit is the current snapshot.
+This covers memory reads and abstract resource fields. The explicit footprint
+separation proof remains in the expanded script; no history search is needed
+for replay. See `mdtests/single_write_transport_expansion.md` and
+`mdtests/single_write_resource_transport_expansion.md`. Other transport routes
 still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the
