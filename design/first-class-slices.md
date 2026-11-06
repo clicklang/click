@@ -183,6 +183,14 @@ argument and one name, printed in Rust spellings. Migration flips a position
 from pair to value one PR at a time, fixing that position's gaps, until the
 pair representation can be deleted.
 
+In place: slice parameters (pair), one slice argument per call, and slice
+values as pure-function results, `Option` payloads and enum fields. A value
+is read with `.len()` and `[i]` through an inline projection `match` that
+reduces on a constructed slice. `.as_ptr()` and a value passed to a slice
+parameter go through `slice::as_ptr`, because a pointer-valued `match` does
+not lower as a value yet. Still open: slices bound by `match` arms or `let`,
+subslices `s[a..b]`, and the importer's slice locals and returns.
+
 ## Importer
 
 There are two stages.

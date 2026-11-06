@@ -973,6 +973,9 @@ struct Parser {
     /// its `name: &[T]` parameters. A call passes such a parameter a slice,
     /// which stands for its pointer and its length.
     pure_function_slices: BTreeMap<String, (usize, Vec<usize>)>,
+    /// The pure functions whose result is a slice, `-> &[T]`: a call's
+    /// `.len()`, `.as_ptr()` and `[i]` read the slice value.
+    slice_result_functions: BTreeSet<String>,
     /// Pure functions declared `-> Integer`, whose calls are Integer
     /// operands.
     integer_function_names: BTreeSet<String>,
@@ -1625,6 +1628,7 @@ impl Parser {
             current_local_pointers: BTreeSet::new(),
             names: NameTable::default(),
             pure_function_slices: BTreeMap::new(),
+            slice_result_functions: BTreeSet::new(),
             integer_function_names: BTreeSet::new(),
             integer_parameter_positions: BTreeMap::new(),
             let_operands: Default::default(),
@@ -1730,6 +1734,9 @@ impl Parser {
                     }
                     if self.declares_integer_result(parameters) {
                         self.integer_function_names.insert(name.clone());
+                    }
+                    if self.declares_slice_result(parameters) {
+                        self.slice_result_functions.insert(name.clone());
                     }
                     if let Some(positions) =
                         spec_arithmetic::written_integer_parameters(&self.tokens, parameters)
@@ -1887,6 +1894,11 @@ impl Parser {
                         "argument {} of `{name}` is a slice, but `{slice}` is not a slice parameter; pass one, or `slice::from_raw_parts(p, n)` for a pointer and a length",
                         index + 1
                     )));
+                }
+                // A slice value passes its pointer and its length.
+                argument if self.is_rust_slice_value(&argument) => {
+                    spread.push(Self::slice_value_field(argument.clone(), false, None));
+                    spread.push(Self::slice_value_field(argument, true, None));
                 }
                 _ => {
                     return Err(self.error(format!(
@@ -2235,6 +2247,14 @@ impl Parser {
                 {
                     c_function_names.insert(signature.name().to_string(), target.clone());
                 }
+            }
+        }
+        // A declaration can imply a library module as it is read: a slice
+        // type in a Rust sidecar brings in the module that defines `Slice`.
+        for identity in &self.implied_library_modules {
+            let identity = (*identity).to_string();
+            if !library_imports.contains(&identity) {
+                library_imports.push(identity);
             }
         }
         let c_target = self.resolve_c_target(c_target_name, c_mode)?;
@@ -2597,6 +2617,16 @@ impl Parser {
         &mut self,
         type_parameters: &[String],
     ) -> Result<AlgebraicFieldType, ClickError> {
+        if let Some(element) = self.take_rust_slice_value_type()? {
+            return Ok(AlgebraicFieldType::Algebraic {
+                name: "Slice".to_string(),
+                arguments: vec![AlgebraicFieldType::C {
+                    c_type: element,
+                    struct_name: None,
+                    object_class: None,
+                }],
+            });
+        }
         let rust_type = if self
             .peek_ident()
             .is_some_and(|name| type_parameters.iter().any(|parameter| parameter == name))
@@ -6093,6 +6123,16 @@ impl Parser {
     }
 
     fn parse_click_type(&mut self) -> Result<(ClickType, Option<ParsedType>), ClickError> {
+        if let Some(element) = self.take_rust_slice_value_type()? {
+            return Ok((
+                ClickType::Algebraic(AlgebraicTypeApplication {
+                    rigid: false,
+                    name: "Slice".to_string(),
+                    arguments: vec![ClickType::C(element)],
+                }),
+                None,
+            ));
+        }
         if let Some(parsed) = self.parse_rust_click_type()? {
             return Ok((ClickType::C(parsed.c_type), Some(parsed)));
         }
@@ -8644,6 +8684,89 @@ impl Parser {
     /// Whether the function header whose parameter list opens at `start`
     /// declares `-> Integer`: the parenthesis is matched, then the result
     /// type follows the arrow.
+    fn declares_slice_result(&self, start: usize) -> bool {
+        if self.tokens.get(start) != Some(&Token::LParen) {
+            return false;
+        }
+        let Some(close) = self.matching_parentheses.get(start).copied().flatten() else {
+            return false;
+        };
+        let mut at = close + 2;
+        if self.tokens.get(close + 1) != Some(&Token::Arrow)
+            || self.tokens.get(at) != Some(&Token::Amp)
+        {
+            return false;
+        }
+        at += 1;
+        if self.tokens.get(at) == Some(&Token::Ident("mut".into())) {
+            at += 1;
+        }
+        self.tokens.get(at) == Some(&Token::LBracket)
+    }
+
+    /// Whether `expression` is a slice value a Rust sidecar reads with
+    /// Rust's slice methods: a call of a pure function whose result is a
+    /// slice, or a `Slice` binder.
+    fn is_rust_slice_value(&self, expression: &ContractExpression) -> bool {
+        if !self.verifies_rust() {
+            return false;
+        }
+        match expression {
+            ContractExpression::Call { name, .. } => self.slice_result_functions.contains(name),
+            ContractExpression::AlgebraicVariable { algebraic_type, .. } => {
+                algebraic_type.name() == "Slice"
+            }
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.is_rust_slice_value(inner),
+            _ => false,
+        }
+    }
+
+    /// A field of the slice value `slice`, as a `match` on its constructor
+    /// that selects it at once when the slice is constructed: its data
+    /// pointer, or its length. `index` reads the element there instead.
+    fn slice_value_field(
+        slice: ContractExpression,
+        length: bool,
+        index: Option<ContractExpression>,
+    ) -> ContractExpression {
+        // A pointer is not a `match` result the kernel lowers as a value;
+        // the library function names it.
+        if !length && index.is_none() {
+            return ContractExpression::Call {
+                name: "click::rust::slice::as_ptr".to_string(),
+                arguments: vec![slice],
+            };
+        }
+        let (data, len) = ("__slice_data".to_string(), "__slice_len".to_string());
+        let (bindings, body) = if length {
+            (
+                vec!["_".to_string(), len.clone()],
+                ContractExpression::Binding(len),
+            )
+        } else {
+            let pointer = ContractExpression::Binding(data.clone());
+            (
+                vec![data, "_".to_string()],
+                match index {
+                    Some(index) => ContractExpression::Index(Box::new(pointer), Box::new(index)),
+                    None => pointer,
+                },
+            )
+        };
+        ContractExpression::AlgebraicMatch {
+            scrutinee: Box::new(slice),
+            arms: vec![AlgebraicMatchArm {
+                type_name: "Slice".to_string(),
+                variant: "Slice".to_string(),
+                bindings,
+                body,
+            }],
+        }
+    }
+
     fn declares_integer_result(&self, start: usize) -> bool {
         if self.tokens.get(start) != Some(&Token::LParen) {
             return false;
@@ -14230,6 +14353,12 @@ impl Parser {
             self.check_expression_chain_limit(postfixes)?;
             postfixes += 1;
             match self.peek() {
+                Some(Token::LBracket) if self.is_rust_slice_value(&expression) => {
+                    self.position += 1;
+                    let index = self.parse_place_index()?;
+                    self.expect(Token::RBracket)?;
+                    expression = Self::slice_value_field(expression, false, Some(index));
+                }
                 Some(Token::LBracket) => {
                     self.position += 1;
                     let index = self.parse_place_index()?;
@@ -14498,6 +14627,17 @@ impl Parser {
                             field_index: 0,
                             click_type: None,
                         });
+                        continue;
+                    }
+                    if self.is_rust_slice_value(&expression)
+                        && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+                        && self.tokens.get(self.position + 3) == Some(&Token::RParen)
+                        && let Some(Token::Ident(method)) = self.tokens.get(self.position + 1)
+                        && matches!(method.as_str(), "len" | "as_ptr")
+                    {
+                        let length = method == "len";
+                        self.position += 4;
+                        expression = Self::slice_value_field(expression, length, None);
                         continue;
                     }
                     if struct_array_element_width.is_some() {

@@ -1462,6 +1462,29 @@ impl Parser {
         })
     }
 
+    /// `&[T]` or `&mut [T]` of a scalar `T` where a Rust sidecar writes a
+    /// value's type: a pure function's result, a theorem binder, an enum
+    /// field or a type argument such as `Option<&[u8]>`. It is the library's
+    /// `Slice<T>`, one value; the element type is returned. A pure
+    /// function's slice parameter is read before this, as its pointer and
+    /// its length.
+    pub(super) fn take_rust_slice_value_type(&mut self) -> Result<Option<C0Type>, ClickError> {
+        if !self.verifies_rust() || self.peek() != Some(&Token::Amp) {
+            return Ok(None);
+        }
+        let start = self.position;
+        let Some(parsed) = self.parse_rust_slice_type()? else {
+            self.position = start;
+            return Ok(None);
+        };
+        let element = parsed
+            .c_type
+            .pointee_type()
+            .ok_or_else(|| self.error("a slice's element type must be a scalar"))?;
+        self.implied_library_modules.insert(super::SLICE_MODULE);
+        Ok(Some(element))
+    }
+
     /// The type of a Click binder in a Rust sidecar, spelled as Rust does:
     /// a scalar (`u8`, `i32`, `usize`, `bool`, ...) or a raw pointer to one
     /// or to a crate struct, `*const T` or `*mut T`. A pure function, predicate or theorem takes
@@ -1476,7 +1499,7 @@ impl Parser {
         }
         if self.peek() == Some(&Token::Amp) {
             return Err(self.error(
-                "a pure function, predicate or theorem takes values, not references; write a pointer `*const T` or `*mut T`, and pass a slice as its pointer and a `usize` length",
+                "a pure function, predicate or theorem takes values, not references; write a pointer `*const T` or `*mut T`, or a slice `&[T]`",
             ));
         }
         let scalar = |c_type, pointee_constant| ParsedType {
