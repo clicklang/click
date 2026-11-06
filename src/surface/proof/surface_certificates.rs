@@ -679,6 +679,113 @@ pub(super) fn plan_explicit_le_and_neq_implies_lt(
     None
 }
 
+/// Ordinary proof of a selected viewability restriction. This visits only
+/// written descriptors and premises; no state, history, or ambient facts.
+pub(super) fn viewability_restriction_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<(Vec<ProofStep>, bool)> {
+    fn resource(proposition: &ClickProposition) -> Option<ResourceSubject> {
+        match proposition {
+            ClickProposition::Loadable { segment }
+                if segment.state == ContractSegmentState::Current =>
+            {
+                Some(ResourceSubject::Memory(segment.clone()))
+            }
+            ClickProposition::ResourceViewable { resource } => Some(resource.clone()),
+            _ => None,
+        }
+    }
+    if source == target || !premises.contains(source) {
+        return None;
+    }
+    let parent = resource(source)?;
+    let child = resource(target)?;
+    let containment = ClickProposition::Contains {
+        parent: parent.clone(),
+        child: child.clone(),
+    };
+    let mut steps = Vec::new();
+    let mut narrow_range = false;
+    if !premises.contains(&containment) {
+        let (ResourceSubject::Memory(parent), ResourceSubject::Memory(child)) = (&parent, &child)
+        else {
+            return None;
+        };
+        if parent.base != child.base || parent.state != child.state {
+            return None;
+        }
+        fn endpoints(
+            segment: &ContractSegment,
+        ) -> Option<(
+            &ContractExpression,
+            &ContractExpression,
+            &ContractExpression,
+        )> {
+            match &segment.surface {
+                ContractSegmentSurface::Range { base, start, end }
+                | ContractSegmentSurface::StructRange {
+                    base, start, end, ..
+                } => Some((base, start, end)),
+                _ => None,
+            }
+        }
+        let (base, lo, hi) = endpoints(parent)?;
+        let (child_base, inner_lo, inner_hi) = endpoints(child)?;
+        // Different rows of a global array can share a lowered base while
+        // their offsets live in the lowered bounds. The subrange application
+        // below uses written endpoints, so it must also use one written base.
+        if base != child_base {
+            return None;
+        }
+        let bounds = [(lo, inner_lo), (inner_lo, inner_hi), (inner_hi, hi)].map(|(left, right)| {
+            ClickProposition::Comparison {
+                left: left.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: right.clone(),
+            }
+        });
+        // Other bound arguments remain the planner's responsibility. Do not
+        // smuggle arithmetic discovery into this elementary restriction.
+        if !bounds.iter().all(|bound| premises.contains(bound)) {
+            return None;
+        }
+        narrow_range = true;
+        steps.push(ProofStep::Have {
+            proposition: containment.clone(),
+            proof: Box::new(
+                ProofCertificate::from_steps(vec![ProofStep::ApplyTheoremUsing {
+                    application: TheoremApplication {
+                        name: "click::separation::subrange".into(),
+                        arguments: [base, lo, hi, inner_lo, inner_hi]
+                            .into_iter()
+                            .cloned()
+                            .collect(),
+                    },
+                    premises: bounds.to_vec(),
+                }])
+                .expect("ordinary theorem application is a certificate step"),
+            ),
+        });
+    }
+    let mut cited = premises.to_vec();
+    if !cited.contains(&containment) {
+        cited.push(containment);
+    }
+    steps.push(ProofStep::ApplyTheoremUsing {
+        application: TheoremApplication {
+            name: "click::separation::viewable_restrict".into(),
+            arguments: vec![
+                ContractExpression::Resource(Box::new(parent)),
+                ContractExpression::Resource(Box::new(child)),
+            ],
+        },
+        premises: cited,
+    });
+    Some((steps, narrow_range))
+}
+
 pub(super) fn plan_explicit_loadability_transport(
     goal: &Proposition,
     surface_goal: &ClickProposition,

@@ -168,7 +168,7 @@ src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_have_step	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_at	driver	1
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin	driver	1
-src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin_inner	driver	14
+src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_with_origin_inner	driver	15
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_step_without_outcome_wrapping_after_wide	driver	2
 src/surface/proof/driver/steps.rs	driver	ProofDriver::apply_theorem_at_returned_outcome	driver	2

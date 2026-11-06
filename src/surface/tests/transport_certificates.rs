@@ -514,3 +514,40 @@ fn resource_viewability_restriction_expands_without_transport() {
         without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
 }
+
+#[test]
+fn viewability_transport_expands_to_ordinary_restriction() {
+    let (source, sources) = mdtest_sources("mdtests/viewable_restrict_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "first.contract").unwrap();
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(expanded.contains("separation::subrange"), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn generic_viewability_transport_expands_to_ordinary_restriction() {
+    let (source, _) = mdtest_sources("mdtests/viewable_restrict_resources.md");
+    let source = source.replace(
+        "apply(separation::viewable_restrict(A, B))",
+        "transport(viewable(A), viewable(B))",
+    );
+    verify_c0_sources(&source, &[]).unwrap();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &[], "restrict_view.ensures_0").unwrap();
+    assert!(
+        expanded.contains("separation::viewable_restrict"),
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &[])).unwrap();
+}
