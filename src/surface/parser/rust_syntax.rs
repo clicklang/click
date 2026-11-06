@@ -172,6 +172,10 @@ impl Parser {
                 // sidecar names the slice once and reads `bytes.len()`.
                 let length = format!("{parameter_name}_len");
                 self.rust_slice_params.insert(parameter_name.clone());
+                if let Some(pointee) = element.c_type.pointee_type() {
+                    self.rust_slice_elements
+                        .insert(parameter_name.clone(), pointee);
+                }
                 rust_slice_parameters.push(parameter_name.clone());
                 self.implied_library_modules.insert(super::SLICE_MODULE);
                 parameters.push(

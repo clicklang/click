@@ -439,8 +439,16 @@ and an enum field, `Window(&[u8], usize)`. Rust's methods read it:
 built, so `half(bytes).len() == bytes.len() / 2u64` closes by `solve`. A
 slice value passes to a slice parameter as one argument,
 `size(half(bytes))`. Failures print these spellings, and a slice built from a
-pointer and a length prints as `slice::from_raw_parts(p, n)`. A slice bound
-by a `match` arm or a `let` is not yet read with these methods. The
+pointer and a length prints as `slice::from_raw_parts(p, n)`. A subslice,
+`bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
+value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
+(`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
+`bytes[1]` under the caller's `views`, and `bytes[1..3].len() == 2u64` closes
+by `solve`. Its bounds are `usize`s, and they are not yet checked: where
+Rust panics on `a > b` or `b > bytes.len()`, the spec's length `b - a` wraps
+as `usize` subtraction does, and a read past the referent still needs its
+`views`. A slice bound by a `match` arm or a
+`let` is not yet read with these methods. The
 [byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
 sums a prefix with `function prefix(bytes: &[u8], end: usize) -> Integer`,
 whose body adds `to_integer(bytes[k] as i32)`, and calls it as

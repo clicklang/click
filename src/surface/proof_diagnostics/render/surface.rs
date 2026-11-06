@@ -1669,12 +1669,6 @@ impl Printer<'_> {
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
                 }
-                if let Some(projection) = crate::surface::diagnostics::slice_projection_spelling(
-                    &scrutinee.text,
-                    &spelled_arms,
-                ) {
-                    return Some(atom(projection));
-                }
                 Some(atom(format!(
                     "match {} {{ {} }}",
                     scrutinee.text,
@@ -2565,12 +2559,6 @@ impl Printer<'_> {
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
                 }
-                if let Some(projection) = crate::surface::diagnostics::slice_projection_spelling(
-                    &scrutinee.text,
-                    &spelled_arms,
-                ) {
-                    return Some(atom(projection));
-                }
                 Some(atom(format!(
                     "match {} {{ {} }}",
                     scrutinee.text,
@@ -2691,12 +2679,6 @@ impl Printer<'_> {
                     let body = self.integer(&arm.body, depth);
                     self.bound.truncate(self.bound.len() - bound);
                     spelled_arms.push(format!("{pattern} => {}", body?.text));
-                }
-                if let Some(projection) = crate::surface::diagnostics::slice_projection_spelling(
-                    &scrutinee.text,
-                    &spelled_arms,
-                ) {
-                    return Some(atom(projection));
                 }
                 Some(atom(format!(
                     "match {} {{ {} }}",
