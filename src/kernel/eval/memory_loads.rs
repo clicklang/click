@@ -2333,11 +2333,8 @@ struct RegisteredLoad {
     memory: SharedCMemory,
     pointer: Pointer,
     kind: LoadKind,
-    /// The first-seen live origin, and the origin epoch it was recorded in.
-    origin: SharedCMemory,
-    epoch: u64,
-    /// The widest access width any mint of this name asked for.
-    bytes: u32,
+    /// Observation ownership is independent of this compatibility name.
+    observation: read_observations::Id,
 }
 
 thread_local! {
@@ -2379,9 +2376,6 @@ thread_local! {
     static LOAD_VARIABLE_REGISTRY: std::cell::RefCell<
         std::collections::HashMap<Variable, RegisteredLoad>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
-    // Migration index: retained read node -> its existing observation record.
-    // Only identity is cached; width and epoch-scoped origins are read live.
-    static READ_TERM_OBSERVATIONS: std::cell::RefCell<std::collections::HashMap<u64, Variable>> = Default::default();
     /// The current origin epoch. A load variable's id names one load for the
     /// whole session, but the live snapshot transport resolves through is
     /// first-seen within one verified function: the surface begins a new
@@ -2427,7 +2421,7 @@ pub(crate) struct LoadRegistryState {
     pointer_observations: imbl::HashMap<(u64, Pointer), (SharedCMemory, Pointer)>,
     wide_observations: imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
-    read_terms: std::collections::HashMap<u64, Variable>,
+    read_observations: read_observations::State,
     pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
     pointer_sources: std::collections::HashMap<PointerLoadId, Variable>,
     widths: std::collections::HashMap<(SharedCMemory, Pointer), u32>,
@@ -2449,7 +2443,7 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
         pointer_observations: POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         wide_observations: WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         variables: LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().clone()),
-        read_terms: READ_TERM_OBSERVATIONS.with(|registry| registry.borrow().clone()),
+        read_observations: read_observations::capture(),
         pointers: POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().clone()),
         pointer_sources: POINTER_LOAD_SOURCES.with(|sources| sources.borrow().clone()),
         widths: LOAD_ACCESS_WIDTH.with(|widths| widths.borrow().clone()),
@@ -2469,7 +2463,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
         .with(|registry| *registry.borrow_mut() = state.wide_observations.clone());
     crate::kernel::equality_graph::restore_logical_pointer_reads(&state.logical_pointer_reads);
     LOAD_VARIABLE_REGISTRY.with(|registry| *registry.borrow_mut() = state.variables.clone());
-    READ_TERM_OBSERVATIONS.with(|registry| *registry.borrow_mut() = state.read_terms.clone());
+    read_observations::restore(&state.read_observations);
     POINTER_LOAD_REGISTRY.with(|registry| *registry.borrow_mut() = state.pointers.clone());
     POINTER_LOAD_SOURCES.with(|sources| *sources.borrow_mut() = state.pointer_sources.clone());
     LOAD_ACCESS_WIDTH.with(|widths| *widths.borrow_mut() = state.widths.clone());
@@ -2489,7 +2483,7 @@ pub(crate) fn clear_load_variable_registry() {
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow_mut().clear());
-    READ_TERM_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
+    read_observations::clear();
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow_mut().clear());
     POINTER_LOAD_SOURCES.with(|sources| sources.borrow_mut().clear());
     // Access widths are scoped to the verification that observed them. A
@@ -2861,10 +2855,11 @@ pub(crate) fn registered_scalar_read_term(
     format: MachineIntegerType,
 ) -> Option<crate::kernel::KernelTerm> {
     crate::instrumentation::record_deterministic_work(1);
-    let term = LOAD_VARIABLE_REGISTRY.with(|registry| {
+    let (term, observation) = LOAD_VARIABLE_REGISTRY.with(|registry| {
         let mut registry = registry.borrow_mut();
         let read = registry.get_mut(variable)?;
-        read.terms
+        let term = read
+            .terms
             .entry(format)
             .or_insert_with(|| {
                 crate::kernel::KernelTerm::scalar_read_descriptor(
@@ -2874,12 +2869,11 @@ pub(crate) fn registered_scalar_read_term(
                     read.kind,
                 )
             })
-            .clone()
-    });
+            .clone();
+        Some((term, read.observation))
+    })?;
     if let Some(term) = &term {
-        READ_TERM_OBSERVATIONS.with(|reads| {
-            reads.borrow_mut().insert(term.id(), *variable);
-        });
+        read_observations::remember_term(term, observation);
     }
     term
 }
@@ -2893,50 +2887,12 @@ pub(crate) struct ScalarReadObservation {
     pub origin: Option<SharedCMemory>,
 }
 
+mod read_observations;
+
 pub(crate) fn scalar_read_observation(
     operand: crate::kernel::MachineOperandView<'_>,
 ) -> Option<ScalarReadObservation> {
-    use crate::kernel::MachineOperandView;
-    let variable = if let Some(variable) = operand.variable() {
-        *variable
-    } else {
-        let (memory, pointer, kind) = operand.read()?;
-        let retained = match operand {
-            MachineOperandView::Shared(term) => {
-                READ_TERM_OBSERVATIONS.with(|reads| reads.borrow().get(&term.id()).copied())
-            }
-            MachineOperandView::Legacy(_) => None,
-        };
-        retained.unwrap_or_else(|| {
-            let variable = registered_exact_read(memory, pointer, kind).unwrap_or_else(|| {
-                load_variable_for_exact_cell(
-                    memory,
-                    pointer,
-                    kind,
-                    load_term_access_width(memory, pointer, kind),
-                )
-            });
-            if let MachineOperandView::Shared(term) = operand {
-                READ_TERM_OBSERVATIONS.with(|reads| {
-                    reads.borrow_mut().insert(term.id(), variable);
-                });
-            }
-            variable
-        })
-    };
-    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
-    LOAD_VARIABLE_REGISTRY.with(|registry| {
-        registry
-            .borrow()
-            .get(&variable)
-            .map(|read| ScalarReadObservation {
-                memory: read.memory.clone(),
-                pointer: read.pointer.clone(),
-                kind: read.kind,
-                bytes: read.bytes,
-                origin: (read.epoch == epoch).then(|| read.origin.clone()),
-            })
-    })
+    read_observations::for_operand(operand)
 }
 
 // Look up existing observation metadata without widening it or renewing its
@@ -2973,8 +2929,7 @@ fn existing_read_access_width(
     pointer: &Pointer,
     kind: LoadKind,
 ) -> Option<u32> {
-    registered_exact_read(memory, pointer, kind)
-        .and_then(|variable| registered_load_bytes_for_variable(&variable))
+    read_observations::existing(memory, pointer, kind).and_then(read_observations::bytes)
 }
 
 /// The kind of read a load variable names.
@@ -3438,7 +3393,12 @@ pub(crate) fn load_access_width_at_address_or_widest(pointer: &Pointer) -> u32 {
 /// load; a caller that needs a width anyway uses
 /// [`crate::kernel::resource_tracker::widest_scalar_access_bytes`].
 pub(crate) fn registered_load_bytes_for_variable(variable: &Variable) -> Option<u32> {
-    LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().get(variable).map(|load| load.bytes))
+    LOAD_VARIABLE_REGISTRY.with(|registry| {
+        registry
+            .borrow()
+            .get(variable)
+            .and_then(|load| read_observations::bytes(load.observation))
+    })
 }
 
 /// The first-seen live snapshot a load variable was minted from in the
@@ -3451,16 +3411,10 @@ pub(crate) fn registered_load_bytes_for_variable(variable: &Variable) -> Option<
 pub(crate) fn registered_load_origin_for_variable(
     variable: &Variable,
 ) -> Option<(SharedCMemory, Pointer)> {
-    let current_epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
-    LOAD_VARIABLE_REGISTRY.with(|registry| {
-        registry
-            .borrow()
-            .get(variable)
-            // An origin recorded under an earlier epoch belongs to another
-            // function's DAG; it can relate nothing this function executes.
-            .filter(|load| load.epoch == current_epoch)
-            .map(|load| (load.origin.clone(), load.pointer.clone()))
-    })
+    let read = scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+        &MachineTerm::Variable(*variable),
+    ))?;
+    Some((read.origin?, read.pointer))
 }
 
 /// [`registered_load_origin_for_variable`] as the load term it names there:
@@ -4548,7 +4502,6 @@ fn mint_load_variable_identity(
     pointer.hash(&mut hasher);
     let hash = hasher.finish();
     let range = load_variable_range();
-    let current_epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     LOAD_VARIABLE_REGISTRY.with(|registry| {
         let mut registry = registry.borrow_mut();
         // The hash picks where the search for this load's id starts, not the
@@ -4569,22 +4522,10 @@ fn mint_load_variable_identity(
                     memory: known_memory,
                     pointer: known_pointer,
                     kind: known_kind,
-                    origin: known_origin,
-                    epoch: known_epoch,
-                    bytes: known_bytes,
+                    observation,
                     ..
                 }) if known_memory == memory && known_pointer == pointer && *known_kind == kind => {
-                    // One entry stands for every access that resolved to this
-                    // name, so its width has to cover all of them: a caller
-                    // that reads the width back is asking how many bytes this
-                    // name could depend on.
-                    *known_bytes = (*known_bytes).max(bytes);
-                    // An origin from an earlier epoch was minted by another
-                    // function; this function's first mint is its origin.
-                    if *known_epoch != current_epoch {
-                        *known_origin = origin.clone();
-                        *known_epoch = current_epoch;
-                    }
+                    read_observations::refresh(*observation, origin, bytes);
                     return variable;
                 }
                 Some(_) => {
@@ -4607,9 +4548,9 @@ fn mint_load_variable_identity(
                             memory: memory.clone(),
                             pointer: pointer.clone(),
                             kind,
-                            origin: origin.clone(),
-                            epoch: current_epoch,
-                            bytes,
+                            observation: read_observations::record(
+                                memory, pointer, kind, origin, bytes,
+                            ),
                         },
                     );
                     return variable;
