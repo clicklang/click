@@ -1573,6 +1573,7 @@ fn expand_declared_resource_tactic(
         tactic @ (ProofTactic::ArithmeticUsing(_)
         | ProofTactic::Contradiction(_)
         | ProofTactic::Extract(_)
+        | ProofTactic::Preserve(_)
         | ProofTactic::Rewrite(_)
         | ProofTactic::Transport { .. }
         | ProofTactic::TransportUsing { .. }
@@ -2264,6 +2265,9 @@ fn expand_declared_resource_tactic_with_propositions(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
         ProofTactic::Extract(proposition) => Ok(ProofTactic::Extract(
+            expand_declared_resource_proposition(proposition, resource_definitions)?,
+        )),
+        ProofTactic::Preserve(proposition) => Ok(ProofTactic::Preserve(
             expand_declared_resource_proposition(proposition, resource_definitions)?,
         )),
         ProofTactic::Rewrite(proposition) => Ok(ProofTactic::Rewrite(

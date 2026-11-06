@@ -328,6 +328,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                         handle
                     }),
             ),
+            ProofStep::Preserve(separation) => Some(driver_proof.apply_preserve(separation)),
             ProofStep::TransportCertificate(certificate) => {
                 Some(driver_proof.apply_transport_certificate(certificate))
             }

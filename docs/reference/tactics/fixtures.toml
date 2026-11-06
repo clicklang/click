@@ -286,3 +286,8 @@ needle = "let { result: status, output: done } = step(Repair, { input: dirty });
 id = "transport-certificate"
 path = "mdtests/transport_certificate.md"
 needle = "transport_certificate {"
+
+[[form]]
+id = "preserve"
+path = "mdtests/preserve_step_carries_a_fact.md"
+needle = "preserve(separate(statement(0).footprint, memory(*q)));"

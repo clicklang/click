@@ -1069,6 +1069,11 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             write_tactics(output, body, indent + 1);
             line(output, &prefix, "}");
         }
+        ProofTactic::Preserve(separation) => line(
+            output,
+            &prefix,
+            &format!("preserve({});", source_click_proposition(separation)),
+        ),
         ProofTactic::Rewrite(equality) => line(
             output,
             &prefix,

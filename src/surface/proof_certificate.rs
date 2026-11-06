@@ -113,6 +113,7 @@ pub enum ProofStep {
     Enumerate,
     Contradiction(ClickProposition),
     Rewrite(ClickProposition),
+    Preserve(ClickProposition),
     TransportUsing {
         source: ClickProposition,
         target: ClickProposition,
@@ -767,6 +768,7 @@ impl ProofStep {
             ProofTactic::IntroAs(name) => Self::IntroAs(name.clone()),
             ProofTactic::Enumerate => Self::Enumerate,
             ProofTactic::Contradiction(proposition) => Self::Contradiction(proposition.clone()),
+            ProofTactic::Preserve(proposition) => Self::Preserve(proposition.clone()),
             ProofTactic::Rewrite(proposition) => Self::Rewrite(proposition.clone()),
             ProofTactic::TransportUsing {
                 source,
@@ -919,6 +921,7 @@ impl ProofStep {
             Self::IntroAs(name) => ProofTactic::IntroAs(name.clone()),
             Self::Enumerate => ProofTactic::Enumerate,
             Self::Contradiction(proposition) => ProofTactic::Contradiction(proposition.clone()),
+            Self::Preserve(proposition) => ProofTactic::Preserve(proposition.clone()),
             Self::Rewrite(proposition) => ProofTactic::Rewrite(proposition.clone()),
             Self::TransportUsing {
                 source,
@@ -1134,7 +1137,9 @@ pub(super) fn certificate_step_class(step: &ProofStep) -> TacticClass {
         }
         ProofStep::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
         ProofStep::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
-        ProofStep::TransportCertificate(_) => TacticClass::Simple(SimpleTactic::FactTransport),
+        ProofStep::Preserve(_) | ProofStep::TransportCertificate(_) => {
+            TacticClass::Simple(SimpleTactic::FactTransport)
+        }
         ProofStep::Intro | ProofStep::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
         ProofStep::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
         ProofStep::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),

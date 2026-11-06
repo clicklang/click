@@ -4190,3 +4190,11 @@ path = "reference/library/index.md#separationseparate_star"
 [[item]]
 id = "library.theorem.separation::separate_emp"
 path = "reference/library/index.md#separationseparate_emp"
+
+[[item]]
+id = "tactic.preserve"
+path = "reference/tactics/index.md#preservation"
+
+[[item]]
+id = "tactic-form.preserve"
+path = "reference/tactics/index.md#preservation"

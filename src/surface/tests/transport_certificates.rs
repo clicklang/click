@@ -429,3 +429,60 @@ fn pointer_rejection_prefixes_expand_and_replay() {
             .unwrap_or_else(|error| panic!("{fixture}: {}\n{expanded}", error.report()));
     }
 }
+
+#[test]
+fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
+    let (source, sources) = mdtest_sources("mdtests/preserve_step_carries_a_fact.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    without_implicit_solve(|| verify_c0_sources(&source, &sources)).unwrap();
+    let expanded = expand_c0_claim_source(&source, &sources, "keep", CProofClaim::Grouped).unwrap();
+    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let overlap = source.replace(
+        "have *q == at(statement(0).entry, *q)",
+        "have *p == at(statement(0).entry, *p)",
+    );
+    assert!(without_implicit_solve(|| verify_c0_sources(&overlap, &sources)).is_err());
+}
+
+#[test]
+fn preserve_step_supports_memory_and_resource_observations() {
+    for fixture in [
+        "transport_certificate_byte_read.md",
+        "transport_certificate.md",
+        "transport_certificate_resource_field.md",
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
+        // Replace each single preserve certificate while leaving the
+        // two-transition composition in the pointer fixture intact.
+        let mut rewritten = source.clone();
+        while let Some(start) = rewritten.find("transport_certificate {\n            premise 0:") {
+            let end = start + rewritten[start..].find("\n        }").unwrap() + "\n        }".len();
+            let block = &rewritten[start..end];
+            if !block.contains("conclusion 1;") {
+                break;
+            }
+            let premise = block
+                .split("premise 0:")
+                .nth(1)
+                .unwrap()
+                .split("=>")
+                .next()
+                .unwrap()
+                .trim();
+            let replacement = format!("preserve({premise});");
+            rewritten.replace_range(start..end, &replacement);
+        }
+        assert_ne!(source, rewritten, "{fixture}");
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        without_implicit_solve(|| verify_c0_sources(&rewritten, &sources)).unwrap();
+    }
+}
