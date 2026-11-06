@@ -3839,10 +3839,8 @@ mod wide_range_reader_tests {
     #[test]
     fn wide_resource_bounds_survive_offset_and_scalar_rewriting() {
         let _session = crate::kernel::VerificationSession::enter();
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(984_700))),
-            byte_width: 4,
-        };
+        let offset =
+            PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(984_700)), 4);
         let base = Pointer {
             block: crate::kernel::PointerBlock::Symbolic(Variable(984_701)),
             offset: offset.clone(),

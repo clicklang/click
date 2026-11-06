@@ -2845,10 +2845,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     let entry_memory = CMemory::new();
     let owner = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100_000))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 4),
     };
     let field = |byte_offset| Pointer {
         block: owner.block.clone(),
@@ -2880,10 +2877,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     );
     let range_data = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(range_data_offset),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(range_data_offset, 4),
     };
     let entry_data_offset = MachineTerm::MemoryLoad(
         crate::kernel::intern_c_memory_ref(&entry_memory),
@@ -2892,10 +2886,7 @@ fn field_derived_capacity_range_covers_a_shorter_live_prefix() {
     );
     let entry_data = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(entry_data_offset),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(entry_data_offset, 4),
     };
     let index = MachineTerm::Variable(Variable(2_000_000));
     let assumptions = PureFactContext::new()
@@ -6736,11 +6727,11 @@ fn wide_scaled_offset_congruence_checks_full_width_and_scale() {
         true,
     ));
     assert!(!evidence.checks(&offset, &four, &low_word_only));
-    let overflowing = PointerOffsetTerm::Int64Scaled {
-        value: Box::new(MachineTerm::uint64_constant(i64::MAX as u64)),
-        byte_width: 2,
-        unsigned: true,
-    };
+    let overflowing = PointerOffsetTerm::scaled_int64_node(
+        MachineTerm::uint64_constant(i64::MAX as u64),
+        2,
+        true,
+    );
     assert!(
         zero.pointer_offset_congruence_evidence(&overflowing, &PointerOffsetTerm::Constant(-2))
             .is_none()
@@ -7713,11 +7704,7 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
     let large = 1u64 << 32;
     let goal_base = Pointer {
         block: root.block.clone(),
-        offset: PointerOffsetTerm::Int64Scaled {
-            value: Box::new(MachineTerm::uint64_constant(large)),
-            byte_width: 1,
-            unsigned: true,
-        },
+        offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::uint64_constant(large), 1, true),
     };
     let context =
         PureFactContext::new().assume_proposition(range(memory.clone(), root.clone(), large + 8));
@@ -7763,11 +7750,7 @@ fn native_loadability_window_requires_every_full_width_guard() {
     let requested = MachineTerm::Variable(Variable(973_203));
     let target = Pointer {
         block: base.block.clone(),
-        offset: PointerOffsetTerm::Int64Scaled {
-            value: Box::new(offset.clone()),
-            byte_width: 1,
-            unsigned: true,
-        },
+        offset: PointerOffsetTerm::scaled_int64_node(offset.clone(), 1, true),
     };
     let source = Proposition::CMemoryLoadable {
         memory: memory.clone(),
@@ -8642,10 +8625,7 @@ fn offset_and_existential_matches_ignore_unrelated_facts() {
         }),
         crate::kernel::LoadKind::Int32,
     );
-    let scaled = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(load),
-        byte_width: 4,
-    };
+    let scaled = PointerOffsetTerm::scaled_int32_node(load, 4);
     let existential = Proposition::Exists {
         name: String::new(),
         var: Variable(97_000),

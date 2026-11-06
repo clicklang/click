@@ -2131,13 +2131,13 @@ mod tests {
         let memory: SharedCMemory = CMemory::new().into();
         let pointer = Pointer {
             block: PointerBlock::Symbolic(Variable(101)),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::IntegerToMachine {
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(Variable(0)).into(),
                     destination: MachineIntegerType::Int32,
-                }),
-                byte_width: 4,
-            },
+                },
+                4,
+            ),
         };
         // The visible C term contains only the registered load variable.  Its
         // pointer offset retains the free Integer ID 0, which must still be

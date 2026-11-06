@@ -276,14 +276,14 @@ fn iterated_element_selection_checks_pointer_reads_across_snapshots() {
     let after = before.clone().store(cell(UNRELATED, 0), int32(1));
     let read = |memory: &CMemory, address: &Pointer| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::MemoryLoad(
+        offset: PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(memory.clone()),
                 Box::new(address.clone()),
                 LoadKind::of_type(CType::Int32Pointer).unwrap(),
-            )),
-            byte_width: 4,
-        },
+            ),
+            4,
+        ),
     };
     let held_base = read(&before, &source);
     let current_base = read(&after, &source);

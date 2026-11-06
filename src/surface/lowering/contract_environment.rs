@@ -240,11 +240,9 @@ pub(in crate::surface) fn offset_pointer_by_elements(
     elements: MachineTerm,
     element_width: u32,
 ) -> Pointer {
-    // A loaded index never enters a pointer offset as a `MemoryLoad` term:
-    // its load variable stands in for it, so contract-side offsets use the
-    // same terms kernel execution does. Names are content-addressed, so no
-    // fact stream is needed here — the defining equation is emitted wherever
-    // the kernel evaluates the same load.
+    // Contract and execution indices retain the same shared structure,
+    // including a loaded index's snapshot and read kind. The common producer
+    // unwraps transitional registered names before constructing that index.
     let mut discarded_facts = crate::kernel::ExecutionFacts::new();
     let elements = crate::kernel::canonicalized_offset_index_term(elements, &mut discarded_facts);
     Pointer {
@@ -278,10 +276,7 @@ pub(in crate::surface) fn scale_int32_offset(
         bits32_constant!(value) => {
             PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => PointerOffsetTerm::Int32Scaled {
-            value: Box::new(value),
-            byte_width,
-        },
+        value => PointerOffsetTerm::scaled_int32_node(value, byte_width),
     }
 }
 

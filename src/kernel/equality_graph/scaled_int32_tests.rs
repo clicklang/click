@@ -34,11 +34,7 @@ fn scaled_int32_congruence_propagates_early_and_late_into_addition_aliases() {
         assert!(!sibling.are_offsets_equal(&offset(10), &offset(11)));
         assert!(!graph.are_offsets_equal(&scaled(1, 4), &scaled(3, 8)));
         for unsigned in [false, true] {
-            let wide = |id| PointerOffsetTerm::Int64Scaled {
-                value: Box::new(scalar(id)),
-                byte_width: 4,
-                unsigned,
-            };
+            let wide = |id| PointerOffsetTerm::scaled_int64_node(scalar(id), 4, unsigned);
             assert!(!graph.are_offsets_equal(&scaled(1, 4), &wide(1)));
             assert!(!graph.are_offsets_equal(&wide(1), &wide(3)));
         }
@@ -63,10 +59,7 @@ fn scaled_int32_literals_join_folded_constants_without_overflow() {
             }
             let folded = PointerOffsetTerm::scale_int32(literal.clone(), 4);
             assert!(graph.are_offsets_equal(&offset(10), &nested(folded.clone())));
-            let explicit = PointerOffsetTerm::Int32Scaled {
-                value: Box::new(literal),
-                byte_width: 4,
-            };
+            let explicit = PointerOffsetTerm::scaled_int32_node(literal, 4);
             assert!(graph.are_offsets_equal(&explicit, &folded));
         }
     }

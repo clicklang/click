@@ -498,19 +498,42 @@ capture/restore retains that index with the registry. The central comparison-for
 collector also selects structural reads inside Integer observations, preserving
 read-over-write matching without adding individual-check fallbacks.
 
-The producer switch and registry removal remain pending. Native address payloads,
-including nested registered reads, also remain an explicit boundary. Shared
-checker admission alone does not justify removing those names.
+The remaining scalar producer switch and registry removal are separate from
+address-index migration. Shared checker admission alone does not justify removing
+those names; width/origin metadata must migrate with their remaining producers.
 
-The next address increment admits structural reads inside a scalar read's native
-address, such as the inner read in `a[*p]`. Import/export retains both snapshots
-and both read kinds without a registered name. The interner retains nested
-snapshot arena identities before comparing native addresses, preventing a
-cross-arena memory-content comparison. Admission walks only the explicit address;
-scaling controls grow nesting depth beside unrelated memory. This does not yet
-switch C/Click index producers: those still introduce registered names, and
-width/origin metadata still uses the registry. The producer switch must migrate
-that common boundary rather than unwrap names separately inside checker queries.
+PR #2472 merged the address-admission prerequisite: structural reads inside a
+scalar read's native address retain their snapshots and read kinds. Its
+separate nested-snapshot key was needed while indices still held native trees.
+
+The current producer increment switches C/Click address indices to shared machine
+operands. The common producer imports registered read names into structural
+reads; scaled offsets retain those shared children. Their identities include
+nested snapshots, replacing the separate snapshot-key walk. Canonicalization
+retains each constructed child rather than resolving its read or reopening its
+prefix. Opaque legacy indices retain their complete producer-local payloads and
+remain outside shared scalar-read admission. Scalar producers outside this
+boundary and width/origin metadata still use the registry.
+
+The producer cutover also exposed three compatibility gaps. Exact rewrite
+matching now recognizes a registered name and its structural descriptor before
+stored-value folding can make their native canonical forms differ. Fold endpoint
+reflexivity compares shared index identities. The difference graph indexes a
+named read's structural descriptor at admission, so range queries reuse its
+recorded bounds without a query-specific fallback. The owned-string example,
+historical fold endpoint, and preserved-call range fixture pass unchanged.
+
+Validation: `scripts/check.sh` passed 7,597 unit/API tests, all 58 regular example
+projects, and all 5,065 regular Markdown fixtures. The local run took 12m53s and
+emitted the ten-minute budget warning; deterministic scaling tests passed without
+relaxing work budgets. Another 147 focused tests and selected nested-index and
+uint64 resource-fold positive/negative fixtures passed. New controls cover cached
+registered names, registry clearing, annotation payloads, stored values,
+cross-arena snapshots, named/structural bound lookup in either admission order,
+and nested producer chains beside unrelated memory with warm and cleared caches.
+The focused `nested_index_read` fact-stability audit reports zero differences
+before and after the change. Its spelling census records 36 spellings and zero
+misses. Both audit harnesses passed; the nightly suite was not run.
 
 
 The checker-admission increment merged in PR #2468. Its initial full gate passed 7,551

@@ -46,10 +46,7 @@ fn wide_equality_bounds_use_incremental_index_and_preserve_branches() {
 fn loadable_object_provenance_lookup_ignores_unrelated_external_pointers() {
     let external = |variable| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let target = external(31_070);
     let loadable = |base| Proposition::CMemoryLoadable {

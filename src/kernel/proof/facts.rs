@@ -3796,17 +3796,14 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(binder)),
-            byte_width: 4,
-        };
+        let bound_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
             PointerOffsetTerm::Add(
                 Box::new(bound_offset),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(free)),
-                    byte_width: 1,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(free),
+                    1,
+                )),
             )
         });
         Proposition::ForAll {
@@ -3833,17 +3830,14 @@ mod integer_equality_fact_index_tests {
         free_offset: Option<Variable>,
         bytes: u32,
     ) -> Proposition {
-        let bound_offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(binder)),
-            byte_width: 4,
-        };
+        let bound_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(binder), 4);
         let offset = free_offset.map_or(bound_offset.clone(), |free| {
             PointerOffsetTerm::Add(
                 Box::new(bound_offset),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(free)),
-                    byte_width: 1,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(free),
+                    1,
+                )),
             )
         });
         Proposition::Exists {

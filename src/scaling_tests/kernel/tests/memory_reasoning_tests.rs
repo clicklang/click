@@ -466,11 +466,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     let native = MachineTerm::Variable(Variable(983_110));
     let alias = MachineTerm::Variable(Variable(983_111));
     let last = |n| MachineTerm::uint64_subtract(n, MachineTerm::uint64_constant(1));
-    let wide = |n| PointerOffsetTerm::Int64Scaled {
-        value: Box::new(n),
-        byte_width: 4,
-        unsigned: true,
-    };
+    let wide = |n| PointerOffsetTerm::scaled_int64_node(n, 4, true);
     let projected = MachineTerm::uint32_from_64(last(native.clone()));
     let query = wide(last(alias.clone()));
     let bound = ConditionTerm::uint64_less_equal(

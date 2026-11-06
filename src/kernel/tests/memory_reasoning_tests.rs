@@ -388,17 +388,14 @@ fn byte_range_containment_expands_constant_stride_arithmetic() {
     let scaled = MachineTerm::multiply(index, MachineTerm::constant(4));
     let base = Pointer {
         block: "strided-byte-buffer".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(repeated),
-            byte_width: 1,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(repeated, 1),
     };
     let pointer = Pointer {
         block: base.block.clone(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::add(scaled, MachineTerm::constant(3))),
-            byte_width: 1,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::add(scaled, MachineTerm::constant(3)),
+            1,
+        ),
     };
 
     let range = CMemoryRange::new_with_element_width(
@@ -436,10 +433,8 @@ fn element_index_and_count_support_nonlegacy_widths() {
         [(1_u32, 3_u32, 3_u32), (2, 7, 14), (4, 5, 20), (8, 2, 16)]
     {
         let index_term = MachineTerm::Variable(Variable(93_600 + u64::from(element_width)));
-        let offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(index_term.clone()),
-            byte_width: i64::from(element_width),
-        };
+        let offset =
+            PointerOffsetTerm::scaled_int32_node(index_term.clone(), i64::from(element_width));
         assert_eq!(
             element_index_from_offset(&offset, element_width),
             Some(index_term)
@@ -459,15 +454,8 @@ fn element_index_and_count_support_nonlegacy_widths() {
 #[test]
 fn a_sixty_four_bit_index_is_an_element_index_only_where_it_is_pinned() {
     let value = MachineTerm::Variable(Variable(93_610));
-    let wide = PointerOffsetTerm::Int64Scaled {
-        value: Box::new(value.clone()),
-        byte_width: 8,
-        unsigned: false,
-    };
-    let narrow = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(value.clone()),
-        byte_width: 8,
-    };
+    let wide = PointerOffsetTerm::scaled_int64_node(value.clone(), 8, false);
+    let narrow = PointerOffsetTerm::scaled_int32_node(value.clone(), 8);
     let empty = PureFactContext::new();
     // The 32-bit index of the same width still answers, with and without facts.
     assert_eq!(element_index_from_offset(&narrow, 8), Some(value.clone()));
@@ -538,11 +526,8 @@ fn wide_offset_branches_publish_full_width_index_facts() {
         for (stride, target) in [(4, 0), (4, 8), (1, i64::MAX), (-4, -8)] {
             for reversed in [false, true] {
                 for value in [false, true] {
-                    let scaled = PointerOffsetTerm::Int64Scaled {
-                        value: Box::new(index.clone()),
-                        byte_width: stride,
-                        unsigned,
-                    };
+                    let scaled =
+                        PointerOffsetTerm::scaled_int64_node(index.clone(), stride, unsigned);
                     let constant = PointerOffsetTerm::Constant(target);
                     let (left, right) = if reversed {
                         (constant, scaled)
@@ -598,11 +583,7 @@ fn wide_offset_branches_publish_full_width_index_facts() {
         let _ = crate::kernel::reasoning::add_pointer_offset_equality_execution_pure_facts(
             &mut facts,
             &PureFactContext::new(),
-            PointerOffsetTerm::Int64Scaled {
-                value: Box::new(index.clone()),
-                byte_width: stride,
-                unsigned,
-            },
+            PointerOffsetTerm::scaled_int64_node(index.clone(), stride, unsigned),
             PointerOffsetTerm::Constant(target),
             false,
         );
@@ -623,10 +604,7 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
     let i = MachineTerm::Variable(Variable(93_660));
     let j = MachineTerm::Variable(Variable(93_661));
     let k = MachineTerm::Variable(Variable(93_662));
-    let scaled = |value: &MachineTerm| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(value.clone()),
-        byte_width: 4,
-    };
+    let scaled = |value: &MachineTerm| PointerOffsetTerm::scaled_int32_node(value.clone(), 4);
     // `p + i + j` against `p + k`: at `i == j == i32::MAX` and `k == -2` the
     // two offsets are `2^34` bytes apart and both indices are `-2`.
     let summed = PointerOffsetTerm::Add(Box::new(scaled(&i)), Box::new(scaled(&j)));
@@ -698,11 +676,7 @@ fn an_index_disequality_needs_the_folds_to_be_sums() {
 #[test]
 fn a_sixty_four_bit_displacement_is_exact_only_where_a_fact_pins_it() {
     let value = MachineTerm::Variable(Variable(93_670));
-    let wide = |unsigned: bool| PointerOffsetTerm::Int64Scaled {
-        value: Box::new(value.clone()),
-        byte_width: 8,
-        unsigned,
-    };
+    let wide = |unsigned: bool| PointerOffsetTerm::scaled_int64_node(value.clone(), 8, unsigned);
     let decide = |assumptions: &PureFactContext, unsigned: bool, target: i64| {
         assumptions.decide(&ConditionTerm::pointer_offset_equal(
             wide(unsigned),
@@ -858,10 +832,7 @@ fn byte_pointer_access_is_contained_by_a_byte_range() {
 fn structural_range_offset_precedes_proof_aware_pointer_resolution() {
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(93_301))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(93_301)), 4),
     };
     let required = memory_range(
         base.offset_by_int32_elements(MachineTerm::constant(2)),
@@ -914,10 +885,7 @@ fn mutable_frame_proves_unwritten_load_equal_across_stack_locals() {
     };
     let written_cell = Pointer {
         block: "p".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(i_bits.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(i_bits.clone(), 4),
     };
     let assumptions = PureFactContext::new()
         .assume_condition(
@@ -1653,17 +1621,11 @@ fn disjoint_range_proves_mutable_frame_cell_distinct() {
     };
     let written_cell = Pointer {
         block: "p".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(i_bits.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(i_bits.clone(), 4),
     };
     let read_cell = Pointer {
         block: "p".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(j_bits.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(j_bits.clone(), 4),
     };
     let i_plus_one = binary_node!(
         Int32,
@@ -3553,10 +3515,7 @@ fn integer_array_fold(
         intern_c_memory_ref(memory),
         Box::new(Pointer {
             block: "array".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(item)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
         }),
         crate::kernel::LoadKind::Int32,
     );
@@ -3783,10 +3742,7 @@ fn symbolic_store_invalidates_only_possible_aliasing_cells() {
     };
     let symbolic_cell = Pointer {
         block: "array".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(i_bits.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(i_bits.clone(), 4),
     };
     let memory = CMemory::new()
         .with_block("array", 12)
@@ -3824,10 +3780,7 @@ fn a_wide_store_does_not_spare_a_narrow_cell_a_ladder_separates() {
         block: "array".into(),
         offset: PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Variable(Variable(93_642))),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(index.clone()),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 4)),
         ),
     };
     let cell = element(&i);
@@ -5070,10 +5023,7 @@ fn assumptions_resolve_materialized_symbolic_memory_load_aliases() {
     });
     let symbolic_src = Pointer {
         block: "src".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(k_bits),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(k_bits, 4),
     };
     let materialized_memory =
         src_pointers
@@ -5139,10 +5089,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_materialized_load_index() {
     });
     let symbolic_src = Pointer {
         block: "src".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(k_bits.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(k_bits.clone(), 4),
     };
     let materialized_memory =
         src_pointers
@@ -5241,10 +5188,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
     });
     let symbolic_src = Pointer {
         block: "src".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(k_bits.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(k_bits.clone(), 4),
     };
     let materialized_memory =
         src_pointers
@@ -5304,10 +5248,7 @@ fn assumptions_reject_forall_based_on_a_shadowed_prefix_index() {
             Box::new(Proposition::ConditionIs(
                 ConditionTerm::pointer_offset_equal(
                     symbolic_src.offset,
-                    PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(i_bits.clone()),
-                        byte_width: 4,
-                    },
+                    PointerOffsetTerm::scaled_int32_node(i_bits.clone(), 4),
                 ),
                 true,
             )),
@@ -5536,10 +5477,7 @@ fn wrapped_index_sum_does_not_decide_pointer_offsets_equal() {
     let i = MachineTerm::Variable(Variable(93_401));
     let j = MachineTerm::Variable(Variable(93_402));
     let k = MachineTerm::Variable(Variable(93_403));
-    let scaled = |value: &MachineTerm| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(value.clone()),
-        byte_width: 4,
-    };
+    let scaled = |value: &MachineTerm| PointerOffsetTerm::scaled_int32_node(value.clone(), 4);
     let assumptions = PureFactContext::new()
         .assume_condition(
             ConditionTerm::equal(i.clone(), MachineTerm::constant(i32::MAX as u32)),
@@ -5683,10 +5621,7 @@ fn freed_external_allocation_is_not_still_available() {
     // compare which allocations each snapshot has freed.
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(93_503))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(93_503)), 4),
     };
     let live = CMemory::new()
         .with_heap_allocation_claim(base.clone(), MachineTerm::constant(8))

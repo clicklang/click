@@ -487,10 +487,7 @@ fn file_scope_static_array_call_requirements_are_spellable() {
 fn external_byte_range_caller() -> (Vec<syntax::C0Parameter>, Vec<CExpression>, CState) {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100_000))),
-            byte_width: 1,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
     };
     let pointer = CValue::typed_pointer(pointer, CType::UInt8Pointer);
     let length = CValue::Int32(MachineTerm::Variable(Variable(1)));
@@ -637,14 +634,11 @@ fn external_byte_range_requirement(binder: Variable, length: &MachineTerm) -> Pr
                 base: Pointer {
                     block: PointerBlock::ExternalArgument,
                     offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                            byte_width: 1,
-                        }),
-                        Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(index.clone()),
-                            byte_width: 1,
-                        }),
+                        Box::new(PointerOffsetTerm::scaled_int32_node(
+                            MachineTerm::Variable(Variable(100_000)),
+                            1,
+                        )),
+                        Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 1)),
                     ),
                 },
                 bytes: binary_node!(
@@ -669,10 +663,7 @@ fn external_symbolic_element_context(
 ) -> (Vec<syntax::C0Parameter>, Vec<CExpression>, CState) {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100_000))),
-            byte_width: 1,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_000)), 1),
     };
     let pointer = CValue::typed_pointer(pointer, CType::UInt8Pointer);
     let index = CValue::Int32(MachineTerm::Variable(Variable(100_001)));
@@ -701,14 +692,11 @@ fn external_symbolic_element_requirement_term(memory: CMemory, index: MachineTer
         base: Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                    byte_width: 1,
-                }),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(index.clone()),
-                    byte_width: 1,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(Variable(100_000)),
+                    1,
+                )),
+                Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 1)),
             ),
         },
         bytes: binary_node!(
@@ -987,14 +975,14 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
         base: Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(Variable(100_002))),
-                    byte_width: 1,
-                }),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(Variable(100_001))),
-                    byte_width: 1,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(Variable(100_002)),
+                    1,
+                )),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(Variable(100_001)),
+                    1,
+                )),
             ),
         },
         bytes: binary_node!(
@@ -1037,14 +1025,14 @@ fn strlen_symbolic_element_range_rejects_wrong_identity() {
             unreachable!();
         };
         base.offset = PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                byte_width: 2,
-            }),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_001))),
-                byte_width: 2,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_000)),
+                2,
+            )),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_001)),
+                2,
+            )),
         );
         requirement
     };
@@ -1092,10 +1080,10 @@ fn strlen_constant_element_range_falls_back_to_general_synthesis() {
     assert_eq!(
         base.offset,
         PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                byte_width: 1,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_000)),
+                1
+            )),
             Box::new(PointerOffsetTerm::Constant(3)),
         )
     );
@@ -1118,10 +1106,7 @@ fn strlen_zero_based_element_range_round_trips_exactly() {
     let Proposition::CMemoryLoadable { base, .. } = &mut requirement else {
         unreachable!();
     };
-    base.offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(100_001))),
-        byte_width: 1,
-    };
+    base.offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100_001)), 1);
     let synthesized = synthesize_surface_proposition(
         &requirement,
         ParameterBinding::new(&parameters, &arguments),
@@ -1165,10 +1150,10 @@ fn non_external_named_range_still_uses_general_synthesis() {
         memory,
         base: Pointer {
             block: PointerBlock::Concrete("local:elements".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_001))),
-                byte_width: 1,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_001)),
+                1,
+            ),
         },
         bytes: binary_node!(
             Int32,
@@ -1260,10 +1245,10 @@ fn external_element_range_context(
 ) -> (Vec<syntax::C0Parameter>, Vec<CExpression>, CState) {
     let pointer = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100_000))),
-            byte_width: i64::from(width),
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::Variable(Variable(100_000)),
+            i64::from(width),
+        ),
     };
     let pointer = CValue::typed_pointer(pointer, pointer_type);
     let parameters = vec![syntax::C0Parameter::new(
@@ -1305,14 +1290,14 @@ fn external_element_range_requirement(
         base: Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                    byte_width: i64::from(width),
-                }),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(start.clone()),
-                    byte_width: i64::from(width),
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(Variable(100_000)),
+                    i64::from(width),
+                )),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    start.clone(),
+                    i64::from(width),
+                )),
             ),
         },
         bytes: binary_node!(
@@ -1515,10 +1500,10 @@ fn named_element_ranges_preserve_nonzero_starts_and_folded_byte_counts() {
     assert_eq!(
         base.offset,
         PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_000)),
+                4
+            )),
             Box::new(PointerOffsetTerm::Constant(12)),
         )
     );
@@ -1537,14 +1522,14 @@ fn named_element_range_does_not_infer_start_from_an_unrelated_index() {
         unreachable!();
     };
     base.offset = PointerOffsetTerm::Add(
-        Box::new(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100_000))),
-            byte_width: 4,
-        }),
-        Box::new(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100_003))),
-            byte_width: 4,
-        }),
+        Box::new(PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::Variable(Variable(100_000)),
+            4,
+        )),
+        Box::new(PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::Variable(Variable(100_003)),
+            4,
+        )),
     );
     let _budget = SurfaceSynthesisScope::enter();
     let synthesized = synthesize_surface_proposition(
@@ -2554,9 +2539,8 @@ fn pointer_field_synthesis_through_cast_and_local_selects_current_value() {
 /// occupancy-clearing loop, whose invariant closer `both` refused.
 #[test]
 fn a_local_indexes_only_addresses_formed_from_it() {
-    let scaled = |variable: u64| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(variable))),
-        byte_width: 4,
+    let scaled = |variable: u64| {
+        PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4)
     };
     let external = |offset: PointerOffsetTerm| Pointer {
         block: PointerBlock::ExternalArgument,
@@ -3382,23 +3366,16 @@ fn array_index_spelling_keeps_the_source_index_at_each_integer_width() {
                     i.clone()
                 };
                 let offset = match format {
-                    MachineIntegerType::Int32 => PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(index),
-                        byte_width: width,
-                    },
-                    MachineIntegerType::UInt32 => PointerOffsetTerm::Int64Scaled {
-                        value: Box::new(MachineTerm::legacy_cast(
+                    MachineIntegerType::Int32 => PointerOffsetTerm::scaled_int32_node(index, width),
+                    MachineIntegerType::UInt32 => PointerOffsetTerm::scaled_int64_node(
+                        MachineTerm::legacy_cast(
                             MachineCastSpelling::UInt64From32,
                             Box::new(index),
-                        )),
-                        byte_width: width,
-                        unsigned: true,
-                    },
-                    _ => PointerOffsetTerm::Int64Scaled {
-                        value: Box::new(index),
-                        byte_width: width,
-                        unsigned: true,
-                    },
+                        ),
+                        width,
+                        true,
+                    ),
+                    _ => PointerOffsetTerm::scaled_int64_node(index, width, true),
                 };
                 let load = MachineTerm::MemoryLoad(
                     crate::kernel::intern_c_memory_ref(state.memory()),

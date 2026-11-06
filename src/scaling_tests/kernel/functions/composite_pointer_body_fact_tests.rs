@@ -155,10 +155,7 @@ fn fold_nonnull_fact_uses_an_exact_composite_pointer_alias() {
     let model = Pointer::symbolic(Variable(700));
     let program = Pointer {
         block: PointerBlock::Symbolic(Variable(701)),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(702))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(702)), 4),
     };
     let null = Pointer::null();
     let alias = pointer_fact(&model, &program, true);

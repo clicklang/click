@@ -6,12 +6,9 @@ use crate::kernel::{MachineCastSpelling, MachineTerm, cast_term};
 
 // --- the canonicalization model's production invariants -------------------
 // See docs/internals/canonicalization.md.
-// Production evaluation must never place a raw `MemoryLoad` inside
-// pointer-offset arithmetic: loaded pointers and indices take their
-// load variable first, and every load variable travels with its exact
-// defining fact in the emitted facts. These tests drive the real
-// evaluation entry points; kernel tests that construct raw load-bearing
-// offsets directly do not establish this invariant.
+// Address indices retain shared structural reads. Loaded pointer values still
+// use registered observations and defining facts. These tests drive both real
+// production boundaries; direct construction alone does not establish them.
 
 /// Walks every pointer offset reachable from a value, collecting the
 /// load variables found in scaled positions and rejecting any
@@ -281,22 +278,19 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         let CStatementOutcome::Return { value, .. } = outcome else {
             continue;
         };
-        let mut load_variables = BTreeSet::new();
-        collect_offset_load_variables_from_value(value, &mut load_variables);
-        for load_variable in &load_variables {
-            let (_, pointer) = crate::kernel::registered_load_for_variable(load_variable)
-                .expect("the index's load variable should be registered");
-            assert_eq!(
-                pointer, len_cell,
-                "the load variable should denote the loaded index cell"
-            );
+        let CValue::Pointer(pointer) = value else {
+            panic!("indexing should return a pointer");
+        };
+        for index in pointer.offset.scaled_values() {
+            let MachineTerm::MemoryLoad(_, address, kind) = index else {
+                panic!("the produced index must retain its structural read");
+            };
+            assert_eq!(address.as_ref(), &len_cell);
+            assert_eq!(*kind, crate::kernel::LoadKind::Int32);
+            saw_a_canonical_offset = true;
         }
-        saw_a_canonical_offset |= !load_variables.is_empty();
     }
-    assert!(
-        saw_a_canonical_offset,
-        "the loaded index's offset should carry a load variable"
-    );
+    assert!(saw_a_canonical_offset, "the loaded index must be retained");
 }
 
 /// A pointer loaded from an opaque cell is named by its own read: the
@@ -625,10 +619,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     };
     let pointer_offset = MachineTerm::If {
         condition: Box::new(ConditionTerm::PointerOffsetEqual(
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(load),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(load.clone(), 4)),
             Box::new(PointerOffsetTerm::Constant(28)),
         )),
         then_term: Box::new(MachineTerm::constant(4)),
@@ -652,7 +643,7 @@ fn atomic_canonicalization_reaches_loads_in_every_condition_region() {
     assert!(matches!(
         condition.as_ref(),
         ConditionTerm::PointerOffsetEqual(left, _)
-            if left.as_ref() == &PointerOffsetTerm::Constant(28)
+            if left.as_ref() == &PointerOffsetTerm::scaled_int32_node(load.clone(), 4)
     ));
 }
 
@@ -708,45 +699,44 @@ fn representational_load_equality_holds_beyond_the_former_depth_preflight() {
 }
 
 #[test]
-fn offsets_have_same_canonical_form_through_the_canonical_form() {
+fn shared_offsets_retain_snapshot_identity_through_canonicalization() {
     let pointer = Pointer {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(0),
     };
     let base = CMemory::new().with_block("cells", 4);
     let drifted = base.clone().with_block("unrelated", 4);
-    let scaled = |memory: CMemory| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::MemoryLoad(
-            crate::kernel::intern_c_memory(memory),
-            Box::new(pointer.clone()),
-            crate::kernel::LoadKind::Int32,
-        )),
-        byte_width: 4,
+    let scaled = |memory: CMemory| {
+        PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Int32,
+            ),
+            4,
+        )
     };
 
-    assert!(crate::kernel::offsets_have_same_canonical_form(
+    // Equal contents at different snapshots do not make identical terms.
+    assert!(!crate::kernel::offsets_have_same_canonical_form(
         &scaled(base.clone()),
-        &scaled(drifted.clone()),
-    ));
-    // The load term and its load variable are one offset.
-    let named = crate::kernel::eval::canonical_offset_term(&scaled(base.clone()));
-    assert!(crate::kernel::offsets_have_same_canonical_form(
-        &named,
         &scaled(drifted),
     ));
+    let retained = crate::kernel::eval::canonical_offset_term(&scaled(base.clone()));
+    assert_eq!(retained, scaled(base.clone()));
     // Distinct cells stay distinct.
     let other = Pointer {
         block: "cells".into(),
         offset: PointerOffsetTerm::Constant(4),
     };
-    let other_scaled = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::MemoryLoad(
+    let other_scaled = PointerOffsetTerm::scaled_int32_node(
+        MachineTerm::MemoryLoad(
             crate::kernel::intern_c_memory(base.clone()),
             Box::new(other),
             crate::kernel::LoadKind::Int32,
-        )),
-        byte_width: 4,
-    };
+        ),
+        4,
+    );
     assert!(!crate::kernel::offsets_have_same_canonical_form(
         &scaled(base),
         &other_scaled,
@@ -756,10 +746,8 @@ fn offsets_have_same_canonical_form_through_the_canonical_form() {
 #[test]
 fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
     for depth in [64, 128, 256] {
-        let mut offset = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(unresolved_canonicalization_test_load()),
-            byte_width: 4,
-        };
+        let mut offset =
+            PointerOffsetTerm::scaled_int32_node(unresolved_canonicalization_test_load(), 4);
         for _ in 0..depth {
             offset =
                 PointerOffsetTerm::Add(Box::new(offset), Box::new(PointerOffsetTerm::Constant(1)));
@@ -779,19 +767,16 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
             matches!(
                 leaf,
                 PointerOffsetTerm::Int32Scaled { value, .. }
-                    if matches!(value.as_ref(), MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable))
+                    if value.as_ref() == &unresolved_canonicalization_test_load()
             ),
-            "the deepest scaled index should take its load variable at depth {depth}: {leaf:?}",
+            "the deepest scaled index should retain its read at depth {depth}: {leaf:?}",
         );
     }
 }
 
 #[test]
 fn pointer_offset_add_coalesces_nested_constant_displacements() {
-    let base = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(17))),
-        byte_width: 4,
-    };
+    let base = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(17)), 4);
     let nested = PointerOffsetTerm::add(
         PointerOffsetTerm::add(base.clone(), PointerOffsetTerm::Constant(4)),
         PointerOffsetTerm::Constant(4),
@@ -813,10 +798,7 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
         memory.clone(),
         Box::new(Pointer {
             block: "data".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(index.clone()),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
         }),
         crate::kernel::LoadKind::Int32,
     );
@@ -934,11 +916,9 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
             crate::kernel::LoadKind::Int32,
         )
     };
-    let indexed_load_variable =
-        crate::kernel::eval::canonical_term(&cell(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(bound)),
-            byte_width: 4,
-        }));
+    let indexed_load_variable = crate::kernel::eval::canonical_term(&cell(
+        PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(bound), 4),
+    ));
     assert!(matches!(indexed_load_variable, MachineTerm::Variable(_)));
     let instantiated = crate::kernel::reasoning::substitute_bitvector_variable(
         &indexed_load_variable,
@@ -977,10 +957,7 @@ fn load_variables_compare_as_loads_under_bounds_pinned_indices() {
             crate::kernel::LoadKind::Int32,
         ))
     };
-    let indexed = cell(PointerOffsetTerm::Int32Scaled {
-        value: Box::new(j.clone()),
-        byte_width: 4,
-    });
+    let indexed = cell(PointerOffsetTerm::scaled_int32_node(j.clone(), 4));
     let third = cell(PointerOffsetTerm::Constant(8));
     assert_ne!(indexed, third);
     // The index is a free variable of the load variable's denotation.
@@ -1010,10 +987,7 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
     let written = CMemory::new().with_block("p", 12).store(
         Pointer {
             block: "p".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(counter)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(counter), 4),
         },
         CValue::Int32(MachineTerm::constant(5)),
     );
@@ -1363,10 +1337,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
 #[test]
 fn a_scaled_index_sum_is_one_atom_and_a_constant_index_is_a_shift() {
     let u = MachineTerm::Variable(Variable(7_960_000));
-    let scaled = |value: MachineTerm| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(value),
-        byte_width: 4,
-    };
+    let scaled = |value: MachineTerm| PointerOffsetTerm::scaled_int32_node(value, 4);
     let wrapping = scaled(binary_node!(
         Int32,
         Add,
@@ -1426,10 +1397,7 @@ fn a_store_through_a_wrapping_index_sum_is_placed_by_the_word_itself() {
     };
     let store_at = |word: &MachineTerm| Pointer {
         block: block.clone(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(word.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(word.clone(), 4),
     };
 
     let wrapping = binary_node!(

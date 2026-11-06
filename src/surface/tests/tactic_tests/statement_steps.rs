@@ -1087,17 +1087,11 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let owner = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(41))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4),
     };
     let data = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(42))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4),
     };
     let read = Pointer::loaded_value(&crate::kernel::intern_c_memory(CMemory::new()), &owner);
     let proposition = Proposition::ConditionIs(
@@ -1143,10 +1137,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let passed = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(43))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(43)), 4),
     };
     let current = Pointer::symbolic(Variable(44));
     let proposition = Proposition::ConditionIs(
@@ -1181,23 +1172,14 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 
 #[test]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
-    let owner_offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(41))),
-        byte_width: 4,
-    };
-    let data_offset = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(42))),
-        byte_width: 4,
-    };
+    let owner_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
+    let data_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
     let index = MachineTerm::Variable(Variable(43));
     let proposition = Proposition::ConditionIs(
         ConditionTerm::PointerOffsetEqual(
             Box::new(PointerOffsetTerm::Add(
                 Box::new(data_offset.clone()),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(index.clone()),
-                    byte_width: 4,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(index.clone(), 4)),
             )),
             Box::new(PointerOffsetTerm::Add(
                 Box::new(owner_offset.clone()),

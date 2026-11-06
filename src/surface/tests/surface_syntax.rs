@@ -2674,10 +2674,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     );
     let first_data_cell = Pointer {
         block: "arg-memory".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(data_pointer),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(data_pointer, 4),
     };
     let proposition = Proposition::ConditionIs(
         ConditionTerm::Compare {

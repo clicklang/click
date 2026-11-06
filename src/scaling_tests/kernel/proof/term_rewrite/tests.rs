@@ -175,10 +175,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
             &memory,
             &Pointer {
                 block: PointerBlock::Concrete(block.clone()),
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(source_term.clone()),
-                    byte_width: 4,
-                },
+                offset: PointerOffsetTerm::scaled_int32_node(source_term.clone(), 4),
             },
             crate::kernel::LoadKind::Int32,
             4,
@@ -189,14 +186,14 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                 &Pointer {
                     block: PointerBlock::Concrete(block.clone()),
                     offset: PointerOffsetTerm::Add(
-                        Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(MachineTerm::Variable(load)),
-                            byte_width: 4,
-                        }),
-                        Box::new(PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(MachineTerm::Variable(load)),
-                            byte_width: 4,
-                        }),
+                        Box::new(PointerOffsetTerm::scaled_int32_node(
+                            MachineTerm::Variable(load),
+                            4,
+                        )),
+                        Box::new(PointerOffsetTerm::scaled_int32_node(
+                            MachineTerm::Variable(load),
+                            4,
+                        )),
                     ),
                 },
                 crate::kernel::LoadKind::Int32,
@@ -228,13 +225,9 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                 .1
         );
         assert_eq!(snapshot, &memory);
-        assert!(
-            pointer
-                .offset
-                .scaled_values()
-                .iter()
-                .all(|value| matches!(value, MachineTerm::Variable(_)))
-        );
+        assert!(pointer.offset.scaled_values().iter().all(
+            |value| matches!(value, MachineTerm::MemoryLoad(snapshot, _, _) if snapshot == &memory)
+        ));
         last_load = Some(load);
         work.push(measured);
     }
@@ -865,13 +858,13 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
         let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("array", 16));
         let leaf_pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::IntegerToMachine {
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(source).into(),
                     destination: MachineIntegerType::Int32,
-                }),
-                byte_width: 4,
-            },
+                },
+                4,
+            ),
         };
         let mut load = crate::kernel::eval::load_variable_for_exact_cell(
             &memory,
@@ -932,15 +925,9 @@ fn checked_substitution_collector_reuses_registered_load_dag() {
 #[test]
 fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
     let index = MachineTerm::Variable(Variable(989_100));
-    let native = PointerOffsetTerm::Int64Scaled {
-        value: Box::new(index.clone()),
-        byte_width: 4,
-        unsigned: true,
-    };
-    let narrow = PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::uint32_from_64(index.clone())),
-        byte_width: 4,
-    };
+    let native = PointerOffsetTerm::scaled_int64_node(index.clone(), 4, true);
+    let narrow =
+        PointerOffsetTerm::scaled_int32_node(MachineTerm::uint32_from_64(index.clone()), 4);
     let bound = ConditionTerm::uint64_less_equal(
         index.clone(),
         MachineTerm::uint64_constant(1_073_741_823),
@@ -1020,11 +1007,7 @@ fn native_unsigned_offset_projection_checks_full_width_bounds_and_scopes() {
         assert_eq!(projection(condition, truth), native);
     }
     let conditions = HashMap::from([(bound.clone(), true)]);
-    let signed = PointerOffsetTerm::Int64Scaled {
-        value: Box::new(index.clone()),
-        byte_width: 4,
-        unsigned: false,
-    };
+    let signed = PointerOffsetTerm::scaled_int64_node(index.clone(), 4, false);
     let mut rewrite = TermRewrite::for_conditions(&conditions);
     assert_eq!(rewrite.offset(&signed), signed);
     let binder = Proposition::ForAll {

@@ -293,7 +293,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             PointerOffsetTerm::Constant(byte_width),
                         ));
                         tasks.push(HavocIdentityTask::Text(","));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
                 }
             }
@@ -308,7 +308,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     } => {
                         let _ = write!(identity, "tmcast{source:?}:{destination:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
 
                     native_constant!(format, bits) => {
@@ -379,17 +379,17 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     unary_term!(Int32, BitwiseNot, value) => {
                         identity.push_str("tbn(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
                     MachineTerm::Float32Negate(value) => {
                         identity.push_str("tf32n(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
                     MachineTerm::Float64Negate(value) => {
                         identity.push_str("tf64n(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
                     MachineTerm::Float32Binary {
                         operator,
@@ -574,7 +574,7 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                     } => {
                         let _ = write!(identity, "fc{width}class{classification:?}(");
                         tasks.push(HavocIdentityTask::Text(")"));
-                        tasks.push(HavocIdentityTask::Bitvector(*value));
+                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
                     }
                 }
             }
@@ -1118,10 +1118,10 @@ mod forget_cached_values_tests {
         // from it by any constant.
         let symbolic = Pointer {
             block: base.block.clone(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(944_105))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(944_105)),
+                4,
+            ),
         };
         assert!(memory.is_zeroed_heap_address(&symbolic, 4, &facts));
         assert!(!narrow.is_zeroed_heap_address(&symbolic, 4, &facts));

@@ -495,13 +495,55 @@ enum MachineIntegerOperand {
     Shared {
         term: KernelTerm,
         boxed: OnceLock<MachineTerm>,
+        structural: OnceLock<MachineTerm>,
     },
     Legacy(MachineTerm),
+    // Keep this producer's complete payload even when legacy equality omits
+    // annotations. The retained identity keeps the old native key alive.
+    ExactLegacy {
+        value: MachineTerm,
+        _identity: SharedMachineIntegerTerm,
+    },
 }
 
 impl Clone for SharedMachineIntegerTerm {
     fn clone(&self) -> Self {
         Self(self.0.clone())
+    }
+}
+
+// Pointer indices retain this shared value. Their compatibility view must
+// expose its structure, not a reserved name retained from a native import.
+impl std::ops::Deref for SharedMachineIntegerTerm {
+    type Target = MachineTerm;
+    fn deref(&self) -> &Self::Target {
+        self.structural_value()
+    }
+}
+
+impl AsRef<MachineTerm> for SharedMachineIntegerTerm {
+    fn as_ref(&self) -> &MachineTerm {
+        self.structural_value()
+    }
+}
+
+impl PartialOrd for SharedMachineIntegerTerm {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+impl Ord for SharedMachineIntegerTerm {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.id().cmp(&other.id())
+    }
+}
+impl fmt::Debug for SharedMachineIntegerTerm {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("SharedMachineIntegerTerm")
+            .field("id", &self.id())
+            .field("type", &self.ty())
+            .finish()
     }
 }
 
@@ -542,6 +584,59 @@ impl SharedMachineIntegerTerm {
         (found.shared_operand().is_some()
             && MACHINE_OBSERVATION_IMPORTS.with(|seen| seen.borrow().contains_key(&found.id())))
         .then_some(found)
+    }
+
+    /// An address index owns its exact structure. Import shared operands
+    /// directly: a cached native input may still contain a reserved name,
+    /// and native snapshot equality is not a cross-arena structural key.
+    pub(crate) fn index(ty: MachineIntegerType, value: MachineTerm) -> Self {
+        let mut import = KernelTermImport::default();
+        if let Some(term) = import.machine_arithmetic(ty, &value) {
+            let shared = Self::from_shared(ty, term).expect("admitted index operand");
+            if !import.machine_input_requires_export
+                && let MachineIntegerOperand::Shared { structural, .. } = &shared.0.operand
+            {
+                // Retain the explicit input; reconstructing it would export
+                // an operand that the producer already supplied.
+                let _ = structural.set(value.clone());
+            }
+            return shared;
+        }
+        let identity = Self::intern_key(MachineIntegerKey::native(ty, value.clone()));
+        Self(Arc::new(SharedMachineIntegerNode {
+            id: identity.id(),
+            ty,
+            operand: MachineIntegerOperand::ExactLegacy {
+                value,
+                _identity: identity,
+            },
+            reading: OnceLock::new(),
+        }))
+    }
+
+    /// Retain an unchanged index after a native mapper. Numeric syntax without
+    /// reads/conversions has exact native equality; opaque payloads do not.
+    /// A direct read compares arena identity before any native address data.
+    pub(crate) fn with_mapped_index(&self, mapped: MachineTerm) -> Self {
+        if let Some(root) = self.shared_operand() {
+            let unchanged = if let KernelTermNode::MemoryLoad {
+                memory,
+                address,
+                kind,
+            } = root.node()
+            {
+                matches!(&mapped, MachineTerm::MemoryLoad(other, pointer, other_kind)
+                    if memory.arena_id() == other.arena_id() && address == pointer.as_ref() && kind == other_kind)
+            } else {
+                !root.has_machine_reads()
+                    && !root.has_machine_conversions()
+                    && self.structural_value() == &mapped
+            };
+            if unchanged {
+                return self.clone();
+            }
+        }
+        Self::index(self.ty(), mapped)
     }
 
     pub fn intern(ty: MachineIntegerType, value: MachineTerm) -> Self {
@@ -650,23 +745,28 @@ impl SharedMachineIntegerTerm {
     pub(crate) fn shared_operand(&self) -> Option<&KernelTerm> {
         match &self.0.operand {
             MachineIntegerOperand::Shared { term, .. } => Some(term),
-            MachineIntegerOperand::Legacy(_) => None,
+            MachineIntegerOperand::Legacy(_) | MachineIntegerOperand::ExactLegacy { .. } => None,
         }
     }
     /// The explicit legacy input, if one was already retained. Unlike
     /// `value`, this never exports a shared operand or fills its cache.
     pub(crate) fn retained_written_operand(&self) -> Option<&MachineTerm> {
         match &self.0.operand {
-            MachineIntegerOperand::Shared { boxed, .. } => boxed.get(),
-            MachineIntegerOperand::Legacy(value) => Some(value),
+            MachineIntegerOperand::Shared {
+                boxed, structural, ..
+            } => boxed.get().or_else(|| structural.get()),
+            MachineIntegerOperand::Legacy(value)
+            | MachineIntegerOperand::ExactLegacy { value, .. } => Some(value),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn has_boxed_operand(&self) -> bool {
         match &self.0.operand {
-            MachineIntegerOperand::Shared { boxed, .. } => boxed.get().is_some(),
-            MachineIntegerOperand::Legacy(_) => true,
+            MachineIntegerOperand::Shared {
+                boxed, structural, ..
+            } => boxed.get().is_some() || structural.get().is_some(),
+            MachineIntegerOperand::Legacy(_) | MachineIntegerOperand::ExactLegacy { .. } => true,
         }
     }
 
@@ -676,11 +776,32 @@ impl SharedMachineIntegerTerm {
     pub fn ty(&self) -> MachineIntegerType {
         self.0.ty
     }
+    /// Exact structural view at native address/checker boundaries. The
+    /// separate written-input cache can contain a registered read name.
+    pub(crate) fn structural_value(&self) -> &MachineTerm {
+        match &self.0.operand {
+            MachineIntegerOperand::Shared {
+                term, structural, ..
+            } => structural
+                .get_or_init(|| KernelTermExport::machine(term).expect("shared machine operand")),
+            MachineIntegerOperand::Legacy(value)
+            | MachineIntegerOperand::ExactLegacy { value, .. } => value,
+        }
+    }
+
     pub fn value(&self) -> &MachineTerm {
         match &self.0.operand {
-            MachineIntegerOperand::Shared { term, boxed } => boxed
-                .get_or_init(|| KernelTermExport::machine(term).expect("shared machine operand")),
-            MachineIntegerOperand::Legacy(value) => value,
+            MachineIntegerOperand::Shared {
+                term,
+                boxed,
+                structural,
+            } => boxed.get_or_init(|| {
+                structural.get().cloned().unwrap_or_else(|| {
+                    KernelTermExport::machine(term).expect("shared machine operand")
+                })
+            }),
+            MachineIntegerOperand::Legacy(value)
+            | MachineIntegerOperand::ExactLegacy { value, .. } => value,
         }
     }
 
@@ -855,6 +976,7 @@ impl MachineIntegerInterner {
                 MachineIntegerOperand::Shared {
                     term: term.clone(),
                     boxed: OnceLock::new(),
+                    structural: OnceLock::new(),
                 },
             ),
             MachineIntegerKey::Legacy { ty, value, .. } => {

@@ -1020,7 +1020,7 @@ pub enum PointerOffsetTerm {
     Variable(Variable),
     Add(Box<PointerOffsetTerm>, Box<PointerOffsetTerm>),
     Int32Scaled {
-        value: Box<MachineTerm>,
+        value: SharedMachineIntegerTerm,
         byte_width: i64,
     },
     /// A pointer displacement formed from a signed or unsigned 64-bit
@@ -1028,13 +1028,30 @@ pub enum PointerOffsetTerm {
     /// existing 32-bit form, but its numeric interpretation must not be
     /// truncated to `i32` while forming an address.
     Int64Scaled {
-        value: Box<MachineTerm>,
+        value: SharedMachineIntegerTerm,
         byte_width: i64,
         unsigned: bool,
     },
 }
 
 impl PointerOffsetTerm {
+    /// Preserve the written index node, including a zero scale; the smart
+    /// `scale_int32` constructor may separately fold literal displacements.
+    pub(crate) fn scaled_int32_node(value: MachineTerm, byte_width: i64) -> Self {
+        Self::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, value),
+            byte_width,
+        }
+    }
+
+    pub(crate) fn scaled_int64_node(value: MachineTerm, byte_width: i64, unsigned: bool) -> Self {
+        Self::Int64Scaled {
+            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int64, value),
+            byte_width,
+            unsigned,
+        }
+    }
+
     /// Maps scaled index values without changing the offset expression.
     pub(crate) fn map_scaled_values(
         &self,
@@ -1056,7 +1073,7 @@ impl PointerOffsetTerm {
                 }
                 Task::Visit(Self::Int32Scaled { value, byte_width }) => {
                     values.push(Self::Int32Scaled {
-                        value: Box::new(map(value)),
+                        value: value.with_mapped_index(map(value)),
                         byte_width: *byte_width,
                     });
                 }
@@ -1066,7 +1083,7 @@ impl PointerOffsetTerm {
                     unsigned,
                 }) => {
                     values.push(Self::Int64Scaled {
-                        value: Box::new(map(value)),
+                        value: value.with_mapped_index(map(value)),
                         byte_width: *byte_width,
                         unsigned: *unsigned,
                     });

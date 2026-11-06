@@ -282,7 +282,7 @@ pub(in crate::kernel) fn unsigned_index_in_range(
     if byte_width != i64::from(range.element_width()) {
         return None;
     }
-    let index = *value;
+    let index = value.as_ref().clone();
     let end_term = MachineTerm::uint64_constant(end as u64);
     let last = MachineTerm::uint64_constant((end - 1) as u64);
     let guards = vec![
@@ -1931,10 +1931,7 @@ mod separated_range_frame_tests {
         };
         let data = Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(word(9_941_005)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(word(9_941_005), 4),
         };
         let backing = CMemoryRange::new(data.clone(), start.clone(), end.clone());
         let descriptor = CMemoryRange::new(field.clone(), 0u32.into(), 4u32.into());
@@ -2053,11 +2050,7 @@ mod unsigned_index_membership_tests {
     fn byte_at(base: &Pointer, index: Variable) -> Pointer {
         Pointer {
             block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(MachineTerm::Variable(index)),
-                byte_width: 1,
-                unsigned: true,
-            },
+            offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(index), 1, true),
         }
     }
 
@@ -2152,22 +2145,14 @@ mod unsigned_index_membership_tests {
         let context = PureFactContext::new().assume_condition(below(k, 4), true);
         let signed = Pointer {
             block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(MachineTerm::Variable(k)),
-                byte_width: 1,
-                unsigned: false,
-            },
+            offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(k), 1, false),
         };
         assert!(unsigned_index_in_range(&signed, &range).is_none());
         // Four-byte elements of a one-byte range: the scale is not the
         // range's element width.
         let wide = Pointer {
             block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(MachineTerm::Variable(k)),
-                byte_width: 4,
-                unsigned: true,
-            },
+            offset: PointerOffsetTerm::scaled_int64_node(MachineTerm::Variable(k), 4, true),
         };
         assert!(unsigned_index_in_range(&wide, &range).is_none());
         assert!(PointerInRangeEvidence::for_pointer(&wide, &range, &context).is_none());

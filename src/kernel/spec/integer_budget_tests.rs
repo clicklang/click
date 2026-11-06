@@ -252,10 +252,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         memory: CMemory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(integer_address),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(integer_address, 4),
         },
         bytes: MachineTerm::constant(4),
         wide: false,
@@ -289,10 +286,7 @@ fn integer_fold_loadable_obligation_keeps_carriers_separate() {
         memory: CMemory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(shared_id)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(shared_id), 4),
         },
         bytes: MachineTerm::constant(4),
         wide: false,
@@ -317,13 +311,13 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
     let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("array", 16));
     let pointer = Pointer {
         block: PointerBlock::Concrete("array".into()),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::IntegerToMachine {
+        offset: PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::IntegerToMachine {
                 value: IntegerTerm::var(accumulator).into(),
                 destination: MachineIntegerType::Int32,
-            }),
-            byte_width: 4,
-        },
+            },
+            4,
+        ),
     };
     let load = crate::kernel::eval::load_variable_for_cell(
         &memory,
@@ -334,10 +328,7 @@ fn integer_fold_loadable_obligation_sees_integer_in_registered_pointer() {
         memory: CMemory::new(),
         base: Pointer {
             block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(load)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(load), 4),
         },
         bytes: MachineTerm::constant(4),
         wide: false,
@@ -386,13 +377,13 @@ fn integer_fold_loadable_obligation_keeps_accumulator_for_two_hop_direct_offset(
         &memory,
         &Pointer {
             block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::IntegerToMachine {
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::IntegerToMachine {
                     value: IntegerTerm::var(accumulator).into(),
                     destination: MachineIntegerType::Int32,
-                }),
-                byte_width: 4,
-            },
+                },
+                4,
+            ),
         },
         crate::kernel::LoadKind::Int32,
     );

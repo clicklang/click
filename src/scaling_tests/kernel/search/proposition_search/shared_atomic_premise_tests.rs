@@ -121,10 +121,7 @@ fn solve_retains_recorded_load_address_equality_premises() {
                 LoadKind::Int32,
             ))
         };
-        let indexed = load(PointerOffsetTerm::Int32Scaled {
-            value: Box::new(term(0)),
-            byte_width: 4,
-        });
+        let indexed = load(PointerOffsetTerm::scaled_int32_node(term(0), 4));
         let first = load(PointerOffsetTerm::Constant(0));
         let equality = |left, right| {
             Proposition::ConditionIs(
@@ -214,10 +211,10 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
     for count in [8u64, 16, 32, 64, 128] {
         let pointer = |index| Pointer {
             block: "indexed".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(9_340_000 + index))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(9_340_000 + index)),
+                4,
+            ),
         };
         let equality =
             |left, right| Proposition::ConditionIs(ConditionTerm::pointer_equal(left, right), true);

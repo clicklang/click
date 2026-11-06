@@ -2497,10 +2497,7 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
     };
     let alias = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(9_850_100))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(9_850_100)), 4),
     };
     let count_of = |pointer: CPointerValue| SpecExpression::CountedResourceCount {
         name: "reference".into(),

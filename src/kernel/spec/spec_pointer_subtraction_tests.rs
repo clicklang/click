@@ -4,10 +4,7 @@ use super::*;
 fn specification_subtraction_retains_pointer_provenance_and_overflow_guards() {
     let external = |variable| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let left = external(32_000);
     let right = external(32_001);

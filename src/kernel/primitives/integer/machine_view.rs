@@ -449,7 +449,8 @@ impl SharedMachineIntegerTerm {
                 .machine_conversion_leaf()
                 .map(MachineOperandView::Legacy)
                 .unwrap_or(MachineOperandView::Shared(term)),
-            MachineIntegerOperand::Legacy(value) => MachineOperandView::Legacy(value),
+            MachineIntegerOperand::Legacy(value)
+            | MachineIntegerOperand::ExactLegacy { value, .. } => MachineOperandView::Legacy(value),
         }
     }
 }

@@ -1698,10 +1698,7 @@ mod resource_frame_substitution_tests {
         let variable = Variable(71_900);
         let address = Pointer {
             block: PointerBlock::Symbolic(variable),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(variable)),
-                byte_width: 1,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(variable), 1),
         };
         let live = CResourceFact::own(CResource::MutexLive(MutexIdentity {
             epoch: Some(123),
@@ -1743,10 +1740,10 @@ mod resource_frame_substitution_tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Add(
-                    Box::new(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                        byte_width: 4,
-                    }),
+                    Box::new(PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::Variable(Variable(100_000)),
+                        4,
+                    )),
                     Box::new(PointerOffsetTerm::Constant(8)),
                 )),
                 Box::new(PointerOffsetTerm::Constant(4)),
@@ -1817,10 +1814,7 @@ mod resource_frame_substitution_tests {
         let range = CMemoryRange::new(
             Pointer {
                 block: PointerBlock::Concrete("substitution:range".into()),
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(from)),
-                    byte_width: 4,
-                },
+                offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(from), 4),
             },
             MachineTerm::Variable(from),
             binary_node!(
@@ -7992,13 +7986,13 @@ mod integer_mixed_quantifier_tests {
             &memory,
             &Pointer {
                 block: PointerBlock::Concrete("integer-witness-capture".into()),
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::IntegerToMachine {
+                offset: PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::IntegerToMachine {
                         value: IntegerTerm::var(free_index).into(),
                         destination: MachineIntegerType::Int32,
-                    }),
-                    byte_width: 4,
-                },
+                    },
+                    4,
+                ),
             },
             crate::kernel::LoadKind::Int32,
             4,
@@ -8591,10 +8585,7 @@ mod integer_range_fold_substitution_tests {
         let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("array", 16));
         let pointer = Pointer {
             block: PointerBlock::Concrete("array".into()),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(item)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(item), 4),
         };
         let load_variable = crate::kernel::eval::load_variable_for_cell(
             &memory,
@@ -8640,10 +8631,10 @@ mod integer_range_fold_substitution_tests {
             block: PointerBlock::Concrete("array".into()),
             offset: PointerOffsetTerm::Add(
                 Box::new(PointerOffsetTerm::Constant(4)),
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(MachineTerm::Variable(item)),
-                    byte_width: 4,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(
+                    MachineTerm::Variable(item),
+                    4,
+                )),
             ),
         };
         let load_variable = crate::kernel::eval::load_variable_for_cell(

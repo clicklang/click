@@ -69,10 +69,7 @@ fn repeated_address_queries_reuse_registered_addresses() {
             (0..size).fold(PointerOffsetTerm::Constant(0), |sum, item| {
                 PointerOffsetTerm::Add(
                     Box::new(sum),
-                    Box::new(PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(index(first + item)),
-                        byte_width: 4,
-                    }),
+                    Box::new(PointerOffsetTerm::scaled_int32_node(index(first + item), 4)),
                 )
             })
         };
@@ -210,10 +207,7 @@ fn equal_base_offset_queries_ignore_unrelated_class_members() {
 
 #[test]
 fn pointer_transitivity_recovers_same_block_offsets() {
-    let offset = |id| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(index(id)),
-        byte_width: 4,
-    };
+    let offset = |id| PointerOffsetTerm::scaled_int32_node(index(id), 4);
     for reverse in [false, true] {
         let mut samples = Vec::new();
         for size in [8u64, 32, 128, 512] {
