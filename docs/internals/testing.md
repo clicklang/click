@@ -324,6 +324,10 @@ The budget is kept by what the gate leaves out, not by a faster machine:
   parallel is marked `#[ignore = "nightly: <measurement>"]`. When that would
   leave a test file with no test in the gate, its fastest test stays. The gate
   kills a test still running after 30 seconds.
+  One approved exception: `standard_library_theorems_are_proved_by_their_own_entry_point`
+  proves every library theorem through `verify_standard_library`, about 7.5
+  CPU-seconds in a debug build, and stays in the gate as its only proof of the
+  library.
 - A mutation test, which re-verifies a whole example with one C statement
   changed, is nightly. A family keeps at most one or two in the gate.
 - An example that does is listed in `NIGHTLY` in `tests/examples.rs`, and an

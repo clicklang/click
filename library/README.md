@@ -55,7 +55,7 @@ A module is named by a `click::` path that mirrors its file:
 The library is checked on its own, like any dependency: `verify_standard_library`
 proves every library theorem that has a proof, checks each kernel standard
 theorem's declaration against its kernel builder
-([trust](../docs/concepts/trust.md#the-click-library)), and the nightly suite
+([trust](../docs/concepts/trust.md#the-click-library)), and the gate
 runs it in `standard_library_theorems_are_proved_by_their_own_entry_point`. Verifying a
 sidecar applies library theorems as dependency declarations and proves only
 the sidecar's own theorems. Whole-contract certification accepts a pure theorem
