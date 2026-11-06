@@ -43,6 +43,8 @@ const QUARANTINED: &[(&str, &str)] = &[];
 /// libraries stay in the gate so it checks both sides of their imports. Run
 /// one with `MDTEST_FILTER=<name>`.
 const NIGHTLY: &[&str] = &[
+    // 0.75s focused; nested-read identity and the positive C case stay in the gate.
+    "nested_index_read_does_not_use_the_changed_index.md",
     "a_decreases_measure_sum_is_an_integer.md", // 2.4s: original disjunctive-guard regression
     // 9.7s in a debug build: eleven sequential branches reach the split limit.
     "execute_stops_at_its_split_limit_on_sequential_branches.md",

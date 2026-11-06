@@ -474,3 +474,43 @@ fn shared_read_selection_reuses_growing_arithmetic_prefixes() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn nested_read_address_import_is_linear_beside_unrelated_memory() {
+    for unrelated in [0, 128, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut memory = CMemory::new();
+        for index in 0..unrelated {
+            memory = memory.store(
+                Pointer::symbolic(Variable(997000 + index)),
+                CValue::Int32(MachineTerm::constant(index as u32)),
+            );
+        }
+        let memory = intern_c_memory(memory);
+        for depth in [16, 64, 256] {
+            let mut raw = MachineTerm::constant(0);
+            for _ in 0..depth {
+                raw = MachineTerm::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer {
+                        block: PointerBlock::Symbolic(Variable(996999)),
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: Box::new(raw),
+                            byte_width: 4,
+                        },
+                    }),
+                    LoadKind::Int32,
+                );
+            }
+            let (term, work) = crate::instrumentation::measure_deterministic_work(|| {
+                KernelTermImport::default().machine(MachineIntegerType::Int32, &raw)
+            });
+            assert!(matches!(term.node(), KernelTermNode::MemoryLoad { .. }));
+            assert_eq!(KernelTermExport::machine(&term).unwrap(), raw);
+            assert!(
+                work <= 5 * depth + 5,
+                "depth={depth}, unrelated={unrelated}, work={work}"
+            );
+        }
+    }
+}

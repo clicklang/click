@@ -43,48 +43,61 @@ impl KernelTerm {
         address: &Pointer,
         kind: LoadKind,
     ) -> Option<Self> {
-        if !exact_address(address) {
-            return None;
-        }
-        Some(Self::intern(
+        let snapshots = address_snapshots(address)?;
+        Some(Self::intern_key(NodeKey::with_read_snapshots(
             KernelType::C(format.c_type()),
             KernelTermNode::MemoryLoad {
                 memory: memory.clone(),
                 address: address.clone(),
                 kind,
             },
-        ))
+            (!snapshots.is_empty()).then(|| snapshots.into()),
+        )))
     }
 }
 
 /// Native pointer equality can omit auxiliary metadata in opaque machine
 /// payloads. Do not use it to intern such a payload: those addresses retain
 /// the producer-local legacy boundary until their own shared forms migrate.
-fn exact_address(address: &Pointer) -> bool {
-    let mut offsets = vec![&address.offset];
-    let mut words = Vec::new();
-    while let Some(offset) = offsets.pop() {
+/// Retain arena identities for every nested read: native snapshot equality
+/// otherwise compares memory contents across arenas. The ordered identities
+/// let the interner refuse that comparison before inspecting the address.
+pub(super) fn address_snapshots(address: &Pointer) -> Option<Vec<(u32, u32)>> {
+    enum Input<'a> {
+        Offset(&'a PointerOffsetTerm),
+        Word(&'a MachineTerm),
+    }
+    let mut pending = vec![Input::Offset(&address.offset)];
+    let mut snapshots = Vec::new();
+    while let Some(input) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        match offset {
-            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-            PointerOffsetTerm::Add(a, b) => offsets.extend([a.as_ref(), b.as_ref()]),
-            PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => words.push(value.as_ref()),
+        match input {
+            Input::Offset(offset) => match offset {
+                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
+                PointerOffsetTerm::Add(a, b) => {
+                    pending.extend([Input::Offset(b), Input::Offset(a)]);
+                }
+                PointerOffsetTerm::Int32Scaled { value, .. }
+                | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                    pending.push(Input::Word(value));
+                }
+            },
+            Input::Word(word) => match word {
+                MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
+                MachineTerm::Binary { left, right, .. } => {
+                    pending.extend([Input::Word(right), Input::Word(left)]);
+                }
+                MachineTerm::Unary { operand, .. } => pending.push(Input::Word(operand)),
+                MachineTerm::Cast { value, .. } => pending.push(Input::Word(value)),
+                MachineTerm::MemoryLoad(memory, address, _) => {
+                    snapshots.push(memory.arena_id());
+                    pending.push(Input::Offset(&address.offset));
+                }
+                _ => return None,
+            },
         }
     }
-    while let Some(word) = words.pop() {
-        crate::instrumentation::record_deterministic_work(1);
-        match word {
-            MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-            MachineTerm::Binary { left, right, .. } => {
-                words.extend([left.as_ref(), right.as_ref()])
-            }
-            MachineTerm::Unary { operand, .. } => words.push(operand),
-            MachineTerm::Cast { value, .. } => words.push(value),
-            _ => return false,
-        }
-    }
-    true
+    Some(snapshots)
 }
 
 #[cfg(test)]
@@ -219,6 +232,89 @@ mod tests {
             term
         );
         assert_eq!(KernelTermExport::machine(&term).unwrap(), descriptor);
+    }
+
+    #[test]
+    fn nested_scalar_reads_retain_both_snapshots_without_registered_names() {
+        let _session = VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(993140));
+        let before = intern_c_memory(CMemory::new());
+        let after = intern_c_memory(
+            CMemory::new().store(p.clone(), CValue::Int32(MachineTerm::constant(1))),
+        );
+        let nested = |inner: SharedCMemory, outer: SharedCMemory, kind| {
+            MachineTerm::MemoryLoad(
+                outer,
+                Box::new(Pointer {
+                    block: PointerBlock::Symbolic(Variable(993141)),
+                    offset: PointerOffsetTerm::Int32Scaled {
+                        value: Box::new(MachineTerm::MemoryLoad(inner, Box::new(p.clone()), kind)),
+                        byte_width: 4,
+                    },
+                }),
+                LoadKind::Int32,
+            )
+        };
+        let raw = nested(before.clone(), after.clone(), LoadKind::Int32);
+        let term = KernelTermImport::default().machine(MachineIntegerType::Int32, &raw);
+        assert!(matches!(term.node(), KernelTermNode::MemoryLoad { .. }));
+        for other in [
+            nested(after.clone(), after.clone(), LoadKind::Int32),
+            nested(before.clone(), before.clone(), LoadKind::Int32),
+            nested(before, after, LoadKind::UInt32),
+        ] {
+            assert_ne!(
+                term,
+                KernelTermImport::default().machine(MachineIntegerType::Int32, &other)
+            );
+        }
+        crate::kernel::eval::clear_load_variable_registry();
+        assert_eq!(KernelTermExport::machine(&term).unwrap(), raw);
+        assert_eq!(
+            term,
+            KernelTermImport::default().machine(MachineIntegerType::Int32, &raw)
+        );
+    }
+
+    #[test]
+    fn nested_read_identity_does_not_compare_snapshot_contents_across_arenas() {
+        let first = {
+            let _session = VerificationSession::enter();
+            intern_c_memory(CMemory::new())
+        };
+        let _session = VerificationSession::enter();
+        let second = intern_c_memory(CMemory::new());
+        assert_ne!(first.arena_id(), second.arena_id());
+        assert_eq!(first, second); // Same contents, distinct snapshot identities.
+        let outer = second.clone();
+        let import = |inner| {
+            KernelTermImport::default().machine(
+                MachineIntegerType::Int32,
+                &MachineTerm::MemoryLoad(
+                    outer.clone(),
+                    Box::new(Pointer {
+                        block: PointerBlock::Symbolic(Variable(993151)),
+                        offset: PointerOffsetTerm::Int32Scaled {
+                            value: Box::new(MachineTerm::MemoryLoad(
+                                inner,
+                                Box::new(Pointer::symbolic(Variable(993150))),
+                                LoadKind::Int32,
+                            )),
+                            byte_width: 4,
+                        },
+                    }),
+                    LoadKind::Int32,
+                ),
+            )
+        };
+        let first_term = import(first.clone());
+        let second_term = import(second);
+        assert!(matches!(
+            first_term.node(),
+            KernelTermNode::MemoryLoad { .. }
+        ));
+        assert_ne!(first_term, second_term);
+        assert_eq!(first_term, import(first));
     }
 
     #[test]
