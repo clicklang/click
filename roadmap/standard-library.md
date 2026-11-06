@@ -3,9 +3,11 @@
 Priority: P2.
 
 Soundness: not soundness. This issue reorganizes and fills in library
-content. The prelude's theorems are already checked by
-`verify_standard_library`, and its five `extern` contracts are already
-listed as assumptions in [trust](../docs/concepts/trust.md). Moving a
+content. The library's theorems are checked by
+`verify_standard_library`, which the gate runs
+(`standard_library_theorems_are_proved_by_their_own_entry_point`), and its
+five `extern` contracts are listed as assumptions in
+[trust](../docs/concepts/trust.md). Moving a
 declaration must not change what it means. A primitive or `extern` contract
 must not lose its trust listing or its checked use.
 
@@ -13,6 +15,34 @@ This issue also tracks Integer-default specification arithmetic
 ([below](#integer-default-specification-arithmetic)), which decides which
 library lemmas survive. That work adds kernel rules; each one carries its
 own soundness argument and regressions.
+
+## Status (2026-11-06)
+
+Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
+generic width-free names, step 6, and the generic `permutation::count` of
+step 7; Integer-default specification arithmetic; machine-integer Stages 0
+to 3, and Stage 4's front ends. The library's own proof check runs in the
+gate. Of the library's 153 theorems, 111 have checked proofs and 42 are
+kernel standard theorems.
+
+Open:
+
+- Generic width-lemma families: each surviving family stated once over a
+  machine-integer format, with generic width-free names
+  (`integer::wrapping_add`), which needs generic theorems over a type
+  constrained to machine integers ([step 5](#delivery-order),
+  [One machine-integer design](#one-machine-integer-design)).
+- `size_t` byte counts for `allocation`, after a 64-bit heap-block extent
+  in the kernel ([step 7](#delivery-order)).
+- Rust names for the lemmas a Rust proof applies
+  ([below](#rust-names-for-the-surviving-lemmas)).
+- One convention for the language library models: where the C library,
+  allocator, `snprintf`, C++ catalog and Rust core contracts are stated and
+  how they are reported ([Layers](#layers)).
+- The fact-dependent integer lowerings
+  ([below](#fact-dependent-integer-lowerings)).
+- The follow-ups from the Integer-default flip
+  ([below](#integer-default-specification-arithmetic)).
 
 ## Motivation
 
@@ -39,9 +69,12 @@ trust:
   places, and each place has its own conventions.
 - **Mathematical library.** `Nat`, `List<T>` and their theorems are generic
   and reasonably organized.
-- **Machine-integer bridges.** 110 of the 162 theorems are width-specific
-  lemmas such as `int32_less_equal_transitive` and
-  `uint64_subtract_to_integer`.
+- **Machine-integer bridges.** At filing, 110 of the 162 theorems were
+  width-specific lemmas such as `int32_less_equal_transitive` and
+  `uint64_subtract_to_integer`. Today 74 of the 153 theorems are: 66
+  width-prefixed `integer::` lemmas and the eight `integer::to_*_round_trip`
+  laws. 111 of the 153 have checked proofs and 42 are kernel standard
+  theorems ([trust](../docs/concepts/trust.md#the-click-library)).
 
 The width lemmas have no consistent coverage across widths. On master at the
 time of filing:
@@ -61,10 +94,13 @@ A proof that moves from `int32` to `int64` or `uint16` therefore loses
 lemmas it relied on, and the author cannot predict which ones. Other
 inconsistencies:
 
-- `count` and `permutation` are monomorphic over `int32[]` with `int32`
+- `count` and `permutation` were monomorphic over `int32[]` with `int32`
   bounds, even though `List<T>` shows that the library supports generics.
+  Done: `permutation::count<T>` is generic over the element type;
+  `permutation::permutation` stays over `int32[]`, a documented limit (step
+  7 below).
 - `allocation(base: int32*, bytes: int32)` states its byte count as `int32`,
-  while `malloc` takes a `size_t`.
+  while `malloc` takes a `size_t`. Open (step 7 below).
 - Names follow several patterns (`int32_less_equal_and_not_equal_implies_less_than`,
   `uint32_less_than_implies_reversed_greater_than`,
   `integer_positive_divisor_quotient_strict_lower`), with no documented rule.
@@ -249,10 +285,31 @@ Each step is a separate PR that leaves every example verifying:
      machinery Click does not have yet
      ([design/machine-integers.md](../design/machine-integers.md),
      Library, option 1).
-6. Document the primitives in the language reference, and describe the
-   library per module in the reference.
-7. Apply the consistency rules below: generic `count` and `permutation`,
-   `size_t` sizes for `allocation`, and the width-lemma families.
+6. Done: document the primitives in the language reference, and describe
+   the library per module in the reference. The language reference's
+   "Verifier primitives" section states each primitive's declaration and
+   kernel meaning under `primitive.` inventory IDs, and the documentation
+   gate refuses them in the library reference. The library reference has
+   one section per module and describes the three layers, as
+   `library/README.md` does.
+7. Apply the consistency rules below:
+   - Done: generic `count`. `permutation::count<T>(p: T*, ...)` takes any
+     element type (a pure-function `T*` is an array ref), with `uint8`
+     clients in `mdtests/stdlib_permutation_count_over_bytes*.md`.
+   - Done, as a documented limit: `permutation::permutation` stays over
+     `int32[]`. Its generic form quantifies over its element type,
+     `forall (x: T)`, and the parser refuses a quantifier over a type
+     parameter ("quantifier type must be a concrete C, Integer, or
+     algebraic type"). The library reference states the limit; a byte
+     permutation is a file predicate over the generic count.
+   - Open: `size_t` sizes for `allocation`. The kernel holds the token's
+     byte count as an `int32` value and gives heap blocks a checked 32-bit
+     extent (`allocation_size_value` in `src/kernel/eval/statements.rs`): a
+     symbolic `size_t` `malloc(n)` is refused, and a 64-bit size is accepted
+     only when its value is concrete. Stating `allocation`'s byte count as
+     `size_t` needs a 64-bit heap-block extent in the kernel first.
+   - Open: the width-lemma families, as one statement over a format
+     ([below](#one-machine-integer-design)).
 
 ## Design
 
@@ -300,9 +357,12 @@ Moved here from the launch design review (formerly its item P2), since it
 decides which library lemmas survive.
 
 
-Today: `+` in a specification is the C operation and is partial
+Status: done. Specification arithmetic is over `Integer` by default; the
+open items below are follow-ups.
+
+At filing: `+` in a specification was the C operation and was partial
 (`docs/reference/language/index.md`, "an int32 fold's `+` is partial in
-specifications"). Proofs bridge with `to_integer`, width-specific lemmas
+specifications"). Proofs bridged with `to_integer`, width-specific lemmas
 (`int64_less_equal_transitive` and about 110 more in `library/`)
 and hand-written `arithmetic_certificate` blocks: about 270 lines of
 `examples/bounded-pool/bounded_pool.click` show counters do not overflow.
@@ -347,7 +407,7 @@ so with exact observations, `to_integer(value + 1) <= to_integer(upper)`,
 which lowers to the same native comparison its kernel axiom states. The kernel decides Integer comparisons of machine observations
 through their native comparisons; for an 8- or 16-bit value that holds only
 where the word is the value's extension (a narrow load or conversion), so
-`examples/rust-slices`' `u8` increment verifies. Step 3 has started: `auto`
+`examples/rust-slices`' `u8` increment verifies. Step 3 is done: `auto`
 proves that an in-range machine `+` or `-` is the Integer operation
 (`integer_operation_identity`, narrow types included), using native
 comparisons as Integer facts and machine type ranges, so
@@ -374,15 +434,13 @@ Still open from the flip:
   where it cost about 3,900 before the flip: each Integer postcondition
   proves an operation identity, and each identity's two range bounds are
   full solver calls. The profile budget test is retuned to that cost.
-- `bugs/a-rust-u8-sum-and-its-written-spelling-lower-to-different-terms.md`:
-  a proof restating the Rust `u8` sum as written does not close by `solve`.
 - Most of the width lemmas below are now bridges nothing needs.
 - The library's respelled lemmas still state C results
   (`to_integer(value + 1)`); restating the surviving families over Integer
   and giving them generic names in the merged `click::integer` module are
   later work.
 
-Sequencing with the library: most of the 110 width lemmas exist only to
+Sequencing with the library: most of the width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather
 than completed, and only the families that remain are completed. The
 merge of `machine_integer` into `integer` and the rename follow that
@@ -422,6 +480,15 @@ matrix's comparison and definedness gaps are filled. The `uint32` order is
 native, as the `uint64` order is; the sign-flip encoding and its
 `interval_sign_bit_flip` certificate step are gone
 ([design](../design/machine-integers.md#stage-2-one-condition-family)).
+Stage 3 is done (2026-11-04): one term family, `Binary`, `Unary`,
+`Constant` and `Cast` with a format, and `Bitvector32Term` renamed
+`MachineTerm`. Two of its planned items were retired by maintainer
+direction: the e-graph keeps its 32-bit word operators as a reasoning-level
+equivalence (`terms::word_operator`), and floats stay in the machine term
+family rather than splitting into their own term type
+([design](../design/machine-integers.md#stage-3-one-term-family)). Stage 4's
+front-end work is done (one conversion table, no front-end width
+matrices); what remains of it is this issue's library families.
 
 ### Fact-dependent integer lowerings
 
@@ -489,9 +556,12 @@ fixture applies them by those names.
   at every supported width, so a missing width fails the gate.
 - `mdtests/stdlib_list*.md`-style positive and negative clients for a
   generic `permutation` over a non-`int32` element type, such as a `uint8`
-  byte buffer.
+  byte buffer. Done for the generic count:
+  `mdtests/stdlib_permutation_count_over_bytes.md` and its `_after_a_store`
+  sibling (positive), `stdlib_permutation_count_rejects_mixed_element_types.md`
+  (negative), and the nightly `_over_bytes_rejects_overwrite` refusal.
 - An `allocation` client whose byte count comes from a `size_t` expression,
-  with no narrowing to `int32`.
+  with no narrowing to `int32`. Open, with the 64-bit heap extent.
 - `mdtests/stdlib_every_symbol.md` and `docs/reference/inventory.toml` stay
   complete across the reorganization. The documentation gate already
   enforces this.
