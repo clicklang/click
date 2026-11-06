@@ -155,6 +155,23 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
         }
 
+        // Each cited footprint contributes one ordinary read equality. The
+        // equality graph connects their named endpoints without a history walk.
+        if let ProofStep::TransportUsing {
+            source,
+            target,
+            premises,
+        } = &step
+            && driver_proof.surface_goal() == Some(target)
+            && let Some(steps) = multiple_statement_preservation_steps(source, target, premises)
+        {
+            let mut current = driver_proof.clone();
+            for ordinary in steps {
+                current = current.driver().apply_step(ordinary)?;
+            }
+            return Ok(current);
+        }
+
         // Retain the ordinary derivation, rather than an opaque transport
         // node, when the written inputs identify a viewability restriction.
         if let ProofStep::TransportUsing {

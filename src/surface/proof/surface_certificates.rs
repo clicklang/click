@@ -687,6 +687,26 @@ pub(super) fn single_statement_preservation_premise(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<ClickProposition> {
+    let (region, _) = preservation_read(source, target)?;
+    let separation = premises.iter().find(|premise| matches!(premise,
+        ClickProposition::Separate { left: ResourceSubject::Footprint(selected), .. } if selected == &region
+    ))?;
+    // The only other admitted citation is the reflexive source. Preserve
+    // establishes its observation's definedness along with the equality.
+    if !premises
+        .iter()
+        .all(|premise| premise == separation || premise == source)
+    {
+        return None;
+    }
+    Some(separation.clone())
+}
+
+/// The explicit old/current observation shared by preservation expansions.
+fn preservation_read(
+    source: &ClickProposition,
+    target: &ClickProposition,
+) -> Option<(CodeRegionRef, ContractExpression)> {
     let ClickProposition::Comparison {
         left,
         operator: ComparisonOperator::Equal,
@@ -723,18 +743,59 @@ pub(super) fn single_statement_preservation_premise(
     if !matches!(region, CodeRegionRef::Region(_) | CodeRegionRef::Path(_)) {
         return None;
     }
-    let separation = premises.iter().find(|premise| matches!(premise,
-        ClickProposition::Separate { left: ResourceSubject::Footprint(selected), .. } if selected == &region
-    ))?;
-    // The only other admitted citation is the reflexive source. Preserve
-    // establishes its observation's definedness along with the equality.
-    if !premises
-        .iter()
-        .all(|premise| premise == separation || premise == source)
-    {
+    Some((region, current))
+}
+
+/// Expand a written list of footprint separations into independent preservation
+/// equalities. Endpoint connectivity is ordinary equality reasoning; this reads
+/// no execution history and discovers no missing footprint or premise.
+pub(super) fn multiple_statement_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    let (start, read) = preservation_read(source, target)?;
+    let mut steps = Vec::new();
+    let mut includes_start = false;
+    for premise in premises {
+        if premise == source {
+            continue;
+        }
+        let ClickProposition::Separate {
+            left: ResourceSubject::Footprint(region),
+            ..
+        } = premise
+        else {
+            return None;
+        };
+        if !matches!(region, CodeRegionRef::Region(_) | CodeRegionRef::Path(_)) {
+            return None;
+        }
+        includes_start |= region == &start;
+        let at = |kind| ContractExpression::At {
+            selector: SnapshotSelector::ProgramPoint(ProgramPointRef {
+                region: region.clone(),
+                kind,
+            }),
+            expression: Box::new(read.clone()),
+        };
+        steps.push(ProofStep::Have {
+            proposition: ClickProposition::Comparison {
+                left: at(ProgramPointKind::Exit),
+                operator: ComparisonOperator::Equal,
+                right: at(ProgramPointKind::Entry),
+            },
+            proof: Box::new(
+                ProofCertificate::from_steps(vec![ProofStep::Preserve(premise.clone())])
+                    .expect("preserve is an ordinary certificate step"),
+            ),
+        });
+    }
+    if !includes_start || steps.len() < 2 {
         return None;
     }
-    Some(separation.clone())
+    steps.push(ProofStep::Assumption);
+    Some(steps)
 }
 
 /// Ordinary proof of a selected viewability restriction. This visits only

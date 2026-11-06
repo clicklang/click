@@ -584,3 +584,61 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
     assert!(!expanded.contains("transport_certificate"), "{expanded}");
     without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
 }
+
+#[test]
+fn multiple_write_transport_expands_to_ordinary_equalities() {
+    let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for source in [source.clone(), source.replace(
+        "separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));",
+        "separate(statement(1).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*q));",
+    )] {
+        verify_c0_sources(&source, &sources).unwrap();
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), 2, "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
+
+#[test]
+fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
+    let (source, sources) = mdtest_sources("mdtests/multi_write_resource_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert_eq!(
+        expanded.matches("preserve(separate(").count(),
+        2,
+        "{expanded}"
+    );
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+}
+
+#[test]
+fn multiple_write_transport_requires_every_link_and_valid_separation() {
+    let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
+    let c = sources[0].1.replace("*p = 1;", "*p = 1; *p = 2;");
+    let missing = source.replace("    have *q ==", "    step();\n    have *q ==");
+    assert!(verify_c0_sources(&missing, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    let c = sources[0].1.replace("*p = 1;", "*q = 1;");
+    let overlapping = source.replace("views *q;", "owns *q;");
+    assert!(verify_c0_sources(&overlapping, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    let invalid = source.replace(
+        "            separate(statement(1).footprint, memory(*q));",
+        "            separate(statement(1).footprint, memory(*p));",
+    );
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    assert!(verify_c0_sources(&invalid, &sources).is_err());
+}

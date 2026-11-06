@@ -3407,7 +3407,17 @@ reflexive equality, and the statement's recorded exit is the current snapshot.
 This covers memory reads and abstract resource fields. The explicit footprint
 separation proof remains in the expanded script; no history search is needed
 for replay. See `mdtests/single_write_transport_expansion.md` and
-`mdtests/single_write_resource_transport_expansion.md`. Other transport routes
+`mdtests/single_write_resource_transport_expansion.md`.
+
+For several statements, cite each footprint separation in `using`. Expansion
+writes one `have at(statement(i).exit, read) == at(statement(i).entry, read)`
+proved by `preserve` per cited footprint, then `assumption()` joins the
+endpoint equalities. The premises can be written in either order; they must
+cover the read's path to the current snapshot. No intermediate footprint or
+separation is discovered from history, and an incomplete chain fails rather
+than retrying a history search. Both memory reads and abstract resource fields
+use this form. See `mdtests/multi_write_transport_expansion.md` and
+`mdtests/multi_write_resource_transport_expansion.md`. Other transport routes
 still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the
