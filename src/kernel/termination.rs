@@ -1553,6 +1553,9 @@ fn collect_spec_c_variables(
                     SpecExpression::If { .. } => {
                         return Visit::Stop("a conditional `if` expression");
                     }
+                    SpecExpression::Requires { .. } => {
+                        return Visit::Stop("a subslice's bounds requirement");
+                    }
                     SpecExpression::RangeFold { .. } => return Visit::Stop("a range fold"),
                     SpecExpression::Let { .. } => return Visit::Stop("a `let` expression"),
                     SpecExpression::LoopEntrySnapshot(_) => {

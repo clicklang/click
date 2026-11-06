@@ -446,10 +446,18 @@ a slice's data or an offset into it prints as a subslice, `bytes[1..3]`,
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
 `bytes[1]` under the caller's `views`, and `bytes[1..3].len() == 2u64` closes
-by `solve`. Its bounds are `usize`s, and they are not yet checked: where
-Rust panics on `a > b` or `b > bytes.len()`, the spec's length `b - a` wraps
-as `usize` subtraction does, and a read past the referent still needs its
-`views`. A slice bound by a `match` arm or a
+by `solve`. Its bounds are `usize`s, and they are Rust's: where Rust panics
+unless `a <= b <= bytes.len()`, a subslice owes those bounds where it is
+evaluated, as signed arithmetic owes its range. Under a guard, it owes them
+only where the guard holds: `forall (k: usize) { k <= 2 implies ... bytes[k..2]
+... }` owes `2 <= bytes.len()`, and the same claim without the guard is
+refused. A bound the facts in scope do not establish is refused with its
+condition, `not established: 5u64 <= bytes.len()`; establish it first, for
+example `have half(bytes).len() == 2u64;` before `half(bytes)[1..]`. A
+literal reversed range, `bytes[3..1]`, is refused as it is read. The length
+is `slice::subslice_len(a, b, bytes.len())` from the
+[slice library](library/index.md#slicesubslice_len). A slice bound by a
+`match` arm or a
 `let` is not yet read with these methods. The
 [byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
 sums a prefix with `function prefix(bytes: &[u8], end: usize) -> Integer`,

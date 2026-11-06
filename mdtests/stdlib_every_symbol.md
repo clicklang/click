@@ -1875,6 +1875,14 @@ theorem use_slice(p: uint8*, n: uint64) {
         normalize();
     }
 }
+
+theorem use_subslice_len(a: uint64, b: uint64, n: uint64) {
+    requires a <= b;
+    requires b <= n;
+    ensures slice::subslice_len(a, b, n) == b - a by {
+        solve();
+    }
+}
 ```
 
 ```expect

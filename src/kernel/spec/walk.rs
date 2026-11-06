@@ -134,6 +134,10 @@ impl<'a> SpecNode<'a> {
                     visit(N::Expression(then_branch));
                     visit(N::Expression(else_branch));
                 }
+                SpecExpression::Requires { requirement, value } => {
+                    visit(N::Proposition(requirement));
+                    visit(N::Expression(value));
+                }
                 SpecExpression::RangeFold {
                     start,
                     end,

@@ -6819,6 +6819,16 @@ fn substitute_pointer_variable_in_spec_expression(
                 to,
             )),
         },
+        SpecExpression::Requires { requirement, value } => SpecExpression::Requires {
+            requirement: Box::new(substitute_pointer_variable_in_spec_proposition(
+                requirement,
+                from,
+                to,
+            )),
+            value: Box::new(substitute_pointer_variable_in_spec_expression(
+                value, from, to,
+            )),
+        },
         SpecExpression::RangeFold {
             start,
             end,

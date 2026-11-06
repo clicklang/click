@@ -4100,6 +4100,10 @@ id = "library.function.slice::from_raw_parts"
 path = "reference/library/index.md#slicefrom_raw_parts"
 
 [[item]]
+id = "library.function.slice::subslice_len"
+path = "reference/library/index.md#slicesubslice_len"
+
+[[item]]
 id = "library.type.Vec"
 path = "reference/library/index.md#vec"
 
