@@ -624,10 +624,12 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
 }
 
 #[test]
-fn multiple_write_transport_requires_every_link_and_valid_separation() {
+fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
-    let c = sources[0].1.replace("*p = 1;", "*p = 1; *p = 2;");
-    let missing = source.replace("    have *q ==", "    step();\n    have *q ==");
+    let c = sources[0].1.replace("*p = 1;", "*p = 1; *q = 2;");
+    let missing = source
+        .replace("    have *q ==", "    step();\n    have *q ==")
+        .replace("views *q;", "owns *q;");
     assert!(verify_c0_sources(&missing, &[(sources[0].0.as_str(), c.as_str())]).is_err());
     let c = sources[0].1.replace("*p = 1;", "*q = 1;");
     let overlapping = source.replace("views *q;", "owns *q;");

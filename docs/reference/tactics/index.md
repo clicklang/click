@@ -3414,7 +3414,7 @@ writes one `have at(statement(i).exit, read) == at(statement(i).entry, read)`
 proved by `preserve` per cited footprint, then `assumption()` joins the
 endpoint equalities. The premises can be written in either order; they must
 cover the read's path to the current snapshot. No intermediate footprint or
-separation is discovered from history, and an incomplete chain fails rather
+separation is discovered from history, and failure of ordinary equality closure is final rather
 than retrying a history search. Both memory reads and abstract resource fields
 use this form. See `mdtests/multi_write_transport_expansion.md` and
 `mdtests/multi_write_resource_transport_expansion.md`. Other transport routes

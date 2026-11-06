@@ -9883,7 +9883,7 @@ fn multi_statement_transport_replay_scales_with_explicit_links() {
     for size in [2, 4, 8, 16] {
         let c = format!(
             "void keep(unsigned char *p, unsigned char *q) {{ {} }}",
-            "*p = 0;".repeat(size)
+            (0..size).map(|i| format!("*p = {i};")).collect::<String>()
         );
         let separations = (0..size).map(|i| format!(
             "step(); have separate(statement({i}).footprint, memory(*q)) by {{ normalize() using {{ separate(memory(*p), memory(*q)); }}; }}"
