@@ -91,16 +91,17 @@ fn external_array_sparse_copies_forward_snapshots_and_preserve_neighbors() {
 }
 
 #[test]
-fn external_array_load_substitution_changes_only_the_copied_lane() {
+fn external_array_read_is_not_a_reserved_variable_occurrence() {
     let _session = crate::kernel::VerificationSession::enter();
     let source = external(932_000);
     let target = external(932_001);
     let memory = copy(CMemory::new(), &target, &source, 1_000_000);
-    let CValue::UInt32(MachineTerm::Variable(variable)) =
-        typed_load(&memory, &target.offset_by_bytes(4))
-    else {
-        panic!()
+    let CValue::UInt32(read) = typed_load(&memory, &target.offset_by_bytes(4)) else {
+        panic!("copied scalar read");
     };
+    // A legacy alias for a read is not an occurrence in the copied bytes.
+    // Substitution must not turn that alias into a write to the array.
+    let variable = crate::kernel::load_variable_for_term(&read).unwrap().0;
     let previous = typed_load(&memory, &target);
     let following = typed_load(&memory, &target.offset_by_bytes(8));
     let (changed, work) = crate::instrumentation::measure_deterministic_work(|| {
@@ -112,12 +113,12 @@ fn external_array_load_substitution_changes_only_the_copied_lane() {
     });
     assert_eq!(
         typed_load(&changed, &target.offset_by_bytes(4)),
-        crate::kernel::uint32(23u32)
+        CValue::UInt32(read)
     );
     assert_eq!(typed_load(&changed, &target), previous);
     assert_eq!(typed_load(&changed, &target.offset_by_bytes(8)), following);
     assert!(work < 10_000, "{work}");
-    assert_eq!(changed.cells.concrete().len(), 1);
+    assert_eq!(changed.cells.concrete().len(), 0);
 }
 
 #[test]

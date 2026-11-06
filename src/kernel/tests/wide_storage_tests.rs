@@ -90,10 +90,7 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
         };
         assert_eq!(value.c_type(), ty);
         let term = c_value_bitvector_term(value).unwrap();
-        let MachineTerm::Variable(variable) = term else {
-            panic!("load variable")
-        };
-        let raw = crate::kernel::eval::registered_load_term_for_variable(&variable).unwrap();
+        let raw = term;
         assert!(
             matches!(&raw, MachineTerm::MemoryLoad(_, pointer, actual) if **pointer == address(0) && *actual == kind)
         );
@@ -101,12 +98,16 @@ fn wide_storage_symbolic_loads_keep_kind_width_and_defining_identity() {
         assert!(machine.accepts_wide_term(&raw));
         assert!(IntegerTerm::from_machine(machine, raw.clone()).is_some());
         assert_eq!(
-            crate::kernel::eval::registered_load_bytes_for_variable(&variable),
-            Some(16)
+            crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(&raw)
+            )
+            .unwrap()
+            .bytes,
+            16
         );
-        assert!(!first[0].facts.is_empty());
+        assert!(first[0].facts.is_empty());
         assert!(first[0].obligations.is_empty());
-        identities.push(variable);
+        identities.push(raw);
     }
     assert_ne!(identities[0], identities[1]);
 }

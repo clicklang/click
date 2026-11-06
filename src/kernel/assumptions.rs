@@ -776,22 +776,16 @@ pub(super) fn resources_equal_ignoring_memories(left: &CResource, right: &CResou
 pub(in crate::kernel) fn load_snapshot_and_pointer(
     term: &MachineTerm,
 ) -> Option<(CMemory, Pointer, LoadKind)> {
-    match term {
-        MachineTerm::MemoryLoad(memory, pointer, kind) => {
-            Some(((**memory).clone(), pointer.as_ref().clone(), *kind))
-        }
-        // A load variable's canonical registration carries a placeholder
-        // snapshot; its origin registration is the live snapshot it was
-        // first minted from, which frame evidence can relate to later
-        // snapshots.
-        MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
-            let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
-            crate::kernel::eval::registered_load_origin_for_variable(variable)
-                .or_else(|| crate::kernel::registered_load_for_variable(variable))
-                .map(|(memory, pointer)| ((*memory).clone(), pointer, kind))
-        }
-        _ => None,
-    }
+    let read = crate::kernel::eval::scalar_read_observation(
+        crate::kernel::MachineOperandView::Legacy(term),
+    )?;
+    // Checking follows the recorded observation, even when structural version
+    // selection retained an earlier representative snapshot in the term.
+    Some((
+        (*read.origin.unwrap_or(read.memory)).clone(),
+        read.pointer,
+        read.kind,
+    ))
 }
 
 pub(in crate::kernel) fn equality_graph_term_key(term: &MachineTerm) -> MachineTerm {
@@ -2021,7 +2015,16 @@ fn collect_bitvector_memory_load_keys(
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _) => {}
-        MachineTerm::MemoryLoad(_, pointer, _) => {
+        MachineTerm::MemoryLoad(_, pointer, kind) => {
+            // Integer reads name fixed versions, just as the former reserved
+            // variables did. This legacy load-time transport index is only
+            // for the remaining non-integer read families. Rebuilding an
+            // integer descriptor must not launch history searches to retarget
+            // facts about it. Explicit transport and step-produced frame
+            // equalities retain their ordinary evidence routes.
+            if !matches!(kind, LoadKind::Float32 | LoadKind::Float64) {
+                return;
+            }
             keys.insert((
                 pointer.block.clone(),
                 memory_blind_pointer_fingerprint(pointer),
@@ -2298,13 +2301,23 @@ fn collect_bitvector_memory_loads(
 }
 
 fn collect_memory_read_descriptor(
-    memory: &SharedCMemory,
-    pointer: &Pointer,
+    operand: MachineOperandView<'_>,
     current_memory: &CMemory,
     loads: &mut Vec<(Pointer, u32)>,
     width: Option<u32>,
     seen_integers: &mut BTreeSet<u64>,
 ) -> Result<(), String> {
+    let (memory, pointer, kind) = operand.read().expect("read descriptor");
+    // Produced reads own an access width and observation point. Their numeric
+    // interpretation can be wider (byte promotion) without widening the read.
+    // Explicit unmaterialized descriptors retain their caller-supplied width.
+    let observation = crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
+        .then(|| crate::kernel::eval::scalar_read_observation(operand).expect("selected read"));
+    let memory = observation
+        .as_ref()
+        .map(|read| read.origin.as_ref().unwrap_or(&read.memory))
+        .unwrap_or(memory);
+    let width = observation.as_ref().map(|read| read.bytes).or(width);
     if CMemorySnapshotIdentity::of(memory.memory()) == CMemorySnapshotIdentity::of(current_memory) {
         let width = width
             .ok_or_else(|| "current memory load has no statically known byte width".to_string())?;
@@ -2339,9 +2352,8 @@ fn collect_bitvector_memory_loads_with_width(
         | int64_constant!(_)
         | uint64_constant!(_)
         | native_constant!(_, _) => Ok(()),
-        MachineTerm::MemoryLoad(memory, pointer, _) => collect_memory_read_descriptor(
-            memory,
-            pointer,
+        MachineTerm::MemoryLoad(..) => collect_memory_read_descriptor(
+            MachineOperandView::Legacy(term),
             current_memory,
             loads,
             width,
@@ -2746,10 +2758,8 @@ fn collect_shared_read_memory_loads(
     })
     .ok_or_else(|| "memory-load collection exceeded its checking budget".to_string())?;
     for ((_, width), read) in reads.iter() {
-        let (memory, pointer, _) = MachineOperandView::Shared(read).read().expect("read leaf");
         collect_memory_read_descriptor(
-            memory,
-            pointer,
+            MachineOperandView::Shared(read),
             current_memory,
             loads,
             *width,

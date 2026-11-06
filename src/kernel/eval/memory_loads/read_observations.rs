@@ -15,6 +15,7 @@ struct Record {
     origin: SharedCMemory,
     epoch: u64,
     bytes: u32,
+    selected: bool,
 }
 
 #[derive(Clone, Default)]
@@ -23,6 +24,7 @@ pub(super) struct State {
     keys: imbl::HashMap<Key, Id>,
     records: imbl::HashMap<Id, Record>,
     terms: imbl::HashMap<u64, Id>,
+    latest: imbl::HashMap<(u64, Id), (SharedCMemory, Pointer)>,
 }
 
 thread_local! {
@@ -88,6 +90,7 @@ pub(super) fn record(
                 origin: origin.clone(),
                 epoch,
                 bytes,
+                selected: false,
             },
         );
         id
@@ -100,6 +103,29 @@ fn refresh_record(record: &mut Record, origin: &SharedCMemory, epoch: u64, bytes
         record.origin = origin.clone();
         record.epoch = epoch;
     }
+}
+
+pub(super) fn select(id: Id) {
+    STATE.with(|state| {
+        state
+            .borrow_mut()
+            .records
+            .get_mut(&id)
+            .expect("recorded read")
+            .selected = true
+    });
+}
+
+pub(super) fn selected(memory: &SharedCMemory, pointer: &Pointer, kind: LoadKind) -> bool {
+    existing(memory, pointer, kind).is_some_and(|id| {
+        STATE.with(|state| {
+            state
+                .borrow()
+                .records
+                .get(&id)
+                .is_some_and(|read| read.selected)
+        })
+    })
 }
 
 pub(super) fn refresh(id: Id, origin: &SharedCMemory, bytes: u32) {
@@ -117,6 +143,45 @@ pub(super) fn refresh(id: Id, origin: &SharedCMemory, bytes: u32) {
             bytes,
         )
     });
+}
+
+pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+        return;
+    };
+    let MachineTerm::MemoryLoad(origin, address, _) = source else {
+        return;
+    };
+    if *kind != LoadKind::Bits64 {
+        return;
+    }
+    let Some(id) = existing(memory, pointer, *kind) else {
+        return;
+    };
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    STATE.with(|state| {
+        state
+            .borrow_mut()
+            .latest
+            .insert((epoch, id), (origin.clone(), address.as_ref().clone()));
+    });
+}
+
+pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+        return None;
+    };
+    let id = existing(memory, pointer, *kind)?;
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    STATE.with(|state| {
+        state
+            .borrow()
+            .latest
+            .get(&(epoch, id))
+            .map(|(memory, pointer)| {
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), *kind)
+            })
+    })
 }
 
 pub(super) fn remember_term(term: &crate::kernel::KernelTerm, id: Id) {
@@ -244,6 +309,70 @@ mod tests {
             2,
         );
         assert_eq!(bytes(narrow_access), Some(2));
+        assert_eq!(load_variable_registry_len(), 0);
+    }
+
+    #[test]
+    fn ordinary_integer_producers_retain_reads_without_reserved_variables() {
+        let _session = VerificationSession::enter();
+        let memory = CMemory::new();
+        let pointer = Pointer::symbolic(Variable(998_704));
+        for ty in [
+            CType::Int8,
+            CType::UInt8,
+            CType::Int16,
+            CType::UInt16,
+            CType::Int32,
+            CType::UInt32,
+            CType::Int64,
+            CType::UInt64,
+            CType::Int128,
+            CType::UInt128,
+        ] {
+            let mut facts = ExecutionFacts::new();
+            let value = canonicalized_symbolic_load_value_with_identity(
+                &memory,
+                &pointer,
+                ty,
+                &mut facts,
+                &PureFactContext::new(),
+                None,
+                LoadPurpose::Logical,
+            )
+            .expect("integer read");
+            let read = crate::kernel::spec::c_value_bitvector_term(&value).expect("scalar term");
+            let MachineTerm::MemoryLoad(snapshot, address, kind) = &read else {
+                panic!("{ty:?} must retain its read: {read:?}");
+            };
+            assert_eq!(address.as_ref(), &pointer);
+            assert_eq!(
+                canonical_form_of_load(snapshot.clone(), pointer.clone(), *kind),
+                read
+            );
+            assert!(facts.is_empty());
+            assert_eq!(load_variable_registry_len(), 0);
+        }
+    }
+
+    #[test]
+    fn selecting_a_read_keeps_its_address_when_another_read_was_stored_there() {
+        let _session = VerificationSession::enter();
+        let source = Pointer::symbolic(Variable(998_705));
+        let destination = Pointer::symbolic(Variable(998_706));
+        let memory = intern_c_memory(CMemory::new());
+        let held = canonical_form_of_load(memory.clone(), source, LoadKind::Int32);
+        let after = intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(destination.clone(), CValue::Int32(held.clone())),
+        );
+        let read = canonical_form_of_load(after, destination.clone(), LoadKind::Int32);
+        assert!(
+            matches!(&read, MachineTerm::MemoryLoad(_, pointer, LoadKind::Int32) if **pointer == destination)
+        );
+        assert_ne!(read, held);
+        assert_eq!(read_over_write_value(&read), Some(held));
         assert_eq!(load_variable_registry_len(), 0);
     }
 

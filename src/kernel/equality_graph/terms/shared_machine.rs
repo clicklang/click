@@ -384,20 +384,27 @@ impl TermClasses {
                         W::Bits64 => MachineIntegerType::UInt64,
                         W::Bits128 => MachineIntegerType::UInt128,
                     };
-                    let (memory, address, kind) = crate::kernel::MachineOperandView::Shared(term)
-                        .read()
-                        .expect("read descriptor");
-                    if let Some(name) =
-                        crate::kernel::eval::registered_exact_read(memory, address, kind)
-                    {
-                        // Preserve an already selected read's exact snapshot and
-                        // access metadata, as native registration of its name does.
-                        self.intern_typed_machine(&T::Variable(name), width)
-                    } else if width == W::Bits64 {
+                    if width == W::Bits64 {
                         self.intern_typed_machine(
                             term.machine_read_leaf().expect("read leaf"),
                             width,
                         )
+                    } else if width != W::Bits128 && {
+                        let (memory, pointer, kind) =
+                            crate::kernel::MachineOperandView::Shared(term)
+                                .read()
+                                .expect("read descriptor");
+                        crate::kernel::eval::is_selected_scalar_read(memory, pointer, kind)
+                    } {
+                        let atom = MachineAtom::from_operand(
+                            format,
+                            crate::kernel::MachineOperandView::Shared(term),
+                        );
+                        self.intern_node(match width {
+                            W::Bits8 | W::Bits16 => Node::MachineNarrow(atom),
+                            W::Bits32 => Node::Int32(atom),
+                            _ => unreachable!(),
+                        })
                     } else {
                         // The graph uses the same assumption-free read identity
                         // as its native entry point. Keep the written descriptor

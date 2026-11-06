@@ -574,14 +574,12 @@ impl Drop for SynthesisRecordedPointsScope {
     }
 }
 
-/// The recorded point whose memory holds the cell `variable` names, and
-/// that point's state: the point recording the memory the load was made in,
-/// or, for a memory no point records (inside a call's region, or after the
-/// last point), a recorded memory near it that reads the same. The load is checked there with the
-/// kernel's naming law, so a spelling built from it lowers back to
-/// `variable`.
-fn recorded_point_of_load(variable: &Variable) -> Option<(SnapshotSelector, CState, MachineTerm)> {
-    let (memory, _) = crate::kernel::registered_load_for_variable(variable)?;
+/// A recorded state whose structural read selection reproduces this read.
+/// Prefer the point recording its memory, then indexed nearby points.
+fn recorded_point_of_load(read: &MachineTerm) -> Option<(SnapshotSelector, CState, MachineTerm)> {
+    let MachineTerm::MemoryLoad(memory, _, _) = read else {
+        return None;
+    };
     SYNTHESIS_RECORDED_POINTS.with(|slot| {
         let slot = slot.borrow();
         let points = slot.as_ref()?;
@@ -590,7 +588,7 @@ fn recorded_point_of_load(variable: &Variable) -> Option<(SnapshotSelector, CSta
             .into_iter()
             .chain(points.points_near_memory(&memory))
             .find_map(|(selector, state)| {
-                let load = registered_load_in_state(variable, state)?;
+                let load = scalar_read_in_state(read, state)?;
                 Some((selector.clone(), state.clone(), load))
             })
     })
@@ -644,7 +642,16 @@ fn synthesize_load_at_recorded_point(
     parameter_binding: ParameterBinding<'_>,
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
-    let (selector, state, load) = recorded_point_of_load(variable)?;
+    let read = crate::kernel::registered_load_term_for_variable(variable)?;
+    synthesize_read_at_recorded_point(&read, parameter_binding, bound_variables)
+}
+
+fn synthesize_read_at_recorded_point(
+    read: &MachineTerm,
+    parameter_binding: ParameterBinding<'_>,
+    bound_variables: &BTreeMap<Variable, String>,
+) -> Option<ContractExpression> {
+    let (selector, state, load) = recorded_point_of_load(read)?;
     let expression =
         synthesize_surface_bitvector(&load, parameter_binding, &state, bound_variables)?;
     Some(ContractExpression::At {
@@ -2044,7 +2051,8 @@ fn synthesize_load_defining_equation(
             })
         })
         .or_else(|| {
-            let (selector, snapshot, _) = recorded_point_of_load(variable)?;
+            let read = crate::kernel::registered_load_term_for_variable(variable)?;
+            let (selector, snapshot, _) = recorded_point_of_load(&read)?;
             synthesize_at(&snapshot).map(|proposition| ClickProposition::At {
                 selector,
                 proposition: Box::new(proposition),
@@ -3469,23 +3477,20 @@ fn synthesize_parameter_field_pointer_value(
     None
 }
 
-/// The source load a load variable denotes at this state: the cell it
-/// names, when this state's memory lies in the variable's epoch. The
-/// kernel's own naming law decides membership, so a spelling built from
-/// the returned load lowers back to exactly this variable here.
+/// Compatibility entry for pointer carriers still registered under a name.
 fn registered_load_in_state(variable: &Variable, state: &CState) -> Option<MachineTerm> {
-    if !crate::kernel::is_load_variable(variable) {
-        return None;
-    }
-    let (_, pointer) = crate::kernel::registered_load_for_variable(variable)?;
-    let kind = crate::kernel::registered_load_kind_for_variable(variable)?;
-    let memory = crate::kernel::intern_c_memory_ref(state.memory());
-    let MachineTerm::Variable(named) =
-        crate::kernel::canonical_form_of_load(memory.clone(), pointer.clone(), kind)
-    else {
+    let read = crate::kernel::registered_load_term_for_variable(variable)?;
+    scalar_read_in_state(&read, state)
+}
+
+fn scalar_read_in_state(read: &MachineTerm, state: &CState) -> Option<MachineTerm> {
+    let MachineTerm::MemoryLoad(_, pointer, kind) = read else {
         return None;
     };
-    (named == *variable).then(|| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind))
+    let memory = crate::kernel::intern_c_memory_ref(state.memory());
+    let selected =
+        crate::kernel::canonical_form_of_load(memory.clone(), pointer.as_ref().clone(), *kind);
+    (selected == *read).then(|| MachineTerm::MemoryLoad(memory, pointer.clone(), *kind))
 }
 
 // Unsigned division and remainder use the usual C conversion of both
@@ -3910,21 +3915,19 @@ fn synthesize_surface_bitvector(
             }))
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
+            let read = crate::kernel::canonical_form_of_load(
+                memory.clone(),
+                kernel_pointer.as_ref().clone(),
+                *kind,
+            );
             let old = SYNTHESIS_ENTRY_STATE
                 .with(|slot| slot.borrow().clone())
                 .and_then(|entry| {
                     if entry.memory() == state.memory() {
                         return None;
                     }
-                    let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
-                        memory.clone(),
-                        kernel_pointer.as_ref().clone(),
-                        *kind,
-                    ) else {
-                        return None;
-                    };
-                    let load = registered_load_in_state(&variable, &entry)?;
-                    if registered_load_in_state(&variable, state).is_some() {
+                    let load = scalar_read_in_state(&read, &entry)?;
+                    if scalar_read_in_state(&read, state).is_some() {
                         return None;
                     }
                     Some(ContractExpression::Old(Box::new(
@@ -3939,14 +3942,9 @@ fn synthesize_surface_bitvector(
             if old.is_some() {
                 return old;
             }
-            if let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
-                memory.clone(),
-                kernel_pointer.as_ref().clone(),
-                *kind,
-            ) && registered_load_in_state(&variable, state).is_none()
-            {
-                return synthesize_load_at_recorded_point(
-                    &variable,
+            if scalar_read_in_state(&read, state).is_none() {
+                return synthesize_read_at_recorded_point(
+                    &read,
                     parameter_binding,
                     bound_variables,
                 );
@@ -5054,12 +5052,7 @@ fn pointer_read_address_in_state(pointer: &Pointer, state: &CState) -> Option<Po
     match &pointer.block {
         PointerBlock::Symbolic(variable) => {
             let (_, address) = crate::kernel::registered_load_for_variable(variable)?;
-            (crate::kernel::canonical_form_of_load(
-                memory,
-                address.clone(),
-                crate::kernel::LoadKind::Int32,
-            ) == MachineTerm::Variable(*variable))
-            .then_some(address)
+            registered_load_in_state(variable, state).map(|_| address)
         }
         PointerBlock::LoadedPointer(_) => {
             let read = pointer.as_loaded_value()?;

@@ -105,13 +105,14 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let load_condition = |id: u64| {
-        ConditionTerm::equal(
+        ConditionTerm::float64_compare(
             MachineTerm::MemoryLoad(
                 crate::kernel::intern_c_memory(CMemory::new()),
                 Box::new(pointer(id)),
-                crate::kernel::LoadKind::Int32,
+                crate::kernel::LoadKind::Float64,
             ),
             var(id),
+            crate::kernel::CComparisonOperator::Equal,
         )
     };
     let key = |id: u64| {
@@ -150,4 +151,36 @@ fn filing_a_load_condition_in_a_fork_shares_every_other_load() {
             .next()
             .is_none()
     );
+}
+
+/// Selected scalar versions already have their historical identity. Adding
+/// more facts about one address must not add load-time history searches.
+#[test]
+fn integer_read_facts_do_not_grow_load_time_transport_work() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let pointer = Pointer::symbolic(Variable(9_330_000));
+    let read = MachineTerm::MemoryLoad(
+        memory,
+        Box::new(pointer.clone()),
+        crate::kernel::LoadKind::Int32,
+    );
+    for count in [16, 32, 64] {
+        let mut facts = PureFactContext::new();
+        for i in 0..count {
+            facts = facts
+                .assume_condition(ConditionTerm::equal(read.clone(), var(9_331_000 + i)), true);
+        }
+        let (candidates, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts
+                .exact_memory_load_condition_candidates(&pointer)
+                .count()
+        });
+        assert_eq!(candidates, 0);
+        assert!(work <= 1);
+        assert_eq!(
+            facts.decide(&ConditionTerm::equal(read.clone(), var(9_331_000))),
+            Some(true)
+        );
+    }
 }

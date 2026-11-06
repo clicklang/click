@@ -215,7 +215,7 @@ mod tests {
     }
 
     #[test]
-    fn a_joined_read_definition_keeps_a_spellable_memory_version() {
+    fn joined_structural_read_goals_keep_a_spellable_memory_version() {
         let fixture =
             include_str!("../../../mdtests/a_join_forgets_a_cell_the_arms_disagree_on.md");
         let c = fixture
@@ -235,9 +235,13 @@ mod tests {
             .split("```")
             .next()
             .unwrap();
+        let click = click.replace(
+            "    step();\n    solve();",
+            "    have p->left == p->left;\n    step();\n    solve();",
+        );
         let lines = capture(|| {
             let error = crate::surface::verify_c0_sources(
-                click,
+                &click,
                 &[("a_join_forgets_a_cell_the_arms_disagree_on.c", c)],
             )
             .unwrap_err();
@@ -250,9 +254,8 @@ mod tests {
             .iter()
             .filter(|line| {
                 let fields = line.split('\t').collect::<Vec<_>>();
-                fields.get(1) == Some(&"fact")
+                fields.get(1) == Some(&"goal")
                     && fields.get(2) == Some(&"condition:Compare(int32 ==)")
-                    && fields.get(4) == Some(&"step")
             })
             .collect::<Vec<_>>();
         assert!(!reads.is_empty(), "{lines:#?}");

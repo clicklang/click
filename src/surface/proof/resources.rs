@@ -237,7 +237,7 @@ struct DynamicViewDependencyIndex {
     /// it exclusively, so a body fact over it needs no loan: it is supported
     /// exactly as a read of ambient owned memory is.
     owned: ResourceContext,
-    /// The owned instance an `open` keeps folded while its body is exposed.
+    /// The owned instance retained while its body is opened or refolded.
     /// A view it publishes over its own bytes borrows nothing: its authority
     /// is this live owner. Only this one owner's projections count; any
     /// other observation still needs a loan.
@@ -395,11 +395,11 @@ fn dynamic_body_fact_dependency(
         let holder = state
             .loan_participant()
             .ok_or_else(|| "current viewed-memory dependency has no loan holder".to_string())?;
-        for candidate in candidates {
-            let checked = crate::kernel::LoanViewBinding {
-                viewed: required_view.clone(),
-                ..candidate
-            };
+        for checked in candidates {
+            // The occurrence lookup above established coverage using the
+            // current facts. Preserve its recorded binding: replacing its
+            // view with a derived subrange would ask the ledger's fact-free
+            // identity check to rediscover that coverage.
             ledger
                 .validate_view_binding(checked.clone(), holder)
                 .map_err(|error| {
@@ -466,6 +466,11 @@ fn dynamic_body_fact_dependency(
             Proposition::ForAll { var, body, .. } => match body.as_ref() {
                 Proposition::Implies(guard, consequent) => {
                     walk_proposition(guard, state, assumptions, temporary_views, binder, selected)?;
+                    // A structurally empty guarded domain evaluates no body
+                    // reads. Still check the guard's own read dependencies.
+                    if crate::kernel::proof::fact_reasoning::instance_guard_folds_to_false(guard) {
+                        return Ok(());
+                    }
                     walk_proposition(
                         consequent,
                         state,
@@ -4153,6 +4158,17 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // representation state, independent of whether the resource
                 // needs a persistent population ledger.
                 folded_representation_already_present = true;
+                // Exact execution can retain this folded owner alongside
+                // observations of its body. Refolding checks those same
+                // observations under their existing owner, just as closing
+                // `open` does; unrelated unbound views still need a loan.
+                if let [occurrence] = state
+                    .resources()
+                    .owned_occurrences_for_fact(&population)
+                    .as_slice()
+                {
+                    opened_owner = Some(*occurrence);
+                }
             }
             if authority_control_body {
                 let definitions = crate::surface::verification::composite_resource_definitions(
@@ -5943,6 +5959,54 @@ void child_release(struct child* obj) {
             dependency.is_some(),
             "current viewed memory must retain its loan"
         );
+        // Coverage can need a proved index equality; binding liveness still
+        // validates the original occurrence, not a newly invented binding.
+        let alias_index = Variable(2_000_017);
+        let alias_fact = Proposition::CMemoryReadDefined {
+            memory: memory.clone(),
+            pointer: Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Int32Scaled {
+                    value: crate::kernel::SharedMachineIntegerTerm::index(
+                        MachineIntegerType::Int32,
+                        MachineTerm::Variable(alias_index),
+                    ),
+                    byte_width: 4,
+                },
+            },
+            value_type: crate::kernel::CType::Int32,
+        };
+        let alias_assumptions =
+            PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: MachineIntegerType::Int32,
+                    relation: CompareRelation::Equal,
+                    left: Box::new(MachineTerm::Variable(alias_index)),
+                    right: Box::new(MachineTerm::constant(0)),
+                },
+                true,
+            ));
+        assert!(
+            dynamic_body_fact_dependency(
+                &alias_fact,
+                &bound_state,
+                &alias_assumptions,
+                &no_temporary_views,
+            )
+            .unwrap()
+            .is_some()
+        );
+        assert!(
+            dynamic_body_fact_dependency(
+                &alias_fact,
+                &bound_state,
+                &PureFactContext::new(),
+                &no_temporary_views,
+            )
+            .is_err(),
+            "coverage still needs the index equality"
+        );
+
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,

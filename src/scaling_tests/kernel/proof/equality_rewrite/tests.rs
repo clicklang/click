@@ -958,10 +958,10 @@ fn pointer_read_chain_rewrite_work(
         if native {
             Pointer::version_read(&memory, address)
         } else {
-            let term = crate::kernel::canonical_form_of_load(
+            let term = crate::kernel::eval::canonical_cell_load(
                 memory.clone(),
                 address.clone(),
-                LoadKind::Int32,
+                CType::Int32Pointer,
             );
             let MachineTerm::Variable(variable) = term else {
                 panic!("expected a named read")

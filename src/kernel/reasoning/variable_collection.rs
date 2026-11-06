@@ -3032,6 +3032,17 @@ pub(crate) fn collect_bitvector_variables(term: &MachineTerm, variables: &mut BT
             collect_shared_memory_bitvector_variables(memory, variables);
             collect_pointer_bitvector_variables(pointer, variables);
             collect_stored_load_connection_variables(memory, pointer, variables);
+            if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
+                && let Some(origin) = crate::kernel::eval::scalar_read_observation(
+                    crate::kernel::MachineOperandView::Legacy(term),
+                )
+                .and_then(|read| read.origin)
+                && origin != *memory
+            {
+                // Like a named read, a structural version can precede the
+                // live DAG whose changed ranges the framing query needs.
+                collect_shared_memory_bitvector_variables(&origin, variables);
+            }
         }
         MachineTerm::PointerAddress(pointer, _) => {
             collect_pointer_bitvector_variables(pointer, variables);

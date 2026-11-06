@@ -1426,3 +1426,30 @@ fn a_forgotten_observation_retains_only_its_complete_typed_value() {
         );
     });
 }
+
+#[test]
+fn structural_read_dependencies_keep_the_observed_point_and_exact_width() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let entry = entry_memory();
+    let pointer = at(block("global:g"), 0);
+    let origin = intern_c_memory(entry.store(at(block("global:h"), 0), one()));
+    crate::kernel::eval::record_load_access_width(origin.memory(), &pointer, 4);
+    let read = crate::kernel::eval::canonical_form_of_load(
+        origin.clone(),
+        pointer.clone(),
+        LoadKind::Int32,
+    );
+    let MachineTerm::MemoryLoad(selected, _, _) = &read else {
+        panic!("structural read")
+    };
+    assert_ne!(
+        selected, &origin,
+        "selection should cross the unrelated store"
+    );
+    let fact = Proposition::ConditionIs(ConditionTerm::equal(read.clone(), 0u32.into()), true);
+    let reads = reads_of_proposition(&fact);
+    assert_eq!(reads.len(), 1);
+    assert_eq!(reads[0].resource, OwnedResource::Cell { pointer, bytes: 4 });
+    assert_eq!(reads[0].point, ProgramPoint::at(&origin));
+    assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
+}

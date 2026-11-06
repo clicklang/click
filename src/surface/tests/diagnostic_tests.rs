@@ -3761,7 +3761,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             // The target names the read of the overwritten cell, not the
             // value the store left there.
             assert!(
-                message.contains("checked target (wanted): int32 =(load"),
+                message.contains("checked target (wanted): int32 =(read<Bits32>"),
                 "{message}"
             );
             assert!(

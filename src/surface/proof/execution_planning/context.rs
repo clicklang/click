@@ -932,6 +932,7 @@ pub(in crate::surface) fn source_backed_requirement_is_supported(
                 if !crate::kernel::is_load_variable(variable) => {}
             Work::Condition(_) => return Ok(false),
             Work::Bitvector(bits32_constant!(_) | int64_constant!(_) | uint64_constant!(_)) => {}
+            Work::Bitvector(MachineTerm::MemoryLoad(..)) if quantified_external_range => {}
             Work::Bitvector(term @ MachineTerm::MemoryLoad(_, _, _))
                 if static_snapshot.is_some_and(|_| {
                     registered_static_memory_load_matches_snapshot(
@@ -1029,10 +1030,18 @@ fn registered_static_memory_load_matches_snapshot(
     term: &MachineTerm,
     source_snapshot: crate::kernel::CMemorySnapshotIdentity,
 ) -> bool {
-    let Some((variable, _)) = crate::kernel::load_variable_for_term(term) else {
+    let Some(read) =
+        crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
+    else {
         return false;
     };
-    registered_static_load_matches_snapshot(&variable, source_snapshot)
+    let Some(origin) = read.origin else {
+        return false;
+    };
+    crate::kernel::CMemorySnapshotIdentity::of(origin.memory()) == source_snapshot
+        && matches!(read.pointer.block,
+            PointerBlock::Concrete(ref block)
+                if PointerBlock::is_static_name(block) || PointerBlock::is_global_name(block))
 }
 
 /// Whether this non-assumable call obligation is eligible for the

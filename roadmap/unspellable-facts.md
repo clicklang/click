@@ -465,9 +465,9 @@ This is a representation foundation, not completion of part 1. Read addresses
 still use native `Pointer` payloads; addresses outside the exact structural
 fragment keep their existing legacy representation. Checker observations admit
 structural reads in machine arithmetic; reads nested inside mathematical conversion
-payloads remain outside that fragment. Next switch scalar read producers and
-retire the reserved-variable bridge, including its nested-address consumers. Preserve existing structural read-version selection
-and keep separation-dependent frame equalities in proofs. Pointer-valued and
+payloads remain outside that fragment. The subsequent scalar producer and
+metadata cutover is described below. It preserves structural read-version
+selection and keeps separation-dependent frame equalities in proofs. Pointer-valued and
 volatile reads need their own representation audit. Scaling regressions cover
 retained arithmetic prefixes beside unrelated memory and repeated imports of a
 read with a growing address; explicit native import still pays for its input.
@@ -493,30 +493,53 @@ exporting surrounding arithmetic. Address rewriting preserves the selected
 snapshot rather than repeating creation-time version selection. The graph reads
 width and epoch-scoped origin metadata through a selected-read interface; changing
 the observation format neither widens the access nor renews its origin. Metadata
-now belongs to a persistent read-observation index keyed by snapshot, address
-and read kind, independently of reserved names. Compatibility names reference
-these observations; capture/restore shares their persistent roots. Inspecting an
-existing read neither widens its access nor renews its origin epoch. The central
-comparison-form collector also selects structural reads inside Integer
-observations, preserving read-over-write matching without adding individual-check fallbacks.
+now belongs to a read-descriptor observation index: snapshot, address and read
+kind select width and epoch-scoped origin independently of any reserved name.
+Capture/restore shares its persistent roots with the verification session. The
+central comparison-form collector also selects structural reads inside Integer
+observations, preserving
+read-over-write matching without adding individual-check fallbacks.
 
-The remaining scalar producer switch and registry removal are separate from
-address-index migration. Shared checker admission alone does not justify removing
-those names. The independent width/origin metadata is the prerequisite; execution,
-contract and resource producers still need their separate cutover.
+The ordinary integer producer switch is in progress on
+`codex/structural-scalar-producers`; it has not been published or merged.
+The integrated cutover passed the unit/API phase (7604 tests) before the latest
+consumer repairs, but the full gate is not green. The focused fixture recheck
+currently passes 38 of the original 42 failing Markdown fixtures; four example
+projects still fail. `input-cursor` now passes unchanged: ordinary integer read
+facts no longer enter the legacy load-time transport index, avoiding repeated
+history walks during resource expansion. A deterministic regression covers
+16/32/64 read facts without growing transport work. Re-run the full gate,
+selected expansion checks and fact-stability audit after completing these repairs.
+
+The ordinary integer producer switch follows the address-index migration.
+Execution, contracts and resource cells retain structural reads for signed and
+unsigned 8/16/32/64/128-bit values. They no longer mint scalar names or emit
+scalar defining equations. Read observations retain widths, historical origins
+and branch-local metadata independently. Creation-time version selection remains
+structural; stored literals and reads of other addresses do not replace the
+selected read. Checking may still establish their equality.
+
+The ordinary scalar bridge is removed from graph read registration, comparison
+rewriting, exact-cell derived reads, origin evidence and historical synthesis.
+The reserved-name machinery remains for pointer-valued/volatile producers and
+compatibility with their existing facts; this increment does not migrate those
+families. Arithmetic certificates accept structural read atoms with exact
+snapshot/address/kind identity, and binder checks inspect the selected read's
+address rather than mistaking it for an unscoped variable. Array runs preserve
+read atoms without expanding their stored snapshots.
 
 PR #2472 merged the address-admission prerequisite: structural reads inside a
 scalar read's native address retain their snapshots and read kinds. Its
 separate nested-snapshot key was needed while indices still held native trees.
 
-PR #2477 switched C/Click address indices to shared machine operands. The common
-producer imports registered read names into structural reads; scaled offsets retain those shared children. Their identities include
+PR #2477 switched C/Click address indices to shared machine operands. The common producer imports registered read names into structural
+reads; scaled offsets retain those shared children. Their identities include
 nested snapshots, replacing the separate snapshot-key walk. Canonicalization
 retains each constructed child rather than resolving its read or reopening its
 prefix. Opaque legacy indices retain their complete producer-local payloads and
-remain outside shared scalar-read admission. Scalar producers outside this
-boundary still use reserved names; the metadata increment above separates their
-observation ownership without changing their produced terms.
+remain outside shared scalar-read admission. That increment left scalar producers
+outside this boundary and width/origin metadata on the registry; the subsequent scalar switch described above removes
+that dependency for ordinary integer reads.
 
 The producer cutover also exposed three compatibility gaps. Exact rewrite
 matching now recognizes a registered name and its structural descriptor before
@@ -580,7 +603,8 @@ The fresh `scripts/check.sh --no-fail-fast` gate passes: 7,584 unit/API tests,
 58 examples, and all 5,057 mdtests. It took 15m06s including compilation
 on this environment, exceeding the ten-minute target; no limits or gate selections
 were changed. PR #2468 merged this checker increment;
-read producers and reserved-variable removal are still the next increment.
+read producers and reserved-variable removal were deferred to the subsequent
+increments described above.
 
 The batch comparison form retains literal machine truth/falsehood after replacing
 reads, while ordinary rewriting keeps raw comparison syntax. Comparison keys now

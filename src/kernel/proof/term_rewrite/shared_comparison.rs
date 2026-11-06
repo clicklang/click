@@ -38,18 +38,29 @@ impl TermRewrite<'_> {
             && self.scope.integer.iter().all(|(a, b)| a == b)
             && self.scope.algebraic.iter().all(|(a, b)| a == b);
         let local = std::cell::RefCell::new(HashMap::<u64, KernelTerm>::new());
-        let batch_cache = self.comparison_read_cache.clone();
+        let shared_cache = self
+            .shared_machine_cache
+            .get_or_insert_with(Default::default)
+            .clone();
         let scope_id = self.scope_id;
+        let source_disabled = self.source_disabled;
+        let integer_shadowed = self.integer_shadowed;
+        let resolve_reads = self.resolve_registered_loads;
+        let key = |term: &KernelTerm| {
+            (
+                term.id(),
+                scope_id,
+                source_disabled,
+                integer_shadowed,
+                resolve_reads,
+            )
+        };
         let get = |term: &KernelTerm| {
             local
                 .borrow()
                 .get(&term.id())
                 .cloned()
-                .or_else(|| {
-                    batch_cache
-                        .as_ref()
-                        .and_then(|cache| cache.borrow().get(&(term.id(), scope_id)).cloned())
-                })
+                .or_else(|| shared_cache.borrow().get(&key(term)).cloned())
                 .or_else(|| {
                     cacheable
                         .then(|| {
@@ -148,26 +159,9 @@ impl TermRewrite<'_> {
                 }
                 KernelTermNode::MemoryLoad { .. } => {
                     let read = term.machine_read_leaf().expect("read leaf");
-                    let rewritten = if self.resolve_registered_loads {
-                        let (memory, pointer, kind) = MachineOperandView::Shared(&term).read()?;
-                        // This node already owns its selected snapshot. Rewriting
-                        // its address must not run creation-time version selection.
-                        let name =
-                            crate::kernel::eval::registered_exact_read(memory, pointer, kind)
-                                .unwrap_or_else(|| {
-                                    crate::kernel::eval::load_variable_for_exact_cell(
-                                        memory,
-                                        pointer,
-                                        kind,
-                                        crate::kernel::load_term_access_width(
-                                            memory, pointer, kind,
-                                        ),
-                                    )
-                                });
-                        self.bits(&MachineTerm::Variable(name))
-                    } else {
-                        self.bits(read)
-                    };
+                    // The selected read owns its snapshot; rewrite its address
+                    // directly without manufacturing a reserved variable.
+                    let rewritten = self.bits(read);
                     KernelTermImport::default().machine_arithmetic(format, &rewritten)?
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
@@ -248,11 +242,7 @@ impl TermRewrite<'_> {
                 return None;
             }
             local.borrow_mut().insert(term.id(), value.clone());
-            if let Some(cache) = &batch_cache {
-                cache
-                    .borrow_mut()
-                    .insert((term.id(), scope_id), value.clone());
-            }
+            shared_cache.borrow_mut().insert(key(&term), value.clone());
             if cacheable {
                 COMPARISON_OPERANDS.with(|cache| cache.borrow_mut().insert(term.id(), value));
             }

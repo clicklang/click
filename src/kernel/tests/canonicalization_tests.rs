@@ -573,10 +573,7 @@ fn canonical_term_resolves_equal_loads_to_one_form() {
         crate::kernel::eval::canonical_term(&load_at_drifted),
         "representational snapshot drift must not change the canonical form"
     );
-    let MachineTerm::Variable(load_variable) = &canonical else {
-        panic!("an unresolved load's canonical form is its load variable: {canonical:?}");
-    };
-    assert!(crate::kernel::is_load_variable(load_variable));
+    assert!(matches!(canonical, MachineTerm::MemoryLoad(..)));
     // Idempotence: the canonical form is its own canonical form.
     assert_eq!(canonical, crate::kernel::eval::canonical_term(&canonical));
 
@@ -789,9 +786,8 @@ fn pointer_offset_add_coalesces_nested_constant_displacements() {
 #[test]
 fn load_variables_are_congruent_through_ground_index_equalities() {
     // `data[index]` with `index == 0` in scope is the cell `data[0]`: the
-    // two load variables are content-addressed by different addresses. They
-    // remain distinct in the ordinary equality graph; an explicit atomic
-    // derivation retains the address-equality path.
+    // two structural reads retain different addresses. Congruence in the
+    // equality graph identifies them only with the required index equality.
     let memory = crate::kernel::intern_c_memory(CMemory::new().with_block("data", 8));
     let index = MachineTerm::Variable(Variable(7));
     let indexed = MachineTerm::MemoryLoad(
@@ -834,8 +830,8 @@ fn load_variables_are_congruent_through_ground_index_equalities() {
     let derivation =
         crate::kernel::search::ProofSearch::derive_proposition(&(with_index_fact), &goal)
             .expect("the explicit load-address congruence should derive the equality");
-    assert!(derivation.load_address_congruence_paths().is_some());
     assert!(derivation.check(&with_index_fact));
+    assert!(!derivation.check(&without_index_fact));
     // A different constant index selects a different cell.
     let other = PureFactContext::new().assume_condition(
         ConditionTerm::equal(MachineTerm::Variable(Variable(7)), MachineTerm::constant(1)),
@@ -919,7 +915,7 @@ fn substitution_reaches_through_a_load_variable_with_a_bound_index() {
     let indexed_load_variable = crate::kernel::eval::canonical_term(&cell(
         PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(bound), 4),
     ));
-    assert!(matches!(indexed_load_variable, MachineTerm::Variable(_)));
+    assert!(matches!(indexed_load_variable, MachineTerm::MemoryLoad(..)));
     let instantiated = crate::kernel::reasoning::substitute_bitvector_variable(
         &indexed_load_variable,
         bound,
@@ -999,7 +995,7 @@ fn load_variable_free_variables_include_its_snapshot_cells() {
         }),
         crate::kernel::LoadKind::Int32,
     ));
-    assert!(matches!(load_variable, MachineTerm::Variable(_)));
+    assert!(matches!(load_variable, MachineTerm::MemoryLoad(..)));
     let mut variables = BTreeSet::new();
     crate::kernel::reasoning::collect_bitvector_variables(&load_variable, &mut variables);
     assert!(variables.contains(&counter));
@@ -1280,10 +1276,10 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         offset: PointerOffsetTerm::Constant(8),
     };
     let entry = CMemory::new().with_block("fields", 16);
-    let MachineTerm::Variable(loaded) = crate::kernel::canonical_form_of_load(
+    let MachineTerm::Variable(loaded) = crate::kernel::eval::canonical_cell_load(
         intern_c_memory(entry.clone()),
         field.clone(),
-        crate::kernel::LoadKind::Int32,
+        CType::Int32Pointer,
     ) else {
         panic!("a load of an opaque cell is named by a load variable");
     };
@@ -1291,10 +1287,10 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         Pointer::loaded(&MachineTerm::Variable(loaded)).expect("the cell's load names its read");
     let pointer_at = |value: Pointer| CValue::typed_pointer(value, CType::Int32Pointer);
     let name_at = |memory: CMemory, cell: &Pointer| {
-        crate::kernel::canonical_form_of_load(
+        crate::kernel::eval::canonical_cell_load(
             intern_c_memory(memory),
             cell.clone(),
-            crate::kernel::LoadKind::Int32,
+            CType::Int32Pointer,
         )
     };
 

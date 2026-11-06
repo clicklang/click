@@ -1781,12 +1781,15 @@ fn load_defining_equation_round_trips() {
         Box::new(pointer),
         crate::kernel::LoadKind::Int32,
     );
-    let (variable, defining_load) = crate::kernel::load_variable_for_term(&load).unwrap();
+    let MachineTerm::MemoryLoad(memory, address, kind) = load else {
+        unreachable!()
+    };
+    let defining_load = crate::kernel::canonical_form_of_load(memory, *address, kind);
     let requirement = Proposition::ConditionIs(
         ConditionTerm::Compare {
             format: MachineIntegerType::Int32,
             relation: CompareRelation::Equal,
-            left: Box::new(MachineTerm::Variable(variable)),
+            left: Box::new(defining_load.clone()),
             right: Box::new(defining_load),
         },
         true,

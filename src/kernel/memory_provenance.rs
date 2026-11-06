@@ -545,6 +545,15 @@ pub(crate) fn canonical_c_memory_deep(memory: &CMemory) -> CMemory {
 
 fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
     let mut canonical = memory.clone();
+    // A stored read is an immutable value, just as its former reserved name
+    // was. Resolving it here would force every slot of a compact run to expand.
+    let scalar = |term: &MachineTerm| {
+        if matches!(term, MachineTerm::MemoryLoad(..)) {
+            term.clone()
+        } else {
+            canonicalize_atomic_loads(term)
+        }
+    };
     let cells = canonical.cells.map_cells_preserving_runs(
         |pointer, value| {
             let key = canonicalize_pointer_loads(pointer);
@@ -560,19 +569,19 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
                 }),
                 CValue::Parameter(term) => CValue::Parameter(term.clone()),
                 CValue::Void => CValue::Void,
-                CValue::Bool(term) => CValue::Bool(canonicalize_atomic_loads(term)),
-                CValue::Int8(term) => CValue::Int8(canonicalize_atomic_loads(term)),
-                CValue::Int16(term) => CValue::Int16(canonicalize_atomic_loads(term)),
-                CValue::Int32(term) => CValue::Int32(canonicalize_atomic_loads(term)),
-                CValue::UInt8(term) => CValue::UInt8(canonicalize_atomic_loads(term)),
-                CValue::UInt16(term) => CValue::UInt16(canonicalize_atomic_loads(term)),
-                CValue::UInt32(term) => CValue::UInt32(canonicalize_atomic_loads(term)),
-                CValue::Int64(term) => CValue::Int64(canonicalize_atomic_loads(term)),
-                CValue::UInt64(term) => CValue::UInt64(canonicalize_atomic_loads(term)),
-                CValue::Int128(term) => CValue::Int128(canonicalize_atomic_loads(term)),
-                CValue::UInt128(term) => CValue::UInt128(canonicalize_atomic_loads(term)),
-                CValue::Float32(term) => CValue::Float32(canonicalize_atomic_loads(term)),
-                CValue::Float64(term) => CValue::Float64(canonicalize_atomic_loads(term)),
+                CValue::Bool(term) => CValue::Bool(scalar(term)),
+                CValue::Int8(term) => CValue::Int8(scalar(term)),
+                CValue::Int16(term) => CValue::Int16(scalar(term)),
+                CValue::Int32(term) => CValue::Int32(scalar(term)),
+                CValue::UInt8(term) => CValue::UInt8(scalar(term)),
+                CValue::UInt16(term) => CValue::UInt16(scalar(term)),
+                CValue::UInt32(term) => CValue::UInt32(scalar(term)),
+                CValue::Int64(term) => CValue::Int64(scalar(term)),
+                CValue::UInt64(term) => CValue::UInt64(scalar(term)),
+                CValue::Int128(term) => CValue::Int128(scalar(term)),
+                CValue::UInt128(term) => CValue::UInt128(scalar(term)),
+                CValue::Float32(term) => CValue::Float32(scalar(term)),
+                CValue::Float64(term) => CValue::Float64(scalar(term)),
                 CValue::Pointer(pointer) => CValue::Pointer(
                     pointer
                         .map_addresses(canonicalize_pointer_loads)
@@ -584,9 +593,8 @@ fn canonical_c_memory_deep_uncached(memory: &CMemory) -> CMemory {
         },
         |_| None,
         |run| {
-            // Numeric Load/Copy slots are minted by canonical_form_of_load,
-            // which returns a load variable for every typed memory load.
-            // Atomic-load canonicalization leaves those variables unchanged.
+            // Numeric Load/Copy slots retain structural reads. The cell-value
+            // mapper above leaves those read values unchanged.
             // A canonical base plus a constant slot shift is canonical too:
             // slot_pointer and canonicalize_pointer_loads both use the same
             // folding PointerOffsetTerm::add constructor. Source cells and
@@ -846,48 +854,43 @@ struct OriginLoadEndpoint {
 }
 
 fn origin_load_width(term: &MachineTerm) -> Option<u32> {
-    match term {
-        MachineTerm::Variable(variable) => {
-            crate::kernel::eval::registered_load_bytes_for_variable(variable)
-        }
-        MachineTerm::MemoryLoad(memory, pointer, kind) => Some(
-            crate::kernel::load_term_access_width(memory, pointer, *kind),
-        ),
-        _ => None,
-    }
+    crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
+        .map(|read| read.bytes)
 }
 
 impl OriginLoadEndpoint {
     fn for_term(term: &MachineTerm) -> Option<Self> {
-        let (memory, pointer, kind) = match term {
-            MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                (memory.clone(), pointer.as_ref().clone(), *kind)
-            }
-            MachineTerm::Variable(variable) => {
-                let (memory, pointer) =
-                    crate::kernel::eval::registered_load_origin_for_variable(variable)?;
-                let kind = crate::kernel::eval::registered_load_kind_for_variable(variable)?;
-                (memory, pointer, kind)
-            }
-            _ => return None,
-        };
+        if let MachineTerm::MemoryLoad(memory, pointer, kind) = term {
+            return Some(Self {
+                memory: memory.clone(),
+                pointer: pointer.as_ref().clone(),
+                kind: *kind,
+            });
+        }
+        Self::for_observed_term(term)
+    }
+
+    fn for_observed_term(term: &MachineTerm) -> Option<Self> {
+        let read = crate::kernel::eval::scalar_read_observation(
+            crate::kernel::MachineOperandView::Legacy(term),
+        )?;
         Some(Self {
-            memory,
-            pointer,
-            kind,
+            memory: read.origin?,
+            pointer: read.pointer,
+            kind: read.kind,
         })
     }
 
-    /// The snapshot explicitly named by a term or its registered defining load.
-    /// Unlike an observation origin, this identity is independent of which
-    /// execution arm first observed a load variable.
+    /// The exact selected snapshot, independently of the observed origin.
     fn for_named_term(term: &MachineTerm) -> Option<Self> {
-        match term {
-            MachineTerm::Variable(variable) => Self::for_term(
-                &crate::kernel::eval::registered_load_term_for_variable(variable)?,
-            ),
-            _ => Self::for_term(term),
-        }
+        let read = crate::kernel::eval::scalar_read_observation(
+            crate::kernel::MachineOperandView::Legacy(term),
+        )?;
+        Some(Self {
+            memory: read.memory,
+            pointer: read.pointer,
+            kind: read.kind,
+        })
     }
 
     /// The access width a walk from this endpoint uses.
@@ -897,6 +900,10 @@ impl OriginLoadEndpoint {
 
     fn matches_term(&self, term: &MachineTerm) -> bool {
         Self::for_term(term).as_ref() == Some(self)
+    }
+
+    fn matches_observed_term(&self, term: &MachineTerm) -> bool {
+        Self::for_observed_term(term).as_ref() == Some(self)
     }
 
     fn as_term(&self) -> MachineTerm {
@@ -1323,8 +1330,8 @@ impl CheckedLoadEquality {
                 right,
                 offset,
             } => {
-                left.matches_term(&self.left)
-                    && right.matches_term(&self.right)
+                left.matches_observed_term(&self.left)
+                    && right.matches_observed_term(&self.right)
                     && left.kind == right.kind
                     && left.pointer.block == right.pointer.block
                     && offset.checks(&left.pointer.offset, &right.pointer.offset, assumptions)
@@ -1335,8 +1342,8 @@ impl CheckedLoadEquality {
                 right,
                 equality,
             } => {
-                left.matches_term(&self.left)
-                    && right.matches_term(&self.right)
+                left.matches_observed_term(&self.left)
+                    && right.matches_observed_term(&self.right)
                     && equality.checks(
                         &Proposition::ConditionIs(
                             ConditionTerm::equal(left.as_term(), right.as_term()),
@@ -1358,7 +1365,8 @@ impl CheckedLoadEquality {
                         && OriginLoadEndpoint::for_named_term(&self.left).as_ref() == Some(left)
                         && OriginLoadEndpoint::for_named_term(&self.right).as_ref() == Some(right)
                 } else {
-                    left.matches_term(&self.left) && right.matches_term(&self.right)
+                    left.matches_observed_term(&self.left)
+                        && right.matches_observed_term(&self.right)
                 };
                 endpoints_match
                     && left.kind == right.kind
@@ -1444,8 +1452,8 @@ impl CheckedLoadEquality {
                 } else {
                     (before, after)
                 };
-                left.matches_term(&self.left)
-                    && right.matches_term(&self.right)
+                left.matches_observed_term(&self.left)
+                    && right.matches_observed_term(&self.right)
                     && left.pointer == right.pointer
                     && left.kind == right.kind
                     && left.memory.memory() == expected_left
@@ -1678,9 +1686,10 @@ pub(crate) fn checked_origin_load_equality(
             left.memory == right.memory && left.pointer.block != right.pointer.block
         });
     let named_snapshot = named_endpoints.is_some();
-    let Some((left_endpoint, right_endpoint)) = named_endpoints
-        .or_else(|| OriginLoadEndpoint::for_term(left).zip(OriginLoadEndpoint::for_term(right)))
-    else {
+    let Some((left_endpoint, right_endpoint)) = named_endpoints.or_else(|| {
+        OriginLoadEndpoint::for_observed_term(left)
+            .zip(OriginLoadEndpoint::for_observed_term(right))
+    }) else {
         return false;
     };
     if left_endpoint.kind != right_endpoint.kind {
@@ -3685,12 +3694,13 @@ impl LoadCellWalks {
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind)
         };
         let pins = |cell: &MemoryDagCell, other: &MachineTerm| {
-            matches!(
-                cell.resolved_value(pointer, kind),
-                Some(
-                    crate::kernel::integer32_c_value!(value)
-                ) if &value == other
-            )
+            matches!(cell, MemoryDagCell::Stored { .. })
+                && matches!(
+                    cell.resolved_value(pointer, kind),
+                    Some(
+                        crate::kernel::integer32_c_value!(value)
+                    ) if &value == other
+                )
         };
         if pins(&self.left, &load(right_memory)) {
             Some(AtomicMemoryLoadEqualityEvidence::LeftResolvesToRight { left: self.left })
@@ -4011,23 +4021,23 @@ pub(crate) fn resolve_load_along_memory_derivations(
 ) -> Option<MachineTerm> {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
-    let result = with_extended_dag_bridging(|| {
-        let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
-        let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
-        if let Some(value) = cell.resolved_value(pointer, kind) {
-            return match value {
-                crate::kernel::integer32_c_value!(value) => Some(value),
-                _ => None,
-            };
-        }
-        match cell {
-            MemoryDagCell::Stored { .. } => None,
-            MemoryDagCell::Unwritten { node, .. } => crate::kernel::eval::load_variable_for_term(
-                &MachineTerm::MemoryLoad(node, Box::new(pointer.clone()), kind),
-            )
-            .map(|(variable, _)| MachineTerm::Variable(variable)),
-        }
-    });
+    let result =
+        with_extended_dag_bridging(|| {
+            let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
+            let cell = memory_dag_cell_source(memory, pointer, bytes, assumptions, true)?;
+            if let Some(value) = cell.resolved_value(pointer, kind) {
+                return match value {
+                    crate::kernel::integer32_c_value!(value) => Some(value),
+                    _ => None,
+                };
+            }
+            match cell {
+                MemoryDagCell::Stored { .. } => None,
+                MemoryDagCell::Unwritten { node, .. } => Some(
+                    crate::kernel::canonical_form_of_load(node, pointer.clone(), kind),
+                ),
+            }
+        });
     EXPLICIT_DAG_CHECK.with(|flag| flag.set(previous));
     result
 }
@@ -5040,7 +5050,16 @@ pub(crate) fn wide_read_has_recorded_value(
         MachineTerm::Variable(variable) => {
             crate::kernel::eval::registered_load_origin_term_for_variable(variable)
         }
-        MachineTerm::MemoryLoad(..) => Some(term.clone()),
+        MachineTerm::MemoryLoad(..) => crate::kernel::eval::scalar_read_observation(
+            crate::kernel::MachineOperandView::Legacy(term),
+        )
+        .map(|read| {
+            MachineTerm::MemoryLoad(
+                read.origin.unwrap_or(read.memory),
+                Box::new(read.pointer),
+                read.kind,
+            )
+        }),
         _ => None,
     };
     let left_origin = origin(left);
@@ -5053,7 +5072,9 @@ pub(crate) fn wide_read_has_recorded_value(
         MachineTerm::Variable(variable) => {
             crate::kernel::eval::latest_wide_load_observation(variable)
         }
-        MachineTerm::MemoryLoad(..) => Some(term.clone()),
+        MachineTerm::MemoryLoad(..) => {
+            crate::kernel::eval::latest_scalar_read_observation(term).or_else(|| Some(term.clone()))
+        }
         _ => None,
     };
     let latest_left = latest(left);

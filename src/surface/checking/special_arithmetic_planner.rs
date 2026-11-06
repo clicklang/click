@@ -900,6 +900,9 @@ fn bounded_term_work(root: &MachineTerm) -> bool {
                 pending.push(right);
             }
             cast_term!(UInt32From64, value) => pending.push(value),
+            MachineTerm::MemoryLoad(_, pointer, _) if !bounded_pointer_work(pointer) => {
+                return false;
+            }
             MachineTerm::PointerAddress(pointer, _) if !bounded_offset_work(&pointer.offset) => {
                 return false;
             }
@@ -946,6 +949,11 @@ fn bounded_term_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
             (int64_constant!(a), int64_constant!(b)) if constant_i64(*a) == constant_i64(*b) => {}
             (uint64_constant!(a), uint64_constant!(b)) if constant_u64(*a) == constant_u64(*b) => {}
             (MachineTerm::Variable(a), MachineTerm::Variable(b)) if a == b => {}
+            (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
+                if lm != rm || lk != rk || !bounded_pointer_equal(lp, rp) {
+                    return false;
+                }
+            }
             (MachineTerm::PointerAddress(_, _), MachineTerm::PointerAddress(_, _)) => {
                 return false;
             }
@@ -1129,6 +1137,66 @@ mod tests {
             true,
         );
         assert!(plan_special_arithmetic_certificate(&goal, &[finite]).is_none());
+    }
+
+    #[test]
+    fn finite_read_certificate_preserves_snapshot_address_and_kind() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(crate::kernel::CMemory::new());
+        let pointer = crate::kernel::Pointer::symbolic(Variable(22_104));
+        let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+        let value = read(
+            memory.clone(),
+            pointer.clone(),
+            crate::kernel::LoadKind::Float64,
+        );
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::float64_compare(
+                value.clone(),
+                value.clone(),
+                crate::kernel::CComparisonOperator::Equal,
+            ),
+            true,
+        );
+        for (value, valid) in [
+            (value, true),
+            (
+                read(
+                    memory.clone(),
+                    pointer.offset_by_bytes(8),
+                    crate::kernel::LoadKind::Float64,
+                ),
+                false,
+            ),
+            (
+                read(
+                    memory.clone(),
+                    pointer.clone(),
+                    crate::kernel::LoadKind::Bits64,
+                ),
+                false,
+            ),
+            (
+                read(
+                    crate::kernel::intern_c_memory(
+                        crate::kernel::CMemory::new().with_block("other", 8),
+                    ),
+                    pointer,
+                    crate::kernel::LoadKind::Float64,
+                ),
+                false,
+            ),
+        ] {
+            let premise = Proposition::ConditionIs(
+                ConditionTerm::float64_classification(value, CFloatClassification::Finite),
+                true,
+            );
+            let plan = plan_special_arithmetic_certificate(&goal, std::slice::from_ref(&premise));
+            assert_eq!(plan.is_some(), valid);
+            if let Some(plan) = plan {
+                plan.check(&goal, &[premise]).unwrap();
+            }
+        }
     }
 
     #[test]

@@ -59,7 +59,6 @@ pub(super) use expression::*;
 pub(in crate::kernel) use memory_loads::abstract_value_source;
 pub(crate) use memory_loads::canonical_condition;
 pub(crate) use memory_loads::canonical_condition_fact;
-pub(crate) use memory_loads::canonical_form_of_load;
 pub(crate) use memory_loads::canonical_term;
 pub(crate) use memory_loads::canonicalized_offset_index_term;
 pub(crate) use memory_loads::check_canonical_at_creation;
@@ -111,9 +110,14 @@ pub(in crate::kernel) use memory_loads::{
     cached_symbolic_storage_cell_value, declare_symbolic_array_access_widths,
     declare_symbolic_element_access_widths, symbolic_storage_cell_value,
 };
+pub(crate) use memory_loads::{canonical_cell_load, canonical_form_of_load};
 pub(super) use memory_loads::{
     canonical_offset_term, evaluate_c_memory_load_paths, evaluate_logical_memory_load_paths,
     evaluate_spec_memory_load_paths, symbolic_load_value,
+};
+pub(crate) use memory_loads::{
+    is_selected_scalar_read, latest_scalar_read_observation, registered_scalar_read_term,
+    scalar_read_for_exact_cell, scalar_read_observation,
 };
 pub(crate) use memory_loads::{latest_pointer_read_observation, latest_wide_load_observation};
 #[cfg(test)]
@@ -125,9 +129,6 @@ pub(crate) use memory_loads::{
 pub(crate) use memory_loads::{
     loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_identity,
     record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
-};
-pub(crate) use memory_loads::{
-    registered_exact_read, registered_scalar_read_term, scalar_read_observation,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

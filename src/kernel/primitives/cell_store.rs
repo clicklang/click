@@ -541,11 +541,10 @@ impl CellRun {
                     &pointer,
                     self.element_type.byte_width(),
                 );
-                let load = crate::kernel::canonical_form_of_load(
+                let load = crate::kernel::eval::canonical_cell_load(
                     self.source.clone(),
                     pointer.clone(),
-                    LoadKind::of_type(self.element_type)
-                        .expect("memory ranges cannot contain aggregate elements"),
+                    self.element_type,
                 );
                 cell_run_value(self.element_type, load)
             }
@@ -564,10 +563,10 @@ impl CellRun {
                     &source_pointer,
                     self.element_type.byte_width(),
                 );
-                let load = crate::kernel::canonical_form_of_load(
+                let load = crate::kernel::eval::canonical_cell_load(
                     self.source.clone(),
                     source_pointer.clone(),
-                    LoadKind::of_type(self.element_type).expect("scalar snapshot element"),
+                    self.element_type,
                 );
                 cell_run_value(self.element_type, load)
             }
@@ -3210,12 +3209,15 @@ mod tests {
                 IndexIntervals::default(),
             );
             for index in 0..2 {
-                let CValue::Int32(MachineTerm::Variable(name)) = run.value(index) else {
+                let CValue::Int32(read @ MachineTerm::MemoryLoad(..)) = run.value(index) else {
                     panic!("typed symbolic read");
                 };
                 let address = base.offset_by_bytes(index * 8);
                 assert_eq!(
-                    crate::kernel::registered_load_bytes_for_variable(&name),
+                    crate::kernel::eval::scalar_read_observation(
+                        crate::kernel::MachineOperandView::Legacy(&read)
+                    )
+                    .map(|observation| observation.bytes),
                     Some(4)
                 );
                 assert_eq!(

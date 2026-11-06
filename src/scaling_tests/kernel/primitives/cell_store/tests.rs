@@ -13,15 +13,22 @@ fn retained_run_reads_refresh_load_origins_without_scanning_the_run() {
         let base = constant(&PointerBlock::from("cell-store-source-99"), 0);
         let run = run(base.clone(), 4, count, &source);
         let first = run.value(0);
-        let CValue::Int32(crate::kernel::MachineTerm::Variable(variable)) = first else {
+        let CValue::Int32(ref read) = first else {
             panic!("a seeded scalar names its source load");
         };
-        assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_some());
+        let observation = || {
+            crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+                read,
+            ))
+            .and_then(|read| read.origin.map(|origin| (origin, read.pointer)))
+        };
+        assert!(matches!(read, crate::kernel::MachineTerm::MemoryLoad(..)));
+        assert!(observation().is_some());
         crate::kernel::eval::begin_load_origin_epoch();
-        assert!(crate::kernel::eval::registered_load_origin_for_variable(&variable).is_none());
+        assert!(observation().is_none());
         assert_eq!(run.value(0), first);
         assert_eq!(
-            crate::kernel::eval::registered_load_origin_for_variable(&variable),
+            observation(),
             Some((source, base)),
             "a retained {count}-cell run must observe the load in this epoch"
         );

@@ -391,7 +391,7 @@ fn instance_guard_folds_to_true(guard: &Proposition) -> bool {
 /// Whether an instance guard folds to false the same way: one false conjunct
 /// refutes a conjunction, and a disjunction needs both sides refuted. Each
 /// leaf is refuted through the normalization leaf on its negation.
-fn instance_guard_folds_to_false(guard: &Proposition) -> bool {
+pub(crate) fn instance_guard_folds_to_false(guard: &Proposition) -> bool {
     match guard {
         Proposition::And(left, right) => {
             instance_guard_folds_to_false(left) || instance_guard_folds_to_false(right)
@@ -1664,11 +1664,25 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
             },
         ) => {
             left_sort == right_sort
-                && substitute_int32_variable_in_proposition(
-                    left_body,
-                    *left_var,
-                    MachineTerm::Variable(*right_var),
-                ) == **right_body
+                && match left_sort {
+                    Sort::Algebraic(ty) => {
+                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                            left_body,
+                            *left_var,
+                            &AlgebraicTerm {
+                                algebraic_type: ty.clone(),
+                                node: AlgebraicTermNode::Variable(*right_var),
+                            },
+                        ) == **right_body
+                    }
+                    _ => {
+                        substitute_int32_variable_in_proposition(
+                            left_body,
+                            *left_var,
+                            MachineTerm::Variable(*right_var),
+                        ) == **right_body
+                    }
+                }
         }
         (
             Proposition::Exists {
@@ -1685,11 +1699,25 @@ pub(crate) fn quantified_binder_equivalent(left: &Proposition, right: &Propositi
             },
         ) => {
             left_sort == right_sort
-                && substitute_int32_variable_in_proposition(
-                    left_body,
-                    *left_var,
-                    MachineTerm::Variable(*right_var),
-                ) == **right_body
+                && match left_sort {
+                    Sort::Algebraic(ty) => {
+                        crate::kernel::reasoning::substitute_algebraic_variable_in_proposition(
+                            left_body,
+                            *left_var,
+                            &AlgebraicTerm {
+                                algebraic_type: ty.clone(),
+                                node: AlgebraicTermNode::Variable(*right_var),
+                            },
+                        ) == **right_body
+                    }
+                    _ => {
+                        substitute_int32_variable_in_proposition(
+                            left_body,
+                            *left_var,
+                            MachineTerm::Variable(*right_var),
+                        ) == **right_body
+                    }
+                }
         }
         _ => false,
     }
@@ -2254,7 +2282,8 @@ mod tests {
             &intern_c_memory(after.clone()),
         );
 
-        let unchanged = OriginsUnchanged::new(&assumptions).decide(left, right);
+        let unchanged = OriginsUnchanged::new(&assumptions)
+            .decide(MachineTerm::Variable(left), MachineTerm::Variable(right));
         assert!(
             unchanged,
             "the effect fact should transport the preserved cell"
@@ -2288,7 +2317,10 @@ mod tests {
             "a write to the cell separates its names"
         );
         let (changed_unchanged, events) = crate::instrumentation::collect(|| {
-            OriginsUnchanged::new(&PureFactContext::new()).decide(changed_left, changed_right)
+            OriginsUnchanged::new(&PureFactContext::new()).decide(
+                MachineTerm::Variable(changed_left),
+                MachineTerm::Variable(changed_right),
+            )
         });
         assert!(
             !changed_unchanged,
@@ -2426,6 +2458,54 @@ mod tests {
     }
 
     #[test]
+    fn algebraic_binder_renaming_with_structural_reads_uses_its_own_sort() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = AlgebraicType::parameter("Fuel".into());
+        let before = intern_c_memory(CMemory::new().with_block("p", 4));
+        let pointer = Pointer {
+            block: "p".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let after = intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
+        );
+        let make = |binder, argument, memory: SharedCMemory| Proposition::Exists {
+            name: "fuel".into(),
+            var: Variable(binder),
+            sort: Sort::Algebraic(ty.clone()),
+            body: Box::new(Proposition::ConditionIs(
+                ConditionTerm::equal(
+                    MachineTerm::ClickFunctionApplication {
+                        name: "observe".into(),
+                        arguments: vec![PureFunctionArgument::Algebraic(AlgebraicTerm {
+                            algebraic_type: ty.clone(),
+                            node: AlgebraicTermNode::Variable(Variable(argument)),
+                        })],
+                    },
+                    MachineTerm::MemoryLoad(memory, Box::new(pointer.clone()), LoadKind::Int32),
+                ),
+                true,
+            )),
+        };
+        let original = make(70_200, 70_200, before.clone());
+        assert!(quantified_binder_equivalent(
+            &original,
+            &make(70_201, 70_201, before.clone())
+        ));
+        assert!(!quantified_binder_equivalent(
+            &original,
+            &make(70_201, 70_200, before)
+        ));
+        assert!(!quantified_binder_equivalent(
+            &original,
+            &make(70_201, 70_201, after)
+        ));
+    }
+
+    #[test]
     fn quantified_check_key_sees_through_load_variables() {
         // A universal lowered to load variables keys as the loads those
         // variables represent. A bound index inside a load variable keys by
@@ -2459,7 +2539,7 @@ mod tests {
         let named = |index: Variable| crate::kernel::canonical_term(&cell(index));
         assert!(matches!(
             named(Variable(3_000_000)),
-            MachineTerm::Variable(_)
+            MachineTerm::MemoryLoad(..)
         ));
         let left = universal(Variable(3_000_000), named(Variable(3_000_000)));
         let renamed = universal(Variable(2_000_000), named(Variable(2_000_000)));
@@ -2633,26 +2713,26 @@ mod tests {
     }
 }
 
-/// One side of an equality that load-variable bridging can walk.
+/// One side of an equality whose selected scalar reads can be related.
 ///
 /// The bridging argument is identical for pointer-offset and int32
 /// equalities — only the shape of a side and of the equality differ — so one
 /// implementation serves both.
-trait LoadVariableBridgeSide: Clone + PartialEq + Sized {
-    /// The load variable this side represents, when it represents one.
-    fn load_variable(&self) -> Option<Variable>;
+trait ScalarReadBridgeSide: Clone + PartialEq + Sized {
+    /// The structural read this side represents, when it represents one.
+    fn scalar_read(&self) -> Option<MachineTerm>;
     /// The two sides of an equality of this shape.
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)>;
     /// An equality of this shape over the two sides.
     fn equality(left: Self, right: Self) -> Proposition;
 }
 
-impl LoadVariableBridgeSide for PointerOffsetTerm {
-    fn load_variable(&self) -> Option<Variable> {
+impl ScalarReadBridgeSide for PointerOffsetTerm {
+    fn scalar_read(&self) -> Option<MachineTerm> {
         let PointerOffsetTerm::Int32Scaled { value, .. } = self else {
             return None;
         };
-        value.as_ref().load_variable()
+        value.as_ref().scalar_read()
     }
 
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {
@@ -2671,19 +2751,11 @@ impl LoadVariableBridgeSide for PointerOffsetTerm {
     }
 }
 
-impl LoadVariableBridgeSide for MachineTerm {
+impl ScalarReadBridgeSide for MachineTerm {
     /// A side represents a load either with its load variable or with the
     /// load term itself; both forms denote one atom, so both answer here.
-    fn load_variable(&self) -> Option<Variable> {
-        match self {
-            MachineTerm::Variable(variable) => {
-                crate::kernel::is_load_variable(variable).then_some(*variable)
-            }
-            MachineTerm::MemoryLoad(_, _, _) => {
-                crate::kernel::load_variable_for_term(self).map(|(variable, _)| variable)
-            }
-            _ => None,
-        }
+    fn scalar_read(&self) -> Option<MachineTerm> {
+        crate::kernel::eval::viewed_as_memory_load(self)
     }
 
     fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {
@@ -2715,13 +2787,10 @@ impl LoadVariableBridgeSide for MachineTerm {
     }
 }
 
-/// Whether an equality premise follows from recorded equalities of the same
-/// shape by chaining through load variables. Load variables are invisible to
-/// Click source, so a premise and the recorded facts may legitimately write
-/// one user-level equality through different intermediate variables. The
-/// closure is bounded: only equality facts with a load-variable endpoint
-/// contribute edges, and the walk visits each side at most once.
-fn bridged_by_load_variable_edges<S: LoadVariableBridgeSide>(
+/// Whether an equality premise follows from recorded equalities through
+/// selected read endpoints. The existing bounded closure visits each side once;
+/// it no longer needs to create a reserved name to recognize a read.
+fn bridged_by_load_variable_edges<S: ScalarReadBridgeSide>(
     premise: &Proposition,
     facts: &[Proposition],
 ) -> bool {
@@ -2731,7 +2800,7 @@ fn bridged_by_load_variable_edges<S: LoadVariableBridgeSide>(
     let edges: Vec<(S, S)> = facts
         .iter()
         .filter_map(S::equality_sides)
-        .filter(|(left, right)| left.load_variable().is_some() || right.load_variable().is_some())
+        .filter(|(left, right)| left.scalar_read().is_some() || right.scalar_read().is_some())
         .collect();
     if edges.is_empty() {
         return false;
@@ -2757,11 +2826,11 @@ fn bridged_by_load_variable_edges<S: LoadVariableBridgeSide>(
     false
 }
 
-/// Decides, and remembers, whether two load variables stand for one cell
+/// Decides, and remembers, whether two read descriptors stand for one cell
 /// that framing shows unchanged between their origin snapshots.
 struct OriginsUnchanged<'a> {
     assumptions: &'a PureFactContext,
-    decided: std::collections::HashMap<(Variable, Variable), bool>,
+    decided: std::collections::HashMap<(MachineTerm, MachineTerm), bool>,
 }
 
 impl<'a> OriginsUnchanged<'a> {
@@ -2772,25 +2841,28 @@ impl<'a> OriginsUnchanged<'a> {
         }
     }
 
-    fn decide(&mut self, left: Variable, right: Variable) -> bool {
-        let key = if left.0 <= right.0 {
-            (left, right)
-        } else {
-            (right, left)
-        };
+    fn decide(&mut self, left: MachineTerm, right: MachineTerm) -> bool {
+        let key = (left, right);
         if let Some(decided) = self.decided.get(&key) {
             return *decided;
         }
-        let decided = self.compute(key.0, key.1);
+        let decided = self.compute(&key.0, &key.1);
         self.decided.insert(key, decided);
         decided
     }
 
-    fn compute(&self, left: Variable, right: Variable) -> bool {
-        let (Some(left_load), Some(right_load)) = (
-            crate::kernel::registered_load_origin_term_for_variable(&left),
-            crate::kernel::registered_load_origin_term_for_variable(&right),
-        ) else {
+    fn compute(&self, left: &MachineTerm, right: &MachineTerm) -> bool {
+        let origin = |term: &MachineTerm| {
+            let read = crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(term),
+            )?;
+            Some(MachineTerm::MemoryLoad(
+                read.origin?,
+                Box::new(read.pointer),
+                read.kind,
+            ))
+        };
+        let (Some(left_load), Some(right_load)) = (origin(left), origin(right)) else {
             return false;
         };
         let (
@@ -2805,8 +2877,8 @@ impl<'a> OriginsUnchanged<'a> {
         left_kind == right_kind
             && ((left_pointer.block != right_pointer.block
                 && crate::kernel::memory_provenance::checked_origin_load_equality(
-                    &MachineTerm::Variable(left),
-                    &MachineTerm::Variable(right),
+                    left,
+                    right,
                     self.assumptions,
                 ))
                 || left_pointer == right_pointer
@@ -2819,18 +2891,20 @@ impl<'a> OriginsUnchanged<'a> {
 }
 
 /// The forms of `side` that represent the same cell as one of `endpoints`.
-fn origin_renamings<S: LoadVariableBridgeSide>(
+fn origin_renamings<S: ScalarReadBridgeSide>(
     side: &S,
     endpoints: &[S],
     origins: &mut OriginsUnchanged<'_>,
 ) -> Vec<S> {
-    let Some(variable) = side.load_variable() else {
+    let Some(variable) = side.scalar_read() else {
         return vec![side.clone()];
     };
     let mut forms = vec![side.clone()];
     for endpoint in endpoints {
-        let candidate = endpoint.load_variable().expect("filtered by the caller");
-        if candidate != variable && origins.decide(variable, candidate) && !forms.contains(endpoint)
+        let candidate = endpoint.scalar_read().expect("filtered by the caller");
+        if candidate != variable
+            && origins.decide(variable.clone(), candidate)
+            && !forms.contains(endpoint)
         {
             forms.push(endpoint.clone());
         }
@@ -2838,7 +2912,7 @@ fn origin_renamings<S: LoadVariableBridgeSide>(
     forms
 }
 
-fn bridged_with_origins<S: LoadVariableBridgeSide>(
+fn bridged_with_origins<S: ScalarReadBridgeSide>(
     premise: &Proposition,
     facts: &[Proposition],
     assumptions: &PureFactContext,
@@ -2850,8 +2924,7 @@ fn bridged_with_origins<S: LoadVariableBridgeSide>(
     // Two load variables for one unchanged cell need no fact edge at all:
     // when the premise equates them directly, the origins-unchanged proof is
     // the whole content.
-    if let (Some(start_variable), Some(goal_variable)) =
-        (start.load_variable(), goal.load_variable())
+    if let (Some(start_variable), Some(goal_variable)) = (start.scalar_read(), goal.scalar_read())
         && origins.decide(start_variable, goal_variable)
     {
         return true;
@@ -2863,7 +2936,7 @@ fn bridged_with_origins<S: LoadVariableBridgeSide>(
         .iter()
         .filter_map(S::equality_sides)
         .flat_map(|(left, right)| [left, right])
-        .filter(|side| side.load_variable().is_some())
+        .filter(|side| side.scalar_read().is_some())
         .collect();
     let start_forms = origin_renamings(&start, &endpoints, &mut origins);
     let goal_forms = origin_renamings(&goal, &endpoints, &mut origins);

@@ -2943,8 +2943,12 @@ impl PureFactContext {
         // Facts may write the load atom by its load variable while the
         // index carries the raw load (or vice versa); try both forms.
         let mut forms = vec![term.as_ref().clone()];
-        if let Some((variable, _)) = crate::kernel::eval::load_variable_for_term(term.as_ref()) {
-            let named = MachineTerm::Variable(variable);
+        if let MachineTerm::MemoryLoad(memory, pointer, kind) = term.as_ref() {
+            let named = crate::kernel::canonical_form_of_load(
+                memory.clone(),
+                pointer.as_ref().clone(),
+                *kind,
+            );
             if !forms.contains(&named) {
                 forms.push(named);
             }

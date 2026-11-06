@@ -3363,10 +3363,8 @@ pub(super) fn plan_pointer_advanced_load_equality(
 }
 
 fn registered_load_pointer(term: &MachineTerm) -> Option<Pointer> {
-    let MachineTerm::Variable(variable) = term else {
-        return None;
-    };
-    crate::kernel::registered_load_origin_for_variable(variable).map(|(_, pointer)| pointer)
+    crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
+        .map(|read| read.pointer)
 }
 
 fn pointer_array_index_pair(

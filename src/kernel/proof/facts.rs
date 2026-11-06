@@ -748,11 +748,18 @@ impl ProofFacts {
                         }
                         if !bound_variables.is_empty()
                             && [a, b].iter().any(|term| match *term {
-                                MachineTerm::Variable(variable) => {
+                                MachineTerm::Variable(variable)
+                                    if !crate::kernel::is_load_variable(variable) =>
+                                {
                                     bound_variables.contains(variable)
                                 }
                                 bits32_constant!(_) => false,
-                                _ => true,
+                                read => {
+                                    !super::term_rewrite::TermRewrite::read_address_independent_of(
+                                        read,
+                                        &bound_variables,
+                                    )
+                                }
                             })
                         {
                             return None;

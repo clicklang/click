@@ -11355,7 +11355,7 @@ fn empty_execution_branch_joins_checked_proof_arms_at_the_shared_frontier() {
 }
 
 #[test]
-fn cursor_execution_branch_join_retains_a_real_load_binding() {
+fn cursor_execution_branch_join_retains_structural_reads_without_bindings() {
     let click_file = crate::surface::parse(
         r#"
             int32 branch_load(int32 x, int32 p[1]) {
@@ -11427,55 +11427,6 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         .driver()
         .apply_step(ProofStep::Step)
         .expect("then return should execute through the cursor");
-    // Fresh load variables are normally unique, so exercise the collision
-    // law by producing a second observation through the kernel producer and
-    // attaching it to one real cursor arm before the production join.
-    let conflicting_binding = {
-        let execution = then_completed
-            .execution()
-            .expect("completed then arm should retain execution state");
-        let (_, exact) = execution
-            .presentation
-            .generated_load_bindings
-            .iter()
-            .next()
-            .expect("then arm should publish its load binding");
-        let crate::kernel::GeneratedLoadBinding::Exact {
-            variable,
-            pointer: recorded_pointer,
-            load,
-            ..
-        } = exact
-        else {
-            panic!("fresh producer observation should be exact");
-        };
-        let crate::kernel::MachineTerm::MemoryLoad(memory, _, _) = load else {
-            panic!("fresh producer observation should carry a memory load");
-        };
-        let conflicting_pointer = Pointer {
-            block: recorded_pointer.block.clone(),
-            offset: PointerOffsetTerm::Constant(1),
-        };
-        let mut producer_facts = crate::kernel::ExecutionFacts::new();
-        crate::kernel::record_load_variable_defining_fact(
-            *variable,
-            crate::kernel::MachineTerm::MemoryLoad(
-                memory.clone(),
-                Box::new(conflicting_pointer),
-                crate::kernel::LoadKind::Int32,
-            ),
-            &mut producer_facts,
-        );
-        producer_facts
-            .into_iter()
-            .find_map(|fact| fact.generated_load_binding().cloned())
-            .expect("kernel producer should publish the conflicting observation")
-    };
-    let (then_completed, ()) = then_completed
-        .edit_execution_presentation(|presentation| {
-            presentation.record_generated_load_bindings(std::slice::from_ref(&conflicting_binding));
-        })
-        .expect("real cursor arm should accept producer metadata");
     let advanced = then_completed
         .focus_split_arm(&record, false)
         .expect("else branch should be open")
@@ -11488,20 +11439,12 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
     let execution = joined
         .execution()
         .expect("joined execution should remain present");
-    assert_eq!(execution.presentation.generated_load_bindings.len(), 1);
-    assert_eq!(
-        execution.presentation.generated_load_binding_events.len(),
-        2
-    );
+    assert!(execution.presentation.generated_load_bindings.is_empty());
     assert!(
         execution
             .presentation
-            .generated_load_bindings
-            .iter()
-            .all(|(_, binding)| matches!(
-                binding,
-                crate::kernel::GeneratedLoadBinding::Ambiguous { .. }
-            ))
+            .generated_load_binding_events
+            .is_empty()
     );
     let terminal_view = joined
         .finalization_view()
@@ -11513,26 +11456,14 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         .paths()
         .len();
     assert!(outcome_count > 0);
-    let mut ambiguous_outcomes = 0;
     for path_index in 0..outcome_count {
-        let bindings = terminal_view.generated_load_bindings(path_index);
-        if bindings.iter().any(|(_, binding)| {
-            matches!(
-                binding,
-                crate::kernel::GeneratedLoadBinding::Ambiguous { .. }
-            )
-        }) {
-            ambiguous_outcomes += 1;
-            assert!(bindings.iter().all(|(_, binding)| matches!(
-                binding,
-                crate::kernel::GeneratedLoadBinding::Ambiguous { .. }
-            )));
-        }
+        assert!(terminal_view.generated_load_bindings(path_index).is_empty());
     }
-    assert!(
-        ambiguous_outcomes > 0,
-        "terminal provenance must retain the conflict tombstone"
-    );
+    for path in terminal_view.frontier.execution().unwrap().paths() {
+        assert!(matches!(path.outcome(),
+            CFunctionOutcome::Return { value: CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)), .. }
+                if **at == pointer));
+    }
 
     // A condition fact selects one arm, exercising the single-transition
     // cursor path that records metadata immediately before advancing the
@@ -11593,14 +11524,7 @@ fn cursor_execution_branch_join_retains_a_real_load_binding() {
         selected_execution
             .presentation
             .generated_load_bindings
-            .iter()
-            .any(|(_, binding)| matches!(
-                binding,
-                crate::kernel::GeneratedLoadBinding::Exact {
-                    pointer: recorded,
-                    ..
-                } if recorded == &pointer
-            ))
+            .is_empty()
     );
 }
 

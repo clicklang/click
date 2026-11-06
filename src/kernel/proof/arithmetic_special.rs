@@ -140,7 +140,9 @@ fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
                 payload = payload.checked_add(name.len())?;
                 pending.extend(arguments.iter());
             }
-            MachineTerm::PointerAddress(pointer, _) => {
+            MachineTerm::PointerAddress(pointer, _) | MachineTerm::MemoryLoad(_, pointer, _) => {
+                // A read owns an interned snapshot; only its written address
+                // contributes syntax payload, never the snapshot contents.
                 payload = payload.checked_add(pointer_payload(pointer)?)?;
             }
             _ => return None,
@@ -336,6 +338,11 @@ fn legacy_bitvector_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
             }
             (MachineTerm::Variable(left), MachineTerm::Variable(right)) => {
                 if left != right {
+                    return false;
+                }
+            }
+            (MachineTerm::MemoryLoad(lm, lp, lk), MachineTerm::MemoryLoad(rm, rp, rk)) => {
+                if lm != rm || lk != rk || !pointer_equal(lp, rp) {
                     return false;
                 }
             }
@@ -2747,6 +2754,11 @@ fn bounded_term_hashes(roots: &[&MachineTerm]) -> Option<HashMap<usize, u64>> {
                 int64_constant!(value) => constant_i64(*value).hash(&mut hasher),
                 uint64_constant!(value) => constant_u64(*value).hash(&mut hasher),
                 MachineTerm::Variable(value) => value.hash(&mut hasher),
+                MachineTerm::MemoryLoad(memory, pointer, kind) => {
+                    memory.arena_id().hash(&mut hasher);
+                    kind.hash(&mut hasher);
+                    pointer_identity_hash(pointer)?.hash(&mut hasher);
+                }
                 MachineTerm::PointerAddress(pointer, _) => {
                     pointer_identity_hash(pointer)?.hash(&mut hasher)
                 }

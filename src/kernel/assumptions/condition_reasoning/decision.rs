@@ -1970,16 +1970,12 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> Option<LoadAddressCongruenceEvidence> {
-        let (MachineTerm::Variable(left), MachineTerm::Variable(right)) = (left, right) else {
-            return None;
-        };
-        let (left_memory, left_pointer) = crate::kernel::eval::registered_load_for_variable(left)?;
-        let (right_memory, right_pointer) =
-            crate::kernel::eval::registered_load_for_variable(right)?;
-        // Congruent addresses in one snapshot name one value only when the two
-        // reads are one kind of read.
-        let left_kind = crate::kernel::eval::registered_load_kind_for_variable(left)?;
-        let right_kind = crate::kernel::eval::registered_load_kind_for_variable(right)?;
+        let left = crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(left))?;
+        let right =
+            crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(right))?;
+        let (left_memory, left_pointer, left_kind) = (left.memory, left.pointer, left.kind);
+        let (right_memory, right_pointer, right_kind) = (right.memory, right.pointer, right.kind);
+        // Congruence retains the exact snapshot and read kind.
         if left_memory != right_memory
             || left_kind != right_kind
             || left_pointer.block != right_pointer.block

@@ -1381,7 +1381,7 @@ mod condition_transition_tests {
     }
 
     #[test]
-    fn real_load_execution_publishes_producer_binding_on_transition() {
+    fn real_scalar_load_transition_retains_its_read_without_a_binding() {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -1425,23 +1425,11 @@ mod condition_transition_tests {
         let [transition] = transitions.as_slice() else {
             panic!("expected one load transition: {transitions:?}");
         };
-        assert!(matches!(
-            transition.generated_load_bindings.as_slice(),
-            [crate::kernel::GeneratedLoadBinding::Exact {
-                pointer: recorded_pointer,
-                ..
-            }] if recorded_pointer == &pointer
-        ));
-        assert!(matches!(
-            transition.generated_load_source_events.as_slice(),
-            [event] if event.source().occurrence == 0
-                && event.source().owner.source_unit.as_ref() == "owner_len.c"
-                && event.source().owner.function.as_ref() == "owner_len"
-        ));
-        assert!(matches!(
-            transition.outcome,
-            CStatementOutcome::Return { .. }
-        ));
+        assert!(transition.generated_load_bindings.is_empty());
+        assert!(transition.generated_load_source_events.is_empty());
+        assert!(matches!(&transition.outcome,
+            CStatementOutcome::Return { value: CValue::Int32(MachineTerm::MemoryLoad(_, at, crate::kernel::LoadKind::Int32)), .. }
+                if **at == pointer));
 
         // Feed the producer-issued transition metadata through the same
         // persistent presentation store used by the execution cursor. This
@@ -1460,23 +1448,23 @@ mod condition_transition_tests {
         execution
             .presentation
             .record_generated_load_source_events(&transition.generated_load_source_events);
-        assert_eq!(execution.presentation.generated_load_bindings.len(), 1);
+        assert_eq!(execution.presentation.generated_load_bindings.len(), 0);
         assert_eq!(
             execution.presentation.generated_load_binding_events.len(),
-            1
+            0
         );
         assert_eq!(
             execution
                 .presentation
                 .generated_load_source_resolutions
                 .len(),
-            1
+            0
         );
-        assert_eq!(execution.presentation.generated_load_source_events.len(), 1);
+        assert_eq!(execution.presentation.generated_load_source_events.len(), 0);
     }
 
     #[test]
-    fn parsed_compound_field_update_publishes_its_implicit_read_source() {
+    fn parsed_compound_field_update_retains_its_structural_read() {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -1491,26 +1479,6 @@ mod condition_transition_tests {
             "bump.c",
         )
         .expect("compound field update should parse with source identity");
-        fn update_source_occurrence(statement: &crate::languages::c::syntax::C0Statement) -> u32 {
-            match statement {
-                crate::languages::c::syntax::C0Statement::Update { target, .. } => target
-                    .field_source_id()
-                    .expect("the parsed update target should retain source identity")
-                    .occurrence(),
-                crate::languages::c::syntax::C0Statement::Seq(first, second) => {
-                    if matches!(
-                        first.as_ref(),
-                        crate::languages::c::syntax::C0Statement::Update { .. }
-                    ) {
-                        update_source_occurrence(first)
-                    } else {
-                        update_source_occurrence(second)
-                    }
-                }
-                _ => panic!("expected the function body to contain an update"),
-            }
-        }
-        let expected_occurrence = update_source_occurrence(parsed[0].body());
         let statement = parsed[0].body_kernel_statement();
         let state = CState::new()
             .with_local("counter", CValue::pointer(pointer.clone()))
@@ -1540,23 +1508,27 @@ mod condition_transition_tests {
         let [transition] = transitions.as_slice() else {
             panic!("expected one field-update transition: {transitions:?}");
         };
-        assert!(
-            matches!(
-            transition.generated_load_source_events.as_slice(),
-            [event] if event.source().occurrence == expected_occurrence
-                    && event.source().owner.source_unit.as_ref() == "bump.c"
-                    && event.source().owner.function.as_ref() == "bump"
-                    && matches!(
-                        event.binding(),
-                        crate::kernel::GeneratedLoadBinding::Exact {
-                            pointer: recorded_pointer,
-                            ..
-                        } if recorded_pointer == &pointer
-                    )
-            ),
-            "{:#?}",
-            transition.generated_load_source_events
-        );
+        assert!(transition.generated_load_source_events.is_empty());
+        let after = match &transition.outcome {
+            CStatementOutcome::Normal(after) | CStatementOutcome::Return { state: after, .. } => {
+                after
+            }
+            other => panic!("completed update: {other:?}"),
+        };
+        let CExpressionOutcome::Value(CValue::UInt32(value)) = after.memory().load(&pointer) else {
+            panic!("unsigned field");
+        };
+        assert!(crate::kernel::proposition_mentions_scalar_read(
+            &Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::UInt32,
+                    relation: crate::kernel::CompareRelation::Equal,
+                    left: Box::new(value),
+                    right: Box::new(MachineTerm::constant(0))
+                },
+                true
+            )
+        ));
     }
 
     #[test]

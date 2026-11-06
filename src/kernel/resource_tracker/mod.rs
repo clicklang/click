@@ -1512,30 +1512,17 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
 
 fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
     match term {
-        // A raw load term reads at least its own kind; the read covers the
-        // widest scalar, which every kind fits.
-        MachineTerm::MemoryLoad(memory, pointer, _) => push_read(
-            reads,
-            OwnedResource::Cell {
-                pointer: pointer.as_ref().clone(),
-                bytes: widest_scalar_access_bytes(),
-            },
-            ProgramPoint::at(memory),
-        ),
-        // A load variable reads the cell it was minted for, at the point its
-        // name embeds.
-        MachineTerm::Variable(variable) => {
-            if let Some((memory, pointer)) =
-                crate::kernel::registered_load_origin_for_variable(variable)
-            {
+        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_) => {
+            if let Some(read) = crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(term),
+            ) {
                 push_read(
                     reads,
                     OwnedResource::Cell {
-                        pointer,
-                        bytes: crate::kernel::registered_load_bytes_for_variable(variable)
-                            .unwrap_or_else(widest_scalar_access_bytes),
+                        pointer: read.pointer,
+                        bytes: read.bytes,
                     },
-                    ProgramPoint::at(&memory),
+                    ProgramPoint::at(&read.origin.unwrap_or(read.memory)),
                 );
             }
         }

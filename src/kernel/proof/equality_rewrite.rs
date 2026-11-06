@@ -871,6 +871,15 @@ fn same_address_observation(left: &MachineTerm, right: &MachineTerm) -> bool {
     }
     matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
 }
+/// Rebuild only a selected read's address, preserving its observation width.
+fn rewrite_read_address(term: &MachineTerm, address: Pointer) -> MachineTerm {
+    let read = crate::kernel::eval::scalar_read_observation(
+        crate::kernel::MachineOperandView::Legacy(term),
+    )
+    .expect("selected read");
+    crate::kernel::eval::scalar_read_for_exact_cell(&read.memory, &address, read.kind, read.bytes)
+}
+
 fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> MachineTerm {
     fn rewrite_offset(
         offset: &PointerOffsetTerm,
@@ -1011,13 +1020,12 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
         }
         // The memory snapshot is fixed, but its address is an ordinary
         // expression: exact equality substitution is congruent there too.
-        MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
-            memory.clone(),
-            Box::new(Pointer {
+        MachineTerm::MemoryLoad(_, pointer, _) => rewrite_read_address(
+            term,
+            Pointer {
                 block: pointer.block.clone(),
                 offset: rewrite_offset(&pointer.offset, from, to),
-            }),
-            *kind,
+            },
         ),
         MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
             Pointer {
@@ -1409,11 +1417,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                             .collect(),
                     }
                 }
-                MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
-                    memory.clone(),
-                    Box::new(rewrite_pointer(pointer)),
-                    *kind,
-                ),
+                MachineTerm::MemoryLoad(_, pointer, _) => {
+                    rewrite_read_address(term, rewrite_pointer(pointer))
+                }
                 MachineTerm::PointerAddress(pointer, class) => {
                     MachineTerm::object_pointer_address(rewrite_pointer(pointer), class.class())
                 }
@@ -1792,11 +1798,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             };
             match term {
-                MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
-                    memory.clone(),
-                    Box::new(rewrite_pointer(pointer)),
-                    *kind,
-                ),
+                MachineTerm::MemoryLoad(_, pointer, _) => {
+                    rewrite_read_address(term, rewrite_pointer(pointer))
+                }
                 MachineTerm::Variable(_) => rewrite_through_load_variable(term, rewrite_pointer)
                     .unwrap_or_else(|| term.clone()),
                 binary_term!(Bits32 @ format32, Add, left_term, right_term) => {
@@ -2401,11 +2405,13 @@ mod tests {
             else {
                 panic!("rewritten scalar comparison");
             };
-            let MachineTerm::Variable(variable) = *left else {
-                panic!("rewritten read retains its name");
-            };
-            assert_eq!(registered_load_bytes_for_variable(&variable), Some(bytes));
-            assert_eq!(registered_load_for_variable(&variable).unwrap().1, base);
+            assert!(matches!(*left, MachineTerm::MemoryLoad(..)));
+            let observed = crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(&left),
+            )
+            .unwrap();
+            assert_eq!(observed.bytes, bytes);
+            assert_eq!(observed.pointer, base);
         }
     }
 
@@ -2511,10 +2517,10 @@ mod tests {
             CMemory::new().store(to.clone(), CValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
-            let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
+            let MachineTerm::Variable(variable) = crate::kernel::eval::canonical_cell_load(
                 memory.clone(),
                 address.clone(),
-                LoadKind::Int32,
+                CType::Int32Pointer,
             ) else {
                 panic!("expected a named read")
             };

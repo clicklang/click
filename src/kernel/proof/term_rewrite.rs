@@ -1694,7 +1694,11 @@ pub(crate) struct TermRewrite<'a> {
     comparison_reads: Option<
         &'a HashMap<((u32, u32), Pointer, LoadKind), (MachineTerm, ReadAddressDependencies)>,
     >,
-    comparison_read_cache: Option<std::rc::Rc<std::cell::RefCell<HashMap<(u64, u64), KernelTerm>>>>,
+    // Recursive read-address walks must share this memo: each address can
+    // reference the same earlier read more than once. Include lexical scope
+    // and temporary rewrite modes so entries never cross interpretations.
+    shared_machine_cache:
+        Option<std::rc::Rc<std::cell::RefCell<HashMap<(u64, u64, bool, bool, bool), KernelTerm>>>>,
     integer_shadowed: bool,
     scope: RewriteScope,
     scope_id: u64,
@@ -1843,6 +1847,25 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    /// A retained read is an atom under a binder only when its explicit
+    /// address does not mention that binder. Snapshots remain immutable.
+    pub(crate) fn read_address_independent_of(
+        term: &MachineTerm,
+        bound: &BTreeSet<Variable>,
+    ) -> bool {
+        let Some(MachineTerm::MemoryLoad(_, pointer, _)) =
+            crate::kernel::eval::viewed_as_memory_load(term)
+        else {
+            return false;
+        };
+        let mut carriers = CarrierVariables::for_rewrite(true);
+        collect_pointer_carriers(&pointer, &mut carriers);
+        !carriers.exhausted()
+            && carriers.c.is_disjoint(bound)
+            && carriers.integer.is_disjoint(bound)
+            && carriers.algebraic.is_disjoint(bound)
+    }
+
     /// Simultaneous one-step read comparison. Only selected syntax is visited;
     /// inserted values and the contents of snapshots remain opaque.
     pub(crate) fn comparison_read_batch(
@@ -1886,7 +1909,6 @@ impl<'a> TermRewrite<'a> {
         let algebraic = BTreeMap::new();
         let mut rewrite = TermRewrite::for_typed_variables(&named, &integers, &algebraic);
         rewrite.comparison_reads = Some(&reads);
-        rewrite.comparison_read_cache = Some(Default::default());
         rewrite.ensure_replacement_carriers();
         let mut carriers = rewrite.new_carrier_variables();
         collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
@@ -1928,7 +1950,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
-            comparison_read_cache: None,
+            shared_machine_cache: None,
             conditions: None,
             cited_conditions: None,
             cited_comparison_context: None,
@@ -2028,7 +2050,7 @@ impl<'a> TermRewrite<'a> {
         let mut rewrite = Self {
             comparison_arithmetic: false,
             comparison_reads: None,
-            comparison_read_cache: None,
+            shared_machine_cache: None,
             conditions: None,
             cited_conditions: None,
             cited_comparison_context: None,
@@ -2200,7 +2222,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
-            comparison_read_cache: None,
+            shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2340,7 +2362,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
-            comparison_read_cache: None,
+            shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2434,7 +2456,7 @@ impl<'a> TermRewrite<'a> {
         let mut walker = Self {
             comparison_arithmetic: false,
             comparison_reads: None,
-            comparison_read_cache: None,
+            shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2622,7 +2644,7 @@ impl<'a> TermRewrite<'a> {
         Self {
             comparison_arithmetic: false,
             comparison_reads: None,
-            comparison_read_cache: None,
+            shared_machine_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -5760,9 +5782,7 @@ impl<'a> TermRewrite<'a> {
                     {
                         continue;
                     }
-                    let variable = view.variable().copied().or_else(|| {
-                        crate::kernel::eval::load_variable_for_term(native).map(|(name, _)| name)
-                    });
+                    let variable = view.variable().copied();
                     let KernelType::C(ty) = shared.ty() else {
                         return false;
                     };
@@ -5918,7 +5938,12 @@ impl<'a> TermRewrite<'a> {
                     self.changed = true;
                     return value;
                 }
-                return MachineTerm::Variable(rewritten);
+                return if self.comparison_arithmetic {
+                    crate::kernel::registered_load_term_for_variable(&rewritten)
+                        .unwrap_or(MachineTerm::Variable(rewritten))
+                } else {
+                    MachineTerm::Variable(rewritten)
+                };
             }
             if self.checked_work_exhausted() {
                 return MachineTerm::constant(0);
@@ -6125,7 +6150,40 @@ impl<'a> TermRewrite<'a> {
                 }
             }
             MachineTerm::MemoryLoad(memory, pointer, kind) => {
-                MachineTerm::MemoryLoad(memory.clone(), Box::new(self.pointer(pointer)), *kind)
+                let rewritten = self.pointer(pointer);
+                if rewritten == **pointer {
+                    return v.clone();
+                }
+                // Pointer substitution uses the producer's live memory, which
+                // may retain cells absent from the read's projected snapshot.
+                // Binder substitution continues to use the exact stored snapshot.
+                let use_origin = self.resolve_registered_loads
+                    && (self.pointer_variable.is_some()
+                        || self.pointer_exact.is_some()
+                        || self.pointer_offset_exact.is_some());
+                let observation =
+                    crate::kernel::eval::scalar_read_observation(MachineOperandView::Legacy(v));
+                let bytes = observation
+                    .as_ref()
+                    .map(|read| read.bytes)
+                    .unwrap_or_else(|| {
+                        crate::kernel::load_term_access_width(memory, pointer, *kind)
+                    });
+                let memory = observation
+                    .filter(|_| use_origin)
+                    .and_then(|read| read.origin)
+                    .unwrap_or_else(|| memory.clone());
+                if self.resolve_registered_loads
+                    && let Some(value) = memory
+                        .memory()
+                        .known_value(&rewritten)
+                        .and_then(|value| kind.read_cell(&value))
+                        .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
+                {
+                    self.changed = true;
+                    return value;
+                }
+                crate::kernel::eval::scalar_read_for_exact_cell(&memory, &rewritten, *kind, bytes)
             }
             MachineTerm::PointerAddress(pointer, class) => {
                 MachineTerm::object_pointer_address(self.pointer(pointer), class.class())

@@ -696,7 +696,7 @@ mod tests {
         let raw =
             MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
         let named = crate::kernel::eval::canonical_term(&raw);
-        assert!(matches!(named, MachineTerm::Variable(_)));
+        assert!(matches!(named, MachineTerm::MemoryLoad(..)));
         let add = |value| MachineTerm::Binary {
             format: T::Int32,
             op: O::Add,
