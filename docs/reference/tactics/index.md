@@ -3431,6 +3431,16 @@ on either side; the other operand and comparison operator must be unchanged. It 
 resource fields. The source must already be provable, and all supplied
 separations are checked. See `mdtests/inequality_transport_expansion.md` and
 `mdtests/known_value_transport_expansion.md`.
+
+The snapshot may also wrap the whole source comparison, as in
+`transport(at(statement(0).entry, *q == 7), *q == 7) using { ... }`.
+The driver uses the same explicit preservation and rewrite steps. Unsuffixed
+integer literals are snapshot-independent; every other operand retains an
+explicit `at(...)`. Thus an old comparison of two reads can carry one read
+while the target explicitly keeps the other's old snapshot, but this route
+does not silently substitute the other's current value. The original source
+fact remains in the proof and is checked by `assumption()`.
+See `mdtests/snapshot_comparison_transport_expansion.md`.
 Other transport routes still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the

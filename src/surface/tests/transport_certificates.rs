@@ -764,3 +764,95 @@ fn known_value_transport_preserves_resource_fields_across_statements() {
         without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
 }
+
+#[test]
+fn snapshot_comparison_transport_expands_without_search() {
+    let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for relation in ["==", "!=", "<", "<=", ">", ">="] {
+        let source = source.replace("== 7", &format!("{relation} 7"));
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert!(expanded.contains("preserve(separate("), "{expanded}");
+        assert!(expanded.contains("rewrite("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+    let reversed = source.replace("*q == 7", "7 == *q");
+    let expanded = expand_c0_claim_source_by_label(&reversed, &sources, "keep.contract").unwrap();
+    assert!(!expanded.contains("transport("), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    let missing = source.replace("    requires *q == 7;\n", "");
+    assert!(verify_c0_sources(&missing, &sources).is_err());
+}
+
+#[test]
+fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
+    let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let source = source
+        .replace(
+            "    requires *q == 7;",
+            "    requires *q == 7;\n    requires *p == 7;",
+        )
+        .replace(
+            "at(statement(0).entry, *q == 7)",
+            "at(statement(0).entry, *q == *p)",
+        )
+        .replace("have *q == 7", "have *q == at(statement(0).entry, *p)")
+        .replace(
+            ", *q == 7) using",
+            ", *q == at(statement(0).entry, *p)) using",
+        );
+    let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+    assert!(expanded.contains("preserve(separate("), "{expanded}");
+    assert!(!expanded.contains("transport("), "{expanded}");
+    assert!(!expanded.contains("transport_certificate"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    // The write changes p from 7 to 0. Its old value may not become its current value.
+    let wrong = source
+        .replace("have *q == at(statement(0).entry, *p)", "have *q == *p")
+        .replace(
+            ", *q == at(statement(0).entry, *p)) using",
+            ", *q == *p) using",
+        );
+    assert!(verify_c0_sources(&wrong, &sources).is_err());
+}
+
+#[test]
+fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
+    let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
+    let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns m: model();")
+        .replace("memory(*q)", "m")
+        .replace("*q", "m.value");
+    for source in [source, resource] {
+        let sources = [(sources[0].0.as_str(), c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(
+            expanded.matches("preserve(separate(").count(),
+            2,
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
