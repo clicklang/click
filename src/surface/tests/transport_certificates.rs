@@ -705,3 +705,62 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
         without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
 }
+
+#[test]
+fn known_value_transport_expands_to_ordinary_steps() {
+    let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let reversed = source.replace("*q == 7", "7 == *q").replace(
+        "at(statement(0).entry, *q) == 7",
+        "7 == at(statement(0).entry, *q)",
+    );
+    for source in [source.clone(), reversed] {
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert!(expanded.contains("preserve(separate("), "{expanded}");
+        assert!(expanded.contains("rewrite("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+    let missing_source = source.replace("    requires *q == 7;\n", "");
+    assert!(verify_c0_sources(&missing_source, &sources).is_err());
+    let changed_value = source
+        .replace("have *q == 7", "have *q == 8")
+        .replace(", *q == 7)", ", *q == 8)");
+    assert!(verify_c0_sources(&changed_value, &sources).is_err());
+}
+
+#[test]
+fn known_value_transport_preserves_resource_fields_across_statements() {
+    let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
+    let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns m: model();")
+        .replace("memory(*q)", "m")
+        .replace("*q", "m.value");
+    for source in [source, resource] {
+        let sources = [(sources[0].0.as_str(), c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(
+            expanded.matches("preserve(separate(").count(),
+            2,
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}

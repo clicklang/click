@@ -3419,16 +3419,18 @@ than retrying a history search. Both memory reads and abstract resource fields
 use this form. See `mdtests/multi_write_transport_expansion.md` and
 `mdtests/multi_write_resource_transport_expansion.md`.
 
-A focused inequality with one read operand changing from a statement entry
+A focused comparison with one read operand changing from a statement entry
 snapshot to the current state uses the same preservation chain. For example,
 `transport(at(statement(0).entry, *q) > 0, *q > 0) using { ... }`
 first retains the earlier inequality with `assumption()`, proves the read
 equality from the cited footprint separations, then uses `rewrite` and
-`assumption()` to close the current inequality. This covers `<`, `<=`, `>`,
-`>=`, and `!=`, with the changing operand on either side; the other operand
-and comparison operator must be unchanged. It also applies to abstract
+`assumption()` to close the current comparison. This also carries a known
+value, such as `at(statement(0).entry, *q) == 7` to `*q == 7`. It covers
+non-reflexive `==`, `<`, `<=`, `>`, `>=`, and `!=`, with the changing operand
+on either side; the other operand and comparison operator must be unchanged. It also applies to abstract
 resource fields. The source must already be provable, and all supplied
-separations are checked. See `mdtests/inequality_transport_expansion.md`.
+separations are checked. See `mdtests/inequality_transport_expansion.md` and
+`mdtests/known_value_transport_expansion.md`.
 Other transport routes still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the

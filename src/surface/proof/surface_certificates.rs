@@ -809,17 +809,26 @@ fn statement_preservation_steps(
 
 /// Carry a comparison whose one read operand changes snapshot. All selected
 /// footprints remain ordinary preservation steps; no ambient premise discovery.
-pub(super) fn inequality_preservation_steps(
+pub(super) fn comparison_preservation_steps(
     source: &ClickProposition,
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
-    let ClickProposition::Comparison { operator, .. } = source else {
+    let ClickProposition::Comparison {
+        left,
+        operator,
+        right,
+    } = source
+    else {
         return None;
     };
+    if *operator == ComparisonOperator::Equal && left == right {
+        return None;
+    }
     if !matches!(
         operator,
-        ComparisonOperator::LessThan
+        ComparisonOperator::Equal
+            | ComparisonOperator::LessThan
             | ComparisonOperator::LessEqual
             | ComparisonOperator::GreaterThan
             | ComparisonOperator::GreaterEqual
