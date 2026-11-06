@@ -814,11 +814,48 @@ pub(super) fn comparison_preservation_steps(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
+    // Distribute only a comparison's written snapshot. Literal integers are
+    // snapshot-independent; every other operand keeps its explicit snapshot.
+    // Retain the original source below, so ordinary assumption checks connect
+    // the written fact to the rewritten goal without a new trusted rule.
+    let distributed;
+    let comparison = if let ClickProposition::At {
+        selector,
+        proposition,
+    } = source
+    {
+        let ClickProposition::Comparison {
+            left,
+            operator,
+            right,
+        } = proposition.as_ref()
+        else {
+            return None;
+        };
+        let at = |expression: &ContractExpression| {
+            if matches!(expression, ContractExpression::IntegerLiteral(_)) {
+                expression.clone()
+            } else {
+                ContractExpression::At {
+                    selector: selector.clone(),
+                    expression: Box::new(expression.clone()),
+                }
+            }
+        };
+        distributed = ClickProposition::Comparison {
+            left: at(left),
+            operator: *operator,
+            right: at(right),
+        };
+        &distributed
+    } else {
+        source
+    };
     let ClickProposition::Comparison {
         left,
         operator,
         right,
-    } = source
+    } = comparison
     else {
         return None;
     };
@@ -836,7 +873,7 @@ pub(super) fn comparison_preservation_steps(
     ) {
         return None;
     }
-    let (historical, current) = comparison_snapshot_expression_pair(source, target)?;
+    let (historical, current) = comparison_snapshot_expression_pair(comparison, target)?;
     let reflexive = ClickProposition::Comparison {
         left: historical.clone(),
         operator: ComparisonOperator::Equal,
