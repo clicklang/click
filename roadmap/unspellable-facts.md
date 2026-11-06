@@ -500,16 +500,44 @@ central comparison-form collector also selects structural reads inside Integer
 observations, preserving
 read-over-write matching without adding individual-check fallbacks.
 
+PR #2480 merged the independent metadata increment. Its full local gate passed
+7,610 unit/API tests, 58 regular examples and 5,079 Markdown fixtures. The run
+took 17m54s including compilation and emitted the ten-minute warning; budgets
+were not raised and the nightly suite was not run.
+
 The ordinary integer producer switch is in progress on
 `codex/structural-scalar-producers`; it has not been published or merged.
 The integrated cutover passed the unit/API phase (7604 tests) before the latest
 consumer repairs, but the full gate is not green. The focused fixture recheck
-currently passes 38 of the original 42 failing Markdown fixtures; four example
+currently passes 39 of the original 42 failing Markdown fixtures; three example
 projects still fail. `input-cursor` now passes unchanged: ordinary integer read
 facts no longer enter the legacy load-time transport index, avoiding repeated
 history walks during resource expansion. A deterministic regression covers
 16/32/64 read facts without growing transport work. Re-run the full gate,
 selected expansion checks and fact-stability audit after completing these repairs.
+
+The decrement fixture now passes unchanged. Certificate spelling recognizes exact
+structural read atoms (snapshot, address and kind), and observation casts retain
+nested historical Surface operands. `label-build-flags` also passes: dynamic
+resource dependencies validate the original loan binding after proving coverage,
+rather than inventing a narrower binding that loses its coverage premises.
+Wrong-holder, ended-loan and missing-range controls remain rejected.
+
+The remaining original Markdown failures are the two loop-exit disjunctions and
+`uninitialized_destination_beside_a_viewed_source`. The latter has a passing
+explicit proof; its automatic range split now recognizes shared comparisons and
+proves the earlier-index arm, but still misses the boundary arm. The loop-exit
+cases await the user decision about ordinary obligation discharge before the
+existing exact `cases` split. Do not change that rule implicitly.
+
+The remaining examples are `arena`, `owned-vector`, and `sequence-transform`.
+An explicit transport proves the untouched `arena_init` field across its loop;
+the expanded trace then reaches a later quantified guard comparison in
+`arena_alloc`. Explicit element equalities at function exit prove the unchanged
+sequence contract. Investigate child-goal spelling after its conjunction split:
+the written sequence equality represents the whole conjunction, while generated
+children can lose their Surface forms. These diagnostic proofs are not shipped
+as fixture workarounds; the producer cutover remains unready for publication.
 
 The ordinary integer producer switch follows the address-index migration.
 Execution, contracts and resource cells retain structural reads for signed and
