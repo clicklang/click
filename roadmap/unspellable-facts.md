@@ -502,7 +502,18 @@ The producer switch and registry removal remain pending. Native address payloads
 including nested registered reads, also remain an explicit boundary. Shared
 checker admission alone does not justify removing those names.
 
-The checker-admission increment is still local. Its full gate passed 7,551
+The next address increment admits structural reads inside a scalar read's native
+address, such as the inner read in `a[*p]`. Import/export retains both snapshots
+and both read kinds without a registered name. The interner retains nested
+snapshot arena identities before comparing native addresses, preventing a
+cross-arena memory-content comparison. Admission walks only the explicit address;
+scaling controls grow nesting depth beside unrelated memory. This does not yet
+switch C/Click index producers: those still introduce registered names, and
+width/origin metadata still uses the registry. The producer switch must migrate
+that common boundary rather than unwrap names separately inside checker queries.
+
+
+The checker-admission increment merged in PR #2468. Its initial full gate passed 7,551
 unit/API tests but exposed nine fixture failures. Named-read replacement inside
 shared Integer observations repairs bounded-pool, owned-string and
 `definedness_before_a_rewritten_sum_claim`; retaining read identity in arithmetic
@@ -542,7 +553,7 @@ domain. The original alias fixture and three focused obligation controls pass.
 The fresh `scripts/check.sh --no-fail-fast` gate passes: 7,584 unit/API tests,
 58 examples, and all 5,057 mdtests. It took 15m06s including compilation
 on this environment, exceeding the ten-minute target; no limits or gate selections
-were changed. This checker increment remains local pending publication approval;
+were changed. PR #2468 merged this checker increment;
 read producers and reserved-variable removal are still the next increment.
 
 The batch comparison form retains literal machine truth/falsehood after replacing

@@ -95,7 +95,11 @@ impl KernelTerm {
         if self.ty() == &KernelType::C(format.c_type()) {
             return self.clone();
         }
-        Self::intern(KernelType::C(format.c_type()), self.node().clone())
+        Self::intern_key(NodeKey::with_read_snapshots(
+            KernelType::C(format.c_type()),
+            self.node().clone(),
+            self.0.key.0.read_address_snapshots.clone(),
+        ))
     }
 
     /// Construct one arithmetic operation structurally from shared children.
