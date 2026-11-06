@@ -3264,6 +3264,24 @@ fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
     }
 }
 
+/// The value of an integer constant built only from unsuffixed literals and
+/// `+`, `-`, `*`, as a decimal spelling: `3 - 1` is `2`. Such a constant has
+/// no type of its own, so a typed position takes it as a literal of that
+/// type. `None` for anything else, or past `i128`.
+fn integer_constant_spelling(expression: &ContractExpression) -> Option<String> {
+    fn value(expression: &ContractExpression) -> Option<i128> {
+        match expression {
+            ContractExpression::IntegerLiteral(text) => text.parse().ok(),
+            ContractExpression::Negate(inner) => value(inner)?.checked_neg(),
+            ContractExpression::Add(left, right) => value(left)?.checked_add(value(right)?),
+            ContractExpression::Subtract(left, right) => value(left)?.checked_sub(value(right)?),
+            ContractExpression::Multiply(left, right) => value(left)?.checked_mul(value(right)?),
+            _ => None,
+        }
+    }
+    value(expression).map(|value| value.to_string())
+}
+
 pub(in crate::surface) fn lower_contract_integer_to_spec(
     expression: &SurfaceTerm,
     integer_values: &crate::persistent::PersistentMap<String, crate::kernel::SpecIntegerExpression>,
@@ -6998,14 +7016,16 @@ impl AnnotationLowerer<'_> {
                         // as a C initializer's is. Without the type it lowers
                         // at the narrowest width that holds it, so `2` in an
                         // `int64` field is an `int32` and the constructor
-                        // compares with no `Seq<int64>` value. A literal the
-                        // type cannot hold is refused, never wrapped.
+                        // compares with no `Seq<int64>` value. A constant of
+                        // literals, `3 - 1`, is the literal it denotes. A
+                        // literal the type cannot hold is refused, never
+                        // wrapped.
                         AlgebraicValueType::C(c_type)
                             if crate::kernel::MachineIntegerType::from_c_type(*c_type).is_some()
-                                && integer_literal_spelling(argument).is_some() =>
+                                && integer_constant_spelling(argument).is_some() =>
                         {
-                            let text = integer_literal_spelling(argument)
-                                .expect("the guard matched an integer literal");
+                            let text = integer_constant_spelling(argument)
+                                .expect("the guard matched an integer constant");
                             let ty = crate::kernel::MachineIntegerType::from_c_type(*c_type)
                                 .expect("the guard matched an integer type");
                             crate::kernel::MachineIntegerConstant::parse_decimal(ty.format(), &text)
@@ -7617,6 +7637,27 @@ impl AnnotationLowerer<'_> {
                 let definition =
                     self.instantiate_click_function_for_call(&definition, arguments, environment)?;
                 Ok(Some(definition.return_type().clone()))
+            }
+            // Pointer arithmetic keeps its pointer's type: `bytes + k` is a
+            // `*const u8` as `bytes` is.
+            ContractExpression::Add(left, right) | ContractExpression::Subtract(left, right) => {
+                let left = self.infer_unconstrained_call_argument_type(left, environment)?;
+                if left
+                    .as_ref()
+                    .is_some_and(|ty| ty.c_type().is_some_and(|c| c.is_pointer()))
+                {
+                    return Ok(left);
+                }
+                if matches!(argument, ContractExpression::Add(..)) {
+                    let right = self.infer_unconstrained_call_argument_type(right, environment)?;
+                    if right
+                        .as_ref()
+                        .is_some_and(|ty| ty.c_type().is_some_and(|c| c.is_pointer()))
+                    {
+                        return Ok(right);
+                    }
+                }
+                Ok(None)
             }
             _ => Ok(None),
         }

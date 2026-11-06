@@ -6334,7 +6334,15 @@ fn rust_slice_values_read_with_rust_methods() {
          have half(bytes)[0] == bytes[0];\n    \
          have half(bytes).as_ptr() == bytes;\n    \
          have size(half(bytes)) == bytes.len() / 2u64;\n    \
-         have some_half(bytes) == Option::Some(half(bytes));",
+         have some_half(bytes) == Option::Some(half(bytes));\n    \
+         have half(bytes).len() - 1u64 == 1u64;\n    \
+         have bytes[1..3].len() == 2u64;\n    \
+         have bytes[1..3][0] == bytes[1];\n    \
+         have bytes[2..].len() == 2u64;\n    \
+         have bytes[..2][1] == bytes[1];\n    \
+         have half(bytes)[1..].len() == 1u64;\n    \
+         have size(bytes[1..]) == 3u64;\n    \
+         have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);",
     );
     C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
     for (claim, printed) in [
@@ -6347,6 +6355,11 @@ fn rust_slice_values_read_with_rust_methods() {
             "have half(bytes).as_ptr() == bytes + 1;",
             "half(bytes).as_ptr() ==",
         ),
+        (
+            "have bytes[1..3][1] == 7u8;",
+            "slice::from_raw_parts((bytes + 1u64), (3u64 - 1u64))[1] == 7u8",
+        ),
+        ("have bytes[1..3].len() == 3u64;", "== 3u64"),
     ] {
         let error = C0VerificationSession::new_program_prepared(&sidecar(claim), &prepared)
             .err()

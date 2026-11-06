@@ -40,7 +40,7 @@ pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_spelling,
-    rust_variable_spelling, slice_call_arguments, slice_call_spelling, slice_projection_spelling,
+    rust_variable_spelling, slice_call_arguments, slice_call_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -5852,7 +5852,12 @@ pub(super) fn describe_c_expression(expression: &CExpression) -> String {
             let (base, index) = (describe_c_expression(base), describe_c_expression(index));
             match object_at_address(&base) {
                 Some(object) if index == "0" => object.to_string(),
-                _ => format!("{base}[{index}]"),
+                // An element of a slice value reads through its data
+                // pointer; Rust writes it `x[i]`.
+                _ => match base.strip_suffix(".as_ptr()") {
+                    Some(slice) => format!("{slice}[{index}]"),
+                    None => format!("{base}[{index}]"),
+                },
             }
         }
     }
@@ -6687,8 +6692,7 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                     )
                 })
                 .collect::<Vec<_>>();
-            slice_projection_spelling(&scrutinee, &arms)
-                .unwrap_or_else(|| format!("match {scrutinee} {{ {} }}", arms.join(", ")))
+            format!("match {scrutinee} {{ {} }}", arms.join(", "))
         }
         ContractExpression::SequenceLiteral(elements) => format!(
             "[{}]",
@@ -6865,7 +6869,12 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             );
             match object_at_address(&base) {
                 Some(object) if index == "0" => object.to_string(),
-                _ => format!("{base}[{index}]"),
+                // An element of a slice value reads through its data
+                // pointer; Rust writes it `x[i]`.
+                _ => match base.strip_suffix(".as_ptr()") {
+                    Some(slice) => format!("{slice}[{index}]"),
+                    None => format!("{base}[{index}]"),
+                },
             }
         }
         ContractExpression::ArrayIndex { base, indexes, .. } => format!(
