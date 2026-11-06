@@ -1015,12 +1015,12 @@ path = "reference/language/grammar.md#word-index"
 
 
 [[item]]
-id = "library.resource.allocation"
-path = "reference/library/index.md#allocation"
+id = "primitive.resource.allocation"
+path = "reference/language/index.md#allocation"
 
 [[item]]
-id = "library.resource.authority"
-path = "reference/library/index.md#authority"
+id = "primitive.resource.authority"
+path = "reference/language/index.md#authority"
 
 [[item]]
 id = "language.target"
@@ -2351,8 +2351,8 @@ id = "library.theorem.cstr::len_has_terminator"
 path = "reference/library/index.md#cstrlen_has_terminator"
 
 [[item]]
-id = "library.extern.__click_constant_p_unknown"
-path = "reference/library/index.md#__click_constant_p_unknown"
+id = "primitive.extern.__click_constant_p_unknown"
+path = "reference/language/index.md#__click_constant_p_unknown"
 
 [[item]]
 id = "library.extern.memcpy"
@@ -3280,24 +3280,24 @@ id = "library.theorem.nat::to_integer_add"
 path = "reference/library/index.md#natto_integer_add"
 
 [[item]]
-id = "library.resource.mutex_guard"
-path = "reference/library/index.md#mutex_guard"
+id = "primitive.resource.mutex_guard"
+path = "reference/language/index.md#mutex_guard"
 
 [[item]]
-id = "library.resource.mutex_live"
-path = "reference/library/index.md#mutex_live"
+id = "primitive.resource.mutex_live"
+path = "reference/language/index.md#mutex_live"
 
 [[item]]
-id = "library.resource.mutex_use"
-path = "reference/library/index.md#mutex_use"
+id = "primitive.resource.mutex_use"
+path = "reference/language/index.md#mutex_use"
 
 [[item]]
-id = "library.resource.publisher"
-path = "reference/library/index.md#publisher"
+id = "primitive.resource.publisher"
+path = "reference/language/index.md#publisher"
 
 [[item]]
-id = "library.resource.subscriber"
-path = "reference/library/index.md#subscriber"
+id = "primitive.resource.subscriber"
+path = "reference/language/index.md#subscriber"
 
 [[item]]
 id = "library.theorem.integer::int32_to_integer_less_equal_implies_less_equal"

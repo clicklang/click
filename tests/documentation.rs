@@ -866,10 +866,26 @@ fn markdown_links(source: &str) -> Vec<String> {
     ai_reference::markdown_links(source)
 }
 
-/// Every Click library module under `library/`, concatenated in path order.
-fn library_source() -> String {
+/// The `library/` modules that declare verifier primitives. Their
+/// declarations are language, documented in the language reference under
+/// `primitive.` inventory IDs rather than in the library reference.
+const PRIMITIVE_MODULES: &[&str] = &["library/primitives.click", "library/c/builtins.click"];
+
+fn is_primitive_module(path: &Path) -> bool {
+    let identity = path
+        .strip_prefix(root())
+        .expect("library module under the root")
+        .to_string_lossy()
+        .replace('\\', "/");
+    PRIMITIVE_MODULES.contains(&identity.as_str())
+}
+
+/// The Click library modules under `library/`, primitive modules or the
+/// others, concatenated in path order.
+fn library_source(primitives: bool) -> String {
     let mut files = Vec::new();
     files_with_extension(&root().join("library"), "click", &mut files);
+    files.retain(|path| is_primitive_module(path) == primitives);
     files.sort();
     assert!(!files.is_empty(), "no Click library modules");
     files
@@ -899,7 +915,13 @@ fn standard_library_inventory_is_bidirectional() {
     let mut files = Vec::new();
     files_with_extension(&root().join("library"), "click", &mut files);
     let mut declarations = BTreeSet::new();
+    let mut primitives = BTreeSet::new();
     for path in files {
+        if is_primitive_module(&path) {
+            let source = fs::read_to_string(&path).expect("read library module");
+            declare_library_inventory(&source, None, &mut primitives);
+            continue;
+        }
         let identity = path
             .strip_prefix(root())
             .expect("library module under the root")
@@ -915,6 +937,7 @@ fn standard_library_inventory_is_bidirectional() {
         declare_library_inventory(&source, module.as_deref(), &mut declarations);
     }
     assert_eq!(declarations, inventory_ids("library."));
+    assert_eq!(primitives, inventory_ids("primitive."));
 }
 
 fn declare_library_inventory(
@@ -1030,9 +1053,44 @@ fn c0_surface_inventory_is_bidirectional() {
 
 #[test]
 fn standard_library_declarations_are_exact_source_includes() {
-    let source = library_source();
+    let source = library_source(false);
     let reference = fs::read_to_string(root().join("docs/reference/library/index.md"))
         .expect("read library reference");
+    for_each_library_declaration(&source, |declaration| {
+        assert!(
+            reference.contains(declaration),
+            "library reference has a missing or stale declaration:\n{declaration}"
+        );
+    });
+}
+
+/// The language reference states each verifier primitive's declaration as
+/// inline code, so it is compared with whitespace normalized, and the
+/// library reference does not present it as library content.
+#[test]
+fn verifier_primitive_declarations_are_in_the_language_reference() {
+    let source = library_source(true);
+    let language = fs::read_to_string(root().join("docs/reference/language/index.md"))
+        .expect("read language reference");
+    let language = normalized_source(&language);
+    let library = fs::read_to_string(root().join("docs/reference/library/index.md"))
+        .expect("read library reference");
+    let library = normalized_source(&library);
+    for_each_library_declaration(&source, |declaration| {
+        let declaration = normalized_source(declaration);
+        assert!(
+            language.contains(&format!("`{declaration}`")),
+            "language reference has a missing or stale primitive declaration:\n{declaration}"
+        );
+        assert!(
+            !library.contains(&declaration),
+            "library reference presents a verifier primitive as library content:\n{declaration}"
+        );
+    });
+}
+
+/// Calls `check` with each complete top-level declaration of `source`.
+fn for_each_library_declaration(source: &str, mut check: impl FnMut(&str)) {
     let mut declaration = String::new();
     let mut depth = 0usize;
     for line in source.lines() {
@@ -1057,10 +1115,7 @@ fn standard_library_declarations_are_exact_source_includes() {
         let complete =
             depth == 0 && (line.trim_end().ends_with('}') || line.trim_end().ends_with(';'));
         if complete {
-            assert!(
-                reference.contains(&declaration),
-                "library reference has a missing or stale declaration:\n{declaration}"
-            );
+            check(&declaration);
             declaration.clear();
         }
     }
@@ -1072,7 +1127,10 @@ fn every_standard_library_symbol_has_a_verified_use() {
     let fixture = fs::read_to_string(root().join("mdtests/stdlib_every_symbol.md"))
         .expect("read standard-library fixture");
     assert!(fixture.contains("```expect\npass\n```"));
-    for id in inventory_ids("library.") {
+    for id in inventory_ids("library.")
+        .into_iter()
+        .chain(inventory_ids("primitive."))
+    {
         let name = id
             .split_once('.')
             .map(|(_, name)| name)

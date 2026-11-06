@@ -1275,7 +1275,7 @@ Supported C surface includes:
   unknown 0 or 1: a function is verified only if its claims hold for both,
   and no claim depends on which arm the compiler kept. The operand is not
   evaluated and must be free of side effects. The unknown value comes from
-  the standard library's `__click_constant_p_unknown` contract, which
+  the verifier primitive [`__click_constant_p_unknown`](index.md#__click_constant_p_unknown), whose `extern` contract
   `click verify` lists among the external assumptions. See
   `mdtests/c_builtin_constant_p.md`
 - `sizeof(expression)` for an operand of scalar or pointer type, or a named
