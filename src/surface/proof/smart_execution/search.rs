@@ -1056,6 +1056,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         requirement_index,
                         &surface,
                         &[],
+                        &[],
                         &requirement,
                     ),
                     crate::surface::proof::theorem_application::requirement_search_miss(

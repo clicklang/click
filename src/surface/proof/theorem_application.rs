@@ -300,6 +300,7 @@ pub(super) fn instantiate_theorem_application_with_assumptions(
                     theorem.name(),
                     requirement_index,
                     requirement,
+                    theorem.parameters(),
                     &requirement_source_bindings(&theorem, application),
                     &lowered,
                 ),
@@ -414,13 +415,18 @@ pub(super) fn describe_unavailable_theorem_requirement(
     theorem_name: &str,
     requirement_index: usize,
     requirement: &ClickProposition,
+    parameters: &[FunctionParameter],
     bindings: &[(String, ContractExpression)],
     lowered: &Proposition,
 ) -> String {
     // Substitute the actual written arguments rather than asking a kernel
-    // load to recover the state selector the author already supplied.
+    // load to recover the state selector the author already supplied. A
+    // native comparison keeps its observations, so the instantiation reads
+    // back as the requirement: `100u64 < a` at `a = n - k` is not the
+    // Integer comparison `100u64 < n - k`.
     let substitutions = bindings.iter().cloned().collect::<BTreeMap<_, _>>();
-    let instantiation = substitute_click_proposition(requirement, &substitutions)
+    let observed = observe_machine_parameters(requirement, parameters, &substitutions);
+    let instantiation = substitute_click_proposition(&observed, &substitutions)
         .map(|surface| crate::surface::printing::source_click_proposition(&surface))
         .unwrap_or_else(|_| crate::surface::proof_diagnostics::render::render_proposition(lowered));
     let names = bindings
@@ -1778,8 +1784,15 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
         }
         _ => None,
     };
+    // A suffixed literal, such as `100u64`, is a machine constant: it reads
+    // natively too, so `100u64 < value` at `value = n - k` is the native
+    // comparison `to_integer(100u64) < to_integer(n - k)`, not
+    // `100u64 < n - k`.
     let literal = |side: &ContractExpression| match side {
         ContractExpression::IntegerLiteral(_) => true,
+        ContractExpression::CFragment(CExpression::Value(value)) => {
+            super::resources::is_integer_constant(value)
+        }
         ContractExpression::Negate(inner) => {
             matches!(inner.as_ref(), ContractExpression::IntegerLiteral(_))
         }
@@ -1803,7 +1816,7 @@ pub(in crate::surface::proof) fn observe_machine_parameters(
     }
     let machine_tree = |side: &ContractExpression| tree(side, &parameter, &literal);
     let observe = |side: &ContractExpression| {
-        if literal(side) {
+        if literal(side) && !matches!(side, ContractExpression::CFragment(_)) {
             side.clone()
         } else {
             ContractExpression::Call {

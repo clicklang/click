@@ -5286,7 +5286,7 @@ fn extend_substitutions_with_witnesses(
 
 /// Whether `value` is an integer constant, which a requirement spells as its
 /// literal.
-fn is_integer_constant(value: &CValue) -> bool {
+pub(in crate::surface::proof) fn is_integer_constant(value: &CValue) -> bool {
     matches!(
         value,
         CValue::Int8(term)
