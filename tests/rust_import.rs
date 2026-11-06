@@ -6345,30 +6345,56 @@ fn rust_slice_values_read_with_rust_methods() {
          have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);",
     );
     C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    // Each refused claim, and the goal it leaves, print in Rust spellings
+    // that read back: a subslice as `bytes[a..b]`, a read through a slice
+    // value's data as `x[i]`, and a slice value's data as `x.as_ptr()`.
     for (claim, printed) in [
         (
             "have half(bytes).len() == 3u64;",
-            "half(bytes).len() == 3u64",
+            &["`half(bytes).len() == 3u64`"][..],
         ),
-        ("have half(bytes)[1] == 7u8;", "half(bytes)[1] == 7u8"),
+        (
+            "have half(bytes)[1] == 7u8;",
+            &[
+                "`half(bytes)[1] == 7u8`",
+                "goal: old(half(old(bytes))[1]) == 7",
+            ],
+        ),
         (
             "have half(bytes).as_ptr() == bytes + 1;",
-            "half(bytes).as_ptr() ==",
+            &["goal: half(old(bytes)).as_ptr() == &bytes[1]"],
         ),
         (
             "have bytes[1..3][1] == 7u8;",
-            "slice::from_raw_parts((bytes + 1u64), (3u64 - 1u64))[1] == 7u8",
+            &["`bytes[1..3][1] == 7u8`", "goal: old(bytes[1..3][1]) == 7"],
         ),
-        ("have bytes[1..3].len() == 3u64;", "== 3u64"),
+        (
+            "have bytes[1..][0] == 7u8;",
+            &["`bytes[1..][0] == 7u8`", "goal: old(bytes[1..][0]) == 7"],
+        ),
+        (
+            "have bytes[..2][0] == 7u8;",
+            &["`bytes[..2][0] == 7u8`", "goal: old(bytes[..2][0]) == 7"],
+        ),
+        (
+            "have bytes[1..3].len() == 3u64;",
+            &["`bytes[1..3].len() == 3u64`"],
+        ),
+        (
+            "have bytes[1..3] == bytes[1..2];",
+            &["goal: bytes[1..3] == bytes[1..2]"],
+        ),
     ] {
         let error = C0VerificationSession::new_program_prepared(&sidecar(claim), &prepared)
             .err()
             .unwrap_or_else(|| panic!("`{claim}` must fail"))
             .to_string();
-        assert!(
-            error.contains(printed),
-            "`{claim}` prints as `{printed}`: {error}"
-        );
+        for printed in printed {
+            assert!(
+                error.contains(printed),
+                "`{claim}` prints `{printed}`: {error}"
+            );
+        }
         assert!(
             !error.contains("__slice_"),
             "no internal binder is printed: {error}"

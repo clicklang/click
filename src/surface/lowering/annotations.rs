@@ -8682,6 +8682,24 @@ impl AnnotationLowerer<'_> {
                     element_type: self.contract_array_element_type(expression, environment),
                 })
             }
+            // A pointer-valued pure call steps by its result's pointee:
+            // `slice::as_ptr::<uint8>(s)[1]` reads the byte at offset 1, not
+            // the `int32` at offset 4.
+            ContractExpression::Call { .. } => {
+                let element_type = match self
+                    .infer_unconstrained_call_argument_type(expression, environment)?
+                    .and_then(|result| result.c_type())
+                    .and_then(|result| result.pointee_type())
+                {
+                    Some(element_type) => element_type.to_kernel_type(),
+                    None => self.contract_array_element_type(expression, environment),
+                };
+                Ok(SpecArrayRef {
+                    memory: environment.current_memory.clone(),
+                    pointer: self.lower_contract_expression_to_spec(expression, environment)?,
+                    element_type,
+                })
+            }
             _ => Ok(SpecArrayRef {
                 memory: environment.current_memory.clone(),
                 pointer: self.lower_contract_expression_to_spec(expression, environment)?,

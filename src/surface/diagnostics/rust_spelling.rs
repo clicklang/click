@@ -61,10 +61,138 @@ pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Ve
             .unwrap_or(pointer);
         let own_length = [format!("{parameter}.len()"), format!("{parameter}_len")];
         if !own_length.contains(&length) {
-            arguments[position] = format!("slice::from_raw_parts({pointer}, {length})");
+            arguments[position] = slice_spelling(pointer, &length);
         }
     }
     arguments
+}
+
+/// The spelling of the slice with data `pointer` and length `length`, as
+/// printed: the subslice `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` when the
+/// pointer is a slice's data or an offset into it, as a subslice is built,
+/// and `slice::from_raw_parts(p, n)` otherwise.
+pub(crate) fn slice_spelling(pointer: &str, length: &str) -> String {
+    subslice_spelling(pointer, length)
+        .unwrap_or_else(|| format!("slice::from_raw_parts({pointer}, {length})"))
+}
+
+fn subslice_spelling(pointer: &str, length: &str) -> Option<String> {
+    let (pointer, length) = (unparenthesized(pointer), unparenthesized(length));
+    let (base, start) = match pointer
+        .strip_prefix('&')
+        .and_then(|element| element.strip_suffix(']'))
+        .and_then(|element| element.rsplit_once('['))
+    {
+        Some((base, start)) => (base, Some(start)),
+        None => match pointer.split_once(" + ") {
+            Some((base, start)) => (base, Some(start)),
+            None => (pointer, None),
+        },
+    };
+    let (slice, own_lengths) = slice_with_data(base)?;
+    // The length a subslice was built with, `end - start`, gives back its
+    // end; the slice's own length is an open end.
+    let start = start.map(usize_bound);
+    let end = match &start {
+        Some(start) => [start.clone(), format!("{start}u64")]
+            .iter()
+            .find_map(|start| length.strip_suffix(&format!(" - {start}")))
+            .map(unparenthesized)
+            .map_or_else(
+                || {
+                    start
+                        .parse::<u64>()
+                        .ok()
+                        .zip(usize_bound(length).parse::<u64>().ok())
+                        .and_then(|(start, length)| start.checked_add(length))
+                        .map_or_else(|| format!("{start} + {length}"), |end| end.to_string())
+                },
+                str::to_string,
+            ),
+        None => length.to_string(),
+    };
+    let end = (!own_lengths.contains(&end)).then(|| usize_bound(&end));
+    if start.is_none() && end.is_none() {
+        return Some(slice);
+    }
+    Some(format!(
+        "{slice}[{}..{}]",
+        start.unwrap_or_default(),
+        end.unwrap_or_default()
+    ))
+}
+
+/// The slice whose data pointer is spelled `pointer`, with the spellings of
+/// its own length: a slice parameter, also at another point (`old(bytes)`),
+/// or a slice value's `x.as_ptr()`.
+fn slice_with_data(pointer: &str) -> Option<(String, Vec<String>)> {
+    if let Some(slice) = pointer.strip_suffix(".as_ptr()") {
+        return Some((slice.to_string(), vec![format!("{slice}.len()")]));
+    }
+    let (wrap, name): (Box<dyn Fn(&str) -> String>, &str) = match pointer
+        .strip_prefix("old(")
+        .and_then(|rest| rest.strip_suffix(')'))
+    {
+        Some(name) => (Box::new(|inner| format!("old({inner})")), name),
+        None => match pointer
+            .strip_prefix("at(")
+            .and_then(|rest| rest.strip_suffix(')'))
+            .and_then(|rest| rest.split_once(", "))
+        {
+            Some((point, name)) => {
+                let point = point.to_string();
+                (Box::new(move |inner| format!("at({point}, {inner})")), name)
+            }
+            None => (Box::new(|inner| inner.to_string()), pointer),
+        },
+    };
+    if !rust_slice_parameters()?
+        .iter()
+        .any(|parameter| parameter == name)
+    {
+        return None;
+    }
+    // A slice parameter's length never changes, so it is also spelled
+    // without the point.
+    let lengths = vec![
+        format!("{pointer}.len()"),
+        wrap(&format!("{name}.len()")),
+        wrap(&format!("{name}_len")),
+        format!("{name}.len()"),
+        format!("{name}_len"),
+    ];
+    Some((pointer.to_string(), lengths))
+}
+
+/// A subslice bound as written: `usize`, so a numeral needs no suffix.
+fn usize_bound(bound: &str) -> String {
+    let bound = unparenthesized(bound);
+    match bound.strip_suffix("u64") {
+        Some(digits) if !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()) => {
+            digits.to_string()
+        }
+        _ => bound.to_string(),
+    }
+}
+
+/// `text` without parentheses that enclose all of it.
+fn unparenthesized(text: &str) -> &str {
+    let Some(inner) = text
+        .strip_prefix('(')
+        .and_then(|rest| rest.strip_suffix(')'))
+    else {
+        return text;
+    };
+    let mut depth = 0usize;
+    for character in inner.chars() {
+        match character {
+            '(' => depth += 1,
+            ')' if depth == 0 => return text,
+            ')' => depth -= 1,
+            _ => {}
+        }
+    }
+    if depth == 0 { inner } else { text }
 }
 
 /// While it lives, loop `index`'s phases are being checked: its iterator's
@@ -176,9 +304,7 @@ pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<St
     match (method, arguments) {
         ("len", [slice]) => Some(format!("{slice}.len()")),
         ("as_ptr", [slice]) => Some(format!("{slice}.as_ptr()")),
-        ("from_raw_parts", [pointer, length]) => {
-            Some(format!("slice::from_raw_parts({pointer}, {length})"))
-        }
+        ("from_raw_parts", [pointer, length]) => Some(slice_spelling(pointer, length)),
         _ => None,
     }
 }
