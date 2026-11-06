@@ -279,6 +279,7 @@ const NIGHTLY: &[&str] = &[
     "static_array_parity_scalar.md",                                           // 0.8s
     "static_local_arrays.md",                                                  // 0.8s
     "stdlib_every_symbol.md",                                                  // 0.9s
+    "stdlib_permutation_count_over_bytes_rejects_overwrite.md",                // 0.9s
     "store_does_not_preserve_a_fold_over_the_range.md",                        // 0.5s
     "store_through_a_derived_pointer_cancels_the_base.md",                     // 2.8s
     "stored_pointer_identity_rejects_overwrite_after_call.md",                 // 1.0s

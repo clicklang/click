@@ -2809,18 +2809,18 @@ function uint64_wrapping_mul(left: uint64, right: uint64) -> uint64 {
 ### `permutation::count`
 
 ```click
-function count(p: int32[], lo: int32, hi: int32, x: int32) -> int32 {
+function count<T>(p: T*, lo: int32, hi: int32, x: T) -> int32 {
     (lo..hi).fold(0, |acc, k| {
         acc + if p[k] == x { 1 } else { 0 }
     })
 }
 ```
 
-**Meaning:** Returns the number of elements equal to `x` in the half-open range `lo..hi` of the `int32` array reference `p`.
+**Meaning:** Returns the number of elements equal to `x` in the half-open range `lo..hi` of the array reference `p`. It is generic over the element type: `T` is inferred from `p`, an `int32[]` or `uint8[]` array ref (a pure-function `T*` parameter is an array ref), and `x` must have that same type.
 
-**Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
+**Kind:** generic function. Parameter types, requirements, and guarantees are normative in the declaration above. The bounds stay `int32`, as `bytes::count`'s do.
 
-**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate.
+**Verified use:** [`mdtests/stdlib_every_symbol.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_every_symbol.md) exercises this symbol and is checked by the ordinary mdtest gate. [`mdtests/stdlib_permutation_count_over_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes.md) counts a `uint8` buffer, [`mdtests/stdlib_permutation_count_over_bytes_rejects_overwrite.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes_rejects_overwrite.md) refuses an overwrite as a byte permutation, and [`mdtests/stdlib_permutation_count_rejects_mixed_element_types.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_rejects_mixed_element_types.md) refuses an `int32` value counted in a `uint8` buffer.
 
 ### `permutation::permutation`
 
@@ -2833,6 +2833,8 @@ predicate permutation(a: int32[], b: int32[], lo: int32, hi: int32) {
 ```
 
 **Meaning:** States that `a` and `b` contain every `int32` value the same number of times in `lo..hi`. Unfolding exposes equality of two `count` calls under a universal quantifier.
+
+**Limit:** the predicate is stated over `int32[]` only. A generic form would quantify over its element type, `forall (x: T)`, and a quantifier's type must be a concrete C, `Integer` or algebraic type; the parser refuses a type parameter there. A permutation over another element type is a file predicate over the generic `permutation::count`, as `byte_permutation` in [`mdtests/stdlib_permutation_count_over_bytes.md`](https://github.com/clicklang/click/blob/master/mdtests/stdlib_permutation_count_over_bytes.md) is.
 
 **Kind:** predicate. Parameter types, requirements, and guarantees are normative in the declaration above.
 
