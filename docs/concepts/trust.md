@@ -119,7 +119,7 @@ contracts in `src/languages/cpp/standard_library.rs`. See
 ## The Click library
 
 The `library/` modules declare 151 theorems. `verify_standard_library`
-checks each one, in one of two ways; the nightly suite runs it
+checks each one, in one of two ways; the gate runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
 - **109 are proved.** Their written or default proofs are checked like any

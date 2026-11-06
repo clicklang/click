@@ -177,7 +177,7 @@ observation laws; the eight `to_*_round_trip` laws; the seven 16-bit packing
 laws; and `uint32_from_le_bytes`. Each is a kernel axiom built by a `prove_*`
 operation that constructs only the fixed implication documented in the
 standard library. Standard-library verification (`verify_standard_library`,
-run by the nightly suite) checks each parsed declaration against its exact
+run by the gate) checks each parsed declaration against its exact
 proposition. No certificate rule relates a machine `/` or `%` with a
 symbolic divisor, or an `Integer`-to-machine conversion `to_T(z)`, to its
 `Integer` value, so those laws remain axioms. The `int32` increment,
