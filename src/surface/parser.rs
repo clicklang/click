@@ -10628,6 +10628,12 @@ impl Parser {
                 }
                 ProofTactic::Normalize
             }
+            "preserve" => {
+                self.expect(Token::LParen)?;
+                let separation = self.parse_proposition()?;
+                self.expect(Token::RParen)?;
+                ProofTactic::Preserve(separation)
+            }
             "transport_certificate" => {
                 return self.parse_transport_certificate_tactic();
             }
@@ -17310,6 +17316,10 @@ mod tactic_classification_tests {
         ("extract", "extract(x == 1);"),
         ("normalize", "normalize();"),
         ("normalize-using", "normalize() using { x == 1; };"),
+        (
+            "preserve",
+            "preserve(separate(statement(0).footprint, memory(*p)));",
+        ),
         (
             "transport-certificate",
             "transport_certificate { premise 0: x == 1 => x == 1; conclusion 0; }",

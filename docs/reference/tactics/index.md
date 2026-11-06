@@ -1055,6 +1055,7 @@ step is still checked.
 | `extract(P)` | simple | Expansion output | Extract a proposition from an available fact. | [Reference](#extracting-a-fact) |
 | `normalize()` | simple | Expansion output | Close a goal by evaluation without context. | [Reference](#context-free-normalization) |
 | `normalize() using { P; ... }` | simple | Expansion output | Check normalization against written premises. | [Reference](#normalization-with-selected-premises) |
+| `preserve(separate(region.footprint, resource))` | simple | Specialized | Preserve a selected read across a separated effect. | [Reference](#preservation) |
 | `transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }` | simple | Specialized | Check explicit preservation and equality composition. | [Reference](#transport-certificates) |
 | `arithmetic_certificate { premise ...; conclusion N; }` / `arithmetic_certificate signed_int32 { ... }` / `arithmetic_certificate rules { ... }` | simple | Expansion output | Check explicit arithmetic evidence. | [Reference](#arithmetic-certificates) |
 | `rewrite(P)` | simple | Core | Rewrite the goal using an equality. | [Reference](#rewriting) |
@@ -1891,6 +1892,26 @@ emits a flat certificate; expansion directly rechecks that certificate without
 planning again.
 
 **Checked examples:** [`pure_arithmetic_affine.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_affine.md), [`pure_arithmetic_bounded_operations.md`](https://github.com/clicklang/click/blob/master/mdtests/pure_arithmetic_bounded_operations.md), [`c_pointer_local_loop_invariant.md`](https://github.com/clicklang/click/blob/master/mdtests/c_pointer_local_loop_invariant.md), [`arithmetic_plans_a_greater_bound_on_an_operation.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_plans_a_greater_bound_on_an_operation.md), [`arithmetic_sharpens_a_bound_with_a_disequality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_sharpens_a_bound_with_a_disequality.md), [`arithmetic_bounds_a_strict_lower_side_below_int32_max.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_bounds_a_strict_lower_side_below_int32_max.md), [`arithmetic_eliminates_integer_equalities.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_eliminates_integer_equalities.md), [`arithmetic_refuses_an_unchained_integer_equality.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_refuses_an_unchained_integer_equality.md), [`a_size_t_loop_stepping_by_two_closes_with_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/a_size_t_loop_stepping_by_two_closes_with_arithmetic.md), [`a_uint64_sum_that_may_wrap_is_not_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/a_uint64_sum_that_may_wrap_is_not_arithmetic.md), [`arithmetic_proves_int64_order_goals.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_proves_int64_order_goals.md), [`an_int64_sum_that_may_overflow_is_not_arithmetic.md`](https://github.com/clicklang/click/blob/master/mdtests/an_int64_sum_that_may_overflow_is_not_arithmetic.md), [`arithmetic_reduces_order_premises_under_an_untouched_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_reduces_order_premises_under_an_untouched_goal.md), [`arithmetic_compound_premise_and_goal.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_compound_premise_and_goal.md), [`arithmetic_compound_wrapping_premise.md`](https://github.com/clicklang/click/blob/master/mdtests/arithmetic_compound_wrapping_premise.md)
+
+### Preservation
+
+**Form:** `preserve(separate(region.footprint, resource));`
+
+A simple tactic for a read-equality goal. Cite an exactly available separation
+between a recorded region footprint and the resource being read. The tactic
+constructs equality of the selected read at the region's exit and entry, in
+that order. It uses the same primitive as a transport certificate's `preserve`
+node, with no premise discovery or history search. The current goal selects
+the read type or named-resource field; it must match the constructed equality.
+
+Use an ordinary `have` to establish this equality, then `rewrite` and
+`assumption` to carry a proposition across the change. The tactic remains
+`preserve(...)` in expansion. It does not expand general `transport` searches;
+that migration is separate. Unavailable separation, an unsupported observation,
+or mismatched endpoints is a local refusal. This tactic is distinct from a
+loop's `preserve by { ... }` proof block.
+
+**Checked example:** [`preserve_step_carries_a_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/preserve_step_carries_a_fact.md).
 
 ### Transport certificates
 

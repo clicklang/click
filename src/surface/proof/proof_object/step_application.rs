@@ -1343,6 +1343,33 @@ impl<'a> Proof<'a> {
         ))
     }
 
+    /// One explicit footprint-preservation operation, using the same direct
+    /// construction as a certificate's preserve node. No premise discovery.
+    fn apply_preserve(
+        &self,
+        separation: &ClickProposition,
+    ) -> Result<KernelProofHandle, ClickError> {
+        let result = self
+            .surface_goal()
+            .ok_or_else(|| self.step_error("preserve requires a spelled read-equality goal"))?
+            .clone();
+        self.apply_transport_certificate(&TransportCertificate {
+            nodes: vec![
+                TransportCertificateNode::Premise {
+                    index: 0,
+                    proposition: separation.clone(),
+                    result: separation.clone(),
+                },
+                TransportCertificateNode::Preserve {
+                    effect: None,
+                    separation: 0,
+                    result,
+                },
+            ],
+            conclusion: 1,
+        })
+    }
+
     fn apply_transport_certificate(
         &self,
         certificate: &TransportCertificate,

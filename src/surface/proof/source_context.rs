@@ -41,6 +41,7 @@ impl SourceContext {
                     | ProofTactic::Extract(_)
                     | ProofTactic::Normalize
                     | ProofTactic::ArithmeticUsing(_)
+                    | ProofTactic::Preserve(_)
                     | ProofTactic::TransportCertificate(_)
                     | ProofTactic::ArithmeticCertificate(_)
                     | ProofTactic::NormalizeUsing(_)
@@ -89,6 +90,7 @@ impl SourceContext {
                     | ProofTactic::Normalize
                     | ProofTactic::NormalizeUsing(_)
                     | ProofTactic::ArithmeticUsing(_)
+                    | ProofTactic::Preserve(_)
                     | ProofTactic::TransportCertificate(_)
                     | ProofTactic::ArithmeticCertificate(_)
                     | ProofTactic::Rewrite(_)

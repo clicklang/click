@@ -5273,6 +5273,7 @@ pub enum ProofTactic {
     Contradiction(ClickProposition),
     CloseInvariants,
     Rewrite(ClickProposition),
+    Preserve(ClickProposition),
     Transport {
         source: ClickProposition,
         target: ClickProposition,
@@ -5696,6 +5697,11 @@ pub const PUBLIC_TACTIC_FORMS: &[PublicTacticForm] = &[
         class: "simple",
     },
     PublicTacticForm {
+        id: "preserve",
+        syntax: "preserve(separate(region.footprint, resource))",
+        class: "simple",
+    },
+    PublicTacticForm {
         id: "transport-certificate",
         syntax: "transport_certificate { premise ...; preserve ...; transitive ...; conclusion N; }",
         class: "simple",
@@ -5909,7 +5915,9 @@ impl ProofTactic {
             }
             Self::ArithmeticUsing(_) => TacticClass::smart(SmartTacticKind::Arithmetic),
             Self::ArithmeticCertificate(_) => TacticClass::Simple(SimpleTactic::Arithmetic),
-            Self::TransportCertificate(_) => TacticClass::Simple(SimpleTactic::FactTransport),
+            Self::Preserve(_) | Self::TransportCertificate(_) => {
+                TacticClass::Simple(SimpleTactic::FactTransport)
+            }
             Self::Intro | Self::IntroAs(_) => TacticClass::Simple(SimpleTactic::Intro),
             Self::Enumerate => TacticClass::Simple(SimpleTactic::Enumerate),
             Self::Contradiction(_) => TacticClass::Simple(SimpleTactic::Contradiction),
