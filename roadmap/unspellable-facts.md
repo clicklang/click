@@ -539,6 +539,13 @@ the written sequence equality represents the whole conjunction, while generated
 children can lose their Surface forms. These diagnostic proofs are not shipped
 as fixture workarounds; the producer cutover remains unready for publication.
 
+The targeted expansion recheck passes `saved_memory_descriptors_expand_and_replay`
+and `explicitly_packaged_pointer_frame_expands_without_history_search`.
+`struct_pointer_field_scalar_read_expansion_keeps_its_width` still fails before
+expansion: the selected premise equating `observed` with the historical payload
+read through `p->kid` has no checked source spelling. Repair this spelling gap
+before treating the producer migration as expandable. No full nightly run was used.
+
 The ordinary integer producer switch follows the address-index migration.
 Execution, contracts and resource cells retain structural reads for signed and
 unsigned 8/16/32/64/128-bit values. They no longer mint scalar names or emit
