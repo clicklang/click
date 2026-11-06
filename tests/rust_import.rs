@@ -6340,7 +6340,9 @@ fn rust_slice_values_read_with_rust_methods() {
          have bytes[1..3][0] == bytes[1];\n    \
          have bytes[2..].len() == 2u64;\n    \
          have bytes[..2][1] == bytes[1];\n    \
+         have half(bytes).len() == 2u64;\n    \
          have half(bytes)[1..].len() == 1u64;\n    \
+         have forall (k: uint64) { k <= 2u64 implies bytes[k..2] == bytes[k..2] };\n    \
          have size(bytes[1..]) == 3u64;\n    \
          have bytes[0..4] == slice::from_raw_parts(bytes, 4u64);",
     );
@@ -6383,6 +6385,24 @@ fn rust_slice_values_read_with_rust_methods() {
         (
             "have bytes[1..3] == bytes[1..2];",
             &["goal: bytes[1..3] == bytes[1..2]"],
+        ),
+        // A subslice owes Rust's bounds, `start <= end <= len`, where it is
+        // evaluated: past the length, before the start, and unguarded.
+        (
+            "have bytes[0..5].len() == 5u64;",
+            &["not established", "`5u64 <= bytes.len()`"],
+        ),
+        (
+            "have bytes[3..1].len() == 0u64;",
+            &["the subslice `[3..1]` starts past its end"],
+        ),
+        (
+            "have half(bytes)[1..].len() == 1u64;",
+            &["not established", "`1u64 <= half(old(bytes)).len()`"],
+        ),
+        (
+            "have forall (k: uint64) { bytes[k..2] == bytes[k..2] };",
+            &["not established", "<= 2u64"],
         ),
     ] {
         let error = C0VerificationSession::new_program_prepared(&sidecar(claim), &prepared)

@@ -27,3 +27,10 @@ function as_ptr<T>(s: Slice<T>) -> T* {
 function from_raw_parts<T>(p: T*, n: uint64) -> Slice<T> {
     Slice::Slice(p, n)
 }
+
+// The length of the subslice `s[start..end]`, `end - start`. A subslice
+// requires `start <= end <= len`, where Rust panics otherwise, so a proof
+// that writes one owes those bounds where it is evaluated.
+function subslice_len(start: uint64, end: uint64, len: uint64) -> uint64 {
+    end - start
+}

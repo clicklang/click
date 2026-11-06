@@ -223,6 +223,7 @@ pub(super) fn state_independent_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::Cast(..)
             | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }
+            | SpecExpression::Requires { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
             | SpecExpression::Subobject { .. }
@@ -340,6 +341,7 @@ pub(super) fn stateful_memory_refinement_node(node: SpecNode<'_>) -> Visit<()> {
             | SpecExpression::Cast(..)
             | SpecExpression::PointerCoercion(..)
             | SpecExpression::If { .. }
+            | SpecExpression::Requires { .. }
             | SpecExpression::Let { .. }
             | SpecExpression::PureFunctionApplication { .. }
             | SpecExpression::Subobject { .. }

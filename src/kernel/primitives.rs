@@ -3970,6 +3970,14 @@ pub enum SpecExpression {
         pointer: Box<SpecExpression>,
         value_type: CType,
     },
+    /// `value`, defined only where `requirement` holds: its evaluation owes
+    /// `requirement`, guarded as every evaluation obligation is, and adds no
+    /// fact. A Rust subslice's length `b - a` requires `a <= b <= len`, where
+    /// Rust panics otherwise.
+    Requires {
+        requirement: Box<SpecProposition>,
+        value: Box<SpecExpression>,
+    },
 }
 
 impl SpecExpression {

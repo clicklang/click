@@ -3091,6 +3091,10 @@ fn collect_current_proposition_variables(
 /// Compatibility name while expression consumers migrate to `SurfaceTerm`.
 pub type ContractExpression = SurfaceTerm;
 
+/// The library function a Rust subslice's length lowers through; its call
+/// owes the subslice's bounds.
+pub(crate) const RUST_SUBSLICE_LEN: &str = "click::rust::slice::subslice_len";
+
 /// Source expressions shared by declarations, proof claims and raised terms.
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub enum SurfaceTerm {
