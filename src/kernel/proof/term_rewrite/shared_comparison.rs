@@ -38,14 +38,26 @@ impl TermRewrite<'_> {
             && self.scope.integer.iter().all(|(a, b)| a == b)
             && self.scope.algebraic.iter().all(|(a, b)| a == b);
         let local = std::cell::RefCell::new(HashMap::<u64, KernelTerm>::new());
+        let batch_cache = self.comparison_read_cache.clone();
+        let scope_id = self.scope_id;
         let get = |term: &KernelTerm| {
-            local.borrow().get(&term.id()).cloned().or_else(|| {
-                cacheable
-                    .then(|| {
-                        COMPARISON_OPERANDS.with(|cache| cache.borrow().get(&term.id()).cloned())
-                    })
-                    .flatten()
-            })
+            local
+                .borrow()
+                .get(&term.id())
+                .cloned()
+                .or_else(|| {
+                    batch_cache
+                        .as_ref()
+                        .and_then(|cache| cache.borrow().get(&(term.id(), scope_id)).cloned())
+                })
+                .or_else(|| {
+                    cacheable
+                        .then(|| {
+                            COMPARISON_OPERANDS
+                                .with(|cache| cache.borrow().get(&term.id()).cloned())
+                        })
+                        .flatten()
+                })
         };
         let mut sources = HashMap::<MachineIntegerType, Option<KernelTerm>>::new();
         let mut replacements = HashMap::<MachineIntegerType, Option<KernelTerm>>::new();
@@ -82,7 +94,9 @@ impl TermRewrite<'_> {
             // rather than rebuilding it at every shared occurrence.
             if !self.source_disabled
                 && let Some((from, to)) = self.bitvector
-                && (from.variable().is_none() || matches!(to, MachineOperandView::Shared(_)))
+                && (from.variable().is_none()
+                    || from.variable().is_some_and(crate::kernel::is_load_variable)
+                    || matches!(to, MachineOperandView::Shared(_)))
                 && !from
                     .variable()
                     .is_some_and(|variable| self.scope.c.contains_key(variable))
@@ -130,6 +144,30 @@ impl TermRewrite<'_> {
             let value = match term.node() {
                 KernelTermNode::Variable(variable) => {
                     let rewritten = self.bits(&MachineTerm::Variable(*variable));
+                    KernelTermImport::default().machine_arithmetic(format, &rewritten)?
+                }
+                KernelTermNode::MemoryLoad { .. } => {
+                    let read = term.machine_read_leaf().expect("read leaf");
+                    let rewritten = if self.resolve_registered_loads {
+                        let (memory, pointer, kind) = MachineOperandView::Shared(&term).read()?;
+                        // This node already owns its selected snapshot. Rewriting
+                        // its address must not run creation-time version selection.
+                        let name =
+                            crate::kernel::eval::registered_exact_read(memory, pointer, kind)
+                                .unwrap_or_else(|| {
+                                    crate::kernel::eval::load_variable_for_exact_cell(
+                                        memory,
+                                        pointer,
+                                        kind,
+                                        crate::kernel::load_term_access_width(
+                                            memory, pointer, kind,
+                                        ),
+                                    )
+                                });
+                        self.bits(&MachineTerm::Variable(name))
+                    } else {
+                        self.bits(read)
+                    };
                     KernelTermImport::default().machine_arithmetic(format, &rewritten)?
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
@@ -210,6 +248,11 @@ impl TermRewrite<'_> {
                 return None;
             }
             local.borrow_mut().insert(term.id(), value.clone());
+            if let Some(cache) = &batch_cache {
+                cache
+                    .borrow_mut()
+                    .insert((term.id(), scope_id), value.clone());
+            }
             if cacheable {
                 COMPARISON_OPERANDS.with(|cache| cache.borrow_mut().insert(term.id(), value));
             }

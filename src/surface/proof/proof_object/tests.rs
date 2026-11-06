@@ -14748,3 +14748,84 @@ fn have_primitive_reports_prerequisites_and_driver_solves_them() {
     );
     assert!(root.certificate().steps().is_empty());
 }
+
+#[test]
+fn proposed_goal_spelling_retains_unproved_domains_for_the_driver() {
+    let file = crate::surface::parse(
+        r#"
+        theorem spelling_domain(x: int32) {
+            ensures 0 == 0;
+            ensures to_integer(x + 1) == to_integer(x + 1);
+        }
+    "#,
+    )
+    .unwrap();
+    let theorem = &file.theorem_definitions()[0];
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let definitions = SpecDefinitions::new(&predicates, &functions);
+    let mut context = pure_identity_fixture();
+    context.values.insert(
+        "x".into(),
+        CValue::Int32(MachineTerm::Variable(Variable(995899))),
+    );
+    let Ensure::Proposition(parent) = theorem.ensures()[0].ensure() else {
+        panic!("parent");
+    };
+    let Ensure::Proposition(target) = theorem.ensures()[1].ensure() else {
+        panic!("target");
+    };
+    let kernel = lower_pure_theorem_proposition(
+        "spelling domain",
+        parent,
+        ContractEnvironment::new(&context.values, &context.array_refs),
+        &context.memory,
+        definitions,
+    )
+    .unwrap();
+    let root = Proof::for_pure_surface_goal(
+        "spelling domain",
+        &[],
+        kernel,
+        parent.clone(),
+        &context,
+        definitions,
+        &theorems,
+    );
+    let (target_kernel, requirements) =
+        probe_open_obligations(|| root.lower_surface_proposition_direct(target, "target"));
+    let target_kernel = target_kernel.unwrap();
+    assert!(!requirements.recorded.is_empty());
+    let mut recorded = SurfacePropositionMap::default();
+    recorded.record_lowering(target, &target_kernel).unwrap();
+    let (premise, premise_probe) = probe_open_obligations(|| {
+        crate::kernel::search::ProofSearch::available_surface_fact(
+            &root,
+            &recorded,
+            None,
+            &target_kernel,
+        )
+    });
+    assert!(premise.is_none());
+    assert!(
+        premise_probe.recorded.is_empty(),
+        "premise validation stays strict inside an outer probe"
+    );
+    let (candidate, outer) = probe_open_obligations(|| {
+        crate::kernel::search::ProofSearch::proposed_surface_goal(&root, &recorded, &target_kernel)
+    });
+    let candidate =
+        candidate.expect("a proposed goal can spell its term before proving its domain");
+    assert!(
+        outer.recorded.is_empty(),
+        "presentation cannot leak debts into another operation"
+    );
+    assert!(root.begin_have(candidate.clone(), true, true).is_err());
+    assert!(
+        root.driver().open_have(candidate).is_err(),
+        "reflexivity cannot prove the unbounded addition's domain"
+    );
+    assert!(root.certificate().steps().is_empty());
+    assert!(!root.facts().contains(&requirements.recorded[0].proposition));
+}

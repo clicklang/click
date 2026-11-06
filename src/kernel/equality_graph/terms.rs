@@ -1745,98 +1745,67 @@ impl TermClasses {
 
     fn enqueue_int32_load(&mut self, id: u64, node: &Node) {
         let Node::Int32(atom) = node else { return };
-        let Some(variable) = atom.operand_view().variable() else {
+        if self.registered_int32_loads.contains(&id) {
+            return;
+        }
+        let Some(read) = crate::kernel::eval::scalar_read_observation(atom.operand_view()) else {
             return;
         };
-        // Only a four-byte integer read is a word load application: a
-        // narrower read named at an address a wider read was recorded at
-        // carries that wider width, and is still another value. The `int32`
-        // read of a cell is its word load application; its `uint32` read is
-        // σ of that read (R-mem at 32 bits, σ a node of its own).
-        if !crate::kernel::is_load_variable(variable)
-            || self.registered_int32_loads.contains(&id)
-            || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
-        {
+        if read.bytes != 4 || !read.kind.is_word32() {
             return;
         }
-        let kind = crate::kernel::registered_load_kind_for_variable(variable);
-        if !kind.is_some_and(crate::kernel::LoadKind::is_word32) {
-            return;
-        }
-        let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
-            return;
-        };
-        if kind == Some(crate::kernel::LoadKind::UInt32) {
-            self.registered_int32_loads = self.registered_int32_loads.with_value(id);
-            self.pending_unsigned_word_reads.push((id, memory, pointer));
-            return;
-        }
-        // Start at the registered defining snapshot, not the mutable live
-        // origin. Registration below also retains the exact source equation
-        // already recorded by a canonical projection's producer.
         self.registered_int32_loads = self.registered_int32_loads.with_value(id);
-        let origin = load_origin(variable, &memory);
-        self.pending_loads.push((id, memory, pointer, origin));
+        if read.kind == crate::kernel::LoadKind::UInt32 {
+            self.pending_unsigned_word_reads
+                .push((id, read.memory, read.pointer));
+            return;
+        }
+        let origin = read
+            .origin
+            .filter(|origin| origin.read_identity() == read.memory.read_identity());
+        self.pending_loads
+            .push((id, read.memory, read.pointer, origin));
     }
 
-    /// An 8- or 16-bit read is a load application of its snapshot, address
-    /// and kind, as a four-byte read is (`enqueue_int32_load`): two reads of
-    /// one snapshot and kind at addresses in one class are one value. Queued
-    /// when the read's node is interned; one pending entry, nothing scanned.
     fn enqueue_narrow_load(&mut self, id: u64, node: &Node) {
         let Node::MachineNarrow(atom) = node else {
             return;
         };
-        let Some(variable) = atom.operand_view().variable() else {
-            return;
-        };
-        if !crate::kernel::is_load_variable(variable) || self.registered_int32_loads.contains(&id) {
+        if self.registered_int32_loads.contains(&id) {
             return;
         }
-        let Some(kind) = crate::kernel::registered_load_kind_for_variable(variable) else {
+        let Some(read) = crate::kernel::eval::scalar_read_observation(atom.operand_view()) else {
             return;
         };
-        let bytes = match kind {
+        let bytes = match read.kind {
             crate::kernel::LoadKind::Int8 | crate::kernel::LoadKind::UInt8 => 1,
             crate::kernel::LoadKind::Int16 | crate::kernel::LoadKind::UInt16 => 2,
             _ => return,
         };
-        // A read named at an address a wider read was recorded at carries
-        // that wider width, and is another value.
-        if crate::kernel::registered_load_bytes_for_variable(variable) != Some(bytes) {
+        // A wider recorded observation must not acquire a narrower read rule.
+        if read.bytes != bytes {
             return;
         }
-        let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
-            return;
-        };
         self.registered_int32_loads = self.registered_int32_loads.with_value(id);
-        let origin = load_origin(variable, &memory);
+        let origin = read
+            .origin
+            .filter(|origin| origin.read_identity() == read.memory.read_identity());
         self.pending_narrow_loads
-            .push((id, memory, pointer, kind, origin));
+            .push((id, read.memory, read.pointer, read.kind, origin));
     }
 
-    /// R-mem for bytes: the `int8` read of a byte and its `uint8` read are
-    /// two loads of the same eight bits, so the signed read is the 8-bit
-    /// sign cast of the unsigned one. Queued when the signed read's node is
-    /// interned; one pending entry, nothing scanned.
     fn enqueue_signed_byte_read(&mut self, id: u64, node: &Node) {
         let Node::MachineNarrow(atom) = node else {
             return;
         };
-        let Some(variable) = atom.operand_view().variable() else {
+        let Some(read) = crate::kernel::eval::scalar_read_observation(atom.operand_view()) else {
             return;
         };
-        if !crate::kernel::is_load_variable(variable)
-            || crate::kernel::registered_load_kind_for_variable(variable)
-                != Some(crate::kernel::LoadKind::Int8)
-            || crate::kernel::registered_load_bytes_for_variable(variable) != Some(1)
-        {
+        if read.kind != crate::kernel::LoadKind::Int8 || read.bytes != 1 {
             return;
         }
-        let Some((memory, pointer)) = crate::kernel::registered_load_for_variable(variable) else {
-            return;
-        };
-        self.pending_signed_byte_reads.push((id, memory, pointer));
+        self.pending_signed_byte_reads
+            .push((id, read.memory, read.pointer));
     }
 
     fn register_pending_loads(&mut self) {

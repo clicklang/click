@@ -236,6 +236,12 @@ impl PureFactContext {
         };
         if held(CompareRelation::Equal, left, right, true)
             || held(CompareRelation::Equal, right, left, true)
+            // Retain the native dispatcher's checked memory-equality rule.
+            // Shared syntax lends only selected read leaves, never an exported
+            // arithmetic tree or a fact-dependent lowering result.
+            || left.read_source().zip(right.read_source()).is_some_and(|(left, right)| {
+                self.memory_loads_proven_equal(&left, &right)
+            })
             || (held(CompareRelation::LessEqual, left, right, true)
                 && held(CompareRelation::GreaterEqual, left, right, true))
             || (held(CompareRelation::LessEqual, written[0], written[1], true)
@@ -316,6 +322,16 @@ impl PureFactContext {
             (Some(a), _) | (_, Some(a)) => a,
             _ => return false,
         };
+        // Aligned syntax needs only its selected leaf correspondences. Reuse
+        // the shared DAG walk, but check each leaf against this context's
+        // existing addend authority; never cache a fact-dependent verdict in
+        // the syntax correspondence table. Permuted sums still use classes
+        // below, without restoring the native all-pairs search.
+        if operands_equal_with_load_atoms(format, left, right, &|left, right| {
+            self.bitvector_addend_terms_proven_equal(left, right)
+        }) {
+            return true;
+        }
         let (a, ac) = retained_additive_parts(left, format);
         let (b, bc) = retained_additive_parts(right, format);
         if ac != bc {
@@ -1110,8 +1126,12 @@ impl PureFactContext {
         let bridging = crate::kernel::api::extended_dag_bridging_active();
         let terms_match = |a: V<'_>, b: V<'_>| {
             key(a) == key(b)
-                || matches!((a,b), (V::Legacy(a), V::Legacy(b)) if bridging
-                && crate::kernel::api::atomic_loads_equal_along_memory_derivations(a,b,self))
+                || (bridging
+                    && a.read_source().zip(b.read_source()).is_some_and(|(a, b)| {
+                        crate::kernel::api::atomic_loads_equal_along_memory_derivations(
+                            &a, &b, self,
+                        )
+                    }))
         };
         let edges_from = |current: V<'_>| {
             let index = &self.order_facts_by_lower;
@@ -1119,8 +1139,8 @@ impl PureFactContext {
             if let Some(c) = constant(current) {
                 conditions.extend(index.constant_at_least(c));
             }
-            if bridging && let V::Legacy(MachineTerm::MemoryLoad(_, pointer, kind)) = current {
-                conditions.extend(index.loads_of(pointer, *kind));
+            if bridging && let Some((_, pointer, kind)) = current.read() {
+                conditions.extend(index.loads_of(pointer, kind));
             }
             conditions
                 .into_iter()
@@ -1266,10 +1286,14 @@ impl PureFactContext {
         let bridging = crate::kernel::api::extended_dag_bridging_active();
         let terms_match = |current: V<'_>, other: V<'_>| {
             Key::for_format(format, current) == Key::for_format(format, other)
-                || matches!((current, other), (V::Legacy(current), V::Legacy(other))
-                if bridging && crate::kernel::api::atomic_loads_equal_along_memory_derivations(
-                    current, other, self,
-                ))
+                || (bridging
+                    && current.read_source().zip(other.read_source()).is_some_and(
+                        |(current, other)| {
+                            crate::kernel::api::atomic_loads_equal_along_memory_derivations(
+                                &current, &other, self,
+                            )
+                        },
+                    ))
         };
         let constant = |operand: V<'_>| {
             operand
@@ -1295,15 +1319,12 @@ impl PureFactContext {
             {
                 return true;
             }
-            let bridged_load =
-                bridging && matches!(current, V::Legacy(MachineTerm::MemoryLoad(..)));
+            let bridged_load = bridging && current.read().is_some();
             if bridged_load || constant(current).is_some() {
                 let index = &self.order_facts_by_lower;
-                let candidates = match (current, constant(current)) {
+                let candidates = match (current.read(), constant(current)) {
                     (_, Some(constant)) => index.constant_at_least(constant).collect::<Vec<_>>(),
-                    (V::Legacy(MachineTerm::MemoryLoad(_, pointer, kind)), None) => {
-                        index.loads_of(pointer, *kind).collect()
-                    }
+                    (Some((_, pointer, kind)), None) => index.loads_of(pointer, kind).collect(),
                     _ => Vec::new(),
                 };
                 for condition in candidates {
@@ -3878,5 +3899,213 @@ mod memory_order_view_tests {
         include!(
             "../../../scaling_tests/kernel/assumptions/condition_reasoning/memory_order_views.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod shared_read_equality_rule_tests {
+    use super::*;
+
+    #[test]
+    fn shared_word_equality_retains_selected_memory_frame_authority() {
+        use crate::kernel::MachineOperandView as V;
+        let _session = crate::kernel::VerificationSession::enter();
+        // A real recorded store whose disjointness needs the selected index
+        // fact (the reversed-history regression uses this same edge shape).
+        let read_index = MachineTerm::Variable(Variable(995_781));
+        let write_index = MachineTerm::Variable(Variable(995_782));
+        let base = Pointer {
+            block: "selected-word".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let pointer = base.offset_by_elements(read_index.clone(), 4);
+        let written = base.offset_by_elements(write_index.clone(), 4);
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::signed_less_than(read_index, write_index),
+            true,
+        );
+        let before = CMemory::new().with_block("selected-word", 64);
+        let after = before.clone().store_with_context(
+            written,
+            CValue::Int32(MachineTerm::constant(9)),
+            &context,
+        );
+        let read = |memory: CMemory, at: &Pointer| {
+            let memory = crate::kernel::intern_c_memory(memory);
+            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                at,
+                LoadKind::Int32,
+                4,
+            ))
+        };
+        let left = read(before.clone(), &pointer);
+        let right = read(after.clone(), &pointer);
+        let unrelated = Pointer {
+            block: "different-word".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let wrong_address = read(after.clone(), &unrelated);
+        let wrong_snapshot = read(
+            after
+                .clone()
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(31))),
+            &pointer,
+        );
+        assert!(
+            !context.int32_values_known_equal(&left, &right),
+            "graph alone has no frame authority"
+        );
+        assert!(context.memory_loads_proven_equal(&left, &right));
+        let shared = |term: &MachineTerm| {
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, term)
+                .unwrap()
+        };
+        let left_shared = shared(&left);
+        for (candidate, expected) in [
+            (&right, Some(true)),
+            (&wrong_address, None),
+            (&wrong_snapshot, None),
+        ] {
+            let candidate_shared = shared(candidate);
+            for operands in [
+                [V::Legacy(&left), V::Legacy(candidate)],
+                [V::Shared(&left_shared), V::Shared(&candidate_shared)],
+                [V::Legacy(&left), V::Shared(&candidate_shared)],
+                [V::Shared(&left_shared), V::Legacy(candidate)],
+            ] {
+                assert_eq!(
+                    context.decide_word_equality_views(
+                        MachineIntegerType::Int32,
+                        operands[0],
+                        operands[1]
+                    ),
+                    expected
+                );
+                assert_eq!(
+                    context.bitvector_terms_equal_for_transport_views(operands[0], operands[1]),
+                    expected == Some(true)
+                );
+            }
+            let extra = MachineTerm::Variable(Variable(995_783));
+            let left_sum = MachineTerm::add(left.clone(), extra.clone());
+            let right_sum = MachineTerm::add(candidate.clone(), extra);
+            let left_shared = shared(&left_sum);
+            let right_shared = shared(&right_sum);
+            for operands in [
+                [V::Legacy(&left_sum), V::Legacy(&right_sum)],
+                [V::Shared(&left_shared), V::Shared(&right_shared)],
+                [V::Legacy(&left_sum), V::Shared(&right_shared)],
+                [V::Shared(&left_shared), V::Legacy(&right_sum)],
+            ] {
+                assert_eq!(
+                    context.decide_word_equality_views(
+                        MachineIntegerType::Int32,
+                        operands[0],
+                        operands[1]
+                    ),
+                    expected,
+                    "sum decision must preserve the selected read's memory authority",
+                );
+                assert_eq!(
+                    context.bitvector_terms_equal_for_transport_views(operands[0], operands[1]),
+                    expected == Some(true)
+                );
+            }
+        }
+        assert!(!PureFactContext::new().memory_loads_proven_equal(&left, &right));
+    }
+}
+
+#[cfg(test)]
+mod shared_read_order_bridge_tests {
+    use super::*;
+
+    #[test]
+    fn shared_order_read_index_and_paths_retain_selected_dag_bridge() {
+        use crate::kernel::MachineOperandView as V;
+        let _session = crate::kernel::VerificationSession::enter();
+        let read_index = MachineTerm::Variable(Variable(995_801));
+        let write_index = MachineTerm::Variable(Variable(995_802));
+        let base = Pointer {
+            block: "order-read-bridge".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let pointer = base.offset_by_elements(read_index.clone(), 4);
+        let write = base.offset_by_elements(write_index.clone(), 4);
+        crate::kernel::eval::declare_load_access_width(&pointer, 4);
+        let separation = ConditionTerm::signed_less_than(read_index, write_index);
+        let separated = PureFactContext::new().assume_condition(separation.clone(), true);
+        let before = CMemory::new().with_block("order-read-bridge", 64);
+        let after = before.clone().store_with_context(
+            write,
+            CValue::Int32(MachineTerm::constant(9)),
+            &separated,
+        );
+        let read = |memory| {
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                LoadKind::Int32,
+            )
+        };
+        let before = read(before);
+        let after = read(after);
+        let import = |term: &MachineTerm| {
+            crate::kernel::KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, term)
+                .unwrap()
+        };
+        let before_shared = import(&before);
+        let after_shared = import(&after);
+        let upper = MachineTerm::constant(20);
+        let upper_shared = import(&upper);
+        let premise = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::LessThan,
+            [V::Shared(&before_shared), V::Legacy(&upper)],
+        );
+        let context = separated.assume_condition(premise.clone(), true);
+        assert!(
+            context
+                .order_facts_by_lower
+                .loads_of(&pointer, LoadKind::Int32)
+                .any(|source| source == &premise)
+        );
+        let withdrawn = context
+            .clone()
+            .without_exact_fact(&Proposition::ConditionIs(premise.clone(), true));
+        assert!(
+            !withdrawn
+                .order_facts_by_lower
+                .loads_of(&pointer, LoadKind::Int32)
+                .any(|source| source == &premise)
+        );
+        for left in [V::Legacy(&after), V::Shared(&after_shared)] {
+            for right in [V::Legacy(&upper), V::Shared(&upper_shared)] {
+                assert!(!context.has_exact_order_path_views(left, right, true));
+                crate::kernel::api::with_extended_dag_bridging(|| {
+                    assert!(
+                        crate::kernel::api::atomic_loads_equal_along_memory_derivations(
+                            &before, &after, &context
+                        )
+                    );
+                    assert!(context.has_exact_order_path_views(left, right, true));
+                    let path = context
+                        .exact_signed_order_source_path(left, right, true)
+                        .expect("selected frame bridge");
+                    assert!(path.iter().any(
+                        |step| step.premise == Proposition::ConditionIs(premise.clone(), true)
+                    ));
+                    assert!(!withdrawn.has_exact_order_path_views(left, right, true));
+                    let no_frame = context
+                        .clone()
+                        .without_exact_fact(&Proposition::ConditionIs(separation.clone(), true));
+                    assert!(!no_frame.has_exact_order_path_views(left, right, true));
+                });
+            }
+        }
     }
 }

@@ -202,11 +202,7 @@ pub(in crate::kernel) fn tag_bound_citing(
         Some((E::UInt64FromInt32, T::Int32, T::UInt64, value)) => (T::Int32, value, true),
         Some((E::UInt64FromInt64, T::Int64, T::UInt64, value)) => (T::Int64, value, true),
         Some((E::UInt64From32, T::UInt32, T::UInt64, value)) => (T::UInt32, value, false),
-        _ if term.variable().is_some()
-            || matches!(term, V::Legacy(MachineTerm::MemoryLoad(..))) =>
-        {
-            (T::UInt64, term, false)
-        }
+        _ if term.variable().is_some() || term.read().is_some() => (T::UInt64, term, false),
         _ => return None,
     };
     let bounds = match format {
@@ -696,6 +692,60 @@ pub(in crate::kernel) fn cast_tagged_address_to_pointer(
 #[cfg(test)]
 mod exact_word_address_tests {
     use super::*;
+
+    #[test]
+    fn direct_shared_read_tag_bound_cites_only_its_exact_snapshot() {
+        use crate::kernel::{KernelTermExport, KernelTermImport};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(985_331));
+        let memory = CMemory::new();
+        let read = |memory| {
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                LoadKind::Bits64,
+            )
+        };
+        let raw = read(memory.clone());
+        let other = read(memory.with_block("other-tag-snapshot", 0));
+        let import = |term: &MachineTerm| {
+            KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::UInt64, term)
+                .unwrap()
+        };
+        let shared = import(&raw);
+        let other = import(&other);
+        let bound = ConditionTerm::uint64_less_equal(raw.clone(), MachineTerm::uint64_constant(3));
+        let context = PureFactContext::new().assume_condition(bound.clone(), true);
+        let exports = KernelTermExport::machine_export_count();
+        for value in [
+            MachineOperandView::Legacy(&raw),
+            MachineOperandView::Shared(&shared),
+        ] {
+            let mut used = UsedFacts::new();
+            assert_eq!(tag_bound_citing(value, &context, &mut used), Some(3));
+            assert!(
+                used.premises
+                    .contains(&Proposition::ConditionIs(bound.clone(), true))
+            );
+            let withdrawn = context
+                .clone()
+                .without_exact_fact(&Proposition::ConditionIs(bound.clone(), true));
+            assert_eq!(
+                tag_bound_citing(value, &withdrawn, &mut UsedFacts::new()),
+                None
+            );
+        }
+        assert_eq!(
+            tag_bound_citing(
+                MachineOperandView::Shared(&other),
+                &context,
+                &mut UsedFacts::new()
+            ),
+            None
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     #[test]
     fn tag_bound_views_preserve_literal_masks_and_unknown_shapes() {

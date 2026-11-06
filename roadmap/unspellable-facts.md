@@ -451,22 +451,22 @@ not remove that projection's native output boundary yet.
 
 Scalar reads now have an owned `KernelTermNode::MemoryLoad` descriptor: shared
 memory version, address and read kind. Generic import retains that structure
-instead of a producer-local opaque load. Reserved variables retain their existing
-identity in both generic imports and arithmetic storage until the producer switch;
-changing only one loses matching across these paths. The explicit registered-read
-bridge caches the descriptor per format, so repeated conversion does not walk
-the address again; the retained term survives registry clearing and cache state
-travels with registry capture/restore. Native export and existing typed Surface
-read spelling preserve the descriptor. Stored values, observation origins and
-access permissions are not part of its identity.
+instead of a producer-local opaque load. Generic imports and arithmetic storage
+now adopt a registered scalar read's descriptor together; changing only one lost
+matching across these paths. The transitional registered-read bridge caches the
+descriptor per format, so repeated conversion does not walk the address again;
+the retained term survives registry clearing and cache state travels with registry
+capture/restore. Native export and existing typed Surface read spelling preserve
+the descriptor. Stored values, observation origins and access permissions are not
+part of its identity. The process-wide interner keys a read's snapshot by arena
+identity, avoiding structural memory comparisons between verification sessions.
 
 This is a representation foundation, not completion of part 1. Read addresses
 still use native `Pointer` payloads; addresses outside the exact structural
-fragment keep their existing legacy representation. Checker observations still
-exclude these new nodes, including reads nested in mathematical conversions.
-Next migrate read/address walkers and selected-operand consumers, preserving
-exact canonical-load matching, then switch scalar read producers and retire the
-reserved-variable bridge. Preserve existing structural read-version selection
+fragment keep their existing legacy representation. Checker observations admit
+structural reads in machine arithmetic; reads nested inside mathematical conversion
+payloads remain outside that fragment. Next switch scalar read producers and
+retire the reserved-variable bridge, including its nested-address consumers. Preserve existing structural read-version selection
 and keep separation-dependent frame equalities in proofs. Pointer-valued and
 volatile reads need their own representation audit. Scaling regressions cover
 retained arithmetic prefixes beside unrelated memory and repeated imports of a
@@ -487,10 +487,71 @@ the existing native carrier rule. Its syntax summary caches no snapshot-match
 or permission answers. Native/shared tests cover formats, casts, absent widths
 and changed snapshots.
 
-The producer switch remains pending. Before admitting these nodes into shared
-checker observations, migrate canonical-read equality matching, graph/atom
-consumers and observation-origin metadata. Native address payloads also remain an explicit
-boundary. The borrowed lexical walkers alone do not justify removing names.
+Shared checker observations now retain read descriptors. Selected equality
+matching, comparison rewriting and graph registration accept them without
+exporting surrounding arithmetic. Address rewriting preserves the selected
+snapshot rather than repeating creation-time version selection. The graph reads
+width and epoch-scoped origin metadata through a selected-read interface; changing
+the observation format neither widens the access nor renews its origin. Metadata
+still comes from the reserved-name registry through a transitional index, and
+capture/restore retains that index with the registry. The central comparison-form
+collector also selects structural reads inside Integer observations, preserving
+read-over-write matching without adding individual-check fallbacks.
+
+The producer switch and registry removal remain pending. Native address payloads,
+including nested registered reads, also remain an explicit boundary. Shared
+checker admission alone does not justify removing those names.
+
+The checker-admission increment is still local. Its full gate passed 7,551
+unit/API tests but exposed nine fixture failures. Named-read replacement inside
+shared Integer observations repairs bounded-pool, owned-string and
+`definedness_before_a_rewritten_sum_claim`; retaining read identity in arithmetic
+certificate matching repairs `integer_cast_identity_unsigned_subword_promotion`.
+Arena now also passes unchanged: resource containment/separation comparison keys
+use shared scalar identities for numeric arguments, retaining the original source
+and complete nonnumeric/pointer metadata. Its rejected allocation size contained
+a structural read where the held fact contained the same read's registered name.
+Multifile-registry now passes after selecting the read snapshot before a
+qualified address spelling; owned-vector passes after read comparison descends
+through logical connectives. The false-model-invariant fixture again reports
+the intended rejection: connected equality search leaves implication/forall
+wrappers to the existing introduction/body route. The remaining original fixture
+failure was `a_self_aliased_field_operand_is_one_value`; it now passes unchanged
+after the goal/obligation spelling repairs below. Do not switch producers or
+remove the registry on the strength of focused-only success. Keep the original programs, proofs and budgets in these checks.
+
+Read comparison now batches selected replacements in one proposition traversal,
+with capture avoidance and opaque snapshots/sealed resource bodies. The scaling
+control grows the number of reads inside one proposition, rather than testing
+many single-read propositions. Read graph inputs preserve exact registered
+snapshot/width identity, and typed symbolic cell runs record their value width
+before producing reads. Selected read authority also reaches shared equality,
+transport, order-index/walk, and pointer-tag consumers. Aligned sums reuse the
+cached structural leaf correspondence before graph signatures; arbitrary
+memory-dependent permutations remain an audit item.
+
+The remaining addition failure was traced to goal spelling: the stored sum's
+candidate had the correct shape, but strict premise lowering rejected its
+unproved overflow obligation before the proof driver could solve it. Proposed
+`have` goals now use private obligation collection only for spelling identity;
+the ordinary driver still proves their prerequisites. Existing premise citations
+remain strict, including inside an outer obligation probe. Fixed-state and
+focused-outcome obligation spelling now receives the proof's indexed recorded
+snapshots, so an intermediate read can be named while proving the stored sum's
+domain. The original alias fixture and three focused obligation controls pass.
+The fresh `scripts/check.sh --no-fail-fast` gate passes: 7,584 unit/API tests,
+58 examples, and all 5,057 mdtests. It took 15m06s including compilation
+on this environment, exceeding the ten-minute target; no limits or gate selections
+were changed. This checker increment remains local pending publication approval;
+read producers and reserved-variable removal are still the next increment.
+
+The batch comparison form retains literal machine truth/falsehood after replacing
+reads, while ordinary rewriting keeps raw comparison syntax. Comparison keys now
+use an iterative connective traversal and boxed resource payloads, preserving the
+supported depth boundary and linear selected-node work. The disjunction expansion
+regression checks the complete printed certificate with implicit search disabled;
+shared read matching lets the existing checked `extract` rule project its held
+disjunction without an additional `cases` proof.
 
 | Remaining audit group | Main consumers |
 | --- | --- |

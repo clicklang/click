@@ -299,11 +299,12 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::apply_smart_induc
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_rewrite_equality	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact	available_surface_fact_raw	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact	named_returned_pointer_surface_fact	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact_raw	named_returned_pointer_surface_fact	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::available_surface_fact_raw	surface_fact_raw_for_purpose	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::check_typed_atomic_solve_candidate	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::extract_special_conjunct_premises	available_surface_fact	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::extract_special_conjunct_premises	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::increment_headroom_premises	available_surface_fact	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::proposed_surface_goal	surface_fact_raw_for_purpose	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	driver	6
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::prove_operation_identities	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::resolve_solve_premises	resolve_solve_premises_unmeasured	1
@@ -323,6 +324,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_solve_de
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_solve_derivation_plan	plan_solve_certificate	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_solve_derivation_with_surfaces	resolve_solve_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::selected_solve_derivation_with_surfaces	selected_solve_derivation_plan	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::surface_fact_raw_for_purpose	named_returned_pointer_surface_fact	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_fact_closure	try_arithmetic_with_selected_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_fact_closure	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_arithmetic_fact_closure	try_solve_closure	1
@@ -535,6 +537,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_statement_step_with_retries	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_statement_step_with_retries	retry_statement_after_refusal	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_stored_value_goal	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_stored_value_goal	proposed_surface_goal	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_stored_value_goal	try_solve_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_and_solve_closure	try_solve_closure_with_surfaces	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_structural_exists_solve_closure	driver	1

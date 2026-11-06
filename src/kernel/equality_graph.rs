@@ -1514,8 +1514,8 @@ impl EqualityGraph {
         }
         // As for scalar equality, normalize selected load observations
         // before locking. The term interner itself never walks history.
-        let left = left.map_scaled_values(crate::kernel::canonical_term);
-        let right = right.map_scaled_values(crate::kernel::canonical_term);
+        let left = left.map_scaled_values(exact_read_comparison_input);
+        let right = right.map_scaled_values(exact_read_comparison_input);
         let (left, right) = (&left, &right);
         // Offset addition is exact byte arithmetic. Its affine form catches
         // reordering and regrouping without a premise or term-class merge.
@@ -1624,8 +1624,8 @@ impl EqualityGraph {
         // Canonicalize before taking the lock, as the uint64 queries do:
         // canonicalizing a load can consult this graph's own read
         // generation, and a std mutex is not reentrant.
-        let left = crate::kernel::canonical_term(left);
-        let right = crate::kernel::canonical_term(right);
+        let left = exact_read_comparison_input(left);
+        let right = exact_read_comparison_input(right);
         let mut state = self.state.lock().expect("equality graph");
         if left == right {
             return true;
@@ -1648,7 +1648,7 @@ impl EqualityGraph {
             return self.are_int32_equal(a, b);
         }
         let written = [left, right].map(|operand| match operand {
-            V::Legacy(term) => Some(crate::kernel::canonical_term(term)),
+            V::Legacy(term) => Some(exact_read_comparison_input(term)),
             V::Shared(_) => None,
         });
         let observations = [left, right].map(|operand| match operand {
@@ -1807,7 +1807,8 @@ impl EqualityGraph {
                     // installing every node again in each sibling context.
                     // Integer conversions can contain other pointer-bearing
                     // payloads and retain the ordinary scoped walk below.
-                    if !term.has_machine_conversions()
+                    if !term.has_machine_reads()
+                        && !term.has_machine_conversions()
                         && crate::kernel::shared_machine_syntax_variables(term, || {
                             crate::instrumentation::record_deterministic_work(1);
                             true
@@ -1836,6 +1837,7 @@ impl EqualityGraph {
                                 pointers.push(pointer);
                             }
                         }
+                        N::MemoryLoad { address, .. } => pointers.push(address.clone()),
                         N::MachineLiteral(_) => {}
                         N::IntegerToMachine { .. } => pending.push(Work::Machine(
                             term.machine_conversion_leaf().expect("conversion leaf"),
@@ -1906,8 +1908,8 @@ impl EqualityGraph {
         if left == right {
             return true;
         }
-        let left = crate::kernel::canonical_term(left);
-        let right = crate::kernel::canonical_term(right);
+        let left = exact_read_comparison_input(left);
+        let right = exact_read_comparison_input(right);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &left, &right);
         state.terms.are_uint64_equal(&left, &right)
@@ -1916,7 +1918,7 @@ impl EqualityGraph {
     /// Files `term` as an endpoint of a recorded true 64-bit equality, so
     /// `wide_equation_endpoints_equal_to` finds it from any equal word.
     pub(in crate::kernel) fn record_wide_equation_endpoint(&self, term: &MachineTerm) {
-        let term = crate::kernel::canonical_term(term);
+        let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
         state.terms.record_wide_equation_endpoint(&term);
@@ -1925,7 +1927,7 @@ impl EqualityGraph {
     /// The recorded 64-bit equality endpoints the graph proves equal to
     /// `term`: one class lookup, no scan of the recorded facts.
     fn wide_equation_endpoints_equal_to_written(&self, term: &MachineTerm) -> Vec<MachineTerm> {
-        let term = crate::kernel::canonical_term(term);
+        let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
         state
@@ -1964,7 +1966,7 @@ impl EqualityGraph {
     }
 
     pub(in crate::kernel) fn uint64_constant(&self, term: &MachineTerm) -> Option<u64> {
-        let term = crate::kernel::canonical_term(term);
+        let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &term, &term);
         state.terms.uint64_constant(&term)
@@ -2012,8 +2014,8 @@ impl EqualityGraph {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> bool {
-        let left = crate::kernel::canonical_term(left);
-        let right = crate::kernel::canonical_term(right);
+        let left = exact_read_comparison_input(left);
+        let right = exact_read_comparison_input(right);
         let mut state = self.state.lock().expect("equality graph");
         self.register_machine_operands(&mut state, &left, &right);
         let changed = state.terms.add_uint64_equality(&left, &right);
@@ -2031,7 +2033,7 @@ impl EqualityGraph {
         term: &MachineTerm,
     ) -> Option<(i64, i64)> {
         // See `are_int32_equal`: canonicalize outside the lock.
-        let term = crate::kernel::canonical_term(term);
+        let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         let node = if !state.has_scalar_inputs {
             match state.terms.existing_scalar_interval_node(&term) {
@@ -2068,8 +2070,8 @@ impl EqualityGraph {
         right: &MachineTerm,
     ) -> bool {
         // See `are_int32_equal`: canonicalize outside the lock.
-        let left = &crate::kernel::canonical_term(left);
-        let right = &crate::kernel::canonical_term(right);
+        let left = &exact_read_comparison_input(left);
+        let right = &exact_read_comparison_input(right);
         let mut state = self.state.lock().expect("equality graph");
         self.register_int32_operands(&mut state, left, right);
         state.has_scalar_inputs = true;
@@ -3007,7 +3009,7 @@ impl EqualityGraph {
         if !self.state.lock().expect("equality graph").has_scalar_inputs {
             return None;
         }
-        let term = crate::kernel::canonical_term(term);
+        let term = exact_read_comparison_input(term);
         let mut state = self.state.lock().expect("equality graph");
         let node = match state.terms.existing_scalar_atom(&term) {
             Some(existing) => existing?,
@@ -3158,7 +3160,7 @@ impl EqualityGraph {
     /// no change to the graph, so a run's work does not depend on what an
     /// earlier query interned.
     pub(in crate::kernel) fn known_atom_constant(&self, term: &MachineTerm) -> Option<i64> {
-        let term = crate::kernel::canonical_term(term);
+        let term = exact_read_comparison_input(term);
         let state = self.state.lock().expect("equality graph");
         if !state.has_scalar_inputs {
             return None;
@@ -3176,6 +3178,19 @@ impl EqualityGraph {
             .expect("equality graph")
             .terms
             .scalar_conditional_members(id)
+    }
+}
+
+/// A raw descriptor of an already registered read is the same selected input
+/// as its retained name. Preserve that exact snapshot before applying the
+/// legacy comparison form to inputs that do not already have an identity.
+fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
+    if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
+        && let Some(name) = crate::kernel::eval::registered_exact_read(memory, pointer, *kind)
+    {
+        MachineTerm::Variable(name)
+    } else {
+        crate::kernel::canonical_term(term)
     }
 }
 

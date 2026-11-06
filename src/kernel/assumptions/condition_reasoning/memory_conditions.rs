@@ -80,14 +80,14 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> bool {
-        // An explicitly held equality between two named word loads is also
-        // frame evidence. Keep those names available to the equality graph
-        // before consulting their raw origin snapshots.
-        if let (MachineTerm::Variable(a), MachineTerm::Variable(b)) = (left, right)
-            && crate::kernel::registered_load_kind_for_variable(a).is_some_and(LoadKind::is_word32)
-            && crate::kernel::registered_load_kind_for_variable(b).is_some_and(LoadKind::is_word32)
-            && self.int32_values_known_equal(left, right)
-        {
+        // An explicitly held equality is frame evidence for either read
+        // representation. Query the existing graph authority before origin
+        // checks; no new memory search is introduced here.
+        let word_read = |term| {
+            matches!(crate::kernel::eval::viewed_as_memory_load(term),
+                Some(MachineTerm::MemoryLoad(_, _, kind)) if kind.is_word32())
+        };
+        if word_read(left) && word_read(right) && self.int32_values_known_equal(left, right) {
             return true;
         }
         // The recorded-DAG check precedes the broad check, whose cached
@@ -529,6 +529,70 @@ impl PureFactContext {
                 memory.symbolic_wide_integer_load(pointer, MachineIntegerType::UInt128)
             }
             LoadKind::Float32 | LoadKind::Float64 => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn held_word_read_equality_accepts_named_raw_and_mixed_atoms() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(
+            CMemory::new()
+                .with_block("held-read-left", 4)
+                .with_block("held-read-right", 4),
+        );
+        let read = |block: &str| {
+            let pointer = Pointer {
+                block: block.into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let variable = crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &pointer,
+                LoadKind::Int32,
+                4,
+            );
+            (
+                MachineTerm::Variable(variable),
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer), LoadKind::Int32),
+            )
+        };
+        let (left_name, left_raw) = read("held-read-left");
+        let (right_name, right_raw) = read("held-read-right");
+        let empty = PureFactContext::new();
+        let held = empty.clone().assume_condition(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(left_name.clone()),
+                right: Box::new(right_name.clone()),
+            },
+            true,
+        );
+        // Distinct uninitialized cells have no store or frame evidence linking
+        // them. Every representation must consume the explicitly held equality.
+        for (label, left, right) in [
+            ("named", &left_name, &right_name),
+            ("raw", &left_raw, &right_raw),
+            ("named/raw", &left_name, &right_raw),
+            ("raw/named", &left_raw, &right_name),
+        ] {
+            assert!(
+                !empty.load_atoms_equal_modulo_origin_unchanged(left, right),
+                "unjustified equality for {label}",
+            );
+            assert!(
+                held.int32_values_known_equal(left, right),
+                "held graph authority missing for {label}",
+            );
+            assert!(
+                held.load_atoms_equal_modulo_origin_unchanged(left, right),
+                "held graph authority not consumed for {label}",
+            );
         }
     }
 }

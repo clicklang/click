@@ -26,12 +26,76 @@ pub(in crate::kernel) enum Key {
     ),
 }
 
+// Resource relation identities preserve complete nonnumeric carriers. Only
+// explicitly supplied machine arguments use the same shared syntax key as
+// numeric comparisons; this neither opens resources nor consults facts.
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::kernel) enum ResourceArgumentKey {
+    Machine(MachineIntegerType, ScalarOperandKey),
+    Exact(AlgebraicValue),
+}
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub(in crate::kernel) enum ResourceKey {
+    Composite(String, Vec<ResourceArgumentKey>),
+    Token(String, Vec<ResourceArgumentKey>),
+    Exact(CResource),
+}
+impl ResourceKey {
+    fn new(resource: &CResource) -> Self {
+        let (name, arguments) = match resource {
+            CResource::Composite { name, arguments } | CResource::Token { name, arguments } => {
+                (name, arguments)
+            }
+            _ => return Self::Exact(resource.clone()),
+        };
+        let arguments = arguments
+            .iter()
+            .map(|argument| {
+                crate::instrumentation::record_deterministic_work(1);
+                if let AlgebraicValue::C(value) = argument {
+                    let term = match value {
+                        CValue::Int8(t)
+                        | CValue::UInt8(t)
+                        | CValue::Int16(t)
+                        | CValue::UInt16(t)
+                        | CValue::Int32(t)
+                        | CValue::UInt32(t)
+                        | CValue::Int64(t)
+                        | CValue::UInt64(t)
+                        | CValue::Int128(t)
+                        | CValue::UInt128(t) => Some(t),
+                        _ => None,
+                    };
+                    if let Some(term) = term {
+                        let format = MachineIntegerType::from_c_type(value.c_type())
+                            .expect("integer argument");
+                        return ResourceArgumentKey::Machine(
+                            format,
+                            ScalarOperandKey::for_format(
+                                format,
+                                crate::kernel::MachineOperandView::Legacy(term),
+                            ),
+                        );
+                    }
+                }
+                ResourceArgumentKey::Exact(argument.clone())
+            })
+            .collect();
+        match resource {
+            CResource::Composite { .. } => Self::Composite(name.clone(), arguments),
+            _ => Self::Token(name.clone(), arguments),
+        }
+    }
+}
+
 /// Comparison identity for compound and quantified facts. Numeric leaves use
 /// shared operand identities; all other leaves keep their exact proposition.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub(in crate::kernel) enum PropositionKey {
     Comparison(Key),
     Exact(Proposition),
+    Contains(Box<ResourceKey>, Box<ResourceKey>),
+    Separate(Box<ResourceKey>, Box<ResourceKey>),
     Not(Box<Self>),
     And(Box<Self>, Box<Self>),
     Or(Box<Self>, Box<Self>),
@@ -53,45 +117,81 @@ impl PropositionKey {
     }
 
     fn with_presence(proposition: &Proposition) -> (Self, bool) {
-        crate::instrumentation::record_deterministic_work(1);
-        match proposition {
-            Proposition::ConditionIs(condition, truth) => {
-                if let Some(view) = comparison_view(condition, *truth) {
-                    let view = view.widened().unwrap_or(view);
-                    (Self::Comparison(key(&view)), true)
-                } else {
-                    (Self::Exact(proposition.clone()), false)
+        // Resource leaves have large native payloads. Do not retain a call
+        // frame containing those payloads for every enclosing connective.
+        let mut pending = vec![(proposition, false)];
+        let mut completed: Vec<(Self, bool)> = Vec::new();
+        while let Some((proposition, visited)) = pending.pop() {
+            if !visited {
+                crate::instrumentation::record_deterministic_work(1);
+                match proposition {
+                    Proposition::Not(body)
+                    | Proposition::ForAll { body, .. }
+                    | Proposition::Exists { body, .. } => {
+                        pending.push((proposition, true));
+                        pending.push((body, false));
+                        continue;
+                    }
+                    Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
+                        pending.push((proposition, true));
+                        pending.push((b, false));
+                        pending.push((a, false));
+                        continue;
+                    }
+                    _ => {}
                 }
             }
-            Proposition::Not(body) => {
-                let (key, observes) = Self::with_presence(body);
-                (Self::Not(Box::new(key)), observes)
-            }
-            Proposition::And(a, b) | Proposition::Or(a, b) | Proposition::Implies(a, b) => {
-                let (a, left) = Self::with_presence(a);
-                let (b, right) = Self::with_presence(b);
-                let (a, b) = (Box::new(a), Box::new(b));
-                let key = match proposition {
-                    Proposition::And(..) => Self::And(a, b),
-                    Proposition::Or(..) => Self::Or(a, b),
-                    _ => Self::Implies(a, b),
-                };
-                (key, left || right)
-            }
-            Proposition::ForAll {
-                var, sort, body, ..
-            } => {
-                let (key, observes) = Self::with_presence(body);
-                (Self::ForAll(*var, sort.clone(), Box::new(key)), observes)
-            }
-            Proposition::Exists {
-                var, sort, body, ..
-            } => {
-                let (key, observes) = Self::with_presence(body);
-                (Self::Exists(*var, sort.clone(), Box::new(key)), observes)
-            }
-            _ => (Self::Exact(proposition.clone()), false),
+            let result = match proposition {
+                Proposition::ConditionIs(condition, truth) => {
+                    if let Some(view) = comparison_view(condition, *truth) {
+                        let view = view.widened().unwrap_or(view);
+                        (Self::Comparison(key(&view)), true)
+                    } else {
+                        (Self::Exact(proposition.clone()), false)
+                    }
+                }
+                Proposition::CResourceContains { parent, child } => (
+                    Self::Contains(
+                        Box::new(ResourceKey::new(parent)),
+                        Box::new(ResourceKey::new(child)),
+                    ),
+                    true,
+                ),
+                Proposition::CResourceSeparate { left, right } => (
+                    Self::Separate(
+                        Box::new(ResourceKey::new(left)),
+                        Box::new(ResourceKey::new(right)),
+                    ),
+                    true,
+                ),
+                Proposition::Not(_) => {
+                    let (key, observes) = completed.pop().expect("visited body");
+                    (Self::Not(Box::new(key)), observes)
+                }
+                Proposition::And(..) | Proposition::Or(..) | Proposition::Implies(..) => {
+                    let (b, right) = completed.pop().expect("visited right child");
+                    let (a, left) = completed.pop().expect("visited left child");
+                    let (a, b) = (Box::new(a), Box::new(b));
+                    let key = match proposition {
+                        Proposition::And(..) => Self::And(a, b),
+                        Proposition::Or(..) => Self::Or(a, b),
+                        _ => Self::Implies(a, b),
+                    };
+                    (key, left || right)
+                }
+                Proposition::ForAll { var, sort, .. } => {
+                    let (key, observes) = completed.pop().expect("visited body");
+                    (Self::ForAll(*var, sort.clone(), Box::new(key)), observes)
+                }
+                Proposition::Exists { var, sort, .. } => {
+                    let (key, observes) = completed.pop().expect("visited body");
+                    (Self::Exists(*var, sort.clone(), Box::new(key)), observes)
+                }
+                _ => (Self::Exact(proposition.clone()), false),
+            };
+            completed.push(result);
         }
+        completed.pop().expect("one root key")
     }
 }
 
@@ -716,5 +816,101 @@ impl PureFactContext {
                 let view = native_comparison_view(condition, truth)?;
                 exact(&view).or_else(|| view.widened().and_then(|view| exact(&view)))
             })
+    }
+}
+
+#[cfg(test)]
+mod resource_relation_tests {
+    use super::*;
+    use crate::kernel::{CPointerValue, CType, LoadKind, Pointer, Variable};
+
+    fn relation(term: MachineTerm, pointer: CPointerValue, separate: bool) -> Proposition {
+        let left = CResource::Composite {
+            name: "storage".into(),
+            arguments: vec![AlgebraicValue::C(CValue::Pointer(pointer.clone()))].into(),
+        };
+        let right = CResource::Composite {
+            name: "allocation".into(),
+            arguments: vec![
+                AlgebraicValue::C(CValue::Pointer(pointer)),
+                AlgebraicValue::C(CValue::Int32(MachineTerm::machine_binary(
+                    MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Multiply,
+                    term,
+                    MachineTerm::constant(4),
+                ))),
+            ]
+            .into(),
+        };
+        if separate {
+            Proposition::CResourceSeparate {
+                left: Box::new(left),
+                right: Box::new(right),
+            }
+        } else {
+            Proposition::CResourceContains {
+                parent: Box::new(left),
+                child: Box::new(right),
+            }
+        }
+    }
+
+    #[test]
+    fn resource_relation_keys_match_read_names_without_erasing_their_identity() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(3_219_300));
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let other_memory = crate::kernel::intern_c_memory(
+            CMemory::new().store(address.clone(), CValue::Int32(9u32.into())),
+        );
+        let name = crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &address,
+            LoadKind::Int32,
+            4,
+        );
+        let pointer = CPointerValue::new(address.clone(), CType::Int32Pointer);
+        let read = |memory, address, kind| MachineTerm::MemoryLoad(memory, Box::new(address), kind);
+        for separate in [false, true] {
+            let named = relation(MachineTerm::Variable(name), pointer.clone(), separate);
+            let structural = relation(
+                read(memory.clone(), address.clone(), LoadKind::Int32),
+                pointer.clone(),
+                separate,
+            );
+            for (source, goal) in [(&named, &structural), (&structural, &named)] {
+                let facts = PureFactContext::new().assume_proposition(source.clone());
+                assert!(facts.proves_exact(goal));
+                assert!(
+                    facts.contains_assumed_exact(source),
+                    "retain the original source"
+                );
+                for different in [
+                    read(other_memory.clone(), address.clone(), LoadKind::Int32),
+                    read(memory.clone(), address.offset_by_bytes(4), LoadKind::Int32),
+                    read(memory.clone(), address.clone(), LoadKind::Int8),
+                ] {
+                    assert!(!facts.proves_exact(&relation(different, pointer.clone(), separate)));
+                }
+                let different_designation = pointer
+                    .clone()
+                    .with_designation(std::sync::Arc::new(address.offset_by_bytes(4)));
+                assert!(!facts.proves_exact(&relation(
+                    MachineTerm::Variable(name),
+                    different_designation,
+                    separate
+                )));
+                let different_pointer = CPointerValue::new(address.clone(), CType::Int8Pointer);
+                assert!(!facts.proves_exact(&relation(
+                    MachineTerm::Variable(name),
+                    different_pointer,
+                    separate
+                )));
+            }
+        }
+    }
+
+    mod scaling_tests {
+        include!("../../scaling_tests/kernel/assumptions/observation_resource_relations.rs");
     }
 }

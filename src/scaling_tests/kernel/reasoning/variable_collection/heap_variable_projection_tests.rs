@@ -48,7 +48,7 @@ fn heap_variable_counts_follow_local_edits_and_keep_siblings_isolated() {
 #[test]
 fn shared_machine_variable_bookkeeping_reuses_prefixes_in_each_collection_mode() {
     use crate::kernel::{
-        KernelTerm, KernelType, MachineBinaryOp, MachineIntegerType, SharedMachineIntegerTerm,
+        KernelTerm, MachineBinaryOp, MachineIntegerType, SharedMachineIntegerTerm,
     };
     let mut samples = Vec::new();
     for size in [8usize, 32, 96] {
@@ -91,7 +91,7 @@ fn shared_machine_variable_bookkeeping_reuses_prefixes_in_each_collection_mode()
 #[test]
 fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses() {
     use crate::kernel::{
-        KernelTerm, KernelType, MachineBinaryOp, MachineIntegerType, SharedMachineIntegerTerm,
+        KernelTerm, MachineBinaryOp, MachineIntegerType, SharedMachineIntegerTerm,
     };
     let _session = crate::kernel::VerificationSession::enter();
     let address = Variable(crate::kernel::ExecutionBudget::KERNEL_VARIABLE_BASE + 124);
@@ -103,7 +103,7 @@ fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses
         4,
     );
     let format = MachineIntegerType::Int32;
-    let leaf = KernelTerm::variable(KernelType::C(CType::Int32), load);
+    let leaf = crate::kernel::eval::registered_scalar_read_term(&load, format).unwrap();
     let machine = SharedMachineIntegerTerm::from_shared(
         format,
         KernelTerm::machine_binary_shared(format, MachineBinaryOp::Add, [leaf.clone(), leaf]),
@@ -133,6 +133,6 @@ fn shared_machine_variable_collection_keeps_snapshot_deferral_and_load_addresses
     );
     assert!(!machine.has_boxed_operand());
     crate::kernel::eval::clear_load_variable_registry();
-    assert_eq!(collect(&shared), (BTreeSet::from([load]), false));
+    assert_eq!(collect(&shared), (BTreeSet::from([address]), true));
     assert!(!machine.has_boxed_operand());
 }

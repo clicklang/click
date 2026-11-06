@@ -702,6 +702,7 @@ impl ProofFacts {
                                             .into_iter()
                                             .any(|v| {
                                                 v.variable().is_none()
+                                                    && v.read().is_none()
                                                     && !matches!(
                                                         v.literal(),
                                                         Some(bits32_constant!(_))
@@ -714,7 +715,8 @@ impl ProofFacts {
                                         // A differing shared leaf must actually name a registered
                                         // load before constructing any native evidence operand.
                                         if ![a, b].into_iter().any(|term| {
-                                            MachineOperandView::Shared(term).variable().is_some_and(|v| {
+                                            let view = MachineOperandView::Shared(term);
+                                            view.read().is_some() || view.variable().is_some_and(|v| {
                                                 crate::kernel::registered_load_kind_for_variable(v).is_some()
                                             })
                                         }) {
@@ -3079,7 +3081,13 @@ fn bitvector_equality_atom_key(term: &MachineTerm) -> Option<BitvectorEqualityAt
     match term {
         // A `uint32` constant is its word's `Constant` (rule K1).
         bits32_constant!(value) => Some(BitvectorEqualityAtomKey::Constant(constant_u32(*value))),
-        MachineTerm::Variable(variable) => Some(BitvectorEqualityAtomKey::Variable(*variable)),
+        MachineTerm::Variable(variable) => {
+            if let Some(read) = crate::kernel::registered_load_term_for_variable(variable) {
+                bitvector_equality_atom_key(&read)
+            } else {
+                Some(BitvectorEqualityAtomKey::Variable(*variable))
+            }
+        }
         MachineTerm::ClickFunctionApplication { name, arguments } => {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
             for argument in arguments {

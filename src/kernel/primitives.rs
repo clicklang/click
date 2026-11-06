@@ -90,7 +90,7 @@ pub use integer::{MachineIntegerType, SharedMachineIntegerTerm, SignedDefinedWid
 pub(crate) use integer::{
     MachineOperandView, clear_shared_machine_variable_cache, shared_machine_conversion_leaves,
     shared_machine_read_leaves, shared_machine_read_uses, shared_machine_syntax_variables,
-    shared_operand_variable_pairs,
+    shared_operand_leaf_pairs,
 };
 mod alias_candidates;
 pub(crate) use alias_candidates::{AliasCandidates, BlockKeyed};
@@ -9268,6 +9268,13 @@ pub(super) fn capture_c_memory_arena() -> CMemoryArenaState {
 pub(super) fn restore_c_memory_arena(state: &CMemoryArenaState) {
     C_MEMORY_ARENA.with(|arena| *arena.borrow_mut() = state.arena.clone());
     C_MEMORY_DERIVATION_GENERATION.with(|generation| generation.set(state.derivation_generation));
+}
+
+/// Scope native import memo keys to the active snapshot arena. Global shared
+/// syntax identities remain independent; a cache lookup must not compare the
+/// contents of snapshots owned by different verification sessions.
+fn c_memory_arena_token() -> u32 {
+    C_MEMORY_ARENA.with(|arena| arena.borrow().0)
 }
 
 pub(super) fn start_fresh_c_memory_arena() {

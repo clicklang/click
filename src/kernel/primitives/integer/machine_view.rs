@@ -729,6 +729,7 @@ impl<'a> MachineOperandView<'a> {
                 }
                 KernelTermNode::MachineLiteral(_) => crate::kernel::root_width(&self.literal()?),
                 KernelTermNode::Variable(_) => None,
+                KernelTermNode::MemoryLoad { kind, .. } => Some(CarrierWidth::of_load(*kind)),
                 KernelTermNode::IntegerToMachine { destination, .. } => {
                     Some(CarrierWidth::of_machine_type(*destination))
                 }
@@ -790,8 +791,8 @@ impl<'a> MachineOperandView<'a> {
         }
     }
 
-    /// Legacy leaves retain the existing read-over-write adapter. A shared
-    /// variable can also name a read, but constructing that leaf costs O(1).
+    /// Select one read for the existing read-over-write adapter. Shared reads
+    /// lend their retained native leaf; compatibility variables cost O(1).
     /// Explicit shared operators are never recursively resolved here.
     pub(crate) fn read_source(self) -> Option<std::borrow::Cow<'a, MachineTerm>> {
         match self {
@@ -800,6 +801,9 @@ impl<'a> MachineOperandView<'a> {
                 KernelTermNode::Variable(variable) => {
                     Some(std::borrow::Cow::Owned(MachineTerm::Variable(*variable)))
                 }
+                KernelTermNode::MemoryLoad { .. } => Some(std::borrow::Cow::Borrowed(
+                    term.machine_read_leaf().expect("read leaf"),
+                )),
                 _ => None,
             },
         }

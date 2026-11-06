@@ -84,7 +84,7 @@ pub(crate) use memory_loads::load_variable_for_exact_cell;
 pub(crate) use memory_loads::load_variable_for_term;
 pub(crate) use memory_loads::loaded_pointer_predates_block;
 pub(crate) use memory_loads::offsets_have_same_canonical_form;
-pub(crate) use memory_loads::proposition_mentions_registered_load_variable;
+pub(crate) use memory_loads::proposition_mentions_scalar_read;
 pub(crate) use memory_loads::read_over_write_c_value;
 pub(in crate::kernel) use memory_loads::record_load_access_width;
 #[cfg(test)]
@@ -94,7 +94,6 @@ pub(crate) use memory_loads::recorded_load_access_width;
 pub(crate) use memory_loads::registered_load_bytes_for_variable;
 pub(crate) use memory_loads::registered_load_for_variable;
 pub(crate) use memory_loads::registered_load_origin_for_variable;
-pub(crate) use memory_loads::registered_scalar_read_term;
 pub(in crate::kernel) use memory_loads::symbolic_load_value_unrecorded;
 pub(in crate::kernel) use memory_loads::term_mentions_a_memory_load;
 pub(crate) use memory_loads::terms_have_same_canonical_form;
@@ -126,6 +125,9 @@ pub(crate) use memory_loads::{
 pub(crate) use memory_loads::{
     loaded_pointer_read_heap_identities, loaded_pointer_read_predates_block, pointer_load_identity,
     record_pointer_load_source, registered_pointer_load, typed_pointer_read_variable,
+};
+pub(crate) use memory_loads::{
+    registered_exact_read, registered_scalar_read_term, scalar_read_observation,
 };
 pub(crate) use memory_loads::{
     registered_load_kind_for_variable, registered_load_origin_term_for_variable,

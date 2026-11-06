@@ -155,7 +155,28 @@ struct NodeKeyData {
 struct NodeKey(Arc<NodeKeyData>);
 impl PartialEq for NodeKey {
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.0, &other.0) || (self.0.ty == other.0.ty && self.0.node == other.0.node)
+        Arc::ptr_eq(&self.0, &other.0)
+            || (self.0.ty == other.0.ty
+                && match (&self.0.node, &other.0.node) {
+                    (
+                        KernelTermNode::MemoryLoad {
+                            memory: a,
+                            address: p,
+                            kind: k,
+                        },
+                        KernelTermNode::MemoryLoad {
+                            memory: b,
+                            address: q,
+                            kind: l,
+                        },
+                    ) => {
+                        // The interner is process-wide; snapshots belong to arenas.
+                        // Comparing their contents across arenas would walk unrelated
+                        // memory while registering one selected read.
+                        a.arena_id() == b.arena_id() && p == q && k == l
+                    }
+                    (a, b) => a == b,
+                })
     }
 }
 impl Eq for NodeKey {}
@@ -168,10 +189,13 @@ impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         ty.hash(&mut hash);
+        if let KernelTermNode::MemoryLoad { memory, .. } = &node {
+            memory.arena_id().hash(&mut hash);
+        }
         node.hash(&mut hash);
         // A fresh legacy identity belongs to its producer. Read addresses also
-        // remain native until their checker consumers migrate. Keep both out of
-        // shared observations, including when nested in a mathematical conversion.
+        // remain native. Keep mathematical conversion payloads containing them
+        // outside shared observations until their scoped consumers migrate.
         // Inspect immediate children only; retain the result across growing DAGs.
         let opaque_observation_boundary = match &node {
             KernelTermNode::MemoryLoad { .. } => true,
@@ -204,7 +228,7 @@ impl NodeKey {
         // to its leaves, including explicit conversion roots. Opaque payloads
         // keep their old storage; inspect immediate children only.
         let shared_machine_operand = match &node {
-            KernelTermNode::MachineLiteral(_) => true,
+            KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())

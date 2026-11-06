@@ -105,8 +105,13 @@ fn checked_c_substitution_reserves_free_integer_in_registered_load_pointer() {
         item, free_integer,
         "free Integer pointer input was captured"
     );
-    assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-        if machine.value() == &replacement_term));
+    assert_eq!(
+        body.as_ref(),
+        &IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            replacement_term.clone(),
+        ))
+    );
     let (_, pointer) = crate::kernel::eval::registered_load_for_variable(&inner_load)
         .expect("replacement load must retain its defining pointer");
     assert!(matches!(pointer.offset,
@@ -145,8 +150,7 @@ fn checked_c_substitution_reserves_free_c_in_registered_load_pointer() {
         panic!("checked substitution dropped the C fold")
     };
     assert_ne!(item, free_c, "free C pointer input was captured");
-    assert!(matches!(body.as_ref(), IntegerTerm::Machine(machine)
-        if machine.value() == &MachineTerm::Variable(load)));
+    assert_eq!(body.as_ref(), &machine_variable(load));
     let (_, pointer) = crate::kernel::eval::registered_load_for_variable(&load)
         .expect("replacement load must retain its defining pointer");
     assert!(matches!(pointer.offset,
@@ -186,14 +190,17 @@ fn checked_registered_load_rewrite_remints_nested_direct_offset() {
     let Term::Integer(IntegerTerm::Machine(machine)) = output else {
         panic!("nested registered load changed the Integer carrier")
     };
-    let MachineTerm::Variable(rewritten_outer) = machine.value() else {
-        panic!("nested registered load expanded into a memory tree")
-    };
-    assert_ne!(*rewritten_outer, outer);
-    let (outer_memory, outer_pointer) =
-        crate::kernel::eval::registered_load_for_variable(rewritten_outer)
-            .expect("outer remint must remain registered");
-    assert_eq!(outer_memory, memory);
+    assert!(!machine.has_boxed_operand());
+    let (outer_memory, outer_pointer, kind) =
+        machine.operand_view().read().expect("structural read");
+    assert_eq!(kind, crate::kernel::LoadKind::Int32);
+    assert_ne!(
+        outer_pointer,
+        &crate::kernel::eval::registered_load_for_variable(&outer)
+            .unwrap()
+            .1
+    );
+    assert_eq!(outer_memory, &memory);
     let PointerOffsetTerm::Variable(rewritten_inner) = outer_pointer.offset else {
         panic!("direct nested offset was not retained")
     };
@@ -297,4 +304,110 @@ fn shared_carrier_cache_preserves_current_registered_load_dependencies() {
     crate::kernel::eval::clear_load_variable_registry();
     assert_eq!(collect(), BTreeSet::from([load]));
     assert!(!machine.has_boxed_operand());
+}
+
+#[test]
+fn named_read_replacement_reaches_a_shared_integer_observation() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let address = Pointer::symbolic(Variable(3_219_000));
+    let source = MachineTerm::Variable(exact_load(&memory, &address));
+    let replacement = MachineTerm::constant(7);
+    let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+        MachineIntegerType::Int32,
+        source.clone(),
+    ));
+    let IntegerTerm::Machine(machine) = &observed else {
+        unreachable!()
+    };
+    assert!(machine.shared_operand().unwrap().has_machine_reads());
+    let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
+    let result = rewrite.integer(&observed);
+    assert_eq!(rewrite.refusal(), None);
+    assert!(rewrite.changed);
+    assert_eq!(result, IntegerTerm::constant_i64(7));
+}
+
+#[test]
+fn structural_read_replacement_matches_retained_name_at_native_value_boundary() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = memory();
+    let address = Pointer::symbolic(Variable(3_219_001));
+    let name = exact_load(&memory, &address);
+    let named = MachineTerm::Variable(name);
+    let read = MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+    let observed = machine_variable(name);
+    let replacement = MachineTerm::IntegerToMachine {
+        value: SharedIntegerTerm::from(IntegerTerm::Add(
+            machine_variable(exact_load(&memory, &address.offset_by_bytes(4))).into(),
+            IntegerTerm::constant_i64(1).into(),
+        )),
+        destination: MachineIntegerType::Int32,
+    };
+    assert!(
+        KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &replacement)
+            .is_none()
+    );
+    let mut expected = TermRewrite::for_bits_checked(&named, &replacement);
+    let expected = expected.integer(&observed);
+    assert_ne!(expected, observed);
+    let mut rewrite = TermRewrite::for_bits_checked(&read, &replacement);
+    let result = rewrite.integer(&observed);
+    assert_eq!(rewrite.refusal(), None);
+    assert_eq!(result, expected);
+    let other = MachineTerm::MemoryLoad(
+        memory,
+        Box::new(address.offset_by_bytes(8)),
+        LoadKind::Int32,
+    );
+    let mut rewrite = TermRewrite::for_bits_checked(&other, &replacement);
+    assert_eq!(rewrite.integer(&observed), observed);
+}
+
+#[test]
+fn resource_comparison_forms_reach_structural_scalar_read_arguments() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let address = Pointer::symbolic(Variable(3_219_020));
+    let memory = crate::kernel::intern_c_memory(
+        CMemory::new().store(address.clone(), CValue::Int32(37u32.into())),
+    );
+    let relation = |term: MachineTerm| {
+        let parent = CResource::Composite {
+            name: "storage".into(),
+            arguments: vec![AlgebraicValue::Integer(
+                IntegerTerm::from_machine(MachineIntegerType::Int32, term.clone()).unwrap(),
+            )]
+            .into(),
+        };
+        let child = CResource::Composite {
+            name: "allocation".into(),
+            arguments: vec![AlgebraicValue::C(CValue::Int32(term))].into(),
+        };
+        Proposition::CResourceContains {
+            parent: Box::new(parent),
+            child: Box::new(child),
+        }
+    };
+    let read =
+        |memory, pointer| MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+    let goal = relation(read(memory.clone(), address.clone()));
+    let expected = relation(MachineTerm::constant(37));
+    assert_eq!(
+        crate::kernel::eval::comparison_form(&goal),
+        Some(expected.clone())
+    );
+    assert!(crate::kernel::eval::proposition_mentions_scalar_read(&goal));
+    let other_address = relation(read(memory, address.offset_by_bytes(4)));
+    assert_ne!(
+        crate::kernel::eval::comparison_form(&other_address),
+        Some(expected.clone())
+    );
+    let other_memory = crate::kernel::intern_c_memory(
+        CMemory::new().store(address.clone(), CValue::Int32(38u32.into())),
+    );
+    assert_ne!(
+        crate::kernel::eval::comparison_form(&relation(read(other_memory, address))),
+        Some(expected)
+    );
 }

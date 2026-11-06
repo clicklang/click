@@ -243,9 +243,23 @@ fn terms_equal_with_load_atoms(
     }
 }
 
+/// Adapt only a selected leaf for the existing load-atom authority. Never
+/// export a surrounding shared expression or open a read's snapshot.
+fn operand_load_leaf(operand: crate::kernel::MachineOperandView<'_>) -> Option<MachineTerm> {
+    use crate::kernel::MachineOperandView as V;
+    if let Some(variable) = operand.variable() {
+        return Some(MachineTerm::Variable(*variable));
+    }
+    match operand {
+        V::Shared(term) => term.machine_read_leaf().cloned(),
+        V::Legacy(term @ MachineTerm::MemoryLoad(..)) => Some(term.clone()),
+        _ => None,
+    }
+}
+
 /// Compare retained arithmetic without exporting it. Shared/shared syntax
 /// correspondence is cached independently of the load registry; every selected
-/// variable pair is checked against the caller's current load authority.
+/// read/variable leaf pair is checked against the caller's current load authority.
 fn operands_equal_with_load_atoms(
     format: MachineIntegerType,
     left: crate::kernel::MachineOperandView<'_>,
@@ -257,12 +271,12 @@ fn operands_equal_with_load_atoms(
         return terms_equal_with_load_atoms(left, right, loads_match);
     }
     if let (V::Shared(left), V::Shared(right)) = (left, right) {
-        return crate::kernel::shared_operand_variable_pairs(format, left, right).is_some_and(
+        return crate::kernel::shared_operand_leaf_pairs(format, left, right).is_some_and(
             |pairs| {
-                pairs.iter().all(|(a, b)| {
+                pairs.values().all(|(a, b)| {
                     terms_equal_with_load_atoms(
-                        &MachineTerm::Variable(*a),
-                        &MachineTerm::Variable(*b),
+                        &operand_load_leaf(V::Shared(a)).expect("selected leaf"),
+                        &operand_load_leaf(V::Shared(b)).expect("selected leaf"),
                         loads_match,
                     )
                 })
@@ -278,42 +292,11 @@ fn operands_equal_with_load_atoms(
             }
             continue;
         }
-        if let (Some(a), Some(b)) = (left.variable(), right.variable()) {
-            if !terms_equal_with_load_atoms(
-                &MachineTerm::Variable(*a),
-                &MachineTerm::Variable(*b),
-                loads_match,
-            ) {
+        if let (Some(a), Some(b)) = (operand_load_leaf(left), operand_load_leaf(right)) {
+            if !terms_equal_with_load_atoms(&a, &b, loads_match) {
                 return false;
             }
             continue;
-        }
-        match (left, right) {
-            (V::Shared(_), V::Legacy(load @ MachineTerm::MemoryLoad(..)))
-                if left.variable().is_some() =>
-            {
-                if !terms_equal_with_load_atoms(
-                    &MachineTerm::Variable(*left.variable().unwrap()),
-                    load,
-                    loads_match,
-                ) {
-                    return false;
-                }
-                continue;
-            }
-            (V::Legacy(load @ MachineTerm::MemoryLoad(..)), V::Shared(_))
-                if right.variable().is_some() =>
-            {
-                if !terms_equal_with_load_atoms(
-                    load,
-                    &MachineTerm::Variable(*right.variable().unwrap()),
-                    loads_match,
-                ) {
-                    return false;
-                }
-                continue;
-            }
-            _ => {}
         }
         if let (Some(a), Some(b)) = (left.literal(), right.literal()) {
             if !format
@@ -7338,7 +7321,9 @@ impl PureFactContext {
         if !self.comparison_views.is_empty()
             && matches!(
                 proposition,
-                Proposition::Not(_)
+                Proposition::CResourceContains { .. }
+                    | Proposition::CResourceSeparate { .. }
+                    | Proposition::Not(_)
                     | Proposition::And(_, _)
                     | Proposition::Or(_, _)
                     | Proposition::Implies(_, _)
@@ -13021,7 +13006,6 @@ impl OrderFactsByLower {
                 index.with_inserted(key, filed)
             };
         }
-        use crate::kernel::MachineOperandView as V;
         use checked_scalar_facts::ScalarOperandKey as Key;
         let Some(view) = retained_order_bounds::order_view(condition, value) else {
             return;
@@ -13041,13 +13025,8 @@ impl OrderFactsByLower {
                     self.constant.insert(constant, filed);
                 }
             }
-            if let V::Legacy(MachineTerm::MemoryLoad(_, pointer, kind)) = lower {
-                file(
-                    &mut self.load,
-                    (pointer.as_ref().clone(), *kind),
-                    condition,
-                    insert,
-                );
+            if let Some((_, pointer, kind)) = lower.read() {
+                file(&mut self.load, (pointer.clone(), kind), condition, insert);
             }
             file(
                 &mut self.canonical,
@@ -13459,79 +13438,95 @@ mod shared_load_atom_comparison_tests {
 
     #[test]
     fn shared_comparisons_require_the_current_load_atom_authority() {
-        for ty in [
-            MachineIntegerType::Int32,
-            MachineIntegerType::UInt32,
-            MachineIntegerType::Int64,
-            MachineIntegerType::UInt64,
-            MachineIntegerType::Int128,
-            MachineIntegerType::UInt128,
-        ] {
-            let _session = crate::kernel::VerificationSession::enter();
-            let (left_load, right_load, a, b) = load_pair(ty);
-            let variable = |v| KernelTerm::variable(KernelType::C(ty.c_type()), v);
-            let product = |v, op| {
-                KernelTerm::machine_binary_shared(ty, op, [variable(v), variable(Variable(990001))])
-            };
-            let root = product(a, MachineBinaryOp::Multiply);
-            let observed = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
-            let condition = |term| {
-                ConditionTerm::integer_less_equal(
-                    IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(ty, term).unwrap()),
-                    IntegerTerm::constant_i64(7),
-                )
-            };
-            let left = condition(root);
-            let right = condition(product(b, MachineBinaryOp::Multiply));
-            let wrong = condition(product(b, MachineBinaryOp::Add));
-            let exports = KernelTermExport::machine_export_count();
-            let calls = std::cell::Cell::new(0);
-            let accept = |l: &MachineTerm, r: &MachineTerm| {
-                if let (MachineTerm::Variable(left), MachineTerm::Variable(right)) = (l, r) {
-                    assert_eq!((*left, *right), (a, b));
-                    // This authority recognizes origin snapshots only. The
-                    // optional named-load check must still consult it.
-                    return false;
-                }
-                calls.set(calls.get() + 1);
-                assert_eq!(l, &left_load);
-                assert_eq!(r, &right_load);
-                true
-            };
-            assert!(conditions_equal_with_load_atoms(&left, &right, &accept));
-            assert_eq!(calls.get(), 1);
-            assert!(!conditions_equal_with_load_atoms(&left, &right, &|_, _| {
-                false
-            }));
-            assert!(!conditions_equal_with_load_atoms(&left, &wrong, &|_, _| {
-                true
-            }));
-            assert!(
-                !PureFactContext::new().conditions_equal_modulo_proven_snapshots(&left, &right)
-            );
-            let mixed = MachineTerm::Binary {
-                format: ty,
-                op: MachineBinaryOp::Multiply,
-                left: Box::new(right_load.clone()),
-                right: Box::new(MachineTerm::Variable(Variable(990001))),
-            };
-            let mixed = ConditionTerm::Compare {
-                format: ty,
-                relation: CompareRelation::LessEqual,
-                left: Box::new(mixed),
-                right: Box::new(MachineTerm::machine_constant(
-                    crate::kernel::MachineIntegerConstant::from_signed(ty.format(), 7).unwrap(),
-                )),
-            };
-            assert!(
-                conditions_equal_with_load_atoms(&left, &mixed, &accept),
-                "{ty:?}: {left:?} / {mixed:?}"
-            );
-            assert!(!conditions_equal_with_load_atoms(&left, &mixed, &|_, _| {
-                false
-            }));
-            assert_eq!(KernelTermExport::machine_export_count(), exports);
-            assert!(!observed.has_boxed_operand());
+        for structural in [false, true] {
+            for ty in [
+                MachineIntegerType::Int32,
+                MachineIntegerType::UInt32,
+                MachineIntegerType::Int64,
+                MachineIntegerType::UInt64,
+                MachineIntegerType::Int128,
+                MachineIntegerType::UInt128,
+            ] {
+                let _session = crate::kernel::VerificationSession::enter();
+                let (left_load, right_load, a, b) = load_pair(ty);
+                let variable = |v| {
+                    if structural {
+                        crate::kernel::KernelTermImport::default()
+                            .machine_arithmetic(ty, &MachineTerm::Variable(v))
+                            .unwrap()
+                    } else {
+                        KernelTerm::variable(KernelType::C(ty.c_type()), v)
+                    }
+                };
+                let product = |v, op| {
+                    KernelTerm::machine_binary_shared(
+                        ty,
+                        op,
+                        [variable(v), variable(Variable(990001))],
+                    )
+                };
+                let root = product(a, MachineBinaryOp::Multiply);
+                let observed = SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap();
+                let condition = |term| {
+                    ConditionTerm::integer_less_equal(
+                        IntegerTerm::Machine(
+                            SharedMachineIntegerTerm::from_shared(ty, term).unwrap(),
+                        ),
+                        IntegerTerm::constant_i64(7),
+                    )
+                };
+                let left = condition(root);
+                let right = condition(product(b, MachineBinaryOp::Multiply));
+                let wrong = condition(product(b, MachineBinaryOp::Add));
+                let exports = KernelTermExport::machine_export_count();
+                let calls = std::cell::Cell::new(0);
+                let accept = |l: &MachineTerm, r: &MachineTerm| {
+                    if let (MachineTerm::Variable(left), MachineTerm::Variable(right)) = (l, r) {
+                        assert_eq!((*left, *right), (a, b));
+                        // This authority recognizes origin snapshots only. The
+                        // optional named-load check must still consult it.
+                        return false;
+                    }
+                    calls.set(calls.get() + 1);
+                    assert_eq!(l, &left_load);
+                    assert_eq!(r, &right_load);
+                    true
+                };
+                assert!(conditions_equal_with_load_atoms(&left, &right, &accept));
+                assert_eq!(calls.get(), 1);
+                assert!(!conditions_equal_with_load_atoms(&left, &right, &|_, _| {
+                    false
+                }));
+                assert!(!conditions_equal_with_load_atoms(&left, &wrong, &|_, _| {
+                    true
+                }));
+                assert!(
+                    !PureFactContext::new().conditions_equal_modulo_proven_snapshots(&left, &right)
+                );
+                let mixed = MachineTerm::Binary {
+                    format: ty,
+                    op: MachineBinaryOp::Multiply,
+                    left: Box::new(right_load.clone()),
+                    right: Box::new(MachineTerm::Variable(Variable(990001))),
+                };
+                let mixed = ConditionTerm::Compare {
+                    format: ty,
+                    relation: CompareRelation::LessEqual,
+                    left: Box::new(mixed),
+                    right: Box::new(MachineTerm::machine_constant(
+                        crate::kernel::MachineIntegerConstant::from_signed(ty.format(), 7).unwrap(),
+                    )),
+                };
+                assert!(
+                    conditions_equal_with_load_atoms(&left, &mixed, &accept),
+                    "{ty:?}: {left:?} / {mixed:?}"
+                );
+                assert!(!conditions_equal_with_load_atoms(&left, &mixed, &|_, _| {
+                    false
+                }));
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                assert!(!observed.has_boxed_operand());
+            }
         }
     }
 

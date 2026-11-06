@@ -401,8 +401,10 @@ fn reads_of_one_cell_at_both_signednesses_are_related() {
         )
     };
     assert_ne!(signed, unsigned, "each read is its own load");
+    let cold_reads = crate::kernel::eval::capture_load_variable_registry();
     let mut samples = Vec::new();
     for unrelated in [4_u64, 64, 512] {
+        crate::kernel::eval::restore_load_variable_registry(&cold_reads);
         // Keep term-bridge imports and canonical forms cold at every sample
         // size.
         crate::kernel::clear_integer_bridge_memo();
@@ -454,9 +456,11 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
         to: MachineIntegerType::Int32,
     };
     let sizes = [8_u64, 32, 128, 512];
+    let cold_reads = crate::kernel::eval::capture_load_variable_registry();
     let mut samples = Vec::new();
     for size in sizes {
-        // Keep term-bridge imports cold at every sample size.
+        crate::kernel::eval::restore_load_variable_registry(&cold_reads);
+        // Keep descriptor caches and term-bridge imports cold at every sample size.
         crate::kernel::clear_integer_bridge_memo();
         let word = |value: MachineTerm| MachineTerm::Cast {
             spelling: MachineCastSpelling::Generic,
@@ -487,4 +491,75 @@ fn widening_chains_are_related_with_constant_work_per_widening() {
     for i in 1..sizes.len() - 1 {
         assert_eq!(per_widening(i), per_widening(0), "{samples:?}");
     }
+}
+
+#[test]
+fn structural_read_graph_registration_keeps_native_version_identity() {
+    use crate::kernel::{KernelTermImport, MachineIntegerType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    let before = memory();
+    let pointer = address(993180);
+    crate::kernel::eval::record_load_access_width(before.memory(), &pointer, 4);
+    let named =
+        crate::kernel::canonical_form_of_load(before.clone(), pointer.clone(), LoadKind::Int32);
+    let beside = intern_c_memory(before.memory().clone().store(
+        Pointer {
+            block: "beside-array".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        CValue::Int32(var(993182)),
+    ));
+    let raw = MachineTerm::MemoryLoad(beside, Box::new(pointer.clone()), LoadKind::Int32);
+    let root = KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::Int32, &raw)
+        .unwrap();
+    let source = KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::Int32, &named)
+        .unwrap();
+    let native = EqualityGraph::default().are_int32_equal(&named, &raw);
+    assert!(native);
+    assert_eq!(
+        EqualityGraph::default().are_int32_equal_views(V::Shared(&source), V::Shared(&root)),
+        native
+    );
+    assert_eq!(root.machine_read_leaf(), Some(&raw));
+    let changed = MachineTerm::MemoryLoad(
+        intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(pointer.clone(), CValue::Int32(var(993183))),
+        ),
+        Box::new(pointer),
+        LoadKind::Int32,
+    );
+    let changed = KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::Int32, &changed)
+        .unwrap();
+    assert!(
+        !EqualityGraph::default().are_int32_equal_views(V::Shared(&source), V::Shared(&changed))
+    );
+}
+
+#[test]
+fn structural_read_graph_keeps_native_only_stored_values() {
+    use crate::kernel::{KernelTermImport, MachineIntegerType, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    let value = MachineTerm::PureFunctionApplication {
+        name: "opaque_read_value".into(),
+        arguments: vec![var(993184)],
+    };
+    let pointer = address(993185);
+    let snapshot = intern_c_memory(
+        memory()
+            .memory()
+            .clone()
+            .store(pointer.clone(), CValue::Int32(value.clone())),
+    );
+    let read = MachineTerm::MemoryLoad(snapshot, Box::new(pointer), LoadKind::Int32);
+    let shared = KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::Int32, &read)
+        .unwrap();
+    assert!(EqualityGraph::default().are_int32_equal_views(V::Shared(&shared), V::Legacy(&value),));
+    assert_eq!(shared.machine_read_leaf(), Some(&read));
 }

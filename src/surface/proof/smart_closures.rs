@@ -3341,6 +3341,15 @@ impl<'a> Proof<'a> {
                     surface: surface.clone(),
                 }));
         }
+        // Fixed-state and focused-outcome requirements can refer to reads
+        // retained from an intermediate statement. Give their speller the
+        // same indexed historical names as ordinary facts and goals.
+        let spelling_view = self.premise_fixed_state_view();
+        let _requirement_points = spelling_view.as_ref().map(|view| {
+            super::surface_synthesis::SynthesisRecordedPointsScope::enter(
+                view.fixed_state.recorded_snapshots,
+            )
+        });
         let non_execution_surface = match self.context.as_ref() {
             ProofContext::Pure(context) => Some(
                 super::surface_synthesis::synthesize_surface_proposition_with_bound_variable_names(

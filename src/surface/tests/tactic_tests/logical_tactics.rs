@@ -2519,7 +2519,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
 }
 
 #[test]
-fn disjunctive_premise_solve_expands_to_a_cases_certificate() {
+fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
     let c_source = r#"
         int32 select_first(int32* left, int32* right, int32 choose_left) {
             int32* selected;
@@ -2570,24 +2570,21 @@ fn disjunctive_premise_solve_expands_to_a_cases_certificate() {
             verified[0].expansion_blocker()
         )
     });
-    fn find_cases(tactics: &[ProofTactic]) -> Option<&ProofCases> {
-        tactics.iter().find_map(|tactic| match tactic {
-            ProofTactic::Cases(cases) => Some(cases),
-            ProofTactic::Have(have) => match &have.proof {
-                SourceProof::Script(body) => find_cases(body),
-                _ => None,
-            },
-            _ => None,
-        })
-    }
-    let cases = find_cases(&expanded)
-        .expect("the expansion should eliminate the disjunctive premise with `cases`");
+    // Shared read comparison can now cite the retained disjunction directly,
+    // so eliminating it again with `cases` is unnecessary. The stronger
+    // requirement is an explicit certificate that cold-checks without search.
     assert!(
-        !format!("{cases:?}").contains("Solve"),
-        "both written branches should close with simple tactics: {cases:?}"
+        !format!("{expanded:?}").contains("Solve"),
+        "the emitted certificate must not retain discovery tactics: {expanded:?}"
     );
     ProofCertificate::from_proof_tactics(&expanded)
         .expect("the disjunctive-premise expansion should be a surface certificate");
+    let expanded_source = expand_checked_grouped_claim(click_source, &verified, "select_first")
+        .expect("the checked disjunctive proof should print");
+    crate::surface::proof::without_implicit_solve(|| {
+        verify_c0_sources(&expanded_source, &[("select_first.c", c_source)])
+    })
+    .expect("the printed disjunctive certificate must cold-check without search");
 }
 
 #[test]

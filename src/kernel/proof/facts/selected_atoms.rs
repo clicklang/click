@@ -31,6 +31,10 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                     }
                     atoms
                 }
+                KernelTermNode::MemoryLoad { .. } => PersistentSet::default().with_value(
+                    bitvector_equality_atom_key(term.machine_read_leaf().expect("read leaf"))
+                        .expect("read atom"),
+                ),
                 // The native collector treats conversions as opaque too.
                 KernelTermNode::IntegerToMachine { .. } => PersistentSet::default(),
                 KernelTermNode::MachineUnary { operand, .. }
@@ -97,6 +101,20 @@ pub(super) fn collect(
             collect_load_address_atoms(*variable, atoms, 0);
         }
     }
+    let Some(reads) = crate::kernel::shared_machine_read_leaves(root, || {
+        !crate::instrumentation::deadline_exceeded_with_work(1)
+    }) else {
+        return;
+    };
+    for (_, read) in reads.iter() {
+        if crate::instrumentation::deadline_exceeded_with_work(1) {
+            return;
+        }
+        let (_, address, _) = MachineOperandView::Shared(read)
+            .read()
+            .expect("selected read");
+        collect_pointer_bitvector_atoms(address, atoms);
+    }
 }
 
 #[cfg(test)]
@@ -155,13 +173,13 @@ mod tests {
             wide_atoms,
             BTreeSet::from([BitvectorEqualityAtomKey::Variable(Variable(1005303))])
         );
-        // A restored/cleared registry must not inherit address atoms merely
-        // because the written shared syntax was already summarized.
+        // Structural reads own their addresses independently of the registry.
         crate::kernel::eval::clear_load_variable_registry();
         let mut restored = BTreeSet::new();
         collect(&machine, &mut restored);
-        assert!(restored.contains(&BitvectorEqualityAtomKey::Variable(load)));
-        assert!(!restored.contains(&BitvectorEqualityAtomKey::Variable(Variable(1005301))));
+        assert_eq!(restored, found);
+        assert!(!restored.contains(&BitvectorEqualityAtomKey::Variable(load)));
+        assert!(restored.contains(&BitvectorEqualityAtomKey::Variable(Variable(1005301))));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 

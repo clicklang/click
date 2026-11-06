@@ -3877,32 +3877,6 @@ fn synthesize_surface_bitvector(
             }))
         }
         MachineTerm::MemoryLoad(memory, kernel_pointer, kind) => {
-            if *kind == crate::kernel::LoadKind::Int32
-                && let Some(field) =
-                    synthesize_owned_field_at_address(kernel_pointer, CType::Int32, state)
-            {
-                return Some(field);
-            }
-
-            if *kind == crate::kernel::LoadKind::Int32
-                && let Some(field) = synthesize_owned_pointer_field(kernel_pointer, state)
-            {
-                return Some(ContractExpression::Index(
-                    Box::new(field),
-                    Box::new(ContractExpression::CFragment(CExpression::Value(int32(0)))),
-                ));
-            }
-
-            if let Some(source) = SYNTHESIS_QUALIFIED_SOURCES.with(|slot| {
-                slot.borrow()
-                    .as_ref()?
-                    .storage
-                    .qualified_load_sources
-                    .get(kernel_pointer.as_ref())
-                    .cloned()
-            }) {
-                return Some(source);
-            }
             let old = SYNTHESIS_ENTRY_STATE
                 .with(|slot| slot.borrow().clone())
                 .and_then(|entry| {
@@ -3937,10 +3911,41 @@ fn synthesize_surface_bitvector(
                 kernel_pointer.as_ref().clone(),
                 *kind,
             ) && registered_load_in_state(&variable, state).is_none()
-                && let Some(at) =
-                    synthesize_load_at_recorded_point(&variable, parameter_binding, bound_variables)
             {
-                return Some(at);
+                return synthesize_load_at_recorded_point(
+                    &variable,
+                    parameter_binding,
+                    bound_variables,
+                );
+            }
+            // Address-only names are valid only after selecting this read's
+            // epoch. A qualified object or owned field names current memory
+            // unless the entry/recorded route above supplies Old or At.
+            if *kind == crate::kernel::LoadKind::Int32
+                && let Some(field) =
+                    synthesize_owned_field_at_address(kernel_pointer, CType::Int32, state)
+            {
+                return Some(field);
+            }
+
+            if *kind == crate::kernel::LoadKind::Int32
+                && let Some(field) = synthesize_owned_pointer_field(kernel_pointer, state)
+            {
+                return Some(ContractExpression::Index(
+                    Box::new(field),
+                    Box::new(ContractExpression::CFragment(CExpression::Value(int32(0)))),
+                ));
+            }
+
+            if let Some(source) = SYNTHESIS_QUALIFIED_SOURCES.with(|slot| {
+                slot.borrow()
+                    .as_ref()?
+                    .storage
+                    .qualified_load_sources
+                    .get(kernel_pointer.as_ref())
+                    .cloned()
+            }) {
+                return Some(source);
             }
             // A 64-bit read must not fall back to the legacy int32 `load`.
             // Prefer the actual field type; otherwise retain a typed read at

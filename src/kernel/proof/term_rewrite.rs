@@ -68,7 +68,13 @@ fn collect_machine_operand_carriers(
     }
     if let Some(reads) = shared_machine_read_leaves(root, || variables.visit()) {
         for (_, read) in reads.iter() {
-            let (_, pointer, _) = MachineOperandView::Shared(read).read().expect("read leaf");
+            let (memory, pointer, kind) =
+                MachineOperandView::Shared(read).read().expect("read leaf");
+            if let Some(terms) = &mut variables.read_terms {
+                terms
+                    .entry((memory.arena_id(), pointer.clone(), kind))
+                    .or_insert_with(|| read.machine_read_leaf().expect("read leaf").clone());
+            }
             collect_pointer_carriers(pointer, variables);
         }
     }
@@ -143,6 +149,7 @@ struct CarrierVariables {
     pointer_loads: BTreeSet<crate::kernel::PointerLoadId>,
     pointer_applications: BTreeSet<u64>,
     pointer_terms: Option<Vec<Pointer>>,
+    read_terms: Option<BTreeMap<((u32, u32), Pointer, LoadKind), MachineTerm>>,
 }
 
 impl CarrierVariables {
@@ -957,7 +964,12 @@ fn collect_bitvector_carriers(term: &MachineTerm, variables: &mut CarrierVariabl
         }
         // Memory snapshots are opaque proof-state values.  Only the selected
         // pointer expression participates in freshness collection.
-        MachineTerm::MemoryLoad(_, pointer, _) => {
+        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            if let Some(terms) = &mut variables.read_terms {
+                terms
+                    .entry((memory.arena_id(), pointer.as_ref().clone(), *kind))
+                    .or_insert_with(|| term.clone());
+            }
             collect_pointer_carriers(pointer, variables);
         }
         MachineTerm::PointerAddress(pointer, _) => {
@@ -1207,6 +1219,19 @@ impl IntegerSubstitutionVariableCollector {
         }
     }
 
+    /// Select structural reads alongside lexical variables, without opening snapshots.
+    pub(crate) fn collect_read_terms(&mut self) {
+        self.carriers.read_terms = Some(BTreeMap::new());
+    }
+
+    pub(crate) fn take_read_terms(&mut self) -> impl Iterator<Item = MachineTerm> {
+        self.carriers
+            .read_terms
+            .take()
+            .unwrap_or_default()
+            .into_values()
+    }
+
     pub(crate) fn collect(&mut self, proposition: &Proposition) {
         if !self.carriers.exhausted() {
             collect_integer_substitution_variables_with_carriers(proposition, &mut self.carriers);
@@ -1277,6 +1302,22 @@ fn collect_integer_substitution_variables_with_carriers(
                 }
                 collect_bitvector_carriers(bytes, carriers);
             }
+            Proposition::CResourceContains { parent, child } => {
+                collect_resource_carriers(parent, carriers);
+                collect_resource_carriers(child, carriers);
+            }
+            Proposition::CResourceSeparate { left, right } => {
+                collect_resource_carriers(left, carriers);
+                collect_resource_carriers(right, carriers);
+            }
+            Proposition::CResourceComposition(resources) => {
+                for fact in resources.facts() {
+                    collect_resource_carriers(fact.resource(), carriers);
+                    if carriers.exhausted() {
+                        return;
+                    }
+                }
+            }
             Proposition::And(left, right)
             | Proposition::Or(left, right)
             | Proposition::Implies(left, right) => {
@@ -1288,6 +1329,44 @@ fn collect_integer_substitution_variables_with_carriers(
             }
             Proposition::ForAll { body, .. } | Proposition::Exists { body, .. } => {
                 pending.push(body);
+            }
+            _ => {}
+        }
+    }
+}
+
+// Visit only the explicitly named footprint and arguments. Stored cells,
+// sealed resource identities and binder-bearing bodies remain opaque.
+fn collect_resource_carriers(resource: &CResource, carriers: &mut CarrierVariables) {
+    let mut pending = vec![resource];
+    while let Some(resource) = pending.pop() {
+        if !carriers.visit() {
+            return;
+        }
+        match resource {
+            CResource::Star(pair) => {
+                pending.extend([&pair.0, &pair.1]);
+            }
+            CResource::Memory(range) => {
+                collect_c_value_carriers(&CValue::Pointer(range.pointer_carrier()), carriers);
+                collect_bitvector_carriers(range.bound_terms().0, carriers);
+                collect_bitvector_carriers(range.bound_terms().1, carriers);
+            }
+            CResource::Composite { arguments, .. } | CResource::Token { arguments, .. } => {
+                for argument in arguments.iter() {
+                    match argument {
+                        AlgebraicValue::C(value) => collect_c_value_carriers(value, carriers),
+                        AlgebraicValue::Integer(value) => {
+                            collect_integer_carriers(value, carriers, &mut BTreeSet::new());
+                        }
+                        AlgebraicValue::Algebraic(value) => {
+                            collect_algebraic_carriers(value, carriers)
+                        }
+                    }
+                    if carriers.exhausted() {
+                        return;
+                    }
+                }
             }
             _ => {}
         }
@@ -1548,6 +1627,28 @@ fn bounded_uint64_indices(
         .collect()
 }
 
+/// Lexical dependencies of a selected read address. Variable IDs are local
+/// to their carrier: an Integer binder cannot shadow a C address variable.
+struct ReadAddressDependencies {
+    c: BTreeSet<Variable>,
+    integer: BTreeSet<Variable>,
+    algebraic: BTreeSet<Variable>,
+}
+
+impl ReadAddressDependencies {
+    fn is_bound_in(&self, scope: &RewriteScope) -> bool {
+        self.c.iter().any(|variable| scope.c.contains_key(variable))
+            || self
+                .integer
+                .iter()
+                .any(|variable| scope.integer.contains_key(variable))
+            || self
+                .algebraic
+                .iter()
+                .any(|variable| scope.algebraic.contains_key(variable))
+    }
+}
+
 pub(crate) struct TermRewrite<'a> {
     // Comparison only: rebuild arithmetic through its assumption-free
     // identities. Ordinary equality rewrites retain the written nodes.
@@ -1583,6 +1684,10 @@ pub(crate) struct TermRewrite<'a> {
     integer_renaming_max: Option<u64>,
     enforce_integer_work_limit: bool,
     typed_variables: Option<TypedVariableReplacements<'a>>,
+    comparison_reads: Option<
+        &'a HashMap<((u32, u32), Pointer, LoadKind), (MachineTerm, ReadAddressDependencies)>,
+    >,
+    comparison_read_cache: Option<std::rc::Rc<std::cell::RefCell<HashMap<(u64, u64), KernelTerm>>>>,
     integer_shadowed: bool,
     scope: RewriteScope,
     scope_id: u64,
@@ -1731,9 +1836,92 @@ impl<'a> TermRewrite<'a> {
         rewrite
     }
 
+    /// Simultaneous one-step read comparison. Only selected syntax is visited;
+    /// inserted values and the contents of snapshots remain opaque.
+    pub(crate) fn comparison_read_batch(
+        proposition: &Proposition,
+        replacements: impl IntoIterator<Item = (MachineTerm, MachineTerm)>,
+    ) -> Option<Proposition> {
+        let mut named = BTreeMap::new();
+        let mut reads = HashMap::new();
+        for (source, value) in replacements {
+            if crate::instrumentation::deadline_exceeded_with_work(1) {
+                return None;
+            }
+            if let Some(read) = crate::kernel::eval::viewed_as_memory_load(&source) {
+                let mut carriers = CarrierVariables::for_rewrite(true);
+                // Collect the explicit address, never its snapshot contents.
+                if let MachineTerm::MemoryLoad(_, pointer, _) = &read {
+                    collect_pointer_carriers(pointer, &mut carriers);
+                }
+                if carriers.exhausted() {
+                    return None;
+                }
+                let dependencies = ReadAddressDependencies {
+                    c: carriers.c,
+                    integer: carriers.integer,
+                    algebraic: carriers.algebraic,
+                };
+                let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+                    unreachable!()
+                };
+                reads.insert((memory.arena_id(), *pointer, kind), (value, dependencies));
+            } else if let MachineTerm::Variable(variable) = source {
+                // Registered names use the exact read table, including its
+                // lexical address dependencies, just like structural reads.
+                named.insert(variable, TypedCReplacement::Bitvector(value));
+            }
+        }
+        if named.is_empty() && reads.is_empty() {
+            return Some(proposition.clone());
+        }
+        let integers = BTreeMap::new();
+        let algebraic = BTreeMap::new();
+        let mut rewrite = TermRewrite::for_typed_variables(&named, &integers, &algebraic);
+        rewrite.comparison_reads = Some(&reads);
+        rewrite.comparison_read_cache = Some(Default::default());
+        rewrite.ensure_replacement_carriers();
+        let mut carriers = rewrite.new_carrier_variables();
+        collect_integer_substitution_variables_with_carriers(proposition, &mut carriers);
+        rewrite.reserve_source_variables(carriers);
+        if rewrite.refusal().is_some() {
+            return None;
+        }
+        // Reserve logical binders too, including unused binders: a fresh name
+        // introduced for an outer capture must not collide with an inner one.
+        let mut pending = vec![proposition];
+        while let Some(proposition) = pending.pop() {
+            rewrite.visit();
+            if rewrite.refusal().is_some() {
+                return None;
+            }
+            match proposition {
+                Proposition::ForAll { var, body, .. } | Proposition::Exists { var, body, .. } => {
+                    rewrite.reserved_variables.insert(*var);
+                    pending.push(body);
+                }
+                Proposition::And(left, right)
+                | Proposition::Or(left, right)
+                | Proposition::Implies(left, right) => {
+                    pending.extend([left.as_ref(), right.as_ref()])
+                }
+                Proposition::Not(body) => pending.push(body),
+                _ => {}
+            }
+        }
+        let result = rewrite.read_comparison_proposition(proposition);
+        if rewrite.refusal().is_some() {
+            None
+        } else {
+            Some(result)
+        }
+    }
+
     fn empty() -> Self {
         Self {
             comparison_arithmetic: false,
+            comparison_reads: None,
+            comparison_read_cache: None,
             conditions: None,
             cited_conditions: None,
             cited_comparison_context: None,
@@ -1832,6 +2020,8 @@ impl<'a> TermRewrite<'a> {
             .max();
         let mut rewrite = Self {
             comparison_arithmetic: false,
+            comparison_reads: None,
+            comparison_read_cache: None,
             conditions: None,
             cited_conditions: None,
             cited_comparison_context: None,
@@ -2002,6 +2192,8 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn for_conditions(conditions: &'a HashMap<ConditionTerm, bool>) -> Self {
         Self {
             comparison_arithmetic: false,
+            comparison_reads: None,
+            comparison_read_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2140,6 +2332,8 @@ impl<'a> TermRewrite<'a> {
     pub(crate) fn for_pointer_variable(from: Variable, to: &'a Pointer) -> Self {
         Self {
             comparison_arithmetic: false,
+            comparison_reads: None,
+            comparison_read_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2232,6 +2426,8 @@ impl<'a> TermRewrite<'a> {
         let integer_renaming_max = renamings.values().map(|variable| variable.0).max();
         let mut walker = Self {
             comparison_arithmetic: false,
+            comparison_reads: None,
+            comparison_read_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2418,6 +2614,8 @@ impl<'a> TermRewrite<'a> {
     ) -> Self {
         Self {
             comparison_arithmetic: false,
+            comparison_reads: None,
+            comparison_read_cache: None,
             algebraic: None,
             bitvector: None,
             integer_exact: None,
@@ -2869,12 +3067,121 @@ impl<'a> TermRewrite<'a> {
             _ => {
                 // Sealed identities and binder-bearing resource bodies need
                 // their own operations; this atomic substitution does not enter them.
-                if self.typed_variables.is_some() || self.integer_variables.is_some() {
+                if self.comparison_reads.is_none()
+                    && (self.typed_variables.is_some() || self.integer_variables.is_some())
+                {
                     self.integer_work_exhausted = true;
                 }
                 resource.clone()
             }
         }
+    }
+
+    /// Read-over-write comparison may descend through logical connectives.
+    /// Ordinary atomic rewrites keep binders opaque. The simultaneous read
+    /// batch uses the carrier-aware scope maps for logical quantifiers.
+    pub(crate) fn read_comparison_proposition(&mut self, proposition: &Proposition) -> Proposition {
+        self.visit();
+        match proposition {
+            Proposition::And(left, right) => Proposition::And(
+                Box::new(self.read_comparison_proposition(left)),
+                Box::new(self.read_comparison_proposition(right)),
+            ),
+            Proposition::Or(left, right) => Proposition::Or(
+                Box::new(self.read_comparison_proposition(left)),
+                Box::new(self.read_comparison_proposition(right)),
+            ),
+            Proposition::Implies(left, right) => Proposition::Implies(
+                Box::new(self.read_comparison_proposition(left)),
+                Box::new(self.read_comparison_proposition(right)),
+            ),
+            Proposition::Not(body) => {
+                Proposition::Not(Box::new(self.read_comparison_proposition(body)))
+            }
+            Proposition::Predicate { name, arguments } if self.comparison_reads.is_some() => {
+                Proposition::Predicate {
+                    name: name.clone(),
+                    arguments: arguments
+                        .iter()
+                        .map(|argument| self.term(argument))
+                        .collect(),
+                }
+            }
+            Proposition::ForAll {
+                name,
+                var,
+                sort,
+                body,
+            } if self.comparison_reads.is_some() => {
+                let (var, body) = self.read_comparison_quantifier(*var, sort, body);
+                Proposition::ForAll {
+                    name: name.clone(),
+                    var,
+                    sort: sort.clone(),
+                    body: Box::new(body),
+                }
+            }
+            Proposition::Exists {
+                name,
+                var,
+                sort,
+                body,
+            } if self.comparison_reads.is_some() => {
+                let (var, body) = self.read_comparison_quantifier(*var, sort, body);
+                Proposition::Exists {
+                    name: name.clone(),
+                    var,
+                    sort: sort.clone(),
+                    body: Box::new(body),
+                }
+            }
+            _ => self.proposition(proposition),
+        }
+    }
+
+    fn read_comparison_quantifier(
+        &mut self,
+        variable: Variable,
+        sort: &Sort,
+        body: &Proposition,
+    ) -> (Variable, Proposition) {
+        let carrier = match sort {
+            Sort::Integer => Some(BindingCarrier::Integer),
+            Sort::Algebraic(_) => Some(BindingCarrier::Algebraic),
+            Sort::Bitvector32
+            | Sort::Bitvector64
+            | Sort::CInt32
+            | Sort::CInt64
+            | Sort::CMachineInteger(_)
+            | Sort::CPointer(_)
+            | Sort::CObjectPointer(_, _)
+            | Sort::CValue
+            | Sort::PointerOffset
+            | Sort::Condition => Some(BindingCarrier::C),
+            _ => None,
+        };
+        let Some(carrier) = carrier else {
+            return (variable, self.read_comparison_proposition(body));
+        };
+        let capture = self
+            .replacement_carriers
+            .as_ref()
+            .is_some_and(|replacement| replacement.contains(carrier, variable));
+        let mapped = if capture {
+            let Some(fresh) = self.fresh_variable() else {
+                return (variable, exhausted_proposition());
+            };
+            fresh
+        } else {
+            variable
+        };
+        let scope_id = self.scope_id;
+        let shadowed = self.integer_shadowed;
+        let mut changes = Vec::new();
+        self.push_binding_mapping(carrier, variable, mapped, &mut changes);
+        let body = self.read_comparison_proposition(body);
+        self.restore_scope(&changes, scope_id, shadowed);
+        (mapped, body)
     }
 
     pub(crate) fn proposition(&mut self, proposition: &Proposition) -> Proposition {
@@ -3045,9 +3352,10 @@ impl<'a> TermRewrite<'a> {
             },
             // Binder-bearing and compound propositions require their own explicit proof steps.
             _ => {
-                if self.integer_variables.is_some()
-                    || self.typed_variables.is_some()
-                    || self.enforce_integer_work_limit
+                if self.comparison_reads.is_none()
+                    && (self.integer_variables.is_some()
+                        || self.typed_variables.is_some()
+                        || self.enforce_integer_work_limit)
                 {
                     self.integer_work_exhausted = true;
                     exhausted_proposition()
@@ -3929,7 +4237,8 @@ impl<'a> TermRewrite<'a> {
         } else {
             self.scope.c.contains_key(&original_item)
         };
-        let changed_scope = accumulator_capture
+        let changed_scope = self.comparison_reads.is_some()
+            || accumulator_capture
             || item_capture
             || accumulator_blocks_source
             || item_blocks_source
@@ -4362,7 +4671,9 @@ impl<'a> TermRewrite<'a> {
                 };
                 self.push_binding_mapping(carrier, variable, fresh, changes);
                 replace_binding_variable(binding, carrier, fresh);
-            } else if self.binding_shadows_source(carrier, variable) {
+            } else if self.comparison_reads.is_some()
+                || self.binding_shadows_source(carrier, variable)
+            {
                 self.push_binding_mapping(carrier, variable, variable, changes);
                 if matches!(carrier, BindingCarrier::Integer) && !self.integer_shadowed {
                     self.integer_shadowed = true;
@@ -4399,7 +4710,9 @@ impl<'a> TermRewrite<'a> {
             self.push_binding_mapping(BindingCarrier::C, variable, fresh, changes);
             return Some(fresh);
         }
-        if self.binding_shadows_source(BindingCarrier::C, variable) {
+        if self.comparison_reads.is_some()
+            || self.binding_shadows_source(BindingCarrier::C, variable)
+        {
             self.push_binding_mapping(BindingCarrier::C, variable, variable, changes);
             return Some(variable);
         }
@@ -4587,6 +4900,14 @@ impl<'a> TermRewrite<'a> {
             && let Some((_, to)) = self.pointer_variable
         {
             collect_pointer_carriers(to, &mut variables);
+        }
+        if let Some(reads) = self.comparison_reads {
+            for (value, _) in reads.values() {
+                collect_bitvector_carriers(value, &mut variables);
+                if variables.exhausted() {
+                    break;
+                }
+            }
         }
         if !variables.exhausted()
             && let Some(replacements) = &self.typed_variables
@@ -5203,6 +5524,27 @@ impl<'a> TermRewrite<'a> {
                 op.build_raw(self.bits(left), self.bits(right))
             }
         };
+        // Comparison forms are lookup aids, not stored syntax. Replacing a
+        // read can expose a literal machine comparison; preserve the old
+        // substitution path's constant result without simplifying symbolic
+        // operands or revisiting an arithmetic prefix.
+        if self.comparison_reads.is_some()
+            && let ConditionTerm::Compare {
+                format,
+                relation,
+                left,
+                right,
+            } = &result
+            && matches!(left.as_ref(), MachineTerm::Constant { .. })
+            && matches!(right.as_ref(), MachineTerm::Constant { .. })
+        {
+            return ConditionTerm::machine_compare(
+                *format,
+                *relation,
+                left.as_ref().clone(),
+                right.as_ref().clone(),
+            );
+        }
         if let Some(guard) = result.pointer_offset_association_guard() {
             if let Some(conditions) = &mut self.collected_conditions {
                 conditions.push(guard.clone());
@@ -5350,7 +5692,23 @@ impl<'a> TermRewrite<'a> {
             let MachineOperandView::Legacy(source) = source else {
                 unreachable!()
             };
-            return native == source;
+            if native == source {
+                return true;
+            }
+            // Shared observations can retain a native read name for output.
+            // When a replacement crosses the native-only value boundary,
+            // match that name to the exact structural read selected by the
+            // caller, without choosing another snapshot or resolving a value.
+            let (variable, read) = match (native, source) {
+                (MachineTerm::Variable(variable), read @ MachineTerm::MemoryLoad(..))
+                | (read @ MachineTerm::MemoryLoad(..), MachineTerm::Variable(variable)) => {
+                    (variable, read)
+                }
+                _ => return false,
+            };
+            return crate::kernel::eval::viewed_as_memory_load(&MachineTerm::Variable(*variable))
+                .as_ref()
+                == Some(read);
         };
         let mut pending = vec![(native, root)];
         while let Some((native, shared)) = pending.pop() {
@@ -5362,6 +5720,36 @@ impl<'a> TermRewrite<'a> {
             match shared.node() {
                 KernelTermNode::Variable(variable) => {
                     if view.variable() != Some(variable) {
+                        return false;
+                    }
+                }
+                KernelTermNode::MemoryLoad {
+                    memory,
+                    address,
+                    kind,
+                } => {
+                    if view
+                        .read()
+                        .is_some_and(|(m, p, k)| m == memory && p == address && k == *kind)
+                    {
+                        continue;
+                    }
+                    let variable = view.variable().copied().or_else(|| {
+                        crate::kernel::eval::load_variable_for_term(native).map(|(name, _)| name)
+                    });
+                    let KernelType::C(ty) = shared.ty() else {
+                        return false;
+                    };
+                    let Some(format) = MachineIntegerType::from_c_type(*ty) else {
+                        return false;
+                    };
+                    if variable
+                        .and_then(|name| {
+                            crate::kernel::eval::registered_scalar_read_term(&name, format)
+                        })
+                        .as_ref()
+                        != Some(shared)
+                    {
                         return false;
                     }
                 }
@@ -5455,6 +5843,15 @@ impl<'a> TermRewrite<'a> {
         if let MachineTerm::Variable(variable) = v
             && let Some(replacements) = &self.typed_variables
             && let Some(TypedCReplacement::Bitvector(replacement)) = replacements.c.get(variable)
+        {
+            self.changed = true;
+            return replacement.clone();
+        }
+        if let Some(reads) = self.comparison_reads
+            && let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
+                crate::kernel::eval::viewed_as_memory_load(v)
+            && let Some((replacement, variables)) = reads.get(&(memory.arena_id(), *pointer, kind))
+            && !variables.is_bound_in(&self.scope)
         {
             self.changed = true;
             return replacement.clone();
@@ -7950,5 +8347,349 @@ mod pointer_integer_rewrite_tests {
             TermRewrite::for_bits(&alias, &from).value(&CValue::UInt64(alias.clone())),
             CValue::UInt64(_)
         ));
+    }
+}
+
+#[cfg(test)]
+mod comparison_read_batch_tests {
+    use super::*;
+
+    fn atom(value: MachineTerm) -> Proposition {
+        Proposition::Predicate {
+            name: "selected_read".into(),
+            arguments: vec![Term::Bitvector32(value)],
+        }
+    }
+
+    #[test]
+    fn batch_read_comparison_retains_literal_machine_truth_and_falsehood() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        for (format, kind) in [
+            (MachineIntegerType::Int32, LoadKind::Int32),
+            (MachineIntegerType::UInt32, LoadKind::UInt32),
+            (MachineIntegerType::Int64, LoadKind::Bits64),
+            (MachineIntegerType::UInt64, LoadKind::Bits64),
+        ] {
+            let read = MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer::symbolic(Variable(401_020))),
+                kind,
+            );
+            let literal = |bits| {
+                MachineTerm::machine_constant(
+                    crate::kernel::MachineIntegerConstant::from_bits(format.format(), bits)
+                        .unwrap(),
+                )
+            };
+            let three = literal(3);
+            for (relation, rhs, expected) in [
+                (CompareRelation::Equal, 3, true),
+                (CompareRelation::Equal, 4, false),
+                (CompareRelation::LessThan, 4, true),
+                (CompareRelation::LessThan, 3, false),
+            ] {
+                let input = Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format,
+                        relation,
+                        left: Box::new(read.clone()),
+                        right: Box::new(literal(rhs)),
+                    },
+                    true,
+                );
+                assert_eq!(
+                    TermRewrite::comparison_read_batch(&input, [(read.clone(), three.clone())]),
+                    Some(Proposition::ConditionIs(
+                        ConditionTerm::Constant(expected),
+                        true
+                    )),
+                );
+                // Ordinary rewriting retains the machine comparison syntax.
+                let mut structural = TermRewrite::for_bits(&read, &three);
+                let result = structural.proposition(&input);
+                assert!(structural.refusal().is_none());
+                assert!(matches!(
+                    result,
+                    Proposition::ConditionIs(ConditionTerm::Compare { .. }, true)
+                ));
+            }
+        }
+    }
+
+    #[test]
+    fn batch_read_comparison_is_simultaneous_and_capture_avoiding() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let read = |index| {
+            MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(Pointer::symbolic(Variable(index))),
+                LoadKind::Int32,
+            )
+        };
+        let first = read(401_001);
+        let second = read(401_002);
+        let input = Proposition::And(
+            Box::new(atom(first.clone())),
+            Box::new(atom(second.clone())),
+        );
+        let actual = TermRewrite::comparison_read_batch(
+            &input,
+            [
+                (first, second.clone()),
+                (second.clone(), MachineTerm::constant(7)),
+            ],
+        )
+        .expect("selected carriers");
+        assert_eq!(
+            actual,
+            Proposition::And(
+                Box::new(atom(second)),
+                Box::new(atom(MachineTerm::constant(7))),
+            )
+        );
+
+        let source = Variable(401_010);
+        let binder = Variable(401_011);
+        let input = Proposition::ForAll {
+            name: BinderName::written("k"),
+            var: binder,
+            sort: Sort::CInt32,
+            body: Box::new(Proposition::Predicate {
+                name: "pair".into(),
+                arguments: vec![
+                    Term::Bitvector32(MachineTerm::Variable(source)),
+                    Term::Bitvector32(MachineTerm::Variable(binder)),
+                ],
+            }),
+        };
+        let actual = TermRewrite::comparison_read_batch(
+            &input,
+            [(MachineTerm::Variable(source), MachineTerm::Variable(binder))],
+        )
+        .expect("quantified carrier");
+        let Proposition::ForAll { var, body, .. } = actual else {
+            panic!("quantifier")
+        };
+        assert_ne!(var, binder);
+        assert_eq!(
+            *body,
+            Proposition::Predicate {
+                name: "pair".into(),
+                arguments: vec![
+                    Term::Bitvector32(MachineTerm::Variable(binder)),
+                    Term::Bitvector32(MachineTerm::Variable(var))
+                ],
+            }
+        );
+        // A descriptor depending on the bound address is not a global read
+        // occurrence to replace using an outer selected substitution.
+        let scoped_read = read(binder.0);
+        let scoped = Proposition::ForAll {
+            name: BinderName::written("address"),
+            var: binder,
+            sort: Sort::CInt32,
+            body: Box::new(atom(scoped_read.clone())),
+        };
+        assert_eq!(
+            TermRewrite::comparison_read_batch(&scoped, [(scoped_read, MachineTerm::constant(9)),]),
+            Some(scoped)
+        );
+
+        let scoped_pointer = Pointer::symbolic(binder);
+        let scoped_name = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &scoped_pointer,
+            LoadKind::Int32,
+            4,
+        ));
+        let scoped_named = Proposition::ForAll {
+            name: BinderName::written("address"),
+            var: binder,
+            sort: Sort::CInt32,
+            body: Box::new(atom(scoped_name.clone())),
+        };
+        for source in [scoped_name, read(binder.0)] {
+            assert_eq!(
+                TermRewrite::comparison_read_batch(
+                    &scoped_named,
+                    [(source, MachineTerm::constant(9)),]
+                ),
+                Some(scoped_named.clone())
+            );
+        }
+
+        // Equal numeric IDs in different carriers are independent binders.
+        let named_address_read =
+            MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+                &memory,
+                &scoped_pointer,
+                LoadKind::Int32,
+                4,
+            ));
+        for body_read in [read(binder.0), named_address_read.clone()] {
+            let input = Proposition::ForAll {
+                name: BinderName::written("integer_k"),
+                var: binder,
+                sort: Sort::Integer,
+                body: Box::new(atom(body_read)),
+            };
+            let expected = Proposition::ForAll {
+                name: BinderName::written("integer_k"),
+                var: binder,
+                sort: Sort::Integer,
+                body: Box::new(atom(MachineTerm::constant(9))),
+            };
+            for source in [read(binder.0), named_address_read.clone()] {
+                assert_eq!(
+                    TermRewrite::comparison_read_batch(
+                        &input,
+                        [(source, MachineTerm::constant(9)),]
+                    ),
+                    Some(expected.clone())
+                );
+            }
+        }
+
+        let shadowed = Proposition::Exists {
+            name: "read".into(),
+            var: source,
+            sort: Sort::CInt32,
+            body: Box::new(atom(MachineTerm::Variable(source))),
+        };
+        assert_eq!(
+            TermRewrite::comparison_read_batch(
+                &shadowed,
+                [(MachineTerm::Variable(source), MachineTerm::constant(9)),]
+            ),
+            Some(shadowed)
+        );
+    }
+
+    #[test]
+    fn batch_read_comparison_respects_internal_binders_for_raw_and_named_reads() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let binder = Variable(403_001);
+        let accumulator = Variable(403_002);
+        let pointer = Pointer::symbolic(binder);
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let raw =
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &pointer,
+            LoadKind::Int32,
+            4,
+        ));
+        let variants: std::sync::Arc<[AlgebraicVariantType]> = vec![AlgebraicVariantType {
+            name: "Bound".into(),
+            fields: vec![AlgebraicValueType::C(CType::Int32)],
+        }]
+        .into();
+        let algebraic_type = AlgebraicType {
+            rigid: false,
+            name: "BatchBound".into(),
+            arguments: vec![],
+            variants: variants.clone(),
+            schemas: std::sync::Arc::new(AlgebraicSchemas::new(BTreeMap::from([(
+                AlgebraicValueType::Algebraic {
+                    name: "BatchBound".into(),
+                    arguments: vec![],
+                },
+                variants,
+            )]))),
+        };
+        for read in [&raw, &named] {
+            let machine_fold = MachineTerm::RangeFold {
+                start: Box::new(MachineTerm::constant(0)),
+                end: Box::new(MachineTerm::constant(2)),
+                initial: Box::new(MachineTerm::constant(0)),
+                accumulator,
+                item: binder,
+                body: Box::new(read.clone()),
+            };
+            let machine_match = MachineTerm::AlgebraicMatch {
+                scrutinee: Box::new(AlgebraicTerm {
+                    algebraic_type: algebraic_type.clone(),
+                    node: AlgebraicTermNode::Variable(Variable(403_003)),
+                }),
+                arms: vec![AlgebraicBitvectorMatchArm {
+                    binding_names: Default::default(),
+                    variant: "Bound".into(),
+                    bindings: vec![AlgebraicValue::C(CValue::Int32(MachineTerm::Variable(
+                        binder,
+                    )))],
+                    body: read.clone(),
+                }],
+            };
+            let integer_fold = IntegerTerm::range_fold(
+                IntegerRangeFoldIndex::Int32 {
+                    start: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(0)),
+                    end: SharedIntegerRangeEndpoint::intern(MachineTerm::constant(2)),
+                },
+                IntegerTerm::constant_i64(0),
+                accumulator,
+                binder,
+                IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    read.clone(),
+                )),
+            );
+            for argument in [
+                Term::Bitvector32(machine_fold),
+                Term::Bitvector32(machine_match),
+                Term::Integer(integer_fold),
+            ] {
+                let input = Proposition::Predicate {
+                    name: "scoped_read".into(),
+                    arguments: vec![argument],
+                };
+                for source in [&raw, &named] {
+                    let result = TermRewrite::comparison_read_batch(
+                        &input,
+                        [(source.clone(), MachineTerm::constant(9))],
+                    )
+                    .expect("internal bound read remains scoped");
+                    assert_eq!(result, input);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn batch_read_comparison_preserves_snapshots_and_sealed_resources() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let source = Variable(402_001);
+        let pointer = Pointer::symbolic(Variable(402_002));
+        let memory = crate::kernel::intern_c_memory(CMemory::new().store(
+            pointer.clone(),
+            CValue::Int32(MachineTerm::Variable(source)),
+        ));
+        let untouched = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        let sealed = CResource::MutexGuard(MutexIdentity {
+            epoch: Some(123),
+            mutex: Pointer {
+                block: "sealed".into(),
+                offset: PointerOffsetTerm::Int32Scaled {
+                    value: Box::new(MachineTerm::Variable(source)),
+                    byte_width: 1,
+                },
+            },
+        });
+        let input = Proposition::And(
+            Box::new(atom(untouched)),
+            Box::new(Proposition::CResourceContains {
+                parent: Box::new(sealed),
+                child: Box::new(CResource::Emp),
+            }),
+        );
+        assert_eq!(
+            TermRewrite::comparison_read_batch(
+                &input,
+                [(MachineTerm::Variable(source), MachineTerm::constant(9)),]
+            ),
+            Some(input)
+        );
     }
 }

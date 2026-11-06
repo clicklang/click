@@ -1007,10 +1007,10 @@ fn certified_transitions_from_execution(
                         if target == &fact {
                             continue;
                         }
-                        // A name-bearing source stays true after the step
-                        // (its cells are named by epoch); a later premise
+                        // A snapshot-bearing source stays true after the step;
+                        // its read descriptor retains the old state. A premise
                         // may cite it at the statement entry. Keep it.
-                        if !crate::kernel::proposition_mentions_registered_load_variable(&fact) {
+                        if !crate::kernel::proposition_mentions_scalar_read(&fact) {
                             successor_facts.remove_all(&fact);
                         }
                         if !successor_facts.contains(target) {
@@ -1034,12 +1034,12 @@ fn certified_transitions_from_execution(
 
                 let mut transported_execution_facts = Vec::new();
                 for transport in &transported_facts {
-                    // A carried fact names its cells by content-addressed
-                    // epoch, so the pre-step form stays true after the
+                    // A carried fact retains its reads' snapshots,
+                    // so the pre-step form stays true after the
                     // step: a later premise may cite either the entry
                     // form (`at(statement(n).entry, ...)`) or the carried
                     // one. Keep both.
-                    if crate::kernel::proposition_mentions_registered_load_variable(
+                    if crate::kernel::proposition_mentions_scalar_read(
                         &transport.source,
                     ) {
                         if !successor_facts.contains(&transport.target) {

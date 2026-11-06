@@ -20,7 +20,7 @@ use num_bigint::BigInt;
 #[cfg(test)]
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
-pub(crate) use operand_correspondence::shared_operand_variable_pairs;
+pub(crate) use operand_correspondence::shared_operand_leaf_pairs;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
@@ -533,10 +533,7 @@ impl SharedMachineIntegerTerm {
     /// An explicit native operand already imported in this verification.
     /// Read-only: a miss does not import syntax or retain an opaque payload.
     pub(crate) fn retained_import(ty: MachineIntegerType, value: &MachineTerm) -> Option<Self> {
-        let key = MachineIntegerKey::Legacy {
-            ty,
-            value: value.clone(),
-        };
+        let key = MachineIntegerKey::native(ty, value.clone());
         let found = MACHINE_INTEGER_INTERNER
             .get()?
             .lock()
@@ -551,7 +548,7 @@ impl SharedMachineIntegerTerm {
         // Legacy callers already supply a boxed tree. Reuse its existing
         // interned observation before importing, and retain that explicit tree
         // instead of exporting it again on the first checker read.
-        let key = MachineIntegerKey::Legacy { ty, value };
+        let key = MachineIntegerKey::native(ty, value);
         let interner =
             MACHINE_INTEGER_INTERNER.get_or_init(|| Mutex::new(MachineIntegerInterner::default()));
         if let Some(found) = interner
@@ -617,10 +614,7 @@ impl SharedMachineIntegerTerm {
             })
             .or_else(|| KernelTermImport::default().machine_arithmetic(ty, value))?;
         let shared = Self::from_shared(ty, root)?;
-        shared.remember_explicit_import(MachineIntegerKey::Legacy {
-            ty,
-            value: value.clone(),
-        });
+        shared.remember_explicit_import(MachineIntegerKey::native(ty, value.clone()));
         Some(shared)
     }
 
@@ -763,9 +757,21 @@ enum MachineIntegerKey {
         term: KernelTerm,
     },
     Legacy {
+        // Compare the scope before the native payload: its snapshots have
+        // content equality across arenas, which can walk unrelated memory.
+        arena: u32,
         ty: MachineIntegerType,
         value: MachineTerm,
     },
+}
+impl MachineIntegerKey {
+    fn native(ty: MachineIntegerType, value: MachineTerm) -> Self {
+        Self::Legacy {
+            arena: super::c_memory_arena_token(),
+            ty,
+            value,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -851,7 +857,7 @@ impl MachineIntegerInterner {
                     boxed: OnceLock::new(),
                 },
             ),
-            MachineIntegerKey::Legacy { ty, value } => {
+            MachineIntegerKey::Legacy { ty, value, .. } => {
                 (*ty, MachineIntegerOperand::Legacy(value.clone()))
             }
         };

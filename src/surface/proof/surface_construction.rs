@@ -109,28 +109,25 @@ fn checked_surface_fact_in_state_with_assumptions(
     // whose defining facts are not in this view's effect stream; the
     // registry is the kernel's own record of what each one stands for, and
     // resolving through it is the sanctioned display direction.
-    let resolved_kernel =
-        if crate::kernel::proposition_mentions_registered_load_variable(&resolved_kernel) {
-            crate::kernel::try_resolve_load_variables_from_registry(&resolved_kernel).map_err(
-                |error| {
-                    ClickError::new(format!("could not resolve checked surface loads: {error}"))
-                },
-            )?
-        } else {
-            resolved_kernel
-        };
+    let resolved_kernel = if crate::kernel::proposition_mentions_scalar_read(&resolved_kernel) {
+        crate::kernel::try_resolve_load_variables_from_registry(&resolved_kernel).map_err(
+            |error| ClickError::new(format!("could not resolve checked surface loads: {error}")),
+        )?
+    } else {
+        resolved_kernel
+    };
     // The round trip is judged against the resolved fact: fresh lowering
     // writes loads as load terms, while the original may name them through
     // kernel-minted variables whose defining equations the resolution
     // already substituted.
     let round_trip_matches =
         |lowered: &Proposition| lowered == kernel || *lowered == resolved_kernel;
-    // A fact that mentions a load variable is anchored to the snapshot its
+    // A fact that contains a scalar read is anchored to the snapshot its
     // cell was read from; synthesize it through the selector recorded for
     // that snapshot, so the form stays correct in every later proof state
     // where the certificate is checked, rather than a plain form
     // that is correct only until the cell changes.
-    if crate::kernel::proposition_mentions_registered_load_variable(kernel) {
+    if crate::kernel::proposition_mentions_scalar_read(kernel) {
         let (exact_snapshots, compatible_snapshots) =
             snapshot_indexed_selectors(&resolved_kernel, view.recorded_snapshots);
         for (selector, snapshot_state) in exact_snapshots.iter().chain(&compatible_snapshots) {
@@ -453,12 +450,12 @@ fn checked_surface_comparison_fact_in_state_with_availability(
             return Ok(surface.clone());
         }
     }
-    // A fact that mentions a load variable is anchored to the snapshot the
+    // A fact that contains a scalar read is anchored to the snapshot the
     // cell was read from, so its program-point-anchored surface forms stay
     // correct at every later proof state, while a plain current-state form
     // is correct only until the cell changes: anchored forms are tried first
     // and plain forms last.
-    let prefer_anchored = crate::kernel::proposition_mentions_registered_load_variable(kernel);
+    let prefer_anchored = crate::kernel::proposition_mentions_scalar_read(kernel);
     if !prefer_anchored
         && let Ok(surface) = checked_surface_fact_in_state_with_assumptions(
             view,

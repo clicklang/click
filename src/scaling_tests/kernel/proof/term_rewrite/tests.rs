@@ -218,16 +218,16 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
         let Term::Integer(IntegerTerm::Machine(machine)) = output else {
             panic!("registered load carrier changed shape")
         };
-        let MachineTerm::Variable(rewritten_load) = machine.value() else {
-            panic!("rewritten load expanded into an owned memory tree")
-        };
-        assert_ne!(*rewritten_load, load);
-        let Some((snapshot, pointer)) =
-            crate::kernel::eval::registered_load_for_variable(rewritten_load)
-        else {
-            panic!("rewritten load was not registered")
-        };
-        assert_eq!(snapshot, memory);
+        assert!(!machine.has_boxed_operand());
+        let (snapshot, pointer, kind) = machine.operand_view().read().expect("structural read");
+        assert_eq!(kind, crate::kernel::LoadKind::Int32);
+        assert_ne!(
+            pointer,
+            &crate::kernel::eval::registered_load_for_variable(&load)
+                .unwrap()
+                .1
+        );
+        assert_eq!(snapshot, &memory);
         assert!(
             pointer
                 .offset
@@ -1568,5 +1568,111 @@ fn retained_rewrite_replacements_do_not_reindex_growing_prefixes() {
             pair[1] <= pair[0] * 5,
             "retained replacement work: {work:?}"
         );
+    }
+}
+
+#[test]
+fn resource_read_collection_scales_with_selected_arguments() {
+    let mut work = Vec::new();
+    for size in [8usize, 16, 32, 64] {
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let arguments = (0..size)
+            .map(|index| {
+                AlgebraicValue::C(CValue::Int32(MachineTerm::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer::symbolic(Variable(3_219_100 + index as u64))),
+                    LoadKind::Int32,
+                )))
+            })
+            .collect();
+        let goal = Proposition::CResourceContains {
+            parent: Box::new(CResource::Composite {
+                name: "selected".into(),
+                arguments,
+            }),
+            child: Box::new(CResource::Emp),
+        };
+        let (reads, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            let mut collector = IntegerSubstitutionVariableCollector::checked();
+            collector.collect_read_terms();
+            collector.collect(&goal);
+            assert!(!collector.exhausted());
+            collector.take_read_terms().count()
+        });
+        assert_eq!(reads, size);
+        work.push(cost);
+    }
+    assert!(work[0] > 0);
+    for pair in work.windows(2) {
+        assert!(pair[1] > pair[0]);
+        assert!(
+            pair[1] <= 3 * pair[0],
+            "selected resource collection: {work:?}"
+        );
+    }
+}
+
+#[test]
+fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
+    let mut work = Vec::new();
+    for size in [8usize, 16, 32, 64] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let reads: Vec<_> = (0..size)
+            .map(|index| {
+                MachineTerm::MemoryLoad(
+                    memory.clone(),
+                    Box::new(Pointer::symbolic(Variable(4_021_000 + index as u64))),
+                    LoadKind::Int32,
+                )
+            })
+            .collect();
+        let arguments = reads
+            .iter()
+            .map(|read| {
+                let shared = KernelTermImport::default()
+                    .machine_arithmetic(MachineIntegerType::Int32, read)
+                    .expect("shared read");
+                AlgebraicValue::Integer(IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, shared)
+                        .unwrap(),
+                ))
+            })
+            .collect();
+        // All reads occur in one goal. Rewalking this goal for each replacement
+        // is quadratic even though a collection of single-read goals is linear.
+        let goal = Proposition::CResourceContains {
+            parent: Box::new(CResource::Composite {
+                name: "many_reads".into(),
+                arguments,
+            }),
+            child: Box::new(CResource::Emp),
+        };
+        let (result, cost) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::comparison_read_batch(
+                &goal,
+                reads
+                    .iter()
+                    .enumerate()
+                    .map(|(index, read)| (read.clone(), MachineTerm::constant(index as u32))),
+            )
+            .expect("selected comparison")
+        });
+        let expected = Proposition::CResourceContains {
+            parent: Box::new(CResource::Composite {
+                name: "many_reads".into(),
+                arguments: (0..size)
+                    .map(|index| AlgebraicValue::Integer(IntegerTerm::constant_i64(index as i64)))
+                    .collect(),
+            }),
+            child: Box::new(CResource::Emp),
+        };
+        assert_eq!(result, expected);
+        work.push(cost);
+    }
+    assert!(work[0] > 0);
+    for pair in work.windows(2) {
+        assert!(pair[1] > pair[0]);
+        assert!(pair[1] <= 3 * pair[0], "single proposition batch: {work:?}");
     }
 }

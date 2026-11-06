@@ -37,7 +37,7 @@ fn payload(root: View<'_>) -> Option<usize> {
             total = total.checked_add(bitvector_payload(term)?)?;
         } else {
             total = total.checked_add(1)?;
-            if term.literal().is_some() || term.variable().is_some() {
+            if term.literal().is_some() || term.variable().is_some() || term.read().is_some() {
             } else if let Some((encoding, _, _, operand)) = term.cast() {
                 if !cast_supported(encoding) {
                     return None;
@@ -59,6 +59,21 @@ fn payload(root: View<'_>) -> Option<usize> {
     Some(total)
 }
 
+// A read is an opaque scalar value, just as its compatibility name was.
+// Ignore the observation's format here; the enclosing comparison checks it,
+// while the descriptor retains the load kind, snapshot and address.
+fn read_identity(view: View<'_>) -> Option<crate::kernel::KernelTerm> {
+    match view {
+        View::Shared(term) if view.read().is_some() => {
+            Some(term.with_machine_observation_type(MachineIntegerType::Int32))
+        }
+        View::Legacy(MachineTerm::Variable(variable)) => {
+            crate::kernel::eval::registered_scalar_read_term(variable, MachineIntegerType::Int32)
+        }
+        _ => None,
+    }
+}
+
 /// Structural equality restricted to precisely the certificate fragment.
 /// No identity shortcut may bypass unsupported operators or the payload bound.
 pub(super) fn equal(left: View<'_>, right: View<'_>) -> bool {
@@ -78,6 +93,15 @@ pub(super) fn equal(left: View<'_>, right: View<'_>) -> bool {
         }
         if let (Some(left), Some(right)) = (left.literal(), right.literal()) {
             if !legacy_bitvector_equal(&left, &right) {
+                return false;
+            }
+            continue;
+        }
+        if left.read().is_some() || right.read().is_some() {
+            let (Some(left), Some(right)) = (read_identity(left), read_identity(right)) else {
+                return false;
+            };
+            if left != right {
                 return false;
             }
             continue;
@@ -114,6 +138,50 @@ pub(super) fn equal(left: View<'_>, right: View<'_>) -> bool {
 mod tests {
     use super::*;
     use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm, Variable};
+
+    #[test]
+    fn shared_certificate_read_identity_keeps_snapshot_address_and_kind() {
+        use crate::kernel::{CMemory, CValue, LoadKind, Pointer, VerificationSession};
+        let _session = VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(997109));
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let name = crate::kernel::eval::load_variable_for_exact_cell(
+            &memory,
+            &address,
+            LoadKind::UInt16,
+            2,
+        );
+        let named = MachineTerm::Variable(name);
+        let read = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::UInt16, &named)
+            .unwrap();
+        let wrong = |memory, address, kind| {
+            KernelTermImport::default()
+                .machine_arithmetic(
+                    MachineIntegerType::UInt16,
+                    &MachineTerm::MemoryLoad(memory, Box::new(address), kind),
+                )
+                .unwrap()
+        };
+        let other_address = wrong(memory.clone(), address.offset_by_bytes(2), LoadKind::UInt16);
+        let other_kind = wrong(memory.clone(), address.clone(), LoadKind::Int16);
+        let other_snapshot = wrong(
+            crate::kernel::intern_c_memory(memory.memory().clone().store(
+                address.clone(),
+                CValue::UInt16(MachineTerm::narrow_constant(MachineIntegerType::UInt16, 7)),
+            )),
+            address,
+            LoadKind::UInt16,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert!(equal(View::Shared(&read), View::Legacy(&named)));
+        for other in [&other_address, &other_kind, &other_snapshot] {
+            assert!(!equal(View::Shared(&read), View::Shared(other)));
+        }
+        crate::kernel::eval::clear_load_variable_registry();
+        assert!(equal(View::Shared(&read), View::Shared(&read)));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
 
     #[test]
     fn shared_certificate_operand_identity_preserves_supported_and_refused_shapes() {

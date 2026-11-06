@@ -275,6 +275,11 @@ impl KernelTermImport {
     ) -> Option<KernelTerm> {
         use KernelMachineLiteral as Literal;
         use MachineTerm as Old;
+        if matches!(term, Old::MemoryLoad(..))
+            || matches!(term, Old::Variable(v) if crate::kernel::registered_load_kind_for_variable(v).is_some())
+        {
+            return self.scalar_read(result, term);
+        }
         let node = match term {
             Old::IntegerToMachine { value, destination } => {
                 let operand = self.integer(value);

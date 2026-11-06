@@ -153,6 +153,12 @@ pub(super) fn evidence_operand(term: &KernelTerm) -> MachineTerm {
     let view = MachineOperandView::Shared(term);
     if let Some(variable) = view.variable() {
         MachineTerm::Variable(*variable)
+    } else if let Some((memory, address, kind)) = view.read() {
+        // The explicit evidence API still consumes native operands. Preserve
+        // its captured-read binder policy while that interface migrates.
+        crate::kernel::eval::registered_exact_read(memory, address, kind)
+            .map(MachineTerm::Variable)
+            .unwrap_or_else(|| term.machine_read_leaf().expect("read leaf").clone())
     } else if let Some(literal) = view.literal() {
         literal
     } else if let Some(conversion) = term.machine_conversion_leaf() {

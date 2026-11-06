@@ -552,6 +552,14 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(goal) = search_input.goal() else {
             return Ok(None);
         };
+        // Intro searches an implication/forall body with its guard or fresh
+        // variable available. Rewriting the entire wrapper repeats that body
+        // search for every candidate chain, including already-refuted leaves.
+        // Keep connected equality search on the resulting selected goal, as
+        // the function-unfold strategy does for the same logical wrappers.
+        if matches!(goal, Proposition::Implies(..) | Proposition::ForAll { .. }) {
+            return Ok(None);
+        }
         let Some(mut equalities) = crate::kernel::search::proposition_search::connected_equalities(
             search_input.facts().assumptions(),
             goal,
@@ -1779,5 +1787,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             }
         }
         carried
+    }
+}
+
+#[cfg(test)]
+mod logical_wrapper_search_tests {
+    #[test]
+    fn guarded_equalities_close_in_the_introduced_body() {
+        crate::surface::verify_click_theorems(
+            r#"
+            theorem guarded_equality(x: Integer, y: Integer) {
+                ensures x == y implies x + 1 == y + 1 by { solve(); }
+            }
+            theorem quantified_guarded_equality(x: Integer, y: Integer) {
+                ensures forall (k: Integer) { x == y implies x + k == y + k } by { solve(); }
+            }
+        "#,
+        )
+        .expect("the introduced body retains equality search");
     }
 }

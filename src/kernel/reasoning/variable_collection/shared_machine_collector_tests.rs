@@ -46,7 +46,10 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
             crate::kernel::LoadKind::Int32,
             4,
         );
-        for leaf in [converted, MachineTerm::Variable(load)] {
+        for leaf in [
+            converted,
+            crate::kernel::eval::registered_load_term_for_variable(&load).unwrap(),
+        ] {
             let native = MachineTerm::Binary {
                 format,
                 op: MachineBinaryOp::Add,

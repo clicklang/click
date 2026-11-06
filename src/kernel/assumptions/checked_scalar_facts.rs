@@ -60,10 +60,9 @@ impl ScalarOperandKey {
                 if matches!(
                     term,
                     MachineTerm::Variable(_) | MachineTerm::Constant { .. }
-                ) {
-                    let shared = crate::kernel::KernelTermImport::default()
-                        .machine_arithmetic(ty, term)
-                        .expect("scalar leaf");
+                ) && let Some(shared) =
+                    crate::kernel::KernelTermImport::default().machine_arithmetic(ty, term)
+                {
                     return Self::Shared(MachineAtom::from_operand(
                         ty,
                         MachineOperandView::Shared(&shared),

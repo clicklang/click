@@ -12,12 +12,31 @@ impl KernelTermImport {
             MachineTerm::MemoryLoad(memory, address, kind) => {
                 KernelTerm::scalar_read_descriptor(format, memory, address, *kind)
             }
+            MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+                crate::kernel::eval::registered_scalar_read_term(variable, format)
+            }
             _ => None,
         }
     }
 }
 
 impl KernelTerm {
+    /// Selected native read leaf for consumers still using the native atom
+    /// interface. Never expands a surrounding shared arithmetic expression.
+    pub(crate) fn machine_read_leaf(&self) -> Option<&MachineTerm> {
+        let KernelTermNode::MemoryLoad {
+            memory,
+            address,
+            kind,
+        } = self.node()
+        else {
+            return None;
+        };
+        Some(self.0.machine_leaf.get_or_init(|| {
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), *kind)
+        }))
+    }
+
     pub(crate) fn scalar_read_descriptor(
         format: MachineIntegerType,
         memory: &SharedCMemory,
@@ -96,11 +115,14 @@ mod tests {
             assert!(
                 matches!(term.node(), KernelTermNode::MemoryLoad { memory: m, address: p, kind: k } if m == &memory && p == &address && *k == kind)
             );
-            assert!(
-                !term.is_shared_machine_operand(),
-                "checker consumers must migrate before admission"
-            );
+            assert!(term.is_shared_machine_operand());
             crate::kernel::eval::clear_load_variable_registry();
+            assert_eq!(
+                crate::kernel::MachineOperandView::Shared(&term)
+                    .read_source()
+                    .as_deref(),
+                Some(&native)
+            );
             assert_eq!(KernelTermExport::machine(&term).unwrap(), native);
             assert_eq!(KernelTermImport::default().machine(format, &native), term);
         }
@@ -153,7 +175,7 @@ mod tests {
         assert_eq!(KernelTermExport::machine(&term).unwrap(), descriptor);
     }
     #[test]
-    fn named_read_import_agrees_with_arithmetic_storage_until_producer_migration() {
+    fn named_read_import_and_arithmetic_storage_retain_the_same_descriptor() {
         let _session = VerificationSession::enter();
         let format = MachineIntegerType::UInt32;
         let raw = MachineTerm::MemoryLoad(
@@ -161,16 +183,20 @@ mod tests {
             Box::new(Pointer::symbolic(Variable(993126))),
             LoadKind::UInt32,
         );
-        let (name, _) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
+        let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&raw).unwrap();
         let named = MachineTerm::Variable(name);
         let arithmetic = KernelTermImport::default()
             .machine_arithmetic(format, &named)
             .unwrap();
         let general = KernelTermImport::default().machine(format, &named);
         assert_eq!(general, arithmetic);
-        assert_eq!(KernelTermExport::machine(&general).unwrap(), named);
+        assert_eq!(KernelTermExport::machine(&general).unwrap(), descriptor);
         crate::kernel::eval::clear_load_variable_registry();
-        assert_eq!(KernelTermImport::default().machine(format, &named), general);
+        assert_eq!(
+            KernelTermImport::default().machine(format, &descriptor),
+            general
+        );
+        assert_eq!(KernelTermExport::machine(&arithmetic).unwrap(), descriptor);
     }
 
     #[test]
