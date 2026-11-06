@@ -5777,12 +5777,12 @@ void child_release(struct child* obj) {
 
     #[test]
     fn dynamic_current_fact_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
-        check_dynamic_current_fact_dependencies(false);
+        check_dynamic_current_fact_dependencies(false, false);
     }
 
     #[test]
     fn dynamic_definedness_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
-        check_dynamic_current_fact_dependencies(true);
+        check_dynamic_current_fact_dependencies(true, false);
     }
 
     /// A guarded universal read depends on a view of every cell its guard
@@ -5891,7 +5891,12 @@ void child_release(struct child* obj) {
         );
     }
 
-    fn check_dynamic_current_fact_dependencies(definedness: bool) {
+    #[test]
+    fn dynamic_fact_keeps_the_binding_when_coverage_uses_a_symbolic_range() {
+        check_dynamic_current_fact_dependencies(false, true);
+    }
+
+    fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -5917,7 +5922,21 @@ void child_release(struct child* obj) {
         } else {
             Proposition::ConditionIs(condition, true)
         };
-        let range = CMemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
+        let extent = if symbolic_range {
+            MachineTerm::Variable(Variable(2_000_017))
+        } else {
+            MachineTerm::constant(1)
+        };
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(extent.clone()),
+                right: Box::new(MachineTerm::constant(1)),
+            },
+            true,
+        ));
+        let range = CMemoryRange::new(pointer, MachineTerm::constant(0), extent);
         let own = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -5947,11 +5966,11 @@ void child_release(struct child* obj) {
             )
             .with_loan_ledger(Some(ledger.clone()))
             .with_loan_participant(Some(lender));
-        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
         let dependency = dynamic_body_fact_dependency(
             &proposition,
             &bound_state,
-            &PureFactContext::new(),
+            &assumptions,
             &no_temporary_views,
         )
         .unwrap();
@@ -5959,59 +5978,24 @@ void child_release(struct child* obj) {
             dependency.is_some(),
             "current viewed memory must retain its loan"
         );
-        // Coverage can need a proved index equality; binding liveness still
-        // validates the original occurrence, not a newly invented binding.
-        let alias_index = Variable(2_000_017);
-        let alias_fact = Proposition::CMemoryReadDefined {
-            memory: memory.clone(),
-            pointer: Pointer {
-                block: PointerBlock::ExternalArgument,
-                offset: PointerOffsetTerm::Int32Scaled {
-                    value: crate::kernel::SharedMachineIntegerTerm::index(
-                        MachineIntegerType::Int32,
-                        MachineTerm::Variable(alias_index),
-                    ),
-                    byte_width: 4,
-                },
-            },
-            value_type: crate::kernel::CType::Int32,
-        };
-        let alias_assumptions =
-            PureFactContext::new().assume_proposition(Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(MachineTerm::Variable(alias_index)),
-                    right: Box::new(MachineTerm::constant(0)),
-                },
-                true,
-            ));
-        assert!(
-            dynamic_body_fact_dependency(
-                &alias_fact,
-                &bound_state,
-                &alias_assumptions,
-                &no_temporary_views,
-            )
-            .unwrap()
-            .is_some()
-        );
-        assert!(
-            dynamic_body_fact_dependency(
-                &alias_fact,
-                &bound_state,
-                &PureFactContext::new(),
-                &no_temporary_views,
-            )
-            .is_err(),
-            "coverage still needs the index equality"
-        );
+        if symbolic_range {
+            assert!(
+                dynamic_body_fact_dependency(
+                    &proposition,
+                    &bound_state,
+                    &PureFactContext::new(),
+                    &no_temporary_views,
+                )
+                .is_err(),
+                "coverage still needs the range bound"
+            );
+        }
 
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
                 &bound_state.clone().with_loan_participant(Some(reader)),
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err(),
@@ -6024,7 +6008,7 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &bound_state.clone().with_loan_ledger(Some(ended.clone())),
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err(),
@@ -6043,7 +6027,7 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &unbound_state,
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err()
@@ -6053,12 +6037,18 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &CState::new().with_memory(unbound_state.memory().clone()),
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err(),
             "a pure definedness fact cannot supply access authority"
         );
+
+        if symbolic_range {
+            // This variant exercises the loan binding and its refusal cases;
+            // the constant-range variants below cover direct owned access.
+            return;
+        }
 
         let owner_state = CState::new()
             .with_memory(unbound_state.memory().clone())
@@ -6067,7 +6057,7 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &owner_state,
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .unwrap()
@@ -6082,13 +6072,8 @@ void child_release(struct child* obj) {
             Term::Bitvector32(MachineTerm::constant(0)),
         );
         assert!(
-            dynamic_body_fact_dependency(
-                &opaque,
-                &owner_state,
-                &PureFactContext::new(),
-                &no_temporary_views,
-            )
-            .is_err(),
+            dynamic_body_fact_dependency(&opaque, &owner_state, &assumptions, &no_temporary_views,)
+                .is_err(),
             "an opaque current-load carrier must fail closed"
         );
     }

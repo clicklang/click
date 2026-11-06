@@ -3497,53 +3497,13 @@ fn scalar_read_in_state(read: &MachineTerm, state: &CState) -> Option<MachineTer
 // operands when either operand is uint32. Keep an explicit snapshot outside
 // the cast so reconstruction never silently changes which memory is read.
 fn synthesize_uint32_operand(expression: ContractExpression) -> Option<ContractExpression> {
-    match expression {
-        ContractExpression::At {
-            selector,
-            expression,
-        } => Some(ContractExpression::At {
-            selector,
-            expression: Box::new(synthesize_uint32_operand(*expression)?),
-        }),
-        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
-            synthesize_uint32_operand(*expression)?,
-        ))),
-        expression => Some(ContractExpression::CFragment(CExpression::Cast {
-            expression: Box::new(contract_expression_to_c_fragment(&expression)?),
-            target_type: CType::UInt32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        })),
-    }
+    synthesize_observation_operand(expression, CType::UInt32)
 }
 
 /// `expression` converted to `int32`, inside its snapshot selector: the
 /// signed counterpart of [`synthesize_uint32_operand`].
 fn synthesize_int32_operand(expression: ContractExpression) -> Option<ContractExpression> {
-    match expression {
-        ContractExpression::At {
-            selector,
-            expression,
-        } => Some(ContractExpression::At {
-            selector,
-            expression: Box::new(synthesize_int32_operand(*expression)?),
-        }),
-        ContractExpression::Old(expression) => Some(ContractExpression::Old(Box::new(
-            synthesize_int32_operand(*expression)?,
-        ))),
-        expression => Some(ContractExpression::CFragment(CExpression::Cast {
-            expression: Box::new(contract_expression_to_c_fragment(&expression)?),
-            target_type: CType::Int32,
-            integer_mode: crate::kernel::CIntegerCastMode::CConversion,
-            pointee_struct: None,
-            pointee_volatile: false,
-            pointee_constant: false,
-            explicit_qualification: false,
-        })),
-    }
+    synthesize_observation_operand(expression, CType::Int32)
 }
 
 /// Whether [`synthesize_surface_bitvector`] spells `term` as a `uint32`

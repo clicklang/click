@@ -3750,7 +3750,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .find(|surface| {
                         search_input
                             .lower_surface_proposition(surface, "upper-bound premise")
-                            .is_ok_and(|lowered| lowered == bound)
+                            .is_ok_and(|lowered| {
+                                crate::kernel::proof::fact_reasoning::order_claim_equivalent(
+                                    &lowered, &bound,
+                                )
+                            })
                     })?;
                 let mut surface_candidates = vec![
                     surface_upper_bound_split_condition(&bound_surface)?,
@@ -3770,7 +3774,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let split_surface = surface_candidates.into_iter().find(|surface| {
                     search_input
                         .lower_surface_proposition(surface, "upper-bound split condition")
-                        .is_ok_and(|lowered| lowered == split_kernel)
+                        .is_ok_and(|lowered| {
+                            crate::kernel::proof::fact_reasoning::order_claim_equivalent(
+                                &lowered,
+                                &split_kernel,
+                            )
+                        })
                 })?;
                 let split_negation = ClickProposition::Not(Box::new(split_surface.clone()));
                 if introduced_surfaces
