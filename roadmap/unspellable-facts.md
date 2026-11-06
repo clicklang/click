@@ -493,27 +493,30 @@ exporting surrounding arithmetic. Address rewriting preserves the selected
 snapshot rather than repeating creation-time version selection. The graph reads
 width and epoch-scoped origin metadata through a selected-read interface; changing
 the observation format neither widens the access nor renews its origin. Metadata
-still comes from the reserved-name registry through a transitional index, and
-capture/restore retains that index with the registry. The central comparison-form
-collector also selects structural reads inside Integer observations, preserving
-read-over-write matching without adding individual-check fallbacks.
+now belongs to a persistent read-observation index keyed by snapshot, address
+and read kind, independently of reserved names. Compatibility names reference
+these observations; capture/restore shares their persistent roots. Inspecting an
+existing read neither widens its access nor renews its origin epoch. The central
+comparison-form collector also selects structural reads inside Integer
+observations, preserving read-over-write matching without adding individual-check fallbacks.
 
 The remaining scalar producer switch and registry removal are separate from
 address-index migration. Shared checker admission alone does not justify removing
-those names; width/origin metadata must migrate with their remaining producers.
+those names. The independent width/origin metadata is the prerequisite; execution,
+contract and resource producers still need their separate cutover.
 
 PR #2472 merged the address-admission prerequisite: structural reads inside a
 scalar read's native address retain their snapshots and read kinds. Its
 separate nested-snapshot key was needed while indices still held native trees.
 
-The current producer increment switches C/Click address indices to shared machine
-operands. The common producer imports registered read names into structural
-reads; scaled offsets retain those shared children. Their identities include
+PR #2477 switched C/Click address indices to shared machine operands. The common
+producer imports registered read names into structural reads; scaled offsets retain those shared children. Their identities include
 nested snapshots, replacing the separate snapshot-key walk. Canonicalization
 retains each constructed child rather than resolving its read or reopening its
 prefix. Opaque legacy indices retain their complete producer-local payloads and
 remain outside shared scalar-read admission. Scalar producers outside this
-boundary and width/origin metadata still use the registry.
+boundary still use reserved names; the metadata increment above separates their
+observation ownership without changing their produced terms.
 
 The producer cutover also exposed three compatibility gaps. Exact rewrite
 matching now recognizes a registered name and its structural descriptor before
