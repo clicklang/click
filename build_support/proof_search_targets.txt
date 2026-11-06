@@ -57,6 +57,7 @@ permits_memory_access_with_assumptions
 plan_explicit_equality_rewrites_from
 plan_solve_certificate
 pointers_distinct_by_owned_anchors
+proposed_surface_goal
 prove_guard
 prove_operation_identities
 prove_stated_fact
@@ -84,6 +85,7 @@ selected_solve_derivation
 selected_solve_derivation_plan
 selected_solve_derivation_with_surfaces
 signed_operand_bound_premises
+surface_fact_raw_for_purpose
 try_arithmetic_fact_closure
 try_arithmetic_with_selected_premises
 try_bridged_selected_arithmetic

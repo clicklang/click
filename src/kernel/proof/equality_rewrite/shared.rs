@@ -235,7 +235,9 @@ fn leaf(term: &KernelTerm) -> Option<MachineTerm> {
     if let Some(variable) = MachineOperandView::Shared(term).variable() {
         Some(MachineTerm::Variable(*variable))
     } else {
-        literal(term).or_else(|| term.machine_conversion_leaf().cloned())
+        literal(term)
+            .or_else(|| term.machine_read_leaf().cloned())
+            .or_else(|| term.machine_conversion_leaf().cloned())
     }
 }
 fn format(term: &KernelTerm) -> T {
@@ -369,18 +371,19 @@ pub(super) fn rewrite(
     rewrite_leaf: impl Fn(&MachineTerm) -> MachineTerm,
 ) -> Option<KernelTerm> {
     let from_has_load = crate::kernel::eval::term_mentions_a_memory_load(from);
-    let root_has_load = if root.has_machine_conversions() {
-        crate::kernel::shared_machine_conversion_leaves(root, || {
-            !crate::instrumentation::deadline_exceeded()
-        })?
-        .iter()
-        .any(|(_, node)| {
-            node.machine_conversion_leaf()
-                .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
-        })
-    } else {
-        false
-    };
+    let root_has_load = root.has_machine_reads()
+        || if root.has_machine_conversions() {
+            crate::kernel::shared_machine_conversion_leaves(root, || {
+                !crate::instrumentation::deadline_exceeded()
+            })?
+            .iter()
+            .any(|(_, node)| {
+                node.machine_conversion_leaf()
+                    .is_some_and(crate::kernel::eval::term_mentions_a_memory_load)
+            })
+        } else {
+            false
+        };
     let canonical_values = if from_has_load || root_has_load {
         Some(canonical(root)?)
     } else {
@@ -511,7 +514,9 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
             let value = match term.node() {
                 KernelTermNode::Variable(variable) => !crate::kernel::is_load_variable(variable),
                 KernelTermNode::MachineLiteral(_) => true,
-                KernelTermNode::IntegerToMachine { .. } => false,
+                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MemoryLoad { .. } => {
+                    false
+                }
                 _ => nodes.iter().all(|node| cache[&node.id()]),
             };
             cache.insert(term.id(), value);
@@ -684,7 +689,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_rewrite_shared_load_matching_uses_current_registry_and_canonical_source() {
+    fn exact_rewrite_shared_reads_match_canonical_sources_and_retain_addresses() {
         let _session = VerificationSession::enter();
         let pointer = CMemory::global_pointer("shared-exact-load");
         let memory = intern_c_memory(CMemory::new().with_block("shared-exact-load", 16));
@@ -724,15 +729,16 @@ mod tests {
             super::super::rewrite_term(leaf, &index, &one)
         })
         .unwrap();
-        assert_eq!(KernelTermExport::machine(&found).unwrap(), expected);
+        assert_eq!(found, imported(T::Int32, &expected));
+        let descriptor = KernelTermExport::machine(&root).unwrap();
         crate::kernel::eval::clear_load_variable_registry();
-        let expected = super::super::rewrite_term(&native, &index, &one);
-        assert_eq!(expected, native);
+        let expected = super::super::rewrite_term(&descriptor, &index, &one);
+        assert_ne!(expected, descriptor);
         let found = rewrite(&root, &index, &one, |leaf| {
             super::super::rewrite_term(leaf, &index, &one)
         })
         .unwrap();
-        assert_eq!(KernelTermExport::machine(&found).unwrap(), expected);
+        assert_eq!(found, imported(T::Int32, &expected));
     }
 
     mod scaling_tests {

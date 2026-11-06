@@ -166,7 +166,7 @@ pub(crate) use eval::load_variable_for_cell_with_origin;
 pub(crate) use eval::load_variable_for_term;
 pub(crate) use eval::offsets_have_same_canonical_form;
 pub(crate) use eval::proposition_mentions_load_variable;
-pub(crate) use eval::proposition_mentions_registered_load_variable;
+pub(crate) use eval::proposition_mentions_scalar_read;
 pub(crate) use eval::read_over_write_c_value;
 pub(crate) use eval::read_over_write_value;
 #[cfg(test)]

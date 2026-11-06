@@ -1258,6 +1258,13 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                         bindings,
                         next_binder,
                     )?,
+                    V::Shared(root) if root.machine_read_leaf().is_some() => {
+                        alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
+                            root.machine_read_leaf().expect("read leaf"),
+                            bindings,
+                            next_binder,
+                        )?
+                    }
                     V::Shared(root) if root.machine_conversion_leaf().is_some() => {
                         alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                             root.machine_conversion_leaf().expect("conversion leaf"),

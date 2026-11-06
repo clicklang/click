@@ -2213,6 +2213,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 )
             } else {
                 match condition {
+                    // A literal guard contains no machine occurrence. Keep it
+                    // while the compound rewriter visits the other leaves.
+                    ConditionTerm::Constant(_) => condition.clone(),
                     // `to_integer(machine)` is represented as an Integer machine
                     // observation.  Rewrite its selected machine payload through
                     // the already checked C equality, then let the normal
@@ -2996,6 +2999,58 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn native_read_rewrite_preserves_literal_guards_of_integer_claims() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let read = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(Pointer::symbolic(Variable(193_024))),
+            LoadKind::Int32,
+        );
+        let replacement = MachineTerm::logical_machine_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            MachineTerm::Variable(Variable(193_025)),
+            MachineTerm::constant(1),
+        );
+        let cited = equality(read.clone(), replacement.clone());
+        let facts = ProofFacts::default().with_fact(cited.clone());
+        for truth in [false, true] {
+            let goal = |value| {
+                Proposition::Implies(
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::Constant(truth),
+                        true,
+                    )),
+                    Box::new(Proposition::ConditionIs(
+                        ConditionTerm::IntegerEqual(
+                            IntegerTerm::from_machine(MachineIntegerType::Int32, value)
+                                .unwrap()
+                                .into(),
+                            IntegerTerm::constant_i64(17).into(),
+                        ),
+                        true,
+                    )),
+                )
+            };
+            assert_eq!(
+                facts
+                    .check_equality_rewrite(&goal(read.clone()), &cited)
+                    .unwrap()
+                    .proposition(),
+                &goal(replacement.clone())
+            );
+        }
+        assert!(
+            facts
+                .check_equality_rewrite(
+                    &Proposition::ConditionIs(ConditionTerm::Constant(true), true),
+                    &cited,
+                )
+                .is_err()
+        );
     }
 
     #[test]

@@ -1,6 +1,14 @@
 //! Discovery over Surface proof presentations; semantic state remains in ProofObject.
 use super::*;
 
+/// Premise citations must already be evaluable; a proposed `have` may
+/// carry evaluation requirements that its ordinary driver still must prove.
+#[derive(Clone, Copy)]
+enum SurfaceSpellingPurpose {
+    AvailablePremise,
+    ProposedGoal,
+}
+
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// A small shared search combinator for structural proposition closure.
     /// Every candidate is accepted only through `apply_step`; `intro` is the
@@ -1811,7 +1819,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         let Some(_scope) = SolveFallbackScope::enter(SolveFallback::StoredValue) else {
             return Ok(None);
         };
-        let Some(surface) = search_input.spelled_goal_for_search(&resolved) else {
+        let surface = search_input.premise_surface_facts().and_then(|recorded| {
+            Self::proposed_surface_goal(search_input, recorded, &resolved).or_else(|| {
+                Self::proposed_surface_goal(
+                    search_input,
+                    search_input.local_surface_facts(),
+                    &resolved,
+                )
+            })
+        });
+        let Some(surface) = surface else {
             return Ok(None);
         };
         let Some(scope) = attempt::candidate_outcome(search_input.driver().open_have(surface))?
@@ -5564,6 +5581,36 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         premise_anchor: Option<&ProgramPointRef>,
         kernel: &Proposition,
     ) -> Option<ClickProposition> {
+        Self::surface_fact_raw_for_purpose(
+            search_input,
+            surface_facts,
+            premise_anchor,
+            kernel,
+            SurfaceSpellingPurpose::AvailablePremise,
+        )
+    }
+
+    pub(in crate::surface::proof) fn proposed_surface_goal(
+        search_input: &Proof<'a>,
+        surface_facts: &SurfacePropositionMap,
+        kernel: &Proposition,
+    ) -> Option<ClickProposition> {
+        Self::surface_fact_raw_for_purpose(
+            search_input,
+            surface_facts,
+            None,
+            kernel,
+            SurfaceSpellingPurpose::ProposedGoal,
+        )
+    }
+
+    fn surface_fact_raw_for_purpose(
+        search_input: &Proof<'a>,
+        surface_facts: &SurfacePropositionMap,
+        premise_anchor: Option<&ProgramPointRef>,
+        kernel: &Proposition,
+        purpose: SurfaceSpellingPurpose,
+    ) -> Option<ClickProposition> {
         // Option-based presentation misses must not restart work after a
         // candidate exhausted the verifier's sticky budget/deadline.
         if crate::instrumentation::deadline_exceeded() {
@@ -5637,11 +5684,28 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 return None;
             }
             let lower = |candidate: &ClickProposition| {
-                search_input
-                    .lower_surface_proposition_direct(candidate, "typed solve premise form")
-                    .ok()
+                let operation = || {
+                    search_input
+                        .lower_surface_proposition_direct(candidate, "typed solve premise form")
+                };
+                match purpose {
+                    SurfaceSpellingPurpose::AvailablePremise => {
+                        super::super::execution_planning::without_open_obligation_probe(operation)
+                            .ok()
+                    }
+                    SurfaceSpellingPurpose::ProposedGoal => {
+                        // This private probe checks only the candidate's term identity.
+                        // It publishes no proof/facts and cannot add debts to an outer
+                        // operation. The selected Surface form must be lowered again by
+                        // open_have, which proves and retains all its prerequisites.
+                        let (lowered, _requirements) =
+                            super::super::execution_planning::probe_open_obligations(operation);
+                        lowered.ok()
+                    }
+                }
             };
-            if allow_recorded_pair
+            if matches!(purpose, SurfaceSpellingPurpose::AvailablePremise)
+                && allow_recorded_pair
                 && search_input.focused_outcome_data().is_some()
                 && surface_facts
                     .available_kernel_matching(candidate, |fact| {

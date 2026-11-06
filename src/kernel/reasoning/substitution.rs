@@ -8620,13 +8620,15 @@ mod integer_range_fold_substitution_tests {
         let IntegerTerm::Machine(machine) = result else {
             panic!("the machine load carrier was lost");
         };
-        let MachineTerm::Variable(rewritten_load) = machine.value() else {
-            panic!("the registered load was not reminted");
-        };
-        assert_ne!(*rewritten_load, load_variable);
-        let (snapshot, pointer) = crate::kernel::eval::registered_load_for_variable(rewritten_load)
-            .expect("the rewritten load must remain registered");
-        assert_eq!(snapshot, source_snapshot);
+        let (snapshot, pointer, kind) = machine.operand_view().read().expect("structural read");
+        assert_eq!(kind, crate::kernel::LoadKind::Int32);
+        assert_ne!(
+            pointer,
+            &crate::kernel::eval::registered_load_for_variable(&load_variable)
+                .unwrap()
+                .1
+        );
+        assert_eq!(snapshot, &source_snapshot);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(0));
     }
 
@@ -8668,13 +8670,15 @@ mod integer_range_fold_substitution_tests {
         let IntegerTerm::Machine(machine) = result else {
             panic!("the machine load carrier was lost");
         };
-        let MachineTerm::Variable(rewritten_load) = machine.value() else {
-            panic!("the registered load was not reminted");
-        };
-        assert_ne!(*rewritten_load, load_variable);
-        let (snapshot, pointer) = crate::kernel::eval::registered_load_for_variable(rewritten_load)
-            .expect("the rewritten load must remain registered");
-        assert_eq!(snapshot, source_snapshot);
+        let (snapshot, pointer, kind) = machine.operand_view().read().expect("structural read");
+        assert_eq!(kind, crate::kernel::LoadKind::Int32);
+        assert_ne!(
+            pointer,
+            &crate::kernel::eval::registered_load_for_variable(&load_variable)
+                .unwrap()
+                .1
+        );
+        assert_eq!(snapshot, &source_snapshot);
         assert_eq!(pointer.offset, PointerOffsetTerm::Constant(4));
     }
 

@@ -1,11 +1,11 @@
 //! Structural correspondence of shared operands. Cache only syntax and the
-//! variable pairs left to check; registry lookups and proof authority stay
+//! read/variable leaf pairs left to check; registry lookups and proof authority stay
 //! with the caller and are never cached here.
 use super::*;
-use crate::persistent::PersistentSet;
+use crate::persistent::PersistentMap;
 
 type Key = (MachineIntegerType, u64, u64);
-type Pairs = PersistentSet<(Variable, Variable)>;
+type Pairs = PersistentMap<(u64, u64), (KernelTerm, KernelTerm)>;
 thread_local! {
     static PAIRS: std::cell::RefCell<HashMap<Key, Option<Pairs>>> = Default::default();
 }
@@ -14,7 +14,7 @@ pub(super) fn clear() {
     PAIRS.with(|pairs| pairs.borrow_mut().clear());
 }
 
-pub(crate) fn shared_operand_variable_pairs(
+pub(crate) fn shared_operand_leaf_pairs(
     format: MachineIntegerType,
     left: &KernelTerm,
     right: &KernelTerm,
@@ -36,8 +36,16 @@ pub(crate) fn shared_operand_variable_pairs(
                 continue;
             }
             let (a, b) = (V(left), V(right));
-            if let (Some(a), Some(b)) = (a.variable(), b.variable()) {
-                pairs.insert(key, Some(Pairs::default().with_value((*a, *b))));
+            if (a.variable().is_some() || a.read().is_some())
+                && (b.variable().is_some() || b.read().is_some())
+            {
+                pairs.insert(
+                    key,
+                    Some(
+                        Pairs::default()
+                            .with_inserted((left.id(), right.id()), (left.clone(), right.clone())),
+                    ),
+                );
                 continue;
             }
             if let (Some(a), Some(b)) = (a.literal(), b.literal()) {
@@ -96,9 +104,9 @@ pub(crate) fn shared_operand_variable_pairs(
                     (child, &*current)
                 };
                 let mut combined = large.clone();
-                for pair in small.iter() {
+                for (key, pair) in small.iter() {
                     crate::instrumentation::record_deterministic_work(1);
-                    combined = combined.with_value(*pair);
+                    combined = combined.with_inserted(*key, pair.clone());
                 }
                 *current = combined;
             }

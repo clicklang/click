@@ -534,6 +534,13 @@ impl CellRun {
         }
         match &self.mode {
             RunValueMode::Load => {
+                // This producer knows the element's value type even when its
+                // address is symbolic and has no array-wide width declaration.
+                crate::kernel::eval::record_load_access_width(
+                    self.source.memory(),
+                    &pointer,
+                    self.element_type.byte_width(),
+                );
                 let load = crate::kernel::canonical_form_of_load(
                     self.source.clone(),
                     pointer.clone(),
@@ -552,6 +559,11 @@ impl CellRun {
             RunValueMode::Constant(value) => value.clone(),
             RunValueMode::Copy { source_base } => {
                 let source_pointer = source_base.offset_by_bytes(index * self.element_width);
+                crate::kernel::eval::record_load_access_width(
+                    self.source.memory(),
+                    &source_pointer,
+                    self.element_type.byte_width(),
+                );
                 let load = crate::kernel::canonical_form_of_load(
                     self.source.clone(),
                     source_pointer.clone(),
@@ -3174,6 +3186,45 @@ mod tests {
     use super::*;
     use crate::kernel::primitives::{CMemory, Variable};
     use std::collections::BTreeMap;
+
+    #[test]
+    fn symbolic_run_reads_keep_the_element_width_instead_of_the_unknown_default() {
+        for copy in [false, true] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let source = crate::kernel::intern_c_memory(CMemory::new());
+            let base = Pointer::symbolic(Variable(993_140)).offset_by_bytes(8);
+            let destination = Pointer::symbolic(Variable(993_141));
+            let run = CellRun::new_with_mode(
+                if copy { destination } else { base.clone() },
+                8,
+                CType::Int32,
+                2,
+                source.clone(),
+                if copy {
+                    RunValueMode::Copy {
+                        source_base: base.clone(),
+                    }
+                } else {
+                    RunValueMode::Load
+                },
+                IndexIntervals::default(),
+            );
+            for index in 0..2 {
+                let CValue::Int32(MachineTerm::Variable(name)) = run.value(index) else {
+                    panic!("typed symbolic read");
+                };
+                let address = base.offset_by_bytes(index * 8);
+                assert_eq!(
+                    crate::kernel::registered_load_bytes_for_variable(&name),
+                    Some(4)
+                );
+                assert_eq!(
+                    crate::kernel::eval::recorded_load_access_width(&source, &address),
+                    Some(4)
+                );
+            }
+        }
+    }
 
     fn source(tag: u32) -> SharedCMemory {
         crate::kernel::intern_c_memory(

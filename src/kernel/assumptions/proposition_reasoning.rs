@@ -4336,6 +4336,7 @@ impl PureFactContext {
                 V::Legacy(term) => Some(std::borrow::Cow::Borrowed(term)),
                 V::Shared(root) => root
                     .machine_conversion_leaf()
+                    .or_else(|| root.machine_read_leaf())
                     .map(std::borrow::Cow::Borrowed)
                     .or_else(|| {
                         view.literal()

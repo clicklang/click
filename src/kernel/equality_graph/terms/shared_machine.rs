@@ -374,6 +374,61 @@ impl TermClasses {
                     }
                 }
                 // Leaves retain load-name registration and literal normalization.
+                N::MemoryLoad { .. } => {
+                    // Match native graph registration at the selected leaf;
+                    // never export the surrounding shared expression.
+                    let format = match width {
+                        W::Bits8 => MachineIntegerType::UInt8,
+                        W::Bits16 => MachineIntegerType::UInt16,
+                        W::Bits32 => MachineIntegerType::Int32,
+                        W::Bits64 => MachineIntegerType::UInt64,
+                        W::Bits128 => MachineIntegerType::UInt128,
+                    };
+                    let (memory, address, kind) = crate::kernel::MachineOperandView::Shared(term)
+                        .read()
+                        .expect("read descriptor");
+                    if let Some(name) =
+                        crate::kernel::eval::registered_exact_read(memory, address, kind)
+                    {
+                        // Preserve an already selected read's exact snapshot and
+                        // access metadata, as native registration of its name does.
+                        self.intern_typed_machine(&T::Variable(name), width)
+                    } else if width == W::Bits64 {
+                        self.intern_typed_machine(
+                            term.machine_read_leaf().expect("read leaf"),
+                            width,
+                        )
+                    } else {
+                        // The graph uses the same assumption-free read identity
+                        // as its native entry point. Keep the written descriptor
+                        // intact; only its graph class follows that identity.
+                        let canonical = crate::kernel::canonical_term(
+                            term.machine_read_leaf().expect("read leaf"),
+                        );
+                        let shared = crate::kernel::KernelTermImport::default()
+                            .machine_arithmetic(format, &canonical);
+                        if let Some(shared) = shared {
+                            if shared != term.with_machine_observation_type(format) {
+                                self.intern_shared_machine(&shared, width)
+                            } else {
+                                let atom = MachineAtom::from_operand(
+                                    format,
+                                    crate::kernel::MachineOperandView::Shared(term),
+                                );
+                                self.intern_node(match width {
+                                    W::Bits8 | W::Bits16 => Node::MachineNarrow(atom),
+                                    W::Bits32 => Node::Int32(atom),
+                                    W::Bits128 => Node::Machine128(atom),
+                                    W::Bits64 => unreachable!(),
+                                })
+                            }
+                        } else {
+                            // A stored value can belong to a native-only term
+                            // family even when its read has a shared descriptor.
+                            self.intern_typed_machine(&canonical, width)
+                        }
+                    }
+                }
                 N::IntegerToMachine { .. } => self.intern_typed_machine(
                     term.machine_conversion_leaf().expect("conversion leaf"),
                     width,

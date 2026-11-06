@@ -66,6 +66,11 @@ impl Index {
                         MachineOperandView::Legacy(value) if value.as_const().is_some() => continue,
                         _ => return None,
                     };
+                    // Read addresses and snapshots have their own dependency
+                    // collector, just as registered read names did before.
+                    if root.has_machine_reads() {
+                        return None;
+                    }
                     if !crate::kernel::shared_machine_conversion_leaves(&root, || {
                         crate::instrumentation::record_deterministic_work(1);
                         true

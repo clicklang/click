@@ -51,7 +51,7 @@ impl CarrierWidth {
         Self::of_machine_type(format)
     }
 
-    fn of_load(kind: LoadKind) -> Self {
+    pub(super) fn of_load(kind: LoadKind) -> Self {
         match kind {
             LoadKind::Int8 | LoadKind::UInt8 => Self::Bits8,
             LoadKind::Int16 | LoadKind::UInt16 => Self::Bits16,

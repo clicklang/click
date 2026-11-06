@@ -251,6 +251,68 @@ fn spelling_validation_cannot_defer_its_debts_to_a_statement_probe() {
 }
 
 #[test]
+fn qualified_static_read_spellings_retain_entry_and_current_epochs() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let (entry, sources, loads) =
+        recorded_qualified_cells("file-static:alpha.c:calls", "alpha::calls", 1);
+    let address = Pointer {
+        block: PointerBlock::Concrete("file-static:alpha.c:calls".into()),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let post = entry
+        .clone()
+        .with_memory(entry.memory().clone().store(address.clone(), int32(7)));
+    let current = crate::kernel::canonical_form_of_load(
+        crate::kernel::intern_c_memory_ref(post.memory()),
+        address,
+        crate::kernel::LoadKind::Int32,
+    );
+    let named = Proposition::ConditionIs(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::Int32,
+            relation: CompareRelation::Equal,
+            left: Box::new(current.clone()),
+            right: Box::new(loads[0].clone()),
+        },
+        true,
+    );
+    let resolve = crate::kernel::resolve_load_variables_from_registry;
+    let shared = Proposition::ConditionIs(
+        ConditionTerm::integer_equal(
+            crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, current).unwrap(),
+            crate::kernel::IntegerTerm::add(
+                crate::kernel::IntegerTerm::from_machine(
+                    MachineIntegerType::Int32,
+                    loads[0].clone(),
+                )
+                .unwrap(),
+                crate::kernel::IntegerTerm::constant_i64(1),
+            ),
+        ),
+        true,
+    );
+    let _sources = QualifiedSynthesisScope::enter(&sources);
+    for goal in [named.clone(), resolve(&named), shared] {
+        let spelled = synthesize_surface_proposition_at_entry_and_post(
+            &goal,
+            ParameterBinding::default(),
+            &entry,
+            &post,
+        )
+        .expect("qualified static reads keep the selected epochs");
+        assert!(format!("{spelled:?}").contains("Old("), "{spelled:?}");
+        let lowered = relower_written_proposition_with_snapshots(
+            &spelled,
+            &entry,
+            &post,
+            &RecordedSnapshots::new(),
+        )
+        .unwrap();
+        assert_eq!(resolve(&lowered), resolve(&goal), "{spelled:?}");
+    }
+}
+
+#[test]
 fn foreign_static_cell_requirements_round_trip_through_their_qualified_spelling() {
     let (state, sources, loads) = recorded_qualified_cells(
         "static:increment_twice:values#static0",
@@ -3794,17 +3856,15 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
     let Proposition::ConditionIs(ConditionTerm::Compare { left, .. }, true) = lowered else {
         panic!("read comparison")
     };
-    // Surface lowering still produces a named native read during migration.
-    // Use the explicit descriptor bridge until both producers and checker
-    // observations switch representations together.
-    let MachineTerm::Variable(name) = left.as_ref() else {
-        panic!("named read boundary")
-    };
+    // Both native lowering and checker observations enter the same structural
+    // boundary; the test needs no special registered-name conversion.
     assert_eq!(
-        crate::kernel::KernelTermImport::default().machine(
-            MachineIntegerType::Int32,
-            &crate::kernel::registered_load_term_for_variable(name).unwrap(),
-        ),
+        crate::kernel::KernelTermImport::default().machine(MachineIntegerType::Int32, &left),
         root
+    );
+    assert_eq!(
+        crate::kernel::KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, &left),
+        Some(root)
     );
 }

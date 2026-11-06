@@ -2381,6 +2381,9 @@ thread_local! {
     static LOAD_VARIABLE_REGISTRY: std::cell::RefCell<
         std::collections::HashMap<Variable, RegisteredLoad>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    // Migration index: retained read node -> its existing observation record.
+    // Only identity is cached; width and epoch-scoped origins are read live.
+    static READ_TERM_OBSERVATIONS: std::cell::RefCell<std::collections::HashMap<u64, Variable>> = Default::default();
     /// The current origin epoch. A load variable's id names one load for the
     /// whole session, but the live snapshot transport resolves through is
     /// first-seen within one verified function: the surface begins a new
@@ -2426,6 +2429,7 @@ pub(crate) struct LoadRegistryState {
     pointer_observations: imbl::HashMap<(u64, Pointer), (SharedCMemory, Pointer)>,
     wide_observations: imbl::HashMap<(u64, Variable), (SharedCMemory, Pointer)>,
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
+    read_terms: std::collections::HashMap<u64, Variable>,
     pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
     pointer_sources: std::collections::HashMap<PointerLoadId, Variable>,
     widths: std::collections::HashMap<(SharedCMemory, Pointer), u32>,
@@ -2447,6 +2451,7 @@ pub(crate) fn capture_load_variable_registry() -> LoadRegistryState {
         pointer_observations: POINTER_READ_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         wide_observations: WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         variables: LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow().clone()),
+        read_terms: READ_TERM_OBSERVATIONS.with(|registry| registry.borrow().clone()),
         pointers: POINTER_LOAD_REGISTRY.with(|registry| registry.borrow().clone()),
         pointer_sources: POINTER_LOAD_SOURCES.with(|sources| sources.borrow().clone()),
         widths: LOAD_ACCESS_WIDTH.with(|widths| widths.borrow().clone()),
@@ -2466,6 +2471,7 @@ pub(crate) fn restore_load_variable_registry(state: &LoadRegistryState) {
         .with(|registry| *registry.borrow_mut() = state.wide_observations.clone());
     crate::kernel::equality_graph::restore_logical_pointer_reads(&state.logical_pointer_reads);
     LOAD_VARIABLE_REGISTRY.with(|registry| *registry.borrow_mut() = state.variables.clone());
+    READ_TERM_OBSERVATIONS.with(|registry| *registry.borrow_mut() = state.read_terms.clone());
     POINTER_LOAD_REGISTRY.with(|registry| *registry.borrow_mut() = state.pointers.clone());
     POINTER_LOAD_SOURCES.with(|sources| *sources.borrow_mut() = state.pointer_sources.clone());
     LOAD_ACCESS_WIDTH.with(|widths| *widths.borrow_mut() = state.widths.clone());
@@ -2485,6 +2491,7 @@ pub(crate) fn clear_load_variable_registry() {
     WIDE_LOAD_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     crate::kernel::equality_graph::clear_logical_pointer_reads();
     LOAD_VARIABLE_REGISTRY.with(|registry| registry.borrow_mut().clear());
+    READ_TERM_OBSERVATIONS.with(|registry| registry.borrow_mut().clear());
     POINTER_LOAD_REGISTRY.with(|registry| registry.borrow_mut().clear());
     POINTER_LOAD_SOURCES.with(|sources| sources.borrow_mut().clear());
     // Access widths are scoped to the verification that observed them. A
@@ -2511,17 +2518,12 @@ pub(crate) fn begin_load_origin_epoch() {
     clear_load_canonicalization_caches();
 }
 
-/// The read-over-write authority: the value a load variable's read
-/// returns when the snapshot it reads records the cell's value at exactly
-/// its address. The variable names the read at its version, so this holds
+/// The read-over-write authority: the value a structural or named read
+/// returns when its snapshot records the cell's value at exactly
+/// its address. The read retains its version, so this holds
 /// at every point; it depends on the memory, never on facts.
 pub(crate) fn read_over_write_value(term: &MachineTerm) -> Option<MachineTerm> {
-    let MachineTerm::Variable(variable) = term else {
-        return None;
-    };
-    let Some(MachineTerm::MemoryLoad(memory, pointer, kind)) =
-        registered_load_term_for_variable(variable)
-    else {
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = viewed_as_memory_load(term)? else {
         return None;
     };
     let stored = memory
@@ -2597,31 +2599,21 @@ fn comparison_form_uncached(proposition: &Proposition) -> Option<Proposition> {
     // visited, never the cells of a snapshot a read names.
     let mut collector =
         crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::uncharged();
+    collector.collect_read_terms();
     collector.collect(proposition);
     let mut variables = std::collections::BTreeSet::new();
     collector.extend_into(&mut variables);
-    let mut resolved = proposition.clone();
-    for variable in variables {
-        let read = MachineTerm::Variable(variable);
-        let Some(value) = read_over_write_value(&read) else {
-            continue;
-        };
-        // The term rewriter reaches Integer observations of the read; plain
-        // substitution reaches the resource forms (a separation's ranges)
-        // the rewriter declines. Each leaves what the other covers unchanged.
-        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_bits(&read, &value);
-        let rewritten = rewrite.proposition(&resolved);
-        if rewrite.refusal().is_none() {
-            resolved = rewritten;
-        }
-        // Substitution refuses outright past an exhausted work budget; the
-        // comparison form is a lookup aid, so it gives up instead.
-        if crate::instrumentation::deadline_exceeded() {
-            return None;
-        }
-        resolved = crate::kernel::reasoning::substitute_bitvector_variable_in_proposition(
-            &resolved, variable, &value,
-        );
+    let replacements = variables
+        .into_iter()
+        .map(MachineTerm::Variable)
+        .chain(collector.take_read_terms())
+        .filter_map(|read| read_over_write_value(&read).map(|value| (read, value)));
+    let mut resolved = crate::kernel::proof::term_rewrite::TermRewrite::comparison_read_batch(
+        proposition,
+        replacements,
+    )?;
+    if crate::instrumentation::deadline_exceeded_with_work(0) {
+        return None;
     }
     if let Proposition::ConditionIs(ConditionTerm::PointerEqual(left, right), value) = &resolved {
         let left_value = pointer_read_over_write_value(left);
@@ -2871,7 +2863,7 @@ pub(crate) fn registered_scalar_read_term(
     format: MachineIntegerType,
 ) -> Option<crate::kernel::KernelTerm> {
     crate::instrumentation::record_deterministic_work(1);
-    LOAD_VARIABLE_REGISTRY.with(|registry| {
+    let term = LOAD_VARIABLE_REGISTRY.with(|registry| {
         let mut registry = registry.borrow_mut();
         let read = registry.get_mut(variable)?;
         read.terms
@@ -2885,7 +2877,106 @@ pub(crate) fn registered_scalar_read_term(
                 )
             })
             .clone()
+    });
+    if let Some(term) = &term {
+        READ_TERM_OBSERVATIONS.with(|reads| {
+            reads.borrow_mut().insert(term.id(), *variable);
+        });
+    }
+    term
+}
+
+/// A selected read's observation data, distinct from its immutable value.
+pub(crate) struct ScalarReadObservation {
+    pub memory: SharedCMemory,
+    pub pointer: Pointer,
+    pub kind: LoadKind,
+    pub bytes: u32,
+    pub origin: Option<SharedCMemory>,
+}
+
+pub(crate) fn scalar_read_observation(
+    operand: crate::kernel::MachineOperandView<'_>,
+) -> Option<ScalarReadObservation> {
+    use crate::kernel::MachineOperandView;
+    let variable = if let Some(variable) = operand.variable() {
+        *variable
+    } else {
+        let (memory, pointer, kind) = operand.read()?;
+        let retained = match operand {
+            MachineOperandView::Shared(term) => {
+                READ_TERM_OBSERVATIONS.with(|reads| reads.borrow().get(&term.id()).copied())
+            }
+            MachineOperandView::Legacy(_) => None,
+        };
+        retained.unwrap_or_else(|| {
+            let variable = registered_exact_read(memory, pointer, kind).unwrap_or_else(|| {
+                load_variable_for_exact_cell(
+                    memory,
+                    pointer,
+                    kind,
+                    load_term_access_width(memory, pointer, kind),
+                )
+            });
+            if let MachineOperandView::Shared(term) = operand {
+                READ_TERM_OBSERVATIONS.with(|reads| {
+                    reads.borrow_mut().insert(term.id(), variable);
+                });
+            }
+            variable
+        })
+    };
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    LOAD_VARIABLE_REGISTRY.with(|registry| {
+        registry
+            .borrow()
+            .get(&variable)
+            .map(|read| ScalarReadObservation {
+                memory: read.memory.clone(),
+                pointer: read.pointer.clone(),
+                kind: read.kind,
+                bytes: read.bytes,
+                origin: (read.epoch == epoch).then(|| read.origin.clone()),
+            })
     })
+}
+
+// Look up existing observation metadata without widening it or renewing its
+// origin. Reinterpreting a read at another machine format is not a new access.
+pub(crate) fn registered_exact_read(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+) -> Option<Variable> {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    memory.hash(&mut hasher);
+    pointer.hash(&mut hasher);
+    let range = load_variable_range();
+    let mut slot = hasher.finish() % range;
+    LOAD_VARIABLE_REGISTRY.with(|registry| {
+        let registry = registry.borrow();
+        loop {
+            crate::instrumentation::record_deterministic_work(1);
+            let variable = Variable(LOAD_VARIABLE_BASE + slot);
+            let read = registry.get(&variable)?;
+            if read.memory == *memory && read.pointer == *pointer && read.kind == kind {
+                return Some(variable);
+            }
+            slot = (slot + 1) % range;
+        }
+    })
+}
+
+/// Existing observation metadata is evidence of an access width too. Merely
+/// inspecting a retained read must not replace it with the unknown-width default.
+fn existing_read_access_width(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+) -> Option<u32> {
+    registered_exact_read(memory, pointer, kind)
+        .and_then(|variable| registered_load_bytes_for_variable(&variable))
 }
 
 /// The kind of read a load variable names.
@@ -3322,6 +3413,7 @@ pub(crate) fn load_term_access_width(
     kind: LoadKind,
 ) -> u32 {
     recorded_load_access_width(memory, pointer)
+        .or_else(|| existing_read_access_width(memory, pointer, kind))
         .unwrap_or_else(|| kind.unrecorded_access_byte_width())
         .max(kind.byte_width())
 }
@@ -3447,15 +3539,13 @@ pub(crate) fn viewed_as_memory_load(term: &MachineTerm) -> Option<MachineTerm> {
     }
 }
 
-/// Whether a proposition mentions any registered load variable.
-/// Cross-effect fact transport uses this to include facts written with load
-/// variables in rewriting, exactly as load-term facts are included by
-/// mentioning their snapshots.
-/// Whether `proposition` names a variable of the load range, registered
-/// or not: what [`proposition_mentions_registered_load_variable`] needs
-/// before it reads the registry, so a fact this rejects that one rejects at
-/// any later time too.
+/// Conservative read presence for transport planning: structural reads and
+/// reserved names count even when a name has not yet been registered. Snapshot
+/// variable summaries retain the existing single-load presence shortcut.
 pub(crate) fn proposition_mentions_load_variable(proposition: &Proposition) -> bool {
+    if proposition_mentions_structural_read(proposition) {
+        return true;
+    }
     let mut variables = std::collections::BTreeSet::new();
     crate::kernel::reasoning::variable_collection::collect_proposition_variables_for_load_presence(
         proposition,
@@ -3464,11 +3554,24 @@ pub(crate) fn proposition_mentions_load_variable(proposition: &Proposition) -> b
     variables.iter().any(is_load_variable)
 }
 
+fn proposition_mentions_structural_read(proposition: &Proposition) -> bool {
+    let mut collector =
+        crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::uncharged();
+    collector.collect_read_terms();
+    collector.collect(proposition);
+    collector.take_read_terms().next().is_some()
+}
+
 /// The identities load variables are minted from.
 pub(crate) const LOAD_VARIABLE_RANGE: std::ops::Range<u64> =
     LOAD_VARIABLE_BASE..LOAD_VARIABLE_BASE + LOAD_VARIABLE_RANGE_SIZE;
 
-pub(crate) fn proposition_mentions_registered_load_variable(proposition: &Proposition) -> bool {
+/// Whether the selected proposition contains a snapshot-bearing scalar read,
+/// in structural form or through the transitional registered name.
+pub(crate) fn proposition_mentions_scalar_read(proposition: &Proposition) -> bool {
+    if proposition_mentions_structural_read(proposition) {
+        return true;
+    }
     let mut variables = std::collections::BTreeSet::new();
     crate::kernel::reasoning::variable_collection::collect_proposition_bitvector_variables(
         proposition,
@@ -4284,9 +4387,7 @@ pub(crate) fn load_variable_for_cell(
         memory,
         pointer,
         kind,
-        recorded_load_access_width(memory, pointer)
-            .unwrap_or_else(|| kind.unrecorded_access_byte_width())
-            .max(kind.byte_width()),
+        load_term_access_width(memory, pointer, kind),
         memory,
     )
 }
@@ -4644,6 +4745,10 @@ fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, Mach
                 // other side knows exactly.
                 recorded_load_access_width(origin, pointer)
                     .or_else(|| recorded_load_access_width(memory, pointer))
+                    .or_else(|| {
+                        existing_read_access_width(origin, pointer, *kind)
+                            .max(existing_read_access_width(memory, pointer, *kind))
+                    })
                     .unwrap_or_else(|| kind.unrecorded_access_byte_width()),
                 origin,
             ),
@@ -5017,6 +5122,66 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn querying_a_registered_read_preserves_its_access_width() {
+        for bytes in [4, 8] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = crate::kernel::intern_c_memory(CMemory::new());
+            let pointer = Pointer::symbolic(Variable(993149));
+            let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, bytes);
+            let raw =
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+            assert_eq!(
+                load_term_access_width(&memory, &pointer, LoadKind::Int32),
+                bytes
+            );
+            let canonical = canonical_term(&raw);
+            let MachineTerm::Variable(read_name) = canonical else {
+                panic!("read name")
+            };
+            assert_eq!(registered_load_bytes_for_variable(&name), Some(bytes));
+            assert_eq!(registered_load_bytes_for_variable(&read_name), Some(bytes));
+            record_load_access_width(memory.memory(), &pointer, 8);
+            assert_eq!(
+                load_term_access_width(&memory, &pointer, LoadKind::Int32),
+                8
+            );
+        }
+    }
+
+    #[test]
+    fn structural_read_observations_keep_live_width_epoch_and_restored_metadata() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(CMemory::new());
+        let pointer = Pointer::symbolic(Variable(993150));
+        let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
+        let term = registered_scalar_read_term(&name, MachineIntegerType::Int32).unwrap();
+        let other = term.with_machine_observation_type(MachineIntegerType::UInt32);
+        let observe = |term: &crate::kernel::KernelTerm| {
+            scalar_read_observation(crate::kernel::MachineOperandView::Shared(term)).unwrap()
+        };
+        assert_eq!(
+            observe(&other).bytes,
+            4,
+            "a new format is not a wider access"
+        );
+        assert_eq!(observe(&other).origin, Some(memory.clone()));
+        begin_load_origin_epoch();
+        assert!(
+            observe(&term).origin.is_none(),
+            "a query must not renew an origin"
+        );
+        assert!(observe(&other).origin.is_none());
+        load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 8);
+        assert_eq!(observe(&term).bytes, 8, "width updates are live");
+        assert_eq!(observe(&other).origin, Some(memory));
+        let saved = capture_load_variable_registry();
+        clear_load_variable_registry();
+        restore_load_variable_registry(&saved);
+        assert_eq!(observe(&term).bytes, 8);
+        assert_eq!(observe(&other).bytes, 8);
+    }
+
     use super::*;
 
     #[test]
@@ -8458,4 +8623,68 @@ fn arithmetic_comparison_normalizes_selected_read_addresses_without_changing_ter
     assert!(!crate::kernel::proposition_holds_without_facts(
         &comparison_form(&different_snapshot).unwrap_or(different_snapshot)
     ));
+}
+
+#[test]
+fn scalar_read_presence_survives_shared_admission_and_registry_reset() {
+    use crate::kernel::{IntegerTerm, SharedMachineIntegerTerm, Term};
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let pointer = Pointer::symbolic(Variable(997171));
+    let name = load_variable_for_exact_cell(&memory, &pointer, LoadKind::Int32, 4);
+    let observed = |term| {
+        Proposition::Equal(
+            Term::Integer(IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                MachineIntegerType::Int32,
+                term,
+            ))),
+            Term::Integer(IntegerTerm::constant_i64(0)),
+        )
+    };
+    let shared = observed(MachineTerm::Variable(name));
+    assert!(proposition_mentions_scalar_read(&shared));
+    assert!(proposition_mentions_load_variable(&shared));
+    clear_load_variable_registry();
+    assert!(proposition_mentions_scalar_read(&shared));
+    assert!(proposition_mentions_load_variable(&shared));
+    assert!(!proposition_mentions_scalar_read(&observed(
+        MachineTerm::Variable(Variable(997172))
+    )));
+}
+
+#[cfg(test)]
+mod structural_read_connective_tests {
+    use super::*;
+    use crate::kernel::VerificationSession;
+
+    #[test]
+    fn stored_structural_reads_compare_inside_logical_connectives() {
+        let _session = VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(989_031));
+        let memory =
+            intern_c_memory(CMemory::new().store(address.clone(), CValue::Int32(37u32.into())));
+        let read = MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32);
+        let observed = IntegerTerm::from_machine(MachineIntegerType::Int32, read).unwrap();
+        let leaf = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(observed, IntegerTerm::constant_i64(37)),
+            true,
+        );
+        let expected = comparison_form(&leaf).expect("stored value comparison");
+        let guard = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+        let wrap = |body: Proposition| {
+            Proposition::Implies(
+                Box::new(guard.clone()),
+                Box::new(Proposition::And(
+                    Box::new(body.clone()),
+                    Box::new(Proposition::Or(
+                        Box::new(body.clone()),
+                        Box::new(Proposition::Not(Box::new(body))),
+                    )),
+                )),
+            )
+        };
+        clear_load_variable_registry();
+        assert_eq!(comparison_form(&wrap(leaf)), Some(wrap(expected)));
+        assert_eq!(load_variable_registry_len(), 0);
+    }
 }

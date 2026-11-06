@@ -1825,48 +1825,70 @@ fn wide_shifted_suffix_coverage_ignores_unrelated_bounds() {
 // unrelated facts and a later snapshot containing an unrelated write.
 #[test]
 fn wide_range_observer_transport_ignores_unrelated_equalities() {
-    let mut samples = Vec::new();
-    for size in [0, 64, 128, 512] {
-        let _session = crate::kernel::VerificationSession::enter();
-        let pointer = scaling_cell("global:wide-observer", 0);
-        let memory = CMemory::new().store(
-            pointer.clone(),
-            CValue::UInt64(MachineTerm::uint64_constant(3)),
-        );
-        let load = |memory| {
-            MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory),
-                Box::new(pointer.clone()),
-                LoadKind::Bits64,
-            )
-        };
-        let before = load(memory.clone());
-        let after = load(memory.store(
-            scaling_cell("global:beside-wide-observer", 0),
-            CValue::UInt64(MachineTerm::uint64_constant(9)),
-        ));
-        let observer = MachineTerm::Variable(Variable(985_002));
-        let mut facts = PureFactContext::new()
-            .assume_condition(ConditionTerm::uint64_equal(observer.clone(), before), true);
-        for index in 0..size {
-            facts = facts.assume_condition(
-                ConditionTerm::uint64_equal(
-                    MachineTerm::Variable(Variable(986_000 + index)),
-                    MachineTerm::uint64_constant(index),
-                ),
-                true,
+    for same_value_class in [false, true] {
+        let mut samples = Vec::new();
+        for size in [0, 64, 128, 512] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let pointer = scaling_cell("global:wide-observer", 0);
+            let memory = CMemory::new().store(
+                pointer.clone(),
+                CValue::UInt64(MachineTerm::uint64_constant(3)),
             );
+            let load = |memory| {
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(memory),
+                    Box::new(pointer.clone()),
+                    LoadKind::Bits64,
+                )
+            };
+            let before = load(memory.clone());
+            let after = load(memory.store(
+                scaling_cell("global:beside-wide-observer", 0),
+                CValue::UInt64(MachineTerm::uint64_constant(9)),
+            ));
+            let observer = MachineTerm::Variable(Variable(985_002));
+            let mut facts = PureFactContext::new()
+                .assume_condition(ConditionTerm::uint64_equal(observer.clone(), before), true);
+            // Structural read-over-write matching also files observer == 3.
+            // Keep unrelated values out of that class. Separately grow aliases
+            // of 3 from a fixed one-alias baseline, so both sides measure the
+            // same union-find root shape rather than its first class merge.
+            if same_value_class {
+                facts = facts.assume_condition(
+                    ConditionTerm::uint64_equal(
+                        MachineTerm::Variable(Variable(985_003)),
+                        MachineTerm::uint64_constant(3),
+                    ),
+                    true,
+                );
+            }
+            for index in 0..size {
+                facts = facts.assume_condition(
+                    ConditionTerm::uint64_equal(
+                        MachineTerm::Variable(Variable(986_000 + index)),
+                        MachineTerm::uint64_constant(if same_value_class {
+                            3
+                        } else {
+                            1000 + index
+                        }),
+                    ),
+                    true,
+                );
+            }
+            // Extending a context discards its root-lookup cache. Give the
+            // zero-extension sample the same cold cache as the larger ones.
+            let facts = facts.clone();
+            let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
+                facts.uint64_values_equal_for_range_resolution(&observer, &after)
+            });
+            assert!(equal);
+            samples.push(work);
         }
-        let (equal, work) = crate::instrumentation::measure_deterministic_work(|| {
-            facts.uint64_values_equal_for_range_resolution(&observer, &after)
-        });
-        assert!(equal);
-        samples.push(work);
+        assert!(
+            samples.windows(2).all(|pair| pair[0] == pair[1]),
+            "observer transport scanned equalities (same value class: {same_value_class}): {samples:?}"
+        );
     }
-    assert!(
-        samples.windows(2).all(|pair| pair[0] == pair[1]),
-        "observer transport scanned unrelated equalities: {samples:?}"
-    );
 }
 
 /// Counts the bytes a value feeds its hasher.

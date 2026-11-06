@@ -48,9 +48,10 @@ pub(crate) enum SignedArithmeticRelation {
     Disequal,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum SignedArithmeticAtomToken {
     Constant(u32),
+    Read(crate::kernel::KernelTerm),
     Variable(Variable),
     // An opaque signed observation of the low word; it carries no fact
     // about the original 64-bit value. Keep its identity distinct.
@@ -174,6 +175,11 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
             MachineTerm::Variable(variable) => {
                 push_token!(SignedArithmeticAtomToken::Variable(*variable));
             }
+            MachineTerm::MemoryLoad(..) => {
+                let read = crate::kernel::KernelTermImport::default()
+                    .machine_arithmetic(MachineIntegerType::Int32, term)?;
+                push_token!(SignedArithmeticAtomToken::Read(read));
+            }
             cast_term!(UInt32From64, value) => {
                 if let MachineTerm::Variable(variable) = value.as_ref() {
                     push_token!(SignedArithmeticAtomToken::Narrow64Variable(*variable));
@@ -192,6 +198,12 @@ fn signed_arithmetic_atom_key(root: &MachineTerm) -> Option<SignedArithmeticAtom
                     let (operator, left, right) = match native {
                         MachineTerm::Variable(variable) => {
                             push_token!(SignedArithmeticAtomToken::Variable(*variable));
+                            continue;
+                        }
+                        MachineTerm::MemoryLoad(..) => {
+                            let read = crate::kernel::KernelTermImport::default()
+                                .machine_arithmetic(MachineIntegerType::Int32, native)?;
+                            push_token!(SignedArithmeticAtomToken::Read(read));
                             continue;
                         }
                         uint64_constant!(value) => {
@@ -3858,6 +3870,50 @@ mod tests {
         ] {
             assert!(interval_remainder_add(&op, &rem, add, divisor, 0).is_err());
         }
+    }
+
+    #[test]
+    fn signed_read_atom_identity_survives_native_export() {
+        use crate::kernel::{KernelTermExport, KernelTermImport, LoadKind, VerificationSession};
+        let _session = VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(crate::kernel::CMemory::new());
+        let address = Pointer::symbolic(Variable(997151));
+        let read = |offset, kind| {
+            MachineTerm::MemoryLoad(
+                memory.clone(),
+                Box::new(address.offset_by_bytes(offset)),
+                kind,
+            )
+        };
+        let scalar = read(0, LoadKind::Int32);
+        let sum = MachineTerm::logical_machine_binary(
+            MachineIntegerType::Int32,
+            MachineBinaryOp::Add,
+            scalar.clone(),
+            MachineTerm::constant(1),
+        );
+        let low_word = MachineTerm::uint32_from_64(MachineTerm::logical_machine_binary(
+            MachineIntegerType::UInt64,
+            MachineBinaryOp::Add,
+            read(0, LoadKind::Bits64),
+            MachineTerm::uint64_constant(1),
+        ));
+        for written in [scalar, sum, low_word] {
+            let root = KernelTermImport::default()
+                .machine_arithmetic(MachineIntegerType::Int32, &written)
+                .unwrap();
+            let shared = atom_keys::from_shared(&root).expect("shared read atom");
+            let exported = KernelTermExport::machine(&root).unwrap();
+            assert_eq!(SignedArithmeticAtom::from_term(&exported), Some(shared));
+        }
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&read(0, LoadKind::Int32)),
+            SignedArithmeticAtom::from_term(&read(4, LoadKind::Int32)),
+        );
+        assert_ne!(
+            SignedArithmeticAtom::from_term(&read(0, LoadKind::Int32)),
+            SignedArithmeticAtom::from_term(&read(0, LoadKind::UInt32)),
+        );
     }
 
     #[test]

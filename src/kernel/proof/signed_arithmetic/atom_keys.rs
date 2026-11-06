@@ -10,6 +10,11 @@ fn constant(bits: u32) -> KernelTerm {
     KernelTermImport::default().machine(T::Int32, &MachineTerm::constant(bits))
 }
 fn variable(variable: Variable) -> KernelTerm {
+    if crate::kernel::is_load_variable(&variable)
+        && let Some(read) = crate::kernel::eval::registered_scalar_read_term(&variable, T::Int32)
+    {
+        return read;
+    }
     KernelTerm::variable(KernelType::C(T::Int32.c_type()), variable)
 }
 fn low_word(value: KernelTerm) -> KernelTerm {
@@ -33,6 +38,7 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
             || matches!(
                 token,
                 Token::Constant(_)
+                    | Token::Read(_)
                     | Token::Variable(_)
                     | Token::Narrow64Variable(_)
                     | Token::Narrow64Expression
@@ -45,6 +51,7 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
         tokens.first(),
         Some(
             Token::Variable(_)
+                | Token::Read(_)
                 | Token::Narrow64Variable(_)
                 | Token::Narrow64Expression
                 | Token::PureFunction { .. }
@@ -61,6 +68,7 @@ pub(super) fn from_tokens(tokens: Vec<Token>) -> Option<SignedArithmeticAtom> {
         }
         let key = match token {
             Token::Constant(bits) => constant(bits),
+            Token::Read(read) => read,
             Token::Variable(value) => variable(value),
             Token::Narrow64Variable(value) => low_word(variable(value)),
             Token::Narrow64Expression => low_word(pending.pop()?),
@@ -140,6 +148,7 @@ pub(super) fn cache_len() -> usize {
 #[derive(Clone)]
 enum Head {
     Variable(Variable),
+    Read(KernelTerm),
     Constant(u32),
     NativeConstant(u64),
     Binary(T, MachineBinaryOp),
@@ -153,6 +162,7 @@ fn shape(term: &KernelTerm, reading: Reading) -> Option<(Head, Vec<(&KernelTerm,
     let child = |value| vec![(value, reading)];
     match term.node() {
         N::Variable(value) => Some((Head::Variable(*value), vec![])),
+        N::MemoryLoad { .. } => Some((Head::Read(term.clone()), vec![])),
         N::MachineLiteral(_) => {
             let literal = V::Shared(term).literal()?;
             match reading {
@@ -259,6 +269,7 @@ pub(super) fn from_shared(root: &KernelTerm) -> Option<SignedArithmeticAtom> {
                 || operands.iter().any(|operand| operand.small_word_literal);
             let (node, root_opaque, parts) = match head {
                 Head::Variable(v) => (variable(v), true, true),
+                Head::Read(read) => (read.with_machine_observation_type(T::Int32), true, true),
                 Head::Constant(v) => (constant(v), false, true),
                 Head::NativeConstant(v) => (
                     KernelTermImport::default()
@@ -343,7 +354,9 @@ fn canonical_arithmetic(root: &KernelTerm) -> Option<KernelTerm> {
                 continue;
             }
             let value = match term.node() {
-                KernelTermNode::Variable(_) | KernelTermNode::MachineLiteral(_) => term.clone(),
+                KernelTermNode::Variable(_)
+                | KernelTermNode::MachineLiteral(_)
+                | KernelTermNode::MemoryLoad { .. } => term.clone(),
                 KernelTermNode::MachineBinary {
                     format,
                     operator,
