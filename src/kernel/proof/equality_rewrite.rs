@@ -1610,6 +1610,12 @@ fn rewrite_atomic_proposition_by_exact_equality(
                 left: Box::new(rewrite_resource_offset(goal_left, left, right)),
                 right: Box::new(rewrite_resource_offset(goal_right, left, right)),
             },
+            Proposition::CResourceViewable { memory, resource } => {
+                crate::kernel::resource_viewable(
+                    memory,
+                    rewrite_resource_offset(resource, left, right),
+                )
+            }
             Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
                 parent: Box::new(rewrite_resource_offset(parent, left, right)),
                 child: Box::new(rewrite_resource_offset(child, left, right)),
@@ -2304,6 +2310,9 @@ fn rewrite_atomic_proposition_by_exact_equality(
             left: Box::new(rewrite_resource_term(goal_left)),
             right: Box::new(rewrite_resource_term(goal_right)),
         },
+        Proposition::CResourceViewable { memory, resource } => {
+            crate::kernel::resource_viewable(memory, rewrite_resource_term(resource))
+        }
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
             parent: Box::new(rewrite_resource_term(parent)),
             child: Box::new(rewrite_resource_term(child)),

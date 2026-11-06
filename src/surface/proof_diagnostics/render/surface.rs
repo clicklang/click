@@ -594,6 +594,10 @@ impl Printer<'_> {
                 self.resource(left),
                 self.resource(right)
             ))),
+            Proposition::CResourceViewable { memory, resource } => {
+                let fact = atom(format!("viewable({})", self.resource(resource)));
+                self.qualify_fact(memory, fact)
+            }
             Proposition::CResourceContains { parent, child } => Some(atom(format!(
                 "contains({}, {})",
                 self.resource(parent),

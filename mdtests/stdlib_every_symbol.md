@@ -1875,6 +1875,17 @@ theorem use_slice(p: uint8*, n: uint64) {
         normalize();
     }
 }
+theorem restricted_view(A: Resource, B: Resource) {
+    requires viewable(A);
+    requires contains(A, B);
+    ensures viewable(B) by {
+        apply(separation::viewable_restrict(A, B)) using {
+            viewable(A);
+            contains(A, B);
+        };
+    }
+}
+
 ```
 
 ```expect

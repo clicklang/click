@@ -486,3 +486,31 @@ fn preserve_step_supports_memory_and_resource_observations() {
         without_implicit_solve(|| verify_c0_sources(&rewritten, &sources)).unwrap();
     }
 }
+
+#[test]
+fn resource_viewability_restriction_expands_without_transport() {
+    for (fixture, claim) in [
+        ("viewable_restrict_memory.md", "first"),
+        ("viewable_restrict_resources.md", "view_component"),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}"));
+        let sources = sources
+            .iter()
+            .map(|(n, s)| (n.as_str(), s.as_str()))
+            .collect::<Vec<_>>();
+        without_implicit_solve(|| verify_c0_sources(&source, &sources))
+            .unwrap_or_else(|e| panic!("{fixture}: {}", e.report()));
+        let expanded = expand_c0_claim_source_by_label(
+            &source,
+            &sources,
+            if claim == "first" {
+                "first.contract"
+            } else {
+                "view_component.ensures_0"
+            },
+        )
+        .unwrap();
+        assert!(!expanded.contains("transport("), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}

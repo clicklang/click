@@ -266,6 +266,9 @@ pub(super) fn print_proposition(
             describe_resource_subject(parent),
             describe_resource_subject(child)
         ),
+        ClickProposition::ResourceViewable { resource } => {
+            format!("viewable({})", describe_resource_subject(resource))
+        }
         ClickProposition::Loadable { segment } => {
             format!("viewable({})", describe_contract_segment(segment))
         }

@@ -127,6 +127,9 @@ fn collect_spec_proposition_carriers(
                 }
             }
         }
+        SpecProposition::ResourceViewable { resource, .. } => {
+            collect_spec_resource_carriers(resource, variables, integer_seen)
+        }
         SpecProposition::ResourceSeparate { left, right }
         | SpecProposition::ResourceContains {
             parent: left,
@@ -1069,6 +1072,12 @@ impl<'a> TermRewrite<'a> {
                 SpecProposition::ResourceSeparate {
                     left: self.rewrite_spec_resource(left)?,
                     right: self.rewrite_spec_resource(right)?,
+                }
+            }
+            SpecProposition::ResourceViewable { memory, resource } => {
+                SpecProposition::ResourceViewable {
+                    memory: memory.clone(),
+                    resource: self.rewrite_spec_resource(resource)?,
                 }
             }
             SpecProposition::ResourceContains { parent, child } => {

@@ -16,6 +16,7 @@ pub(in crate::kernel) fn observes_resource_state(proposition: &SpecProposition) 
                     ..
                 }
                 | SpecProposition::ResourceSeparate { .. }
+                | SpecProposition::ResourceViewable { .. }
                 | SpecProposition::ResourceContains { .. },
             )
             | SpecNode::Expression(

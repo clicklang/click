@@ -46,7 +46,9 @@ and the glossary entry for axiom). Some of them are also exposed as the kernel
 standard library theorems below. `separation::restrict` is likewise a named
 trusted axiom, implemented in `src/kernel/separation_laws.rs`: separate parents
 and explicit containment premises imply separate parts. Its `Resource`
-parameters describe resources without granting ownership. `integer::uint32_from_le_bytes`
+parameters describe resources without granting ownership.
+`separation::viewable_restrict` likewise transfers pure viewability from a
+parent to an explicitly contained part, at the same snapshot. `integer::uint32_from_le_bytes`
 is backed by `src/kernel/byte_representation_laws.rs`; it relates a defined
 unsigned word to its four representation bytes under an explicit
 `little_endian()` premise and a readable-word premise. The selected execution
@@ -118,7 +120,7 @@ contracts in `src/languages/cpp/standard_library.rs`. See
 
 ## The Click library
 
-The `library/` modules declare 151 theorems. `verify_standard_library`
+The `library/` modules declare 152 theorems. `verify_standard_library`
 checks each one, in one of two ways; the nightly suite runs it
 (`standard_library_theorems_are_proved_by_their_own_entry_point`):
 
@@ -130,7 +132,7 @@ checks each one, in one of two ways; the nightly suite runs it
   the `uint64` order transitivities, each with a pinned proof of explicit
   steps (`assumption()`, `normalize()`, `arithmetic_certificate`, and
   `apply` of earlier library theorems).
-- **42 are kernel standard theorems.** They have no proof. The check is
+- **43 are kernel standard theorems.** They have no proof. The check is
   only that the declaration's parameters, premises and conclusion match the
   proposition a Rust kernel builder constructs (`prove_*`, mostly in
   `src/kernel/api.rs`); the theorem is then recorded as an axiom
@@ -141,7 +143,7 @@ checks each one, in one of two ways; the nightly suite runs it
   (`int32_remainder_to_integer`; the `uint32` and `uint64` divide and
   remainder laws; the 8 round trips; 16-bit packing; and the
   `uint32_from_le_bytes` byte layout), 5 Integer truncation laws, 6 `Nat`
-  conversion laws and 10 separation laws. `separation::elements` is
+  conversion laws and 11 separation laws. `separation::elements` is
   generic over its index type, which has no rigid C form, so it is checked
   at each index type its builder admits: `int32`, `int64` and `uint64`.
 

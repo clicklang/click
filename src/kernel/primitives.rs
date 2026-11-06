@@ -5099,6 +5099,10 @@ pub enum SpecProposition {
         left: SpecResource,
         right: SpecResource,
     },
+    ResourceViewable {
+        memory: SpecMemory,
+        resource: SpecResource,
+    },
     ResourceContains {
         parent: SpecResource,
         child: SpecResource,
@@ -12369,6 +12373,10 @@ pub enum Proposition {
     /// PureFactContext store this as indexed kernel authority rather than as an
     /// ambient proposition visible to proof search.
     CResourceComposition(ResourceContext),
+    CResourceViewable {
+        memory: CMemory,
+        resource: Box<CResource>,
+    },
     CResourceContains {
         parent: Box<CResource>,
         child: Box<CResource>,
@@ -12619,6 +12627,10 @@ fn hash_atomic_proposition<H: Hasher>(atomic: &Proposition, state: &mut H) {
             right.hash(state);
         }
         Proposition::CResourceComposition(resources) => resources.hash(state),
+        Proposition::CResourceViewable { memory, resource } => {
+            memory.hash(state);
+            resource.hash(state);
+        }
         Proposition::CResourceContains { parent, child } => {
             parent.hash(state);
             child.hash(state);
@@ -12924,6 +12936,10 @@ fn clone_atomic_proposition(proposition: &Proposition) -> Proposition {
         Proposition::CResourceComposition(resources) => {
             Proposition::CResourceComposition(resources.clone())
         }
+        Proposition::CResourceViewable { memory, resource } => Proposition::CResourceViewable {
+            memory: memory.clone(),
+            resource: resource.clone(),
+        },
         Proposition::CResourceContains { parent, child } => Proposition::CResourceContains {
             parent: parent.clone(),
             child: child.clone(),

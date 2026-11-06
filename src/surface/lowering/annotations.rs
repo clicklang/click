@@ -2823,6 +2823,7 @@ fn proposition_supported_in_opaque_contract(proposition: &ClickProposition) -> b
     match proposition {
         ClickProposition::ChangesOnly { .. }
         | ClickProposition::Separate { .. }
+        | ClickProposition::ResourceViewable { .. }
         | ClickProposition::Contains { .. }
         | ClickProposition::Loadable { .. }
         | ClickProposition::Defined { .. } => true,
@@ -4237,6 +4238,7 @@ impl AnnotationLowerer<'_> {
             | ClickProposition::FloatClassification { .. }
             | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. }
             | ClickProposition::Defined { .. } => {
@@ -5040,6 +5042,12 @@ impl AnnotationLowerer<'_> {
                 left: self.lower_resource_subject_to_spec(left, environment)?,
                 right: self.lower_resource_subject_to_spec(right, environment)?,
             }),
+            ClickProposition::ResourceViewable { resource } => {
+                Ok(SpecProposition::ResourceViewable {
+                    memory: environment.current_memory.clone(),
+                    resource: self.lower_resource_subject_to_spec(resource, environment)?,
+                })
+            }
             ClickProposition::Contains { parent, child } => Ok(SpecProposition::ResourceContains {
                 parent: self.lower_resource_subject_to_spec(parent, environment)?,
                 child: self.lower_resource_subject_to_spec(child, environment)?,

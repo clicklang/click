@@ -6346,6 +6346,26 @@ history or discover containment facts.
 
 **Verified use:** [`mdtests/resource_theorem_parameters.md`](https://github.com/clicklang/click/blob/master/mdtests/resource_theorem_parameters.md).
 
+### `separation::viewable_restrict`
+
+```click
+theorem viewable_restrict(A: Resource, B: Resource) {
+    requires viewable(A);
+    requires contains(A, B);
+    ensures viewable(B);
+}
+```
+
+**Meaning:** A contained part of a viewable resource is viewable at the same
+snapshot. This applies to arbitrary resource descriptors, including named
+resources and separating conjunctions. For memory,
+`viewable(memory(p[a..b]))` is the same fact as `viewable(p[a..b])`.
+The axiom grants no ownership and discovers neither containment nor history
+paths; both premises are explicit.
+
+**Verified use:** `mdtests/viewable_restrict_memory.md` and
+`mdtests/viewable_restrict_resources.md`.
+
 ### Separating conjunction laws
 
 `A * B` is a resource descriptor for separating conjunction; `separation::emp`

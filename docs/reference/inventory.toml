@@ -4198,3 +4198,7 @@ path = "reference/tactics/index.md#preservation"
 [[item]]
 id = "tactic-form.preserve"
 path = "reference/tactics/index.md#preservation"
+
+[[item]]
+id = "library.theorem.separation::viewable_restrict"
+path = "reference/library/index.md#separationviewable_restrict"

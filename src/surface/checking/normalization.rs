@@ -218,6 +218,7 @@ pub(in crate::surface) fn solve_proposition(
         | Proposition::CFunctionPartiallySatisfiesSpecification { .. }
         | Proposition::CMemoryLoads { .. }
         | Proposition::CMemoryReadDefined { .. }
+        | Proposition::CResourceViewable { .. }
         | Proposition::CMemoryLoadable { .. }
         | Proposition::CMemoryCanStore { .. }
         | Proposition::CResourceSeparate { .. }

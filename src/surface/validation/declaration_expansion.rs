@@ -3316,6 +3316,9 @@ fn expand_declared_resource_proposition_one(
             parent: expand_declared_resource_subject(parent, resource_definitions)?,
             child: expand_declared_resource_subject(child, resource_definitions)?,
         }),
+        ClickProposition::ResourceViewable { resource } => Ok(ClickProposition::ResourceViewable {
+            resource: expand_declared_resource_subject(resource, resource_definitions)?,
+        }),
         ClickProposition::And(left, right) => Ok(ClickProposition::And(
             Box::new(expand_declared_resource_proposition(
                 *left,

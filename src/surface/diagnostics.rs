@@ -3454,6 +3454,7 @@ pub(in crate::surface) fn describe_consumed_instance_field_read(
             ClickProposition::At { .. }
             | ClickProposition::ChangesOnly { .. }
             | ClickProposition::Separate { .. }
+            | ClickProposition::ResourceViewable { .. }
             | ClickProposition::Contains { .. }
             | ClickProposition::Loadable { .. } => {}
         }

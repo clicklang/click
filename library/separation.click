@@ -39,3 +39,10 @@ theorem separate_star(A: Resource, B: Resource, C: Resource) {
     ensures separate(A * B, C);
 }
 theorem separate_emp(A: Resource) { ensures separate(separation::emp, A); }
+
+// A pure viewability fact restricts along explicitly proved containment.
+theorem viewable_restrict(A: Resource, B: Resource) {
+    requires viewable(A);
+    requires contains(A, B);
+    ensures viewable(B);
+}

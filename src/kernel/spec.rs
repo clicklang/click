@@ -1959,6 +1959,28 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
                 },
             )
         }
+        SpecProposition::ResourceViewable { memory, resource } => {
+            let memory = match memory {
+                SpecMemory::Current => scope.state.memory(),
+                SpecMemory::FunctionEntry | SpecMemory::LoopEntry => match scope.loop_entry_state {
+                    Some(entry) => entry.memory(),
+                    None => return Ok(Vec::new()),
+                },
+                SpecMemory::Fixed(memory) => memory,
+            };
+            let mut paths = Vec::new();
+            for (resource, facts, obligations) in
+                evaluate_spec_resource_at_state_in(scope, resource, assumptions, budget)?
+            {
+                paths.push(SpecPropositionPath {
+                    introductions: Vec::new(),
+                    proposition: crate::kernel::resource_viewable(memory, resource),
+                    facts,
+                    obligations,
+                });
+            }
+            Ok(paths)
+        }
         SpecProposition::ResourceContains { parent, child } => {
             lower_spec_resource_relation_at_state_in(
                 scope,
