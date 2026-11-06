@@ -56,6 +56,10 @@ fn old_collect_spec_expression_bitvector_variables(
             old_collect_spec_expression_bitvector_variables(then_branch, variables);
             old_collect_spec_expression_bitvector_variables(else_branch, variables);
         }
+        SpecExpression::Requires { requirement, value } => {
+            old_collect_spec_proposition_bitvector_variables(requirement, variables);
+            old_collect_spec_expression_bitvector_variables(value, variables);
+        }
         SpecExpression::RangeFold {
             start,
             end,
@@ -435,6 +439,10 @@ fn old_collect_spec_integer_bound_expression(
             old_collect_spec_proposition_bound_identities(condition, variables, integer_seen);
             old_collect_spec_integer_bound_expression(then_branch, variables, integer_seen);
             old_collect_spec_integer_bound_expression(else_branch, variables, integer_seen);
+        }
+        SpecExpression::Requires { requirement, value } => {
+            old_collect_spec_proposition_bound_identities(requirement, variables, integer_seen);
+            old_collect_spec_integer_bound_expression(value, variables, integer_seen);
         }
         SpecExpression::RangeFold {
             start,
