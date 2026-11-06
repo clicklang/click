@@ -11,9 +11,11 @@ No new scaling measurements were made for this audit.
 The have prerequisite callback described below has been extracted:
 `Proof::begin_have` now reports requirements without scheduling their proofs;
 `ProofDriver::open_have` owns the ordinary obligation-solving orchestration.
-The enforced inventory now contains 14 operation-to-driver records. The tables
-below retain their explicitly identified audit snapshot; focusing and resource
-scope completion still have the other two obligation callbacks. This extraction
+Contract-claim opening now follows the same boundary: `Proof::begin_contract_claim`
+reports definedness obligations, and `ProofDriver::open_contract_claim` handles
+their proofs. The enforced inventory now contains 13 operation-to-driver records.
+The tables below retain their explicitly identified audit snapshot; resource
+scope completion still has its obligation callback. This extraction
 does not resolve the separate cost of separation observation during have setup.
 
 ## Findings

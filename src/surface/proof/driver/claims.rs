@@ -1116,7 +1116,7 @@ fn focus_claim_goal<'a>(
     surface_goal: &ClickProposition,
 ) -> Result<Proof<'a>, ClickError> {
     match kernel_goal {
-        Some(goal) => root.focus_kernel_claim_goal(&goal, surface_goal),
+        Some(goal) => root.driver().open_contract_claim(&goal, surface_goal),
         None => root.focus_fixed_state_surface_goal(surface_goal),
     }
 }
@@ -1136,7 +1136,7 @@ impl ClaimGoalCandidate {
         surface_goal: &ClickProposition,
     ) -> Result<Proof<'a>, ClickError> {
         match self {
-            Self::Kernel(goal) => root.focus_kernel_claim_goal(goal, surface_goal),
+            Self::Kernel(goal) => root.driver().open_contract_claim(goal, surface_goal),
             Self::Lowered(goal) => {
                 root.focus_lowered_outcome_claim(goal.clone(), &[], surface_goal)
             }
@@ -4528,7 +4528,8 @@ pub(super) fn finish_ordered_proof<'a>(
                                         if let Some(root) = &fixed_state_root {
                                             for original in &kernel_goals {
                                                 let candidate = root
-                                                    .focus_bare_kernel_claim_goal(
+                                                    .driver()
+                                                    .open_contract_claim_without_lowering_facts(
                                                         original,
                                                         surface_goal,
                                                     )?

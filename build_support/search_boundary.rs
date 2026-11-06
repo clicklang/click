@@ -64,8 +64,10 @@ impl Boundary<'_> {
     }
     fn ident(&mut self, name: &str) {
         let name = name.strip_prefix("r#").unwrap_or(name);
-        if self.path == "src/surface/proof/proof_object/splits_and_scopes.rs"
-            && self.function == "begin_have"
+        if ((self.path == "src/surface/proof/proof_object/splits_and_scopes.rs"
+            && self.function == "begin_have")
+            || (self.path == "src/surface/proof/proof_object/outcomes_and_focus.rs"
+                && self.function == "begin_contract_claim"))
             && (matches!(name, "ProofDriver" | "ProofSearch" | "DriveProof")
                 || proof_search_boundary::TARGETS
                     .lines()
@@ -75,8 +77,8 @@ impl Boundary<'_> {
                     .any(|method| method == name))
         {
             self.errors.push(format!(
-                "{}: begin_have must report obligations, not schedule proofs or search ({name})",
-                self.path
+                "{}: {} must report obligations, not schedule proofs or search ({name})",
+                self.path, self.function
             ));
         }
         if self.path == "src/surface/proof/driver/obligations.rs"

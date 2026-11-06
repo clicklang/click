@@ -611,68 +611,33 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Focus a compiler-lowered contract claim with only the load facts
-    /// produced by that lowering. The ambient outcome facts remain shared.
-    /// Focuses the kernel's goal for one contract claim, with the facts its
-    /// loads introduced. The obligation keeps the claim's identity, so the
-    /// proposition completed from it says which claim it closes.
-    pub(in crate::surface::proof) fn focus_kernel_claim_goal(
+    /// Open a proof of an already-lowered contract claim. Report missing
+    /// definedness obligations through the ordinary obligation channel;
+    /// scheduling their proofs belongs to the driver.
+    pub(in crate::surface::proof) fn begin_contract_claim(
         &self,
         goal: &crate::kernel::CClaimGoal,
         surface: &ClickProposition,
     ) -> Result<Self, ClickError> {
-        let root = self.clone().with_claim_lowering_facts(self, goal.facts())?;
-        root.focus_bare_kernel_claim_goal(goal, surface)
-    }
-
-    /// [`Self::focus_kernel_claim_goal`] without the goal's lowering facts.
-    pub(in crate::surface::proof) fn focus_bare_kernel_claim_goal(
-        &self,
-        goal: &crate::kernel::CClaimGoal,
-        surface: &ClickProposition,
-    ) -> Result<Self, ClickError> {
-        let checkpoint = self.checkpoint();
-        let mut root = self.clone();
-        let pending = goal.unproved_requirements(root.facts().assumptions());
-        if !pending.is_empty() {
-            let mut requirements = super::super::execution_planning::OpenObligationProbe::default();
-            for obligation in pending {
-                let error = root
-                    .step_error_with_requirement(
-                        "contract claim has an outstanding evaluation requirement",
+        for obligation in goal.unproved_requirements(self.facts().assumptions()) {
+            let error = self
+                .step_error_with_requirement(
+                    "contract claim has an outstanding evaluation requirement",
+                    None,
+                    Some((
+                        "evaluation requirement",
+                        Box::new(obligation.proposition().clone()),
                         None,
-                        Some((
-                            "evaluation requirement",
-                            Box::new(obligation.proposition().clone()),
-                            None,
-                        )),
-                    )
-                    .with_unresolved_requirement(&obligation);
-                requirements.recorded.push(
-                    error
-                        .unresolved_requirement()
-                        .expect("evaluation requirement")
-                        .clone(),
-                );
-                requirements.refusals.push(error);
-            }
-            root = root
-                .driver()
-                .discharge_entry_requirements(surface, &requirements)?;
+                    )),
+                )
+                .with_unresolved_requirement(&obligation);
+            super::super::execution_planning::refuse_or_record_open_obligation(error)?;
         }
-        let mut focused = root.focus_fixed_state_goal_for_claim(
+        self.focus_fixed_state_goal_for_claim(
             goal.proposition().clone(),
             Some(surface.clone()),
             Some(goal),
-        )?;
-        // Focusing creates a semantic root. Keep only the prerequisite proofs
-        // just produced for it, so expansion writes those haves before the
-        // claim's own steps without copying the enclosing execution history.
-        for step in root.certificate_since(&checkpoint)?.steps() {
-            focused.node =
-                ProofNode::step_child(&focused.node, BranchId::ROOT, Arc::new(step.clone()));
-        }
-        Ok(focused)
+        )
     }
 
     pub(in crate::surface::proof) fn focus_lowered_outcome_claim(
@@ -685,7 +650,7 @@ impl<'a> Proof<'a> {
         focused.with_claim_lowering_facts(self, lowering_facts)
     }
 
-    fn with_claim_lowering_facts(
+    pub(in crate::surface::proof) fn with_claim_lowering_facts(
         self,
         origin: &Self,
         lowering_facts: &[Proposition],
