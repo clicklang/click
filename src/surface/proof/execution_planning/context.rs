@@ -1443,10 +1443,8 @@ mod tests {
             && let Proposition::Implies(_, consequent) = body.as_mut()
             && let Proposition::CMemoryLoadable { base, .. } = consequent.as_mut()
         {
-            base.offset = PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(1 << 40))),
-                byte_width: 1,
-            };
+            base.offset =
+                PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(1 << 40)), 1);
         }
         let unregistered_guarded = Proposition::Exists {
             name: "len".to_string(),

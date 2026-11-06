@@ -2585,10 +2585,7 @@ impl PointerOffsetTerm {
     pub(crate) fn scale_int32(value: MachineTerm, byte_width: i64) -> Self {
         match value.as_const() {
             Some(value) => Self::Constant((value as i32 as i64) * byte_width),
-            None => Self::Int32Scaled {
-                value: Box::new(value),
-                byte_width,
-            },
+            None => Self::scaled_int32_node(value, byte_width),
         }
     }
 
@@ -2634,11 +2631,7 @@ impl PointerOffsetTerm {
         };
         match constant {
             Some(value) => Self::Constant(value),
-            None => Self::Int64Scaled {
-                value: Box::new(value),
-                byte_width,
-                unsigned,
-            },
+            None => Self::scaled_int64_node(value, byte_width, unsigned),
         }
     }
 }
@@ -5092,7 +5085,7 @@ impl Pointer {
                 value,
                 byte_width,
                 unsigned: true,
-            } if byte_width == width => Some(*value),
+            } if byte_width == width => Some(value.as_ref().clone()),
             PointerOffsetTerm::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
                 Some(MachineTerm::uint64_constant((bytes / width) as u64))
             }

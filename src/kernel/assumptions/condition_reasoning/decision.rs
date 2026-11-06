@@ -3308,10 +3308,7 @@ mod shared_equality_dispatch_tests {
                     MachineTerm::Variable(Variable(983001)),
                     MachineTerm::Variable(Variable(983002)),
                 );
-                let offset = |value| PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(value),
-                    byte_width: width,
-                };
+                let offset = |value| PointerOffsetTerm::scaled_int32_node(value, width);
                 let source = Proposition::ConditionIs(
                     ConditionTerm::pointer_offset_equal(
                         offset(native_product),

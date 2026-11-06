@@ -5338,10 +5338,7 @@ fn canonical_scaled_offset(value: MachineTerm, byte_width: i64) -> PointerOffset
         bits32_constant!(value) => {
             PointerOffsetTerm::Constant((constant_u32(value) as i32 as i64) * byte_width)
         }
-        value => PointerOffsetTerm::Int32Scaled {
-            value: Box::new(value),
-            byte_width,
-        },
+        value => PointerOffsetTerm::scaled_int32_node(value, byte_width),
     }
 }
 

@@ -142,7 +142,6 @@ struct TermData {
 
 struct NodeKeyData {
     fingerprint: u64,
-    read_address_snapshots: Option<Arc<[(u32, u32)]>>,
     ty: KernelType,
     node: KernelTermNode,
     shared_machine_operand: bool,
@@ -174,10 +173,7 @@ impl PartialEq for NodeKey {
                         // The interner is process-wide; snapshots belong to arenas.
                         // Comparing their contents across arenas would walk unrelated
                         // memory while registering one selected read.
-                        a.arena_id() == b.arena_id()
-                            && self.0.read_address_snapshots == other.0.read_address_snapshots
-                            && p == q
-                            && k == l
+                        a.arena_id() == b.arena_id() && p == q && k == l
                     }
                     (a, b) => a == b,
                 })
@@ -191,27 +187,10 @@ impl Hash for NodeKey {
 }
 impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
-        let read_address_snapshots = match &node {
-            KernelTermNode::MemoryLoad { address, .. } => {
-                let snapshots = reads::address_snapshots(address)
-                    .expect("shared reads have exact structural addresses");
-                (!snapshots.is_empty()).then(|| snapshots.into())
-            }
-            _ => None,
-        };
-        Self::with_read_snapshots(ty, node, read_address_snapshots)
-    }
-
-    fn with_read_snapshots(
-        ty: KernelType,
-        node: KernelTermNode,
-        read_address_snapshots: Option<Arc<[(u32, u32)]>>,
-    ) -> Self {
         let mut hash = std::collections::hash_map::DefaultHasher::new();
         ty.hash(&mut hash);
         if let KernelTermNode::MemoryLoad { memory, .. } = &node {
             memory.arena_id().hash(&mut hash);
-            read_address_snapshots.hash(&mut hash);
         }
         node.hash(&mut hash);
         // A fresh legacy identity belongs to its producer. Read addresses also
@@ -301,7 +280,6 @@ impl NodeKey {
         let machine_constant = machine::constant_reading(&node);
         Self(Arc::new(NodeKeyData {
             machine_constant,
-            read_address_snapshots,
             fingerprint: hash.finish(),
             shared_machine_operand,
             opaque_observation_boundary,
@@ -441,17 +419,14 @@ impl KernelTerm {
     }
 
     fn intern(ty: KernelType, node: KernelTermNode) -> Self {
-        Self::intern_key(NodeKey::new(ty, node))
-    }
-
-    fn intern_key(key: NodeKey) -> Self {
         static INTERNER: OnceLock<Mutex<Interner>> = OnceLock::new();
-        crate::instrumentation::record_deterministic_work(match &key.0.node {
+        crate::instrumentation::record_deterministic_work(match &node {
             KernelTermNode::IntegerOperation { arguments, .. } => arguments.len() + 1,
             KernelTermNode::Call { name, arguments } => name.len() + arguments.len() + 1,
             KernelTermNode::IntegerLiteral(value) => value.bits() as usize + 1,
             _ => 1,
         });
+        let key = NodeKey::new(ty, node);
         INTERNER
             .get_or_init(Default::default)
             .lock()
@@ -584,6 +559,9 @@ impl KernelTerm {
 #[derive(Default)]
 pub(crate) struct KernelTermImport {
     integers: HashMap<SharedIntegerTerm, KernelTerm>,
+    // Index producers can retain their supplied native tree unless import
+    // expanded a registered read.
+    pub(super) machine_input_requires_export: bool,
 }
 impl KernelTermImport {
     pub(crate) fn argument(&mut self, value: &PureFunctionArgument) -> KernelTerm {

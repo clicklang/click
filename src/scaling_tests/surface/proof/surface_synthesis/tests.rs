@@ -62,10 +62,10 @@ fn pointer_spelling_skips_cyclic_offsets_and_tries_the_next_local() {
                 };
                 let cyclic = Pointer {
                     block: pointer.block.clone(),
-                    offset: PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(MachineTerm::pointer_address(pointer.clone())),
-                        byte_width: 4,
-                    },
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::pointer_address(pointer.clone()),
+                        4,
+                    ),
                 };
                 let mut state = CState::new();
                 for index in 0..size {

@@ -4008,7 +4008,7 @@ impl PureFactContext {
         }) = pointer.offset_from_base(base)
             && byte_width == i64::from(element_width)
         {
-            return Some(match *value {
+            return Some(match value.as_ref().clone() {
                 int64_constant!(constant) => {
                     MachineTerm::uint64_constant(constant_i64(constant) as u64)
                 }
@@ -4086,7 +4086,10 @@ impl PureFactContext {
         // ([`crate::kernel::wide_range_bounds`]). A negative index becomes at
         // least 2^63, beyond every wide range's end, so no caller places it.
         crate::kernel::primitives::checked_native_range_endpoint(&value, self).or(Some(
-            MachineTerm::legacy_cast(MachineCastSpelling::UInt64FromInt32, value),
+            MachineTerm::legacy_cast(
+                MachineCastSpelling::UInt64FromInt32,
+                Box::new(value.as_ref().clone()),
+            ),
         ))
     }
 

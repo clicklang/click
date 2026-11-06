@@ -368,15 +368,14 @@ impl AffineOffset {
                     PointerOffsetTerm::Variable(*variable)
                 }
                 OffsetAtom::Variable(_) => return None,
-                OffsetAtom::Int32(value) => PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(value.value().clone()),
-                    byte_width: coefficient,
-                },
-                OffsetAtom::Int64 { value, unsigned } => PointerOffsetTerm::Int64Scaled {
-                    value: Box::new(value.value().clone()),
-                    byte_width: coefficient,
-                    unsigned: *unsigned,
-                },
+                OffsetAtom::Int32(value) => {
+                    PointerOffsetTerm::scaled_int32_node(value.value().clone(), coefficient)
+                }
+                OffsetAtom::Int64 { value, unsigned } => PointerOffsetTerm::scaled_int64_node(
+                    value.value().clone(),
+                    coefficient,
+                    *unsigned,
+                ),
             };
             term = PointerOffsetTerm::add(term, addend);
         }
@@ -3318,38 +3317,26 @@ mod tests {
     fn offsets_spelled_differently_share_one_normal_form() {
         let nested = PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(index(7)),
-                    byte_width: 4,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(index(7), 4)),
                 Box::new(PointerOffsetTerm::Constant(4)),
             )),
             Box::new(PointerOffsetTerm::Constant(4)),
         );
         let flat = PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Constant(8)),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(index(7)),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(index(7), 4)),
         );
         assert_eq!(AffineOffset::of(&nested), AffineOffset::of(&flat));
         let other_index = PointerOffsetTerm::Add(
             Box::new(PointerOffsetTerm::Constant(8)),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(index(8)),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(index(8), 4)),
         );
         assert_ne!(AffineOffset::of(&flat), AffineOffset::of(&other_index));
     }
 
     #[test]
     fn a_constant_index_folds_with_its_sign() {
-        let minus_one = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::constant(u32::MAX)),
-            byte_width: 8,
-        };
+        let minus_one = PointerOffsetTerm::scaled_int32_node(MachineTerm::constant(u32::MAX), 8);
         assert_eq!(
             AffineOffset::of(&minus_one),
             Some(AffineOffset::constant(-8))
@@ -3685,19 +3672,13 @@ mod tests {
         let mut classes = EqualityGraph::default();
         let element = Pointer {
             block: symbolic(2),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(index(9)),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(index(9), 4),
         };
         classes.add_equality(&at(symbolic(1), 0), &element);
         let next = Pointer {
             block: symbolic(2),
             offset: PointerOffsetTerm::Add(
-                Box::new(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(index(9)),
-                    byte_width: 4,
-                }),
+                Box::new(PointerOffsetTerm::scaled_int32_node(index(9), 4)),
                 Box::new(PointerOffsetTerm::Constant(4)),
             ),
         };
@@ -3741,10 +3722,7 @@ mod tests {
         assert!(classes.pointer_spellings(&at(symbolic(1), 4)).is_empty());
         let element = Pointer {
             block: symbolic(2),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(index(9)),
-                byte_width: 8,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(index(9), 8),
         };
         classes.add_equality(&at(symbolic(1), 0), &element);
         classes.add_equality(&at(symbolic(3), 16), &at(symbolic(1), 0));
@@ -4197,14 +4175,8 @@ mod tests {
 
     #[test]
     fn affine_spelling_order_does_not_depend_on_atom_interning_order() {
-        let high = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(index(987_002)),
-            byte_width: 4,
-        };
-        let low = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(index(987_001)),
-            byte_width: 4,
-        };
+        let high = PointerOffsetTerm::scaled_int32_node(index(987_002), 4);
+        let low = PointerOffsetTerm::scaled_int32_node(index(987_001), 4);
         let high_form = AffineOffset::of(&high).unwrap();
         let low_form = AffineOffset::of(&low).unwrap();
         let sum = high_form.checked_add(&low_form).unwrap();

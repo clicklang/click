@@ -4518,6 +4518,12 @@ impl PureFactContext {
         }
     }
 
+    /// Whether an exact positive offset-equality lookup can find a source.
+    /// This index is maintained with insertion and withdrawal of those facts.
+    pub(in crate::kernel) fn has_recorded_pointer_offset_equalities(&self) -> bool {
+        !self.pointer_offset_equalities_by_shape.is_empty()
+    }
+
     pub(in crate::kernel) fn has_pointer_offset_snapshot_fact(
         &self,
         left: &PointerOffsetTerm,

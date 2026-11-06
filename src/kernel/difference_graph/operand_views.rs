@@ -125,7 +125,11 @@ struct Query<'a> {
 
 impl DifferenceGraph {
     pub(super) fn index_operand_node(&mut self, domain: Domain, term: &MachineTerm, node: NodeId) {
-        if matches!(term, MachineTerm::Variable(_)) || V::Legacy(term).literal().is_some() {
+        let named_read = matches!(term, MachineTerm::Variable(variable)
+            if crate::kernel::is_load_variable(variable));
+        if !named_read && matches!(term, MachineTerm::Variable(_))
+            || V::Legacy(term).literal().is_some()
+        {
             self.shared_queries.invalidate(Read::Operand(
                 domain,
                 Key::for_format(format(domain), V::Legacy(term)),
@@ -158,6 +162,10 @@ impl DifferenceGraph {
                 crate::kernel::KernelTermImport::default().machine_arithmetic(interpretation, term)
             });
         if let Some(root) = root {
+            // A compatibility name can introduce a read before any shared
+            // comparison does. Index its descriptor at the same coordinate,
+            // so structural address indices use the already-admitted bounds.
+            self.has_shared_admissions |= root.has_machine_reads();
             let key = Key::for_format(format(domain), V::Shared(&root));
             self.shared_queries
                 .invalidate(Read::Operand(domain, key.clone()));
@@ -780,6 +788,69 @@ mod tests {
     use super::*;
     use crate::kernel::machine_integer::{Operation as Op, definedness::OverflowQueryView};
     use crate::kernel::{KernelTermExport, KernelTermImport, SharedMachineIntegerTerm, Variable};
+
+    #[test]
+    fn named_read_bounds_are_available_to_structural_indices() {
+        use crate::kernel::{
+            CMemory, CValue, LoadKind, Pointer, VerificationSession, intern_c_memory,
+        };
+        let _session = VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(998_301));
+        let memory = intern_c_memory(CMemory::new());
+        let name = crate::kernel::eval::load_variable_for_cell(&memory, &address, LoadKind::Int32);
+        let read = crate::kernel::eval::registered_load_term_for_variable(&name).unwrap();
+        let named = MachineTerm::Variable(name);
+        let lower = MachineTerm::Variable(Variable(998_302));
+        let upper = MachineTerm::Variable(Variable(998_303));
+        let equal = ConditionTerm::equal(named.clone(), lower.clone());
+        let bound = ConditionTerm::signed_less_than(lower.clone(), upper.clone());
+        for facts in [
+            [equal.clone(), bound.clone()],
+            [bound.clone(), equal.clone()],
+        ] {
+            let mut graph = DifferenceGraph::new();
+            for fact in facts {
+                graph.assume_condition(&fact, true);
+            }
+            for index in [named.clone(), read.clone()] {
+                assert_eq!(
+                    graph.decide(&ConditionTerm::signed_less_equal(
+                        lower.clone(),
+                        index.clone()
+                    )),
+                    Some(true)
+                );
+                assert_eq!(
+                    graph.decide(&ConditionTerm::signed_less_than(index, upper.clone())),
+                    Some(true)
+                );
+            }
+            let shared = SharedMachineIntegerTerm::index(MachineIntegerType::Int32, read.clone());
+            assert_eq!(
+                graph.decide_word_equality_views(shared.operand_view(), V::Legacy(&lower)),
+                Some(true)
+            );
+            let changed = intern_c_memory(
+                memory
+                    .memory()
+                    .clone()
+                    .store(address.clone(), CValue::Int32(17u32.into())),
+            );
+            let other =
+                MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Int32);
+            assert_eq!(
+                graph.decide(&ConditionTerm::signed_less_than(other, upper.clone())),
+                None
+            );
+            assert_eq!(
+                graph.decide(&ConditionTerm::signed_less_than(
+                    read.clone(),
+                    lower.clone()
+                )),
+                Some(false)
+            );
+        }
+    }
 
     #[test]
     fn graph_overflow_views_keep_chained_bounds_and_unknown_answers() {

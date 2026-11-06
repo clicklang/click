@@ -3553,11 +3553,7 @@ mod tests {
         let base = Pointer::symbolic(Variable(895_081));
         let scaled = |width, unsigned| Pointer {
             block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(value.clone()),
-                byte_width: width,
-                unsigned,
-            },
+            offset: PointerOffsetTerm::scaled_int64_node(value.clone(), width, unsigned),
         };
         for unsigned in [false, true] {
             for width in [1, 4, 8] {
@@ -3602,11 +3598,8 @@ mod tests {
     #[test]
     fn offset_equality_preserves_width_signedness_and_snapshot_identity() {
         let _session = crate::kernel::VerificationSession::enter();
-        let scaled = |value, width, unsigned| PointerOffsetTerm::Int64Scaled {
-            value: Box::new(value),
-            byte_width: width,
-            unsigned,
-        };
+        let scaled =
+            |value, width, unsigned| PointerOffsetTerm::scaled_int64_node(value, width, unsigned);
         let value = MachineTerm::Variable(Variable(10));
         let signed = scaled(value.clone(), 4, false);
         let target = var(11);

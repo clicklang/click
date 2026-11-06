@@ -738,10 +738,7 @@ fn comparison_read_fixture(value: MachineTerm) -> (Variable, Variable) {
     let index = MachineTerm::Variable(Variable(992201));
     let pointer = |value| Pointer {
         block: PointerBlock::Concrete("opaque-comparison".into()),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(value),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(value, 4),
     };
     let memory = crate::kernel::intern_c_memory(
         CMemory::new()

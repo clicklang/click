@@ -14,10 +14,10 @@ fn indexed_pointer_site() -> (BTreeMap<String, CValue>, CState) {
     let pointer = CValue::typed_pointer(
         Pointer {
             block: PointerBlock::ExternalArgument,
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_000)),
+                4,
+            ),
         },
         CType::Int32Pointer,
     );
@@ -44,14 +44,14 @@ fn indexed_cell(values: &BTreeMap<String, CValue>) -> Pointer {
     Pointer {
         block: pointer_base(values).block,
         offset: PointerOffsetTerm::Add(
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(100_000))),
-                byte_width: 4,
-            }),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(1))),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(100_000)),
+                4,
+            )),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(1)),
+                4,
+            )),
         ),
     }
 }

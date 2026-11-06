@@ -851,10 +851,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
     const CALLS: [usize; 4] = [16, 64, 256, 1024];
     let external = |variable: u64| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let int32_range = |base: &Pointer, end: u32| {
         CMemoryRange::new_with_element_width(
@@ -973,10 +970,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
 fn retirement_admits_a_view_of_a_kept_owned_range() {
     let external = |variable: u64| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let int32_range = |base: &Pointer, end: u32| {
         CMemoryRange::new_with_element_width(

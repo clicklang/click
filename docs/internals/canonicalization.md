@@ -143,7 +143,18 @@ premise and uses the explicit checker's shared listed-premise rule to select
 its checked conjunct. It does not demand identical proposition structure or
 import omitted evidence from ambient facts.
 
-## Load variables are the canonical form of a load
+## Transitional load variables and shared reads
+
+Scalar execution still introduces registered load variables for consumers that
+have not migrated. Shared checker operands import those names as structural
+`KernelTerm` reads. Address-index producers now retain shared machine operands:
+a read index contains its snapshot, address and read kind, rather than the
+reserved variable. Offset hashing compares the shared child identity without
+walking its read history. Canonicalizing an outer read preserves that child;
+it must not resolve the index read to its cached value. Width/origin metadata
+and scalar producers outside this boundary still use the registry.
+
+The following describes the remaining registered-variable interface.
 
 A load variable is the canonical form of the load it represents, not an
 alias for it. The load term carries an entire interned snapshot; the
@@ -211,8 +222,8 @@ refers to one through a snapshot form such as `at(region(3).entry, x)` or
 - Symbolic execution introduces load variables for loaded **pointers**
   (`canonicalized_pointer_value_from_int_cell`,
   `canonicalized_symbolic_load_value_with_identity`), so a pointer loaded from an opaque
-  cell never enters offset arithmetic as a load term, and its defining fact
-  is emitted beside it. The same function names every **integer scalar** it
+  cell receives a registered observation and its defining fact. Address-index
+  producers import that observation into a shared structural read. The same function names every **integer scalar** it
   loads, one to eight bytes wide, signed or unsigned. Contract lowering
   already materializes a cell of any of those widths with
   `canonical_form_of_load`, so a width execution left unnamed would give one

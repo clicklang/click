@@ -6668,10 +6668,7 @@ fn atomic_memory_evidence_cites_only_connected_conditions() {
     // The address of element `variable` of the goal's array.
     let at = |variable: u64| Pointer {
         block: "goal".into(),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let loadable = |base: Pointer, bytes: u32| Proposition::CMemoryLoadable {
         memory: memory.clone(),
@@ -6858,10 +6855,7 @@ fn atomic_load_dependencies_ignore_other_snapshot_cells() {
         }
         let at = |value| Pointer {
             block: "selected-array".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(value),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(value, 4),
         };
         let source = Proposition::CMemoryLoadable {
             memory: memory.clone(),
@@ -6959,10 +6953,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
         body: Box::new(Proposition::Implies(
             Box::new(less(variable(480_000), variable(480_001), true)),
             Box::new(equal(
-                load(PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(variable(480_000)),
-                    byte_width: 4,
-                }),
+                load(PointerOffsetTerm::scaled_int32_node(variable(480_000), 4)),
                 variable(480_000),
             )),
         )),
@@ -6986,10 +6977,7 @@ fn atomic_evidence_without_one_source_cites_connected_facts() {
                     memory: memory.clone(),
                     base: Pointer {
                         block: format!("other{index}").as_str().into(),
-                        offset: PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(variable(482_000 + index)),
-                            byte_width: 4,
-                        },
+                        offset: PointerOffsetTerm::scaled_int32_node(variable(482_000 + index), 4),
                     },
                     bytes: MachineTerm::constant(16),
                     wide: false,

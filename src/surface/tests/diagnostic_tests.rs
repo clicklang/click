@@ -773,10 +773,7 @@ fn resource_neutral_callee_preserves_callers_allocation_resource() {
 fn an_unnamed_store_index_is_spelled_through_its_own_base() {
     let base = |variable: u64| Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(variable))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(variable)), 4),
     };
     let parameters = vec![
         syntax::C0Parameter::new(C0Type::Int32Pointer, "next".to_string(), None),
@@ -791,10 +788,10 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
         block: PointerBlock::ExternalArgument,
         offset: PointerOffsetTerm::Add(
             Box::new(base(100_001).offset),
-            Box::new(PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(1_000_000))),
-                byte_width: 4,
-            }),
+            Box::new(PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::Variable(Variable(1_000_000)),
+                4,
+            )),
         ),
     };
     assert_eq!(
@@ -812,10 +809,7 @@ fn an_unnamed_store_index_is_spelled_through_its_own_base() {
 fn exact_struct_field_offsets_remain_resolvable_after_deadline() {
     let base = Pointer {
         block: PointerBlock::ExternalArgument,
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(Variable(100000))),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(100000)), 4),
     };
     let field = base.offset_by_bytes(4);
 

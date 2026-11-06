@@ -13,6 +13,7 @@ impl KernelTermImport {
                 KernelTerm::scalar_read_descriptor(format, memory, address, *kind)
             }
             MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
+                self.machine_input_requires_export = true;
                 crate::kernel::eval::registered_scalar_read_term(variable, format)
             }
             _ => None,
@@ -43,61 +44,43 @@ impl KernelTerm {
         address: &Pointer,
         kind: LoadKind,
     ) -> Option<Self> {
-        let snapshots = address_snapshots(address)?;
-        Some(Self::intern_key(NodeKey::with_read_snapshots(
+        if !exact_address(address) {
+            return None;
+        }
+        Some(Self::intern(
             KernelType::C(format.c_type()),
             KernelTermNode::MemoryLoad {
                 memory: memory.clone(),
                 address: address.clone(),
                 kind,
             },
-            (!snapshots.is_empty()).then(|| snapshots.into()),
-        )))
+        ))
     }
 }
 
 /// Native pointer equality can omit auxiliary metadata in opaque machine
 /// payloads. Do not use it to intern such a payload: those addresses retain
 /// the producer-local legacy boundary until their own shared forms migrate.
-/// Retain arena identities for every nested read: native snapshot equality
-/// otherwise compares memory contents across arenas. The ordered identities
-/// let the interner refuse that comparison before inspecting the address.
-pub(super) fn address_snapshots(address: &Pointer) -> Option<Vec<(u32, u32)>> {
-    enum Input<'a> {
-        Offset(&'a PointerOffsetTerm),
-        Word(&'a MachineTerm),
-    }
-    let mut pending = vec![Input::Offset(&address.offset)];
-    let mut snapshots = Vec::new();
-    while let Some(input) = pending.pop() {
+/// Shared index identities include their nested read snapshots, so admitting
+/// an address never re-walks the retained index expression.
+fn exact_address(address: &Pointer) -> bool {
+    let mut pending = vec![&address.offset];
+    while let Some(offset) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        match input {
-            Input::Offset(offset) => match offset {
-                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
-                PointerOffsetTerm::Add(a, b) => {
-                    pending.extend([Input::Offset(b), Input::Offset(a)]);
+        match offset {
+            PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {}
+            PointerOffsetTerm::Add(a, b) => pending.extend([b.as_ref(), a.as_ref()]),
+            PointerOffsetTerm::Int32Scaled { value, .. }
+            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                // The child identity already includes every read snapshot.
+                // Never export or walk its retained expression prefix here.
+                if value.shared_operand().is_none() {
+                    return false;
                 }
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                    pending.push(Input::Word(value));
-                }
-            },
-            Input::Word(word) => match word {
-                MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
-                MachineTerm::Binary { left, right, .. } => {
-                    pending.extend([Input::Word(right), Input::Word(left)]);
-                }
-                MachineTerm::Unary { operand, .. } => pending.push(Input::Word(operand)),
-                MachineTerm::Cast { value, .. } => pending.push(Input::Word(value)),
-                MachineTerm::MemoryLoad(memory, address, _) => {
-                    snapshots.push(memory.arena_id());
-                    pending.push(Input::Offset(&address.offset));
-                }
-                _ => return None,
-            },
+            }
         }
     }
-    Some(snapshots)
+    true
 }
 
 #[cfg(test)]
@@ -247,10 +230,10 @@ mod tests {
                 outer,
                 Box::new(Pointer {
                     block: PointerBlock::Symbolic(Variable(993141)),
-                    offset: PointerOffsetTerm::Int32Scaled {
-                        value: Box::new(MachineTerm::MemoryLoad(inner, Box::new(p.clone()), kind)),
-                        byte_width: 4,
-                    },
+                    offset: PointerOffsetTerm::scaled_int32_node(
+                        MachineTerm::MemoryLoad(inner, Box::new(p.clone()), kind),
+                        4,
+                    ),
                 }),
                 LoadKind::Int32,
             )
@@ -286,6 +269,16 @@ mod tests {
         let second = intern_c_memory(CMemory::new());
         assert_ne!(first.arena_id(), second.arena_id());
         assert_eq!(first, second); // Same contents, distinct snapshot identities.
+        let read = |memory| {
+            MachineTerm::MemoryLoad(
+                memory,
+                Box::new(Pointer::symbolic(Variable(993150))),
+                LoadKind::Int32,
+            )
+        };
+        let offset = PointerOffsetTerm::scaled_int32_node(read(first.clone()), 4);
+        assert_eq!(offset.map_scaled_values(Clone::clone), offset);
+        assert_ne!(offset.map_scaled_values(|_| read(second.clone())), offset);
         let outer = second.clone();
         let import = |inner| {
             KernelTermImport::default().machine(
@@ -294,14 +287,14 @@ mod tests {
                     outer.clone(),
                     Box::new(Pointer {
                         block: PointerBlock::Symbolic(Variable(993151)),
-                        offset: PointerOffsetTerm::Int32Scaled {
-                            value: Box::new(MachineTerm::MemoryLoad(
+                        offset: PointerOffsetTerm::scaled_int32_node(
+                            MachineTerm::MemoryLoad(
                                 inner,
                                 Box::new(Pointer::symbolic(Variable(993150))),
                                 LoadKind::Int32,
-                            )),
-                            byte_width: 4,
-                        },
+                            ),
+                            4,
+                        ),
                     }),
                     LoadKind::Int32,
                 ),
@@ -318,17 +311,122 @@ mod tests {
     }
 
     #[test]
+    fn index_producers_retain_structural_reads_despite_a_cached_written_name() {
+        let _session = VerificationSession::enter();
+        for (format, kind, wide) in [
+            (MachineIntegerType::Int32, LoadKind::Int32, false),
+            (MachineIntegerType::Int64, LoadKind::Bits64, true),
+        ] {
+            let read = MachineTerm::MemoryLoad(
+                intern_c_memory(CMemory::new()),
+                Box::new(Pointer::symbolic(Variable(993160))),
+                kind,
+            );
+            let (name, descriptor) = crate::kernel::eval::load_variable_for_term(&read).unwrap();
+            let written = SharedMachineIntegerTerm::intern(format, MachineTerm::Variable(name));
+            assert!(matches!(written.value(), MachineTerm::Variable(_)));
+            let mut facts = crate::kernel::ExecutionFacts::new();
+            let index = crate::kernel::canonicalized_offset_index_term(
+                MachineTerm::Variable(name),
+                &mut facts,
+            );
+            assert_eq!(index, descriptor);
+            let offset = if wide {
+                PointerOffsetTerm::scaled_int64_node(index, 4, true)
+            } else {
+                PointerOffsetTerm::scaled_int32_node(index, 4)
+            };
+            let (PointerOffsetTerm::Int32Scaled { value, .. }
+            | PointerOffsetTerm::Int64Scaled { value, .. }) = &offset
+            else {
+                unreachable!()
+            };
+            assert!(matches!(
+                value.shared_operand().unwrap().node(),
+                KernelTermNode::MemoryLoad { .. }
+            ));
+            crate::kernel::eval::clear_load_variable_registry();
+            assert_eq!(value.as_ref(), &descriptor);
+            let restored = if wide {
+                PointerOffsetTerm::scaled_int64_node(value.as_ref().clone(), 4, true)
+            } else {
+                PointerOffsetTerm::scaled_int32_node(value.as_ref().clone(), 4)
+            };
+            assert_eq!(offset, restored);
+        }
+    }
+
+    #[test]
+    fn forming_an_outer_read_does_not_fold_the_index_read_to_its_stored_value() {
+        let _session = VerificationSession::enter();
+        let p = Pointer::symbolic(Variable(993162));
+        let memory = intern_c_memory(
+            CMemory::new().store(p.clone(), CValue::Int32(MachineTerm::constant(3))),
+        );
+        let index = crate::kernel::eval::canonical_form_of_load(memory.clone(), p, LoadKind::Int32);
+        let address = Pointer {
+            block: PointerBlock::Symbolic(Variable(993163)),
+            offset: PointerOffsetTerm::scaled_int32_node(index, 4),
+        };
+        let outer =
+            crate::kernel::eval::canonical_form_of_load(memory, address.clone(), LoadKind::Int32);
+        let shared = KernelTermImport::default().machine(MachineIntegerType::Int32, &outer);
+        let KernelTermNode::MemoryLoad {
+            address: actual, ..
+        } = shared.node()
+        else {
+            panic!("outer read")
+        };
+        assert_eq!(actual, &address);
+        let PointerOffsetTerm::Int32Scaled { value, .. } = &actual.offset else {
+            panic!("index read retained")
+        };
+        assert!(matches!(
+            value.shared_operand().unwrap().node(),
+            KernelTermNode::MemoryLoad { .. }
+        ));
+    }
+
+    #[test]
+    fn opaque_index_identity_does_not_replace_its_annotation_payload() {
+        use crate::kernel::effective_type::{CAccessClass, CScalarClass};
+        let _session = VerificationSession::enter();
+        let mut retained = Vec::new();
+        for class in [CScalarClass::Int, CScalarClass::Char] {
+            let expected = Some(CAccessClass::Scalar(class));
+            let index = PointerOffsetTerm::scaled_int64_node(
+                MachineTerm::PointerAddress(
+                    Box::new(Pointer::symbolic(Variable(993161))),
+                    crate::kernel::AddressObjectClass::new(expected.clone()),
+                ),
+                1,
+                true,
+            );
+            let PointerOffsetTerm::Int64Scaled { value, .. } = &index else {
+                unreachable!()
+            };
+            assert!(value.shared_operand().is_none());
+            let MachineTerm::PointerAddress(_, actual) = value.as_ref() else {
+                panic!("address payload")
+            };
+            assert_eq!(actual.class(), expected);
+            retained.push(index);
+        }
+        assert_eq!(retained[0], retained[1]); // The annotations are not numeric identity.
+    }
+
+    #[test]
     fn read_addresses_outside_the_shared_fragment_keep_the_exact_legacy_payload() {
         let _session = VerificationSession::enter();
         let address = Pointer {
             block: PointerBlock::Symbolic(Variable(993130)),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(MachineTerm::IntegerToMachine {
-                    value: IntegerTerm::Variable(Variable(993131)).into(),
-                    destination: MachineIntegerType::Int32,
-                }),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(
+                MachineTerm::PointerAddress(
+                    Box::new(Pointer::symbolic(Variable(993131))),
+                    crate::kernel::AddressObjectClass::NONE,
+                ),
+                4,
+            ),
         };
         let native = MachineTerm::MemoryLoad(
             intern_c_memory(CMemory::new()),

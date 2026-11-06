@@ -739,14 +739,8 @@ fn offset_premises_support_scalar_graph_edges_and_withdrawal() {
     for width in [0, 1, 8] {
         context = context.assume_condition(
             ConditionTerm::pointer_offset_equal(
-                PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(a.clone()),
-                    byte_width: width,
-                },
-                PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(b.clone()),
-                    byte_width: width,
-                },
+                PointerOffsetTerm::scaled_int32_node(a.clone(), width),
+                PointerOffsetTerm::scaled_int32_node(b.clone(), width),
             ),
             true,
         );

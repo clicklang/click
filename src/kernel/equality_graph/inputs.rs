@@ -425,10 +425,7 @@ mod read_trace_tests {
         let memory = crate::kernel::intern_c_memory(CMemory::new());
         let load = MachineTerm::MemoryLoad(memory, Box::new(pointer(304_000)), LoadKind::Int32);
         let (variable, _) = crate::kernel::load_variable_for_term(&load).unwrap();
-        let read = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(variable)),
-            byte_width: 4,
-        };
+        let read = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(variable), 4);
         let target = PointerOffsetTerm::Constant(8);
         let checkpoint = graph.read_equality_checkpoint();
         graph.add_offset_equality(&read, &target);

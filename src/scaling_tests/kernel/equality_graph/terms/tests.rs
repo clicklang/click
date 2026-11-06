@@ -59,10 +59,7 @@ fn addition_congruence_forks_do_not_reindex_unrelated_parents() {
 
 #[test]
 fn offset_graph_construction_and_fork_queries_scale_with_indexed_work() {
-    let offset = |id| PointerOffsetTerm::Int32Scaled {
-        value: Box::new(MachineTerm::Variable(Variable(id))),
-        byte_width: 4,
-    };
+    let offset = |id| PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(id)), 4);
     for size in [16u64, 64, 256, 1024] {
         let ((graph, work), map_work) = crate::persistent::measure_persistent_work(|| {
             crate::instrumentation::measure_deterministic_work(|| {
@@ -100,11 +97,11 @@ fn late_wide_zero_reindexes_only_its_existing_offsets() {
         let mut graph = EqualityGraph::default();
         let scaled = |base: &Pointer, value| Pointer {
             block: base.block.clone(),
-            offset: PointerOffsetTerm::Int64Scaled {
-                value: Box::new(MachineTerm::Variable(Variable(value))),
-                byte_width: 4,
-                unsigned: true,
-            },
+            offset: PointerOffsetTerm::scaled_int64_node(
+                MachineTerm::Variable(Variable(value)),
+                4,
+                true,
+            ),
         };
         for i in 0..size {
             let base = Pointer::symbolic(Variable(896_000 + i));

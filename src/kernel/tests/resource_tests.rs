@@ -4682,10 +4682,7 @@ fn observed_projection_tracks_loaded_base_and_start_prerequisites() {
     let base_projected = CResourceFact::view_memory(CMemoryRange::new(
         Pointer {
             block: "base-start-data".into(),
-            offset: PointerOffsetTerm::Int32Scaled {
-                value: Box::new(selector_load.clone()),
-                byte_width: 4,
-            },
+            offset: PointerOffsetTerm::scaled_int32_node(selector_load.clone(), 4),
         },
         MachineTerm::constant(0),
         MachineTerm::constant(1),

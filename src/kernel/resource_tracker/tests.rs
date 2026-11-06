@@ -1030,10 +1030,7 @@ fn a_cell_value_on_a_path_crosses_only_a_store_its_facts_place_elsewhere() {
     let index = MachineTerm::Variable(Variable(0));
     let written = Pointer {
         block: block("global:g"),
-        offset: PointerOffsetTerm::Int32Scaled {
-            value: Box::new(index.clone()),
-            byte_width: 4,
-        },
+        offset: PointerOffsetTerm::scaled_int32_node(index.clone(), 4),
     };
     let three = CValue::Int32(MachineTerm::constant(3));
     let no_facts = PureFactContext::new();

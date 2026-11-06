@@ -5811,7 +5811,10 @@ void child_release(struct child* obj) {
                     pointer: Pointer {
                         block: PointerBlock::ExternalArgument,
                         offset: PointerOffsetTerm::Int32Scaled {
-                            value: index_term(),
+                            value: crate::kernel::SharedMachineIntegerTerm::index(
+                                crate::kernel::MachineIntegerType::Int32,
+                                *index_term(),
+                            ),
                             byte_width: 4,
                         },
                     },

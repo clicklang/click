@@ -2145,10 +2145,9 @@ fn pointer_translation(
                     pending.push(OffsetPart::Scaled(right, width));
                     continue;
                 }
-                OffsetPart::Scaled(value, width) => PointerOffsetTerm::Int32Scaled {
-                    value: Box::new(value.clone()),
-                    byte_width: width,
-                },
+                OffsetPart::Scaled(value, width) => {
+                    PointerOffsetTerm::scaled_int32_node(value.clone(), width)
+                }
                 OffsetPart::Offset(PointerOffsetTerm::Int64Scaled {
                     value,
                     byte_width,
@@ -2178,11 +2177,9 @@ fn pointer_translation(
                     pending.push(OffsetPart::Scaled64(right, width));
                     continue;
                 }
-                OffsetPart::Scaled64(value, width) => PointerOffsetTerm::Int64Scaled {
-                    value: Box::new(value.clone()),
-                    byte_width: width,
-                    unsigned: true,
-                },
+                OffsetPart::Scaled64(value, width) => {
+                    PointerOffsetTerm::scaled_int64_node(value.clone(), width, true)
+                }
                 OffsetPart::Offset(value) => value.clone(),
             };
             if !charge_map_insert(&atom, terms.len()) {
@@ -4174,10 +4171,7 @@ mod tests {
     }
 
     fn scaled(value: MachineTerm) -> PointerOffsetTerm {
-        PointerOffsetTerm::Int32Scaled {
-            value: Box::new(value),
-            byte_width: 4,
-        }
+        PointerOffsetTerm::scaled_int32_node(value, 4)
     }
 
     #[test]
@@ -4621,10 +4615,10 @@ mod tests {
         let base = pointer(PointerOffsetTerm::Variable(crate::kernel::Variable(710)));
         let aligned_base =
             Proposition::ConditionIs(ConditionTerm::pointer_aligned(base.clone(), 8), true);
-        let scaled = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(crate::kernel::Variable(711))),
-            byte_width: 8,
-        };
+        let scaled = PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::Variable(crate::kernel::Variable(711)),
+            8,
+        );
         let goal_pointer = Pointer {
             block: base.block.clone(),
             offset: PointerOffsetTerm::Add(Box::new(base.offset.clone()), Box::new(scaled)),
@@ -4640,10 +4634,10 @@ mod tests {
         .check(&goal, std::slice::from_ref(&aligned_base))
         .unwrap();
 
-        let unaligned_scaled = PointerOffsetTerm::Int32Scaled {
-            value: Box::new(MachineTerm::Variable(crate::kernel::Variable(712))),
-            byte_width: 4,
-        };
+        let unaligned_scaled = PointerOffsetTerm::scaled_int32_node(
+            MachineTerm::Variable(crate::kernel::Variable(712)),
+            4,
+        );
         let negative_pointer = Pointer {
             block: base.block,
             offset: PointerOffsetTerm::Add(Box::new(base.offset), Box::new(unaligned_scaled)),
