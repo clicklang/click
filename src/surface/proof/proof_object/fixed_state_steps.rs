@@ -127,7 +127,15 @@ mod projection_path_tests {
 
 /// A source-sized decision graph. Both arms point to the shared continuation;
 /// walking an arm never visits the syntax or outcomes of its sibling.
+type OutcomeBindings = PersistentMap<String, ContractExpression>;
+
+// Nodes select their lexical match by source occurrence. Shared continuation
+// nodes keep their enclosing scope, so arm bindings cannot escape the arm.
+
 struct OutcomeCase<'a> {
+    scope: Option<usize>,
+    lexical_bindings: Option<&'a OutcomeBindings>,
+    occurrence: usize,
     fingerprint: u64,
     condition: &'a ClickProposition,
     /// `condition` is a `cases` disjunction whose two sides the arms take,
@@ -140,20 +148,37 @@ struct OutcomeCase<'a> {
 /// A constructor `match` in the decision graph: each live constructor case
 /// takes the arm written for it.
 struct OutcomeMatch<'a> {
+    scope: Option<usize>,
+    lexical_bindings: Option<&'a OutcomeBindings>,
     occurrence: usize,
     source: &'a ProofMatch,
     arms: Vec<Option<usize>>,
 }
 
 enum OutcomeNode<'a> {
+    Have {
+        scope: Option<usize>,
+        occurrence: usize,
+        source: &'a DeferredPostExecutionTactic,
+        next: Option<usize>,
+    },
     Case(OutcomeCase<'a>),
     Match(OutcomeMatch<'a>),
 }
 
 fn outcome_case_region<'a>(
     tactics: &'a [DeferredPostExecutionTactic],
+    next: Option<usize>,
+    nodes: &mut Vec<OutcomeNode<'a>>,
+) -> Option<usize> {
+    outcome_case_region_in_scope(tactics, next, nodes, None)
+}
+
+fn outcome_case_region_in_scope<'a>(
+    tactics: &'a [DeferredPostExecutionTactic],
     mut next: Option<usize>,
     nodes: &mut Vec<OutcomeNode<'a>>,
+    scope: Option<usize>,
 ) -> Option<usize> {
     for tactic in tactics.iter().rev() {
         match &tactic.tactic {
@@ -165,10 +190,13 @@ fn outcome_case_region<'a>(
                 else_tactics,
             } => {
                 let arms = [
-                    outcome_case_region(then_tactics, next, nodes),
-                    outcome_case_region(else_tactics, next, nodes),
+                    outcome_case_region_in_scope(then_tactics, next, nodes, scope),
+                    outcome_case_region_in_scope(else_tactics, next, nodes, scope),
                 ];
                 nodes.push(OutcomeNode::Case(OutcomeCase {
+                    scope,
+                    lexical_bindings: tactic.lexical_bindings.as_ref(),
+                    occurrence: tactic.source_index,
                     fingerprint: ExecutionBranchDecisions::key(condition),
                     condition,
                     disjunction: *disjunction,
@@ -180,13 +208,26 @@ fn outcome_case_region<'a>(
             PostExecutionTactic::Match { source, arms } => {
                 let arms = arms
                     .iter()
-                    .map(|arm| outcome_case_region(arm, next, nodes))
+                    .map(|arm| {
+                        outcome_case_region_in_scope(arm, next, nodes, Some(tactic.source_index))
+                    })
                     .collect();
                 nodes.push(OutcomeNode::Match(OutcomeMatch {
+                    scope,
+                    lexical_bindings: tactic.lexical_bindings.as_ref(),
                     occurrence: tactic.source_index,
                     source,
                     arms,
                 }));
+                next = Some(nodes.len() - 1);
+            }
+            PostExecutionTactic::Have(_) if next.is_some() => {
+                nodes.push(OutcomeNode::Have {
+                    scope,
+                    occurrence: tactic.source_index,
+                    source: tactic,
+                    next,
+                });
                 next = Some(nodes.len() - 1);
             }
             _ => {}
@@ -203,6 +244,7 @@ type OutcomeMatchPartition<'f> = dyn Fn(
         &ProofMatch,
         &ProofFacts,
         &ProofFacts,
+        Option<&OutcomeBindings>,
     ) -> Result<super::match_cases::OutcomeMatchCases, ClickError>
     + 'f;
 
@@ -217,11 +259,30 @@ fn partition_outcome_match(
     query: &ProofFacts,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
-    lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    lower: &impl Fn(
+        &ClickProposition,
+        &[Proposition],
+        Option<&OutcomeBindings>,
+    ) -> Result<Proposition, ClickError>,
     match_cases: &OutcomeMatchPartition<'_>,
+    prove: &impl Fn(
+        &ClickProposition,
+        Option<&DeferredPostExecutionTactic>,
+        &ProofFacts,
+        &OutcomeProvenance,
+        Option<&OutcomeBindings>,
+    ) -> Result<(Proposition, ProofCertificate), ClickError>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
-    let cases = match_cases(node.source, query, authority)?;
+    let bindings = node.lexical_bindings.or_else(|| {
+        node.scope.and_then(|scope| {
+            provenance
+                .match_arms
+                .get(&scope)
+                .map(|(_, bindings)| bindings)
+        })
+    });
+    let cases = match_cases(node.source, query, authority, bindings)?;
     let mut arms = Vec::new();
     for case in cases.partition.live_cases() {
         let (written, (_, bindings)) = cases
@@ -259,6 +320,7 @@ fn partition_outcome_match(
             child,
             lower,
             match_cases,
+            prove,
             emit,
         );
         facts.truncate(old_len);
@@ -294,8 +356,19 @@ fn descend_outcome_case(
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
     fact: Option<Proposition>,
-    lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    lower: &impl Fn(
+        &ClickProposition,
+        &[Proposition],
+        Option<&OutcomeBindings>,
+    ) -> Result<Proposition, ClickError>,
     match_cases: &OutcomeMatchPartition<'_>,
+    prove: &impl Fn(
+        &ClickProposition,
+        Option<&DeferredPostExecutionTactic>,
+        &ProofFacts,
+        &OutcomeProvenance,
+        Option<&OutcomeBindings>,
+    ) -> Result<(Proposition, ProofCertificate), ClickError>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
     let mut child = provenance;
@@ -320,6 +393,7 @@ fn descend_outcome_case(
         child,
         lower,
         match_cases,
+        prove,
         emit,
     );
     facts.truncate(old_len);
@@ -334,16 +408,77 @@ fn partition_outcome_cases(
     query: &ProofFacts,
     facts: &mut Vec<Proposition>,
     provenance: OutcomeProvenance,
-    lower: &impl Fn(&ClickProposition, &[Proposition]) -> Result<Proposition, ClickError>,
+    lower: &impl Fn(
+        &ClickProposition,
+        &[Proposition],
+        Option<&OutcomeBindings>,
+    ) -> Result<Proposition, ClickError>,
     match_cases: &OutcomeMatchPartition<'_>,
+    prove: &impl Fn(
+        &ClickProposition,
+        Option<&DeferredPostExecutionTactic>,
+        &ProofFacts,
+        &OutcomeProvenance,
+        Option<&OutcomeBindings>,
+    ) -> Result<(Proposition, ProofCertificate), ClickError>,
     emit: &mut impl FnMut(&[Proposition], OutcomeProvenance),
 ) -> Result<OutcomeEvidenceFork, ClickError> {
-    check_verification_deadline()?;
-    let Some(index) = next else {
-        emit(facts, provenance);
-        return Ok(OutcomeEvidenceFork::Keep);
+    // Flat source haves are a sequence, not nested proof branches. Consume
+    // them iteratively so a long explicit certificate does not grow the stack.
+    // The enclosing arm owns the facts buffer's push/pop boundary.
+    let mut next = next;
+    let mut provenance = provenance;
+    let mut authority = authority.clone();
+    let mut query = query.clone();
+    let index = loop {
+        check_verification_deadline()?;
+        let Some(index) = next else {
+            emit(facts, provenance);
+            return Ok(OutcomeEvidenceFork::Keep);
+        };
+        let OutcomeNode::Have {
+            scope,
+            occurrence,
+            source,
+            next: continuation,
+        } = &nodes[index]
+        else {
+            break index;
+        };
+        next = *continuation;
+        if provenance.checked_haves.get(occurrence).is_some() {
+            continue;
+        }
+        let PostExecutionTactic::Have(have) = &source.tactic else {
+            unreachable!("a have node retains its source have")
+        };
+        let bindings = scope.and_then(|scope| {
+            provenance
+                .match_arms
+                .get(&scope)
+                .map(|(_, bindings)| bindings)
+        });
+        let (kernel, checked) = prove(
+            &have.proposition,
+            Some(source),
+            &query,
+            &provenance,
+            bindings,
+        )?;
+        provenance
+            .surface_propositions
+            .record_lowering(&have.proposition, &kernel)?;
+        provenance.checked_haves = provenance
+            .checked_haves
+            .with_inserted(*occurrence, Arc::new(checked));
+        facts.push(kernel.clone());
+        authority = authority.with_kernel_checked_fact(kernel.clone());
+        query = query.with_kernel_checked_fact(kernel);
     };
+    let authority = &authority;
+    let query = &query;
     let node = match &nodes[index] {
+        OutcomeNode::Have { .. } => unreachable!("the linear prefix was consumed"),
         OutcomeNode::Case(node) => node,
         OutcomeNode::Match(node) => {
             return partition_outcome_match(
@@ -355,6 +490,7 @@ fn partition_outcome_cases(
                 provenance,
                 lower,
                 match_cases,
+                prove,
                 emit,
             );
         }
@@ -409,10 +545,19 @@ fn partition_outcome_cases(
             provenance,
             lower,
             match_cases,
+            prove,
             emit,
         );
     }
-    let lowered = lower(node.condition, facts)?;
+    let bindings = node.lexical_bindings.or_else(|| {
+        node.scope.and_then(|scope| {
+            provenance
+                .match_arms
+                .get(&scope)
+                .map(|(_, bindings)| bindings)
+        })
+    });
+    let lowered = lower(node.condition, facts, bindings)?;
     // The two cases: an `if` condition and its negation, or the two sides
     // of the `cases` disjunction as it lowered.
     let negated_surface;
@@ -479,11 +624,44 @@ fn partition_outcome_cases(
             None,
             lower,
             match_cases,
+            prove,
             emit,
         );
     }
+    // Prove exhaustiveness before introducing either arm's assumption.
+    // The driver retains the ordinary nested proof for source expansion.
+    let existing_partition =
+        CheckedProofCasePartition::check(authority, cases[0].clone(), cases[1].clone());
+    let mut provenance = provenance;
+    let proved_authority;
+    let proved_query;
+    let (authority, query) = if node.disjunction && existing_partition.is_none() {
+        let bindings = node.lexical_bindings.or_else(|| {
+            node.scope.and_then(|scope| {
+                provenance
+                    .match_arms
+                    .get(&scope)
+                    .map(|(_, bindings)| bindings)
+            })
+        });
+        let (kernel, have) = prove(node.condition, None, query, &provenance, bindings)?;
+        provenance
+            .surface_propositions
+            .record_lowering(node.condition, &kernel)?;
+        provenance.case_obligations = provenance
+            .case_obligations
+            .with_inserted(node.occurrence, Arc::new(have));
+        facts.push(kernel.clone());
+        proved_authority = authority.with_kernel_checked_fact(kernel.clone());
+        proved_query = query.with_kernel_checked_fact(kernel);
+        (&proved_authority, &proved_query)
+    } else {
+        (authority, query)
+    };
     let [positive, negative] = cases.clone();
-    let partition = CheckedProofCasePartition::check(authority, positive.clone(), negative.clone())
+    let partition = existing_partition.or_else(|| {
+        CheckedProofCasePartition::check(authority, positive.clone(), negative.clone())
+    })
         .ok_or_else(|| {
             ClickError::new(match &arm_surfaces {
                 None => "post-execution case split did not produce complementary case facts"
@@ -510,6 +688,7 @@ fn partition_outcome_cases(
         Some(positive),
         lower,
         match_cases,
+        prove,
         emit,
     )?;
     let else_arm = descend_outcome_case(
@@ -524,6 +703,7 @@ fn partition_outcome_cases(
         Some(negative),
         lower,
         match_cases,
+        prove,
         emit,
     )?;
     Ok(OutcomeEvidenceFork::binary(
@@ -3390,212 +3570,6 @@ impl<'a> Proof<'a> {
         )))
     }
 
-    /// Partitions checked outcomes along the explicitly written case tree
-    /// rooted at `split`, a deferred `if`, `cases` or `match`. Known
-    /// conditions select one arm; unknown conditions introduce checked
-    /// complementary facts and traverse only the corresponding subtrees.
-    /// Shared continuations are represented once in the source graph, and
-    /// each resulting leaf retains its own nested evidence and provenance.
-    pub(in crate::surface::proof) fn split_outcome_paths(
-        &self,
-        split: &DeferredPostExecutionTactic,
-    ) -> Result<Self, ClickError> {
-        self.require_execution_frontier("post-execution case split")?;
-        let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Err(self.step_error("post-execution case split requires an execution proof"));
-        };
-        let mut execution = self.execution().cloned().ok_or_else(|| {
-            self.step_error("post-execution case split lost its execution frontier")
-        })?;
-        if !execution.core.frontier.is_at_function_exit() {
-            return Err(self.step_error("post-execution case split requires function exit"));
-        }
-        let checked = execution
-            .core
-            .frontier
-            .execution()
-            .cloned()
-            .ok_or_else(|| {
-                self.step_error("post-execution case split has no checked execution paths")
-            })?;
-        let pre_state = execution
-            .core
-            .frontier
-            .execution_start_state(&execution.core.state)
-            .clone();
-        let mut paths = Vec::with_capacity(checked.paths().len() * 2);
-        let mut outcome_provenance = Vec::with_capacity(checked.paths().len() * 2);
-        // The retained evidence traces fork with the candidates so they
-        // stay zipped for completion; each forked copy records its arm.
-        let mut evidence_plan = Vec::with_capacity(checked.paths().len());
-        let mut nodes = Vec::new();
-        let root = outcome_case_region(std::slice::from_ref(split), None, &mut nodes)
-            .ok_or_else(|| self.step_error("post-execution case split is not a case split"))?;
-        // Every path partitions its deferred matches with witnesses past
-        // those of the paths before it.
-        let next_variable = std::cell::Cell::new(self.state.locals().next_choice_variable);
-        let ambient_delta = execution
-            .presentation
-            .outcome_fact_root
-            .as_ref()
-            .and_then(|root| self.facts().introduced_since(root));
-        for (path_index, path) in checked.paths().iter().enumerate() {
-            check_verification_deadline()?;
-            let mut provenance = execution.provenance_for_outcome(path_index);
-            let retained = provenance
-                .checked_leaf_facts
-                .as_deref()
-                .filter(|(candidate, _, _)| candidate.shares_record_with(path))
-                .filter(|_| {
-                    execution
-                        .core
-                        .pending_loop_return_pure_facts(path_index)
-                        .is_none()
-                })
-                .zip(ambient_delta.as_ref())
-                .map(|((_, facts, holds_effects), delta)| {
-                    (
-                        delta.iter().fold(facts.clone(), |facts, fact| {
-                            facts.with_kernel_checked_fact(fact.clone())
-                        }),
-                        *holds_effects,
-                    )
-                });
-            if retained.is_none() {
-                provenance.checked_leaf_facts = None;
-            }
-            let CFunctionOutcome::Return { value, state } = path.outcome() else {
-                paths.push(path.clone());
-                outcome_provenance.push(provenance);
-                evidence_plan.push(OutcomeEvidenceFork::Keep);
-                continue;
-            };
-            // A checked leaf retains its query root. Only new case facts
-            // enter the push/pop buffer; legacy paths keep their full input.
-            let mut path_facts = if retained.is_some() {
-                Vec::new()
-            } else {
-                path.facts()
-                    .iter()
-                    .map(|fact| fact.proposition().clone())
-                    .collect::<Vec<_>>()
-            };
-            let base_len = path_facts.len();
-            let query = retained.clone().map(|(facts, _)| facts).unwrap_or_else(|| {
-                path_facts.iter().fold(self.facts().clone(), |facts, fact| {
-                    facts.with_kernel_checked_fact(fact.clone())
-                })
-            });
-            let snapshots = provenance.recorded_snapshots.clone();
-            let match_cases = |source: &ProofMatch, query: &ProofFacts, authority: &ProofFacts| {
-                let value = self.outcome_match_scrutinee(source, state, query, &snapshots)?;
-                let cases =
-                    self.outcome_match_cases(source, &value, authority, next_variable.get())?;
-                next_variable.set(cases.next_variable);
-                Ok(cases)
-            };
-            let fork = partition_outcome_cases(
-                &nodes,
-                Some(root),
-                self.facts(),
-                &query,
-                &mut path_facts,
-                provenance,
-                &|condition, facts| {
-                    let lowered = if retained.is_some() {
-                        let retained_query = facts.iter().fold(query.clone(), |query, fact| {
-                            query.with_kernel_checked_fact(fact.clone())
-                        });
-                        lower_outcome_proposition_with_recorded_snapshots(
-                            context.parameter_binding(),
-                            &pre_state,
-                            state,
-                            value,
-                            &retained_query,
-                            condition,
-                            context.spec_definitions,
-                            &snapshots,
-                        )
-                    } else {
-                        lower_outcome_proposition_with_recorded_snapshots(
-                            context.parameter_binding(),
-                            &pre_state,
-                            state,
-                            value,
-                            facts,
-                            condition,
-                            context.spec_definitions,
-                            &snapshots,
-                        )
-                    };
-                    lowered.map_err(|message| {
-                        self.step_error(format!(
-                            "post-execution case split could not lower its condition: {message}"
-                        ))
-                    })
-                },
-                &match_cases,
-                &mut |facts, mut provenance| {
-                    let additional = facts[base_len..]
-                        .iter()
-                        .cloned()
-                        .map(ExecutionPureFact::new)
-                        .collect::<ExecutionFacts>();
-                    let published =
-                        crate::kernel::c_function_execution_candidate_with_additional_facts(
-                            path,
-                            &additional,
-                        );
-                    if let Some((retained, holds_effects)) = &retained {
-                        let facts = facts[base_len..]
-                            .iter()
-                            .fold(retained.clone(), |facts, fact| {
-                                facts.with_kernel_checked_fact(fact.clone())
-                            });
-                        provenance.checked_leaf_facts =
-                            Some(Arc::new((published.clone(), facts, *holds_effects)));
-                    }
-                    paths.push(published);
-                    outcome_provenance.push(provenance);
-                },
-            )?;
-            evidence_plan.push(fork);
-        }
-        let candidates = crate::kernel::c_function_execution_candidates_from_retained_paths(
-            checked.state().clone(),
-            checked.function().clone(),
-            checked.arguments().to_vec(),
-            paths,
-        );
-        execution
-            .core
-            .fork_outcome_evidence(&evidence_plan)
-            .map_err(|message| self.step_error(format!("post-execution case split: {message}")))?;
-        execution.core.frontier.position = FrontierPosition::FunctionExit {
-            execution: candidates,
-        };
-        execution.presentation.outcome_provenance = outcome_provenance.into();
-        let transition = self.checked_execution_transition(
-            self.facts().clone(),
-            false,
-            execution,
-            Vec::new(),
-            Vec::new(),
-        );
-        let mut state = self.publish_checked_transition(transition)?;
-        if next_variable.get() > state.locals().next_choice_variable {
-            let mut locals = state.locals().clone();
-            locals.next_choice_variable = next_variable.get();
-            state = state.with_locals(locals);
-        }
-        Ok(Self {
-            site: self.site.clone(),
-            context: self.context.clone(),
-            state,
-            node: self.node.clone(),
-        })
-    }
-
     pub(in crate::surface::proof) fn post_execution_if_is_path_decided(
         &self,
         condition: &ClickProposition,
@@ -4181,6 +4155,9 @@ mod outcome_case_tests {
                 .enumerate()
                 .map(|(index, condition)| {
                     OutcomeNode::Case(OutcomeCase {
+                        scope: None,
+                        lexical_bindings: None,
+                        occurrence: index,
                         fingerprint: ExecutionBranchDecisions::key(condition),
                         condition,
                         disjunction: false,
@@ -4213,11 +4190,13 @@ mod outcome_case_tests {
                     call_routes: Vec::new(),
                     branch_decisions: ExecutionBranchDecisions::default(),
                     match_arms: PersistentMap::default(),
+                    case_obligations: PersistentMap::default(),
+                    checked_haves: PersistentMap::default(),
                     surface_propositions: SurfacePropositionMap::default(),
                     recorded_snapshots: RecordedSnapshots::default(),
                     generated_load_bindings: PersistentMap::default(),
                 },
-                &|condition, _| {
+                &|condition, _, _| {
                     visits.set(visits.get() + 1);
                     let ClickProposition::PredicateCall { name, .. } = condition else {
                         unreachable!()
@@ -4227,7 +4206,8 @@ mod outcome_case_tests {
                         arguments: Vec::new(),
                     })
                 },
-                &|_, _, _| unreachable!("the graph has no match"),
+                &|_, _, _, _| unreachable!("the graph has no match"),
+                &|_, _, _, _, _| unreachable!("the graph has no proposition obligations"),
                 &mut |_, _| leaves += 1,
             )
             .unwrap();
@@ -4275,3 +4255,6 @@ fn binding_names_chosen_variable(binding: &ContractExpression, variable: Variabl
         _ => false,
     }
 }
+
+#[path = "../driver/outcome_cases.rs"]
+mod outcome_cases_driver;

@@ -1,6 +1,7 @@
 # `cases` at an execution frontier requires its disjunction
 
-The arms of `cases` are only exhaustive when their disjunction holds, so it must be an exact available fact. Here only `x == 1` is known, and the split is refused, naming the disjunction.
+The known fact `x == 1` proves that `x == 1 or x == 2` is exhaustive.
+The ordinary obligation introduces that disjunction before the exact split.
 
 ```c filename=cases_at_a_frontier_requires_its_disjunction.c
 int32 f(int32 x) {
@@ -26,5 +27,5 @@ int32 f(int32 x) {
 ```
 
 ```expect
-fail: `cases` requires its exact disjunction as an available fact: `x == 1 or x == 2`
+pass
 ```

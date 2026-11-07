@@ -19,3 +19,17 @@ pub(in crate::surface) trait DriveProof: Sized {
 }
 impl DriveProof for Proof<'_> {}
 impl DriveProof for ProofScope<'_> {}
+
+/// A source obligation is a terminal refusal, even when a structural
+/// partition miss would let the caller try a different execution route.
+#[derive(Debug)]
+pub(in crate::surface::proof) enum OutcomeSplitFailure {
+    Partition(super::ClickError),
+    Obligation(super::ClickError),
+}
+
+impl From<super::ClickError> for OutcomeSplitFailure {
+    fn from(error: super::ClickError) -> Self {
+        Self::Partition(error)
+    }
+}

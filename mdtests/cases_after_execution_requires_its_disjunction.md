@@ -1,6 +1,6 @@
 # `cases` after execution requires its disjunction
 
-A `cases` after execution forks an outcome path only where its disjunction is an exact available fact on that path. Here the contract gives `x == 1 or x == 3`, not the written `x == 1 or x == 2`, so the split is refused, naming the disjunction.
+A `cases` after execution forks an outcome path only after proving that its alternatives cover that path. Here the contract gives `x == 1 or x == 3`, not the written `x == 1 or x == 2`, so the split is refused, naming the disjunction.
 
 ```c filename=cases_after_execution_requires_its_disjunction.c
 int32 f(int32 x) {
@@ -24,5 +24,5 @@ int32 f(int32 x) {
 ```
 
 ```expect
-fail: `cases` after execution requires its exact disjunction as an available fact on each outcome path: `x == 1 or x == 2`
+fail: `cases` could not prove that its alternatives are exhaustive: `x == 1 or x == 2`
 ```

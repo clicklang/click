@@ -13521,6 +13521,7 @@ fn terminal_execution_branch_retains_distinct_outcomes_as_a_logical_if() {
             ))),
         };
         let forked = joined
+            .driver()
             .split_outcome_paths(&DeferredPostExecutionTactic {
                 lexical_bindings: None,
                 tactic_index: 0,

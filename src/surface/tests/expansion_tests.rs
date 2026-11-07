@@ -80,6 +80,69 @@ fn unfolded_member_quantifier_keeps_written_pointer_arguments_in_expansion() {
 }
 
 #[test]
+#[ignore = "nightly: multiple frontend expansion and cold replay checks"]
+fn cases_obligation_expands_before_execution_arms() {
+    let source = r#"
+        verifying "cases_obligation.c";
+        int32 choose(int32 x, int32 y) {
+            requires x == 0 or x == y;
+            requires y == 1;
+            ensures result == 0 or result == 1;
+        } by {
+            cases {
+                x == 0 => { step_until(function.exit); solve(); }
+                x == 1 => { step_until(function.exit); solve(); }
+            }
+        }
+    "#;
+    let sources = [(
+        "cases_obligation.c",
+        "int32 choose(int32 x, int32 y) { return x; }",
+    )];
+    let after = source
+        .replace(
+            "            cases {",
+            "            step_until(function.exit);\n            cases {",
+        )
+        .replace(
+            "=> { step_until(function.exit); solve(); }",
+            "=> { solve(); }",
+        );
+    let explicit = after.replace("            cases {", "            have x == 0 or x == 1 by { extract(x == 0 or x == 1); assumption(); }\n            cases {");
+    let result_cases = after
+        .replace("x == 0 =>", "result == 0 =>")
+        .replace("x == 1 =>", "result == 1 =>");
+    for source in [source, &after, &explicit, &result_cases] {
+        let verified =
+            verify_c0_sources(source, &sources).unwrap_or_else(|error| panic!("{error}\n{source}"));
+        let expanded = expand_checked_grouped_claim(source, &verified, "choose").unwrap();
+        assert!(expanded.contains("have "), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+            .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+        let incomplete = source.replace("requires y == 1;", "requires y == 2;");
+        assert!(
+            verify_c0_sources(&incomplete, &sources).is_err(),
+            "{incomplete}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "nightly: focused deferred match expansion and cold replay"]
+fn cases_after_execution_keep_match_bindings_in_expansion() {
+    let (source, sources) =
+        mdtest_sources("mdtests/cases_after_execution_keeps_match_field_bindings.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let verified = verify_c0_sources(&source, &sources).unwrap();
+    let expanded = expand_checked_grouped_claim(&source, &verified, "read").unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{error}\n{expanded}"));
+}
+
+#[test]
 fn unsigned_array_read_cases_expand_without_implicit_search() {
     let (source, sources) = mdtest_sources("mdtests/unsigned_array_read_cases_are_spellable.md");
     let sources = sources

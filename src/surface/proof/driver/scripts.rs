@@ -140,7 +140,10 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         );
         let disjunction =
             ClickProposition::Or(Box::new(disjunction), Box::new(last.assumption.clone()));
-        let (split_proof, split, ids) = driver_proof.split_focused_cases(disjunction.clone())?;
+        let prepared = driver_proof
+            .driver()
+            .prove_cases_disjunction(&disjunction)?;
+        let (split_proof, split, ids) = prepared.split_focused_cases(disjunction.clone())?;
         let marker = split_proof.checkpoint();
         let leading_branch = split_proof.focus_branch(ids[0])?;
         let leading_done = match leading {

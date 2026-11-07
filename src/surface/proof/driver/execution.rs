@@ -1,4 +1,5 @@
 use super::*;
+use crate::surface::proof::driver::OutcomeSplitFailure;
 
 #[cfg(test)]
 thread_local! {
@@ -179,10 +180,11 @@ fn defer_post_execution_case_split<'a>(
         // The case is open on some outcome path: fork those paths, one per
         // arm.
         let before = outcome_path_count(&proof);
-        match proof.split_outcome_paths(&deferred) {
+        match proof.driver().split_outcome_paths(&deferred) {
             Ok(split) => proof = split,
-            Err(error) if disjunction => return Err(error),
-            Err(_) => {
+            Err(OutcomeSplitFailure::Obligation(error)) => return Err(error),
+            Err(OutcomeSplitFailure::Partition(error)) if disjunction => return Err(error),
+            Err(OutcomeSplitFailure::Partition(_)) => {
                 check_verification_deadline()?;
                 return decline();
             }
@@ -225,9 +227,10 @@ fn defer_post_execution_match<'a>(
         return decline();
     };
     let before = outcome_path_count(&proof);
-    let proof = match proof.split_outcome_paths(&deferred) {
+    let proof = match proof.driver().split_outcome_paths(&deferred) {
         Ok(split) => split,
-        Err(_) => {
+        Err(OutcomeSplitFailure::Obligation(error)) => return Err(error),
+        Err(OutcomeSplitFailure::Partition(_)) => {
             check_verification_deadline()?;
             return decline();
         }
@@ -1832,6 +1835,7 @@ fn try_check_structural_function_proof_inner<'a>(
                 if !matches!(continuation.as_ref(), InternalProofNode::Done) {
                     proof = proof.prepare_entry_interface()?;
                 }
+                proof = proof.driver().prove_cases_disjunction(disjunction)?;
                 let (split, record) =
                     proof.split_focused_execution_disjunction(disjunction.clone())?;
                 let (joined, consumed_continuation) = driven!(advance_case_split_arms(
@@ -4193,6 +4197,9 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                 if !matches!(continuation.as_ref(), InternalProofNode::Done) {
                     proof_at_cases = proof_at_cases.prepare_entry_interface()?;
                 }
+                proof_at_cases = proof_at_cases
+                    .driver()
+                    .prove_cases_disjunction(disjunction)?;
                 let (split, record) =
                     proof_at_cases.split_focused_execution_disjunction(disjunction.clone())?;
                 let (joined, consumed_continuation) = driven!(advance_case_split_arms(

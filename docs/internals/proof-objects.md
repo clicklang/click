@@ -64,7 +64,13 @@ For proposition `if` and `cases`, the kernel allocates the audited split and
 sibling identities, checks complementary or available case facts, and owns the
 closed-arm join. Surface provenance independently proves that serialized arm
 steps descend through the exact split marker; it never manufactures branch
-state. Logical `cases` at an execution frontier uses the same operation while
+state. A source `cases` may establish its disjunction through an ordinary
+nested `have` before the split. The driver uses the ordinary implicit closer,
+and expansion retains the explicit checked proof before either arm. Deferred
+post-execution splits retain these proofs by source occurrence on each outcome;
+preceding explicit `have` steps are checked in source order and their certificates
+are reused during final assembly. Already justified complementary splits retain
+the kernel's direct evidence. Logical `cases` at an execution frontier uses the same operation while
 sharing the unchanged execution core between both fact-local siblings. For a
 proof-level execution `if`, the language prepares each arm's opaque Surface
 record, while the kernel validates polarity and attaches those records to its

@@ -1169,11 +1169,13 @@ spelled fails.
 Proof-level `if` and `cases` answer different questions. `if P` is an
 excluded-middle split: the else case assumes `not P`, so it cannot eliminate a
 disjunctive fact whose right side is not the negation of its left. `cases`
-requires the spelled disjunction to be an exact available fact and checks each
-branch under exactly its assumed disjunct — the shape smart simplification
-emits when a proof consumes a fact such as `selected == left or
-selected == right`. Click never searches: a branch that needs the other
-case's disjunct fails.
+requires proof that its written alternatives are exhaustive, then checks each
+branch under exactly its assumed disjunct. The ordinary implicit closer can
+establish the disjunction from available facts, and expansion retains that
+proof as a preceding `have`. An explicit `have` can establish it without
+implicit search. This permits equivalent or reordered alternatives; a branch
+that needs another arm's disjunct still fails. Complementary alternatives
+retain the kernel's direct split evidence.
 
 Intrinsic tactic class and selectable source-site kind answer different
 questions. `have` is always a control container because it owns a nested goal.
