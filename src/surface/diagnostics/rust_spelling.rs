@@ -61,107 +61,41 @@ pub(crate) fn slice_call_arguments(name: &str, mut arguments: Vec<String>) -> Ve
             .unwrap_or(pointer);
         let own_length = [format!("{parameter}.len()"), format!("{parameter}_len")];
         if !own_length.contains(&length) {
-            arguments[position] = slice_spelling(pointer, &length);
+            // The parser spreads this back into the same pointer and length.
+            arguments[position] =
+                format!("click::rust::slice::from_raw_parts({pointer}, {length})");
         }
     }
     arguments
 }
 
-/// The spelling of the slice with data `pointer` and length `length`, as
-/// printed: the subslice `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` when the
-/// pointer is a slice's data or an offset into it, as a subslice is built,
-/// and `slice::from_raw_parts(p, n)` otherwise.
-pub(crate) fn slice_spelling(pointer: &str, length: &str) -> String {
-    subslice_spelling(pointer, length)
-        .unwrap_or_else(|| format!("slice::from_raw_parts({pointer}, {length})"))
+/// The type a slice constructor is written at, `Slice<u8>` in a function
+/// written in Rust syntax and `Slice<uint8>` elsewhere: a slice standing
+/// alone, `Slice<u8>::Slice(p, n)[1]`, has no context to infer it from.
+pub(crate) fn slice_type_spelling(element: &CType) -> Option<String> {
+    let name = if rust_spelling() {
+        rust_scalar_spelling(element)?
+    } else {
+        crate::surface::printing::machine_integer_type_name(
+            crate::kernel::MachineIntegerType::from_c_type(*element)?,
+        )
+    };
+    Some(format!("Slice<{name}>"))
 }
 
-fn subslice_spelling(pointer: &str, length: &str) -> Option<String> {
-    let (pointer, length) = (unparenthesized(pointer), unparenthesized(length));
-    let (base, start) = match pointer
-        .strip_prefix('&')
-        .and_then(|element| element.strip_suffix(']'))
-        .and_then(|element| element.rsplit_once('['))
-    {
-        Some((base, start)) => (base, Some(start)),
-        None => match pointer.split_once(" + ") {
-            Some((base, start)) => (base, Some(start)),
-            None => (pointer, None),
-        },
+/// The subslice whose length is `slice::subslice_len(start, end, len)`, as
+/// written: `bytes[a..b]`, `bytes[a..]` or `bytes[..b]`, when `len` is a
+/// slice's own length.
+pub(crate) fn subslice_of_length(start: &str, end: &str, len: &str) -> Option<String> {
+    let slice = unparenthesized(len).strip_suffix(".len()")?;
+    let start = usize_bound(start);
+    let start = if start == "0" { "" } else { start.as_str() };
+    let end = if unparenthesized(end) == unparenthesized(len) {
+        String::new()
+    } else {
+        usize_bound(end)
     };
-    let (slice, own_lengths) = slice_with_data(base)?;
-    // The length a subslice was built with, `end - start`, gives back its
-    // end; the slice's own length is an open end.
-    let start = start.map(usize_bound);
-    let end = match &start {
-        Some(start) => [start.clone(), format!("{start}u64")]
-            .iter()
-            .find_map(|start| length.strip_suffix(&format!(" - {start}")))
-            .map(unparenthesized)
-            .map_or_else(
-                || {
-                    start
-                        .parse::<u64>()
-                        .ok()
-                        .zip(usize_bound(length).parse::<u64>().ok())
-                        .and_then(|(start, length)| start.checked_add(length))
-                        .map_or_else(|| format!("{start} + {length}"), |end| end.to_string())
-                },
-                str::to_string,
-            ),
-        None => length.to_string(),
-    };
-    let end = (!own_lengths.contains(&end)).then(|| usize_bound(&end));
-    if start.is_none() && end.is_none() {
-        return Some(slice);
-    }
-    Some(format!(
-        "{slice}[{}..{}]",
-        start.unwrap_or_default(),
-        end.unwrap_or_default()
-    ))
-}
-
-/// The slice whose data pointer is spelled `pointer`, with the spellings of
-/// its own length: a slice parameter, also at another point (`old(bytes)`),
-/// or a slice value's `x.as_ptr()`.
-fn slice_with_data(pointer: &str) -> Option<(String, Vec<String>)> {
-    if let Some(slice) = pointer.strip_suffix(".as_ptr()") {
-        return Some((slice.to_string(), vec![format!("{slice}.len()")]));
-    }
-    let (wrap, name): (Box<dyn Fn(&str) -> String>, &str) = match pointer
-        .strip_prefix("old(")
-        .and_then(|rest| rest.strip_suffix(')'))
-    {
-        Some(name) => (Box::new(|inner| format!("old({inner})")), name),
-        None => match pointer
-            .strip_prefix("at(")
-            .and_then(|rest| rest.strip_suffix(')'))
-            .and_then(|rest| rest.split_once(", "))
-        {
-            Some((point, name)) => {
-                let point = point.to_string();
-                (Box::new(move |inner| format!("at({point}, {inner})")), name)
-            }
-            None => (Box::new(|inner| inner.to_string()), pointer),
-        },
-    };
-    if !rust_slice_parameters()?
-        .iter()
-        .any(|parameter| parameter == name)
-    {
-        return None;
-    }
-    // A slice parameter's length never changes, so it is also spelled
-    // without the point.
-    let lengths = vec![
-        format!("{pointer}.len()"),
-        wrap(&format!("{name}.len()")),
-        wrap(&format!("{name}_len")),
-        format!("{name}.len()"),
-        format!("{name}_len"),
-    ];
-    Some((pointer.to_string(), lengths))
+    Some(format!("{slice}[{start}..{end}]"))
 }
 
 /// A subslice bound as written: `usize`, so a numeral needs no suffix.
@@ -297,6 +231,11 @@ pub(super) fn rust_scalar_spelling(c_type: &CType) -> Option<&'static str> {
 /// `slice::from_raw_parts(p, n)`. `name` may carry the qualified path and
 /// an instance, `click::rust::slice::len::<uint8>`.
 pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<String> {
+    // Only a function written in Rust syntax reads Rust's slice methods
+    // back; elsewhere the library call is its own spelling.
+    if !rust_spelling() {
+        return None;
+    }
     let base = name.split("::<").next().unwrap_or(name);
     let method = base
         .strip_prefix("click::rust::slice::")
@@ -304,13 +243,16 @@ pub(crate) fn slice_call_spelling(name: &str, arguments: &[String]) -> Option<St
     match (method, arguments) {
         ("len", [slice]) => Some(format!("{slice}.len()")),
         ("as_ptr", [slice]) => Some(format!("{slice}.as_ptr()")),
-        ("from_raw_parts", [pointer, length]) => Some(slice_spelling(pointer, length)),
-        // A subslice's length is `end - start`; its bounds are the
-        // subslice's own, which the subslice spelling writes again.
-        ("subslice_len", [start, end, _]) => Some(match usize_bound(start).as_str() {
-            "0" => end.clone(),
-            _ => format!("{end} - {start}"),
-        }),
+        // A call is spelled as the call it is; its slice is a constructor
+        // only once unfolded.
+        ("from_raw_parts", [pointer, length]) => Some(format!(
+            "click::rust::slice::from_raw_parts({pointer}, {length})"
+        )),
+        // A subslice's length is that subslice's `.len()`: written as
+        // `end - start` it would read as Integer subtraction in a comparison.
+        ("subslice_len", [start, end, len]) => {
+            subslice_of_length(start, end, len).map(|subslice| format!("{subslice}.len()"))
+        }
         _ => None,
     }
 }

@@ -2553,15 +2553,16 @@ impl Printer<'_> {
                         .text,
                     );
                 }
-                if value.algebraic_type.name == "Slice"
-                    && variant == "Slice"
-                    && let [pointer, length] = spelled_fields.as_slice()
-                {
-                    return Some(atom(crate::surface::diagnostics::slice_spelling(
-                        pointer, length,
-                    )));
+                let type_name = match value.algebraic_type.arguments.as_slice() {
+                    [crate::kernel::AlgebraicValueType::C(element)]
+                        if value.algebraic_type.name == "Slice" =>
+                    {
+                        crate::surface::diagnostics::slice_type_spelling(element)
+                    }
+                    _ => None,
                 }
-                let name = format!("{}::{variant}", value.algebraic_type.name);
+                .unwrap_or_else(|| value.algebraic_type.name.clone());
+                let name = format!("{type_name}::{variant}");
                 Some(atom(if spelled_fields.is_empty() {
                     name
                 } else {

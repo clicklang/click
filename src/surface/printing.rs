@@ -2124,16 +2124,18 @@ fn format_theorem_application(application: &TheoremApplication) -> String {
 }
 
 fn format_click_function_application(application: &ClickFunctionApplication) -> String {
-    format!(
-        "{}({})",
-        application.name,
+    // Each slice is one written argument, as the call is read: the parsed
+    // call holds a slice parameter's pointer and length separately. The
+    // application itself stays a call, which `unfold` names.
+    let arguments = crate::surface::diagnostics::slice_call_arguments(
+        &application.name,
         application
             .arguments
             .iter()
             .map(describe_contract_expression)
-            .collect::<Vec<_>>()
-            .join(", ")
-    )
+            .collect(),
+    );
+    format!("{}({})", application.name, arguments.join(", "))
 }
 
 fn format_fact_source(source: &ProofFactSource) -> String {
