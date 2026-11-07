@@ -475,6 +475,17 @@ impl DifferenceGraph {
         }
     }
 
+    /// Whether the facts exclude a zero `divisor`: its interval lies above
+    /// zero, or `divisor != 0` was recorded. A remainder or quotient by a
+    /// divisor that may be zero is an opaque value and bounds nothing.
+    fn nonzero_divisor(&self, domain: Domain, divisor: &MachineTerm) -> bool {
+        self.term_interval(domain, divisor).0 >= 1
+            || matches!(
+                self.resolve(domain, divisor),
+                Some((Some(node), offset)) if self.excludes(node, -offset)
+            )
+    }
+
     /// Whether `node != value` was recorded.
     fn excludes(&self, node: NodeId, value: i128) -> bool {
         self.excluded
@@ -1464,24 +1475,69 @@ impl DifferenceGraph {
             },
         ) = (domain, lower)
             && a.as_ref() == upper
-            && let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
-            && self.difference_bound(a, b) <= 0
-            && (!strict || self.affine_interval(b).0 >= 1)
+        {
+            // `a - a % k` by a nonzero `k`: the remainder is at most `a`.
+            if !strict
+                && let MachineTerm::Binary {
+                    format: MachineIntegerType::UInt64,
+                    op: MachineBinaryOp::Remainder,
+                    left: dividend,
+                    right: divisor,
+                } = b.as_ref()
+                && dividend == a
+                && self.nonzero_divisor(domain, divisor)
+            {
+                return Some(true);
+            }
+            if let (Some(a), Some(b)) = (self.resolve(domain, a), self.resolve(domain, b))
+                && self.difference_bound(a, b) <= 0
+                && (!strict || self.affine_interval(b).0 >= 1)
+            {
+                return Some(true);
+            }
+        }
+        // `(a - a % k) <= u` from `a <= u`, for a nonzero `k`: rounding down
+        // does not wrap. Only the dividend's chain is followed, so the work
+        // is linear in the nested roundings of `a`.
+        if let (
+            Domain::UInt64,
+            MachineTerm::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Subtract,
+                left: a,
+                right: b,
+            },
+        ) = (domain, lower)
+            && a.as_ref() != upper
+            && let MachineTerm::Binary {
+                format: MachineIntegerType::UInt64,
+                op: MachineBinaryOp::Remainder,
+                left: dividend,
+                right: divisor,
+            } = b.as_ref()
+            && dividend == a
+            && self.nonzero_divisor(domain, divisor)
+            && self.decide(&ConditionTerm::uint64_less_equal(
+                a.as_ref().clone(),
+                upper.clone(),
+            )) == Some(true)
         {
             return Some(true);
         }
-        // An unsigned remainder is at most its dividend.
+        // An unsigned remainder by a nonzero divisor is at most its
+        // dividend. `a % 0` is an opaque value and bounds nothing.
         if let (
             Domain::UInt64,
             MachineTerm::Binary {
                 format: MachineIntegerType::UInt64,
                 op: MachineBinaryOp::Remainder,
                 left: a,
-                right: _,
+                right: b,
             },
         ) = (domain, lower)
             && a.as_ref() == upper
             && !strict
+            && self.nonzero_divisor(domain, b)
         {
             return Some(true);
         }

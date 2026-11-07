@@ -997,6 +997,26 @@ promoted `int` operation. Unsuffixed literals are Integer unless their context g
 them a machine type
 ([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
 
+Specification `/` and `%`, which always have a machine type, are total. A
+zero divisor leaves the kernel's opaque quotient or remainder: a fixed value
+that nothing relates to anything but itself, not a chosen one. So
+`a / b == a / b` and a function whose body is `total / count` need no
+divisor premise, while `x / 0u32 == 0u32`, `x % 0u64 <= x` and `a / b <= a`
+are not provable without one
+(`mdtests/a_specification_quotient_needs_no_divisor_premise.md`,
+`mdtests/a_quotient_by_zero_is_not_zero.md`,
+`mdtests/a_quotient_by_a_divisor_that_may_be_zero_is_not_bounded.md`).
+Signed `MIN / -1` and `MIN % -1` overflow their format, so a signed quotient
+still owes `a != MIN or b != -1`, as signed `+`, `-` and `*` owe their range
+(`mdtests/a_signed_specification_quotient_still_owes_its_overflow_exclusion.md`).
+`defined(a / b)` states C's definedness and still includes `b != 0`. Executed
+C and Rust division keep their undefined-behavior and panic checks: a C
+function whose contract says `result == a / b` is still refused where `b`
+may be zero
+(`mdtests/a_total_specification_quotient_does_not_define_the_c_division.md`).
+`truncating_quotient` and `truncating_remainder` still require a nonzero
+divisor.
+
 | Position | Expected type |
 | --- | --- |
 | an operand of a comparison that does `+`, `-`, `*` or negation, compares an Integer with a machine value, or has a `count(...)` operand | Integer |
@@ -3566,12 +3586,12 @@ propositions. Those remain C-fragment syntax.
 
 The right side of `implies` is read only where its left side holds, and the
 right side of `or` only where its left side fails, so a right side's
-definedness is owed only there: `b == 0u32 or a <= 4294967295u32 / b` owes
-nothing for the division, and lowers as written whatever the facts say.
+definedness is owed only there: `s >= 64u64 or (1u64 << s) == 2u64` owes
+nothing for the shift, and lowers as written whatever the facts say.
 A right side that is undefined wherever it is read, such as
-`x != 0u32 or 5u32 / x == 1u32`, is refused
+`s < 64u64 or (1u64 << s) == 2u64`, is refused
 (`mdtests/false_disjunction_requires_defined_right_requirement.md`). A
-literally true left side, as in `0u32 == 0u32 or 5u32 / 0u32 == 1u32`,
+literally true left side, as in `64u64 >= 64u64 or (1u64 << 64u64) == 2u64`,
 lowers to the left side alone
 (`mdtests/true_disjunction_skips_undefined_right_requirement.md`). Both
 sides of `and` are read.

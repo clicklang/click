@@ -495,21 +495,23 @@ matrices); what remains of it is this issue's library families.
 Found while making lowering structural (every fact must be spellable:
 lowering a raised fact gives the fact back, so lowering never consults the
 facts to choose a term). These three sites are integer design questions,
-so they wait for this work rather than being fixed one by one.
+so they wait for this work rather than being fixed one by one. The first
+is decided.
 
-- **Specification `/` and `%`.** The kernel quotient is total: a zero
-  divisor leaves an opaque term (`MachineTerm::divide`, the Integer
-  `TruncatingQuotient`), so `x / 0` is a fixed but unspecified value and
-  `P(x / 0) or not P(x / 0)` holds. A specification `/` nevertheless owes
-  C's definedness obligation (`b != 0`), so Click `/` behaves like the C
-  operation rather than the total one. C and Rust `/` are only executed,
-  and execution already refuses the undefined case, so the specification
-  operator need not copy it. Maintainer direction (2026-10-26): consider
-  making Click `/` total by returning an option (`None` for a zero divisor
-  and, signed, `MIN / -1`), with options made convenient to handle, while
-  C and Rust `/` keep their undefined behavior in execution. Lowering then
-  produces one term with no side obligation, and a defined C division
-  relates to it as `checked_div(a, b) == Some(result)`.
+- **Specification `/` and `%`.** Decided and done (option B, maintainer
+  2026-11-07): specification `/` and `%` are total. A zero divisor owes
+  nothing and leaves the kernel's opaque quotient (`MachineTerm::divide`,
+  the Integer `TruncatingQuotient`), a fixed but unspecified value that only
+  congruence relates; every quotient or remainder bound by a symbolic
+  divisor asks for a nonzero divisor. Signed `MIN / -1` still owes its
+  no-overflow condition, as `+`, `-` and `*` do; `defined(a / b)` still
+  states C's definedness; `truncating_quotient` and `truncating_remainder`
+  still require a nonzero divisor; and executed C and Rust `/` keep their
+  undefined-behavior and panic checks
+  ([mathematical integers](../docs/internals/mathematical-integers.md#exact-operations-and-definedness)).
+  Choosing a value for `x / 0` later remains possible, since it only adds
+  facts. The option form (`checked_div(a, b) == Some(result)`) was not
+  taken.
 - **Byte offset restrided to an element index**
   (`byte_stride_index`, `src/kernel/eval/operators.rs`). A `char`-width
   displacement `i * K` becomes element index `i` with stride `K` only when

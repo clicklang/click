@@ -1353,9 +1353,10 @@ pub(super) fn execute_c_heap_allocate_paths(
         };
         let effective_assumptions =
             assumptions_with_path_context(assumptions, &facts, &obligations);
+        let refusal = allocation_size_refusal(&value);
         let Some(size) = allocation_size_value(value, &effective_assumptions) else {
             paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                CStatementOutcome::RuntimeError(refusal),
                 facts,
                 obligations,
             ));
@@ -1511,6 +1512,15 @@ fn heap_range_element_count(bytes: &MachineTerm, requested_width: u32) -> (Machi
 struct AllocationSize {
     term: MachineTerm,
     unsigned: bool,
+}
+
+/// The refusal for a size [`allocation_size_value`] does not accept: a
+/// 64-bit size it could not narrow is named as such, not as a type error.
+fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
+    match value.numeric_value() {
+        CValue::Int64(_) | CValue::UInt64(_) => CRuntimeError::HeapAllocationSize,
+        _ => CRuntimeError::TypeMismatch,
+    }
 }
 
 /// C heap blocks currently use the target's checked 32-bit address extent.
@@ -1875,9 +1885,10 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 &size_facts,
                 &size_obligations,
             );
+            let refusal = allocation_size_refusal(&new_size_value);
             let Some(size) = allocation_size_value(new_size_value, &size_assumptions) else {
                 paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    CStatementOutcome::RuntimeError(refusal),
                     size_facts,
                     size_obligations,
                 ));

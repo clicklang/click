@@ -12,6 +12,7 @@ fn observe(value: &CValue) -> Option<IntegerTerm> {
 
 pub(super) fn apply(
     op: MachineBinaryOp,
+    division: SpecDivision,
     left: &CValue,
     right: &CValue,
     facts: &ExecutionFacts,
@@ -55,10 +56,12 @@ pub(super) fn apply(
         ));
         product
     } else {
-        require(Proposition::ConditionIs(
-            ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
-            false,
-        ));
+        if division == SpecDivision::CDefined {
+            require(Proposition::ConditionIs(
+                ConditionTerm::integer_equal(right.clone(), IntegerTerm::constant_i64(0)),
+                false,
+            ));
+        }
         if destination == MachineIntegerType::Int128 {
             let min =
                 ConditionTerm::integer_equal(left.clone(), IntegerTerm::constant(i128::MIN.into()));
@@ -127,11 +130,10 @@ mod tests {
             (MachineBinaryOp::Multiply, i128::MAX, 2),
             (MachineBinaryOp::Divide, i128::MIN, -1),
             (MachineBinaryOp::Remainder, i128::MIN, -1),
-            (MachineBinaryOp::Divide, 1, 0),
-            (MachineBinaryOp::Remainder, 1, 0),
         ] {
             let path = apply(
                 op,
+                SpecDivision::Total,
                 &value(MachineIntegerType::Int128, left),
                 &value(MachineIntegerType::Int128, right),
                 &ExecutionFacts::default(),
@@ -157,6 +159,45 @@ mod tests {
     }
 
     #[test]
+    fn a_wide_zero_divisor_is_owed_only_by_c_definedness() {
+        for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
+            for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
+                let (left, right) = (value(format, 1), value(format, 0));
+                let total = apply(
+                    op,
+                    SpecDivision::Total,
+                    &left,
+                    &right,
+                    &ExecutionFacts::default(),
+                    &[],
+                )
+                .unwrap();
+                // The value is the opaque quotient, never a chosen constant.
+                let CExpressionOutcome::Value(CValue::Int128(term) | CValue::UInt128(term)) =
+                    &total.outcome
+                else {
+                    panic!("a wide quotient has a wide value");
+                };
+                assert!(matches!(term, MachineTerm::IntegerToMachine { .. }));
+                assert!(total.obligations.is_empty());
+                let defined = apply(
+                    op,
+                    SpecDivision::CDefined,
+                    &left,
+                    &right,
+                    &ExecutionFacts::default(),
+                    &[],
+                )
+                .unwrap();
+                assert_eq!(defined.outcome, total.outcome);
+                assert!(defined.obligations.iter().any(|obligation| {
+                    !PureFactContext::new().proves_exact(obligation.proposition())
+                }));
+            }
+        }
+    }
+
+    #[test]
     fn defined_wide_arithmetic_agrees_with_execution() {
         for format in [MachineIntegerType::Int128, MachineIntegerType::UInt128] {
             for op in [
@@ -169,7 +210,15 @@ mod tests {
                 }
                 let left = value(format, (1i128 << 80) + 7);
                 let right = value(format, 3);
-                let logical = apply(op, &left, &right, &ExecutionFacts::default(), &[]).unwrap();
+                let logical = apply(
+                    op,
+                    SpecDivision::CDefined,
+                    &left,
+                    &right,
+                    &ExecutionFacts::default(),
+                    &[],
+                )
+                .unwrap();
                 let execute = match op {
                     MachineBinaryOp::Multiply => apply_c_multiply,
                     MachineBinaryOp::Divide => apply_c_divide,

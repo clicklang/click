@@ -1,6 +1,8 @@
+// `defined(...)` keeps C's nonzero divisor; a specification quotient owes none.
 fn division_paths(context: &PureFactContext) -> Vec<CExpressionPath> {
-    apply_spec_arithmetic(
+    apply_spec_arithmetic_with(
         crate::kernel::MachineBinaryOp::Divide,
+        SpecDivision::CDefined,
         CValue::UInt32(MachineTerm::uint32_constant(7)),
         CValue::UInt32(MachineTerm::Variable(Variable(690_000))),
         ExecutionFacts::default(),

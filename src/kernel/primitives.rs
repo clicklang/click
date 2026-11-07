@@ -7400,6 +7400,10 @@ pub enum CRuntimeError {
     UnboundVariable(String),
     UnknownFunction(String),
     TypeMismatch,
+    /// A `malloc`, `calloc` or `realloc` size Click cannot use as a heap
+    /// block's extent: blocks have a checked 32-bit extent, and a symbolic
+    /// 64-bit size is not narrowed into one. Diagnostic only.
+    HeapAllocationSize,
     /// A typed memory load whose type does not fit the value the cell
     /// holds: a 4-byte load of an 8-byte cell, or a pointer cell read as an
     /// integer. `stored` is the cell's value when the snapshot knows it.
@@ -7734,6 +7738,10 @@ impl CRuntimeError {
             _ => None,
         }
     }
+
+    /// Why a heap allocation's size was refused, and which sizes are
+    /// accepted ([`Self::HeapAllocationSize`]).
+    pub const HEAP_ALLOCATION_SIZE_MESSAGE: &'static str = "heap allocation size must be a 32-bit value or a known constant: Click models a heap block with a checked 32-bit extent and cannot yet narrow a symbolic 64-bit size into it; a 64-bit size is accepted where the facts fix it to a constant that fits, and an upper bound is not enough";
 
     pub fn kernel_summary(&self) -> String {
         match self {

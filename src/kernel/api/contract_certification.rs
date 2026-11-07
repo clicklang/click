@@ -838,6 +838,7 @@ pub(in crate::kernel) fn describe_certification_runtime_error(error: &CRuntimeEr
             format!("no named contract is available for function pointer `{name}`")
         }
         CRuntimeError::TypeMismatch => "type mismatch".to_string(),
+        CRuntimeError::HeapAllocationSize => CRuntimeError::HEAP_ALLOCATION_SIZE_MESSAGE.to_string(),
         CRuntimeError::LoadTypeMismatch { .. } => error.kernel_summary(),
         CRuntimeError::IndeterminatePointeeType => {
             "a pointer operation has no known pointee type".to_string()

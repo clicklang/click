@@ -335,10 +335,17 @@ mod tests {
         for invalid in [
             "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value) <= 2147483647 by { apply(integer::uint32_to_integer_bounds(value)); } }",
             "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value + 1u32) == to_integer(value) + 1 by { apply(integer::uint32_to_integer_bounds(value + 1u32)); } }",
-            "import click::integer; theorem wrong(value: uint32) { ensures 0 <= to_integer(value / 0u32) by { apply(integer::uint32_to_integer_bounds(value / 0u32)); } }",
+            "import click::integer; theorem wrong(value: uint32) { ensures to_integer(value / 0u32) == 0 by { apply(integer::uint32_to_integer_bounds(value / 0u32)); } }",
         ] {
             assert!(verify_c0_sources(invalid, &[]).is_err(), "{invalid}");
         }
+        // Specification division is total: the quotient by zero is an opaque
+        // `uint32`, so it has the type's range and no other property.
+        verify_c0_sources(
+            "import click::integer; theorem range(value: uint32) { ensures 0 <= to_integer(value / 0u32) by { apply(integer::uint32_to_integer_bounds(value / 0u32)); } }",
+            &[],
+        )
+        .unwrap();
     }
 
     #[test]
@@ -452,10 +459,11 @@ mod tests {
         for proof in ["solve()", "normalize()"] {
             let division = format!(
                 "function f(x: int32) -> Integer {{ to_integer(x) }}\n\
-                 theorem call(x: int32) {{ ensures f(1 / x) == f(1 / x) by {{ {proof}; }} }}"
+                 theorem call(x: int32) {{ ensures f(-2147483648 / x) == f(-2147483648 / x) by {{ {proof}; }} }}"
             );
+            // A zero divisor owes nothing; `MIN / -1` still overflows.
             assert!(verify_c0_sources(&division, &[]).is_err(), "{division}");
-            let guarded = division.replace("{ ensures", "{ requires x != 0; ensures");
+            let guarded = division.replace("{ ensures", "{ requires x != -1; ensures");
             verify_c0_sources(&guarded, &[]).unwrap();
             let expanded =
                 expand_c0_claim_source_by_label(&guarded, &[], "call.ensures_0").unwrap();

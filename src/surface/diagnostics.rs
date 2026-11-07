@@ -1658,6 +1658,9 @@ pub(super) fn describe_runtime_error(
             )
         }
         crate::kernel::CRuntimeError::TypeMismatch => "type mismatch".to_string(),
+        crate::kernel::CRuntimeError::HeapAllocationSize => {
+            crate::kernel::CRuntimeError::HEAP_ALLOCATION_SIZE_MESSAGE.to_string()
+        }
         crate::kernel::CRuntimeError::LoadTypeMismatch {
             pointer,
             value_type,

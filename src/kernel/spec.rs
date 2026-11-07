@@ -1,6 +1,7 @@
 use super::prelude::*;
 use super::{ResourceDescription, ResourceFieldSchema};
 use crate::kernel::CompareRelation;
+use crate::kernel::eval::SpecDivision;
 use crate::kernel::{bits32_constant, constant_u32, int32_constant};
 
 thread_local! {
@@ -115,6 +116,9 @@ impl<'a> SpecScope<'a> {
 struct SpecEvaluation<'a> {
     budget: &'a mut ExecutionBudget,
     checked_reads: bool,
+    /// `defined(...)` states C's definedness, so its quotients owe C's
+    /// nonzero divisor. Specification `/` and `%` are otherwise total.
+    c_definedness: bool,
     /// Only the selected body of an already held resource, or an interface
     /// proposition checked where it is established, may introduce its
     /// well-formed logical calls' nominal argument requirements.
@@ -175,6 +179,7 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: false,
+            c_definedness: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
@@ -185,6 +190,7 @@ impl<'a> SpecEvaluation<'a> {
         Self {
             budget,
             checked_reads: true,
+            c_definedness: false,
             recover_resource_call_types: false,
             pointer_cast_operand: false,
             machine_preparation_disabled: false,
@@ -2013,6 +2019,7 @@ fn lower_spec_proposition_at_state_with_algebraic_bindings_one_in(
         ),
         SpecProposition::Defined(expression) => {
             let mut checked = SpecEvaluation::checked(budget);
+            checked.c_definedness = true;
             // Definedness is decided from no facts, except that a contract
             // entry's own requirement keeps assuming what its caller checked
             // about opaque pointer extents.
@@ -6791,42 +6798,50 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
                 )
             },
         )?,
-        SpecExpression::Divide(left, right) => evaluate_spec_scalar_binary_paths_in(
-            SpecScope::new(state, loop_entry_state, algebraic_bindings),
-            left,
-            right,
-            assumptions,
-            budget,
-            |left, right, facts, obligations| {
-                apply_spec_arithmetic(
-                    crate::kernel::MachineBinaryOp::Divide,
-                    left,
-                    right,
-                    facts,
-                    obligations,
-                    assumptions,
-                    apply_c_divide,
-                )
-            },
-        )?,
-        SpecExpression::Remainder(left, right) => evaluate_spec_scalar_binary_paths_in(
-            SpecScope::new(state, loop_entry_state, algebraic_bindings),
-            left,
-            right,
-            assumptions,
-            budget,
-            |left, right, facts, obligations| {
-                apply_spec_arithmetic(
-                    crate::kernel::MachineBinaryOp::Remainder,
-                    left,
-                    right,
-                    facts,
-                    obligations,
-                    assumptions,
-                    apply_c_remainder,
-                )
-            },
-        )?,
+        SpecExpression::Divide(left, right) => {
+            let division = SpecDivision::of(budget);
+            evaluate_spec_scalar_binary_paths_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    apply_spec_arithmetic_with(
+                        crate::kernel::MachineBinaryOp::Divide,
+                        division,
+                        left,
+                        right,
+                        facts,
+                        obligations,
+                        assumptions,
+                        apply_c_divide,
+                    )
+                },
+            )?
+        }
+        SpecExpression::Remainder(left, right) => {
+            let division = SpecDivision::of(budget);
+            evaluate_spec_scalar_binary_paths_in(
+                SpecScope::new(state, loop_entry_state, algebraic_bindings),
+                left,
+                right,
+                assumptions,
+                budget,
+                |left, right, facts, obligations| {
+                    apply_spec_arithmetic_with(
+                        crate::kernel::MachineBinaryOp::Remainder,
+                        division,
+                        left,
+                        right,
+                        facts,
+                        obligations,
+                        assumptions,
+                        apply_c_remainder,
+                    )
+                },
+            )?
+        }
         SpecExpression::RustShiftLeft(left, right)
         | SpecExpression::RustShiftRight(left, right) => evaluate_spec_scalar_binary_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
@@ -7990,6 +8005,16 @@ fn spec_expression_pointer_step_width(state: &CState, expression: &SpecExpressio
     }
 }
 
+impl SpecDivision {
+    fn of(budget: &SpecEvaluation<'_>) -> Self {
+        if budget.c_definedness {
+            Self::CDefined
+        } else {
+            Self::Total
+        }
+    }
+}
+
 /// Logical arithmetic retains its domain independently of the current facts.
 /// Pointer and floating operations keep their type-specific evaluator.
 fn apply_spec_arithmetic(
@@ -8007,9 +8032,43 @@ fn apply_spec_arithmetic(
         &PureFactContext,
     ) -> Vec<CExpressionPath>,
 ) -> Vec<CExpressionPath> {
-    if let Some(mut path) =
-        crate::kernel::eval::apply_spec_machine_arithmetic(op, &left, &right, &facts, &obligations)
-    {
+    apply_spec_arithmetic_with(
+        op,
+        SpecDivision::Total,
+        left,
+        right,
+        facts,
+        obligations,
+        assumptions,
+        apply,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn apply_spec_arithmetic_with(
+    op: crate::kernel::MachineBinaryOp,
+    division: SpecDivision,
+    left: CValue,
+    right: CValue,
+    facts: ExecutionFacts,
+    obligations: Vec<ProofObligation>,
+    assumptions: &PureFactContext,
+    apply: impl Fn(
+        CValue,
+        CValue,
+        ExecutionFacts,
+        Vec<ProofObligation>,
+        &PureFactContext,
+    ) -> Vec<CExpressionPath>,
+) -> Vec<CExpressionPath> {
+    if let Some(mut path) = crate::kernel::eval::apply_spec_machine_arithmetic(
+        op,
+        division,
+        &left,
+        &right,
+        &facts,
+        &obligations,
+    ) {
         apply_held_resource_domain_policy(&mut path.obligations[obligations.len()..], assumptions);
         return vec![path];
     }

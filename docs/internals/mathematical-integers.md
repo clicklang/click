@@ -242,16 +242,46 @@ says that too instead of leaving a reader hunting for a line number.
 
 Logical machine `+`, `-`, `*`, `/`, and `%` at 32 or 64 bits produce one
 structural term, with mandatory evaluation-domain obligations beside it.
-Known overflow or a zero divisor does not erase the term; it leaves an
-unprovable obligation. Facts discharge these obligations without changing the
-term. Operand promotion and unsigned wrapping retain their C meanings.
+Known overflow does not erase the term; it leaves an unprovable obligation.
+Facts discharge these obligations without changing the term. Operand
+promotion and unsigned wrapping retain their C meanings.
+
+Specification `/` and `%` are total
+(`eval/operators/spec_arithmetic.rs`, `SpecDivision`). A zero divisor owes
+nothing: the term is the kernel's quotient node, which constant folding
+leaves standing for a zero divisor (`MachineTerm::divide`,
+`MachineIntegerConstant::truncating_div_rem`), so `x / 0` is a fixed but
+unspecified value. Only congruence relates it: `a / 0 == a / 0`, and equal
+operands give equal quotients, but no rule states a value or a bound for it.
+Every rule that bounds a quotient or remainder by a symbolic divisor asks for
+a positive or excluded-zero divisor: the difference graph's unsigned
+`a % b <= a` and `a - a % b` routes (`DifferenceGraph::nonzero_divisor`),
+the interval rules, `operation_bound` (positive constants), the remainder
+rewrites, the sign-cast rule, and the `click::integer` division laws, whose
+premises name the nonzero divisor. Signed `MIN / -1` and `MIN % -1` still
+owe `left != MIN or right != -1`, as the other signed operations owe their
+range. `defined(e)` evaluates `e` with C's definedness
+(`SpecEvaluation::c_definedness`), so `defined(a / b)` still includes
+`b != 0`. Executed C and Rust division keep their undefined-behavior and
+panic checks, so the executed term exists only where its divisor is nonzero.
+A later decision may add facts about `x / 0` (a chosen value); totality
+without one is the weaker, compatible choice
+(`mdtests/a_specification_quotient_needs_no_divisor_premise.md`,
+`mdtests/a_quotient_by_zero_is_not_zero.md`,
+`mdtests/a_remainder_by_zero_is_not_the_dividend.md`,
+`mdtests/quotients_by_zero_of_different_dividends_are_not_equal.md`,
+`mdtests/a_quotient_by_a_divisor_that_may_be_zero_is_not_bounded.md`,
+`mdtests/an_unsigned_remainder_by_a_divisor_that_may_be_zero_is_not_bounded.md`,
+`mdtests/a_total_specification_quotient_does_not_define_the_c_division.md`).
 Logical shifts also retain a structural value and separate count obligations.
 C left shifts retain their signed-value and overflow conditions; Rust shifts
 use the original operand width and Rust bit semantics, including wrapping
 signed left shifts. Negative counts and counts at least the operand width
 remain invalid. The supported 128-bit cases follow the same separation:
 signed multiplication, and matching signed or unsigned division and remainder,
-retain their range and divisor obligations without replacing terms from facts.
+retain their range obligations without replacing terms from facts; a zero
+divisor owes nothing there either, and the opaque Integer quotient stays
+inside its checked conversion.
 
 Capturing such a term as an Integer value retains its domain obligations.
 Proof steps discharge them through the ordinary implicit solver and retain
@@ -266,8 +296,8 @@ the right side of `implies` and `or` does: the then arm's obligation `O`
 becomes `C implies O` and the else arm's `C or O` (scalar, Integer, and
 algebraic `if` alike). An obligation the guard itself states is met. Both arms
 are still lowered under the same assumptions, so the guard changes only what
-is owed, not the arms' terms. `if d != 0u64 { a / d } else { 0u64 }`
-therefore needs no divisor premise, and a pure function guarded that way is
+is owed, not the arms' terms. `if s < 64u64 { a << s } else { 0u64 }`
+therefore needs no count premise, and a pure function guarded that way is
 total and unfolds anywhere; an arm whose guard does not give its domain is
 still refused
 (`a_conditional_arm_owes_its_domain_only_under_its_guard.md`,
