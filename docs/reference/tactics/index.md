@@ -3452,6 +3452,16 @@ Selection uses the explicitly written single-cell dereference or named
 resource-field subject; it does not discover aliases or prove range containment.
 Every supplied separation must be used and checked. See
 `mdtests/two_read_transport_expansion.md`.
+A conjunction of two supported scalar comparisons also expands: for example,
+`transport(at(statement(0).entry, *q == 7 and *r == 8), *q == 7 and *r == 8)`.
+Expansion emits ordinary `both`, with a preservation/rewrite proof in each arm.
+The source can instead spell each conjunct's snapshot separately. Each arm
+checks its earlier fact with `assumption()` and uses the supplied footprint
+separations for its changing reads. This covers memory and root fields of named
+resources across one or several statements; every supplied separation must be
+used and checked. See `mdtests/conjunction_transport_expansion.md`.
+Nested conjunctions are not included in this route.
+
 Other transport routes still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the

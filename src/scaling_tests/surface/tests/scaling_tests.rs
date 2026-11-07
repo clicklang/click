@@ -10120,3 +10120,58 @@ fn two_read_transport_replay_scales_with_explicit_links() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn conjunction_transport_replay_scales_with_explicit_links() {
+    let mut costs = Vec::new();
+    for size in [2, 4, 8, 16] {
+        let c = format!(
+            "void keep(int *p, int *q, int *r) {{ {} }}",
+            (0..size).map(|i| format!("*p = {i};")).collect::<String>()
+        );
+        let mut setup = String::new();
+        let mut premises = String::new();
+        for i in 0..size {
+            setup.push_str("step();");
+            for read in ["q", "r"] {
+                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                premises.push_str(&format!(
+                    "separate(statement({i}).footprint, memory(*{read}));"
+                ));
+            }
+        }
+        let source = format!(
+            r#"
+            verifying "chain.c";
+            void keep(int32* p, int32* q, int32* r) {{
+                owns *p; views *q; views *r;
+                requires separate(memory(*p), memory(*q));
+                requires separate(memory(*p), memory(*r));
+                requires *q == 7 and *r == 8;
+            }} by {{
+                {setup}
+                have *q == 7 and *r == 8 by {{
+                    transport(at(statement(0).entry, *q == 7 and *r == 8), *q == 7 and *r == 8) using {{ {premises} }};
+                }}
+                step();
+            }}
+        "#
+        );
+        let sources = [("chain.c", c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        });
+        verified.unwrap();
+        costs.push(work);
+    }
+    eprintln!("conjunction replay work: {costs:?}");
+    assert!(costs.iter().all(|cost| *cost > 0));
+    assert!(
+        costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}
