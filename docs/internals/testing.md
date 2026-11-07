@@ -326,7 +326,7 @@ The budget is kept by what the gate leaves out, not by a faster machine:
   kills a test still running after 30 seconds.
   One approved exception: `standard_library_theorems_are_proved_by_their_own_entry_point`
   proves every library theorem through `verify_standard_library`, about 7.5
-  CPU-seconds in a debug build, and stays in the gate as its only proof of the
+  CPU-seconds in an `opt-level = 0` build, and stays in the gate as its only proof of the
   library.
 - A mutation test, which re-verifies a whole example with one C statement
   changed, is nightly. A family keeps at most one or two in the gate.
@@ -591,6 +591,31 @@ dependent functions at compile time: ignoring a test would still compile its
 body and require the normal application binary. Their production targets retain
 the original tests without that feature. Fast-only support modules deliberately
 retain each standalone harness's support namespace.
+
+### Build profile
+
+The gate's test executable is built with the dev profile at `opt-level = 1`
+and `lto = "off"`, and the build script at `opt-level = 3` (`Cargo.toml`).
+Measured on 2026-11-06 at `3c38b4b`, Claude Code cloud (4 vCPUs), one run
+each, with tests run from nextest binary metadata as `scripts/check.sh` runs
+them:
+
+| Dev profile | Cold build | Full Click rebuild | Small kernel edit | Unit/API tests | Fixture tests |
+| --- | --- | --- | --- | --- | --- |
+| `opt-level = 0` | 441s | 343s | 95s | 414s | 399s |
+| dependencies only at `opt-level = 2` | 474s | — | — | 353s | 352s |
+| `opt-level = 1` | 908s | 900s | 109s | 116s | 92s |
+| `opt-level = 1`, `lto = "off"` | 656s | 556s | 92s | 125s | 106s |
+
+All four runs passed the same 7,597 unit/API tests and four fixture tests.
+The small edit appends one unused function to `src/kernel/spec.rs`. The
+rustc front end (type and borrow checking, monomorphization collection) runs
+on one thread, so a small-edit rebuild used one core and a full rebuild 1.35:
+more cores shorten neither. At `opt-level = 1` local ThinLTO took 368s of the
+full rebuild; turning it off kept tests within about 15% of its speed. The
+build script took 28s per source edit at `opt-level = 0` and 6s at
+`opt-level = 3`, with identical output. The gate timing baselines above
+predate this profile.
 
 ### Batching short diagnostic tests
 
