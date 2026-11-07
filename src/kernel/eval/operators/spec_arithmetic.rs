@@ -5,8 +5,22 @@ use crate::kernel::MachineBinaryOp;
 
 mod wide;
 
+/// Whether a quotient or remainder owes C's nonzero divisor.
+///
+/// Specification `/` and `%` are total: a zero divisor leaves the kernel's
+/// opaque quotient term, a fixed value that no rule relates to anything but
+/// itself. Only `defined(...)`, which states C's definedness, still owes it.
+/// Signed `MIN / -1` overflows the format, and like `+`, `-` and `*` it owes
+/// its no-overflow domain either way.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(in crate::kernel) enum SpecDivision {
+    Total,
+    CDefined,
+}
+
 pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     op: MachineBinaryOp,
+    division: SpecDivision,
     left: &CValue,
     right: &CValue,
     facts: &ExecutionFacts,
@@ -20,7 +34,7 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
-        return wide::apply(op, left, right, facts, inherited);
+        return wide::apply(op, division, left, right, facts, inherited);
     }
     if matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight) {
         return apply_spec_shift(op, left, right, facts, inherited);
@@ -31,16 +45,18 @@ pub(in crate::kernel) fn apply_spec_machine_arithmetic(
     let mut obligations = inherited.to_vec();
     let mut domain = Vec::new();
     if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
-        let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
-        domain.push(Proposition::ConditionIs(
-            ConditionTerm::machine_compare(
-                format,
-                crate::kernel::CompareRelation::Equal,
-                right.clone(),
-                zero,
-            ),
-            false,
-        ));
+        if division == SpecDivision::CDefined {
+            let zero = crate::kernel::machine_integer::range::constant_word(format, &0.into())?;
+            domain.push(Proposition::ConditionIs(
+                ConditionTerm::machine_compare(
+                    format,
+                    crate::kernel::CompareRelation::Equal,
+                    right.clone(),
+                    zero,
+                ),
+                false,
+            ));
+        }
         if format.format().is_signed() {
             domain.push(Proposition::signed_division_exclusion(
                 format, &left, &right,
@@ -291,9 +307,15 @@ mod tests {
                 MachineBinaryOp::ShiftRight,
             ),
         ] {
-            let path =
-                apply_spec_machine_arithmetic(op, &left, &right, &ExecutionFacts::default(), &[])
-                    .unwrap();
+            let path = apply_spec_machine_arithmetic(
+                op,
+                SpecDivision::Total,
+                &left,
+                &right,
+                &ExecutionFacts::default(),
+                &[],
+            )
+            .unwrap();
             assert!(matches!(path.outcome, CExpressionOutcome::Value(_)));
             assert!(path.facts.is_empty());
             assert!(
@@ -328,6 +350,7 @@ mod tests {
                 for op in [MachineBinaryOp::ShiftLeft, MachineBinaryOp::ShiftRight] {
                     let logical = apply_spec_machine_arithmetic(
                         op,
+                        SpecDivision::Total,
                         left,
                         right,
                         &ExecutionFacts::default(),
@@ -380,32 +403,44 @@ mod tests {
                 };
                 let left = MachineTerm::Variable(Variable(991_000));
                 let right = MachineTerm::Variable(Variable(991_001));
-                let path = apply_spec_machine_arithmetic(
-                    op,
-                    &wrap(left.clone()),
-                    &wrap(right.clone()),
-                    &ExecutionFacts::default(),
-                    &[],
-                )
-                .unwrap();
-                assert_eq!(
-                    path.outcome,
-                    CExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
-                        format, op, left, right
-                    )))
-                );
-                assert!(path.facts.is_empty());
-                let signed = matches!(
-                    format,
-                    MachineIntegerType::Int32 | MachineIntegerType::Int64
-                );
-                let division = matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder);
-                let shift = matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
-                assert_eq!(
-                    path.obligations.len(),
-                    usize::from(signed || division || shift)
-                );
-                assert!(path.obligations.iter().all(|debt| !debt.is_assumable()));
+                for mode in [SpecDivision::Total, SpecDivision::CDefined] {
+                    let path = apply_spec_machine_arithmetic(
+                        op,
+                        mode,
+                        &wrap(left.clone()),
+                        &wrap(right.clone()),
+                        &ExecutionFacts::default(),
+                        &[],
+                    )
+                    .unwrap();
+                    assert_eq!(
+                        path.outcome,
+                        CExpressionOutcome::Value(wrap(MachineTerm::machine_binary(
+                            format,
+                            op,
+                            left.clone(),
+                            right.clone()
+                        )))
+                    );
+                    assert!(path.facts.is_empty());
+                    let signed = matches!(
+                        format,
+                        MachineIntegerType::Int32 | MachineIntegerType::Int64
+                    );
+                    let division =
+                        matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder);
+                    let shift =
+                        matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
+                    // Unsigned division is total; only C's definedness owes
+                    // its nonzero divisor.
+                    assert_eq!(
+                        path.obligations.len(),
+                        usize::from(
+                            signed || shift || (division && mode == SpecDivision::CDefined)
+                        )
+                    );
+                    assert!(path.obligations.iter().all(|debt| !debt.is_assumable()));
+                }
             }
         }
     }
@@ -433,6 +468,7 @@ mod tests {
         ] {
             let path = apply_spec_machine_arithmetic(
                 op,
+                SpecDivision::Total,
                 &CValue::Int32(left.clone()),
                 &CValue::Int32(right.clone()),
                 &ExecutionFacts::default(),
@@ -457,11 +493,12 @@ mod tests {
             (MachineBinaryOp::Add, i32::MAX, 1),
             (MachineBinaryOp::Subtract, i32::MIN, 1),
             (MachineBinaryOp::Multiply, i32::MAX, 2),
-            (MachineBinaryOp::Divide, 1, 0),
             (MachineBinaryOp::Remainder, i32::MIN, -1),
+            (MachineBinaryOp::Divide, i32::MIN, -1),
         ] {
             let path = apply_spec_machine_arithmetic(
                 op,
+                SpecDivision::Total,
                 &int32(left as u32),
                 &int32(right as u32),
                 &ExecutionFacts::default(),
@@ -474,6 +511,66 @@ mod tests {
                     .iter()
                     .any(|debt| !PureFactContext::new().proves_exact(debt.proposition()))
             );
+        }
+    }
+
+    #[test]
+    fn a_zero_divisor_is_owed_only_by_c_definedness_and_keeps_the_opaque_quotient() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let word = |value: i64| {
+                crate::kernel::machine_integer::range::constant_word(format, &value.into()).unwrap()
+            };
+            let wrap = |term| match format {
+                MachineIntegerType::Int32 => CValue::Int32(term),
+                MachineIntegerType::UInt32 => CValue::UInt32(term),
+                MachineIntegerType::Int64 => CValue::Int64(term),
+                MachineIntegerType::UInt64 => CValue::UInt64(term),
+                _ => unreachable!(),
+            };
+            for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
+                let (left, right) = (word(7), word(0));
+                let total = apply_spec_machine_arithmetic(
+                    op,
+                    SpecDivision::Total,
+                    &wrap(left.clone()),
+                    &wrap(right.clone()),
+                    &ExecutionFacts::default(),
+                    &[],
+                )
+                .unwrap();
+                // No value is chosen: the quotient stays an operation node.
+                assert_eq!(
+                    total.outcome,
+                    CExpressionOutcome::Value(wrap(MachineTerm::Binary {
+                        format,
+                        op,
+                        left: Box::new(left.clone()),
+                        right: Box::new(right.clone()),
+                    }))
+                );
+                assert!(total.obligations.is_empty());
+                let defined = apply_spec_machine_arithmetic(
+                    op,
+                    SpecDivision::CDefined,
+                    &wrap(left),
+                    &wrap(right),
+                    &ExecutionFacts::default(),
+                    &[],
+                )
+                .unwrap();
+                assert_eq!(defined.outcome, total.outcome);
+                assert!(
+                    defined
+                        .obligations
+                        .iter()
+                        .any(|debt| !PureFactContext::new().proves_exact(debt.proposition()))
+                );
+            }
         }
     }
 }

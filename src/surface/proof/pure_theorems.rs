@@ -3607,8 +3607,10 @@ mod tests {
         for (parameters, arguments, expression, wrong_expression) in [
             ("n: int32", "n", "n + 1", "n - 1"),
             ("n: int64", "n", "n + 1i64", "n - 1i64"),
-            ("n: uint32, d: uint32", "n, d", "n / d", "n * d"),
-            ("n: uint64, d: uint64", "n, d", "n / d", "n * d"),
+            // Unsigned division is total; signed division still owes
+            // `n != MIN or d != -1`.
+            ("n: int32, d: int32", "n, d", "n / d", "n + d"),
+            ("n: int64, d: int64", "n, d", "n / d", "n + d"),
         ] {
             let guard = format!("requires defined({expression});");
             let observation = format!("requires to_integer({expression}) == 1;");

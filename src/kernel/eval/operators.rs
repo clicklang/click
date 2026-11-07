@@ -9,7 +9,9 @@ mod spec_arithmetic;
 pub(in crate::kernel) use narrow_arithmetic::{
     is_narrow_format, native_narrow_binary, native_narrow_not,
 };
-pub(in crate::kernel) use spec_arithmetic::{apply_spec_machine_arithmetic, apply_spec_rust_shift};
+pub(in crate::kernel) use spec_arithmetic::{
+    SpecDivision, apply_spec_machine_arithmetic, apply_spec_rust_shift,
+};
 
 type ValidShiftCountEvaluator = fn(
     MachineTerm,

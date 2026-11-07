@@ -1516,7 +1516,8 @@ mod observed_integer_argument_tests {
             "true",
             "to_integer(2147483647 + 1)",
             "truncating_quotient(to_integer(x), 0)",
-            "to_integer(x / 0)",
+            // `x / 0` is total, but `x / -1` overflows at `x == MIN`.
+            "to_integer(x / -1)",
         ] {
             let source = format!(
                 "{prefix} theorem refused(x: int32) {{ ensures x == x by {{ apply(reflexive({argument})); solve(); }} }}"

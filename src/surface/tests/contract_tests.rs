@@ -2901,12 +2901,25 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
 }
 
 #[test]
-fn contract_claims_cannot_hide_overflow_or_zero_division_behind_reflexivity() {
+fn contract_claims_cannot_hide_overflow_behind_reflexivity() {
     let c = "int32 identity(int32 x) { return x; }";
+    // Specification `/` and `%` are total at a zero divisor, so only signed
+    // `MIN / -1` remains partial.
+    for expression in ["result / 0", "result % 0"] {
+        let source = format!(
+            r#"verifying "domain.c";
+            int32 identity(int32 x) {{
+                ensures to_integer({expression}) == to_integer({expression});
+            }} by {{ step(); solve(); }}
+        "#
+        );
+        verify_c0_sources(&source, &[("domain.c", c)])
+            .unwrap_or_else(|error| panic!("{expression} is total: {error:?}"));
+    }
     for expression in [
         "result + 1",
-        "result / 0",
-        "result % 0",
+        "result / -1",
+        "result % -1",
         "to_uint8(to_integer(result))",
     ] {
         let source = format!(
@@ -3005,6 +3018,11 @@ fn exceptional_contract_claims_discharge_their_own_domains() {
         (
             "7",
             "to_integer(exception / 0) == to_integer(exception / 0)",
+            true,
+        ),
+        (
+            "-2147483648",
+            "to_integer(exception / -1) == to_integer(exception / -1)",
             false,
         ),
     ] {

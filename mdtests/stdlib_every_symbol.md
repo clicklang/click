@@ -1019,8 +1019,13 @@ theorem use_format_decimal_digit_power_nonzero(v: uint64, k: uint64) {
 
 theorem use_format_decimal_digit_of_length(v: uint64) {
     requires format::decimal_length(v) == 2u64;
-    ensures format::decimal_digit(v, 1u64) == (48u64 + v / format::pow10(2u64 - 1u64 - 1u64) % 10u64) as uint8 by
+    ensures format::decimal_digit(v, 1u64) == (48u64 + v / format::pow10(2u64 - 1u64 - 1u64) % 10u64) as uint8 by {
+        apply(format::pow10_0());
+        have format::pow10(2u64 - 1u64 - 1u64) != 0u64 by {
+            solve() using { format::pow10(0u64) == 1u64; };
+        }
         apply(format::decimal_digit_of_length(v, 2u64, 1u64));
+    }
 }
 
 theorem use_format_decimal_digit_lower_bound(v: uint64) {

@@ -1364,6 +1364,43 @@ fn an_unsigned_value_rounded_down_to_a_multiple_stays_in_range() {
         }),
         Some(true)
     );
+    // `x % y` by a divisor that may be zero is opaque: it bounds nothing
+    // until the facts exclude zero.
+    let by_variable = T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Remainder,
+        left: boxed(&x),
+        right: Box::new(variable(1)),
+    };
+    let dividend_bound = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(by_variable.clone()),
+        right: boxed(&x),
+    };
+    assert_eq!(unknown.decide(&dividend_bound), None);
+    let by_zero = ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Remainder,
+            left: boxed(&x),
+            right: Box::new(T::uint64_constant(0)),
+        }),
+        right: boxed(&x),
+    };
+    assert_eq!(unknown.decide(&by_zero), None);
+    let positive = graph(&[(
+        ConditionTerm::Compare {
+            format: MachineIntegerType::UInt64,
+            relation: CompareRelation::LessEqual,
+            left: Box::new(T::uint64_constant(1)),
+            right: Box::new(variable(1)),
+        },
+        true,
+    )]);
+    assert_eq!(positive.decide(&dividend_bound), Some(true));
     let at_least_four = |rounded: &MachineTerm| ConditionTerm::Compare {
         format: MachineIntegerType::UInt64,
         relation: CompareRelation::LessEqual,
@@ -2344,5 +2381,51 @@ fn shared_narrow_sources_widen_without_export_and_follow_context_changes() {
             ))
         );
         assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}
+
+/// `(a - a % k) <= u` follows from `a <= u` for a nonzero `k`, through
+/// nested roundings, and not for a divisor that may be zero.
+#[test]
+fn a_rounded_down_value_stays_below_the_bound_of_its_dividend() {
+    use MachineTerm as T;
+    let round = |value: T, divisor: T| T::Binary {
+        format: MachineIntegerType::UInt64,
+        op: MachineBinaryOp::Subtract,
+        left: Box::new(value.clone()),
+        right: Box::new(T::Binary {
+            format: MachineIntegerType::UInt64,
+            op: MachineBinaryOp::Remainder,
+            left: Box::new(value),
+            right: Box::new(divisor),
+        }),
+    };
+    let at_most = |left: &T, right: &T| ConditionTerm::Compare {
+        format: MachineIntegerType::UInt64,
+        relation: CompareRelation::LessEqual,
+        left: Box::new(left.clone()),
+        right: Box::new(right.clone()),
+    };
+    let length = variable(10);
+    let divisor = variable(11);
+    let positive = (at_most(&T::uint64_constant(1), &divisor), true);
+    let nested = round(
+        round(length.clone(), divisor.clone()),
+        T::uint64_constant(4),
+    );
+    assert_eq!(
+        graph(std::slice::from_ref(&positive)).decide(&at_most(&nested, &length)),
+        Some(true)
+    );
+    assert_eq!(graph(&[]).decide(&at_most(&nested, &length)), None);
+    // Each further rounding follows its dividend's chain once.
+    let mut value = length.clone();
+    for _ in 0..6 {
+        value = round(value, divisor.clone());
+        assert_eq!(
+            graph(std::slice::from_ref(&positive)).decide(&at_most(&value, &length)),
+            Some(true)
+        );
+        assert_eq!(graph(&[]).decide(&at_most(&value, &length)), None);
     }
 }

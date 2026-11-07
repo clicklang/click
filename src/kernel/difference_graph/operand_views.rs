@@ -271,6 +271,16 @@ impl DifferenceGraph {
             && let Some((MachineIntegerType::UInt64, op, [a, b])) = lower.binary()
             && Key::for_format(view.format, a) == Key::for_format(view.format, upper)
         {
+            // `a - a % k` by a nonzero `k`: the remainder is at most `a`.
+            if op == MachineBinaryOp::Subtract
+                && !strict
+                && let Some((MachineIntegerType::UInt64, MachineBinaryOp::Remainder, [x, k])) =
+                    b.binary()
+                && Key::for_format(view.format, x) == Key::for_format(view.format, a)
+                && query.nonzero(domain, k)
+            {
+                return Some(true);
+            }
             if op == MachineBinaryOp::Subtract
                 && let (Some(a), Some(b)) = (query.resolve(domain, a), query.resolve(domain, b))
                 && self.difference_bound(a, b) <= 0
@@ -278,7 +288,8 @@ impl DifferenceGraph {
             {
                 return Some(true);
             }
-            if op == MachineBinaryOp::Remainder && !strict {
+            // `a % 0` is an opaque value: only a nonzero divisor bounds it.
+            if op == MachineBinaryOp::Remainder && !strict && query.nonzero(domain, b) {
                 return Some(true);
             }
         }
@@ -444,6 +455,12 @@ impl<'a> Query<'a> {
         }
         None
     }
+    /// Whether the facts bound `term` above zero. A remainder by a divisor
+    /// that may be zero is an opaque value and bounds nothing.
+    fn nonzero(&mut self, domain: Domain, term: V<'_>) -> bool {
+        self.interval(domain, term).0 >= 1
+    }
+
     fn resolve(&mut self, domain: Domain, term: V<'_>) -> Option<Affine> {
         if let V::Legacy(term) = term {
             self.uncacheable();

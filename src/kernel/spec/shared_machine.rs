@@ -321,8 +321,12 @@ mod tests {
                 MachineTerm::uint64_constant(0),
             )))
         };
-        let nested =
-            SpecExpression::Multiply(zero(), Box::new(SpecExpression::Divide(unsigned(), zero())));
+        // A zero factor does not erase an inner shift's count domain. (A
+        // quotient by zero would owe nothing: specification `/` is total.)
+        let nested = SpecExpression::Multiply(
+            zero(),
+            Box::new(SpecExpression::ShiftLeft(unsigned(), unsigned())),
+        );
         let paths = evaluate(&nested, false);
         assert_eq!(paths, evaluate(&nested, true));
         assert!(!paths[0].obligations.is_empty());

@@ -2977,7 +2977,7 @@ theorem machine_fold_argument_missing_definedness(divisor: int32) {
     }
 }
 "#,
-            "divisor != 0 and (k != -2147483648 or divisor != -1) }` holds, and that is not available here",
+            "k != -2147483648 or divisor != -1 }` holds, and that is not available here",
         ),
         (
             r#"
@@ -17439,7 +17439,7 @@ fn uint32_mul_observations_and_true_disjunction_expand_and_recheck() {
     let (invalid, _) =
         mdtest_sources("mdtests/false_disjunction_requires_defined_right_requirement.md");
     verify_c0_sources(&invalid, &[])
-        .expect_err("a false left disjunct must not hide division by zero");
+        .expect_err("a false left disjunct must not hide an undefined shift");
     let forged = guarded.replace("ensures 1 == 1", "ensures 1 == 2");
     verify_c0_sources(&forged, &[]).expect_err("a true guard must not prove a false conclusion");
 }

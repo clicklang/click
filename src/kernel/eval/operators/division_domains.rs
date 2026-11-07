@@ -145,21 +145,31 @@ mod tests {
                 _ => CValue::Int64(word),
             };
             for op in [MachineBinaryOp::Divide, MachineBinaryOp::Remainder] {
-                let path = apply_spec_machine_arithmetic(
-                    op,
-                    &wrap(left.clone()),
-                    &wrap(right.clone()),
-                    &ExecutionFacts::new(),
-                    &[],
-                )
-                .unwrap();
-                assert_eq!(path.obligations.len(), 1);
-                let conjunction = path.obligations[0].proposition().clone();
-                assert_eq!(
-                    conjunction,
-                    Proposition::signed_division_defined(format, &left, &right)
-                );
-                assert!(path.obligations.iter().all(|debt| !debt.is_assumable()));
+                for (mode, expected) in [
+                    (
+                        SpecDivision::CDefined,
+                        Proposition::signed_division_defined(format, &left, &right),
+                    ),
+                    // Specification division is total at zero; `MIN / -1`
+                    // still overflows the format.
+                    (
+                        SpecDivision::Total,
+                        Proposition::signed_division_exclusion(format, &left, &right),
+                    ),
+                ] {
+                    let path = apply_spec_machine_arithmetic(
+                        op,
+                        mode,
+                        &wrap(left.clone()),
+                        &wrap(right.clone()),
+                        &ExecutionFacts::new(),
+                        &[],
+                    )
+                    .unwrap();
+                    assert_eq!(path.obligations.len(), 1);
+                    assert_eq!(path.obligations[0].proposition(), &expected);
+                    assert!(path.obligations.iter().all(|debt| !debt.is_assumable()));
+                }
             }
         }
     }
