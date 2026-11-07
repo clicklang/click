@@ -138,7 +138,7 @@ Proof tooling:
 
 - [Smart tactics: fast checking and enforceable search boundaries](smart-tactics.md)
 - [One fact-aware frame query instead of scattered history walks](fact-aware-frame-walks.md)
-- [Unspellable facts: make every proof-state fact round-trip](unspellable-facts.md)
+- [KernelTerm / SurfaceTerm: finish the representation split](unspellable-facts.md)
 
 ## P2: after launch (16)
 
