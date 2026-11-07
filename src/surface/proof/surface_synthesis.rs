@@ -4075,9 +4075,7 @@ fn synthesize_surface_bitvector(
                 // A `static` array's name has its own element type (a struct
                 // array's is bytes), which the legacy `load` would read; a
                 // 32-bit read through it states its own type.
-                let typed_word = value_type.is_none()
-                    && *kind == crate::kernel::LoadKind::Int32
-                    && kernel_pointer.block.is_static_storage_block();
+                let typed_word = value_type.is_none() && *kind == crate::kernel::LoadKind::Int32;
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(CType::UInt8)
                 } else if typed_word {
@@ -5211,9 +5209,27 @@ fn synthesize_surface_pointer(
         return contract_expression_to_c_fragment(&field);
     }
     // A pointer read from a struct field spells as that field.
-    if let Some(read) = pointer.as_loaded_value()
-        && read.displacement == PointerOffsetTerm::Constant(0)
-    {
+    if let Some(read) = pointer.as_loaded_value() {
+        if let PointerOffsetTerm::Constant(bytes) = read.displacement
+            && bytes != 0
+        {
+            let base = Pointer {
+                block: pointer.block.clone(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            return Some(CExpression::PointerOffsetBytes {
+                pointer: Box::new(synthesize_surface_pointer(
+                    &base,
+                    parameter_binding,
+                    state,
+                    bound_variables,
+                )?),
+                bytes: u32::try_from(bytes).ok()?,
+            });
+        }
+        if read.displacement != PointerOffsetTerm::Constant(0) {
+            return None;
+        }
         let field = synthesize_struct_field_load(
             &read.defining_address,
             CType::Int32Pointer,

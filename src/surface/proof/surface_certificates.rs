@@ -15,6 +15,43 @@ pub(super) fn surface_logical_children(
         ClickProposition::Or(left, right) if !conjunction => {
             Some((left.as_ref().clone(), right.as_ref().clone()))
         }
+        ClickProposition::Comparison {
+            left,
+            operator: ComparisonOperator::Equal,
+            right,
+        } if conjunction => {
+            let left = written_sequence_elements(left)?;
+            let right = written_sequence_elements(right)?;
+            if left.len() != right.len() || left.len() < 2 {
+                return None;
+            }
+            // Match finite_sequence_equality's pairwise balanced tree. The
+            // written comparison names the whole tree; its children retain
+            // element spellings, including each operand's snapshot.
+            let mut level = left
+                .into_iter()
+                .zip(right)
+                .map(|(left, right)| ClickProposition::Comparison {
+                    left,
+                    operator: ComparisonOperator::Equal,
+                    right,
+                })
+                .collect::<Vec<_>>();
+            while level.len() > 2 {
+                let mut next = Vec::with_capacity(level.len().div_ceil(2));
+                let mut values = level.into_iter();
+                while let Some(left) = values.next() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    next.push(match values.next() {
+                        Some(right) => ClickProposition::And(Box::new(left), Box::new(right)),
+                        None => left,
+                    });
+                }
+                level = next;
+            }
+            let right = level.pop()?;
+            Some((level.pop()?, right))
+        }
         ClickProposition::At {
             selector,
             proposition,
@@ -33,6 +70,58 @@ pub(super) fn surface_logical_children(
         }
         _ => None,
     }
+}
+
+/// Flatten only explicit sequence syntax. Snapshot wrappers apply to each
+/// element; no value evaluation or fact-dependent simplification participates.
+fn written_sequence_elements(expression: &ContractExpression) -> Option<Vec<ContractExpression>> {
+    let mut pending = vec![(expression, Vec::<Option<SnapshotSelector>>::new())];
+    let mut elements = Vec::new();
+    while let Some((expression, selectors)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match expression {
+            ContractExpression::SequenceConcat(left, right) => {
+                pending.push((right, selectors.clone()));
+                pending.push((left, selectors));
+            }
+            ContractExpression::SequenceLiteral(values) => {
+                for value in values {
+                    crate::instrumentation::record_deterministic_work(1 + selectors.len());
+                    let mut value = value.clone();
+                    for selector in selectors.iter().rev() {
+                        value = match selector {
+                            Some(selector) => ContractExpression::At {
+                                selector: selector.clone(),
+                                expression: Box::new(value),
+                            },
+                            None => ContractExpression::Old(Box::new(value)),
+                        };
+                    }
+                    elements.push(value);
+                }
+            }
+            ContractExpression::Old(inner) => {
+                let mut selectors = selectors;
+                selectors.push(None);
+                pending.push((inner, selectors));
+            }
+            ContractExpression::At {
+                selector,
+                expression,
+            } => {
+                let mut selectors = selectors;
+                selectors.push(Some(selector.clone()));
+                pending.push((expression, selectors));
+            }
+            _ => return None,
+        }
+    }
+    Some(elements)
+}
+
+#[cfg(test)]
+mod sequence_scaling_tests {
+    include!("../../scaling_tests/surface/proof/surface_certificates.rs");
 }
 
 /// How one written universal's body continues under the binder.

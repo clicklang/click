@@ -1764,26 +1764,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
-        if let Some(surface) = search_input.surface_goal()
-            && let Some(proof) =
-                crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
-                    search_input,
-                    surface,
-                )?
-        {
-            scope.succeed();
-            return Ok(Some(proof));
-        }
-        // A goal that reads stored cells is first tried over the stored
-        // values, the goal the search saw before reads kept their version
-        // names; the full search over the reads follows only when that
-        // misses.
-        if let Some(proof) =
-            crate::kernel::search::ProofSearch::try_stored_value_goal(search_input)?
-        {
-            scope.succeed();
-            return Ok(Some(proof));
-        }
         let result = match crate::kernel::search::ProofSearch::try_solve_closure_after_direct(search_input, false)? {
             Some(proof) => Some(proof),
             None => match crate::kernel::search::ProofSearch::try_restated_constant_upper_bound(search_input)? {
@@ -2048,6 +2028,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         introduced_surfaces: &[ClickProposition],
         allow_function_unfold: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        // Plain solve and recursive logical closure share the same memory
+        // strategies. A structural child must not lose read-over-write or
+        // explicit frame transport merely because it was reached by `both`.
+        if let Some(surface) = search_input.surface_goal()
+            && let Some(proof) =
+                crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
+                    search_input,
+                    surface,
+                )?
+        {
+            return Ok(Some(proof));
+        }
+        // A goal that reads stored cells is first tried over the stored
+        // values, the goal the search saw before reads kept their version
+        // names; the full search over the reads follows only when that
+        // misses.
+        if let Some(proof) =
+            crate::kernel::search::ProofSearch::try_stored_value_goal(search_input)?
+        {
+            return Ok(Some(proof));
+        }
         // The uint32 lemmas state the wrapping steps of a `uint32` order, so
         // a goal of one of their shapes is closed by naming the lemma, from
         // the exact premise it requires.
@@ -2211,8 +2212,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(flat));
         }
         let structural_conjunction_tried = if let Some(surface_goal) = search_input.surface_goal()
-            && matches!(surface_goal, ClickProposition::And(_, _))
             && matches!(search_input.goal(), Some(Proposition::And(_, _)))
+            && surface_logical_children(surface_goal, true).is_some()
         {
             if let Some(structural) = crate::instrumentation::measure_operation(
                 "surface",
