@@ -594,8 +594,7 @@ and branch-local metadata independently. Creation-time version selection remains
 structural; stored literals and reads of other addresses do not replace the
 selected read. Checking may still establish their equality.
 
-The ordinary pointer producer increment is implemented on
-`codex/structural-pointer-volatile-producers`, based on merged PR #2485.
+PR #2489 merged the ordinary pointer producer increment after PR #2485.
 Object and function pointer reads retain structural descriptors and live origins
 without allocating intermediate scalar variables, including seeded resource
 cells. Callback type checks accept those descriptors. Checked callback evidence
@@ -612,8 +611,23 @@ the unchanged #2485 base: `augment_rotate_callback`, its consumed-shape and
 extra-write negative controls, `augment_rotate_model_callback_rejects_relink`,
 and `rb_augment_callbacks_rejects_mismatch`.
 Volatile pointer values deliberately lack ordinary snapshot-read equality;
-representing them by a read event with a `.result` spelling is a pending design
-question, not an implemented semantic change.
+the user approved read-event `.result` names, with internal handles permitted.
+PR #2492 (`codex/volatile-read-results`) records completed observations
+and raises their values as `R.read_event(i).result`. Lowering retrieves the
+recorded typed value directly. A single-read region also exposes `R.result`
+when there is no call result. This preserves current sequential volatile
+semantics and does not equate an observation with an ordinary snapshot load.
+The tests also exposed specification evaluation emitting volatile access events
+while lowering preconditions. Specification reads now use the logical read path
+and emit no C event; actual C accesses keep their existing event records.
+Validation after rebasing onto `8504c5f22`: `scripts/check.sh` passes 7,663
+unit/API tests, 58 example projects and 5,107 Markdown fixtures in 9m33s,
+including the optimized test rebuild, with both frontends required. The fresh
+fact-stability audit passes both regular corpora with zero differences. The
+focused volatile census passes all 11 fixtures and reports one remaining
+smart-step `PointerValueEqual` miss in `update_pointer_cell.contract`, rendered
+`replacement == cell[0]`. Its exact full-pointer equality spelling remains to
+investigate; this is not a failed verification. The nightly suite was not run.
 
 The ordinary scalar bridge is removed from graph read registration, comparison
 rewriting, exact-cell derived reads, origin evidence and historical synthesis.

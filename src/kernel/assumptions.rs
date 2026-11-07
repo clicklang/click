@@ -10557,6 +10557,23 @@ impl ProofObligation {
 }
 
 impl ExecutionPureFact {
+    /// The value observed by this producer's completed volatile read.
+    pub(crate) fn volatile_read_result(&self) -> Option<&CValue> {
+        if !self.is_certified() {
+            return None;
+        }
+        let Proposition::Predicate { name, arguments } = self.proposition() else {
+            return None;
+        };
+        if !name.starts_with("__click_volatile_read_") {
+            return None;
+        }
+        let [Term::CValue(_), Term::CValue(value)] = arguments.as_slice() else {
+            return None;
+        };
+        Some(value)
+    }
+
     /// Retain the exact typed producer's definition and checked cached value.
     /// Used when a checked expression's value outlives its temporary fact
     /// stream (for example, an owned recursive child index). Definitions are

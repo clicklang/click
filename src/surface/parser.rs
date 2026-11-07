@@ -12318,6 +12318,14 @@ impl Parser {
                 }
             }
         }
+        if self.chained_region_follows(&["read_event"]) {
+            self.expect(Token::Dot)?;
+            self.expect_ident("read_event")?;
+            self.expect(Token::LParen)?;
+            let event = self.expect_index("read event index")?;
+            self.expect(Token::RParen)?;
+            steps.push(SourcePathStep::ReadEvent(event));
+        }
         if matches!(steps.as_slice(), [SourcePathStep::Loop(_)]) {
             return Ok(CodeRegionRef::Loop(match steps[0] {
                 SourcePathStep::Loop(index) => index,
@@ -12350,6 +12358,9 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("region index")?;
                 self.expect(Token::RParen)?;
+                if self.chained_region_follows(&["read_event"]) {
+                    return self.parse_source_path(vec![SourcePathStep::Region(index)]);
+                }
                 Ok(CodeRegionRef::Region(index))
             }
             Some(Token::Ident(kind)) if kind == "statement" && self.peek() == Some(&Token::LParen) => {
