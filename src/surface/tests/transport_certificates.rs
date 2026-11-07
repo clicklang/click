@@ -940,3 +940,94 @@ fn two_read_transport_handles_resources_and_multiple_statements() {
         without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
 }
+
+#[test]
+fn conjunction_transport_expands_with_ordinary_both() {
+    let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let variants = [
+        source.clone(),
+        source.replace("*r == 8", "*r > 8"),
+        source.replace("*q == 7 and *r == 8", "*r == 8 and *q == 7"),
+        source.replace(
+            "at(statement(0).entry, *q == 7 and *r == 8)",
+            "at(statement(0).entry, *q == 7) and at(statement(0).entry, *r == 8)",
+        ),
+    ];
+    for source in variants {
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert!(expanded.contains("both {"), "{expanded}");
+        assert_eq!(
+            expanded.matches("preserve(separate(").count(),
+            2,
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
+
+#[test]
+fn conjunction_transport_requires_both_facts_and_preservations() {
+    let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
+    for read in ["q", "r"] {
+        let c = sources[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
+        let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
+        assert!(verify_c0_sources(&invalid, &[(sources[0].0.as_str(), c.as_str())]).is_err());
+    }
+    let sources = sources
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for remaining in ["*q == 7", "*r == 8"] {
+        let missing = source.replace(
+            "requires *q == 7 and *r == 8;",
+            &format!("requires {remaining};"),
+        );
+        assert!(verify_c0_sources(&missing, &sources).is_err());
+    }
+    let invalid = source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));");
+    assert!(verify_c0_sources(&invalid, &sources).is_err());
+}
+
+#[test]
+fn conjunction_transport_handles_resources_and_multiple_statements() {
+    let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
+    let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 and *r == 8 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have separate(statement(1).footprint, memory(*r)) by {
+        normalize() using { separate(memory(*p), memory(*r)); };
+    }
+    have *q == 7 and *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("views *r;", "owns b: model();")
+        .replace("memory(*q)", "a")
+        .replace("memory(*r)", "b")
+        .replace("*q", "a.value")
+        .replace("*r", "b.value");
+    for source in [source, resource] {
+        let sources = [(sources[0].0.as_str(), c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(
+            expanded.matches("preserve(separate(").count(),
+            4,
+            "{expanded}"
+        );
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}

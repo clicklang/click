@@ -903,6 +903,76 @@ pub(super) fn comparison_preservation_steps(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
+    let pairs = comparison_preservation_reads(source, target)?;
+    let separations = premises
+        .iter()
+        .filter(|p| *p != source)
+        .cloned()
+        .collect::<Vec<_>>();
+    let selected = if pairs.len() == 1 {
+        vec![separations]
+    } else {
+        let mut selected = vec![Vec::new(), Vec::new()];
+        // Build each written read's C shape once, including on a miss. A long
+        // pointer expression must not be cloned again for every other premise.
+        let read_shapes = pairs
+            .iter()
+            .map(|(_, read)| contract_expression_as_c_fragment(read))
+            .collect::<Vec<_>>();
+        for premise in separations {
+            let ClickProposition::Separate {
+                left: ResourceSubject::Footprint(_),
+                right,
+            } = &premise
+            else {
+                return None;
+            };
+            let mut used = false;
+            for (index, (_, read)) in pairs.iter().enumerate() {
+                if separation_subject_names_read(right, read, read_shapes[index].as_ref()) {
+                    selected[index].push(premise.clone());
+                    used = true;
+                }
+            }
+            if !used {
+                return None;
+            }
+        }
+        selected
+    };
+    let have = |proposition, steps| ProofStep::Have {
+        proposition,
+        proof: Box::new(ProofCertificate::from_steps(steps).expect("ordinary preservation proof")),
+    };
+    // The written source is a premise, not a new assumption. Each written
+    // separation is used by at least one preservation proof and checked there.
+    let mut steps = vec![have(source.clone(), vec![ProofStep::Assumption])];
+    let mut rewrites = Vec::new();
+    for ((historical, current), separations) in pairs.into_iter().zip(selected) {
+        let reflexive = ClickProposition::Comparison {
+            left: historical.clone(),
+            operator: ComparisonOperator::Equal,
+            right: historical.clone(),
+        };
+        let bridge = ClickProposition::Comparison {
+            left: current,
+            operator: ComparisonOperator::Equal,
+            right: historical,
+        };
+        let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
+        steps.push(have(bridge.clone(), equality_steps));
+        rewrites.push(ProofStep::Rewrite(bridge));
+    }
+    steps.extend(rewrites);
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
+/// Read bridges selected by the written comparison only.
+fn comparison_preservation_reads(
+    source: &ClickProposition,
+    target: &ClickProposition,
+) -> Option<Vec<(ContractExpression, ContractExpression)>> {
     // Distribute only a comparison's written snapshot. Literal integers are
     // snapshot-independent; every other operand keeps its explicit snapshot.
     // Retain the original source below, so ordinary assumption checks connect
@@ -986,68 +1056,86 @@ pub(super) fn comparison_preservation_steps(
             })
             .collect::<Option<Vec<_>>>()?
     };
-    let separations = premises
-        .iter()
-        .filter(|p| *p != source)
-        .cloned()
-        .collect::<Vec<_>>();
-    let selected = if pairs.len() == 1 {
-        vec![separations]
-    } else {
-        let mut selected = vec![Vec::new(), Vec::new()];
-        // Build each written read's C shape once, including on a miss. A long
-        // pointer expression must not be cloned again for every other premise.
-        let read_shapes = pairs
-            .iter()
-            .map(|(_, read)| contract_expression_as_c_fragment(read))
-            .collect::<Vec<_>>();
-        for premise in separations {
-            let ClickProposition::Separate {
-                left: ResourceSubject::Footprint(_),
-                right,
-            } = &premise
-            else {
+    Some(pairs)
+}
+
+/// Two scalar conjuncts compose with the ordinary logical `both` rule. Keep
+/// this bounded to two leaves; recursive conjunction planning is separate.
+pub(super) fn conjunction_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    let (source_left, source_right) = match source {
+        ClickProposition::And(left, right) => (left.as_ref().clone(), right.as_ref().clone()),
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => {
+            let ClickProposition::And(left, right) = proposition.as_ref() else {
                 return None;
             };
-            let mut used = false;
-            for (index, (_, read)) in pairs.iter().enumerate() {
-                if separation_subject_names_read(right, read, read_shapes[index].as_ref()) {
-                    selected[index].push(premise.clone());
-                    used = true;
-                }
-            }
-            if !used {
-                return None;
+            let at = |proposition: &ClickProposition| ClickProposition::At {
+                selector: selector.clone(),
+                proposition: Box::new(proposition.clone()),
+            };
+            (at(left), at(right))
+        }
+        _ => return None,
+    };
+    let ClickProposition::And(target_left, target_right) = target else {
+        return None;
+    };
+    let pairs = [
+        comparison_preservation_reads(&source_left, target_left)?,
+        comparison_preservation_reads(&source_right, target_right)?,
+    ];
+    // At most four written reads. Convert each once before examining premises.
+    let read_shapes = pairs
+        .iter()
+        .map(|reads| {
+            reads
+                .iter()
+                .map(|(_, read)| contract_expression_as_c_fragment(read))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let mut selected = [Vec::new(), Vec::new()];
+    for premise in premises {
+        if premise == source || premise == &source_left || premise == &source_right {
+            // Each arm's source is checked by its existing comparison proof.
+            continue;
+        }
+        let ClickProposition::Separate {
+            left: ResourceSubject::Footprint(_),
+            right,
+        } = premise
+        else {
+            return None;
+        };
+        let mut used = false;
+        for (arm, reads) in pairs.iter().enumerate() {
+            if reads.iter().enumerate().any(|(index, (_, read))| {
+                separation_subject_names_read(right, read, read_shapes[arm][index].as_ref())
+            }) {
+                selected[arm].push(premise.clone());
+                used = true;
             }
         }
-        selected
-    };
-    let have = |proposition, steps| ProofStep::Have {
-        proposition,
-        proof: Box::new(ProofCertificate::from_steps(steps).expect("ordinary preservation proof")),
-    };
-    // The written source is a premise, not a new assumption. Each written
-    // separation is used by at least one preservation proof and checked there.
-    let mut steps = vec![have(source.clone(), vec![ProofStep::Assumption])];
-    let mut rewrites = Vec::new();
-    for ((historical, current), separations) in pairs.into_iter().zip(selected) {
-        let reflexive = ClickProposition::Comparison {
-            left: historical.clone(),
-            operator: ComparisonOperator::Equal,
-            right: historical.clone(),
-        };
-        let bridge = ClickProposition::Comparison {
-            left: current,
-            operator: ComparisonOperator::Equal,
-            right: historical,
-        };
-        let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
-        steps.push(have(bridge.clone(), equality_steps));
-        rewrites.push(ProofStep::Rewrite(bridge));
+        if !used {
+            return None;
+        }
     }
-    steps.extend(rewrites);
-    steps.push(ProofStep::Assumption);
-    Some(steps)
+    let left = comparison_preservation_steps(&source_left, target_left, &selected[0])?;
+    let right = comparison_preservation_steps(&source_right, target_right, &selected[1])?;
+    Some(vec![ProofStep::Both {
+        left_proof: Box::new(
+            ProofCertificate::from_steps(left).expect("ordinary left conjunct proof"),
+        ),
+        right_proof: Box::new(
+            ProofCertificate::from_steps(right).expect("ordinary right conjunct proof"),
+        ),
+    }])
 }
 
 /// Select from the two written read subjects, never from ambient resources.
