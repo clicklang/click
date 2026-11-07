@@ -523,12 +523,23 @@ resource dependencies validate the original loan binding after proving coverage,
 rather than inventing a narrower binding that loses its coverage premises.
 Wrong-holder, ended-loan and missing-range controls remain rejected.
 
-The remaining original Markdown failures are the two loop-exit disjunctions and
-`uninitialized_destination_beside_a_viewed_source`. The latter has a passing
-explicit proof; its automatic range split now recognizes shared comparisons and
-proves the earlier-index arm, but still misses the boundary arm. The loop-exit
-cases await the user decision about ordinary obligation discharge before the
-existing exact `cases` split. Do not change that rule implicitly.
+Both original loop-exit disjunction fixtures passed focused rechecks with the
+ordinary `cases` obligation change. The remaining original Markdown failure is
+`uninitialized_destination_beside_a_viewed_source`. It has a passing explicit
+proof; its automatic range split recognizes shared comparisons and proves the
+earlier-index arm, but still misses the boundary arm.
+
+The user approved ordinary obligation discharge before the existing exact
+`cases` split. The isolated fix is PR #2484 (auto-merge enabled, not yet confirmed
+merged). Pure proofs, execution frontiers, and post-execution paths are covered;
+source haves retain their lexical match bindings and completed certificates.
+The isolated full gate passed 7,622 unit/API tests, 58 examples, and 5,088 Markdown
+fixtures in 12m03s, with the ten-minute budget warning and no raised limits.
+Targeted expansion replay with implicit solving disabled and deterministic
+32/128/512-fact scaling checks passed too. The full nightly suite was not run.
+The fix is also checkpointed in this producer worktree, but the integrated
+producer cutover still needs a fresh build and validation; the isolated gate
+does not establish that the producer migration is green.
 
 The remaining examples are `arena`, `owned-vector`, and `sequence-transform`.
 An explicit transport proves the untouched `arena_init` field across its loop;
