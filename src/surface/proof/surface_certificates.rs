@@ -1059,51 +1059,75 @@ fn comparison_preservation_reads(
     Some(pairs)
 }
 
-/// Two scalar conjuncts compose with the ordinary logical `both` rule. Keep
-/// this bounded to two leaves; recursive conjunction planning is separate.
+/// Preserve a written conjunction tree without rescanning its premises at each
+/// branch. Only scalar leaves are copied; the tree is traversed by reference.
 pub(super) fn conjunction_preservation_steps(
     source: &ClickProposition,
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
-    let (source_left, source_right) = match source {
-        ClickProposition::And(left, right) => (left.as_ref().clone(), right.as_ref().clone()),
-        ClickProposition::At {
+    use std::collections::{HashMap, HashSet};
+    if !matches!(target, ClickProposition::And(..)) {
+        return None;
+    }
+    enum Task<'a> {
+        Visit(
+            &'a ClickProposition,
+            &'a ClickProposition,
+            Option<&'a SnapshotSelector>,
+        ),
+        Join,
+    }
+    let mut pending = vec![Task::Visit(source, target, None)];
+    let mut leaves = Vec::new();
+    let mut shape = Vec::new();
+    while let Some(task) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        let Task::Visit(source, target, snapshot) = task else {
+            shape.push(None);
+            continue;
+        };
+        if let ClickProposition::At {
             selector,
             proposition,
-        } => {
-            let ClickProposition::And(left, right) = proposition.as_ref() else {
+        } = source
+        {
+            if snapshot.is_some() {
                 return None;
+            }
+            pending.push(Task::Visit(proposition, target, Some(selector)));
+        } else if let (ClickProposition::And(sl, sr), ClickProposition::And(tl, tr)) =
+            (source, target)
+        {
+            pending.push(Task::Join);
+            pending.push(Task::Visit(sr, tr, snapshot));
+            pending.push(Task::Visit(sl, tl, snapshot));
+        } else {
+            let source = match snapshot {
+                Some(selector) => ClickProposition::At {
+                    selector: selector.clone(),
+                    proposition: Box::new(source.clone()),
+                },
+                None => source.clone(),
             };
-            let at = |proposition: &ClickProposition| ClickProposition::At {
-                selector: selector.clone(),
-                proposition: Box::new(proposition.clone()),
-            };
-            (at(left), at(right))
+            let reads = comparison_preservation_reads(&source, target)?;
+            shape.push(Some(leaves.len()));
+            leaves.push((source, target, reads));
         }
-        _ => return None,
-    };
-    let ClickProposition::And(target_left, target_right) = target else {
-        return None;
-    };
-    let pairs = [
-        comparison_preservation_reads(&source_left, target_left)?,
-        comparison_preservation_reads(&source_right, target_right)?,
-    ];
-    // At most four written reads. Convert each once before examining premises.
-    let read_shapes = pairs
+    }
+    // Hash each explicit source once, rather than compare the whole conjunction
+    // with every premise. Each leaf is still proved by ordinary assumption.
+    let mut sources = leaves
         .iter()
-        .map(|reads| {
-            reads
-                .iter()
-                .map(|(_, read)| contract_expression_as_c_fragment(read))
-                .collect::<Vec<_>>()
-        })
-        .collect::<Vec<_>>();
-    let mut selected = [Vec::new(), Vec::new()];
-    for premise in premises {
-        if premise == source || premise == &source_left || premise == &source_right {
-            // Each arm's source is checked by its existing comparison proof.
+        .map(|(source, _, _)| source)
+        .collect::<HashSet<_>>();
+    sources.insert(source);
+    let mut by_subject = HashMap::<TransportReadSubject, Vec<usize>>::new();
+    let mut used = vec![false; premises.len()];
+    for (index, premise) in premises.iter().enumerate() {
+        crate::instrumentation::record_deterministic_work(1);
+        if sources.contains(premise) {
+            used[index] = true;
             continue;
         }
         let ClickProposition::Separate {
@@ -1113,29 +1137,96 @@ pub(super) fn conjunction_preservation_steps(
         else {
             return None;
         };
-        let mut used = false;
-        for (arm, reads) in pairs.iter().enumerate() {
-            if reads.iter().enumerate().any(|(index, (_, read))| {
-                separation_subject_names_read(right, read, read_shapes[arm][index].as_ref())
-            }) {
-                selected[arm].push(premise.clone());
-                used = true;
+        by_subject
+            .entry(transport_separation_subject(right)?)
+            .or_default()
+            .push(index);
+    }
+    let mut proofs = Vec::with_capacity(leaves.len());
+    for (source, target, reads) in &leaves {
+        let mut selected = Vec::new();
+        let mut previous = None;
+        for (_, read) in reads {
+            let key = transport_read_subject(read)?;
+            // Two operands can read the same subject; cite its evidence once.
+            if previous.as_ref() == Some(&key) {
+                continue;
             }
+            if let Some(indices) = by_subject.get(&key) {
+                for &index in indices {
+                    crate::instrumentation::record_deterministic_work(1);
+                    used[index] = true;
+                    selected.push(premises[index].clone());
+                }
+            }
+            previous = Some(key);
         }
-        if !used {
-            return None;
+        proofs.push(Some(comparison_preservation_steps(
+            source, target, &selected,
+        )?));
+    }
+    if used.iter().any(|used| !used) {
+        return None;
+    }
+    let mut built = Vec::new();
+    for node in shape {
+        if let Some(index) = node {
+            built.push(proofs[index].take()?);
+        } else {
+            let right = built.pop()?;
+            let left = built.pop()?;
+            // Children were constructed above from ordinary steps. Do not walk
+            // their entire certificate trees again at every enclosing `both`.
+            let certificate = |steps| {
+                Box::new(
+                    ProofCertificate::from_steps_checking_arithmetic_later(steps)
+                        .expect("ordinary conjunction proof"),
+                )
+            };
+            built.push(vec![ProofStep::Both {
+                left_proof: certificate(left),
+                right_proof: certificate(right),
+            }]);
         }
     }
-    let left = comparison_preservation_steps(&source_left, target_left, &selected[0])?;
-    let right = comparison_preservation_steps(&source_right, target_right, &selected[1])?;
-    Some(vec![ProofStep::Both {
-        left_proof: Box::new(
-            ProofCertificate::from_steps(left).expect("ordinary left conjunct proof"),
-        ),
-        right_proof: Box::new(
-            ProofCertificate::from_steps(right).expect("ordinary right conjunct proof"),
-        ),
-    }])
+    built.pop()
+}
+
+#[derive(Eq, PartialEq, Hash)]
+enum TransportReadSubject {
+    Cell(CExpression),
+    Resource(crate::kernel::Variable),
+}
+
+fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubject> {
+    if let ContractExpression::ResourceField(field) = read {
+        return field
+            .children
+            .is_empty()
+            .then(|| TransportReadSubject::Resource(field.identity.clone()));
+    }
+    match contract_expression_as_c_fragment(read)? {
+        CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
+            Some(TransportReadSubject::Cell(*pointer))
+        }
+        _ => None,
+    }
+}
+
+fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportReadSubject> {
+    match subject {
+        ResourceSubject::Instance { identity, .. } => {
+            Some(TransportReadSubject::Resource(identity.clone()))
+        }
+        ResourceSubject::Memory(segment)
+            if segment.state == ContractSegmentState::Current
+                && segment.start == CExpression::Value(crate::kernel::int32(0))
+                && segment.end == CExpression::Value(crate::kernel::int32(1)) =>
+        {
+            Some(TransportReadSubject::Cell(segment.base.clone()))
+        }
+        _ => None,
+    }
 }
 
 /// Select from the two written read subjects, never from ambient resources.

@@ -3452,15 +3452,19 @@ Selection uses the explicitly written single-cell dereference or named
 resource-field subject; it does not discover aliases or prove range containment.
 Every supplied separation must be used and checked. See
 `mdtests/two_read_transport_expansion.md`.
-A conjunction of two supported scalar comparisons also expands: for example,
-`transport(at(statement(0).entry, *q == 7 and *r == 8), *q == 7 and *r == 8)`.
-Expansion emits ordinary `both`, with a preservation/rewrite proof in each arm.
-The source can instead spell each conjunct's snapshot separately. Each arm
-checks its earlier fact with `assumption()` and uses the supplied footprint
-separations for its changing reads. This covers memory and root fields of named
-resources across one or several statements; every supplied separation must be
-used and checked. See `mdtests/conjunction_transport_expansion.md`.
-Nested conjunctions are not included in this route.
+Conjunction trees of supported scalar comparisons also expand: for example,
+`transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9))`.
+Expansion emits nested ordinary `both` proofs, preserving the written grouping,
+with a preservation/rewrite proof for each scalar leaf. Source and target must
+have matching conjunction structure. The source can wrap the whole tree, a
+subtree, or individual leaves in `at(...)`; nested snapshot wrappers are not
+handled by this route. Each leaf checks its earlier fact with `assumption()`
+and uses the supplied footprint separations for its changing reads. This covers
+memory and root fields of named resources across one or several statements.
+The explicit separations are indexed once by their written cell or resource,
+and every supplied separation must be used and checked. No aliases or range
+containment facts are discovered. See `mdtests/conjunction_transport_expansion.md`
+and `mdtests/nested_conjunction_transport_expansion.md`.
 
 Other transport routes still retain their existing form.
 

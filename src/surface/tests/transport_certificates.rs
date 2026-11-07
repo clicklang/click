@@ -1031,3 +1031,64 @@ fn conjunction_transport_handles_resources_and_multiple_statements() {
         without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
 }
+
+#[test]
+fn nested_conjunction_transport_expands_and_replays() {
+    let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let nested = "*q == 7 and (*r == 8 and *s == 9)";
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("views *r;", "owns b: model();")
+        .replace("views *s;", "owns c: model();")
+        .replace("memory(*q)", "a")
+        .replace("memory(*r)", "b")
+        .replace("memory(*s)", "c")
+        .replace("*q", "a.value")
+        .replace("*r", "b.value")
+        .replace("*s", "c.value");
+    for source in [
+        source.clone(),
+        source.replace(nested, "(*q == 7 and *r == 8) and *s == 9"),
+        source.replace(nested, "(*q == 7 and *r == 8) and (*s == 9 and *q > 0)"),
+        source.replace(
+            &format!("at(statement(0).entry, {nested})"),
+            "at(statement(0).entry, *q == 7) and at(statement(0).entry, *r == 8 and *s == 9)",
+        ),
+        resource,
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        assert!(expanded.matches("both {").count() >= 2, "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    }
+}
+
+#[test]
+fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
+    let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
+    for read in ["q", "r", "s"] {
+        let c = files[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
+        let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
+        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+    }
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("requires *q == 7 and (*r == 8 and *s == 9);", "requires *q == 7 and *r == 8;"),
+        source.replace("            separate(statement(0).footprint, memory(*s));",
+            "            separate(statement(0).footprint, memory(*s));\n            separate(statement(0).footprint, memory(*p));"),
+    ] {
+        assert!(verify_c0_sources(&invalid, &files).is_err());
+    }
+}
