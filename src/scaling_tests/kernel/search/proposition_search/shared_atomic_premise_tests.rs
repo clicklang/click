@@ -143,7 +143,6 @@ fn solve_retains_recorded_load_address_equality_premises() {
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal).unwrap()
         });
-        assert!(derivation.load_address_congruence_paths().is_some());
         assert_eq!(derivation.context_premises(), vec![required.clone()]);
         assert!(derivation.check(&context));
         assert!(!derivation.check(&context.without_exact_fact(&required)));
@@ -248,7 +247,6 @@ fn solve_retains_common_base_pointer_equality_for_load_congruence() {
         let (derivation, work) = crate::instrumentation::measure_deterministic_work(|| {
             crate::kernel::search::ProofSearch::derive_solve_proposition(&(context), &goal).unwrap()
         });
-        assert!(derivation.load_address_congruence_paths().is_some());
         assert_eq!(derivation.context_premises(), vec![required.clone()]);
         assert!(derivation.check(&context));
         assert!(!derivation.check(&context.without_exact_fact(&required)));

@@ -626,3 +626,46 @@ fn signed_defined_certificates_keep_shared_operands_and_source_bounds() {
         }
     }
 }
+
+#[test]
+fn arithmetic_read_atoms_keep_snapshot_identity_without_scanning_storage() {
+    use crate::kernel::{CMemory, CValue, LoadKind, Variable, intern_c_memory};
+    let mut samples = Vec::new();
+    for size in [8, 64, 512] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let address = Pointer::symbolic(Variable(894_000));
+        let mut memory = CMemory::new();
+        for index in 0..size {
+            memory = memory.store(
+                Pointer::symbolic(Variable(895_000 + index)),
+                CValue::Int32(MachineTerm::constant(7)),
+            );
+        }
+        let memory = intern_c_memory(memory);
+        let read =
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Bits64);
+        let duplicate = read.clone();
+        let ((), work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(charge_bitvector(&read));
+            assert!(bitvector_equal(&read, &duplicate));
+            assert_eq!(bounded_term_hash(&read), bounded_term_hash(&duplicate));
+            assert!(bounded_term_hash(&read).is_some());
+        });
+        let changed = intern_c_memory(memory.memory().clone().store(
+            address.clone(),
+            CValue::UInt64(MachineTerm::uint64_constant(9)),
+        ));
+        let different =
+            MachineTerm::MemoryLoad(changed, Box::new(address.clone()), LoadKind::Bits64);
+        assert!(!bitvector_equal(&read, &different));
+        assert!(!bitvector_equal(
+            &read,
+            &MachineTerm::MemoryLoad(memory, Box::new(address), LoadKind::Int32)
+        ));
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[0] == pair[1]),
+        "{samples:?}"
+    );
+}

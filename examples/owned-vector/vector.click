@@ -605,6 +605,7 @@ int32 vector_grow(struct vector* owner) {
         step();
         step();
         have owner->cap == at(region(9).entry, new_capacity);
+        have owner->data == at(region(13).entry, new_data);
         have forall (k: int32) { 0 <= k and k < old(owner->len) implies owner->data[k] == old(owner->data[k]) } by {
             intro();
             intro();
@@ -612,7 +613,13 @@ int32 vector_grow(struct vector* owner) {
                 0 <= k and k < old(owner->len);
                 owner->data == owner->data;
             };
+            have &owner->data[k] == at(region(13).entry, &new_data[k]) by {
+                normalize() using { owner->data == at(region(13).entry, new_data); };
+            }
+            have separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
             transport(at(region(13).entry, new_data[k]) == at(region(13).entry, old_data[k]), owner->data[k] == old(owner->data[k])) using {
+                &owner->data[k] == at(region(13).entry, &new_data[k]);
+                separate(memory(owner->data[k]), memory(old(owner->data)[0..old(owner->cap)]));
                 at(region(13).entry, new_data[k]) == at(region(13).entry, old_data[k]);
                 0 <= k and k < old(owner->len);
                 owner->data == owner->data;

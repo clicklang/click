@@ -69,7 +69,12 @@ fn deep_canonicalization_preserves_numeric_load_and_copy_runs() {
                         | CValue::Float64(bits) => bits,
                         _ => unreachable!("numeric cell"),
                     };
-                    assert_eq!(canonicalize_atomic_loads(bits), *bits);
+                    // Scalar run values retain the read even when checking
+                    // can resolve its source to a stored literal.
+                    assert!(matches!(
+                        bits,
+                        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_)
+                    ));
                     assert_eq!(canonical.cells.get(&run.slot_pointer(index)), Some(value));
                 }
                 assert!(canonical.cells.get(&run.slot_pointer(3)).is_none());

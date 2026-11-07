@@ -2026,7 +2026,7 @@ fn symbolic_logical_wide_reads_do_not_scan_ambient_cells_or_facts() {
         };
         assert!(matches!(
             value.numeric_value(),
-            CValue::UInt64(MachineTerm::Variable(_))
+            CValue::UInt64(MachineTerm::MemoryLoad(..))
         ));
         samples.push(work);
     }
@@ -2053,34 +2053,23 @@ fn structural_read_definitions_scale_across_cache_only_records() {
                 LoadKind::Int32,
             )
         };
-        let (original, definition) = load_variable_for_term(&raw(&memory)).unwrap();
+        let original = canonical_scalar_read(&raw(&memory));
         let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
             for i in 1..=count {
                 memory = memory.clone().materialize_symbolic_cell(
                     address.clone().offset_by_bytes((i * 4) as u32),
                     CType::Int32,
                 );
-                let (read, descriptor) = load_variable_for_term(&raw(&memory)).unwrap();
+                let read = canonical_scalar_read(&raw(&memory));
                 assert_eq!(read, original);
-                assert_eq!(descriptor, definition);
-                let mut facts = ExecutionFacts::new();
-                record_load_variable_defining_fact(read, descriptor, &mut facts);
-                assert_eq!(
-                    facts[0].proposition(),
-                    &Proposition::ConditionIs(
-                        ConditionTerm::equal(
-                            MachineTerm::Variable(read),
-                            MachineTerm::Variable(read)
-                        ),
-                        true,
-                    )
-                );
+                assert_eq!(load_variable_registry_len(), 0);
             }
         });
         samples.push((count, work));
         let written = memory.store(address.clone(), int32(7));
         let read = canonical_form_of_load(intern_c_memory_ref(&written), address, LoadKind::Int32);
-        assert!(matches!(read, MachineTerm::Variable(next) if next != original));
+        assert!(matches!(read, MachineTerm::MemoryLoad(..)));
+        assert_ne!(read, original);
         assert_ne!(read, MachineTerm::constant(7));
         assert_eq!(read_over_write_value(&read), Some(MachineTerm::constant(7)));
     }

@@ -165,9 +165,10 @@ pub(crate) enum Resource<'a> {
     /// about without its width would be separated from that store and keep
     /// its old value across it.
     ///
-    /// Callers that cannot name a width — a raw `MemoryLoad` term records
-    /// none — pass [`MAX_SCALAR_ACCESS_BYTES`]. Over-stating a width can
-    /// only shrink the separated set, never grow it.
+    /// Read descriptors use their recorded access width, or their kind's
+    /// conservative width when unobserved. Callers holding only an address
+    /// pass [`MAX_SCALAR_ACCESS_BYTES`]. Over-stating a width can only shrink
+    /// the separated set, never grow it.
     Cell { pointer: &'a Pointer, bytes: u32 },
     /// A whole memory block, as a pure function reads it through an array
     /// argument: the footprint is every cell reachable through the pointer.
@@ -1512,30 +1513,17 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
 
 fn collect_bitvector_reads(term: &MachineTerm, reads: &mut Vec<ResourceRead>) {
     match term {
-        // A raw load term reads at least its own kind; the read covers the
-        // widest scalar, which every kind fits.
-        MachineTerm::MemoryLoad(memory, pointer, _) => push_read(
-            reads,
-            OwnedResource::Cell {
-                pointer: pointer.as_ref().clone(),
-                bytes: widest_scalar_access_bytes(),
-            },
-            ProgramPoint::at(memory),
-        ),
-        // A load variable reads the cell it was minted for, at the point its
-        // name embeds.
-        MachineTerm::Variable(variable) => {
-            if let Some((memory, pointer)) =
-                crate::kernel::registered_load_origin_for_variable(variable)
-            {
+        MachineTerm::MemoryLoad(..) | MachineTerm::Variable(_) => {
+            if let Some(read) = crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(term),
+            ) {
                 push_read(
                     reads,
                     OwnedResource::Cell {
-                        pointer,
-                        bytes: crate::kernel::registered_load_bytes_for_variable(variable)
-                            .unwrap_or_else(widest_scalar_access_bytes),
+                        pointer: read.pointer,
+                        bytes: read.bytes,
                     },
-                    ProgramPoint::at(&memory),
+                    ProgramPoint::at(&read.origin.unwrap_or(read.memory)),
                 );
             }
         }

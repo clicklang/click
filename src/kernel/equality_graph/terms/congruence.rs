@@ -1192,16 +1192,6 @@ impl TermClasses {
                             crate::kernel::native_constant!(_, bits) => {
                                 T::narrow_constant(canonical, *bits)
                             }
-                            // A narrow read is named as its exact cell, as
-                            // a 32-bit read is, so R-mem finds it.
-                            T::MemoryLoad(memory, pointer, kind) => {
-                                T::Variable(crate::kernel::eval::load_variable_for_exact_cell(
-                                    memory,
-                                    pointer,
-                                    *kind,
-                                    crate::kernel::load_term_access_width(memory, pointer, *kind),
-                                ))
-                            }
                             _ => term.clone(),
                         };
                         Node::MachineNarrow(MachineAtom::new(canonical, atom))
@@ -1214,10 +1204,7 @@ impl TermClasses {
                             let read =
                                 self.intern_node(Node::UInt64Read(memory.read_identity(), numeric));
                             let snapshot = memory.read_identity();
-                            let origin = match term {
-                                T::Variable(variable) => super::load_origin(variable, &memory),
-                                _ => None,
-                            };
+                            let origin = super::load_origin(term, &memory);
                             self.pending_cell_reads.push(super::PendingCellRead {
                                 read,
                                 memory,
@@ -1234,19 +1221,7 @@ impl TermClasses {
                             Node::UInt64(MachineAtom::uint64(term.clone()))
                         }
                     } else {
-                        let value = match term {
-                            T::MemoryLoad(memory, pointer, kind) => {
-                                // Exact observation naming, without a version walk:
-                                // another snapshot needs its checked read bridge.
-                                T::Variable(crate::kernel::eval::load_variable_for_exact_cell(
-                                    memory,
-                                    pointer,
-                                    *kind,
-                                    crate::kernel::load_term_access_width(memory, pointer, *kind),
-                                ))
-                            }
-                            _ => term.clone(),
-                        };
+                        let value = term.clone();
                         Node::Int32(MachineAtom::int32(value))
                     }
                 }

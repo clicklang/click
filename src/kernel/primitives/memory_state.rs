@@ -5850,8 +5850,7 @@ impl CMemory {
         let value = if let CType::Parameter(parameter) = c_type {
             AlgebraicTermNode::parameter_load(source, pointer.clone(), parameter)
         } else {
-            let kind = LoadKind::of_type(c_type).expect("contract fields have scalar read kinds");
-            let load = crate::kernel::canonical_form_of_load(source, pointer.clone(), kind);
+            let load = crate::kernel::eval::canonical_cell_load(source, pointer.clone(), c_type);
             crate::kernel::cell_run_value(c_type, load)
         };
         self.materialize_named_cell(pointer, value)

@@ -1451,6 +1451,11 @@ impl Printer<'_> {
                 return self.placeholder(|printer| printer.unnamed_variable(*variable));
             }
             B::MemoryLoad(memory, pointer, kind) => {
+                if self.source_mode()
+                    && let Some(name) = self.labels.source_read_name_for(value)
+                {
+                    return Some(atom(name.to_string()));
+                }
                 return self.load(memory.as_ref(), pointer, *kind, depth);
             }
             cast_term!(UInt32From64, inner) if !self.source_mode() => {

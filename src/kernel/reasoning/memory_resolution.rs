@@ -1193,18 +1193,11 @@ pub(in crate::kernel) fn pointer_in_block_for_memory_resolution(
         &read.defining_address,
         &target.defining_address,
         assumptions,
-    ) && (crate::kernel::api::with_extended_dag_bridging(|| {
-        memory_snapshots_match_for_resolution(
-            read.defining_memory.memory(),
-            target.defining_memory.memory(),
-            &read.defining_address,
-            assumptions,
-        )
-    }) || crate::kernel::memory_provenance::pointer_reads_see_one_cell_source(
+    ) && crate::kernel::memory_provenance::pointer_reads_see_one_cell_source(
         &read,
         &target,
         assumptions,
-    )))
+    ))
     .then(|| Pointer {
         block: block.clone(),
         offset: read.displacement,

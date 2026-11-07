@@ -1986,10 +1986,10 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
     let loaded = symbolic_descriptor(92_000);
     let sibling = symbolic_descriptor(92_001);
     let name = |memory: &CMemory, pointer: &Pointer| {
-        crate::kernel::eval::canonical_form_of_load(
+        crate::kernel::eval::canonical_cell_load(
             crate::kernel::intern_c_memory_ref(memory),
             pointer.clone(),
-            crate::kernel::LoadKind::Int32,
+            CType::Int32Pointer,
         )
     };
     let pointer_value = |read: Pointer| CValue::typed_pointer(read, CType::Int32Pointer);
@@ -3645,17 +3645,17 @@ fn canonical_load_naming_retains_the_live_memory_origin() {
     };
     let live =
         crate::kernel::intern_c_memory(CMemory::new().with_block("unrelated-origin-storage", 16));
-    let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
+    let read = crate::kernel::canonical_form_of_load(
         live.clone(),
         pointer.clone(),
         crate::kernel::LoadKind::Int32,
-    ) else {
-        panic!("an unresolved scalar read has a load name");
-    };
-    assert_eq!(
-        crate::kernel::eval::registered_load_origin_for_variable(&variable),
-        Some((live, pointer))
     );
+    let observed = crate::kernel::eval::scalar_read_observation(
+        crate::kernel::MachineOperandView::Legacy(&read),
+    )
+    .unwrap();
+    assert_eq!((observed.origin, observed.pointer), (Some(live), pointer));
+    assert_eq!(crate::kernel::eval::load_variable_registry_len(), 0);
 }
 
 #[test]

@@ -1201,15 +1201,9 @@ impl<'a> Proof<'a> {
                         }
                     }
                     ArithmeticPlan::SignedInt32(plan) => {
-                        let surface_goal = surface_goal.cloned().or_else(|| {
-                        let context = self.execution_context()?;
-                        let execution = self.execution()?;
-                        crate::surface::proof::surface_synthesis::synthesize_surface_proposition(
-                            goal,
-                            context.parameter_binding(),
-                            &execution.core.state,
-                        )
-                    });
+                        let surface_goal = surface_goal
+                            .cloned()
+                            .or_else(|| self.structural_proposition_candidate(goal));
                         if let Some(surface_goal) = surface_goal.as_ref() {
                             let converted = self.signed_plan_to_surface_certificate(
                                 &plan,

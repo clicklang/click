@@ -360,6 +360,12 @@ fn signed_surface_terms_equal(
                 crate::kernel::MachineTerm::Variable(left),
                 crate::kernel::MachineTerm::Variable(right),
             ) if left == right => {}
+            (
+                crate::kernel::MachineTerm::MemoryLoad(left_memory, left_pointer, left_kind),
+                crate::kernel::MachineTerm::MemoryLoad(right_memory, right_pointer, right_kind),
+            ) if left_memory == right_memory
+                && left_pointer == right_pointer
+                && left_kind == right_kind => {}
             (cast_term!(UInt32From64, left), cast_term!(UInt32From64, right)) => {
                 pending.push((left, right))
             }
@@ -1603,35 +1609,35 @@ fn integer_surface_trivial(claim: &IntegerAffineClaim) -> Option<ClickPropositio
 
 fn kernel_upper_bound_split_candidate(
     proposition: &Proposition,
-) -> Option<(Variable, MachineTerm)> {
+) -> Option<(Variable, crate::kernel::SharedMachineIntegerTerm)> {
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
-    let (left, right, plus_one) = match condition {
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left,
-            right,
-        } => (left, right, true),
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessEqual,
-            left,
-            right,
-        } => (left, right, false),
+    let comparison =
+        crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    if comparison.format != MachineIntegerType::Int32 || comparison.negated {
+        return None;
+    }
+    let variable = *comparison.operands[0].operand_view().variable()?;
+    let right = comparison.operands[1].operand_view();
+    let pivot = match comparison.relation {
+        CompareRelation::LessEqual => right,
+        CompareRelation::LessThan => {
+            let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Add, [pivot, one]) =
+                right.binary()?
+            else {
+                return None;
+            };
+            if one.word32_constant() != Some(1) {
+                return None;
+            }
+            pivot
+        }
         _ => return None,
     };
-    let MachineTerm::Variable(variable) = left.as_ref() else {
-        return None;
-    };
-    if !plus_one {
-        return Some((*variable, right.as_ref().clone()));
-    }
-    let binary_term!(Int32, Add, pivot, one) = right.as_ref() else {
-        return None;
-    };
-    (**one == MachineTerm::constant(1)).then(|| (*variable, pivot.as_ref().clone()))
+    // Candidate inspection retains the shared pivot. Rejected candidates
+    // must not export arithmetic or depend on an earlier export's cache.
+    Some((variable, pivot.retain(MachineIntegerType::Int32)))
 }
 
 // These split conditions come from a native int32 bound. Shield their pivot
@@ -4517,6 +4523,71 @@ fn selected_premise_contains_goal(premise: &Proposition, goal: &Proposition) -> 
 #[cfg(test)]
 mod synthesized_literal_tests {
     use super::*;
+
+    #[test]
+    fn signed_certificate_spelling_matches_exact_read_atoms() {
+        use crate::kernel::{CMemory, LoadKind, Pointer, intern_c_memory};
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer::symbolic(Variable(71_230));
+        let before = intern_c_memory(CMemory::new());
+        let after = intern_c_memory(
+            before
+                .memory()
+                .clone()
+                .store(pointer.clone(), CValue::Int32(MachineTerm::constant(1))),
+        );
+        let read = |memory, pointer, kind| MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+        let value = read(before.clone(), pointer.clone(), LoadKind::Int32);
+        assert!(signed_surface_terms_equal(&value, &value));
+        for other in [
+            read(after, pointer.clone(), LoadKind::Int32),
+            read(before.clone(), pointer.offset_by_bytes(4), LoadKind::Int32),
+            read(before, pointer, LoadKind::UInt32),
+        ] {
+            assert!(!signed_surface_terms_equal(&value, &other));
+        }
+    }
+
+    #[test]
+    fn upper_bound_split_reads_integer_observations_of_the_native_increment() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let index = Variable(71_220);
+        let pivot = MachineTerm::Variable(Variable(71_221));
+        let observe = |value| {
+            crate::kernel::IntegerTerm::from_machine(MachineIntegerType::Int32, value).unwrap()
+        };
+        let bound = |amount| {
+            Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(
+                    observe(MachineTerm::Variable(index)),
+                    observe(MachineTerm::add_at(
+                        MachineIntegerType::Int32,
+                        pivot.clone(),
+                        MachineTerm::constant(amount),
+                    )),
+                ),
+                true,
+            )
+        };
+        let accepted = bound(1);
+        let rejected = bound(2);
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        assert_eq!(
+            kernel_upper_bound_split_candidate(&accepted),
+            Some((
+                index,
+                crate::kernel::SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    pivot.clone()
+                )
+            ))
+        );
+        assert!(kernel_upper_bound_split_candidate(&rejected).is_none());
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
+    }
 
     #[test]
     fn signed_literal_spelling_handles_int32_minimum_without_overflow() {

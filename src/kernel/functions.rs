@@ -5022,8 +5022,13 @@ fn source_load_snapshot_for_proposition(
                     snapshot = Some(identity);
                 }
             }
-            Work::Bitvector(MachineTerm::MemoryLoad(memory, _, _)) => {
-                let identity = CMemorySnapshotIdentity::of(memory.memory());
+            Work::Bitvector(term @ MachineTerm::MemoryLoad(..)) => {
+                let read = crate::kernel::eval::scalar_read_observation(
+                    crate::kernel::MachineOperandView::Legacy(term),
+                )
+                .expect("structural read observation");
+                let origin = read.origin.unwrap_or(read.memory);
+                let identity = CMemorySnapshotIdentity::of(origin.memory());
                 if snapshot.is_some_and(|known| known != identity) {
                     return Ok(None);
                 }
@@ -15329,11 +15334,18 @@ pub(super) fn expand_composite_resource_fact_with_children(
     } else {
         &[]
     } {
-        let child_result = evaluate_function_resource_spec(
-            &state,
-            contained,
-            &evaluation_assumptions,
-            &mut budget,
+        let child_result = crate::instrumentation::measure_operation(
+            name,
+            "composite expansion",
+            "composite child lowering",
+            || {
+                evaluate_function_resource_spec(
+                    &state,
+                    contained,
+                    &evaluation_assumptions,
+                    &mut budget,
+                )
+            },
         );
         let Ok(Ok(child)) = child_result else {
             return None;
@@ -15349,9 +15361,13 @@ pub(super) fn expand_composite_resource_fact_with_children(
             .map(|fact| CResourceFact::View(fact.resource().clone()))
             .collect()
     };
-    let children = ResourceContext::new()
-        .try_compose_with_facts(child_facts, assumptions)
-        .ok()?;
+    let children = crate::instrumentation::measure_operation(
+        name,
+        "composite expansion",
+        "composite child composition",
+        || ResourceContext::new().try_compose_with_facts(child_facts, assumptions),
+    )
+    .ok()?;
     let children = if composite.is_own() {
         children.facts().to_vec()
     } else {

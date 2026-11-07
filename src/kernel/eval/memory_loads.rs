@@ -378,17 +378,14 @@ fn evaluate_logical_memory_load_paths_unbridged(
         .collect()
 }
 
-/// Whether `stored`, the value a cell at `pointer` holds, is the load
-/// variable naming a read of that same cell: a cell seeded with its own read.
-/// That variable is the read's version name, so the read is it.
+/// Whether a cell was seeded with a read of its own address. The retained
+/// descriptor supplies its version; a legacy pointer carrier may still name it.
 fn holds_its_own_read(stored: &CValue, pointer: &Pointer) -> bool {
-    let Some(MachineTerm::Variable(variable)) = crate::kernel::spec::c_value_bitvector_term(stored)
-    else {
-        return false;
-    };
-    is_load_variable(&variable)
-        && registered_load_for_variable(&variable)
-            .is_some_and(|(_, registered)| registered == *pointer)
+    crate::kernel::spec::c_value_bitvector_term(stored)
+        .and_then(|term| viewed_as_memory_load(&term))
+        .is_some_and(
+            |term| matches!(term, MachineTerm::MemoryLoad(_, address, _) if *address == *pointer),
+        )
 }
 
 /// Whether a logical read of a `value_type` cell lowers to the read at the
@@ -1627,15 +1624,15 @@ pub(in crate::kernel) fn abstract_value_source(
     let mut source: Option<SharedCMemory> = None;
     for word in 0..ABSTRACT_VALUE_WIDTH / 4 {
         let address = pointer.offset_by_bytes(word * 4);
-        let Some(CValue::Int32(MachineTerm::Variable(variable))) = memory.known_value(&address)
+        let CValue::Int32(term) = memory.known_value(&address)? else {
+            return None;
+        };
+        let MachineTerm::MemoryLoad(loaded, loaded_address, LoadKind::Int32) =
+            viewed_as_memory_load(&term)?
         else {
             return None;
         };
-        if registered_load_kind_for_variable(&variable) != Some(LoadKind::Int32) {
-            return None;
-        }
-        let (loaded, loaded_address) = registered_load_for_variable(&variable)?;
-        if loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
+        if *loaded_address != address || source.as_ref().is_some_and(|source| *source != loaded) {
             return None;
         }
         source = Some(loaded);
@@ -2052,69 +2049,49 @@ fn canonicalized_symbolic_load_value_with_identity(
     } else {
         symbolic_load_value(memory, &address, value_type)?
     };
-    // Terms are canonical at creation: an int or byte load evaluates to its
-    // load variable, with the defining fact beside it, so every fact,
-    // offset, and range built from the value is canonical.
+    // Ordinary scalar reads retain their selected memory and address directly.
     match &value {
         // A signed byte read is its own load (byte R-mem relates it to the
         // byte's unsigned read).
         CValue::Int8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int8(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::Int8(read));
         }
         CValue::Int16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int16(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::Int16(read));
         }
         CValue::Int32(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int32(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::Int32(read));
         }
         CValue::UInt8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::UInt8(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::UInt8(read));
         }
         CValue::UInt16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::UInt16(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::UInt16(read));
         }
-        // The wider integer scalars name their loads for the same reason.
-        // Adoption is atomic across producers: contract lowering already
-        // materializes a `uint32`, `int64`, or `uint64` cell with
-        // `canonical_form_of_load`, so leaving execution's load of the same
-        // cell unnamed would split one value into two terms that only
-        // the snapshot could reconnect — and a snapshot the execution has
-        // since written cannot. A resource body fact about a `uint64` cell
-        // (the rbtree's packed parent word) then survives a write to a
-        // sibling cell of the same node, which the fold after that write
-        // needs.
         CValue::UInt32(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::UInt32(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::UInt32(read));
         }
         CValue::Int64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(complete_loaded_word(
-                CValue::Int64(MachineTerm::Variable(fresh)),
-                memory,
-                &address,
-            ));
+            let read = canonical_scalar_read(bits);
+            return Some(complete_loaded_word(CValue::Int64(read), memory, &address));
         }
         CValue::UInt64(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(complete_loaded_word(
-                CValue::UInt64(MachineTerm::Variable(fresh)),
-                memory,
-                &address,
-            ));
+            let read = canonical_scalar_read(bits);
+            return Some(complete_loaded_word(CValue::UInt64(read), memory, &address));
         }
         CValue::Int128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int128(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::Int128(read));
         }
         CValue::UInt128(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::UInt128(MachineTerm::Variable(fresh)));
+            let read = canonical_scalar_read(bits);
+            return Some(CValue::UInt128(read));
         }
         _ => {}
     }
@@ -2386,6 +2363,11 @@ thread_local! {
     static LOAD_VARIABLE_CACHE: std::cell::RefCell<
         std::collections::HashMap<MachineTerm, (Variable, MachineTerm)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    // The flag retains whether version selection used an observed width.
+    // Such hits need no second metadata lookup; widening clears this cache.
+    static SCALAR_READ_CACHE: std::cell::RefCell<
+        std::collections::HashMap<MachineTerm, (MachineTerm, bool)>,
+    > = Default::default();
     static TERM_CACHE: std::cell::RefCell<
         std::collections::HashMap<MachineTerm, MachineTerm>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
@@ -2409,6 +2391,7 @@ pub(crate) fn clear_load_canonicalization_caches() {
     STORED_POINTER_BLOCKS.with(|cache| cache.borrow_mut().clear());
     MEMORY_SHOWN_CELLS.with(|cache| cache.borrow_mut().clear());
     LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
+    SCALAR_READ_CACHE.with(|cache| cache.borrow_mut().clear());
     TERM_CACHE.with(|cache| cache.borrow_mut().clear());
 }
 
@@ -2895,31 +2878,25 @@ pub(crate) fn scalar_read_observation(
     read_observations::for_operand(operand)
 }
 
-// Look up existing observation metadata without widening it or renewing its
-// origin. Reinterpreting a read at another machine format is not a new access.
-pub(crate) fn registered_exact_read(
+/// Build a typed read at an already selected snapshot, without version
+/// selection or a reserved name. Derived checking reads retain their width.
+pub(crate) fn scalar_read_for_exact_cell(
     memory: &SharedCMemory,
     pointer: &Pointer,
     kind: LoadKind,
-) -> Option<Variable> {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    memory.hash(&mut hasher);
-    pointer.hash(&mut hasher);
-    let range = load_variable_range();
-    let mut slot = hasher.finish() % range;
-    LOAD_VARIABLE_REGISTRY.with(|registry| {
-        let registry = registry.borrow();
-        loop {
-            crate::instrumentation::record_deterministic_work(1);
-            let variable = Variable(LOAD_VARIABLE_BASE + slot);
-            let read = registry.get(&variable)?;
-            if read.memory == *memory && read.pointer == *pointer && read.kind == kind {
-                return Some(variable);
-            }
-            slot = (slot + 1) % range;
-        }
-    })
+    bytes: u32,
+) -> MachineTerm {
+    let id = read_observations::record(memory, pointer, kind, memory, bytes);
+    read_observations::select(id);
+    MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind)
+}
+
+pub(crate) fn is_selected_scalar_read(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+) -> bool {
+    read_observations::selected(memory, pointer, kind)
 }
 
 /// Existing observation metadata is evidence of an access width too. Merely
@@ -3300,6 +3277,7 @@ pub(in crate::kernel) fn record_load_access_width(memory: &CMemory, pointer: &Po
     });
     if widened {
         LOAD_VARIABLE_CACHE.with(|cache| cache.borrow_mut().clear());
+        SCALAR_READ_CACHE.with(|cache| cache.borrow_mut().clear());
     }
 }
 
@@ -3534,13 +3512,9 @@ pub(crate) fn proposition_mentions_scalar_read(proposition: &Proposition) -> boo
     })
 }
 
-/// The single canonical form for a term: the deep, assumption-free
-/// structural canonicalization ([`canonicalize_atomic_loads`]) followed by
-/// load-variable substitution, so every remaining load becomes its load
-/// variable. The load variable is the canonical form of its load — a
-/// consumer never expands a load variable back into its snapshot-bearing
-/// load; the registered defining fact is the only bridge. Equality of
-/// canonical forms holds by definition: it needs no proof evidence.
+/// The comparison form: assumption-free read-over-write canonicalization
+/// followed by structural selection of unresolved scalar reads. This is a
+/// checker operation; lowering retains the read even when its value is known.
 /// Deterministic and idempotent. The traversal is linear and uses explicit
 /// worklists. Shallow terms are memoized; deep terms bypass the recursive
 /// structural key and take the same complete path directly.
@@ -3557,9 +3531,9 @@ pub(crate) fn canonical_term(term: &MachineTerm) -> MachineTerm {
     if matches!(term, MachineTerm::MemoryLoad(..))
         && matches!(structural, MachineTerm::MemoryLoad(..))
     {
-        load_variable_for_term(term);
+        canonical_scalar_read(term);
     }
-    let result = substitute_load_variables(&structural, &mut None);
+    let result = select_scalar_reads(&structural);
     if cacheable {
         TERM_CACHE.with(|cache| {
             let mut cache = cache.borrow_mut();
@@ -3626,16 +3600,14 @@ pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffset
     results.pop().expect("canonicalization produces one offset")
 }
 
-/// Keep an index's read structure at the producer boundary. Existing read
-/// observations and defining facts are retained for unmigrated consumers;
-/// the index itself is no longer stored as their reserved variable.
+/// Keep an index's read structure at the producer boundary.
 pub(crate) fn canonicalized_offset_index_term(
     bits: MachineTerm,
-    facts: &mut ExecutionFacts,
+    _facts: &mut ExecutionFacts,
 ) -> MachineTerm {
     let bits = bits.into_index_word32();
     let observed = if term_mentions_a_memory_load(&bits) {
-        substitute_load_variables(&bits, &mut Some(facts))
+        select_scalar_reads(&bits)
     } else {
         bits
     };
@@ -3643,20 +3615,31 @@ pub(crate) fn canonicalized_offset_index_term(
     index.structural_value().clone()
 }
 
-/// The term for reading `pointer` from `memory` at a creation point with no
-/// fact stream (resource materialization, contract evaluation): the load
-/// variable. Load variables are content-addressed, so this agrees with
-/// every other creation point; the defining fact is available through the
-/// registry.
+/// Structural read identity shared by execution, resource materialization,
+/// and contract evaluation. No reserved variable or defining fact is needed.
 pub(crate) fn canonical_form_of_load(
     memory: SharedCMemory,
     pointer: Pointer,
     kind: LoadKind,
 ) -> MachineTerm {
-    let load = MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
-    match load_variable_for_term(&load) {
-        Some((variable, _)) => MachineTerm::Variable(variable),
-        None => load,
+    canonical_scalar_read(&MachineTerm::MemoryLoad(memory, Box::new(pointer), kind))
+}
+
+/// Resource cells keep the existing pointer producer until pointer-valued
+/// reads migrate. Ordinary scalar cells use structural descriptors.
+pub(crate) fn canonical_cell_load(
+    memory: SharedCMemory,
+    pointer: Pointer,
+    ty: CType,
+) -> MachineTerm {
+    let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
+    let read = MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
+    if ty.is_pointer() {
+        load_variable_for_term(&read)
+            .map(|(name, _)| MachineTerm::Variable(name))
+            .unwrap_or(read)
+    } else {
+        canonical_scalar_read(&read)
     }
 }
 
@@ -3854,16 +3837,9 @@ pub(crate) fn canonical_condition_fact(fact: &Proposition) -> Proposition {
     Proposition::ConditionIs(canonical_condition(condition), *value)
 }
 
-/// Replaces every load atom in a term with its load variable.
-/// When `facts` carries a stream, this is the production mode: each
-/// substituted load variable's defining fact joins the stream,
-/// deduplicated, so the variable always travels with its defining fact. Binder scopes
-/// (`RangeFold` bodies) are left untouched: a load under a fold can mention
-/// bound variables, which name no load identity.
-fn substitute_load_variables(
-    term: &MachineTerm,
-    facts: &mut Option<&mut ExecutionFacts>,
-) -> MachineTerm {
+/// Select unresolved read descriptors with an explicit worklist. Range-fold
+/// bodies remain scoped and are not assigned a global read identity.
+fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
     enum Task<'a> {
         VisitTerm(&'a MachineTerm),
         VisitCondition(&'a ConditionTerm),
@@ -3906,19 +3882,18 @@ fn substitute_load_variables(
                 LOAD_SUBSTITUTION_TERM_VISITS.with(|visits| visits.set(visits.get() + 1));
                 match term {
                     bits32_constant!(_)
-                    | MachineTerm::Variable(_)
                     | int64_constant!(_)
                     | uint64_constant!(_)
                     | native_constant!(_, _) => term_results.push(term.clone()),
-                    MachineTerm::MemoryLoad(_, _, _) => match load_variable_for_term(term) {
-                        Some((variable, load)) => {
-                            if let Some(facts) = facts.as_deref_mut() {
-                                record_load_variable_defining_fact(variable, load, facts);
-                            }
-                            term_results.push(MachineTerm::Variable(variable));
-                        }
-                        None => term_results.push(term.clone()),
-                    },
+                    MachineTerm::Variable(variable) => {
+                        term_results.push(
+                            registered_load_term_for_variable(variable)
+                                .unwrap_or_else(|| term.clone()),
+                        );
+                    }
+                    MachineTerm::MemoryLoad(_, _, _) => {
+                        term_results.push(canonical_scalar_read(term));
+                    }
                     MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {
                         term_results.push(term.clone())
                     }
@@ -4548,9 +4523,12 @@ fn mint_load_variable_identity(
                             memory: memory.clone(),
                             pointer: pointer.clone(),
                             kind,
-                            observation: read_observations::record(
-                                memory, pointer, kind, origin, bytes,
-                            ),
+                            observation: {
+                                let id =
+                                    read_observations::record(memory, pointer, kind, origin, bytes);
+                                read_observations::select(id);
+                                id
+                            },
                         },
                     );
                     return variable;
@@ -4627,6 +4605,93 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
                 MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Bits64)
             })
     })
+}
+
+/// Select the structural identity of an ordinary scalar read. Selection uses
+/// only memory structure; stored literals never replace the read expression.
+fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
+    let MachineTerm::MemoryLoad(origin, original_pointer, original_kind) = bits else {
+        return bits.clone();
+    };
+    if let Some((read, typed)) = SCALAR_READ_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
+        let MachineTerm::MemoryLoad(memory, pointer, kind) = &read else {
+            unreachable!("cached scalar read")
+        };
+        // A conservative, untyped selection is not an observed access width.
+        // Once a producer supplies the width, select its version with that
+        // width instead of treating the earlier guess as an eight-byte load.
+        if typed
+            || existing_read_access_width(memory, pointer, *kind).is_some()
+            || recorded_load_access_width(origin, original_pointer).is_none()
+        {
+            read_observations::produced(&read, bits);
+            return read;
+        }
+    }
+    let canonical = crate::kernel::memory_provenance::canonicalize_atomic_loads(bits);
+    let candidate = match &canonical {
+        MachineTerm::Variable(variable) => registered_load_term_for_variable(variable)
+            .filter(
+                |read| matches!(read, MachineTerm::MemoryLoad(_, address, kind) if address == original_pointer && kind == original_kind),
+            )
+            .unwrap_or_else(|| bits.clone()),
+        MachineTerm::MemoryLoad(memory, pointer, kind) if pointer == original_pointer && kind == original_kind => {
+            let held = memory
+                .memory()
+                .known_value(pointer)
+                .and_then(|value| crate::kernel::spec::c_value_bitvector_term(&value))
+                .and_then(|held| match held {
+                    MachineTerm::Variable(variable) => registered_load_term_for_variable(&variable),
+                    read @ MachineTerm::MemoryLoad(..) => Some(read),
+                    _ => None,
+                })
+                .filter(|held| {
+                    matches!(held, MachineTerm::MemoryLoad(_, at, held_kind)
+                    if at == pointer && held_kind == kind)
+                });
+            held.unwrap_or(canonical)
+        }
+        _ => bits.clone(),
+    };
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = candidate else {
+        unreachable!("selected scalar read")
+    };
+    let recorded_bytes = recorded_load_access_width(origin, original_pointer)
+        .or_else(|| recorded_load_access_width(&memory, &pointer))
+        .or_else(|| {
+            existing_read_access_width(origin, original_pointer, *original_kind)
+                .max(existing_read_access_width(&memory, &pointer, kind))
+        });
+    let bytes = recorded_bytes.unwrap_or_else(|| kind.unrecorded_access_byte_width());
+    let version = crate::kernel::resource_tracker::last_same_point(
+        crate::kernel::resource_tracker::Resource::Cell {
+            pointer: &pointer,
+            bytes,
+        },
+        &crate::kernel::resource_tracker::ProgramPoint::at(&memory),
+    )
+    .map(|point| point.snapshot().clone())
+    .unwrap_or(memory);
+    let id = if recorded_bytes.is_some() {
+        read_observations::record(&version, &pointer, kind, origin, bytes)
+    } else {
+        read_observations::record_untyped(&version, &pointer, kind, origin)
+    };
+    read_observations::select(id);
+    let read = MachineTerm::MemoryLoad(version, pointer, kind);
+    read_observations::produced(&read, bits);
+    SCALAR_READ_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        if cache.len() >= 100_000 {
+            cache.clear();
+        }
+        cache.insert(bits.clone(), (read.clone(), recorded_bytes.is_some()));
+    });
+    read
+}
+
+pub(crate) fn latest_scalar_read_observation(read: &MachineTerm) -> Option<MachineTerm> {
+    read_observations::latest(read)
 }
 
 /// Returns the load variable for a load term's provenance-stable form.
@@ -4958,7 +5023,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
 /// holds at function entry, where `memory` holds only the storage's block: a
 /// fresh symbolic pointer named by the cell's load for an object pointer (a
 /// stored pointer may point into any block), and otherwise the cell's typed
-/// load, its integer loads named as their load variables.
+/// load, with its memory snapshot and address retained directly.
 ///
 /// `record_width` says the access width here, as [`symbolic_load_value`]
 /// does; a caller that declared it for a whole array
@@ -5007,17 +5072,9 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
         kind,
     );
     crate::instrumentation::record_deterministic_work(1);
-    TERM_CACHE
+    SCALAR_READ_CACHE
         .with(|cache| cache.borrow().get(&load).cloned())
-        .or_else(|| {
-            LOAD_VARIABLE_CACHE.with(|cache| {
-                cache
-                    .borrow()
-                    .get(&load)
-                    .map(|(variable, _)| MachineTerm::Variable(*variable))
-            })
-        })
-        .map(wrap)
+        .map(|(read, _)| wrap(read))
 }
 
 pub(in crate::kernel) fn symbolic_storage_cell_value(
@@ -5050,27 +5107,23 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
             pointer,
         )));
     }
-    // The cell holds the load of this storage at its symbolic base, and a
-    // term is canonical at creation: name the load as its load variable,
-    // exactly as a contract clause over the same storage names it. A raw
-    // load here reached the facts a callee's `old(...)` produced, where
-    // nothing equates it with the caller's name for the same cell.
+    // Entry cells and contract reads select the same structural descriptor.
     let value = if record_width {
         symbolic_load_value(memory, pointer, c_type)
     } else {
         symbolic_load_value_unrecorded(memory, pointer, c_type)
     };
     value.map(|value| match value {
-        CValue::Int8(bits) => CValue::Int8(canonical_term(&bits)),
-        CValue::Int16(bits) => CValue::Int16(canonical_term(&bits)),
-        CValue::Int32(bits) => CValue::Int32(canonical_term(&bits)),
-        CValue::UInt8(bits) => CValue::UInt8(canonical_term(&bits)),
-        CValue::UInt16(bits) => CValue::UInt16(canonical_term(&bits)),
-        CValue::UInt32(bits) => CValue::UInt32(canonical_term(&bits)),
-        CValue::Int64(bits) => CValue::Int64(canonical_term(&bits)),
-        CValue::UInt64(bits) => CValue::UInt64(canonical_term(&bits)),
-        CValue::Int128(bits) => CValue::Int128(canonical_term(&bits)),
-        CValue::UInt128(bits) => CValue::UInt128(canonical_term(&bits)),
+        CValue::Int8(bits) => CValue::Int8(canonical_scalar_read(&bits)),
+        CValue::Int16(bits) => CValue::Int16(canonical_scalar_read(&bits)),
+        CValue::Int32(bits) => CValue::Int32(canonical_scalar_read(&bits)),
+        CValue::UInt8(bits) => CValue::UInt8(canonical_scalar_read(&bits)),
+        CValue::UInt16(bits) => CValue::UInt16(canonical_scalar_read(&bits)),
+        CValue::UInt32(bits) => CValue::UInt32(canonical_scalar_read(&bits)),
+        CValue::Int64(bits) => CValue::Int64(canonical_scalar_read(&bits)),
+        CValue::UInt64(bits) => CValue::UInt64(canonical_scalar_read(&bits)),
+        CValue::Int128(bits) => CValue::Int128(canonical_scalar_read(&bits)),
+        CValue::UInt128(bits) => CValue::UInt128(canonical_scalar_read(&bits)),
         other => other,
     })
 }
@@ -5091,11 +5144,14 @@ mod tests {
                 bytes
             );
             let canonical = canonical_term(&raw);
-            let MachineTerm::Variable(read_name) = canonical else {
-                panic!("read name")
-            };
+            assert!(matches!(canonical, MachineTerm::MemoryLoad(..)));
             assert_eq!(registered_load_bytes_for_variable(&name), Some(bytes));
-            assert_eq!(registered_load_bytes_for_variable(&read_name), Some(bytes));
+            assert_eq!(
+                scalar_read_observation(crate::kernel::MachineOperandView::Legacy(&canonical))
+                    .unwrap()
+                    .bytes,
+                bytes
+            );
             record_load_access_width(memory.memory(), &pointer, 8);
             assert_eq!(
                 load_term_access_width(&memory, &pointer, LoadKind::Int32),
@@ -6039,15 +6095,16 @@ mod tests {
         let [distinct_path] = distinct_paths.as_slice() else {
             panic!("the decided distinct load should have one path");
         };
-        let CExpressionOutcome::Value(CValue::Int32(MachineTerm::Variable(variable))) =
-            &distinct_path.outcome
+        let CExpressionOutcome::Value(CValue::Int32(MachineTerm::MemoryLoad(
+            named_memory,
+            named_pointer,
+            LoadKind::Int32,
+        ))) = &distinct_path.outcome
         else {
             panic!("the unresolved distinct load should have a symbolic identity");
         };
-        let (named_memory, named_pointer) = registered_load_for_variable(variable)
-            .expect("the symbolic identity should retain its exact load");
-        assert_eq!(named_memory, ancestor);
-        assert_eq!(named_pointer, read);
+        assert_eq!(*named_memory, ancestor);
+        assert_eq!(**named_pointer, read);
 
         // Reuse the same per-load cache deliberately. Its assumption-context
         // key must prevent the distinct answer, and therefore the ancestor
@@ -6122,13 +6179,13 @@ mod tests {
             let raw = MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), kind);
             let (variable, descriptor) = load_variable_for_term(&raw).unwrap();
             let mut facts = ExecutionFacts::new();
-            record_load_variable_defining_fact(variable, descriptor, &mut facts);
+            record_load_variable_defining_fact(variable, descriptor.clone(), &mut facts);
             let expected = Proposition::ConditionIs(
                 ConditionTerm::Compare {
                     format,
                     relation: CompareRelation::Equal,
                     left: Box::new(MachineTerm::Variable(variable)),
-                    right: Box::new(MachineTerm::Variable(variable)),
+                    right: Box::new(descriptor),
                 },
                 true,
             );

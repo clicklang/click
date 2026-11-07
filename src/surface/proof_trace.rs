@@ -1730,13 +1730,13 @@ mod tests {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
         };
-        let MachineTerm::Variable(variable) = crate::kernel::canonical_form_of_load(
+        let variable = crate::kernel::load_variable_for_term(&MachineTerm::MemoryLoad(
             memory.clone(),
-            pointer.clone(),
+            Box::new(pointer.clone()),
             crate::kernel::LoadKind::Int32,
-        ) else {
-            panic!("an unresolved external read has a load variable");
-        };
+        ))
+        .unwrap()
+        .0;
         let defining = Proposition::ConditionIs(
             ConditionTerm::Compare {
                 format: MachineIntegerType::Int32,

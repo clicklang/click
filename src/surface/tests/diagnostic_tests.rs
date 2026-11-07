@@ -2853,7 +2853,7 @@ fn memory_history_diagnostic_names_the_store_and_limits_its_claim() {
     );
     assert!(
         report.contains(&format!(
-            "read range checked: 16 bytes at address `{read_name}`"
+            "read range checked: 8 bytes at address `{read_name}`"
         )),
         "{report}"
     );
@@ -3761,7 +3761,7 @@ fn rejected_transport_prints_checked_reads_and_retains_prefix() {
             // The target names the read of the overwritten cell, not the
             // value the store left there.
             assert!(
-                message.contains("checked target (wanted): int32 =(load"),
+                message.contains("checked target (wanted): int32 =(read<Bits32>"),
                 "{message}"
             );
             assert!(

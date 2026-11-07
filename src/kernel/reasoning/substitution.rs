@@ -5399,11 +5399,42 @@ pub(crate) fn substitute_bitvector_variable(
                 })
                 .collect(),
         },
-        MachineTerm::MemoryLoad(memory, pointer, kind) => MachineTerm::MemoryLoad(
-            substitute_bitvector_variable_in_shared_memory(memory, from, to),
-            Box::new(substitute_bitvector_variable_in_pointer(pointer, from, to)),
-            *kind,
-        ),
+        MachineTerm::MemoryLoad(memory, pointer, kind) => {
+            let rewritten_memory = substitute_bitvector_variable_in_shared_memory(memory, from, to);
+            let rewritten_pointer = substitute_bitvector_variable_in_pointer(pointer, from, to);
+            if rewritten_memory == *memory && rewritten_pointer == **pointer {
+                return term.clone();
+            }
+            let read = crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(term),
+            )
+            .expect("structural read");
+            // A projected snapshot is indexed by the address it was selected
+            // for. Renaming that address must project the original source
+            // again, just as direct lowering at the new binder does.
+            if rewritten_pointer != **pointer
+                && let Some(source) =
+                    super::memory_resolution::canonical_load_projection_source(memory, pointer)
+            {
+                let source = substitute_bitvector_variable_in_shared_memory(&source, from, to);
+                crate::kernel::eval::record_load_access_width(
+                    source.memory(),
+                    &rewritten_pointer,
+                    read.bytes,
+                );
+                return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+                    source,
+                    Box::new(rewritten_pointer),
+                    *kind,
+                ));
+            }
+            crate::kernel::eval::scalar_read_for_exact_cell(
+                &rewritten_memory,
+                &rewritten_pointer,
+                *kind,
+                read.bytes,
+            )
+        }
         MachineTerm::PointerAddress(pointer, class) => MachineTerm::object_pointer_address(
             substitute_bitvector_variable_in_pointer(pointer, from, to),
             class.class(),
@@ -8560,6 +8591,57 @@ mod integer_range_fold_substitution_tests {
     }
 
     #[test]
+    fn quantified_structural_read_renaming_reprojects_its_source() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let binder = Variable(70_190);
+        let renamed = Variable(70_191);
+        let pointer = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
+        };
+        let source =
+            crate::kernel::intern_c_memory(CMemory::new().with_block("unrelated", 4).store(
+                Pointer {
+                    block: PointerBlock::Concrete("unrelated".into()),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                CValue::Int32(MachineTerm::constant(7)),
+            ));
+        crate::kernel::eval::record_load_access_width(source.memory(), &pointer, 4);
+        let original = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+            source.clone(),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Int32,
+        ));
+        let MachineTerm::MemoryLoad(projected, _, _) = &original else {
+            panic!("structural read");
+        };
+        assert_ne!(*projected, source, "exercise a projected snapshot");
+        let renamed_pointer = substitute_bitvector_variable_in_pointer(
+            &pointer,
+            binder,
+            &MachineTerm::Variable(renamed),
+        );
+        let actual =
+            substitute_bitvector_variable(&original, binder, &MachineTerm::Variable(renamed));
+        crate::kernel::eval::record_load_access_width(source.memory(), &renamed_pointer, 4);
+        let expected = crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+            source,
+            Box::new(renamed_pointer),
+            crate::kernel::LoadKind::Int32,
+        ));
+        assert_eq!(actual, expected);
+        assert_eq!(
+            crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(&actual),
+            )
+            .unwrap()
+            .bytes,
+            4
+        );
+    }
+
+    #[test]
     fn quantified_load_substitution_preserves_access_width() {
         let _session = crate::kernel::VerificationSession::enter();
         for bytes in [4, 8] {
@@ -8569,26 +8651,24 @@ mod integer_range_fold_substitution_tests {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::scale_int32(MachineTerm::Variable(binder), 4),
             };
-            let original = crate::kernel::eval::load_variable_for_exact_cell(
+            let original = crate::kernel::eval::scalar_read_for_exact_cell(
                 &memory,
                 &pointer,
                 crate::kernel::LoadKind::Int32,
                 bytes,
             );
             let substituted = substitute_bitvector_variable(
-                &MachineTerm::Variable(original),
+                &original,
                 binder,
                 &MachineTerm::Variable(Variable(70_170 + u64::from(bytes))),
             );
-            let MachineTerm::Variable(renamed) = substituted else {
-                panic!("substituted read must retain a registered name");
-            };
-            assert_eq!(
-                crate::kernel::registered_load_bytes_for_variable(&renamed),
-                Some(bytes)
-            );
-            let (_, renamed_pointer) =
-                crate::kernel::registered_load_for_variable(&renamed).unwrap();
+            assert!(matches!(substituted, MachineTerm::MemoryLoad(..)));
+            let observed = crate::kernel::eval::scalar_read_observation(
+                crate::kernel::MachineOperandView::Legacy(&substituted),
+            )
+            .unwrap();
+            assert_eq!(observed.bytes, bytes);
+            let renamed_pointer = observed.pointer;
             assert_eq!(
                 renamed_pointer,
                 Pointer {

@@ -3185,9 +3185,9 @@ impl EqualityGraph {
 /// legacy comparison form to inputs that do not already have an identity.
 fn exact_read_comparison_input(term: &MachineTerm) -> MachineTerm {
     if let MachineTerm::MemoryLoad(memory, pointer, kind) = term
-        && let Some(name) = crate::kernel::eval::registered_exact_read(memory, pointer, *kind)
+        && crate::kernel::eval::is_selected_scalar_read(memory, pointer, *kind)
     {
-        MachineTerm::Variable(name)
+        term.clone()
     } else {
         crate::kernel::canonical_term(term)
     }
@@ -4274,12 +4274,14 @@ mod tests {
         let target = read(&model.offset_by_bytes(24));
         let expected = MachineTerm::constant(7);
         for read in [&source, &target] {
-            let MachineTerm::Variable(variable) = read else {
-                panic!("named scalar read");
-            };
+            assert!(matches!(read, MachineTerm::MemoryLoad(..)));
             assert_eq!(
-                crate::kernel::registered_load_bytes_for_variable(variable),
-                Some(4)
+                crate::kernel::eval::scalar_read_observation(
+                    crate::kernel::MachineOperandView::Legacy(read)
+                )
+                .unwrap()
+                .bytes,
+                4
             );
         }
         let mut graph = EqualityGraph::default();

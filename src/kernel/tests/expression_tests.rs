@@ -1446,6 +1446,30 @@ fn finite_float_context_proves_reflexive_comparisons() {
 }
 
 #[test]
+fn finite_structural_float_read_proves_reflexive_comparison() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = crate::kernel::intern_c_memory(CMemory::new());
+    let pointer = Pointer::symbolic(Variable(22_103));
+    let value = crate::kernel::eval::scalar_read_for_exact_cell(
+        &memory,
+        &pointer,
+        crate::kernel::LoadKind::Float64,
+        8,
+    );
+    let finite = ConditionTerm::float64_classification(value.clone(), CFloatClassification::Finite);
+    let assumptions = PureFactContext::new().assume_condition(finite.clone(), true);
+    assert_eq!(assumptions.decide(&finite), Some(true), "held finiteness");
+    assert_eq!(
+        assumptions.decide(&ConditionTerm::float64_compare(
+            value.clone(),
+            value,
+            CComparisonOperator::Equal,
+        )),
+        Some(true)
+    );
+}
+
+#[test]
 fn spec_pointer_order_lowers_same_block_offsets() {
     let left = Pointer {
         block: "array".into(),

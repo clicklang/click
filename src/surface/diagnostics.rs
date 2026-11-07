@@ -1125,29 +1125,34 @@ contract claims are closed.
     .to_string()
 }
 
-/// The pure facts relevant to `goal`: those sharing a variable with it,
-/// directly or through a chain of facts that share variables (`i <= j` and
+/// The pure facts relevant to `goal`: those sharing a variable or structural read with it,
+/// directly or through a chain of facts that share these atoms (`i <= j` and
 /// `j < 1000` both bear on a goal about `i`), in their original order. A
 /// conjunction is listed as its conjuncts, each judged on its own, so a
 /// `requires` that joins a relevant bound with an unrelated one lists the
 /// bound alone and spells it as the condition it is.
 ///
-/// A fact over none of the goal's variables cannot have been the missing
+/// A fact over none of the goal's atoms cannot have been the missing
 /// premise of a closure that failed on it, so listing it only pushes the
-/// relevant ones past the item limit. The walk is over a variable-to-fact
-/// index, so it reads each fact's variables once.
+/// relevant ones past the item limit. The walk is over a atom-to-fact
+/// index, so it reads each fact's atoms once.
 pub(super) fn pure_facts_relevant_to(
     goal: &Proposition,
     facts: &[Proposition],
 ) -> Vec<Proposition> {
     use std::collections::{BTreeMap, BTreeSet};
-    let variables_of = |proposition: &Proposition| {
+    let atoms_of = |proposition: &Proposition| {
+        let mut collector =
+            crate::kernel::proof::term_rewrite::IntegerSubstitutionVariableCollector::uncharged();
+        collector.collect_read_terms();
+        collector.collect(proposition);
         let mut variables = BTreeSet::new();
-        crate::kernel::planning_api::collect_proposition_bitvector_variables(
-            proposition,
-            &mut variables,
-        );
+        collector.extend_into(&mut variables);
         variables
+            .into_iter()
+            .map(MachineTerm::Variable)
+            .chain(collector.take_read_terms())
+            .collect::<BTreeSet<_>>()
     };
     let mut conjuncts = Vec::new();
     let mut pending_facts = facts.iter().rev().collect::<Vec<_>>();
@@ -1161,25 +1166,25 @@ pub(super) fn pure_facts_relevant_to(
         }
     }
     let facts = conjuncts;
-    let fact_variables = facts
-        .iter()
-        .map(|fact| variables_of(fact))
-        .collect::<Vec<_>>();
-    let mut facts_by_variable = BTreeMap::<crate::kernel::Variable, Vec<usize>>::new();
-    for (index, variables) in fact_variables.iter().enumerate() {
+    let fact_atoms = facts.iter().map(|fact| atoms_of(fact)).collect::<Vec<_>>();
+    let mut facts_by_atom = BTreeMap::<MachineTerm, Vec<usize>>::new();
+    for (index, variables) in fact_atoms.iter().enumerate() {
         for variable in variables {
-            facts_by_variable.entry(*variable).or_default().push(index);
+            facts_by_atom
+                .entry(variable.clone())
+                .or_default()
+                .push(index);
         }
     }
-    let mut reached = variables_of(goal);
-    let mut pending = reached.iter().copied().collect::<Vec<_>>();
+    let mut reached = atoms_of(goal);
+    let mut pending = reached.iter().cloned().collect::<Vec<_>>();
     let mut included = BTreeSet::new();
     while let Some(variable) = pending.pop() {
-        for index in facts_by_variable.get(&variable).into_iter().flatten() {
+        for index in facts_by_atom.get(&variable).into_iter().flatten() {
             if included.insert(*index) {
-                for next in &fact_variables[*index] {
-                    if reached.insert(*next) {
-                        pending.push(*next);
+                for next in &fact_atoms[*index] {
+                    if reached.insert(next.clone()) {
+                        pending.push(next.clone());
                     }
                 }
             }
@@ -3235,15 +3240,10 @@ pub(super) fn unresolved_load(value: &CValue) -> Option<(SharedCMemory, Pointer)
         | CValue::UInt64(term) => term,
         _ => return None,
     };
-    match widened_word(term) {
-        MachineTerm::MemoryLoad(memory, pointer, _) => {
-            Some((memory.clone(), pointer.as_ref().clone()))
-        }
-        MachineTerm::Variable(variable) => {
-            crate::kernel::registered_load_origin_for_variable(variable)
-        }
-        _ => None,
-    }
+    let read = crate::kernel::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(
+        widened_word(term),
+    ))?;
+    Some((read.origin.unwrap_or(read.memory), read.pointer))
 }
 
 /// The model field a comparison side stands for, if that side is exactly one

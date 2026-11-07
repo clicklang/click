@@ -58,6 +58,8 @@ pub(crate) struct SnapshotLabels {
     pointer_sources: HashMap<Pointer, String>,
     source_memories: Vec<(CMemory, String, std::sync::Arc<NamingTables>)>,
     source_names: HashMap<Variable, String>,
+    /// Exact structural reads held by source locals or recorded snapshots.
+    source_read_names: HashMap<MachineTerm, String>,
     source_types: HashMap<Variable, crate::kernel::CType>,
     anonymous_names: HashMap<Variable, String>,
     /// Memories a source spelling names only by a report-local `<state A>`,
@@ -187,6 +189,15 @@ impl SnapshotLabels {
                 | crate::kernel::CValue::Float64(term) => term,
                 _ => continue,
             };
+            if matches!(widened_word(term), MachineTerm::MemoryLoad(..)) {
+                labels
+                    .source_read_names
+                    .entry(widened_word(term).clone())
+                    .or_insert_with(|| {
+                        crate::surface::diagnostics::rust_variable_spelling(parameter.name())
+                            .unwrap_or_else(|| parameter.name().to_string())
+                    });
+            }
             if let Some(variable) = value_binder(term) {
                 let variable = &variable;
                 labels.source_name(
@@ -317,6 +328,7 @@ impl SnapshotLabels {
         let names = Self::naming(binding);
         self.pointer_sources.extend(names.pointer_sources);
         self.source_names.extend(names.source_names);
+        self.source_read_names.extend(names.source_read_names);
         self.source_types.extend(names.source_types);
         if self.naming.is_none() {
             self.naming = names.naming;
@@ -334,6 +346,13 @@ impl SnapshotLabels {
                 *name = format!("old({name})");
             }
         }
+        for (read, name) in &mut self.source_read_names {
+            if names.iter().any(|local| local.name() == name)
+                && !current.source_read_names.contains_key(read)
+            {
+                *name = format!("old({name})");
+            }
+        }
         for (pointer, name) in &mut self.pointer_sources {
             if names.iter().any(|local| local.name() == name)
                 && !current.pointer_sources.contains_key(pointer)
@@ -343,6 +362,9 @@ impl SnapshotLabels {
         }
         for (pointer, name) in current.pointer_sources {
             self.pointer_sources.entry(pointer).or_insert(name);
+        }
+        for (read, name) in current.source_read_names {
+            self.source_read_names.entry(read).or_insert(name);
         }
         self.source_types.extend(current.source_types);
         for (variable, name) in current.source_names {
@@ -594,10 +616,22 @@ impl SnapshotLabels {
         }
     }
 
+    pub(crate) fn fallback_read_name(&mut self, read: &MachineTerm, name: String) {
+        self.source_read_names.entry(read.clone()).or_insert(name);
+    }
+
+    fn source_read_name_for(&self, read: &MachineTerm) -> Option<&str> {
+        self.source_read_names
+            .get(read)
+            .map(String::as_str)
+            .filter(|name| name.len() <= 256)
+    }
+
     /// Whether some variable is spelled `name` in source, so a printed
     /// binder must not take it.
     fn names_a_variable(&self, name: &str) -> bool {
         self.source_names.values().any(|source| source == name)
+            || self.source_read_names.values().any(|source| source == name)
             || self.integer_names.values().any(|source| source == name)
     }
 

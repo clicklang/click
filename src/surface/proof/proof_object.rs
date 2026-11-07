@@ -1597,6 +1597,9 @@ fn register_snapshot_names(
                     crate::kernel::arithmetic_c_value!(MachineTerm::Variable(variable)) => {
                         labels.fallback_source_name(*variable, spelling, value.c_type());
                     }
+                    crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(..)) => {
+                        labels.fallback_read_name(read, spelling);
+                    }
                     CValue::Pointer(pointer) => {
                         labels.fallback_pointer_name(pointer.pointer(), spelling.clone());
                         labels.fallback_value_name(spelling, value.clone());
@@ -1634,6 +1637,11 @@ fn register_snapshot_names(
                         format!("at({point}, {name})"),
                         value.c_type(),
                     );
+                }
+                crate::kernel::arithmetic_c_value!(read @ MachineTerm::MemoryLoad(memory, _, _)) => {
+                    if !labels.names_memory(memory.memory()) {
+                        labels.fallback_read_name(read, format!("at({point}, {name})"));
+                    }
                 }
                 // An address no structural spelling names, a heap
                 // allocation, is the pointer local that held it.

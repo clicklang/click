@@ -153,12 +153,8 @@ pub(super) fn evidence_operand(term: &KernelTerm) -> MachineTerm {
     let view = MachineOperandView::Shared(term);
     if let Some(variable) = view.variable() {
         MachineTerm::Variable(*variable)
-    } else if let Some((memory, address, kind)) = view.read() {
-        // The explicit evidence API still consumes native operands. Preserve
-        // its captured-read binder policy while that interface migrates.
-        crate::kernel::eval::registered_exact_read(memory, address, kind)
-            .map(MachineTerm::Variable)
-            .unwrap_or_else(|| term.machine_read_leaf().expect("read leaf").clone())
+    } else if view.read().is_some() {
+        term.machine_read_leaf().expect("read leaf").clone()
     } else if let Some(literal) = view.literal() {
         literal
     } else if let Some(conversion) = term.machine_conversion_leaf() {
@@ -180,109 +176,141 @@ mod tests {
             block: PointerBlock::Symbolic(Variable(1005600)),
             offset: PointerOffsetTerm::Constant(0),
         };
-        let load = MachineTerm::Variable(crate::kernel::eval::load_variable_for_cell(
+        let named = MachineTerm::Variable(crate::kernel::eval::load_variable_for_cell(
             &memory,
             &pointer,
             LoadKind::Int32,
         ));
-        let one = MachineTerm::constant(1);
-        let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
-            ConditionTerm::equal(load.clone(), one.clone()),
-            true,
-        )]);
-        let binary = |op, left| MachineTerm::Binary {
-            format: MachineIntegerType::Int32,
-            op,
-            left: Box::new(left),
-            right: Box::new(MachineTerm::constant(7)),
-        };
-        let cast = |value| MachineTerm::Cast {
-            spelling: MachineCastSpelling::Generic,
-            from: MachineIntegerType::UInt32,
-            to: MachineIntegerType::Int32,
-            value: Box::new(value),
-        };
-        let native = |value| {
-            Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::Equal,
-                    left: Box::new(value),
-                    right: Box::new(MachineTerm::constant(0)),
-                },
+        let structural = MachineTerm::MemoryLoad(memory, Box::new(pointer), LoadKind::Int32);
+        for load in [named, structural] {
+            let one = MachineTerm::constant(1);
+            let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+                ConditionTerm::equal(load.clone(), one.clone()),
                 true,
-            )
-        };
-        let shared = |value| {
-            Proposition::ConditionIs(
-                ConditionTerm::IntegerEqual(
-                    IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
-                        MachineIntegerType::Int32,
-                        value,
-                    ))
-                    .into(),
-                    IntegerTerm::constant_i64(0).into(),
+            )]);
+            let binary = |op, left| MachineTerm::Binary {
+                format: MachineIntegerType::Int32,
+                op,
+                left: Box::new(left),
+                right: Box::new(MachineTerm::constant(7)),
+            };
+            let cast = |value| MachineTerm::Cast {
+                spelling: MachineCastSpelling::Generic,
+                from: MachineIntegerType::UInt32,
+                to: MachineIntegerType::Int32,
+                value: Box::new(value),
+            };
+            let native = |value| {
+                Proposition::ConditionIs(
+                    ConditionTerm::Compare {
+                        format: MachineIntegerType::Int32,
+                        relation: CompareRelation::Equal,
+                        left: Box::new(value),
+                        right: Box::new(MachineTerm::constant(0)),
+                    },
+                    true,
+                )
+            };
+            let shared = |value| {
+                Proposition::ConditionIs(
+                    ConditionTerm::IntegerEqual(
+                        IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+                            MachineIntegerType::Int32,
+                            value,
+                        ))
+                        .into(),
+                        IntegerTerm::constant_i64(0).into(),
+                    ),
+                    true,
+                )
+            };
+            for (a, b, expected, bound_expected) in [
+                (load.clone(), one.clone(), true, true),
+                (load.clone(), MachineTerm::constant(2), false, false),
+                (
+                    binary(MachineBinaryOp::Add, load.clone()),
+                    binary(MachineBinaryOp::Add, one.clone()),
+                    true,
+                    false,
                 ),
-                true,
-            )
-        };
-        for (a, b, expected, bound_expected) in [
-            (load.clone(), one.clone(), true, true),
-            (load.clone(), MachineTerm::constant(2), false, false),
-            (
-                binary(MachineBinaryOp::Add, load.clone()),
-                binary(MachineBinaryOp::Add, one.clone()),
-                true,
-                false,
-            ),
-            (
-                binary(MachineBinaryOp::Add, load.clone()),
-                binary(MachineBinaryOp::Subtract, one.clone()),
-                false,
-                false,
-            ),
-            (cast(load.clone()), cast(one), true, false),
-            (
-                binary(MachineBinaryOp::Add, load.clone()),
-                binary(MachineBinaryOp::Add, load),
-                true,
-                true,
-            ),
-        ] {
-            for bound in [false, true] {
-                let bind = |body| {
-                    if bound {
-                        Proposition::ForAll {
-                            name: Default::default(),
-                            var: Variable(1005601),
-                            sort: Sort::CInt32,
-                            body: Box::new(body),
+                (
+                    binary(MachineBinaryOp::Add, load.clone()),
+                    binary(MachineBinaryOp::Subtract, one.clone()),
+                    false,
+                    false,
+                ),
+                (cast(load.clone()), cast(one), true, false),
+                (
+                    binary(MachineBinaryOp::Add, load.clone()),
+                    binary(MachineBinaryOp::Add, load),
+                    true,
+                    true,
+                ),
+            ] {
+                for bound in [false, true] {
+                    let bind = |body| {
+                        if bound {
+                            Proposition::ForAll {
+                                name: Default::default(),
+                                var: Variable(1005601),
+                                sort: Sort::CInt32,
+                                body: Box::new(body),
+                            }
+                        } else {
+                            body
                         }
-                    } else {
-                        body
-                    }
-                };
-                let expected = if bound { bound_expected } else { expected };
-                assert_eq!(
-                    facts
-                        .with_checked_rewritten_loads(
-                            &bind(native(a.clone())),
-                            &bind(native(b.clone()))
-                        )
-                        .is_some(),
-                    expected
-                );
-                assert_eq!(
-                    facts
-                        .with_checked_rewritten_loads(
-                            &bind(shared(a.clone())),
-                            &bind(shared(b.clone()))
-                        )
-                        .is_some(),
-                    expected
-                );
+                    };
+                    let expected = if bound { bound_expected } else { expected };
+                    assert_eq!(
+                        facts
+                            .with_checked_rewritten_loads(
+                                &bind(native(a.clone())),
+                                &bind(native(b.clone()))
+                            )
+                            .is_some(),
+                        expected
+                    );
+                    assert_eq!(
+                        facts
+                            .with_checked_rewritten_loads(
+                                &bind(shared(a.clone())),
+                                &bind(shared(b.clone()))
+                            )
+                            .is_some(),
+                        expected
+                    );
+                }
             }
         }
+    }
+
+    #[test]
+    fn retained_load_evidence_cannot_use_an_outer_fact_for_a_bound_address() {
+        let _session = VerificationSession::enter();
+        let binder = Variable(1005699);
+        let read = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            Box::new(Pointer::symbolic(binder)),
+            LoadKind::Int32,
+        );
+        let equal = |value| {
+            Proposition::ConditionIs(ConditionTerm::equal(value, MachineTerm::constant(1)), true)
+        };
+        let facts = ProofFacts::from_ordered(&[equal(read.clone())]);
+        let bind = |body| Proposition::ForAll {
+            name: Default::default(),
+            var: binder,
+            sort: Sort::CInt32,
+            body: Box::new(body),
+        };
+        assert!(
+            facts
+                .with_checked_rewritten_loads(
+                    &bind(equal(read)),
+                    &bind(equal(MachineTerm::constant(1))),
+                )
+                .is_none()
+        );
     }
 
     mod scaling_tests {

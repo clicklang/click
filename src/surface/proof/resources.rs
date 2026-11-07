@@ -237,7 +237,7 @@ struct DynamicViewDependencyIndex {
     /// it exclusively, so a body fact over it needs no loan: it is supported
     /// exactly as a read of ambient owned memory is.
     owned: ResourceContext,
-    /// The owned instance an `open` keeps folded while its body is exposed.
+    /// The owned instance retained while its body is opened or refolded.
     /// A view it publishes over its own bytes borrows nothing: its authority
     /// is this live owner. Only this one owner's projections count; any
     /// other observation still needs a loan.
@@ -346,13 +346,17 @@ fn dynamic_body_fact_dependency(
                 // A view the instance being opened publishes over its own
                 // bytes (an owned `cstr_at` held folded across `open`)
                 // borrows nothing: its authority is that live owner, so the
-                // read is a read of owned memory, as after `unfold`.
-                if temporary_views.opened_owner.is_some_and(|owner| {
-                    state
-                        .resources()
-                        .owned_projection_support(occurrence)
-                        .is_some_and(|(support, _)| support == owner)
-                }) {
+                // read is a read of owned memory, as after `unfold`. A view
+                // with an exact support edge to plain owned memory likewise
+                // needs no loan. Unrelated owners cannot supply this edge.
+                if state
+                    .resources()
+                    .owned_projection_support(occurrence)
+                    .is_some_and(|(support, fact)| {
+                        temporary_views.opened_owner == Some(support)
+                            || fact.memory_own_range().is_some()
+                    })
+                {
                     owned_projection = true;
                     continue;
                 }
@@ -395,11 +399,11 @@ fn dynamic_body_fact_dependency(
         let holder = state
             .loan_participant()
             .ok_or_else(|| "current viewed-memory dependency has no loan holder".to_string())?;
-        for candidate in candidates {
-            let checked = crate::kernel::LoanViewBinding {
-                viewed: required_view.clone(),
-                ..candidate
-            };
+        for checked in candidates {
+            // The occurrence lookup above established coverage using the
+            // current facts. Preserve its recorded binding: replacing its
+            // view with a derived subrange would ask the ledger's fact-free
+            // identity check to rediscover that coverage.
             ledger
                 .validate_view_binding(checked.clone(), holder)
                 .map_err(|error| {
@@ -466,6 +470,11 @@ fn dynamic_body_fact_dependency(
             Proposition::ForAll { var, body, .. } => match body.as_ref() {
                 Proposition::Implies(guard, consequent) => {
                     walk_proposition(guard, state, assumptions, temporary_views, binder, selected)?;
+                    // A structurally empty guarded domain evaluates no body
+                    // reads. Still check the guard's own read dependencies.
+                    if crate::kernel::proof::fact_reasoning::instance_guard_folds_to_false(guard) {
+                        return Ok(());
+                    }
                     walk_proposition(
                         consequent,
                         state,
@@ -4153,6 +4162,17 @@ fn fold_composite_resources_on_outcome_with_facts(
                 // representation state, independent of whether the resource
                 // needs a persistent population ledger.
                 folded_representation_already_present = true;
+                // Exact execution can retain this folded owner alongside
+                // observations of its body. Refolding checks those same
+                // observations under their existing owner, just as closing
+                // `open` does; unrelated unbound views still need a loan.
+                if let [occurrence] = state
+                    .resources()
+                    .owned_occurrences_for_fact(&population)
+                    .as_slice()
+                {
+                    opened_owner = Some(*occurrence);
+                }
             }
             if authority_control_body {
                 let definitions = crate::surface::verification::composite_resource_definitions(
@@ -5761,12 +5781,12 @@ void child_release(struct child* obj) {
 
     #[test]
     fn dynamic_current_fact_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
-        check_dynamic_current_fact_dependencies(false);
+        check_dynamic_current_fact_dependencies(false, false);
     }
 
     #[test]
     fn dynamic_definedness_requires_live_view_binding_and_keeps_owner_scalar_distinct() {
-        check_dynamic_current_fact_dependencies(true);
+        check_dynamic_current_fact_dependencies(true, false);
     }
 
     /// A guarded universal read depends on a view of every cell its guard
@@ -5875,7 +5895,12 @@ void child_release(struct child* obj) {
         );
     }
 
-    fn check_dynamic_current_fact_dependencies(definedness: bool) {
+    #[test]
+    fn dynamic_fact_keeps_the_binding_when_coverage_uses_a_symbolic_range() {
+        check_dynamic_current_fact_dependencies(false, true);
+    }
+
+    fn check_dynamic_current_fact_dependencies(definedness: bool, symbolic_range: bool) {
         let pointer = Pointer {
             block: PointerBlock::ExternalArgument,
             offset: PointerOffsetTerm::Constant(0),
@@ -5901,7 +5926,21 @@ void child_release(struct child* obj) {
         } else {
             Proposition::ConditionIs(condition, true)
         };
-        let range = CMemoryRange::new(pointer, MachineTerm::constant(0), MachineTerm::constant(1));
+        let extent = if symbolic_range {
+            MachineTerm::Variable(Variable(2_000_017))
+        } else {
+            MachineTerm::constant(1)
+        };
+        let assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::Equal,
+                left: Box::new(extent.clone()),
+                right: Box::new(MachineTerm::constant(1)),
+            },
+            true,
+        ));
+        let range = CMemoryRange::new(pointer, MachineTerm::constant(0), extent);
         let own = CResourceFact::own_memory(range.clone());
         let view = CResourceFact::view_memory(range.clone());
         let support_resources = ResourceContext::new().unchecked_with_fact(own.clone());
@@ -5931,11 +5970,11 @@ void child_release(struct child* obj) {
             )
             .with_loan_ledger(Some(ledger.clone()))
             .with_loan_participant(Some(lender));
-        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &PureFactContext::new());
+        let no_temporary_views = DynamicViewDependencyIndex::new(&[], &[], &assumptions);
         let dependency = dynamic_body_fact_dependency(
             &proposition,
             &bound_state,
-            &PureFactContext::new(),
+            &assumptions,
             &no_temporary_views,
         )
         .unwrap();
@@ -5943,11 +5982,24 @@ void child_release(struct child* obj) {
             dependency.is_some(),
             "current viewed memory must retain its loan"
         );
+        if symbolic_range {
+            assert!(
+                dynamic_body_fact_dependency(
+                    &proposition,
+                    &bound_state,
+                    &PureFactContext::new(),
+                    &no_temporary_views,
+                )
+                .is_err(),
+                "coverage still needs the range bound"
+            );
+        }
+
         assert!(
             dynamic_body_fact_dependency(
                 &proposition,
                 &bound_state.clone().with_loan_participant(Some(reader)),
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err(),
@@ -5960,7 +6012,7 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &bound_state.clone().with_loan_ledger(Some(ended.clone())),
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err(),
@@ -5972,6 +6024,30 @@ void child_release(struct child* obj) {
             "a historical-only operation must still reject an ended binding"
         );
 
+        // A view published from this exact plain-memory owner is an owned
+        // read. Merely placing an unrelated view beside it remains invalid.
+        let (resources, occurrences) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences([own.clone()]);
+        let supported = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
+            occurrences[0].1,
+            &own,
+            [view.clone()],
+            &memory,
+        );
+        let supported_state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(supported);
+        assert!(
+            dynamic_body_fact_dependency(
+                &proposition,
+                &supported_state,
+                &assumptions,
+                &no_temporary_views
+            )
+            .unwrap()
+            .is_none()
+        );
+
         let unbound_state = CState::new().with_memory(memory).with_resource_context(
             ResourceContext::new().unchecked_with_facts([own.clone(), view]),
         );
@@ -5979,7 +6055,7 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &unbound_state,
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err()
@@ -5989,12 +6065,18 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &CState::new().with_memory(unbound_state.memory().clone()),
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .is_err(),
             "a pure definedness fact cannot supply access authority"
         );
+
+        if symbolic_range {
+            // This variant exercises the loan binding and its refusal cases;
+            // the constant-range variants below cover direct owned access.
+            return;
+        }
 
         let owner_state = CState::new()
             .with_memory(unbound_state.memory().clone())
@@ -6003,7 +6085,7 @@ void child_release(struct child* obj) {
             dynamic_body_fact_dependency(
                 &proposition,
                 &owner_state,
-                &PureFactContext::new(),
+                &assumptions,
                 &no_temporary_views,
             )
             .unwrap()
@@ -6018,13 +6100,8 @@ void child_release(struct child* obj) {
             Term::Bitvector32(MachineTerm::constant(0)),
         );
         assert!(
-            dynamic_body_fact_dependency(
-                &opaque,
-                &owner_state,
-                &PureFactContext::new(),
-                &no_temporary_views,
-            )
-            .is_err(),
+            dynamic_body_fact_dependency(&opaque, &owner_state, &assumptions, &no_temporary_views,)
+                .is_err(),
             "an opaque current-load carrier must fail closed"
         );
     }

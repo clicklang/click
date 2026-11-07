@@ -1764,26 +1764,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
             return Ok(Some(proof));
         }
-        if let Some(surface) = search_input.surface_goal()
-            && let Some(proof) =
-                crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
-                    search_input,
-                    surface,
-                )?
-        {
-            scope.succeed();
-            return Ok(Some(proof));
-        }
-        // A goal that reads stored cells is first tried over the stored
-        // values, the goal the search saw before reads kept their version
-        // names; the full search over the reads follows only when that
-        // misses.
-        if let Some(proof) =
-            crate::kernel::search::ProofSearch::try_stored_value_goal(search_input)?
-        {
-            scope.succeed();
-            return Ok(Some(proof));
-        }
         let result = match crate::kernel::search::ProofSearch::try_solve_closure_after_direct(search_input, false)? {
             Some(proof) => Some(proof),
             None => match crate::kernel::search::ProofSearch::try_restated_constant_upper_bound(search_input)? {
@@ -2048,6 +2028,27 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         introduced_surfaces: &[ClickProposition],
         allow_function_unfold: bool,
     ) -> Result<Option<Proof<'a>>, ClickError> {
+        // Plain solve and recursive logical closure share the same memory
+        // strategies. A structural child must not lose read-over-write or
+        // explicit frame transport merely because it was reached by `both`.
+        if let Some(surface) = search_input.surface_goal()
+            && let Some(proof) =
+                crate::kernel::search::ProofSearch::try_cell_frame_transport_closure(
+                    search_input,
+                    surface,
+                )?
+        {
+            return Ok(Some(proof));
+        }
+        // A goal that reads stored cells is first tried over the stored
+        // values, the goal the search saw before reads kept their version
+        // names; the full search over the reads follows only when that
+        // misses.
+        if let Some(proof) =
+            crate::kernel::search::ProofSearch::try_stored_value_goal(search_input)?
+        {
+            return Ok(Some(proof));
+        }
         // The uint32 lemmas state the wrapping steps of a `uint32` order, so
         // a goal of one of their shapes is closed by naming the lemma, from
         // the exact premise it requires.
@@ -2211,8 +2212,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             return Ok(Some(flat));
         }
         let structural_conjunction_tried = if let Some(surface_goal) = search_input.surface_goal()
-            && matches!(surface_goal, ClickProposition::And(_, _))
             && matches!(search_input.goal(), Some(Proposition::And(_, _)))
+            && surface_logical_children(surface_goal, true).is_some()
         {
             if let Some(structural) = crate::instrumentation::measure_operation(
                 "surface",
@@ -3707,8 +3708,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter_map(|(bound, introduced_surface)| {
                 let (variable, pivot) = kernel_upper_bound_split_candidate(&bound)?;
                 let pivot_probe = Proposition::Equal(
-                    Term::Bitvector32(pivot.clone()),
-                    Term::Bitvector32(pivot.clone()),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
                 );
                 if crate::kernel::proposition_variables(&pivot_probe).contains(&variable) {
                     return None;
@@ -3722,12 +3723,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )
                 })?;
                 let split_kernel = Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::Variable(variable)),
-                        right: Box::new(pivot.clone()),
-                    },
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        CompareRelation::LessThan,
+                        [
+                            crate::kernel::MachineOperandView::Legacy(&MachineTerm::Variable(
+                                variable,
+                            )),
+                            pivot.operand_view(),
+                        ],
+                    ),
                     true,
                 );
                 let direct = surface_upper_bound_direct_condition(&bound_surface)?;
@@ -3750,7 +3755,11 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     .find(|surface| {
                         search_input
                             .lower_surface_proposition(surface, "upper-bound premise")
-                            .is_ok_and(|lowered| lowered == bound)
+                            .is_ok_and(|lowered| {
+                                crate::kernel::proof::fact_reasoning::order_claim_equivalent(
+                                    &lowered, &bound,
+                                )
+                            })
                     })?;
                 let mut surface_candidates = vec![
                     surface_upper_bound_split_condition(&bound_surface)?,
@@ -3770,7 +3779,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 let split_surface = surface_candidates.into_iter().find(|surface| {
                     search_input
                         .lower_surface_proposition(surface, "upper-bound split condition")
-                        .is_ok_and(|lowered| lowered == split_kernel)
+                        .is_ok_and(|lowered| {
+                            crate::kernel::proof::fact_reasoning::order_claim_equivalent(
+                                &lowered,
+                                &split_kernel,
+                            )
+                        })
                 })?;
                 let split_negation = ClickProposition::Not(Box::new(split_surface.clone()));
                 if introduced_surfaces
@@ -3831,7 +3845,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .chain(
                             crate::kernel::search::ProofSearch::increment_headroom_premises(
                                 search_input,
-                                &pivot,
+                                pivot.structural_value(),
                                 surface_facts,
                                 premise_anchor,
                             )

@@ -521,7 +521,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_upper_bound_split_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	driver	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	scalar_equality_goal_is_refuted	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_cell_frame_transport_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_cell_frame_transport_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_connected_fact_closure	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_direct_operation_identity	1
@@ -531,7 +531,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_late_arithmetic_with_selected_premises	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_restated_constant_upper_bound	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_solve_closure_after_direct	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_stored_value_goal	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_stored_value_goal	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_zero_witness_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_with_surfaces	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_with_surfaces	try_direct_structural_closure_under_binders	1

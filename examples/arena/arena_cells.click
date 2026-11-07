@@ -244,6 +244,8 @@ int32 arena_init(struct arena* arena, int32 capacity) {
     } else {}
     have 1 <= capacity;
     step();
+    mark initialize_entry;
+    have arena->live_regions == 0;
     loop as initialize_occupied {
         decreases to_integer(capacity) - to_integer(i);
         invariant 0 <= i and i <= capacity;
@@ -262,6 +264,10 @@ int32 arena_init(struct arena* arena, int32 capacity) {
             solve();
         }
     }
+    have at(initialize_entry, arena->live_regions) == 0;
+    transport(at(initialize_entry, arena->live_regions) == 0, arena->live_regions == 0) using {
+        at(initialize_entry, arena->live_regions) == 0;
+    };
     have i == capacity;
     have forall (k: int32) {
         0 <= k and k < capacity implies occupied[k] == 0
@@ -2685,12 +2691,28 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     arena->capacity == old(arena->capacity);
                 };
                 have forall (k: int32) { i <= k and k < end implies load_int32((old(arena->occupied) + k)) == 0 } by {
-                    rewrite(old(arena->occupied) == arena->occupied);
-                    assumption();
+                    intro();
+                    intro();
+                    instantiate(forall (j: int32) { i <= j and j < end implies arena->occupied[j] == 0 }, k) using { i <= k and k < end; };
+                    have &arena->occupied[k] == old(&arena->occupied[k]) by {
+                        normalize() using { old(arena->occupied) == arena->occupied; };
+                    }
+                    normalize() using {
+                        arena->occupied[k] == 0;
+                        &arena->occupied[k] == old(&arena->occupied[k]);
+                    };
                 }
                 have forall (k: int32) { start <= k and k < i implies load_int32((old(arena->occupied) + k)) == 1 } by {
-                    rewrite(old(arena->occupied) == arena->occupied);
-                    assumption();
+                    intro();
+                    intro();
+                    instantiate(forall (j: int32) { start <= j and j < i implies arena->occupied[j] == 1 }, k) using { start <= k and k < i; };
+                    have &arena->occupied[k] == old(&arena->occupied[k]) by {
+                        normalize() using { old(arena->occupied) == arena->occupied; };
+                    }
+                    normalize() using {
+                        arena->occupied[k] == 1;
+                        &arena->occupied[k] == old(&arena->occupied[k]);
+                    };
                 }
                 let w = fold(arena_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), { next: i });
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
@@ -5599,10 +5621,39 @@ int32 arena_pipeline(
     have first->arena->data == at(w2, first->arena->data) by {
         assumption();
     }
+    have &first->arena->data[first->start + 0] == at(w2, &first->arena->data[first->start + 0]) by {
+        normalize() using {
+            first->arena->data == at(w2, first->arena->data);
+            first->start == at(w2, first->start);
+        };
+    }
+    let { live: framed_live, capacity: framed_capacity } = unfold(s0);
+    let { start: framed_start, end: framed_end } = unfold(r1);
+    let r1 = fold(arena_region(first), { start: framed_start, end: framed_end });
+    let s0 = fold(arena_state(arena), { live: framed_live, capacity: framed_capacity });
+    have r1.start == first->start by {
+        assumption();
+    }
+    have first->start < r1.end by {
+        normalize() using { r1.start == first->start; r1.start < r1.end; };
+    }
+    have (r1.start as int32) <= ((first->start + 0) as int32) by {
+        rewrite(first->start == r1.start);
+        normalize();
+    }
+    have ((first->start + 0) as int32) < (r1.end as int32) by {
+        rewrite(first->start == r1.start);
+        normalize() using { r1.start < r1.end; };
+    }
     have first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start + 0)]) by {
         transport(at(w2, first->arena->data[(first->start + 0)]) == at(w2, first->arena->data[(first->start + 0)]), first->arena->data[(first->start + 0)] == at(w2, first->arena->data[(first->start + 0)])) using {
             first->arena->data == at(w2, first->arena->data);
             first->start == at(w2, first->start);
+            r1.start == first->start;
+            first->start < r1.end;
+            (r1.start as int32) <= ((first->start + 0) as int32);
+            ((first->start + 0) as int32) < (r1.end as int32);
+            &first->arena->data[first->start + 0] == at(w2, &first->arena->data[first->start + 0]);
         };
     }
     have first->arena->data[(first->start + 0)] == 11 by {
@@ -5631,9 +5682,6 @@ int32 arena_pipeline(
     step(arena_read, { r: r1, st: s0 });
     let { live: returned_live, capacity: returned_capacity } = unfold(s0);
     let {  } = unfold(kept);
-    have second->arena->data[(second->start + 0)] == 22 by {
-        assumption();
-    }
     let s0 = fold(arena_state(arena), { live: returned_live, capacity: returned_capacity });
     have r1.start == at(m3, r1.start) by {
         assumption();
@@ -5786,7 +5834,15 @@ int32 arena_pipeline(
     have second->arena->data == at(m3, second->arena->data) by {
         assumption();
     }
+    have &second->arena->data[second->start + 0] == (at(m3, second->arena->data) + kept_start) by {
+        normalize() using {
+            second->arena->data == at(m3, second->arena->data);
+            second->start == at(m3, second->start);
+            at(m3, second->start) == kept_start;
+        };
+    }
     have second->arena->data[(second->start + 0)] == 22 by {
+        rewrite(&second->arena->data[second->start + 0] == (at(m3, second->arena->data) + kept_start));
         assumption();
     }
     have (at(m3, second->arena->data) + at(m3, second->start)) == (second->arena->data + kept_start) by {

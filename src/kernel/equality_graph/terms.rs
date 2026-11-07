@@ -61,11 +61,11 @@ pub(super) struct PendingCellRead {
 /// value lacks. An origin at another snapshot is not consulted; the graph
 /// does not equate distinct snapshots.
 fn load_origin(
-    variable: &Variable,
+    term: &crate::kernel::MachineTerm,
     named: &crate::kernel::SharedCMemory,
 ) -> Option<crate::kernel::SharedCMemory> {
-    crate::kernel::registered_load_origin_for_variable(variable)
-        .map(|(origin, _)| origin)
+    crate::kernel::eval::scalar_read_observation(crate::kernel::MachineOperandView::Legacy(term))
+        .and_then(|read| read.origin)
         .filter(|origin| origin.read_identity() == named.read_identity())
 }
 
@@ -277,16 +277,10 @@ pub(super) fn uint64_binary(
 pub(super) fn int32_read(
     term: &crate::kernel::MachineTerm,
 ) -> Option<(crate::kernel::SharedCMemory, Pointer)> {
-    let crate::kernel::MachineTerm::Variable(variable) = term else {
-        return None;
-    };
-    if !crate::kernel::registered_load_kind_for_variable(variable)
-        .is_some_and(crate::kernel::LoadKind::is_word32)
-        || crate::kernel::registered_load_bytes_for_variable(variable) != Some(4)
-    {
-        return None;
-    }
-    crate::kernel::registered_load_for_variable(variable)
+    let read = crate::kernel::eval::scalar_read_observation(
+        crate::kernel::MachineOperandView::Legacy(term),
+    )?;
+    (read.kind.is_word32() && read.bytes == 4).then_some((read.memory, read.pointer))
 }
 
 pub(super) fn uint64_read(
@@ -1845,13 +1839,11 @@ impl TermClasses {
             // application. One read interned, one σ node, one union.
             if let Some((unsigned, memory, pointer)) = self.pending_unsigned_word_reads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let signed = crate::kernel::MachineTerm::Variable(
-                    crate::kernel::eval::load_variable_for_exact_cell(
-                        &memory,
-                        &pointer,
-                        crate::kernel::LoadKind::Int32,
-                        4,
-                    ),
+                let signed = crate::kernel::eval::scalar_read_for_exact_cell(
+                    &memory,
+                    &pointer,
+                    crate::kernel::LoadKind::Int32,
+                    4,
                 );
                 let signed = self.intern_machine(&signed, false);
                 let cast = self.intern_node(Node::Int32Unary(
@@ -1866,13 +1858,11 @@ impl TermClasses {
             }
             if let Some((signed, memory, pointer)) = self.pending_signed_byte_reads.pop() {
                 crate::instrumentation::record_deterministic_work(1);
-                let unsigned = crate::kernel::MachineTerm::Variable(
-                    crate::kernel::eval::load_variable_for_exact_cell(
-                        &memory,
-                        &pointer,
-                        crate::kernel::LoadKind::UInt8,
-                        1,
-                    ),
+                let unsigned = crate::kernel::eval::scalar_read_for_exact_cell(
+                    &memory,
+                    &pointer,
+                    crate::kernel::LoadKind::UInt8,
+                    1,
                 );
                 let byte = self.intern_typed_machine(&unsigned, crate::kernel::CarrierWidth::Bits8);
                 let cast = self.narrow_cast_node(

@@ -15,6 +15,8 @@ struct Record {
     origin: SharedCMemory,
     epoch: u64,
     bytes: u32,
+    typed: bool,
+    selected: bool,
 }
 
 #[derive(Clone, Default)]
@@ -23,6 +25,7 @@ pub(super) struct State {
     keys: imbl::HashMap<Key, Id>,
     records: imbl::HashMap<Id, Record>,
     terms: imbl::HashMap<u64, Id>,
+    latest: imbl::HashMap<(u64, Id), (SharedCMemory, Pointer)>,
 }
 
 thread_local! {
@@ -59,6 +62,33 @@ pub(super) fn record(
     origin: &SharedCMemory,
     bytes: u32,
 ) -> Id {
+    record_with_width(memory, pointer, kind, origin, bytes, true)
+}
+
+pub(super) fn record_untyped(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+    origin: &SharedCMemory,
+) -> Id {
+    record_with_width(
+        memory,
+        pointer,
+        kind,
+        origin,
+        kind.unrecorded_access_byte_width(),
+        false,
+    )
+}
+
+fn record_with_width(
+    memory: &SharedCMemory,
+    pointer: &Pointer,
+    kind: LoadKind,
+    origin: &SharedCMemory,
+    bytes: u32,
+    typed: bool,
+) -> Id {
     crate::instrumentation::record_deterministic_work(1);
     let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
     STATE.with(|state| {
@@ -70,6 +100,7 @@ pub(super) fn record(
                 origin,
                 epoch,
                 bytes,
+                typed,
             );
             return id;
         }
@@ -88,18 +119,55 @@ pub(super) fn record(
                 origin: origin.clone(),
                 epoch,
                 bytes,
+                typed,
+                selected: false,
             },
         );
         id
     })
 }
 
-fn refresh_record(record: &mut Record, origin: &SharedCMemory, epoch: u64, bytes: u32) {
-    record.bytes = record.bytes.max(bytes);
-    if record.epoch != epoch {
+fn refresh_record(
+    record: &mut Record,
+    origin: &SharedCMemory,
+    epoch: u64,
+    bytes: u32,
+    typed: bool,
+) {
+    let first_typed = typed && !record.typed;
+    if first_typed {
+        record.bytes = bytes;
+    } else if typed {
+        record.bytes = record.bytes.max(bytes);
+    }
+    record.typed |= typed;
+    if record.epoch != epoch || first_typed {
         record.origin = origin.clone();
         record.epoch = epoch;
     }
+}
+
+pub(super) fn select(id: Id) {
+    STATE.with(|state| {
+        state
+            .borrow_mut()
+            .records
+            .get_mut(&id)
+            .expect("recorded read")
+            .selected = true
+    });
+}
+
+pub(super) fn selected(memory: &SharedCMemory, pointer: &Pointer, kind: LoadKind) -> bool {
+    existing(memory, pointer, kind).is_some_and(|id| {
+        STATE.with(|state| {
+            state
+                .borrow()
+                .records
+                .get(&id)
+                .is_some_and(|read| read.selected)
+        })
+    })
 }
 
 pub(super) fn refresh(id: Id, origin: &SharedCMemory, bytes: u32) {
@@ -115,8 +183,48 @@ pub(super) fn refresh(id: Id, origin: &SharedCMemory, bytes: u32) {
             origin,
             epoch,
             bytes,
+            true,
         )
     });
+}
+
+pub(super) fn produced(read: &MachineTerm, source: &MachineTerm) {
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+        return;
+    };
+    let MachineTerm::MemoryLoad(origin, address, _) = source else {
+        return;
+    };
+    if *kind != LoadKind::Bits64 {
+        return;
+    }
+    let Some(id) = existing(memory, pointer, *kind) else {
+        return;
+    };
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    STATE.with(|state| {
+        state
+            .borrow_mut()
+            .latest
+            .insert((epoch, id), (origin.clone(), address.as_ref().clone()));
+    });
+}
+
+pub(super) fn latest(read: &MachineTerm) -> Option<MachineTerm> {
+    let MachineTerm::MemoryLoad(memory, pointer, kind) = read else {
+        return None;
+    };
+    let id = existing(memory, pointer, *kind)?;
+    let epoch = LOAD_ORIGIN_EPOCH.with(std::cell::Cell::get);
+    STATE.with(|state| {
+        state
+            .borrow()
+            .latest
+            .get(&(epoch, id))
+            .map(|(memory, pointer)| {
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), *kind)
+            })
+    })
 }
 
 pub(super) fn remember_term(term: &crate::kernel::KernelTerm, id: Id) {
@@ -126,7 +234,14 @@ pub(super) fn remember_term(term: &crate::kernel::KernelTerm, id: Id) {
 }
 
 pub(super) fn bytes(id: Id) -> Option<u32> {
-    STATE.with(|state| state.borrow().records.get(&id).map(|record| record.bytes))
+    STATE.with(|state| {
+        state
+            .borrow()
+            .records
+            .get(&id)
+            .filter(|record| record.typed)
+            .map(|record| record.bytes)
+    })
 }
 
 pub(super) fn observation(id: Id) -> Option<ScalarReadObservation> {
@@ -162,17 +277,18 @@ pub(super) fn for_operand(
         return observation(id);
     }
     let (memory, pointer, kind) = operand.read()?;
-    // Inspecting an existing read neither widens its access nor renews a stale
-    // origin. A previously unseen explicit read gets its own observation.
-    let id = existing(memory, pointer, kind).unwrap_or_else(|| {
-        record(
-            memory,
-            pointer,
+    // Inspection is not an access observation. In particular, retaining the
+    // conservative width of an unseen descriptor would widen a later typed
+    // producer, and retaining this snapshot would steal its first live origin.
+    let Some(id) = existing(memory, pointer, kind) else {
+        return Some(ScalarReadObservation {
+            memory: memory.clone(),
+            pointer: pointer.clone(),
             kind,
-            memory,
-            load_term_access_width(memory, pointer, kind),
-        )
-    });
+            bytes: load_term_access_width(memory, pointer, kind),
+            origin: Some(memory.clone()),
+        });
+    };
     if let MachineOperandView::Shared(term) = operand {
         remember_term(term, id);
     }
@@ -183,6 +299,134 @@ pub(super) fn for_operand(
 mod tests {
     use super::*;
     use crate::kernel::{KernelTerm, MachineOperandView, VerificationSession};
+
+    #[test]
+    fn a_typed_producer_replaces_an_untyped_canonical_reads_guessed_width() {
+        let _session = VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new());
+        let pointer = Pointer::symbolic(Variable(998_709));
+        let untyped = canonical_scalar_read(&MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        ));
+        assert_eq!(
+            for_operand(MachineOperandView::Legacy(&untyped))
+                .unwrap()
+                .bytes,
+            8
+        );
+        record_load_access_width(memory.memory(), &pointer, 4);
+        let typed = canonical_scalar_read(&MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(pointer.clone()),
+            LoadKind::Int32,
+        ));
+        assert_eq!(
+            for_operand(MachineOperandView::Legacy(&typed))
+                .unwrap()
+                .bytes,
+            4
+        );
+        // A genuine wider observation remains conservative when a narrower
+        // producer later names the same descriptor.
+        let MachineTerm::MemoryLoad(selected, address, kind) = &typed else {
+            unreachable!()
+        };
+        record(selected, address, *kind, &memory, 8);
+        record(selected, address, *kind, &memory, 4);
+        assert_eq!(
+            for_operand(MachineOperandView::Legacy(&typed))
+                .unwrap()
+                .bytes,
+            8
+        );
+    }
+
+    #[test]
+    fn inspecting_an_unobserved_read_does_not_capture_its_width_or_origin() {
+        let _session = VerificationSession::enter();
+        let memory = intern_c_memory(CMemory::new());
+        let pointer = Pointer::symbolic(Variable(998_707));
+        let read =
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        assert_eq!(
+            for_operand(MachineOperandView::Legacy(&read))
+                .unwrap()
+                .bytes,
+            8
+        );
+        assert!(existing(&memory, &pointer, LoadKind::Int32).is_none());
+        let live = intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(pointer.offset_by_bytes(16), CValue::Int32(1u32.into())),
+        );
+        record(&memory, &pointer, LoadKind::Int32, &live, 4);
+        let observed = for_operand(MachineOperandView::Legacy(&read)).unwrap();
+        assert_eq!(observed.bytes, 4);
+        assert_eq!(observed.origin, Some(live));
+    }
+
+    fn cyclic_frame_read(index: u64) -> (Proposition, Variable) {
+        let pointer = Pointer {
+            block: format!("local:frame-origin-{index}").into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let memory = intern_c_memory(CMemory::new().with_block(pointer.block.clone(), 4));
+        let read =
+            MachineTerm::MemoryLoad(memory.clone(), Box::new(pointer.clone()), LoadKind::Int32);
+        let bound = Variable(998_800 + index);
+        let range = CMemoryRange::new_with_element_width(
+            Pointer {
+                block: "frame-target".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            0u32.into(),
+            MachineTerm::add_at(
+                MachineIntegerType::Int32,
+                read.clone(),
+                MachineTerm::Variable(bound),
+            ),
+            4,
+        );
+        let origin = intern_c_memory(memory.memory().clone().with_call_memory_havoc(
+            Variable(999_800 + index),
+            &[range],
+            &PureFactContext::new(),
+            None,
+        ));
+        // The local read survives a havoc of another block. Its live origin
+        // contains a range bound that refers to the same structural version.
+        record(&memory, &pointer, LoadKind::Int32, &origin, 4);
+        (
+            Proposition::ConditionIs(ConditionTerm::equal(read, 0u32.into()), true),
+            bound,
+        )
+    }
+
+    #[test]
+    fn frame_collection_terminates_on_cyclic_observation_origins_and_keeps_bounds() {
+        let _session = VerificationSession::enter();
+        let (proposition, bound) = cyclic_frame_read(0);
+        let collect = || {
+            let mut variables = std::collections::BTreeSet::new();
+            crate::kernel::reasoning::variable_collection::collect_proposition_frame_variables(
+                &proposition,
+                &mut variables,
+            );
+            variables
+        };
+        let first = collect();
+        assert!(first.contains(&bound));
+        assert_eq!(
+            collect(),
+            first,
+            "visited snapshots belong to one collection"
+        );
+        assert_eq!(load_variable_registry_len(), 0);
+    }
 
     #[test]
     fn structural_observations_need_no_reserved_name_and_restore_branch_metadata() {
@@ -244,6 +488,70 @@ mod tests {
             2,
         );
         assert_eq!(bytes(narrow_access), Some(2));
+        assert_eq!(load_variable_registry_len(), 0);
+    }
+
+    #[test]
+    fn ordinary_integer_producers_retain_reads_without_reserved_variables() {
+        let _session = VerificationSession::enter();
+        let memory = CMemory::new();
+        let pointer = Pointer::symbolic(Variable(998_704));
+        for ty in [
+            CType::Int8,
+            CType::UInt8,
+            CType::Int16,
+            CType::UInt16,
+            CType::Int32,
+            CType::UInt32,
+            CType::Int64,
+            CType::UInt64,
+            CType::Int128,
+            CType::UInt128,
+        ] {
+            let mut facts = ExecutionFacts::new();
+            let value = canonicalized_symbolic_load_value_with_identity(
+                &memory,
+                &pointer,
+                ty,
+                &mut facts,
+                &PureFactContext::new(),
+                None,
+                LoadPurpose::Logical,
+            )
+            .expect("integer read");
+            let read = crate::kernel::spec::c_value_bitvector_term(&value).expect("scalar term");
+            let MachineTerm::MemoryLoad(snapshot, address, kind) = &read else {
+                panic!("{ty:?} must retain its read: {read:?}");
+            };
+            assert_eq!(address.as_ref(), &pointer);
+            assert_eq!(
+                canonical_form_of_load(snapshot.clone(), pointer.clone(), *kind),
+                read
+            );
+            assert!(facts.is_empty());
+            assert_eq!(load_variable_registry_len(), 0);
+        }
+    }
+
+    #[test]
+    fn selecting_a_read_keeps_its_address_when_another_read_was_stored_there() {
+        let _session = VerificationSession::enter();
+        let source = Pointer::symbolic(Variable(998_705));
+        let destination = Pointer::symbolic(Variable(998_706));
+        let memory = intern_c_memory(CMemory::new());
+        let held = canonical_form_of_load(memory.clone(), source, LoadKind::Int32);
+        let after = intern_c_memory(
+            memory
+                .memory()
+                .clone()
+                .store(destination.clone(), CValue::Int32(held.clone())),
+        );
+        let read = canonical_form_of_load(after, destination.clone(), LoadKind::Int32);
+        assert!(
+            matches!(&read, MachineTerm::MemoryLoad(_, pointer, LoadKind::Int32) if **pointer == destination)
+        );
+        assert_ne!(read, held);
+        assert_eq!(read_over_write_value(&read), Some(held));
         assert_eq!(load_variable_registry_len(), 0);
     }
 

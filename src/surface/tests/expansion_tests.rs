@@ -935,13 +935,54 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
     let sources = [("read.c", c)];
     let expanded = expand_function_proof_source(source, &sources, "caller")
         .expect("the scalar read should expand through a byte address");
-    assert!(expanded.contains("load_int32("), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
+    assert!(!expanded.contains("p->kid[1]"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
         .expect("the printed read must retain its four-byte offset");
 }
 
-// Whole-claim expansion must print hidden record ownership and fold inputs
-// in the syntax the author can write, then independently verify them.
+// Splitting a written sequence equality retains the source spelling and
+// historical selector for each generated element equality.
+#[test]
+#[ignore = "nightly: targeted sequence-conjunction expansion coverage"]
+fn sequence_equality_children_retain_snapshot_spellings() {
+    for length in [3, 5] {
+        let statements = (0..length)
+            .map(|i| format!("dst[{i}] = src[{i}];"))
+            .collect::<String>();
+        let c = format!("void copy(int32 dst[], int32 src[]) {{ {statements} }}");
+        let tail = |name: &str| {
+            (1..length)
+                .map(|i| format!("{name}[{i}]"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let source = format!(
+            r#"
+            verifying "copy.c";
+            void copy(int32 dst[], int32 src[]) {{
+                owns dst[0..{length}];
+                views src[0..{length}];
+                requires separate(memory(dst[0..{length}]), memory(src[0..{length}]));
+                ensures [dst[0]] ++ [{}] == old([src[0]] ++ [{}]);
+            }}
+        "#,
+            tail("dst"),
+            tail("src")
+        );
+        let sources = [("copy.c", c.as_str())];
+        let expanded = expand_function_proof_source(&source, &sources, "copy").unwrap();
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+        let wrong = c.replace(
+            &format!("dst[{}] = src[{}];", length - 1, length - 1),
+            &format!("dst[{}] = 0;", length - 1),
+        );
+        assert!(
+            without_implicit_solve(|| verify_c0_sources(&expanded, &[("copy.c", wrong.as_str())]))
+                .is_err()
+        );
+    }
+}
+
 #[test]
 #[ignore = "nightly: 1.1s in the parallel gate"]
 fn hidden_record_resource_expansion_round_trips() {
@@ -12480,9 +12521,8 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         "{expanded}"
     );
     assert!(expanded.contains("unfold(valid_pool);"), "{expanded}");
-    assert!(expanded.contains("normalize();"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the retained predicate closure should check independently");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        .expect("the retained predicate closure should check independently without search");
 }
 
 #[test]

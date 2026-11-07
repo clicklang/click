@@ -1903,6 +1903,12 @@ impl<'a> Planner<'a> {
                             term.hash(&mut hasher);
                             self.term_hash_cache.insert(key, hasher.finish());
                         }
+                        MachineTerm::MemoryLoad(..) => {
+                            let atom = SignedArithmeticAtom::from_term(term)?;
+                            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                            atom.hash(&mut hasher);
+                            self.term_hash_cache.insert(key, hasher.finish());
+                        }
                         MachineTerm::PureFunctionApplication { arguments, .. } => {
                             tasks.push(Task::Finish(term));
                             tasks.extend(arguments.iter().rev().map(Task::Visit));
@@ -2390,6 +2396,7 @@ impl<'a> Planner<'a> {
         while let Some(term) = pending.pop() {
             match term {
                 MachineTerm::Variable(_) | bits32_constant!(_) => {}
+                MachineTerm::MemoryLoad(..) if SignedArithmeticAtom::from_term(term).is_some() => {}
                 cast_term!(UInt32From64, _) if SignedArithmeticAtom::from_term(term).is_some() => {}
                 MachineTerm::PureFunctionApplication { arguments, .. } => {
                     pending.extend(arguments.iter());
@@ -3382,6 +3389,29 @@ mod tests {
         assert!(
             plan_signed_arithmetic_certificate(&le(var(3), constant(599)), &premises).is_none()
         );
+    }
+
+    #[test]
+    fn structural_read_decrement_uses_its_selected_bound() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = crate::kernel::intern_c_memory(crate::kernel::CMemory::new());
+        let pointer = crate::kernel::Pointer::symbolic(Variable(71_201));
+        let read = MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(pointer.clone()),
+            crate::kernel::LoadKind::Int32,
+        );
+        let goal = lt(
+            MachineTerm::subtract_at(MachineIntegerType::Int32, read.clone(), constant(1)),
+            read.clone(),
+        );
+        checked_plan(&goal, &[lt(constant(0), read)]);
+        let other = MachineTerm::MemoryLoad(
+            memory,
+            Box::new(pointer.offset_by_bytes(4)),
+            crate::kernel::LoadKind::Int32,
+        );
+        assert!(plan_signed_arithmetic_certificate(&goal, &[lt(constant(0), other)]).is_none());
     }
 
     fn var(index: u64) -> MachineTerm {
