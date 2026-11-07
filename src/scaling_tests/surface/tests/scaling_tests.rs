@@ -10175,3 +10175,87 @@ fn conjunction_transport_replay_scales_with_explicit_links() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn nested_conjunction_transport_scales_with_written_leaves() {
+    fn conjunction(leaves: &[String], balanced: bool) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let split = if balanced { leaves.len() / 2 } else { 1 };
+        format!(
+            "({}) and ({})",
+            conjunction(&leaves[..split], balanced),
+            conjunction(&leaves[split..], balanced)
+        )
+    }
+    for balanced in [false, true] {
+        let mut planning = Vec::new();
+        let mut replay = Vec::new();
+        // Skewed syntax must stay within the existing parenthesis/proof depth
+        // limits. Balanced trees exercise larger leaf and premise counts.
+        let sizes = if balanced {
+            [4, 8, 16, 32]
+        } else {
+            [2, 4, 8, 12]
+        };
+        for size in sizes {
+            let mut c_args = String::new();
+            let mut args = String::new();
+            let mut requirements = String::new();
+            let mut setup = String::new();
+            let mut premises = String::new();
+            for i in 0..size {
+                c_args.push_str(&format!(", int *q{i}"));
+                args.push_str(&format!(", int32* q{i}"));
+                requirements.push_str(&format!(
+                    "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+                ));
+                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+            }
+            let leaves = (0..size)
+                .map(|i| format!("*q{i} == {i}"))
+                .collect::<Vec<_>>();
+            let fact = conjunction(&leaves, balanced);
+            let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+            let source = format!(
+                r#"
+                verifying "nested.c";
+                void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
+                    step(); {setup}
+                    have {fact} by {{ transport(at(statement(0).entry, {fact}), {fact}) using {{ {premises} }}; }}
+                    step();
+                }}
+            "#
+            );
+            let files = [("nested.c", c.as_str())];
+            let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+                expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+            });
+            let expanded = expanded.unwrap();
+            planning.push(work);
+            assert_eq!(expanded.matches("both {").count(), size - 1);
+            assert_eq!(expanded.matches("preserve(separate(").count(), size);
+            assert!(!expanded.contains("transport("));
+            assert!(!expanded.contains("transport_certificate"));
+            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::proof::without_implicit_solve(|| {
+                    verify_c0_sources(&expanded, &files)
+                })
+            });
+            verified.unwrap();
+            replay.push(work);
+        }
+        eprintln!(
+            "nested conjunction balanced={balanced}: expansion {planning:?}, replay {replay:?}"
+        );
+        for costs in [planning, replay] {
+            assert!(costs.iter().all(|cost| *cost > 0));
+            assert!(
+                costs.windows(2).all(|pair| pair[1] <= 3 * pair[0]),
+                "{costs:?}"
+            );
+        }
+    }
+}
