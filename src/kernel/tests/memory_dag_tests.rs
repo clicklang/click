@@ -1994,7 +1994,7 @@ fn a_materialized_pointer_cell_is_named_at_its_source() {
     };
     let pointer_value = |read: Pointer| CValue::typed_pointer(read, CType::Int32Pointer);
     let own = name(&pristine, &sibling);
-    assert!(matches!(own, MachineTerm::Variable(_)));
+    assert!(matches!(own, MachineTerm::MemoryLoad(..)));
     let own_read = Pointer::loaded(&own).expect("the cell's load names its read");
 
     let materialized = pristine

@@ -59,6 +59,7 @@ pub(super) use expression::*;
 pub(in crate::kernel) use memory_loads::abstract_value_source;
 pub(crate) use memory_loads::canonical_condition;
 pub(crate) use memory_loads::canonical_condition_fact;
+pub(in crate::kernel) use memory_loads::canonical_scalar_read;
 pub(crate) use memory_loads::canonical_term;
 pub(crate) use memory_loads::canonicalized_offset_index_term;
 pub(crate) use memory_loads::check_canonical_at_creation;

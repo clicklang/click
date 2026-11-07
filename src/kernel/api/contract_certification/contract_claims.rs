@@ -991,8 +991,8 @@ fn materialized_load_is_unchanged(
     pointer: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
-    // With terms canonical at creation a materialized cell holds the load
-    // variable for its load; the registry records the load it stands for.
+    // Materialized cells retain their structural read. Legacy scalar names
+    // remain input adapters for older producer families.
     let load_of = |bits: &MachineTerm| match bits {
         MachineTerm::MemoryLoad(_, _, _) => Some(bits.clone()),
         MachineTerm::Variable(variable) if crate::kernel::eval::is_load_variable(variable) => {
@@ -1002,9 +1002,11 @@ fn materialized_load_is_unchanged(
     };
     let load = match value {
         crate::kernel::integer64_c_value!(bits) => load_of(bits),
-        // Object-pointer loads scale their read by the pointee width.
-        // Function-pointer loads instead name the exact registered read as
-        // a symbolic function at offset zero; neither form is a new write.
+        // Object and function pointers share the exact structural descriptor;
+        // the remaining branches adapt legacy registered names and offsets.
+        CValue::Pointer(pointer_value) if pointer_value.pointer().as_loaded_value().is_some() => {
+            crate::kernel::equality_graph::logical_pointer_read_term(pointer_value.pointer())
+        }
         CValue::Pointer(pointer_value) => match pointer_value.pointer() {
             Pointer {
                 block: PointerBlock::FunctionSymbolic(variable),

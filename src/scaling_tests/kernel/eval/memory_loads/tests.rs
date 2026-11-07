@@ -2113,6 +2113,7 @@ fn symbolic_pointer_observations_scale_with_selected_cells() {
                 );
             }
         });
+        assert_eq!(load_variable_registry_len(), 0);
         samples.push(work);
     }
     assert!(

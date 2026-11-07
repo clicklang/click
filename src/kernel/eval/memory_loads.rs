@@ -123,10 +123,13 @@ pub(in crate::kernel) fn evaluate_c_memory_load_paths(
             };
             // A checked, nonvolatile C read supplies its complete current-cell
             // equation. Ordinary observations do not publish this evidence.
-            path.facts.push(ExecutionPureFact::logical_read_equation(
-                value.clone(),
-                Pointer::loaded_value(&observed.0, &observed.1),
-            ));
+            let read = Pointer::loaded_value(&observed.0, &observed.1);
+            path.facts
+                .push(if matches!(value.c_type(), CType::FunctionPointer(_)) {
+                    ExecutionPureFact::checked_pointer_read_equation(value.clone(), read)
+                } else {
+                    ExecutionPureFact::logical_read_equation(value.clone(), read)
+                });
             let mut read_facts = ExecutionFacts::new();
             if let Some(variable) = typed_pointer_read_variable(value.pointer())
                 && let Some(load) =
@@ -1685,10 +1688,9 @@ fn cell_value_recorded_on_path(
     value_type.read_cell(&value)
 }
 
-/// Reinterprets an int cell's loaded value as a pointer through the remaining
-/// registered-read interface. Its defining equation joins the path's fact
-/// stream. Address-index construction subsequently retains the structural
-/// read, including its snapshot and kind, in a shared child.
+/// Reinterprets a cached scalar read as a pointer while retaining its selected
+/// descriptor. Complete-pointer frame evidence remains separate from the
+/// numeric prefix. Only the legacy volatile route still allocates a name.
 fn canonicalized_pointer_value_from_int_cell(
     memory: &CMemory,
     pointer: &Pointer,
@@ -1700,32 +1702,31 @@ fn canonicalized_pointer_value_from_int_cell(
     purpose: LoadPurpose,
 ) -> Option<CValue> {
     value_type.pointee_type()?;
-    let fresh = match value {
-        // A narrow read is its own load (R-mem relates the two byte reads).
-        CValue::Int8(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int8(MachineTerm::Variable(fresh)));
+    let (fresh, defining_load) = match value {
+        CValue::Int8(bits @ MachineTerm::MemoryLoad(..)) => {
+            return Some(CValue::Int8(canonical_scalar_read(bits)));
         }
-        CValue::Int16(bits @ MachineTerm::MemoryLoad(_, _, _)) => {
-            let fresh = mint_load_variable(bits, facts, assumptions, source)?;
-            return Some(CValue::Int16(MachineTerm::Variable(fresh)));
+        CValue::Int16(bits @ MachineTerm::MemoryLoad(..)) => {
+            return Some(CValue::Int16(canonical_scalar_read(bits)));
         }
-        CValue::Int32(bits @ MachineTerm::MemoryLoad(_, _, _)) => load_variable_for_term(bits)?.0,
-        // A cell materialized with its load variable (canonicalizing at
-        // creation) already carries the variable; record its defining fact
-        // in this path's stream, as minting would have.
-        CValue::Int32(MachineTerm::Variable(variable)) if is_load_variable(variable) => *variable,
+        CValue::Int32(bits @ MachineTerm::MemoryLoad(..)) => {
+            if purpose == LoadPurpose::VolatileProgram {
+                let fresh = load_variable_for_term(bits)?.0;
+                (Some(fresh), registered_load_term_for_variable(&fresh))
+            } else {
+                (None, Some(canonical_scalar_read(bits)))
+            }
+        }
+        CValue::Int32(MachineTerm::Variable(variable)) if is_load_variable(variable) => (
+            (purpose == LoadPurpose::VolatileProgram).then_some(*variable),
+            registered_load_term_for_variable(variable),
+        ),
         _ => return None,
     };
     // The selected cached value already names its defining read. An address
     // alias may spell that cell with a different symbolic storage block; it
     // must not rebase the same pointer value onto that caller spelling.
-    let defining_load = registered_load_term_for_variable(&fresh);
-    let defining_block = match &defining_load {
-        Some(MachineTerm::MemoryLoad(_, address, _)) => &address.block,
-        _ => &pointer.block,
-    };
-    // A load variable names the pointer value, not an offset in the
+    // The descriptor names the pointer value, not an offset in the
     // storage object containing it. Fresh storage provenance must not
     // manufacture disjointness from the actual pointee.
     // The cached scalar was read at `defining_load`'s address. When that is
@@ -1742,12 +1743,7 @@ fn canonicalized_pointer_value_from_int_cell(
     );
     // A volatile read may observe a value memory does not record, so it is
     // never named as the snapshot's read of the cell.
-    let loaded = if matches!(
-        defining_block,
-        PointerBlock::Heap(_) | PointerBlock::Temporary(_)
-    ) || defining_block.is_local_block()
-        || purpose == LoadPurpose::VolatileProgram
-    {
+    let loaded = if let Some(fresh) = fresh {
         Pointer::symbolic(fresh)
     } else if copied_prefix {
         Pointer::loaded_value(
@@ -1755,8 +1751,7 @@ fn canonicalized_pointer_value_from_int_cell(
             pointer,
         )
     } else {
-        Pointer::loaded(&MachineTerm::Variable(fresh))
-            .expect("a minted load variable names its read")
+        Pointer::loaded(defining_load.as_ref()?).expect("selected pointer read")
     };
     let result = CPointerValue::from_read(
         loaded.clone(),
@@ -1806,17 +1801,13 @@ fn canonicalized_pointer_value_from_int_cell(
         {
             assumptions.register_pointer_read(&loaded, memory, address);
         }
-        // The cached scalar spelling still comes from this exact typed read.
-        // Preserve the same producer evidence as the symbolic load route,
-        // recording each source observation once. A copied prefix names no
-        // pointer read of its source.
-        record_load_variable_defining_fact_with_source_and_pointer(
-            fresh,
-            load,
-            facts,
-            source,
-            (purpose == LoadPurpose::Program && !copied_prefix).then_some(&loaded),
-        );
+        // Volatile observations retain their legacy opaque value until their
+        // event representation migrates. Ordinary descriptors need no equation.
+        if let Some(fresh) = fresh {
+            record_load_variable_defining_fact_with_source_and_pointer(
+                fresh, load, facts, source, None,
+            );
+        }
     }
     Some(CValue::Pointer(result))
 }
@@ -2015,10 +2006,7 @@ fn canonicalized_symbolic_load_value_with_identity(
     }
     // A logical pointer read names the cell's version, whatever pointer the
     // cell holds (`docs/internals/spellability.md`).
-    let names_version = purpose == LoadPurpose::Logical
-        && logical_read_names_its_version(value_type)
-        && value_type.pointee_type().is_some()
-        && !matches!(value_type, CType::FunctionPointer(_));
+    let names_version = purpose == LoadPurpose::Logical && value_type.is_pointer();
     // Canonical address selection can expose a materialized pointer cell that
     // the original spelling did not name. Reuse its complete stored value;
     // manufacturing another read here would discard the selected designation.
@@ -2331,12 +2319,12 @@ thread_local! {
     static POINTER_LOAD_REGISTRY: std::cell::RefCell<
         std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
-    /// The load variable a pointer-load name was first minted from, whose
+    /// The read observation a pointer-load name was first produced from, whose
     /// epoch-scoped live origin answers what existed when the value was read
     /// (`loaded_pointer_read_predates_block`). The defining snapshot cannot:
     /// it may be a canonical projection that keeps only the load's own block.
     static POINTER_LOAD_SOURCES: std::cell::RefCell<
-        std::collections::HashMap<PointerLoadId, Variable>,
+        std::collections::HashMap<PointerLoadId, read_observations::Id>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
     /// Load variable -> the load it names (canonical memory, pointer, kind),
     /// its first-seen live origin and the origin epoch that origin was
@@ -2406,7 +2394,7 @@ pub(crate) struct LoadRegistryState {
     variables: std::collections::HashMap<Variable, RegisteredLoad>,
     read_observations: read_observations::State,
     pointers: std::collections::HashMap<PointerLoadId, (SharedCMemory, Pointer)>,
-    pointer_sources: std::collections::HashMap<PointerLoadId, Variable>,
+    pointer_sources: std::collections::HashMap<PointerLoadId, read_observations::Id>,
     widths: std::collections::HashMap<(SharedCMemory, Pointer), u32>,
     widths_at_address: std::collections::HashMap<Pointer, u32>,
     array_widths: std::collections::BTreeMap<(PointerBlock, i64), SymbolicArrayAccessWidths>,
@@ -3429,33 +3417,42 @@ pub(crate) fn loaded_pointer_predates_block(variable: &Variable, block: &Pointer
     }
 }
 
-/// Record the load variable a pointer-load name was minted from; the first
-/// record stands, as a registered load keeps its first-seen origin.
-pub(crate) fn record_pointer_load_source(identity: PointerLoadId, variable: Variable) {
-    POINTER_LOAD_SOURCES.with(|sources| {
-        sources.borrow_mut().entry(identity).or_insert(variable);
-    });
+/// Retain the selected read's observation independently of any scalar name.
+pub(crate) fn record_pointer_load_source(identity: PointerLoadId, read: &MachineTerm) {
+    let MachineTerm::MemoryLoad(memory, address, kind) = read else {
+        return;
+    };
+    if let Some(observation) = read_observations::existing(memory, address, *kind) {
+        POINTER_LOAD_SOURCES.with(|sources| {
+            sources.borrow_mut().entry(identity).or_insert(observation);
+        });
+    }
 }
 
-/// [`loaded_pointer_predates_block`] for a pointer-load name: the read's
-/// bytes are those of its source load, so a local that did not exist at that
-/// load's origin is out of the value's reach.
+fn pointer_load_origin(identity: PointerLoadId) -> Option<SharedCMemory> {
+    let observation =
+        POINTER_LOAD_SOURCES.with(|sources| sources.borrow().get(&identity).copied())?;
+    read_observations::observation(observation)?.origin
+}
+
 pub(crate) fn loaded_pointer_read_predates_block(
     identity: PointerLoadId,
     block: &PointerBlock,
 ) -> bool {
-    POINTER_LOAD_SOURCES
-        .with(|sources| sources.borrow().get(&identity).copied())
-        .is_some_and(|variable| loaded_pointer_predates_block(&variable, block))
+    if !block.is_local_block() && !matches!(block, PointerBlock::Heap(_)) {
+        return false;
+    }
+    let Some(origin) = pointer_load_origin(identity) else {
+        return false;
+    };
+    match block {
+        PointerBlock::Heap(identity) => !origin.heap_identity_allocated(*identity),
+        _ => !origin.has_block(block) && !origin.forgotten.ended_local_blocks.contains(block),
+    }
 }
 
-/// The heap identities a pointer-load name can point into, ascending: those
-/// its read's origin had handed out (see [`loaded_pointer_predates_block`]).
-/// `None` when the name has no recorded source, which judges nothing.
 pub(crate) fn loaded_pointer_read_heap_identities(identity: PointerLoadId) -> Option<Vec<u64>> {
-    let variable = POINTER_LOAD_SOURCES.with(|sources| sources.borrow().get(&identity).copied())?;
-    let (origin, _) = registered_load_origin_for_variable(&variable)?;
-    Some(origin.allocated_heap_identities())
+    Some(pointer_load_origin(identity)?.allocated_heap_identities())
 }
 
 /// Views a term as a memory load for equality reasoning: load terms pass
@@ -3625,8 +3622,7 @@ pub(crate) fn canonical_form_of_load(
     canonical_scalar_read(&MachineTerm::MemoryLoad(memory, Box::new(pointer), kind))
 }
 
-/// Resource cells keep the existing pointer producer until pointer-valued
-/// reads migrate. Ordinary scalar cells use structural descriptors.
+/// Resource cells retain structural descriptors for integers and pointers.
 pub(crate) fn canonical_cell_load(
     memory: SharedCMemory,
     pointer: Pointer,
@@ -3634,13 +3630,7 @@ pub(crate) fn canonical_cell_load(
 ) -> MachineTerm {
     let kind = LoadKind::of_type(ty).expect("scalar cell read kind");
     let read = MachineTerm::MemoryLoad(memory, Box::new(pointer), kind);
-    if ty.is_pointer() {
-        load_variable_for_term(&read)
-            .map(|(name, _)| MachineTerm::Variable(name))
-            .unwrap_or(read)
-    } else {
-        canonical_scalar_read(&read)
-    }
+    canonical_scalar_read(&read)
 }
 
 /// The test-only audit of the creation-time invariant (see
@@ -4609,7 +4599,7 @@ pub(crate) fn latest_wide_load_observation(variable: &Variable) -> Option<Machin
 
 /// Select the structural identity of an ordinary scalar read. Selection uses
 /// only memory structure; stored literals never replace the read expression.
-fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
+pub(in crate::kernel) fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
     let MachineTerm::MemoryLoad(origin, original_pointer, original_kind) = bits else {
         return bits.clone();
     };
@@ -4802,6 +4792,7 @@ fn load_variable_for_term_uncached(bits: &MachineTerm) -> Option<(Variable, Mach
 /// kernel-certified by construction: the load variable represents this
 /// load. It must not demand a checkable assumption derivation
 /// downstream.
+#[cfg(test)]
 fn mint_load_variable(
     bits: &MachineTerm,
     facts: &mut ExecutionFacts,
@@ -4991,18 +4982,7 @@ pub(in crate::kernel) fn symbolic_load_value_unrecorded(
         | CType::Float64Pointer
         | CType::Float32PointerPointer
         | CType::Float64PointerPointer => Some(memory.symbolic_pointer_load(pointer, value_type)),
-        CType::FunctionPointer(_) => {
-            let load = MachineTerm::MemoryLoad(
-                crate::kernel::intern_c_memory(memory.clone()),
-                Box::new(pointer.clone()),
-                LoadKind::Int32,
-            );
-            let (variable, _) = load_variable_for_term(&load)?;
-            Some(CValue::typed_pointer(
-                Pointer::symbolic_function(variable),
-                value_type,
-            ))
-        }
+        CType::FunctionPointer(_) => Some(memory.symbolic_pointer_load(pointer, value_type)),
         CType::Int8Array(_) => None,
         CType::Int32Array(_)
         | CType::UInt8Array(_)
@@ -5053,13 +5033,12 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
                 Box::new(pointer.clone()),
                 LoadKind::Int32,
             );
-            return LOAD_VARIABLE_CACHE.with(|cache| {
-                let variable = cache.borrow().get(&load)?.0;
+            return SCALAR_READ_CACHE.with(|cache| {
+                let read = cache.borrow().get(&load)?.0.clone();
                 Some(CValue::Pointer(CPointerValue::from_read(
-                    Pointer::loaded(&MachineTerm::Variable(variable))
-                        .expect("cached pointer cells have registered read identities"),
+                    Pointer::loaded(&read).expect("cached pointer read descriptor"),
                     c_type,
-                    &crate::kernel::intern_c_memory(memory.clone()),
+                    &crate::kernel::intern_c_memory_ref(memory),
                     pointer,
                 )))
             });
@@ -5092,14 +5071,7 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
             Box::new(pointer.clone()),
             LoadKind::Int32,
         );
-        let (variable, definition) = load_variable_for_term(&load)
-            .expect("symbolic pointer cells must be backed by memory loads");
-        let value = Pointer::loaded(&MachineTerm::Variable(variable))
-            .expect("symbolic pointer cells have registered read identities");
-        if let MachineTerm::MemoryLoad(snapshot, address, _) = definition {
-            crate::kernel::equality_graph::EqualityGraph::default()
-                .register_pointer_read_definition(&value, &snapshot, &address);
-        }
+        let value = Pointer::loaded(&load).expect("symbolic pointer cell read");
         return Some(CValue::Pointer(CPointerValue::from_read(
             value,
             c_type,
@@ -5130,6 +5102,47 @@ pub(in crate::kernel) fn symbolic_storage_cell_value(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pointer_producers_do_not_allocate_scalar_names() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let memory = CMemory::new();
+        let address = Pointer::symbolic(Variable(93_001));
+        let before = load_variable_registry_len();
+        for ty in [
+            CType::Int32Pointer,
+            CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+        ] {
+            let ordinary = symbolic_load_value(&memory, &address, ty).unwrap();
+            let logical = memory.symbolic_pointer_version_load(&address, ty);
+            let entry = symbolic_storage_cell_value(&memory, &address, ty, true)
+                .expect("entry pointer read");
+            let run = memory.clone().with_seeded_cells(
+                address.clone(),
+                8,
+                ty,
+                0,
+                1,
+                intern_c_memory_ref(&memory),
+            );
+            let CExpressionOutcome::Value(seeded) = run.load(&address) else {
+                panic!("seeded pointer read");
+            };
+            for value in [&ordinary, &logical, &entry, &seeded] {
+                let CValue::Pointer(pointer) = value else {
+                    panic!("pointer read");
+                };
+                let read = pointer
+                    .pointer()
+                    .as_loaded_value()
+                    .expect("structural read");
+                assert_eq!(read.defining_address, address);
+            }
+            assert_eq!(ordinary, logical);
+            assert_eq!(ordinary, entry);
+            assert_eq!(load_variable_registry_len(), before);
+        }
+    }
+
     #[test]
     fn querying_a_registered_read_preserves_its_access_width() {
         for bytes in [4, 8] {
@@ -5197,13 +5210,24 @@ mod tests {
 
     #[test]
     fn forced_logical_pointer_reads_keep_the_snapshot_identity_of_cached_values() {
-        for stored in [Pointer::null(), Pointer::symbolic(Variable(989_850))] {
+        for (ty, stored) in [
+            (CType::Int32Pointer, Pointer::null()),
+            (CType::Int32Pointer, Pointer::symbolic(Variable(989_850))),
+            (
+                CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+                Pointer::null(),
+            ),
+            (
+                CType::FunctionPointer(CallbackSignature::UNSPECIFIED),
+                Pointer::function("callback"),
+            ),
+        ] {
             let _session = crate::kernel::VerificationSession::enter();
             let address = Pointer {
                 block: PointerBlock::ExternalArgument,
                 offset: PointerOffsetTerm::Constant(0),
             };
-            let value = CValue::typed_pointer(stored.clone(), CType::Int32Pointer);
+            let value = CValue::typed_pointer(stored.clone(), ty);
             let memory = CMemory::new().store(address.clone(), value.clone());
             let context = PureFactContext::new()
                 .allow_symbolic_contract_loads()
@@ -5215,7 +5239,7 @@ mod tests {
             let ordinary = evaluate_logical_memory_load_paths(
                 &memory,
                 address.clone(),
-                CType::Int32Pointer,
+                ty,
                 ExecutionFacts::new(),
                 vec![],
                 &context,
@@ -5238,7 +5262,7 @@ mod tests {
             let forced = evaluate_logical_memory_load_paths(
                 &memory,
                 address.clone(),
-                CType::Int32Pointer,
+                ty,
                 ExecutionFacts::new(),
                 vec![],
                 &forced_context,
@@ -5812,7 +5836,10 @@ mod tests {
                 let CValue::Pointer(cached) = cached else {
                     panic!("cached pointer expected");
                 };
-                assert!(matches!(cached.pointer().block, PointerBlock::Symbolic(_)));
+                assert!(matches!(
+                    cached.pointer().block,
+                    PointerBlock::LoadedPointer(_)
+                ));
                 let target = Pointer {
                     block: PointerBlock::Heap(8702),
                     offset: PointerOffsetTerm::Constant(0),
@@ -5965,7 +5992,10 @@ mod tests {
             let CValue::Pointer(cached) = cached else {
                 panic!("cached pointer expected");
             };
-            assert!(matches!(cached.pointer().block, PointerBlock::Symbolic(_)));
+            assert!(matches!(
+                cached.pointer().block,
+                PointerBlock::LoadedPointer(_)
+            ));
             assert!(!cached.pointer().block.proven_distinct(&target.block));
         }
     }
@@ -7129,26 +7159,18 @@ mod tests {
         let CExpressionOutcome::Value(CValue::Pointer(read)) = &path.outcome else {
             panic!("function pointer expected");
         };
-        assert!(path.facts.iter().any(|fact| matches!(
-            fact.generated_load_binding(),
-            Some(GeneratedLoadBinding::Exact {
-                typed_pointer_value: Some(_),
-                ..
-            })
-        )));
+        assert!(
+            path.facts
+                .iter()
+                .any(|fact| fact.has_checked_pointer_read())
+        );
         let known = path.facts.iter().fold(context.clone(), |context, fact| {
             context.assume_proposition(fact.proposition().clone())
         });
         let merged =
             crate::kernel::reasoning::merge_facts(&ExecutionFacts::new(), &path.facts, &known)
                 .unwrap();
-        assert!(merged.iter().any(|fact| matches!(
-            fact.generated_load_binding(),
-            Some(GeneratedLoadBinding::Exact {
-                typed_pointer_value: Some(_),
-                ..
-            })
-        )));
+        assert!(merged.iter().any(|fact| fact.has_checked_pointer_read()));
         let plain: ExecutionFacts = path
             .facts
             .iter()
@@ -7782,24 +7804,10 @@ mod tests {
         // producer fact being admitted first.
         let application = Pointer::loaded_value(&snapshot, &address);
         assert_eq!(value.pointer(), &application);
-        assert_eq!(facts.len(), 1);
-        let fact = &facts[0];
         assert!(
-            matches!(fact.generated_load_binding(), Some(GeneratedLoadBinding::Exact {
-            typed_pointer_value: Some(recorded), ..
-        }) if recorded == value.pointer())
+            facts.is_empty(),
+            "the descriptor needs no defining equation"
         );
-        assert_eq!(fact.generated_load_source_events().len(), 1);
-        assert_eq!(fact.generated_load_source_events()[0].source(), &source);
-        assert!(matches!(fact.generated_load_source_events()[0].binding(),
-            GeneratedLoadBinding::Exact { typed_pointer_value: Some(recorded), .. }
-                if recorded == value.pointer()));
-        // An ordinary proposition, even with copied metadata, is not a producer.
-        let forged = ExecutionPureFact::new(fact.proposition().clone())
-            .with_generated_load_binding(fact.generated_load_binding().unwrap().clone());
-        forged.retain_pointer_read_definition(&context);
-        assert!(context.pure_facts().is_empty());
-        fact.retain_pointer_read_definition(&context);
         assert!(context.pointers_known_equal(value.pointer(), &application));
         assert!(context.pure_facts().is_empty());
         assert!(

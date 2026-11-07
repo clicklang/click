@@ -2517,13 +2517,10 @@ mod tests {
             CMemory::new().store(to.clone(), CValue::Int32(7u32.into())),
         );
         let read = |address: &Pointer| {
-            let MachineTerm::Variable(variable) = crate::kernel::eval::canonical_cell_load(
-                memory.clone(),
-                address.clone(),
-                CType::Int32Pointer,
-            ) else {
-                panic!("expected a named read")
-            };
+            let load =
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+            let (variable, _) =
+                crate::kernel::load_variable_for_term(&load).expect("legacy read adapter");
             Pointer::symbolic(variable)
         };
         let input = read(&from);

@@ -1610,15 +1610,14 @@ prerequisites have been checked. The graph's generation invalidates equality
 misses recorded before publication; persistent sibling contexts retain their
 own admitted unions.
 
-Function-pointer reads use their exact registered load-variable definition;
-they cannot be recovered by treating pointer arithmetic as a read. Nonvolatile
-function reads retain a typed `GeneratedLoadBinding`, including ordinary
-statement reads from borrowed callback tables. Expression-fact composition
-preserves certified producer metadata even when its defining proposition is
-already known. Statement publication retains only the new checked evidence
-suffix in the successor's fact context, rather than reducing it to bare
-propositions. Existing object-pointer observation policy and volatile-read
-behavior are preserved.
+Function-pointer reads retain the same structural loaded-pointer descriptor as
+object-pointer reads, with the callback signature in the complete C value.
+Their descriptor supplies the exact snapshot and address without a scalar
+variable or a defining equation. Nonvolatile statement reads from borrowed
+callback tables also retain the checked current-cell equation. Statement
+publication preserves that evidence in the successor's fact context; it grants
+neither an ordinary proposition premise nor access to memory. Volatile reads
+remain outside this bridge.
 
 [`function_pointer_read_uses_checked_table_alias.md`](https://github.com/clicklang/click/blob/master/mdtests/function_pointer_read_uses_checked_table_alias.md)
 checks a complete callback-field copy through a proved constant-table alias;
