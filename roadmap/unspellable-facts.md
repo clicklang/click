@@ -560,15 +560,22 @@ verifies. No stack or work limit was raised. A small scalar-store/owned-array
 loop reproduction also passes, so the remaining arena issue is not the basic
 kept-scalar frame rule.
 
-Remaining reproduced example failures are `arena` and `owned-vector`. Arena still
-loses `live_regions == 0` across initialization's loop. Explicit transport
-proves that link and reaches a later quantified comparison in `arena_alloc`.
-Owned-vector still cannot transport the copied element equality across its
-pointer-field update and free. The explicit pointer chain succeeds when the
-free's frame equality is cited: the frame fact is present. Transporting the
-indexed scalar read still refuses even with that pointer alias cited. These
-diagnostic proofs are not shipped as workarounds.
-Complete these investigations, then rerun the full gate, selected expansion
+The subsequent complete unit/API run passed 7,642 of 7,643 tests. Its only
+failure required the expander to emit `normalize()` even though it now emits
+`assumption()`. The updated regression checks independent replay with implicit
+solving disabled, and passes. The two constant-cost cache regressions exposed
+by an intervening full gate also pass unchanged after retaining the observed-width
+flag in the scalar-read cache; typed cache hits avoid a redundant width lookup.
+
+`owned-vector` now verifies with explicit pointer alias, indexed-address equality,
+and separation premises for its existing transport. The C program and contract
+are unchanged. Arena's initialization and quantified comparison links verify
+with explicit transport and per-witness proofs, but its later call-frame
+transport still fails. A reduced variant of
+`transport_carries_a_kept_slot_cell_across_a_call.md` reproduces a failure after
+changing its index from `first->at` to `first->at + 0`. Investigation is now at
+the range-placement/transport boundary; the arena diagnostic proofs are not
+shipped. Complete that investigation, then rerun the full gate, selected expansion
 checks and fact-stability audit before publishing the producer cutover.
 
 The ordinary integer producer switch follows the address-index migration.

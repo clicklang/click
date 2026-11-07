@@ -2363,8 +2363,10 @@ thread_local! {
     static LOAD_VARIABLE_CACHE: std::cell::RefCell<
         std::collections::HashMap<MachineTerm, (Variable, MachineTerm)>,
     > = std::cell::RefCell::new(std::collections::HashMap::new());
+    // The flag retains whether version selection used an observed width.
+    // Such hits need no second metadata lookup; widening clears this cache.
     static SCALAR_READ_CACHE: std::cell::RefCell<
-        std::collections::HashMap<MachineTerm, MachineTerm>,
+        std::collections::HashMap<MachineTerm, (MachineTerm, bool)>,
     > = Default::default();
     static TERM_CACHE: std::cell::RefCell<
         std::collections::HashMap<MachineTerm, MachineTerm>,
@@ -4611,14 +4613,15 @@ fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
     let MachineTerm::MemoryLoad(origin, original_pointer, original_kind) = bits else {
         return bits.clone();
     };
-    if let Some(read) = SCALAR_READ_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
+    if let Some((read, typed)) = SCALAR_READ_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
         let MachineTerm::MemoryLoad(memory, pointer, kind) = &read else {
             unreachable!("cached scalar read")
         };
         // A conservative, untyped selection is not an observed access width.
         // Once a producer supplies the width, select its version with that
         // width instead of treating the earlier guess as an eight-byte load.
-        if existing_read_access_width(memory, pointer, *kind).is_some()
+        if typed
+            || existing_read_access_width(memory, pointer, *kind).is_some()
             || recorded_load_access_width(origin, original_pointer).is_none()
         {
             read_observations::produced(&read, bits);
@@ -4682,7 +4685,7 @@ fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
         if cache.len() >= 100_000 {
             cache.clear();
         }
-        cache.insert(bits.clone(), read.clone());
+        cache.insert(bits.clone(), (read.clone(), recorded_bytes.is_some()));
     });
     read
 }
@@ -5071,7 +5074,7 @@ pub(in crate::kernel) fn cached_symbolic_storage_cell_value(
     crate::instrumentation::record_deterministic_work(1);
     SCALAR_READ_CACHE
         .with(|cache| cache.borrow().get(&load).cloned())
-        .map(wrap)
+        .map(|(read, _)| wrap(read))
 }
 
 pub(in crate::kernel) fn symbolic_storage_cell_value(

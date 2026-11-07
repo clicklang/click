@@ -12521,9 +12521,8 @@ fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
         "{expanded}"
     );
     assert!(expanded.contains("unfold(valid_pool);"), "{expanded}");
-    assert!(expanded.contains("normalize();"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the retained predicate closure should check independently");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        .expect("the retained predicate closure should check independently without search");
 }
 
 #[test]
