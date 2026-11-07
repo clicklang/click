@@ -258,6 +258,13 @@ kernel names them under `__click_`: `kernel::predicate_source_name` gives the
 Click name that lowers to each, and the printer, synthesis, and authority
 classification all read that one mapping.
 
+The observed value carried by a volatile read event has a public spelling even
+though the event predicate remains authority: `R.read_event(i).result`. Execution
+records its exact typed value in the presentation state and indexes that value
+for raising. Lowering retrieves it directly without consulting equalities or
+performing another load. Internal handles therefore raise as event results,
+not anonymous variables.
+
 Making a proposition kind authority is a design decision, never a way to
 avoid spelling a fact a proof could need to cite.
 

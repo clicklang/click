@@ -3848,3 +3848,117 @@ fn shared_scalar_load_raises_and_relowers_to_the_same_read_node() {
         Some(root)
     );
 }
+
+#[test]
+fn volatile_read_event_results_raise_and_lower_exactly() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let state = CState::new();
+    let values = [
+        CValue::Int32(MachineTerm::Variable(Variable(762001))),
+        CValue::typed_pointer(Pointer::symbolic(Variable(762002)), CType::Int32Pointer),
+    ];
+    let mut points = RecordedSnapshots::new();
+    points.record_read_event_values(3, values.iter());
+    let _points = SynthesisRecordedPointsScope::enter(&points);
+    for (event, value) in values.iter().enumerate() {
+        let expression = synthesize_surface_value(value, ParameterBinding::default(), &state)
+            .expect("event result spelling");
+        let expected = ContractExpression::RegionResult(CodeRegionRef::Path(vec![
+            SourcePathStep::Region(3),
+            SourcePathStep::ReadEvent(event),
+        ]));
+        assert_eq!(expression, expected);
+        let text = diagnostics::describe_contract_expression(&expression);
+        assert_eq!(text, format!("region(3).read_event({event}).result"));
+        let parsed = parser::parse(&format!(
+            "theorem observed() {{ requires {text} == {text}; ensures true; }}"
+        ))
+        .unwrap();
+        let Requirement::Proposition(claim) = &parsed.theorem_definitions()[0].requires()[0] else {
+            panic!("parsed comparison");
+        };
+        assert_eq!(
+            claim,
+            &ClickProposition::Comparison {
+                left: expected.clone(),
+                operator: ComparisonOperator::Equal,
+                right: expected,
+            }
+        );
+        let lowered = relower_written_proposition_with_snapshots(claim, &state, &state, &points)
+            .expect("event result lowers");
+        assert_eq!(
+            points
+                .region_result_value(&CodeRegionRef::Path(vec![
+                    SourcePathStep::Region(3),
+                    SourcePathStep::ReadEvent(event)
+                ]))
+                .unwrap(),
+            *value
+        );
+        let expected = match value {
+            CValue::Int32(term) => Proposition::ConditionIs(
+                ConditionTerm::Compare {
+                    format: crate::kernel::MachineIntegerType::Int32,
+                    relation: crate::kernel::CompareRelation::Equal,
+                    left: Box::new(term.clone()),
+                    right: Box::new(term.clone()),
+                },
+                true,
+            ),
+            CValue::Pointer(pointer) => Proposition::ConditionIs(
+                ConditionTerm::pointer_equal(pointer.pointer().clone(), pointer.pointer().clone()),
+                true,
+            ),
+            _ => unreachable!(),
+        };
+        assert_eq!(lowered, expected);
+    }
+}
+
+#[test]
+fn volatile_read_event_results_follow_snapshot_branches() {
+    let point = ProgramPointRef {
+        region: CodeRegionRef::Region(3),
+        kind: ProgramPointKind::Exit,
+    };
+    let old = CValue::Int32(MachineTerm::Variable(Variable(762010)));
+    let next = CValue::Int32(MachineTerm::Variable(Variable(762011)));
+    let mut ancestor = RecordedSnapshots::new();
+    ancestor.insert(point.clone(), CState::new());
+    ancestor.record_read_event_values(3, std::iter::once(&old));
+    let mut left = ancestor.clone();
+    left.insert(point.clone(), CState::new());
+    left.record_read_event_values(3, std::iter::once(&next));
+    let mut right = ancestor.clone();
+    right.insert(point, CState::new());
+    right.record_read_event_values(3, std::iter::once(&next));
+    let joined = left.common_descendant(&right, &ancestor).unwrap();
+    assert_eq!(
+        joined
+            .region_result_value(&CodeRegionRef::Region(3))
+            .unwrap(),
+        next
+    );
+    assert!(joined.read_event_naming_value(&old).is_none());
+    right.record_read_event_values(3, std::iter::once(&old));
+    let disagreed = left.common_descendant(&right, &ancestor).unwrap();
+    assert!(
+        disagreed
+            .region_result_value(&CodeRegionRef::Region(3))
+            .is_err()
+    );
+    left.retain(|_, _| true);
+    assert_eq!(
+        left.region_result_value(&CodeRegionRef::Region(3)).unwrap(),
+        next
+    );
+    left.retain(|_, _| false);
+    assert!(left.region_result_value(&CodeRegionRef::Region(3)).is_err());
+    assert_eq!(
+        ancestor
+            .region_result_value(&CodeRegionRef::Region(3))
+            .unwrap(),
+        old
+    );
+}
