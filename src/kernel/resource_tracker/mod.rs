@@ -165,9 +165,10 @@ pub(crate) enum Resource<'a> {
     /// about without its width would be separated from that store and keep
     /// its old value across it.
     ///
-    /// Callers that cannot name a width — a raw `MemoryLoad` term records
-    /// none — pass [`MAX_SCALAR_ACCESS_BYTES`]. Over-stating a width can
-    /// only shrink the separated set, never grow it.
+    /// Read descriptors use their recorded access width, or their kind's
+    /// conservative width when unobserved. Callers holding only an address
+    /// pass [`MAX_SCALAR_ACCESS_BYTES`]. Over-stating a width can only shrink
+    /// the separated set, never grow it.
     Cell { pointer: &'a Pointer, bytes: u32 },
     /// A whole memory block, as a pure function reads it through an array
     /// argument: the footprint is every cell reachable through the pointer.

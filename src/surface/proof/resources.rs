@@ -346,13 +346,17 @@ fn dynamic_body_fact_dependency(
                 // A view the instance being opened publishes over its own
                 // bytes (an owned `cstr_at` held folded across `open`)
                 // borrows nothing: its authority is that live owner, so the
-                // read is a read of owned memory, as after `unfold`.
-                if temporary_views.opened_owner.is_some_and(|owner| {
-                    state
-                        .resources()
-                        .owned_projection_support(occurrence)
-                        .is_some_and(|(support, _)| support == owner)
-                }) {
+                // read is a read of owned memory, as after `unfold`. A view
+                // with an exact support edge to plain owned memory likewise
+                // needs no loan. Unrelated owners cannot supply this edge.
+                if state
+                    .resources()
+                    .owned_projection_support(occurrence)
+                    .is_some_and(|(support, fact)| {
+                        temporary_views.opened_owner == Some(support)
+                            || fact.memory_own_range().is_some()
+                    })
+                {
                     owned_projection = true;
                     continue;
                 }
@@ -6018,6 +6022,30 @@ void child_release(struct child* obj) {
             unique_borrowed_resource_dependency(&bound_state.with_loan_ledger(Some(ended)), &view,)
                 .is_err(),
             "a historical-only operation must still reject an ended binding"
+        );
+
+        // A view published from this exact plain-memory owner is an owned
+        // read. Merely placing an unrelated view beside it remains invalid.
+        let (resources, occurrences) =
+            ResourceContext::new().unchecked_with_facts_and_occurrences([own.clone()]);
+        let supported = resources.unchecked_with_supported_facts_from_occurrence_with_memory(
+            occurrences[0].1,
+            &own,
+            [view.clone()],
+            &memory,
+        );
+        let supported_state = CState::new()
+            .with_memory(memory.clone())
+            .with_resource_context(supported);
+        assert!(
+            dynamic_body_fact_dependency(
+                &proposition,
+                &supported_state,
+                &assumptions,
+                &no_temporary_views
+            )
+            .unwrap()
+            .is_none()
         );
 
         let unbound_state = CState::new().with_memory(memory).with_resource_context(

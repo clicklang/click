@@ -186,6 +186,10 @@ const HAVOC_RANGE_HOPS: usize = 64;
 
 thread_local! {
     static COLLECTING_HAVOC_RANGES: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    // Observation origins can lead back to a snapshot whose havoc bounds
+    // contain this same read. Each root contributes its bounded range walk
+    // once to the current planner collection, including cyclic origins.
+    static FRAME_SNAPSHOTS: std::cell::RefCell<std::collections::HashSet<(u32, u32)>> = Default::default();
     /// Set while [`execution_variable_ceiling`] collects: an interned
     /// snapshot then contributes only its greatest remembered variable below
     /// the execution ceiling, which is all a ceiling needs.
@@ -302,13 +306,17 @@ pub(crate) fn collect_proposition_frame_variables(
     proposition: &Proposition,
     variables: &mut BTreeSet<Variable>,
 ) {
-    struct Scope(bool);
+    struct Scope(bool, std::collections::HashSet<(u32, u32)>);
     impl Drop for Scope {
         fn drop(&mut self) {
             COLLECTING_HAVOC_RANGES.with(|flag| flag.set(self.0));
+            FRAME_SNAPSHOTS.with(|seen| *seen.borrow_mut() = std::mem::take(&mut self.1));
         }
     }
-    let _scope = Scope(COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(true)));
+    let _scope = Scope(
+        COLLECTING_HAVOC_RANGES.with(|flag| flag.replace(true)),
+        FRAME_SNAPSHOTS.with(|seen| std::mem::take(&mut *seen.borrow_mut())),
+    );
     collect_proposition_connection_variables(proposition, variables);
 }
 
@@ -5508,7 +5516,9 @@ pub(in crate::kernel) fn collect_shared_memory_bitvector_variables(
     memory: &SharedCMemory,
     variables: &mut BTreeSet<Variable>,
 ) {
-    if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get) {
+    if COLLECTING_HAVOC_RANGES.with(std::cell::Cell::get)
+        && FRAME_SNAPSHOTS.with(|seen| seen.borrow_mut().insert(memory.arena_id()))
+    {
         // The ranges a call or loop wrote to reach this snapshot: a fact
         // about one of their bounds is what frames a load across the edge.
         let mut current = memory.clone();

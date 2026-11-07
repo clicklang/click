@@ -4072,9 +4072,9 @@ fn synthesize_surface_bitvector(
                 // An unsigned byte read is spelled as one whatever the
                 // pointer's own element type: through a signed plain `char`
                 // pointer it is the byte's one name, not the pointer's read.
-                // A `static` array's name has its own element type (a struct
-                // array's is bytes), which the legacy `load` would read; a
-                // 32-bit read through it states its own type.
+                // When no pointee type was recovered, the pointer's spelling
+                // must not choose the access width. A word read states its
+                // own type, including through byte-addressed struct fields.
                 let typed_word = value_type.is_none() && *kind == crate::kernel::LoadKind::Int32;
                 let value_type = if *kind == crate::kernel::LoadKind::UInt8 {
                     Some(CType::UInt8)

@@ -507,55 +507,69 @@ were not raised and the nightly suite was not run.
 
 The ordinary integer producer switch is in progress on
 `codex/structural-scalar-producers`; it has not been published or merged.
-The integrated cutover passed the unit/API phase (7604 tests) before the latest
-consumer repairs, but the full gate is not green. The focused fixture recheck
-currently passes 39 of the original 42 failing Markdown fixtures; three example
-projects still fail. `input-cursor` now passes unchanged: ordinary integer read
-facts no longer enter the legacy load-time transport index, avoiding repeated
-history walks during resource expansion. A deterministic regression covers
-16/32/64 read facts without growing transport work. Re-run the full gate,
-selected expansion checks and fact-stability audit after completing these repairs.
+The cutover is rebased onto upstream `0218b3138` (including merged PR #2484).
+Its first fresh full unit/API run passed 7,631 of 7,637 tests. The fixture phase,
+run separately after that failed unit phase, passed 54 of 58 examples and 5,079
+of 5,088 Markdown fixtures. These are baseline counts, not a green verdict.
+No full nightly run or raised limits were used.
 
-The decrement fixture now passes unchanged. Certificate spelling recognizes exact
-structural read atoms (snapshot, address and kind), and observation casts retain
-nested historical Surface operands. `label-build-flags` also passes: dynamic
-resource dependencies validate the original loan binding after proving coverage,
-rather than inventing a narrower binding that loses its coverage premises.
-Wrong-holder, ended-loan and missing-range controls remain rejected.
+The `cases` obligation change landed in PR #2484. Its isolated gate passed
+7,622 unit/API tests, 58 examples and 5,088 Markdown fixtures before this
+producer cutover. Pure proofs, execution frontiers and post-execution paths
+are covered; source haves retain lexical match bindings and certificates.
+That isolated result does not establish that scalar producers are green.
 
-Both original loop-exit disjunction fixtures passed focused rechecks with the
-ordinary `cases` obligation change. The remaining original Markdown failure is
-`uninitialized_destination_beside_a_viewed_source`. It has a passing explicit
-proof; its automatic range split recognizes shared comparisons and proves the
-earlier-index arm, but still misses the boundary arm.
+The sequence and copy-loop repairs now pass unchanged. Written sequence
+comparisons provide the balanced conjunction's child Surface propositions,
+including historical selectors; recursive closure uses the same stored-value
+and cell-frame strategies as ordinary closure. The historical scalar read
+through a loaded `p->kid` plus a byte displacement now spells the field with
+its correct width. Targeted expansion checks replay with implicit solving
+disabled; the sequence check also rejects a changed final element.
 
-The user approved ordinary obligation discharge before the existing exact
-`cases` split. The isolated fix is PR #2484 (auto-merge enabled, not yet confirmed
-merged). Pure proofs, execution frontiers, and post-execution paths are covered;
-source haves retain their lexical match bindings and completed certificates.
-The isolated full gate passed 7,622 unit/API tests, 58 examples, and 5,088 Markdown
-fixtures in 12m03s, with the ten-minute budget warning and no raised limits.
-Targeted expansion replay with implicit solving disabled and deterministic
-32/128/512-fact scaling checks passed too. The full nightly suite was not run.
-The fix is also checkpointed in this producer worktree, but the integrated
-producer cutover still needs a fresh build and validation; the isolated gate
-does not establish that the producer migration is green.
+The fresh audit exposed an access-metadata defect: an untyped read's guessed
+width could become an observation and widen a later four-byte producer to
+eight bytes. Inspection no longer creates observations, and canonicalization
+now distinguishes a conservative guess from a recorded access. A typed producer
+replaces a guess; genuinely observed widths still combine conservatively.
+A separate dependency-check defect rejected views with recorded support from
+a live plain-memory owner. That exact support edge now supplies the dependency;
+unrelated ownership and unopened composite owners do not. All six dependency
+controls pass, including the existing unbound-view rejection cases. Selected
+loans still require validation.
 
-The remaining examples are `arena`, `owned-vector`, and `sequence-transform`.
-An explicit transport proves the untouched `arena_init` field across its loop;
-the expanded trace then reaches a later quantified guard comparison in
-`arena_alloc`. Explicit element equalities at function exit prove the unchanged
-sequence contract. Investigate child-goal spelling after its conjunction split:
-the written sequence equality represents the whole conjunction, while generated
-children can lose their Surface forms. These diagnostic proofs are not shipped
-as fixture workarounds; the producer cutover remains unready for publication.
+Focused rechecks after these fixes pass all nine failing Markdown fixtures,
+`bounded-pool`, `refcount`, the authority positive tests and the false-close
+control. The two stale diagnostic width expectations were updated to the
+read kind's conservative pointer-word width. Another regression covers checked
+index substitution rebuilding a read projection for the substituted address.
 
-The targeted expansion recheck passes `saved_memory_descriptors_expand_and_replay`
-and `explicitly_packaged_pointer_frame_expands_without_history_search`.
-`struct_pointer_field_scalar_read_expansion_keeps_its_width` still fails before
-expansion: the selected premise equating `observed` with the historical payload
-read through `p->kid` has no checked source spelling. Repair this spelling gap
-before treating the producer migration as expandable. No full nightly run was used.
+The source-location work-count regression is fixed: upper-bound split candidate
+selection retains its shared pivot instead of exporting it before deciding
+whether to use the candidate. The candidate regression asserts zero exports.
+A fresh focused run passes 1,383 tests, including the complete scaling suite
+and all resource-dependency controls, plus both targeted expansion regressions.
+The source-location diagnostic passes as well.
+
+An explicit indexed-pointer diagnostic exposed recursive frame-dependency
+collection: a read's observation origin can contain a havoc range whose bound
+mentions that same read. A collection-scoped snapshot-root set now terminates
+that cycle without dropping range-bound variables. The cycle regression and
+16/64/256-read scaling case pass, and the formerly crashing vector diagnostic
+verifies. No stack or work limit was raised. A small scalar-store/owned-array
+loop reproduction also passes, so the remaining arena issue is not the basic
+kept-scalar frame rule.
+
+Remaining reproduced example failures are `arena` and `owned-vector`. Arena still
+loses `live_regions == 0` across initialization's loop. Explicit transport
+proves that link and reaches a later quantified comparison in `arena_alloc`.
+Owned-vector still cannot transport the copied element equality across its
+pointer-field update and free. The explicit pointer chain succeeds when the
+free's frame equality is cited: the frame fact is present. Transporting the
+indexed scalar read still refuses even with that pointer alias cited. These
+diagnostic proofs are not shipped as workarounds.
+Complete these investigations, then rerun the full gate, selected expansion
+checks and fact-stability audit before publishing the producer cutover.
 
 The ordinary integer producer switch follows the address-index migration.
 Execution, contracts and resource cells retain structural reads for signed and

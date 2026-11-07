@@ -1609,7 +1609,7 @@ fn integer_surface_trivial(claim: &IntegerAffineClaim) -> Option<ClickPropositio
 
 fn kernel_upper_bound_split_candidate(
     proposition: &Proposition,
-) -> Option<(Variable, MachineTerm)> {
+) -> Option<(Variable, crate::kernel::SharedMachineIntegerTerm)> {
     let Proposition::ConditionIs(condition, true) = proposition else {
         return None;
     };
@@ -1635,15 +1635,9 @@ fn kernel_upper_bound_split_candidate(
         }
         _ => return None,
     };
-    // The existing split planner consumes a native pivot; inspect the shared
-    // comparison before crossing that boundary, preserving its written form.
-    Some((
-        variable,
-        pivot
-            .retain(MachineIntegerType::Int32)
-            .structural_value()
-            .clone(),
-    ))
+    // Candidate inspection retains the shared pivot. Rejected candidates
+    // must not export arithmetic or depend on an earlier export's cache.
+    Some((variable, pivot.retain(MachineIntegerType::Int32)))
 }
 
 // These split conditions come from a native int32 bound. Shield their pivot
@@ -4575,11 +4569,24 @@ mod synthesized_literal_tests {
                 true,
             )
         };
+        let accepted = bound(1);
+        let rejected = bound(2);
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
         assert_eq!(
-            kernel_upper_bound_split_candidate(&bound(1)),
-            Some((index, pivot.clone()))
+            kernel_upper_bound_split_candidate(&accepted),
+            Some((
+                index,
+                crate::kernel::SharedMachineIntegerTerm::intern(
+                    MachineIntegerType::Int32,
+                    pivot.clone()
+                )
+            ))
         );
-        assert!(kernel_upper_bound_split_candidate(&bound(2)).is_none());
+        assert!(kernel_upper_bound_split_candidate(&rejected).is_none());
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
     }
 
     #[test]

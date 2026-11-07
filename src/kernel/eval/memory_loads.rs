@@ -4612,8 +4612,18 @@ fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
         return bits.clone();
     };
     if let Some(read) = SCALAR_READ_CACHE.with(|cache| cache.borrow().get(bits).cloned()) {
-        read_observations::produced(&read, bits);
-        return read;
+        let MachineTerm::MemoryLoad(memory, pointer, kind) = &read else {
+            unreachable!("cached scalar read")
+        };
+        // A conservative, untyped selection is not an observed access width.
+        // Once a producer supplies the width, select its version with that
+        // width instead of treating the earlier guess as an eight-byte load.
+        if existing_read_access_width(memory, pointer, *kind).is_some()
+            || recorded_load_access_width(origin, original_pointer).is_none()
+        {
+            read_observations::produced(&read, bits);
+            return read;
+        }
     }
     let canonical = crate::kernel::memory_provenance::canonicalize_atomic_loads(bits);
     let candidate = match &canonical {
@@ -4643,13 +4653,13 @@ fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
     let MachineTerm::MemoryLoad(memory, pointer, kind) = candidate else {
         unreachable!("selected scalar read")
     };
-    let bytes = recorded_load_access_width(origin, original_pointer)
+    let recorded_bytes = recorded_load_access_width(origin, original_pointer)
         .or_else(|| recorded_load_access_width(&memory, &pointer))
         .or_else(|| {
             existing_read_access_width(origin, original_pointer, *original_kind)
                 .max(existing_read_access_width(&memory, &pointer, kind))
-        })
-        .unwrap_or_else(|| kind.unrecorded_access_byte_width());
+        });
+    let bytes = recorded_bytes.unwrap_or_else(|| kind.unrecorded_access_byte_width());
     let version = crate::kernel::resource_tracker::last_same_point(
         crate::kernel::resource_tracker::Resource::Cell {
             pointer: &pointer,
@@ -4659,7 +4669,11 @@ fn canonical_scalar_read(bits: &MachineTerm) -> MachineTerm {
     )
     .map(|point| point.snapshot().clone())
     .unwrap_or(memory);
-    let id = read_observations::record(&version, &pointer, kind, origin, bytes);
+    let id = if recorded_bytes.is_some() {
+        read_observations::record(&version, &pointer, kind, origin, bytes)
+    } else {
+        read_observations::record_untyped(&version, &pointer, kind, origin)
+    };
     read_observations::select(id);
     let read = MachineTerm::MemoryLoad(version, pointer, kind);
     read_observations::produced(&read, bits);

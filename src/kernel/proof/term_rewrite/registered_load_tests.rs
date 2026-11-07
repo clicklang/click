@@ -16,6 +16,59 @@ fn memory() -> SharedCMemory {
     crate::kernel::intern_c_memory(CMemory::new().with_block("registered-load-capture", 64))
 }
 
+#[test]
+fn checked_index_substitution_reprojects_the_selected_scalar_read() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let memory = crate::kernel::intern_c_memory(memory().memory().clone().store(
+        Pointer {
+            block: PointerBlock::Concrete("registered-load-capture".into()),
+            offset: PointerOffsetTerm::Constant(0),
+        },
+        CValue::Int32(MachineTerm::constant(7)),
+    ));
+    let from = MachineTerm::Variable(Variable(3_219_010));
+    let to = MachineTerm::Variable(Variable(3_219_011));
+    let address = |index: MachineTerm| Pointer {
+        block: PointerBlock::ExternalArgument,
+        offset: PointerOffsetTerm::scale_int32(index, 4),
+    };
+    let read = |index: MachineTerm| {
+        let pointer = address(index);
+        crate::kernel::eval::record_load_access_width(memory.memory(), &pointer, 4);
+        crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+            memory.clone(),
+            Box::new(pointer),
+            LoadKind::Int32,
+        ))
+    };
+    let original = read(from.clone());
+    let MachineTerm::MemoryLoad(projected, pointer, _) = &original else {
+        panic!("structural read");
+    };
+    assert_ne!(*projected, memory);
+    assert_eq!(
+        crate::kernel::prelude::canonical_load_projection_source(projected, pointer),
+        Some(memory.clone())
+    );
+    let mut rewrite = TermRewrite::for_bits_checked(&from, &to);
+    rewrite.enable_registered_load_resolution();
+    let actual = rewrite.bits(&original);
+    assert_eq!(rewrite.refusal(), None);
+    let expected = read(to.clone());
+    assert_eq!(actual, expected);
+    let observed = IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+        MachineIntegerType::Int32,
+        original,
+    ));
+    assert_eq!(
+        TermRewrite::for_bits_checked(&from, &to).integer(&observed),
+        IntegerTerm::Machine(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            expected
+        ))
+    );
+}
+
 fn exact_load(memory: &SharedCMemory, pointer: &Pointer) -> Variable {
     crate::kernel::eval::load_variable_for_exact_cell(
         memory,

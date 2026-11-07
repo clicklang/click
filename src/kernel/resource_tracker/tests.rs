@@ -670,12 +670,11 @@ fn a_version_mismatch_names_the_resource_and_both_points() {
     assert_eq!(
         version_mismatch(&fact(&after), &fact(&entry)),
         Some((
-            // The fact spells a raw `MemoryLoad`; the cell resource it reads
-            // stands for every read of that address, so it is the widest
-            // scalar access, which the load's own kind fits inside.
+            // This unobserved word read retains the conservative pointer-word
+            // width. A typed producer can record its precise scalar width.
             OwnedResource::Cell {
                 pointer: cell.clone(),
-                bytes: super::widest_scalar_access_bytes(),
+                bytes: crate::kernel::LoadKind::Int32.unrecorded_access_byte_width(),
             },
             point(&after),
             point(&entry)

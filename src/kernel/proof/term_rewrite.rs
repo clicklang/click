@@ -6169,6 +6169,25 @@ impl<'a> TermRewrite<'a> {
                     .unwrap_or_else(|| {
                         crate::kernel::load_term_access_width(memory, pointer, *kind)
                     });
+                // A projection belongs to the selected address. Instantiating
+                // an index must select the new address from that projection's
+                // recorded source, as direct lowering does. This is one indexed
+                // lookup, independent of facts and memory-history length.
+                if !use_origin
+                    && let Some(source) =
+                        crate::kernel::prelude::canonical_load_projection_source(memory, pointer)
+                {
+                    crate::kernel::eval::record_load_access_width(
+                        source.memory(),
+                        &rewritten,
+                        bytes,
+                    );
+                    return crate::kernel::eval::canonical_term(&MachineTerm::MemoryLoad(
+                        source,
+                        Box::new(rewritten),
+                        *kind,
+                    ));
+                }
                 let memory = observation
                     .filter(|_| use_origin)
                     .and_then(|read| read.origin)

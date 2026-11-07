@@ -3708,8 +3708,8 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             .filter_map(|(bound, introduced_surface)| {
                 let (variable, pivot) = kernel_upper_bound_split_candidate(&bound)?;
                 let pivot_probe = Proposition::Equal(
-                    Term::Bitvector32(pivot.clone()),
-                    Term::Bitvector32(pivot.clone()),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
+                    Term::Integer(crate::kernel::IntegerTerm::Machine(pivot.clone())),
                 );
                 if crate::kernel::proposition_variables(&pivot_probe).contains(&variable) {
                     return None;
@@ -3723,12 +3723,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     )
                 })?;
                 let split_kernel = Proposition::ConditionIs(
-                    ConditionTerm::Compare {
-                        format: MachineIntegerType::Int32,
-                        relation: CompareRelation::LessThan,
-                        left: Box::new(MachineTerm::Variable(variable)),
-                        right: Box::new(pivot.clone()),
-                    },
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        CompareRelation::LessThan,
+                        [
+                            crate::kernel::MachineOperandView::Legacy(&MachineTerm::Variable(
+                                variable,
+                            )),
+                            pivot.operand_view(),
+                        ],
+                    ),
                     true,
                 );
                 let direct = surface_upper_bound_direct_condition(&bound_surface)?;
@@ -3841,7 +3845,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         .chain(
                             crate::kernel::search::ProofSearch::increment_headroom_premises(
                                 search_input,
-                                &pivot,
+                                pivot.structural_value(),
                                 surface_facts,
                                 premise_anchor,
                             )

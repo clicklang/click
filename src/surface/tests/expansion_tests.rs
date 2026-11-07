@@ -940,8 +940,8 @@ fn struct_pointer_field_scalar_read_expansion_keeps_its_width() {
         .expect("the printed read must retain its four-byte offset");
 }
 
-// Whole-claim expansion must print hidden record ownership and fold inputs
-// in the syntax the author can write, then independently verify them.
+// Splitting a written sequence equality retains the source spelling and
+// historical selector for each generated element equality.
 #[test]
 #[ignore = "nightly: targeted sequence-conjunction expansion coverage"]
 fn sequence_equality_children_retain_snapshot_spellings() {
