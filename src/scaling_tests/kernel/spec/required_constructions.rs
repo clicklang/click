@@ -19,9 +19,9 @@ fn slice_type() -> AlgebraicType {
         name: "Slice".to_string(),
         arguments,
         variants: variants.clone(),
-        schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from(
-            [(value_type, variants)],
-        ))),
+        schemas: std::sync::Arc::new(AlgebraicSchemas::new(std::collections::BTreeMap::from([(
+            value_type, variants,
+        )]))),
     }
 }
 
