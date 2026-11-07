@@ -4206,3 +4206,11 @@ path = "reference/tactics/index.md#preservation"
 [[item]]
 id = "library.theorem.separation::viewable_restrict"
 path = "reference/library/index.md#separationviewable_restrict"
+
+[[item]]
+id = "language.read-event-result"
+path = "reference/language/index.md#at"
+
+[[item]]
+id = "language.word.read_event"
+path = "reference/language/grammar.md#word-index"

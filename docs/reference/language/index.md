@@ -3913,6 +3913,24 @@ that do not produce a result are refused
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
 
+A completed volatile read exposes its observed value as
+`R.read_event(i).result`, where `i` counts volatile reads in execution order
+within the atomic region `R`; volatile writes do not count. For example,
+`statement(1).read_event(0).result` and
+`statement(1).read_event(1).result` distinguish the two observations in
+`x = volatile_value + volatile_value`. Select an atomic subregion first when a
+source statement contains several regions. If the region has exactly one read
+and no call result, `R.result` is also accepted. A call result takes precedence.
+These names retain the typed observed value after locals are overwritten;
+they do not perform another read or grant permission to access memory. Mentioning
+a volatile object in a specification likewise does not create a C access event. The
+current sequential volatile model may give several observations equal values.
+An unexecuted event or an out-of-range index is refused. `read_event(i)` selects
+a result, not an `.entry`/`.exit` point or a stepping target
+(`mdtests/volatile_read_event_results.md`,
+`mdtests/volatile_read_event_requires_execution.md`,
+`mdtests/volatile_read_event_rejects_false_value.md`).
+
 An allocation region also exposes `R.allocation`, the fresh heap identity
 reserved for its successful outcome. For example, `statement(1).allocation`
 keeps this identity distinct from the nullable `statement(1).result`. The

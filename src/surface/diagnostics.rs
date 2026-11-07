@@ -7222,6 +7222,7 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
                 SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
                 SourcePathStep::Read(index) => format!("read({index})"),
+                SourcePathStep::ReadEvent(index) => format!("read_event({index})"),
             })
             .collect::<Vec<_>>()
             .join("."),

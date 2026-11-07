@@ -736,6 +736,7 @@ fn advance_execution_proof_statement(
                     ProgramPointKind::Exit,
                     *exit_state.clone(),
                 );
+                recorded_snapshots.record_read_events(statement_index, &transition.execution_facts);
                 if let Some(result) = &transition.call_result {
                     recorded_snapshots.record_call_result(statement_index, Some(result.clone()));
                 }
