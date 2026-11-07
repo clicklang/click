@@ -2478,10 +2478,8 @@ fn validate_resource_subject_expression_types(
                         argument, *expected,
                     )
                 {
-                    return Err(ClickError::new(format!(
-                        "resource `{name}` argument {index} expects {}, got {} in {context}",
-                        describe_c0_type(*expected),
-                        describe_c0_type(actual)
+                    return Err(ClickError::new(resource_argument_type_message(
+                        name, index, *expected, actual, context,
                     )));
                 }
             }
@@ -3030,6 +3028,34 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
 /// A resource argument follows the predicate rule,
 /// [`click_argument_types_compatible`]: a character pointer is passed as
 /// `uint8` bytes, so `cstr_at(s, n)` takes a C `char *s`.
+/// A resource argument of the wrong type. The heap `allocation` extent
+/// says why a 64-bit size is refused, and which spelling is accepted.
+fn resource_argument_type_message(
+    name: &str,
+    index: usize,
+    expected: C0Type,
+    actual: C0Type,
+    context: &str,
+) -> String {
+    let mut message = format!(
+        "resource `{name}` argument {index} expects {}, got {} in {context}",
+        describe_c0_type(expected),
+        describe_c0_type(actual)
+    );
+    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+        && index == 1
+        && matches!(actual, C0Type::Int64(_) | C0Type::UInt64(_))
+    {
+        message.push_str(
+            ": the byte count is a heap block's extent, which Click models as a checked 32-bit \
+             value; it does not narrow a 64-bit size into it. Under a requirement that bounds \
+             the size, state the extent as its `as int32` conversion, such as \
+             `allocation(result, bytes as int32)`",
+        );
+    }
+    message
+}
+
 fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected: C0Type) -> bool {
     if name == CResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 0
@@ -4133,10 +4159,8 @@ pub(super) fn validate_resource_clause(
                             argument, expected,
                         )
                     {
-                        return Err(ClickError::new(format!(
-                            "resource `{name}` argument {index} expects {}, got {} in {context}",
-                            describe_c0_type(expected),
-                            describe_c0_type(actual)
+                        return Err(ClickError::new(resource_argument_type_message(
+                            name, index, expected, actual, context,
                         )));
                     }
                 }

@@ -2151,7 +2151,12 @@ uses the returned pointer's logical element width. The declaration therefore
 also works for any modeled data pointer, pointer-to-pointer, or supported
 struct pointer result when the byte extent and owned range match that type.
 This is a contract for a compatible allocator boundary, not a general
-`void*`/`size_t` allocator interface.
+`void*`/`size_t` allocator interface. The `allocation` byte count is that
+32-bit extent, so a `size_t bytes` parameter is refused there, with the
+reason; state the extent as `bytes as int32` under a requirement that bounds
+`bytes`
+(`mdtests/an_extern_allocator_with_a_64_bit_extent_names_the_32_bit_heap_extent.md`,
+`mdtests/an_extern_allocator_states_a_bounded_64_bit_extent_as_int32.md`).
 
 ## Undefined behavior
 
@@ -2658,7 +2663,10 @@ unmodeled allocator prototypes, and non-concrete zeroed-prefix `realloc` cases
 remain unsupported.
 Heap byte extents still use Click's checked 32-bit memory-block extent; a
 64-bit `size_t` extent is accepted when it is concrete or reduced by exact
-contract facts to a value that fits that extent.
+contract facts to a value that fits that extent. An upper bound on a symbolic
+64-bit size is not enough: `malloc`, `calloc` and `realloc` refuse it with
+`heap allocation size must be a 32-bit value or a known constant`
+(`mdtests/a_symbolic_64_bit_malloc_size_names_the_32_bit_heap_extent.md`).
 
 ## Loops
 
