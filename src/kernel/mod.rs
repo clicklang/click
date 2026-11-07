@@ -125,6 +125,7 @@ pub(crate) use reasoning::variable_collection::count_cells_collected;
 pub(crate) mod resource_tracker;
 mod spec;
 pub(crate) use spec::LOOP_ITERATIONS_VARIABLE;
+pub use spec::required_constructions::is_required_construction;
 pub(crate) use spec::{
     SpecCaptureRefusal, algebraic_argument_evaluation_guards, capture_spec_algebraic_value,
     capture_spec_integer_value, capture_spec_integer_value_with_guards,
@@ -340,6 +341,7 @@ pub struct VerificationSessionState {
     blocks: primitives::BlockRegistriesState,
     fold_reads: fold_read_summary::FoldReadSummariesState,
     conjunctions: resource_conjunction::Registry,
+    required_constructions: spec::required_constructions::RequiredConstructionsState,
 }
 
 /// One verification's worth of kernel thread-local state.
@@ -380,6 +382,7 @@ impl VerificationSession {
                 .with(|generation| generation.set(generation.get().wrapping_add(1)));
 
             resource_conjunction::clear();
+            spec::required_constructions::clear_required_constructions();
             primitives::start_fresh_c_memory_arena();
             eval::clear_load_variable_registry();
             model_fields::clear_model_field_registry();
@@ -427,6 +430,7 @@ impl VerificationSession {
             blocks: primitives::capture_block_registries(),
             fold_reads: fold_read_summary::capture_fold_read_summaries(),
             conjunctions: resource_conjunction::capture(),
+            required_constructions: spec::required_constructions::capture_required_constructions(),
         }
     }
 
@@ -457,6 +461,7 @@ impl VerificationSession {
         }
 
         resource_conjunction::restore(&state.conjunctions);
+        spec::required_constructions::restore_required_constructions(&state.required_constructions);
         primitives::restore_c_memory_arena(&state.arena);
         eval::restore_load_variable_registry(&state.loads);
         model_fields::restore_model_field_registry(&state.model_fields);

@@ -247,11 +247,12 @@ reads `bytes[4 * iterations + 3]` under the function's `views *bytes`.
    Should every slice value carry that as a fact? Contract entry assumes it
    for parameters today.
 3. **Printing a slice with no source name.** A printed slice must read back
-   as the same term, with no obligation it did not have. Since subslices owe
-   their bounds, a constructed slice in a goal prints as its constructor,
-   `Slice<u8>::Slice(&bytes[1], 2u64)`, and a written subslice as itself.
-   Planned: a subslice keeps its provenance, so a goal prints it as
-   `bytes[1..3]` where that reads back exactly.
+   as the same term, with no obligation it did not have. A subslice is named
+   where it is constructed: the kernel records the constructed value
+   (`spec::required_constructions`) as it evaluates the constructor whose
+   length owes the bounds, and a goal prints a recorded value as the
+   subslice, `bytes[1..3]`. Any other constructed slice prints as its
+   constructor, `Slice<u8>::Slice(&bytes[1], 2u64)`, which owes nothing.
 4. **Non-scalar elements** (records, slices of slices). These are deferred
    until a program needs them.
 

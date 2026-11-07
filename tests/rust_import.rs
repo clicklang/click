@@ -6377,8 +6377,9 @@ fn rust_slice_values_read_with_rust_methods() {
     );
     C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
     // Each refused claim, and the goal it leaves, print in spellings that
-    // read back as the same terms: a claim keeps its written subslice, and a
-    // goal's constructed slice is its constructor at its element type.
+    // read back as the same terms: a slice built as a subslice is that
+    // subslice, and one built any other way is its constructor at its
+    // element type.
     for (claim, printed) in [
         (
             "have half(bytes).len() == 3u64;",
@@ -6397,32 +6398,27 @@ fn rust_slice_values_read_with_rust_methods() {
         ),
         (
             "have bytes[1..3][1] == 7u8;",
-            &[
-                "`bytes[1..3][1] == 7u8`",
-                "goal: old(Slice<u8>::Slice(&bytes[1], 2u64)[1]) == 7",
-            ],
+            &["`bytes[1..3][1] == 7u8`", "goal: old(bytes[1..3][1]) == 7"],
         ),
         (
             "have bytes[1..][0] == 7u8;",
-            &[
-                "`bytes[1..][0] == 7u8`",
-                "goal: old(Slice<u8>::Slice(&bytes[1], bytes.len() - 1u64)[0]) == 7",
-            ],
+            &["`bytes[1..][0] == 7u8`", "goal: old(bytes[1..][0]) == 7"],
         ),
         (
             "have bytes[..2][0] == 7u8;",
-            &[
-                "`bytes[..2][0] == 7u8`",
-                "goal: old(Slice<u8>::Slice(bytes, 2u64)[0]) == 7",
-            ],
+            &["`bytes[..2][0] == 7u8`", "goal: old(bytes[..2][0]) == 7"],
         ),
         (
             "have bytes[1..3].len() == 3u64;",
             &["`bytes[1..3].len() == 3u64`"],
         ),
         (
+            "have Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2];",
+            &["goal: Slice<u8>::Slice(&bytes[1], 2u64) == bytes[1..2]"],
+        ),
+        (
             "have bytes[1..3] == bytes[1..2];",
-            &["goal: Slice<u8>::Slice(&bytes[1], 2u64) == Slice<u8>::Slice(&bytes[1], 1u64)"],
+            &["goal: bytes[1..3] == bytes[1..2]"],
         ),
         // A subslice owes Rust's bounds, `start <= end <= len`, where it is
         // evaluated: past the length, before the start, and unguarded.

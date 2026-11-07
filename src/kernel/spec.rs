@@ -31,6 +31,7 @@ fn with_integer_comparisons_preserved<T>(preserve: bool, operation: impl FnOnce(
 mod existential;
 pub(in crate::kernel) mod predicate_dependencies;
 mod quantifier_polarity;
+pub(in crate::kernel) mod required_constructions;
 mod shared_machine;
 pub(in crate::kernel) mod walk;
 
@@ -4064,6 +4065,13 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                 })
                 .collect::<Vec<_>>();
             budget.check_path_width(paths.len())?;
+            // A value built with a field owed under a requirement, a Rust
+            // subslice, is named here as the form that built it.
+            if fields.iter().any(required_constructions::field_is_required) {
+                for path in &paths {
+                    required_constructions::record_required_construction(&path.value);
+                }
+            }
             Ok(paths)
         }
         SpecAlgebraicExpressionNode::PureFunctionApplication { name, arguments } => {
