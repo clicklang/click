@@ -4846,10 +4846,7 @@ theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
 theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     requires format::decimal_length(v) == n;
     requires k < n;
-    requires format::pow10(n - 1u64 - k) != 0u64;
     ensures format::decimal_digit(v, k) == (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) as uint8 by {
-        have k < format::decimal_length(v) by { solve(); }
-        apply(format::decimal_digit_power_nonzero(v, k));
         unfold(format::decimal_digit(v, k));
         rewrite(format::decimal_length(v) == n);
         normalize() using { k < n; };
@@ -4857,7 +4854,7 @@ theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
 }
 ```
 
-**Meaning:** Rewrites digit `k < n` of a value whose length is known to be `n` to `48 + v / 10^(n-1-k) % 10`. The statement divides by `format::pow10(n - 1u64 - k)`, so that power being nonzero is a premise; for known `n` and `k`, `format::pow10_e` gives its value, and `format::decimal_digit_power_nonzero` gives it in general.
+**Meaning:** Rewrites digit `k < n` of a value whose length is known to be `n` to `48 + v / 10^(n-1-k) % 10`. For known `n` and `k`, `format::pow10_e` gives the value of the power `format::pow10(n - 1u64 - k)` it divides by.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
