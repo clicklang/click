@@ -3691,7 +3691,7 @@ function decimal_digit(v: uint64, k: uint64) -> uint8 {
 }
 ```
 
-**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant. Past the last digit, at `k >= format::decimal_length(v)`, it is `'0'` (`48u8`), so the function is total. Unfolding it leaves the digit's division by `format::pow10(...)` owed only where `k < format::decimal_length(v)`; `format::decimal_digit_power_nonzero` discharges that.
+**Meaning:** The ASCII character of `v`'s `k`th decimal digit, counting from the most significant. Past the last digit, at `k >= format::decimal_length(v)`, it is `'0'` (`48u8`), so the function is total. Unfolding it owes nothing: specification `/` and `%` are total, so the digit's division by `format::pow10(...)` needs no nonzero premise.
 
 **Kind:** function. Parameter types, requirements, and guarantees are normative in the declaration above.
 
@@ -4834,7 +4834,7 @@ theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
 }
 ```
 
-**Meaning:** Where `k` names one of `v`'s digits, the power of ten that selects it is nonzero, so the digit's division by it has a value.
+**Meaning:** Where `k` names one of `v`'s digits, the power of ten that selects it is nonzero, so the digit's division by it is an ordinary quotient rather than the opaque quotient by zero.
 
 **Kind:** theorem. Parameter types, requirements, and guarantees are normative in the declaration above.
 
