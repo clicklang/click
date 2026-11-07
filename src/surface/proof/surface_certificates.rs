@@ -1059,6 +1059,59 @@ fn comparison_preservation_reads(
     Some(pairs)
 }
 
+/// Select one scalar leaf from the written historical conjunction. Index the
+/// leaf spellings once: neither ambient facts nor candidate histories are read.
+pub(super) fn conjunction_projection_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    if !matches!(target, ClickProposition::Comparison { .. }) {
+        return None;
+    }
+    let mut pending = vec![(source, None)];
+    let mut leaves = std::collections::HashMap::new();
+    let mut conjunction = false;
+    while let Some((proposition, snapshot)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match proposition {
+            ClickProposition::And(left, right) => {
+                conjunction = true;
+                pending.push((right.as_ref(), snapshot));
+                pending.push((left.as_ref(), snapshot));
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } if snapshot.is_none() => {
+                pending.push((proposition.as_ref(), Some(selector)));
+            }
+            ClickProposition::Comparison { .. } => {
+                if let Some(snapshot) = snapshot {
+                    // One selected witness. Failure of its ordinary proof does
+                    // not retry another snapshot or discover extra premises.
+                    leaves.entry(proposition).or_insert(snapshot);
+                }
+            }
+            _ => {}
+        }
+    }
+    if !conjunction {
+        return None;
+    }
+    let snapshot = leaves.get(target)?;
+    let selected_source = ClickProposition::At {
+        selector: (*snapshot).clone(),
+        proposition: Box::new(target.clone()),
+    };
+    let premises = premises
+        .iter()
+        .filter(|premise| *premise != source)
+        .cloned()
+        .collect::<Vec<_>>();
+    comparison_preservation_steps(&selected_source, target, &premises)
+}
+
 /// Preserve a written conjunction tree without rescanning its premises at each
 /// branch. Only scalar leaves are copied; the tree is traversed by reference.
 pub(super) fn conjunction_preservation_steps(

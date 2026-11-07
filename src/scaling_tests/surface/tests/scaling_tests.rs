@@ -10259,3 +10259,68 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
         }
     }
 }
+
+#[test]
+fn conjunction_projection_transport_scales_with_written_source() {
+    fn balanced(leaves: &[String]) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let middle = leaves.len() / 2;
+        format!(
+            "({}) and ({})",
+            balanced(&leaves[..middle]),
+            balanced(&leaves[middle..])
+        )
+    }
+    let mut expansion = Vec::new();
+    let mut replay = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let mut leaves = (0..size - 1)
+            .map(|i| format!("*p >= {i}"))
+            .collect::<Vec<_>>();
+        leaves.push("*q == 7".to_owned());
+        let fact = balanced(&leaves);
+        let source = format!(
+            r#"
+            verifying "projection.c";
+            void keep(int32* p, int32* q) {{
+                owns *p; views *q;
+                requires separate(memory(*p), memory(*q));
+                requires {fact};
+            }} by {{
+                step();
+                have separate(statement(0).footprint, memory(*q)) by {{
+                    normalize() using {{ separate(memory(*p), memory(*q)); }};
+                }}
+                have *q == 7 by {{
+                    transport(at(statement(0).entry, {fact}), *q == 7) using {{
+                        separate(statement(0).footprint, memory(*q));
+                    }};
+                }}
+                step();
+            }}
+        "#
+        );
+        let files = [("projection.c", "void keep(int *p, int *q) { *p = 0; }")];
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+        });
+        let expanded = expanded.unwrap();
+        expansion.push(work);
+        assert_eq!(expanded.matches("preserve(separate(").count(), 1);
+        assert!(!expanded.contains("both {"));
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &files))
+        });
+        verified.unwrap();
+        replay.push(work);
+    }
+    eprintln!("conjunction projection: expansion {expansion:?}, replay {replay:?}");
+    for costs in [expansion, replay] {
+        assert!(costs.iter().all(|cost| *cost > 0));
+        assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+    }
+}

@@ -3466,6 +3466,18 @@ and every supplied separation must be used and checked. No aliases or range
 containment facts are discovered. See `mdtests/conjunction_transport_expansion.md`
 and `mdtests/nested_conjunction_transport_expansion.md`.
 
+A historical conjunction can also transport just one scalar comparison leaf:
+`transport(at(statement(0).entry, *p == 8 and *q == 7), *q == 7)`.
+The driver indexes the written conjunction's snapshotted comparison leaves and
+selects the exact target spelling. It emits a `have` for the selected historical
+leaf using `assumption()`, followed by its ordinary preservation/rewrite proof.
+Discarded conjuncts need not remain true; only the selected reads need footprint
+separations. Whole-tree and subtree `at(...)` wrappers are supported. An exact
+leaf spelling selects one snapshot; this route does not retry other snapshots
+or discover additional evidence. Conjunction-valued projections, regrouping,
+and operand-level snapshot spellings remain outside this route.
+See `mdtests/conjunction_projection_transport_expansion.md`.
+
 Other transport routes still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the
