@@ -44,17 +44,16 @@ tempfile = "3"
 # still name their file and line, and backtraces name every function; for
 # file/line in backtraces, rebuild with CARGO_PROFILE_DEV_DEBUG=line-tables-only
 # and CARGO_PROFILE_TEST_DEBUG=line-tables-only. The test profile inherits this.
-#
-# `opt-level = 1` runs the gate's tests about 3.5 times faster than
-# `opt-level = 0`, and an incremental rebuild after a small edit costs the
-# same. `lto = "off"` drops the cross-codegen-unit ThinLTO pass that
-# `opt-level = 1` would otherwise add, which took more than a third of a full
-# rebuild and barely changed test speed. Debug assertions and overflow checks
-# stay on. Measurements: `docs/internals/testing.md`, "Build profile".
 [profile.dev]
 debug = false
-opt-level = 1
-lto = "off"
+
+# Dependencies are compiled once and cached, so optimizing them leaves Click's
+# rebuild after an edit about as fast and makes the gate's tests 12-15% faster. Click itself
+# stays at `opt-level = 0`: at `opt-level = 1` real PR changes rebuilt about
+# twice as slowly, which cancelled the faster tests in CI
+# (`docs/internals/testing.md`, "Speeding up the gate: what has been tried").
+[profile.dev.package."*"]
+opt-level = 2
 
 # `build.rs` parses the kernel and surface trees with `syn` after every source
 # edit, before rustc can start on Click; optimized, that takes 6 seconds

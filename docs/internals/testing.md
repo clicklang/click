@@ -326,7 +326,7 @@ The budget is kept by what the gate leaves out, not by a faster machine:
   kills a test still running after 30 seconds.
   One approved exception: `standard_library_theorems_are_proved_by_their_own_entry_point`
   proves every library theorem through `verify_standard_library`, about 7.5
-  CPU-seconds in an `opt-level = 0` build, and stays in the gate as its only proof of the
+  CPU-seconds in a debug build, and stays in the gate as its only proof of the
   library.
 - A mutation test, which re-verifies a whole example with one C statement
   changed, is nightly. A family keeps at most one or two in the gate.
@@ -592,30 +592,92 @@ body and require the normal application binary. Their production targets retain
 the original tests without that feature. Fast-only support modules deliberately
 retain each standalone harness's support namespace.
 
-### Build profile
+### Speeding up the gate: what has been tried
 
-The gate's test executable is built with the dev profile at `opt-level = 1`
-and `lto = "off"`, and the build script at `opt-level = 3` (`Cargo.toml`).
-Measured on 2026-11-06 at `3c38b4b`, Claude Code cloud (4 vCPUs), one run
-each, with tests run from nextest binary metadata as `scripts/check.sh` runs
-them:
+Read this before proposing another compiler-flag, build-profile or runner
+change to make the gate faster. Those levers are close to exhausted; the
+remaining time is in what the tests do, not in how they are compiled. Look
+for ways to test the same behavior with less work (see "Where the test time
+goes" below) before changing flags again.
 
-| Dev profile | Cold build | Full Click rebuild | Small kernel edit | Unit/API tests | Fixture tests |
-| --- | --- | --- | --- | --- | --- |
-| `opt-level = 0` | 441s | 343s | 95s | 414s | 399s |
-| dependencies only at `opt-level = 2` | 474s | — | — | 353s | 352s |
-| `opt-level = 1` | 908s | 900s | 109s | 116s | 92s |
-| `opt-level = 1`, `lto = "off"` | 656s | 556s | 92s | 125s | 106s |
+The gate builds Click at `opt-level = 0`, its dependencies at
+`opt-level = 2`, and the build script at `opt-level = 3` (`Cargo.toml`).
 
-All four runs passed the same 7,597 unit/API tests and four fixture tests.
-The small edit appends one unused function to `src/kernel/spec.rs`. The
-rustc front end (type and borrow checking, monomorphization collection) runs
-on one thread, so a small-edit rebuild used one core and a full rebuild 1.35:
-more cores shorten neither. At `opt-level = 1` local ThinLTO took 368s of the
-full rebuild; turning it off kept tests within about 15% of its speed. The
-build script took 28s per source edit at `opt-level = 0` and 6s at
-`opt-level = 3`, with identical output. The gate timing baselines above
-predate this profile.
+Measured on Claude Code cloud (4 vCPUs), one run each, tests run from nextest
+binary metadata as `scripts/check.sh` runs them. "Small edit" appends one
+unused function to `src/kernel/spec.rs`; #2488 (surface) and #2489 (kernel)
+are real merged changes, each rebuilt from its parent's build:
+
+| Profile | Cold build | Small edit | #2488 | #2489 | Unit/API tests | Fixture tests |
+| --- | --- | --- | --- | --- | --- | --- |
+| Click and dependencies at `opt-level = 0` | 358s | 95s | 87s | 156s | 414s | 399s |
+| dependencies at `opt-level = 2` | 396s | — | 88s | 163s | 353s | 352s |
+| everything at `opt-level = 1`, `lto = "off"` | 565s | 92s | 171s | 350s | 125s | 106s |
+
+The small-edit and test columns are at `3c38b4b`, before the build-script
+change; the other build columns are at `54347ef`, after it. All runs passed the same
+7,597 unit/API tests and four fixture tests.
+
+- **`opt-level = 1` for Click (PR #2486, reverted).** Tests ran about 3.5
+  times faster, but a real change rebuilt about twice as slowly: an inlined
+  function's edit invalidates every codegen unit it was inlined into. The
+  unused-function benchmark hid this. In the merge queue, the shards saved
+  about 100s and the build lost 130-190s (queue runs for #2488 and #2489:
+  266s and 456s to build, against 129-265s before). Locally a full gate run
+  still gained, but CI did not. ThinLTO at `opt-level = 1` added another 368s
+  to a full rebuild.
+- **Larger runners for `prepare`.** At `opt-level = 0` a small-edit rebuild
+  used one core and a full Click rebuild 1.35 (`-Ztime-passes`: type and
+  borrow checking and monomorphization collection are serial in rustc's front
+  end; codegen took 118s of a 302s rebuild). More cores would not shorten it.
+  At `opt-level = 1` rebuilds used about three cores, so a larger runner would
+  help only that rejected configuration.
+- **Linker.** Linking took 3s of a full rebuild; a faster linker cannot help.
+- **Splitting the crate.** Not tried. The non-test kernel uses `crate::surface`
+  in 3 places and `crate::languages` in 18, so a `click-kernel` crate is
+  feasible, but 38 of the 52 merges before `3c38b4b` that changed `src/`
+  changed non-test kernel code and would still rebuild everything downstream.
+  A crate with in-module tests is also compiled twice, once as a dependency
+  and once with its tests.
+- **Build script (kept).** `build.rs` parsed the kernel and surface trees with
+  unoptimized `syn` in 28s after every source edit, before rustc could start;
+  at `opt-level = 3` it takes 6s with identical output.
+- **Dependencies at `opt-level = 2` (kept).** Tests 12-15% faster, the cached
+  `target/debug` 3.2 GiB instead of 3.7 GiB (CI restore time follows its
+  size), and Click's own rebuilds within 5% (88s and 163s against 87s
+  and 156s), at the cost of 38s more on a cold build.
+
+#### Where the test time goes
+
+Leads for test-level work, from the `opt-level = 0` run at `3c38b4b` on
+Claude Code cloud and the merge-queue runs before PR #2486. "Test-seconds"
+sums nextest's per-test durations while the gate runs tests in parallel.
+
+- **Unit/API tests (1,652 test-seconds).** `surface::tests` holds 639 of them
+  across 1,143 tests; `gate_tests::rust_import` 286 across only 79 tests,
+  each starting Charon; `gate_tests::cpp_import` 98 across 176. On this
+  machine 953 tests took half a second or more, 1,093 test-seconds in all,
+  although the gate's rule moves such tests to nightly: the rule's wall-clock
+  measure depends on the machine and load it was taken on.
+- **mdtests (1,142 test-seconds, 5,065 files).** The slowest files take 6-12s
+  each: `consumed_population_predicate_rejects_missing_consumption.md`,
+  `authority_pool_control_missing_consumption.md`,
+  `c_pointer_field_subrange_write_preserves_resources.md`,
+  `an_interface_fact_needs_its_terms_defined_in_each_arm.md` and
+  `array_fact_does_not_survive_a_branch_that_may_write_it.md`.
+- **Examples (384 test-seconds, 58 projects).** `arena` takes 80s and
+  `rbtree/rbtree-model` 53s. `EXAMPLE_PARTITION` takes every n-th sorted
+  name, which puts both in shard 2/2: 248 test-seconds against 136, the cause
+  of CI's 113s and 59s examples shards.
+- **Shard overhead.** Each of the 14 CI shards spends 20-30s on checkout,
+  artifact download and setup. A Rust shard spent 11s downloading Charon and
+  14s restoring its compiler runtime to run 23s of tests.
+
+Unexplored directions: weight-aware fixture partitions; fewer, fuller Rust
+shards; sharing one Charon extraction or verified library across the tests
+that repeat it; per-test coverage to find tests whose covered behavior a
+cheaper test already checks; and a machine-independent cost measure (work
+counters or CPU time) for the half-second rule.
 
 ### Batching short diagnostic tests
 
