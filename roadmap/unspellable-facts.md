@@ -505,12 +505,13 @@ PR #2480 merged the independent metadata increment. Its full local gate passed
 took 17m54s including compilation and emitted the ten-minute warning; budgets
 were not raised and the nightly suite was not run.
 
-The ordinary integer producer switch is in progress on
+The ordinary integer producer switch is validated on
 `codex/structural-scalar-producers`; it has not been published or merged.
 The cutover is rebased onto upstream `0218b3138` (including merged PR #2484).
-Its first fresh full unit/API run passed 7,631 of 7,637 tests. The fixture phase,
-run separately after that failed unit phase, passed 54 of 58 examples and 5,079
-of 5,088 Markdown fixtures. These are baseline counts, not a green verdict.
+The fresh full `scripts/check.sh` gate passes 7,643 unit/API tests, all 58
+examples and all 5,088 Markdown fixtures. The run took 15m39s including a full
+rebuild and reported the ten-minute budget warning. Its test phases took
+354.7s and 321.5s, versus 376.9s and 328.6s for the cases-only base gate.
 No full nightly run or raised limits were used.
 
 The `cases` obligation change landed in PR #2484. Its isolated gate passed
@@ -560,10 +561,9 @@ verifies. No stack or work limit was raised. A small scalar-store/owned-array
 loop reproduction also passes, so the remaining arena issue is not the basic
 kept-scalar frame rule.
 
-The subsequent complete unit/API run passed 7,642 of 7,643 tests. Its only
-failure required the expander to emit `normalize()` even though it now emits
-`assumption()`. The updated regression checks independent replay with implicit
-solving disabled, and passes. The two constant-cost cache regressions exposed
+An expansion regression required the expander to emit `normalize()` even
+though it now emits `assumption()`. It now checks independent replay with
+implicit solving disabled, and passes in the full gate. The two constant-cost cache regressions exposed
 by an intervening full gate also pass unchanged after retaining the observed-width
 flag in the scalar-read cache; typed cache hits avoid a redundant width lookup.
 
@@ -581,7 +581,10 @@ transport's explicit bound evidence: `read + 0` is in range, but the transport
 needs its written bounds. An origin-metadata experiment did not repair that
 case and was dropped. No origin-selection or frame-rule change was made for
 these example proofs, and all temporary tracing probes were removed. The fresh
-full gate and fact-stability audit remain pending before publication.
+full gate passed. The fresh fact-stability audit also passes all 58 examples
+and 5,088 Markdown fixtures with zero reported lowering differences. Both named
+scalar-width and sequence-spelling expansion regressions pass on the final
+binary, including independent replay with implicit solving disabled.
 
 The ordinary integer producer switch follows the address-index migration.
 Execution, contracts and resource cells retain structural reads for signed and
