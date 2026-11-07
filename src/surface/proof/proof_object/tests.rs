@@ -14131,13 +14131,11 @@ fn checked_callback_statement_publishes_its_typed_read_evidence() {
         panic!("callback local is a pointer")
     };
     assert!(
-        execution.core.effect_facts.iter().any(|fact| matches!(
-            fact.generated_load_binding(),
-            Some(crate::kernel::GeneratedLoadBinding::Exact {
-                typed_pointer_value: Some(_),
-                ..
-            })
-        )),
+        execution
+            .core
+            .effect_facts
+            .iter()
+            .any(|fact| fact.has_checked_pointer_read()),
         "no typed read evidence: {:?}",
         execution.core.effect_facts
     );

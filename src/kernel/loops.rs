@@ -1677,7 +1677,11 @@ fn execute_c_indirect_call_paths(
                     {
                         vec![Ok(name.clone())]
                     }
-                    PointerBlock::FunctionSymbolic(_) | PointerBlock::Function(_) => {
+                    PointerBlock::FunctionSymbolic(_)
+                    | PointerBlock::Function(_)
+                    | PointerBlock::LoadedPointer(_)
+                        if matches!(pointer.c_type(), CType::FunctionPointer(_)) =>
+                    {
                         let target_assumptions =
                             assumptions_with_path_context(assumptions, &facts, &obligations);
                         let owned = super::functions::contracts_from_facts(

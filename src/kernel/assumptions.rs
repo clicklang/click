@@ -4010,6 +4010,9 @@ impl PureFactContext {
         if !fact.is_certified() {
             return self;
         }
+        if fact.has_checked_pointer_read() {
+            fact.retain_pointer_read_definition(&self);
+        }
         let Some(
             binding @ GeneratedLoadBinding::Exact {
                 variable,
@@ -10563,6 +10566,9 @@ impl ExecutionPureFact {
         if !self.is_certified() {
             return;
         }
+        if let Some((value, memory, address)) = self.checked_pointer_read.as_deref() {
+            context.register_checked_pointer_read(value, memory, address);
+        }
         if self.is_logical_read_equation() {
             match self.proposition() {
                 Proposition::ConditionIs(ConditionTerm::PointerValueEqual(left, right), true) => {
@@ -10620,6 +10626,7 @@ impl ExecutionPureFact {
             certified_store: None,
             transport: None,
             generated_load_binding: None,
+            checked_pointer_read: None,
             generated_load_source_events: Default::default(),
             reference_observation: Default::default(),
         }
@@ -10636,6 +10643,7 @@ impl ExecutionPureFact {
             certified_store: None,
             transport: None,
             generated_load_binding: None,
+            checked_pointer_read: None,
             generated_load_source_events: Default::default(),
             reference_observation: Default::default(),
         }
@@ -10672,6 +10680,7 @@ impl ExecutionPureFact {
             certified_store: None,
             transport: None,
             generated_load_binding: None,
+            checked_pointer_read: None,
             generated_load_source_events: Default::default(),
             reference_observation: Default::default(),
         }
@@ -10680,6 +10689,27 @@ impl ExecutionPureFact {
     pub(in crate::kernel) fn logical_read_equation(value: CPointerValue, read: Pointer) -> Self {
         let read = CPointerValue::new(read, value.c_type());
         Self::logical_pointer_value_equation(value, read)
+    }
+
+    pub(in crate::kernel) fn checked_pointer_read_equation(
+        value: CPointerValue,
+        observed: Pointer,
+    ) -> Self {
+        let evidence = value.pointer().as_loaded_value().map(|read| {
+            Box::new((
+                value.pointer().clone(),
+                read.defining_memory,
+                read.defining_address,
+            ))
+        });
+        Self {
+            checked_pointer_read: evidence,
+            ..Self::logical_read_equation(value, observed)
+        }
+    }
+
+    pub(crate) fn has_checked_pointer_read(&self) -> bool {
+        self.checked_pointer_read.is_some()
     }
 
     pub(in crate::kernel) fn logical_pointer_value_equation(
@@ -10727,6 +10757,7 @@ impl ExecutionPureFact {
             })),
             transport: None,
             generated_load_binding: None,
+            checked_pointer_read: None,
             generated_load_source_events: Default::default(),
             reference_observation: Default::default(),
         }
@@ -10751,6 +10782,7 @@ impl ExecutionPureFact {
             self.resource_effect_bound = None;
             self.logical_read_equation = false;
             self.generated_load_binding = None;
+            self.checked_pointer_read = None;
             self.generated_load_source_events = Default::default();
             self.reference_observation = Default::default();
             if let Some(store) = &mut self.certified_store {
@@ -10796,6 +10828,7 @@ impl ExecutionPureFact {
                 theorem,
             })),
             generated_load_binding: None,
+            checked_pointer_read: None,
             generated_load_source_events: Default::default(),
             reference_observation: Default::default(),
         }

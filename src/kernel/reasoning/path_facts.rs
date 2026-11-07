@@ -1593,11 +1593,12 @@ fn merge_facts_with_changes(
         // Appending the selected delta also avoids searching old facts for
         // a source observation that must not be deduplicated.
         if fact.is_certified()
-            && !fact.is_public()
-            && (fact.reference_observation.is_some()
-                || fact
-                    .certified_store_data()
-                    .is_some_and(|store| store.source.as_ref().is_some()))
+            && (fact.has_checked_pointer_read()
+                || !fact.is_public()
+                    && (fact.reference_observation.is_some()
+                        || fact
+                            .certified_store_data()
+                            .is_some_and(|store| store.source.as_ref().is_some())))
         {
             crate::instrumentation::record_deterministic_work(1);
             saw_memory_effect |= fact.certified_store_data().is_some();

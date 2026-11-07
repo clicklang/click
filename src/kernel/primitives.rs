@@ -14064,6 +14064,8 @@ pub struct ExecutionPureFact {
     /// carried with the certified fact rather than recovered from the current
     /// state, since the producer's snapshot and pointer are the authority.
     pub(super) generated_load_binding: Option<Box<GeneratedLoadBinding>>,
+    /// Checked callback-read evidence, independent of scalar-variable naming.
+    pub(super) checked_pointer_read: Option<Box<(Pointer, SharedCMemory, Pointer)>>,
     pub(super) generated_load_source_events: GeneratedLoadSourceEvents,
     pub(super) reference_observation: super::source_access::ReferenceObservationSource,
 }

@@ -35,5 +35,5 @@ int32 caller() {
 ```
 
 ```expect
-fail: no `One(&two#inline:inline_wrong.c)` fact is available
+fail: missing pure fact: One(old(table#file-static:inline_wrong.c[0]))
 ```

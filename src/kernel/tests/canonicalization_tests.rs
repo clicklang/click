@@ -1260,8 +1260,7 @@ fn variable_substitution_visits_each_snapshot_once_per_rewrite() {
 
 /// A pointer cell a snapshot holds materialized is named by the pointer it
 /// holds when that value is exactly what a typed load of the cell produces:
-/// the cell's block, offset `v * 4` for an `int32*`, and `v` registered as a
-/// load of this cell. The version walk cannot cross a loop head's havoc, so a
+/// the structural read of this cell. The version walk cannot cross a loop head's havoc, so a
 /// struct field the head copied back would otherwise take a second name.
 /// The same value in another cell, or at another pointee width, is not a
 /// load of this cell and keeps the walk's name.
@@ -1276,15 +1275,12 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         offset: PointerOffsetTerm::Constant(8),
     };
     let entry = CMemory::new().with_block("fields", 16);
-    let MachineTerm::Variable(loaded) = crate::kernel::eval::canonical_cell_load(
+    let loaded = crate::kernel::eval::canonical_cell_load(
         intern_c_memory(entry.clone()),
         field.clone(),
         CType::Int32Pointer,
-    ) else {
-        panic!("a load of an opaque cell is named by a load variable");
-    };
-    let read =
-        Pointer::loaded(&MachineTerm::Variable(loaded)).expect("the cell's load names its read");
+    );
+    let read = Pointer::loaded(&loaded).expect("the cell's structural read");
     let pointer_at = |value: Pointer| CValue::typed_pointer(value, CType::Int32Pointer);
     let name_at = |memory: CMemory, cell: &Pointer| {
         crate::kernel::eval::canonical_cell_load(
@@ -1300,7 +1296,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         .store(field.clone(), pointer_at(read.clone()));
     assert_eq!(
         name_at(held, &field),
-        MachineTerm::Variable(loaded),
+        loaded,
         "the cell holds the pointer its own load produced"
     );
 
@@ -1310,7 +1306,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         .store(other.clone(), pointer_at(read.clone()));
     assert_ne!(
         name_at(elsewhere, &other),
-        MachineTerm::Variable(loaded),
+        loaded,
         "another cell holding that pointer is not a load of the first cell"
     );
 
@@ -1319,7 +1315,7 @@ fn a_materialized_pointer_cell_is_named_by_the_load_it_holds() {
         .store(field.clone(), pointer_at(read.offset_by_bytes(4)));
     assert_ne!(
         name_at(displaced, &field),
-        MachineTerm::Variable(loaded),
+        loaded,
         "a pointer displaced from the cell's read is not what a typed load of the cell produces"
     );
 }
