@@ -568,15 +568,20 @@ by an intervening full gate also pass unchanged after retaining the observed-wid
 flag in the scalar-read cache; typed cache hits avoid a redundant width lookup.
 
 `owned-vector` now verifies with explicit pointer alias, indexed-address equality,
-and separation premises for its existing transport. The C program and contract
-are unchanged. Arena's initialization and quantified comparison links verify
-with explicit transport and per-witness proofs, but its later call-frame
-transport still fails. A reduced variant of
-`transport_carries_a_kept_slot_cell_across_a_call.md` reproduces a failure after
-changing its index from `first->at` to `first->at + 0`. Investigation is now at
-the range-placement/transport boundary; the arena diagnostic proofs are not
-shipped. Complete that investigation, then rerun the full gate, selected expansion
-checks and fact-stability audit before publishing the producer cutover.
+and separation premises for its existing transport. Arena also verifies: its
+initialization loop uses explicit scalar transport, its quantified array claims
+instantiate their witnesses before relating addresses, and the pipeline cites
+bounds for the actual C index expression before transporting a kept cell. After
+`arena_read`, the retained-cell value is related to the reloaded indexed address
+where the existing pointer aliases are available. Both C programs and their
+contracts are unchanged.
+
+A reduced kept-slot diagnostic distinguished ordinary range reasoning from
+transport's explicit bound evidence: `read + 0` is in range, but the transport
+needs its written bounds. An origin-metadata experiment did not repair that
+case and was dropped. No origin-selection or frame-rule change was made for
+these example proofs, and all temporary tracing probes were removed. The fresh
+full gate and fact-stability audit remain pending before publication.
 
 The ordinary integer producer switch follows the address-index migration.
 Execution, contracts and resource cells retain structural reads for signed and
