@@ -52,9 +52,6 @@ int32 render(char buf[], uint32 n) {
         have format::decimal_digit(n as uint64, 0u64) == 52u8 by {
             rewrite(n as uint64 == 42u64);
             apply(format::pow10_1());
-            have format::pow10(2u64 - 1u64 - 0u64) != 0u64 by {
-                solve() using { format::pow10(1u64) == 10u64; };
-            }
             apply(format::decimal_digit_of_length(42u64, 2u64, 0u64));
             solve() using {
                 format::decimal_digit(42u64, 0u64) == (48u64 + 42u64 / format::pow10(2u64 - 1u64 - 0u64) % 10u64) as uint8;
