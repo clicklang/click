@@ -2,6 +2,27 @@ use super::*;
 use crate::kernel::VerificationSession;
 use crate::kernel::binary_node;
 
+#[test]
+fn complete_pointer_representative_exposes_a_stored_callback() {
+    let _session = VerificationSession::enter();
+    let ty = CType::FunctionPointer(crate::kernel::CallbackSignature::UNSPECIFIED);
+    let cell = Pointer::symbolic(Variable(998_965));
+    let target = CPointerValue::new(Pointer::function("callback"), ty);
+    let memory = crate::kernel::intern_c_memory(
+        CMemory::new().store(cell.clone(), CValue::Pointer(target.clone())),
+    );
+    let read = CPointerValue::from_read(Pointer::loaded_value(&memory, &cell), ty, &memory, &cell);
+    let graph = EqualityGraph::default();
+    assert_eq!(graph.pointer_value_representative(&read), target);
+    let unknown = CPointerValue::from_read(
+        Pointer::loaded_value(&memory, &cell.offset_by_bytes(8)),
+        ty,
+        &memory,
+        &cell.offset_by_bytes(8),
+    );
+    assert_eq!(graph.pointer_value_representative(&unknown), unknown);
+}
+
 fn var(id: u64) -> MachineTerm {
     MachineTerm::Variable(Variable(id))
 }

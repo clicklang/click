@@ -1556,6 +1556,7 @@ impl EqualityGraph {
         value: &CPointerValue,
     ) -> CPointerValue {
         let mut state = self.state.lock().expect("equality graph");
+        self.register_logical_read_values(&mut state, value.pointers());
         state.register_blocks(value.pointers().map(|p| p.block.clone()));
         state.close(Vec::new());
         state.terms.pointer_value_representative(value)

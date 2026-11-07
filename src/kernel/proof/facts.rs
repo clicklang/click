@@ -1099,6 +1099,10 @@ impl ProofFacts {
     /// already published by the checked statement. Plain propositions and
     /// evidence outside this branch cannot introduce a typed read bridge.
     pub(crate) fn retain_checked_read_fact(&mut self, fact: &ExecutionPureFact) {
+        if fact.is_certified() && fact.has_checked_pointer_read() {
+            self.assumptions = self.assumptions.clone().assume_execution_pure_fact(fact);
+            return;
+        }
         if fact.is_certified()
             && fact.generated_load_binding().is_some()
             && self.assumptions.contains_assumed_exact(fact.proposition())

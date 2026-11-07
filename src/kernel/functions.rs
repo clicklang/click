@@ -6947,15 +6947,21 @@ fn function_contract_requirement_is_proven(
             else {
                 return Ok(false);
             };
-            let target = match pointer.pointer() {
+            // Contract formation checks the complete value's graph class.
+            // The lowered requirement keeps its structural read; it need not
+            // contain the literal function that the read is known to equal.
+            let comparison_pointer = assumptions
+                .equality_graph
+                .pointer_value_representative(pointer);
+            let target = match comparison_pointer.pointer() {
                 Pointer {
                     block: PointerBlock::Function(target),
                     offset: PointerOffsetTerm::Constant(0),
                 } => Some(target),
                 Pointer {
-                    block: PointerBlock::FunctionSymbolic(_),
+                    block: PointerBlock::FunctionSymbolic(_) | PointerBlock::LoadedPointer(_),
                     offset: PointerOffsetTerm::Constant(0),
-                } => None,
+                } if matches!(pointer.c_type(), CType::FunctionPointer(_)) => None,
                 _ => return Ok(false),
             };
             // The fact's values fix the contract's value parameters for the

@@ -958,14 +958,10 @@ fn pointer_read_chain_rewrite_work(
         if native {
             Pointer::version_read(&memory, address)
         } else {
-            let term = crate::kernel::eval::canonical_cell_load(
-                memory.clone(),
-                address.clone(),
-                CType::Int32Pointer,
-            );
-            let MachineTerm::Variable(variable) = term else {
-                panic!("expected a named read")
-            };
+            let term =
+                MachineTerm::MemoryLoad(memory.clone(), Box::new(address.clone()), LoadKind::Int32);
+            let (variable, _) =
+                crate::kernel::load_variable_for_term(&term).expect("legacy read adapter");
             Pointer::symbolic(variable)
         }
     };

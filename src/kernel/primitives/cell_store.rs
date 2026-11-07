@@ -770,8 +770,7 @@ impl BlockKeyed for RunKey {
 
 /// The value a seeded cell of type `element_type` at `pointer` holds when its
 /// load is `load`: the load itself for a scalar, the load's truth for a
-/// `bool`, a complete typed read for an object pointer, and the load's function
-/// identity for a function pointer.
+/// `bool`, and a complete typed read for object and function pointers.
 pub(crate) fn cell_run_value(element_type: CType, load: MachineTerm) -> CValue {
     match element_type {
         // The byte rule (Stage 5): the `Bool` `load != 0`.
@@ -788,20 +787,6 @@ pub(crate) fn cell_run_value(element_type: CType, load: MachineTerm) -> CValue {
         CType::UInt128 => CValue::UInt128(load),
         CType::Float32 => CValue::Float32(load),
         CType::Float64 => CValue::Float64(load),
-        CType::FunctionPointer(_) => {
-            let variable = match &load {
-                MachineTerm::Variable(variable) if crate::kernel::is_load_variable(variable) => {
-                    *variable
-                }
-                MachineTerm::MemoryLoad(_, _, _) => crate::kernel::load_variable_for_term(&load)
-                    .map(|(variable, _)| variable)
-                    .expect("exact function-pointer loads have canonical identities"),
-                _ => unreachable!(
-                    "symbolic function-pointer fields use raw or canonical exact loads"
-                ),
-            };
-            CValue::typed_pointer(Pointer::symbolic_function(variable), element_type)
-        }
         c_type if c_type.is_pointer() => {
             // A seeded pointer cell is already a typed read, even before a
             // C load observes it. Retain its exact producer definition so a

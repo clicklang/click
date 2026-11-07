@@ -192,7 +192,12 @@ impl<K: Ord + Clone> ValueClasses<K> {
 pub(super) fn prefer_pointer(left: &CPointerValue, right: &CPointerValue) -> CPointerValue {
     // A contract supplies the designation of an opaque incoming value. Its
     // explicit subobject boundary takes precedence over an unknown extent.
-    if !left.extent_is_known() && right.extent_is_known() {
+    if !left.extent_is_known() && right.extent_is_known()
+        || matches!(right.pointer().block, super::PointerBlock::Function(_))
+            && !matches!(left.pointer().block, super::PointerBlock::Function(_))
+    {
+        // A complete-value class can expose a concrete callback target even
+        // when both the structural read and the target have known root bounds.
         right.clone()
     } else {
         left.clone()

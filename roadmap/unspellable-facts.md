@@ -505,8 +505,8 @@ PR #2480 merged the independent metadata increment. Its full local gate passed
 took 17m54s including compilation and emitted the ten-minute warning; budgets
 were not raised and the nightly suite was not run.
 
-The ordinary integer producer switch is validated on
-`codex/structural-scalar-producers`; it has not been published or merged.
+PR #2485 merged the ordinary integer producer switch from
+`codex/structural-scalar-producers`.
 The cutover is rebased onto upstream `0218b3138` (including merged PR #2484).
 The fresh full `scripts/check.sh` gate passes 7,643 unit/API tests, all 58
 examples and all 5,088 Markdown fixtures. The run took 15m39s including a full
@@ -594,11 +594,31 @@ and branch-local metadata independently. Creation-time version selection remains
 structural; stored literals and reads of other addresses do not replace the
 selected read. Checking may still establish their equality.
 
+The ordinary pointer producer increment is implemented on
+`codex/structural-pointer-volatile-producers`, based on merged PR #2485.
+Object and function pointer reads retain structural descriptors and live origins
+without allocating intermediate scalar variables, including seeded resource
+cells. Callback type checks accept those descriptors. Checked callback evidence
+is a separate producer record that survives fact-stream composition even when
+its proposition is redundant. Concrete contract formation uses the complete
+pointer value's equality-graph representative; lowering keeps the read.
+Rebased onto `54347ef5c`, the full `scripts/check.sh` gate passes 7,649
+unit/API tests, 58 examples and 5,089 Markdown fixtures. The fact-stability
+audit reruns both corpora successfully with zero differences. The gate took
+25m15s, including a cold optimized build of 21m47s after upstream changed the
+build profile; limits were not raised and the nightly suite was not run.
+The callback-focused corpus has five failures that also reproduce on
+the unchanged #2485 base: `augment_rotate_callback`, its consumed-shape and
+extra-write negative controls, `augment_rotate_model_callback_rejects_relink`,
+and `rb_augment_callbacks_rejects_mismatch`.
+Volatile pointer values deliberately lack ordinary snapshot-read equality;
+representing them by a read event with a `.result` spelling is a pending design
+question, not an implemented semantic change.
+
 The ordinary scalar bridge is removed from graph read registration, comparison
 rewriting, exact-cell derived reads, origin evidence and historical synthesis.
-The reserved-name machinery remains for pointer-valued/volatile producers and
-compatibility with their existing facts; this increment does not migrate those
-families. Arithmetic certificates accept structural read atoms with exact
+After the ordinary pointer increment, reserved-name machinery remains for
+volatile pointer producers and compatibility with existing legacy facts. Arithmetic certificates accept structural read atoms with exact
 snapshot/address/kind identity, and binder checks inspect the selected read's
 address rather than mistaking it for an unscoped variable. Array runs preserve
 read atoms without expanding their stored snapshots.
