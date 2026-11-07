@@ -441,8 +441,12 @@ slice value passes to a slice parameter as one argument,
 `size(half(bytes))`. Failures print these spellings, each reading back as
 the same term: a written subslice as `bytes[1..3]` and its length as
 `bytes[2..].len()`, a slice argument built from a pointer and a length as
-`click::rust::slice::from_raw_parts(p, n)`, and a constructed slice in a
-goal as its constructor, `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
+`click::rust::slice::from_raw_parts(p, n)`. In a goal, a slice built as a
+subslice prints as that subslice, `bytes[1..3]`: the kernel records it where
+it is constructed, the same place its bounds are owed, so the spelling owes
+nothing new when it is read back. A slice built any other way, such as the
+body of `half` unfolded, prints as its constructor at its element type,
+`Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
 written in Click syntax, the library's calls print as calls,
 `slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
 constructed slice, such as a subslice, reduce as they are read, so

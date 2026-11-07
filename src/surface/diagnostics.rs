@@ -41,7 +41,7 @@ use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_spelling,
     rust_variable_spelling, slice_call_arguments, slice_call_spelling, slice_type_spelling,
-    subslice_of_length,
+    subslice_of_length, subslice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
