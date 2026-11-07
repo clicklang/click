@@ -86,6 +86,34 @@ It holds repeated roles to a no-drift rule and varies ambient objects/facts;
 it is valuable integration coverage, not an exhaustive list of statements,
 contracts, or resource shapes.
 
+## Remaining transport expansion inventory
+
+This is a migration checklist for the legacy transport dispatcher, not a count
+of distinct slow walks. There are five remaining work areas; each may need more
+than one fixture. A spelling variation belongs to its existing row rather than
+becoming a new roadmap item. Paths below are relative to `src/`.
+
+| Area | Remaining route and source anchor | Completion criterion |
+| --- | --- | --- |
+| T1: residual scalar observations | `surface/proof/fixed_state_proofs/fact_transport.rs`: load-variable/origin bridges in `check_fixed_state_fact_transport_using_facts_inner`, plus `certified_fact_transport_reaches_through`. Larger read expressions, computed addresses, alternate cell spellings, and range-selected evidence still reach these routes. | Select each necessary equality and address guard in planning; emit explicit preservation/rewrite steps. Start with one reduced case, and identify a missing primitive before adding one. |
+| T2: logical structure and quantifiers | `certified_fact_transport_reaches`: conjunction, disjunction, implication, and universal-body recursion; `check_fixed_state_fact_transport_using_facts_inner`: `frame_quantified_transport`. | Decompose into ordinary logical steps and the already supported leaf proofs. Begin with a conjunction of two scalar facts; then handle guards and binders with their own replay/refusal fixtures. |
+| T3: resource, range, and definedness facts | `certified_fact_transport_reaches`: separation/containment descriptor matching and atomic derivation of `CMemoryLoadable` / `CMemoryReadDefined`. | Replace each surviving route with named resource laws or explicit observations and guards. Do not count already converted current-snapshot viewability restrictions as outstanding. |
+| T4: proof-context adapters | `surface/proof/proof_object/fixed_state_steps.rs`: `apply_transport_using`, `apply_pure_transport_using`, `apply_fixed_state_transport_using`, `apply_execution_transport_using`; post-execution handling in `surface/proof/driver/claims.rs`. | The same supported derivation expands at a focused execution goal, a pure/fixed-state proof, and a completed outcome. No adapter may retain an opaque transport simply because the proof phase differs. |
+| T5: discovery and legacy dispatcher retirement | `plan_explicit_fact_transport`, transition/effect collection in `check_fixed_state_fact_transport_using_facts_inner`, and `surface/proof/proof_object/execution_statements.rs`'s planned transport/outcome adapters. | Budgeted discovery emits ordinary steps, including selected footprint evidence. Remove search from the explicit-operation path and retire the legacy dispatcher once its supported cases have ordinary expansions or deliberate bounded refusals. |
+
+T5 includes an explicit known cost violation: the legacy fixed-state route
+rebuilds transition assumptions with `assume_proposition_uncharged`, and its
+source comments acknowledge path-linear work. Converting a surface spelling
+does not remove that shared implementation; the endpoint is to make it
+unreachable from expanded proofs and then remove the obsolete route. Keep
+source/result normalization and premise/effect collection in this review too.
+
+For each row, retain a positive expansion/replay example with implicit solving
+disabled, relevant refusal controls, and deterministic growth evidence. Finish
+with a boundary test that expansion cannot create `ProofSearch`; the absence of
+`transport` text in a few examples alone is not the global guarantee. This
+inventory does not classify all non-transport entries in the operation ledger.
+
 ## Outstanding measurement ledger
 
 ### R1: remaining fragment-selection routes — reachability gap

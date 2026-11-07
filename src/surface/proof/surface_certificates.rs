@@ -896,7 +896,7 @@ fn statement_preservation_steps(
     Some(steps)
 }
 
-/// Carry a comparison whose one read operand changes snapshot. All selected
+/// Carry a comparison whose read operands change snapshot. All selected
 /// footprints remain ordinary preservation steps; no ambient premise discovery.
 pub(super) fn comparison_preservation_steps(
     source: &ClickProposition,
@@ -962,34 +962,118 @@ pub(super) fn comparison_preservation_steps(
     ) {
         return None;
     }
-    let (historical, current) = comparison_snapshot_expression_pair(comparison, target)?;
-    let reflexive = ClickProposition::Comparison {
-        left: historical.clone(),
-        operator: ComparisonOperator::Equal,
-        right: historical.clone(),
-    };
-    let bridge = ClickProposition::Comparison {
-        left: current,
-        operator: ComparisonOperator::Equal,
-        right: historical,
+    let pairs = if let Some(pair) = comparison_snapshot_expression_pair(comparison, target) {
+        vec![pair]
+    } else {
+        let ClickProposition::Comparison {
+            left: target_left,
+            operator: target_operator,
+            right: target_right,
+        } = target
+        else {
+            return None;
+        };
+        if operator != target_operator {
+            return None;
+        }
+        [(left, target_left), (right, target_right)]
+            .into_iter()
+            .map(|(historical, current)| match historical {
+                ContractExpression::At { expression, .. } if expression.as_ref() == current => {
+                    Some((historical.clone(), current.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Option<Vec<_>>>()?
     };
     let separations = premises
         .iter()
         .filter(|p| *p != source)
         .cloned()
         .collect::<Vec<_>>();
-    let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
+    let selected = if pairs.len() == 1 {
+        vec![separations]
+    } else {
+        let mut selected = vec![Vec::new(), Vec::new()];
+        // Build each written read's C shape once, including on a miss. A long
+        // pointer expression must not be cloned again for every other premise.
+        let read_shapes = pairs
+            .iter()
+            .map(|(_, read)| contract_expression_as_c_fragment(read))
+            .collect::<Vec<_>>();
+        for premise in separations {
+            let ClickProposition::Separate {
+                left: ResourceSubject::Footprint(_),
+                right,
+            } = &premise
+            else {
+                return None;
+            };
+            let mut used = false;
+            for (index, (_, read)) in pairs.iter().enumerate() {
+                if separation_subject_names_read(right, read, read_shapes[index].as_ref()) {
+                    selected[index].push(premise.clone());
+                    used = true;
+                }
+            }
+            if !used {
+                return None;
+            }
+        }
+        selected
+    };
     let have = |proposition, steps| ProofStep::Have {
         proposition,
         proof: Box::new(ProofCertificate::from_steps(steps).expect("ordinary preservation proof")),
     };
-    Some(vec![
-        // The written transport source is a premise, not a new assumption.
-        have(source.clone(), vec![ProofStep::Assumption]),
-        have(bridge.clone(), equality_steps),
-        ProofStep::Rewrite(bridge),
-        ProofStep::Assumption,
-    ])
+    // The written source is a premise, not a new assumption. Each written
+    // separation is used by at least one preservation proof and checked there.
+    let mut steps = vec![have(source.clone(), vec![ProofStep::Assumption])];
+    let mut rewrites = Vec::new();
+    for ((historical, current), separations) in pairs.into_iter().zip(selected) {
+        let reflexive = ClickProposition::Comparison {
+            left: historical.clone(),
+            operator: ComparisonOperator::Equal,
+            right: historical.clone(),
+        };
+        let bridge = ClickProposition::Comparison {
+            left: current,
+            operator: ComparisonOperator::Equal,
+            right: historical,
+        };
+        let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
+        steps.push(have(bridge.clone(), equality_steps));
+        rewrites.push(ProofStep::Rewrite(bridge));
+    }
+    steps.extend(rewrites);
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
+/// Select from the two written read subjects, never from ambient resources.
+/// This deliberately does not discover aliases or infer range containment.
+fn separation_subject_names_read(
+    subject: &ResourceSubject,
+    read: &ContractExpression,
+    read_shape: Option<&CExpression>,
+) -> bool {
+    match (subject, read) {
+        (ResourceSubject::Instance { identity, .. }, ContractExpression::ResourceField(field)) => {
+            field.children.is_empty() && identity == &field.identity
+        }
+        (ResourceSubject::Memory(segment), _) if segment.state == ContractSegmentState::Current => {
+            let pointer = match read_shape {
+                Some(CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. }) => {
+                    pointer
+                }
+                _ => return false,
+            };
+            pointer.as_ref() == &segment.base
+                && segment.start == CExpression::Value(crate::kernel::int32(0))
+                && segment.end == CExpression::Value(crate::kernel::int32(1))
+        }
+        _ => false,
+    }
 }
 
 /// Ordinary proof of a selected viewability restriction. This visits only

@@ -3443,6 +3443,15 @@ while the target explicitly keeps the other's old snapshot, but this route
 does not silently substitute the other's current value. The original source
 fact remains in the proof and is checked by `assumption()`.
 See `mdtests/snapshot_comparison_transport_expansion.md`.
+
+When both operands are reads at earlier snapshots, the comparison route can
+preserve both: `transport(at(statement(0).entry, *q == *r), *q == *r)`.
+Cite the footprint separation for each read in `using`. Expansion writes one
+preservation chain per operand, rewrites both, and closes with `assumption()`.
+Selection uses the explicitly written single-cell dereference or named
+resource-field subject; it does not discover aliases or prove range containment.
+Every supplied separation must be used and checked. See
+`mdtests/two_read_transport_expansion.md`.
 Other transport routes still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the
