@@ -6182,21 +6182,32 @@ impl AnnotationLowerer<'_> {
                         right: right.clone(),
                     }
                 };
-                let requirement = ClickProposition::And(
-                    Box::new(at_most(start, end)),
-                    Box::new(at_most(end, len)),
-                );
+                // A subslice from the start, `s[..b]`, has length `b` itself,
+                // so it is the slice `slice::from_raw_parts(s.as_ptr(), b)`
+                // is, and owes only `b <= len`.
+                let from_start = matches!(start, ContractExpression::IntegerLiteral(text) if text == "0")
+                    || matches!(start, ContractExpression::CFragment(CExpression::Value(_)))
+                        && crate::surface::diagnostics::describe_contract_expression(start)
+                            == "0u64";
+                let (requirement, value) = if from_start {
+                    (at_most(end, len), end.clone())
+                } else {
+                    (
+                        ClickProposition::And(
+                            Box::new(at_most(start, end)),
+                            Box::new(at_most(end, len)),
+                        ),
+                        ContractExpression::Subtract(
+                            Box::new(end.clone()),
+                            Box::new(start.clone()),
+                        ),
+                    )
+                };
                 Ok(SpecExpression::Requires {
                     requirement: Box::new(
                         self.click_proposition_to_spec_proposition(&requirement, environment)?,
                     ),
-                    value: Box::new(self.lower_contract_expression_to_spec(
-                        &ContractExpression::Subtract(
-                            Box::new(end.clone()),
-                            Box::new(start.clone()),
-                        ),
-                        environment,
-                    )?),
+                    value: Box::new(self.lower_contract_expression_to_spec(&value, environment)?),
                 })
             }
             ContractExpression::Call { name, arguments }

@@ -438,10 +438,15 @@ and an enum field, `Window(&[u8], usize)`. Rust's methods read it:
 `half(bytes).as_ptr()`. They reduce without an `unfold` when the slice is
 built, so `half(bytes).len() == bytes.len() / 2u64` closes by `solve`. A
 slice value passes to a slice parameter as one argument,
-`size(half(bytes))`. Failures print these spellings. A slice whose data is
-a slice's data or an offset into it prints as a subslice, `bytes[1..3]`,
-`bytes[1..]` or `bytes[..2]`, and any other pointer and length as
-`slice::from_raw_parts(p, n)`. A subslice,
+`size(half(bytes))`. Failures print these spellings, each reading back as
+the same term: a written subslice as `bytes[1..3]` and its length as
+`bytes[2..].len()`, a slice argument built from a pointer and a length as
+`click::rust::slice::from_raw_parts(p, n)`, and a constructed slice in a
+goal as its constructor, `Slice<u8>::Slice(&bytes[1], 2u64)`. In a theorem
+written in Click syntax, the library's calls print as calls,
+`slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
+constructed slice, such as a subslice, reduce as they are read, so
+`bytes[k..].len()` is its length with no `unfold`. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
