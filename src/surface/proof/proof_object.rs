@@ -542,6 +542,9 @@ pub(in crate::surface::proof) struct ExecutionProofPresentation {
     /// finalization; joins carry each arm's suffix.
     pub(in crate::surface::proof) post_execution_tactics:
         PersistentSequence<DeferredPostExecutionTactic>,
+    /// Deferred source prefix already visited while preparing case obligations.
+    pub(in crate::surface::proof) partitioned_post_execution_tactics:
+        PersistentSequence<DeferredPostExecutionTactic>,
     /// Checked direct-call edge order for the narrow terminal int32 handler
     /// split. This is path-routing presentation, not proof evidence: each
     /// selected outcome retains its own kernel-checked theorem and goal.
@@ -763,6 +766,8 @@ impl ExecutionProofState {
                 call_routes: Vec::new(),
                 branch_decisions: self.presentation.branch_decisions.clone(),
                 match_arms: PersistentMap::default(),
+                case_obligations: PersistentMap::default(),
+                checked_haves: PersistentMap::default(),
                 surface_propositions: self.presentation.surface_propositions.clone(),
                 recorded_snapshots: self.presentation.recorded_snapshots.clone(),
                 generated_load_bindings: self.presentation.generated_load_bindings.clone(),
@@ -803,6 +808,7 @@ impl ExecutionProofState {
                 path_branch_premises: PersistentSequence::default(),
                 frontier_loop_clauses: FrontierLoopClauses::default(),
                 post_execution_tactics: PersistentSequence::default(),
+                partitioned_post_execution_tactics: PersistentSequence::default(),
                 call_outcome_edges: None,
                 surface_record: SurfaceRecord::default(),
                 invariant_closer_step: Default::default(),
@@ -1288,6 +1294,10 @@ struct OutcomeProvenance {
     call_routes: Vec<bool>,
     branch_decisions: ExecutionBranchDecisions,
     match_arms: OutcomeMatchArms,
+    /// Ordinary exhaustiveness proofs completed before either case arm.
+    case_obligations: PersistentMap<usize, Arc<ProofCertificate>>,
+    /// Explicit source haves already checked while preparing a later split.
+    checked_haves: PersistentMap<usize, Arc<ProofCertificate>>,
     surface_propositions: SurfacePropositionMap,
     recorded_snapshots: RecordedSnapshots,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -2357,6 +2367,8 @@ pub(in crate::surface::proof) struct OutcomeProofPresentation {
     /// The arm each `match` deferred after execution took on this path, by
     /// the match's source occurrence, with that arm's field bindings.
     pub(in crate::surface::proof) match_arms: OutcomeMatchArms,
+    pub(in crate::surface::proof) case_obligations: PersistentMap<usize, Arc<ProofCertificate>>,
+    pub(in crate::surface::proof) checked_haves: PersistentMap<usize, Arc<ProofCertificate>>,
 }
 
 /// The arm a deferred `match` took on one outcome path, by the match's

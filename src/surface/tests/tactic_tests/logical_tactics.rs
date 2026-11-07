@@ -1730,7 +1730,7 @@ fn cases_eliminates_a_disjunctive_premise() {
 }
 
 #[test]
-fn cases_requires_its_exact_disjunction_as_an_available_fact() {
+fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
     let c_source = r#"
         int32 keep_small(int32 x) {
             return x;
@@ -1761,11 +1761,11 @@ fn cases_requires_its_exact_disjunction_as_an_available_fact() {
     "#;
 
     let error = verify_c0_sources(click_source, &[("keep_small.c", c_source)])
-        .expect_err("cases must not split a disjunction that is not an available fact");
+        .expect_err("cases must not omit the possible value x == 2");
     assert!(
         error
             .message()
-            .contains("`cases` requires its exact disjunction as an available fact"),
+            .contains("`cases` could not prove that its alternatives are exhaustive"),
         "unexpected error: {}",
         error.message()
     );
@@ -2976,24 +2976,25 @@ fn three_arm_cases_verifies_and_expands() {
         .unwrap_or_else(|error| panic!("{}\n{expanded}", error.message()));
 }
 
-/// The arms' disjunction is grouped left to right in the written order, and
-/// it must be exactly an available fact: arms written out of order are
-/// refused rather than matched up.
+/// Reordering the alternatives is valid, but each body must still prove its
+/// goal from its own written assumption rather than the old arm position.
 #[test]
-fn cases_arms_out_of_the_disjunction_order_are_refused() {
+fn reordered_cases_check_bodies_under_their_written_assumptions() {
     let reordered = THREE_WAY_CASES
         .replacen("x == 1 => {", "x == 0 => {", 1)
         .replacen("x == 2 => {", "x == 1 => {", 1)
         .replacen("x == 0 => {", "x == 2 => {", 1);
     let error = verify_c0_sources(&reordered, &[])
-        .expect_err("arms out of the disjunction's order are a different disjunction");
+        .expect_err("the first body still cites x == 1 while its arm assumes x == 2");
     assert!(
         error
             .message()
-            .contains("`cases` requires its exact disjunction as an available fact"),
+            .contains("`rewrite` requires its equality to be an exact available fact"),
         "{}",
         error.message()
     );
+    let corrected = reordered.replacen("rewrite(x == 1);", "rewrite(x == 2);", 1);
+    verify_c0_sources(&corrected, &[]).expect("reordered exhaustive alternatives work");
 }
 
 /// `outcomes` names its arms like `match` does, so they may come in either

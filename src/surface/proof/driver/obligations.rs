@@ -3,6 +3,36 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
+    /// Establish the alternatives before a source `cases` splits. This is an
+    /// ordinary nested proposition proof; the exact kernel split remains a
+    /// simple operation and expansion retains the completed `have` body.
+    pub(in crate::surface::proof) fn prove_cases_disjunction(
+        &self,
+        disjunction: &ClickProposition,
+    ) -> Result<Proof<'a>, ClickError> {
+        let proof = self.proof;
+        let kernel = proof.lower_surface_proposition(disjunction, "`cases` disjunction")?;
+        if proof.facts().contains(&kernel) {
+            return Ok(proof.clone());
+        }
+        let scope = proof.driver().open_have(disjunction.clone())?;
+        let refusal = || {
+            scope.body().step_error(format!(
+                "`cases` could not prove that its alternatives are exhaustive: `{}`",
+                crate::surface::printing::source_click_proposition(disjunction)
+            ))
+        };
+        if super::execution_statements::implicit_solve_disabled() {
+            return Err(refusal());
+        }
+        let _timing = crate::surface::proof::timing::TacticTiming::implicit_solve();
+        let _origin = crate::surface::proof_trace::TraceOrigin::enter(Some("implicit solve"));
+        let Some(closed) = scope.driver().try_solve_closure()? else {
+            return Err(refusal());
+        };
+        closed.join()
+    }
+
     pub(in crate::surface::proof) fn apply_execution_statement_step(
         &self,
         step: ProofStep,

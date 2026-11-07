@@ -1,7 +1,7 @@
 # `cases` names a missing disjunction in source terms
 
 `cases { A => { ... } B => { ... } }` splits on the disjunction of its arms,
-which must already be an available fact. When it is not, the refusal spells
+which must follow from the available facts. When it does not, the refusal spells
 the disjunction in source terms, not as a dump of the kernel's internal
 proposition.
 
@@ -14,5 +14,5 @@ theorem reflexive(x: int32) {
 ```
 
 ```expect
-fail: `cases` requires its exact disjunction as an available fact: `x > 0 or x < 0`
+fail: `cases` could not prove that its alternatives are exhaustive: `x > 0 or x < 0`
 ```

@@ -50,7 +50,7 @@ fn next_checked_post_execution_tactic<'a>(
     proof: Option<&Proof<'_>>,
     pending: &mut Vec<PendingPostExecutionTactic<'a>>,
     choices: &mut Vec<SurfacePathChoice>,
-    tactic_offset: usize,
+    surface_tactics: &mut Vec<ProofTactic>,
     path_index: usize,
 ) -> Result<
     Option<(
@@ -75,7 +75,7 @@ fn next_checked_post_execution_tactic<'a>(
                 occurrence: deferred.source_index,
                 selector: SurfacePathSelector::MatchArm(Arc::clone(source), arm),
                 value: true,
-                tactic_offset,
+                tactic_offset: surface_tactics.len(),
             });
             let tactics = arms.get(arm).ok_or_else(|| {
                 ClickError::new("a post-execution `match` path names an arm it does not have")
@@ -106,6 +106,15 @@ fn next_checked_post_execution_tactic<'a>(
                 let mut scoped = proof.clone().at_source_tactic(deferred.source_index);
                 if let Some(bindings) = &scope {
                     scoped = scoped.with_surface_local_scope(bindings);
+                }
+                if *disjunction
+                    && let Some(have) = scoped
+                        .focused_outcome_data()
+                        .and_then(|data| data.case_obligations.get(&deferred.source_index))
+                {
+                    // Already proved before partitioning, with neither arm
+                    // assumed. Retain its source without checking it again.
+                    surface_tactics.extend(have.to_proof_tactics());
                 }
                 let value = if *disjunction {
                     scoped.checked_outcome_cases_value(condition, *execution_route)
@@ -152,7 +161,7 @@ fn next_checked_post_execution_tactic<'a>(
             occurrence: deferred.source_index,
             selector,
             value,
-            tactic_offset,
+            tactic_offset: surface_tactics.len(),
         });
         pending.extend(
             arm.iter()
@@ -3769,7 +3778,7 @@ pub(super) fn finish_ordered_proof<'a>(
                             outcome_proof.as_ref(),
                             &mut pending_post_execution_tactics,
                             &mut surface_post_choices,
-                            path_surface_post_tactics.len(),
+                            &mut path_surface_post_tactics,
                             path_index,
                         )?
                     } {
@@ -4070,6 +4079,23 @@ pub(super) fn finish_ordered_proof<'a>(
                                 }
                             }
                             PostExecutionTactic::Have(have) => {
+                                if let Some(checked) = outcome_proof
+                                    .as_ref()
+                                    .and_then(|proof| proof.focused_outcome_data())
+                                    .and_then(|data| data.checked_haves.get(&deferred.source_index))
+                                {
+                                    for tactic in checked.to_proof_tactics() {
+                                        record_post_execution_surface_tactic(
+                                            &mut path_surface_post_tactics,
+                                            &mut path_deferred_capture_tactics,
+                                            path_capture,
+                                            post_execution_index,
+                                            *tactic_index,
+                                            tactic,
+                                        );
+                                    }
+                                    continue;
+                                }
                                 // A throw outcome is proved like a return: its
                                 // `exceptional ensures` names the thrown value
                                 // `exception`, which smart `solve` already

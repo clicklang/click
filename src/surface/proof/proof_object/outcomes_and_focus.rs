@@ -901,6 +901,8 @@ impl<'a> Proof<'a> {
                             requirement_surfaces: requirement_surfaces.clone(),
                             branch_decisions: provenance.branch_decisions,
                             match_arms: provenance.match_arms,
+                            case_obligations: provenance.case_obligations,
+                            checked_haves: provenance.checked_haves,
                             call_routes: if provenance.call_routes.is_empty() {
                                 call_edges
                                     .map(|edges| vec![edges[path_index]])
