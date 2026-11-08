@@ -35,6 +35,16 @@ pub(crate) fn shared_operand_leaf_pairs(
                 pairs.insert(key, Some(Pairs::default()));
                 continue;
             }
+            // Exact retained inputs can have different producer identities
+            // to preserve metadata. Numeric syntax equality relates their
+            // values without replacing either payload or consulting facts.
+            if let (Some(a), Some(b)) = (
+                left.machine_conversion_leaf(),
+                right.machine_conversion_leaf(),
+            ) {
+                pairs.insert(key, (a == b).then(Pairs::default));
+                continue;
+            }
             let (a, b) = (V(left), V(right));
             if (a.variable().is_some() || a.read().is_some())
                 && (b.variable().is_some() || b.read().is_some())

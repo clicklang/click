@@ -1839,7 +1839,7 @@ impl EqualityGraph {
                         }
                         N::MemoryLoad { address, .. } => pointers.push(address.clone()),
                         N::MachineLiteral(_) => {}
-                        N::IntegerToMachine { .. } => pending.push(Work::Machine(
+                        N::IntegerToMachine { .. } | N::Legacy(_) => pending.push(Work::Machine(
                             term.machine_conversion_leaf().expect("conversion leaf"),
                         )),
                         _ => unreachable!("shared machine operand fragment"),
