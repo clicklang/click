@@ -514,9 +514,9 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
             let value = match term.node() {
                 KernelTermNode::Variable(variable) => !crate::kernel::is_load_variable(variable),
                 KernelTermNode::MachineLiteral(_) => true,
-                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::MemoryLoad { .. } => {
-                    false
-                }
+                KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::MemoryLoad { .. }
+                | KernelTermNode::Legacy(_) => false,
                 _ => nodes.iter().all(|node| cache[&node.id()]),
             };
             cache.insert(term.id(), value);

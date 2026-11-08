@@ -8,9 +8,28 @@ use crate::kernel::{
 };
 
 impl KernelTerm {
-    /// The fixed-size compatibility reading of a mathematical integer conversion.
-    /// Its Integer payload stays shared; the surrounding machine DAG is never exported.
+    /// An explicitly retained native leaf or the compatibility reading of a
+    /// mathematical integer conversion. The surrounding machine DAG is never
+    /// exported; conversion Integer payloads stay shared.
     pub(crate) fn machine_conversion_leaf(&self) -> Option<&MachineTerm> {
+        if let KernelTermNode::Legacy(value) = self.node()
+            && matches!(value.identity, LegacyIdentity::Machine(_))
+            && let PureFunctionArgument::Value(value) = value.value()
+        {
+            return match value {
+                CValue::Int8(v)
+                | CValue::UInt8(v)
+                | CValue::Int16(v)
+                | CValue::UInt16(v)
+                | CValue::Int32(v)
+                | CValue::UInt32(v)
+                | CValue::Int64(v)
+                | CValue::UInt64(v)
+                | CValue::Int128(v)
+                | CValue::UInt128(v) => Some(v),
+                _ => None,
+            };
+        }
         let KernelTermNode::IntegerToMachine {
             destination,
             operand,

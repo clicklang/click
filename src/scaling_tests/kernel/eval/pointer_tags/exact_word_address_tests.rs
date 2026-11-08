@@ -295,3 +295,95 @@ fn cited_shared_tag_bounds_retain_growing_prefixes_and_selected_sources() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn retained_tag_forms_visit_shared_nodes_once_and_reuse_prefixes() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let x = MachineTerm::Variable(Variable(986020));
+        // Keep a pointer source present, but unrelated: a missing root must
+        // traverse its DAG once, not once per occurrence of a shared child.
+        let context = PureFactContext::new().assume_condition(
+            ConditionTerm::uint64_equal(
+                MachineTerm::Variable(Variable(986021)),
+                MachineTerm::pointer_address(Pointer::symbolic(Variable(986022))),
+            ),
+            true,
+        );
+        let mut root = KernelTermImport::default()
+            .machine_arithmetic(ty, &x)
+            .unwrap();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root],
+                );
+                assert!(
+                    tagged_address_form_view(
+                        MachineOperandView::Shared(&root),
+                        &context,
+                        &mut UsedFacts::new()
+                    )
+                    .is_none()
+                );
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples[0] > 0 && samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100),
+        "{samples:?}"
+    );
+}
+
+#[test]
+fn mixed_tag_syntax_comparison_reuses_growing_shared_prefixes() {
+    use crate::kernel::{KernelTerm, KernelTermExport, SharedMachineIntegerTerm};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let opaque = MachineTerm::pointer_address(Pointer::symbolic(Variable(986050)));
+        let mut left =
+            KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&opaque));
+        let mut right =
+            KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&opaque));
+        assert_ne!(left, right);
+        let one = KernelTerm::retained_machine_operand(
+            ty,
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                left = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [left, one.clone()],
+                );
+                right = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [right, one.clone()],
+                );
+                assert!(same_tag_syntax(
+                    &SharedMachineIntegerTerm::from_shared(ty, left.clone()).unwrap(),
+                    &SharedMachineIntegerTerm::from_shared(ty, right.clone()).unwrap()
+                ));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples[0] > 0 && samples.windows(2).all(|p| p[1] <= p[0] * 5 + 100),
+        "{samples:?}"
+    );
+}

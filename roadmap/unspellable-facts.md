@@ -73,21 +73,20 @@ be treated as a current to-do list. The detailed evidence is preserved in
 ### 1. Close the remaining checker boundaries — next
 
 Finish the checker consumers before enabling the remaining shared producers.
-Finish the wide comparison route below, then close the finite audit
-inventory. For each route record its caller, its role (checking, production,
+Close the finite audit inventory below. For each route record its caller, its role (checking, production,
 output, test reference or unused), and the deletion or regression that closes it.
 A textual accessor occurrence alone is not evidence of a checker dependency.
 
 | Route/group | Evidence and required closure |
 | --- | --- |
-| Wide comparison dispatch | `assumptions/condition_reasoning/decision.rs` still calls `native_comparison_of_integer_observation` and recursively decides its native result. Preserve tagged-address, mixed-operand and wide-equality rules using retained operands; remove this live export. |
+| Wide comparison dispatch — closed | `decision.rs` sends retained operands to tagged-address reasoning. Residual tag arithmetic stays shared, exact source premises and selected native read transport are preserved, and the dispatcher no longer exports shared operands. Fixed-size atoms and already-native comparisons retain their native rules. |
 | Memory-resolution bounds — closed | `recorded_less_equal_candidates` retains operand views and the order index retains original true signed `<`/`<=` source membership. Memory equality reads shared arithmetic and selected native read leaves without exporting endpoints; parity, withdrawal, direction and DAG scaling controls cover this boundary. |
-| Mixed operands and reconstruction | Close the remaining tagged-address, exact-equality rewrite, fold-output, modular and operation-reconstruction boundaries identified in the previous audit. Distinguish a genuinely native input/output from exporting a shared operand just to inspect it. |
+| Mixed operands and reconstruction | Close the remaining exact-equality rewrite, fold-output, modular and operation-reconstruction boundaries identified in the previous audit. Distinguish a genuinely native input/output from exporting a shared operand just to inspect it. |
 | Dependency and atom walkers | Confirm remaining guarded legacy branches retain shared inputs and selected read authority. Include growing prefixes, cold DAGs and registry/branch changes. |
 | Output and dead helpers | `resource_tracker::collect_integer_node_reads`, the missing-fold-guard diagnostic and Surface bound-planning adapters were classified as output/planning. `IntegerTerm::max_variable` had no in-repository callers. Recheck callers; do not reopen all their checker migrations based on their names alone. |
 
 - [x] Close the memory-resolution endpoint export.
-- [ ] Close the wide-comparison export after migrating its tagged-address consumer.
+- [x] Close the wide-comparison export after migrating its tagged-address consumer.
 - [ ] Classify and close each remaining audit group above; retain a short final
   inventory of legitimate frontend/output boundaries.
 - [ ] Remove the obsolete checker adapters and retain no-export regressions.
@@ -189,15 +188,20 @@ proof that another term-family migration is needed. New regressions introduced
 by the migration still need fixing; separating milestones does not excuse them
 or authorize placeholders, spelling searches or fact-dependent lowering.
 
-The next implementation PR should migrate the wide tagged-address comparison
-consumer, then remove the dispatcher's boxed export. The regression
-`wide_observation_keeps_tagged_address_equality_rules` pins a concrete dependency:
-with `x == address(p) + 1`, the existing checker refutes `x == x + 1`; simply
-replacing the export by a retained comparison returns unknown. Preserve that
-rule and its negated form, source withdrawal and branch isolation. This is an
-existing checker rule, not a request to redesign pointer syntax or provenance.
-Then finish step 1's bounded caller audit and proceed through steps 2–4. Do not
-resume the census backlog as the default next task.
+The tagged-address consumer now retains shared operands, including mixed residual
+tags containing an explicit native opaque input. Those inputs use the existing
+`KernelTerm::Legacy` boundary with a producer identity that preserves their exact
+payload; this does not migrate opaque pointer expression families in step 3.
+`wide_observation_keeps_tagged_address_equality_rules` proves that with
+`x == address(p) + 1`, the checker still refutes `x == x + 1` without a machine
+export, and preserves the negated result, source withdrawal and branch isolation.
+Tag-form memoization is scoped to the fact/read generation, decision mode and
+nesting depth; cached answers retain their source evidence. Multi-size growing
+DAG tests cover repeated misses and reuse of checked prefixes.
+
+Next finish step 1's bounded caller audit, especially exact-equality rewriting
+and operation reconstruction, then proceed through steps 2–4. Do not resume the
+census backlog as the default next task.
 
 ## Spellability follow-up — outside the split's finish line
 

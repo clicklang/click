@@ -1733,24 +1733,49 @@ impl PureFactContext {
         right: &MachineTerm,
         used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
     ) -> Option<bool> {
-        use crate::kernel::eval::pointer_tags::{masked_tag_value, tag_bound, tagged_address_form};
-        let left_form = tagged_address_form(left, self, used);
-        let right_form = tagged_address_form(right, self, used);
+        self.decide_uint64_equality_extras_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+            used,
+        )
+    }
+
+    pub(in crate::kernel) fn decide_uint64_equality_extras_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+        used: &mut crate::kernel::eval::pointer_tags::UsedFacts,
+    ) -> Option<bool> {
+        use crate::kernel::eval::pointer_tags::{
+            masked_tag_value, tag_bound, tagged_address_form_view,
+        };
+        let left_form = tagged_address_form_view(left, self, used);
+        let right_form = tagged_address_form_view(right, self, used);
+        let left_is_form = left_form.is_some();
+        let equal = |left, right| {
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                CompareRelation::Equal,
+                [left, right],
+            )
+        };
         match (left_form, right_form) {
             (Some(left), Some(right)) => {
-                if left.tag == right.tag {
+                if crate::kernel::eval::pointer_tags::same_tag_syntax(&left.tag, &right.tag) {
                     return self.decide_citing(
                         &ConditionTerm::pointer_equal(left.pointer, right.pointer),
                         used,
                     );
                 }
                 if left.pointer == right.pointer {
-                    return self
-                        .decide_citing(&ConditionTerm::uint64_equal(left.tag, right.tag), used);
+                    return self.decide_citing(
+                        &equal(left.tag.operand_view(), right.tag.operand_view()),
+                        used,
+                    );
                 }
                 let (Some(left_tag), Some(right_tag)) = (
-                    tag_bound(MachineOperandView::Legacy(&left.tag)),
-                    tag_bound(MachineOperandView::Legacy(&right.tag)),
+                    tag_bound(left.tag.operand_view()),
+                    tag_bound(right.tag.operand_view()),
                 ) else {
                     return None;
                 };
@@ -1758,9 +1783,10 @@ impl PureFactContext {
                     .max(right_tag)
                     .checked_add(1)?
                     .checked_next_power_of_two()?;
-                let tags_differ = self
-                    .decide_citing(&ConditionTerm::uint64_equal(left.tag, right.tag), used)
-                    == Some(false);
+                let tags_differ = self.decide_citing(
+                    &equal(left.tag.operand_view(), right.tag.operand_view()),
+                    used,
+                ) == Some(false);
                 let distinct = tags_differ
                     || self.decide_citing(
                         &ConditionTerm::pointer_equal(left.pointer.clone(), right.pointer.clone()),
@@ -1780,13 +1806,11 @@ impl PureFactContext {
                 (distinct && both_aligned).then_some(false)
             }
             (Some(form), None) | (None, Some(form)) => {
-                let left_is_form =
-                    tagged_address_form(left, self, &mut Default::default()).is_some();
                 let other = if left_is_form { right } else { left };
-                if other.uint64_as_const() != Some(0) {
+                if other.uint64_constant() != Some(0) {
                     return None;
                 }
-                let tag = tag_bound(MachineOperandView::Legacy(&form.tag))?;
+                let tag = tag_bound(form.tag.operand_view())?;
                 let alignment = tag.checked_add(1)?.checked_next_power_of_two()?;
                 let nonnull = self.decide_citing(
                     &ConditionTerm::pointer_equal(form.pointer.clone(), Pointer::null()),
@@ -1802,18 +1826,12 @@ impl PureFactContext {
             }
             (None, None) => {
                 if let Some(tag) = masked_tag_value(left, self, used) {
-                    return self
-                        .decide_citing(&ConditionTerm::uint64_equal(tag, right.clone()), used);
+                    return self.decide_citing(&equal(tag.operand_view(), right), used);
                 }
                 if let Some(tag) = masked_tag_value(right, self, used) {
-                    return self
-                        .decide_citing(&ConditionTerm::uint64_equal(left.clone(), tag), used);
+                    return self.decide_citing(&equal(left, tag.operand_view()), used);
                 }
-                self.decide_masked_zero(
-                    MachineOperandView::Legacy(left),
-                    MachineOperandView::Legacy(right),
-                    used,
-                )
+                self.decide_masked_zero(left, right, used)
             }
         }
     }

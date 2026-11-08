@@ -165,6 +165,13 @@ impl TermRewrite<'_> {
                     KernelTermImport::default().machine_arithmetic(format, &rewritten)?
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
+                KernelTermNode::Legacy(_) => {
+                    let value = self.bits(
+                        term.machine_conversion_leaf()
+                            .expect("retained native operand"),
+                    );
+                    KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
+                }
                 KernelTermNode::IntegerToMachine { .. } => {
                     let value = self.bits(term.machine_conversion_leaf().expect("conversion leaf"));
                     KernelTermImport::default().machine_arithmetic(format, &value)?
