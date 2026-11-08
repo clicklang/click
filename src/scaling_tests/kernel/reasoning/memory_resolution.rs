@@ -256,3 +256,39 @@ fn unresolved_load_projection_ignores_earlier_objects_and_hidden_slots() {
         "an unresolved load's projection grows with earlier objects: {samples:?}"
     );
 }
+
+#[test]
+fn retained_endpoint_queries_reuse_shared_dag_pairs() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineIntegerType as T, MachineOperandView as V,
+    };
+    let samples = [8usize, 32, 128].map(|size| {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::C(T::Int32.c_type()), Variable(993891));
+        let other = KernelTerm::variable(KernelType::C(T::Int32.c_type()), Variable(993892));
+        let context = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    T::Int32,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root.clone()],
+                );
+                assert!(!int32_operand_values_equal_for_memory_resolution(
+                    V::Shared(&root),
+                    V::Shared(&other),
+                    &context
+                ));
+            }
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        (size, work)
+    });
+    for pair in samples.windows(2) {
+        let [(small, sw), (large, lw)] = pair else {
+            unreachable!()
+        };
+        assert!(lw * small <= sw * large * 2, "{samples:?}");
+    }
+}

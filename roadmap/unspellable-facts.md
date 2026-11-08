@@ -59,8 +59,8 @@ Already landed:
   branch/indexing controls. Specification reads no longer emit C access events.
 
 **The split is not complete.** Source inspection still finds a live wide
-comparison export, a memory-resolution bound export, a restricted signed
-producer and generic legacy payloads. These are concrete migration boundaries,
+comparison export, a restricted signed producer and generic legacy payloads.
+These are concrete migration boundaries,
 not a count of every remaining defect in the verifier.
 
 The previous document interleaved open boxes with later paragraphs completing
@@ -73,7 +73,7 @@ be treated as a current to-do list. The detailed evidence is preserved in
 ### 1. Close the remaining checker boundaries — next
 
 Finish the checker consumers before enabling the remaining shared producers.
-Start with the two confirmed live routes below, then close the finite audit
+Finish the wide comparison route below, then close the finite audit
 inventory. For each route record its caller, its role (checking, production,
 output, test reference or unused), and the deletion or regression that closes it.
 A textual accessor occurrence alone is not evidence of a checker dependency.
@@ -81,12 +81,13 @@ A textual accessor occurrence alone is not evidence of a checker dependency.
 | Route/group | Evidence and required closure |
 | --- | --- |
 | Wide comparison dispatch | `assumptions/condition_reasoning/decision.rs` still calls `native_comparison_of_integer_observation` and recursively decides its native result. Preserve tagged-address, mixed-operand and wide-equality rules using retained operands; remove this live export. |
-| Memory-resolution bounds | `assumptions.rs::recorded_less_equal_candidates` exports retained endpoints through `.value()` for `exact_less_equal_for_memory_resolution`. Keep endpoint views, exact source premises and checked memory identity through this route. |
+| Memory-resolution bounds — closed | `recorded_less_equal_candidates` retains operand views and the order index retains original true signed `<`/`<=` source membership. Memory equality reads shared arithmetic and selected native read leaves without exporting endpoints; parity, withdrawal, direction and DAG scaling controls cover this boundary. |
 | Mixed operands and reconstruction | Close the remaining tagged-address, exact-equality rewrite, fold-output, modular and operation-reconstruction boundaries identified in the previous audit. Distinguish a genuinely native input/output from exporting a shared operand just to inspect it. |
 | Dependency and atom walkers | Confirm remaining guarded legacy branches retain shared inputs and selected read authority. Include growing prefixes, cold DAGs and registry/branch changes. |
 | Output and dead helpers | `resource_tracker::collect_integer_node_reads`, the missing-fold-guard diagnostic and Surface bound-planning adapters were classified as output/planning. `IntegerTerm::max_variable` had no in-repository callers. Recheck callers; do not reopen all their checker migrations based on their names alone. |
 
-- [ ] Close both confirmed live exports.
+- [x] Close the memory-resolution endpoint export.
+- [ ] Close the wide-comparison export after migrating its tagged-address consumer.
 - [ ] Classify and close each remaining audit group above; retain a short final
   inventory of legitimate frontend/output boundaries.
 - [ ] Remove the obsolete checker adapters and retain no-export regressions.
@@ -188,10 +189,15 @@ proof that another term-family migration is needed. New regressions introduced
 by the migration still need fixing; separating milestones does not excuse them
 or authorize placeholders, spelling searches or fact-dependent lowering.
 
-The next implementation PR should close the two confirmed checker exports in
-step 1, with parity and no-export controls. Then finish that step's bounded
-caller audit and proceed through steps 2–4. Do not resume the census backlog as
-the default next task.
+The next implementation PR should migrate the wide tagged-address comparison
+consumer, then remove the dispatcher's boxed export. The regression
+`wide_observation_keeps_tagged_address_equality_rules` pins a concrete dependency:
+with `x == address(p) + 1`, the existing checker refutes `x == x + 1`; simply
+replacing the export by a retained comparison returns unknown. Preserve that
+rule and its negated form, source withdrawal and branch isolation. This is an
+existing checker rule, not a request to redesign pointer syntax or provenance.
+Then finish step 1's bounded caller audit and proceed through steps 2–4. Do not
+resume the census backlog as the default next task.
 
 ## Spellability follow-up — outside the split's finish line
 

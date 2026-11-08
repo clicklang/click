@@ -3491,3 +3491,47 @@ mod shared_singleton_bound_evidence_tests {
 }
 
 mod legacy_search;
+
+#[cfg(test)]
+mod wide_observation_tag_regression {
+    use super::*;
+    use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn wide_observation_keeps_tagged_address_equality_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let x = MachineTerm::Variable(Variable(993801));
+        let one = MachineTerm::uint64_constant(1);
+        let next = MachineTerm::uint64_add(x.clone(), one.clone());
+        let tagged = MachineTerm::uint64_add(
+            MachineTerm::pointer_address(Pointer::symbolic(Variable(993803))),
+            one,
+        );
+        let observed = |value: &MachineTerm| {
+            IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(
+                    format,
+                    KernelTermImport::default()
+                        .machine_arithmetic(format, value)
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        let source = Proposition::ConditionIs(ConditionTerm::uint64_equal(x.clone(), tagged), true);
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_proposition(source.clone());
+        let goal = ConditionTerm::integer_equal(observed(&x), observed(&next));
+        assert_eq!(branch.decide(&goal), Some(false));
+        assert_eq!(
+            branch.decide(&ConditionTerm::integer_not_equal(
+                observed(&x),
+                observed(&next)
+            )),
+            Some(true)
+        );
+        assert_eq!(parent.decide(&goal), None);
+        assert_eq!(branch.without_exact_fact(&source).decide(&goal), None);
+    }
+}

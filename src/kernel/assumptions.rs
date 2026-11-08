@@ -9269,32 +9269,28 @@ fn exact_less_equal_for_memory_resolution(
         return true;
     }
     let left_constant = signed_bitvector_constant(left);
-    if recorded_less_equal_candidates(left, right, assumptions).any(|(fact_lower, fact_upper)| {
-        // The written fact states `fact_lower <= fact_upper` (or `<`, which
-        // is stronger). It proves the query when its lower endpoint is the
-        // query's lower endpoint, or — for a constant query endpoint — when
-        // it is a constant at least as large.
-        if crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
-            &fact_lower,
-            left,
-            assumptions,
-        ) {
-            return true;
-        }
-        let Some(left_constant) = left_constant else {
-            return false;
-        };
-        let strict = assumptions
-            .condition_facts
-            .get(&ConditionTerm::signed_less_than(
-                fact_lower.clone(),
-                fact_upper.clone(),
-            ))
-            .copied()
-            == Some(true);
-        signed_bitvector_constant(&fact_lower)
-            .is_some_and(|bound| left_constant <= if strict { bound + 1 } else { bound })
-    }) {
+    if recorded_less_equal_candidates(left, right, assumptions).any(
+        |(fact_lower, _fact_upper, strict)| {
+            // The written fact states `fact_lower <= fact_upper` (or `<`, which
+            // is stronger). It proves the query when its lower endpoint is the
+            // query's lower endpoint, or — for a constant query endpoint — when
+            // it is a constant at least as large.
+            if crate::kernel::reasoning::int32_operand_values_equal_for_memory_resolution(
+                fact_lower,
+                MachineOperandView::Legacy(left),
+                assumptions,
+            ) {
+                return true;
+            }
+            let Some(left_constant) = left_constant else {
+                return false;
+            };
+            fact_lower
+                .word32_constant()
+                .map(|bits| i64::from(bits as i32))
+                .is_some_and(|bound| left_constant <= if strict { bound + 1 } else { bound })
+        },
+    ) {
         return true;
     }
     // Keep broader scalar-resolution rules for forms outside graph closure or
@@ -9452,7 +9448,7 @@ fn recorded_less_equal_candidates<'a>(
     left: &'a MachineTerm,
     right: &'a MachineTerm,
     assumptions: &'a PureFactContext,
-) -> impl Iterator<Item = (MachineTerm, MachineTerm)> + 'a {
+) -> impl Iterator<Item = (MachineOperandView<'a>, MachineOperandView<'a>, bool)> + 'a {
     let endpoint_keys = |term: &MachineTerm| {
         let canonical = crate::kernel::eval::canonical_term(term);
         if canonical == *term {
@@ -9461,61 +9457,32 @@ fn recorded_less_equal_candidates<'a>(
             vec![term.clone(), canonical]
         }
     };
-    // `signed_order_bounds` entries are `(own endpoint, other endpoint,
-    // strict, own endpoint is the lower one)`. A lookup at `right` yields
-    // the facts bounding it from below; a lookup at `left` yields the facts
-    // bounding it from above.
-    let upper_side = endpoint_keys(right).into_iter().flat_map(move |key| {
-        assumptions
-            .signed_order_bounds
-            .get(&key)
-            .into_iter()
-            .flat_map(|bounds| bounds.operand_keys())
-            .filter(|(_, _, _, own_is_lower)| !*own_is_lower)
-            .map(|(own, other, _, _)| {
-                (
-                    other.retain(MachineIntegerType::Int32).value().clone(),
-                    own.retain(MachineIntegerType::Int32).value().clone(),
-                )
-            })
-    });
-    let lower_side = endpoint_keys(left).into_iter().flat_map(move |key| {
-        assumptions
-            .signed_order_bounds
-            .get(&key)
-            .into_iter()
-            .flat_map(|bounds| bounds.operand_keys())
-            .filter(|(_, _, _, own_is_lower)| *own_is_lower)
-            .map(|(own, other, _, _)| {
-                (
-                    own.retain(MachineIntegerType::Int32).value().clone(),
-                    other.retain(MachineIntegerType::Int32).value().clone(),
-                )
-            })
-    });
-    upper_side
-        .chain(lower_side)
-        .filter(move |(fact_lower, fact_upper)| {
-            // Confirm the written form. The index normalizes every order
-            // shape into one direction; only a true `<=` or `<` fact may
-            // discharge this rule, as the replaced scans required.
-            let written = |condition| assumptions.condition_facts.get(&condition).copied();
-            written(ConditionTerm::signed_less_equal(
-                fact_lower.clone(),
-                fact_upper.clone(),
-            )) == Some(true)
-                || written(ConditionTerm::signed_less_than(
-                    fact_lower.clone(),
-                    fact_upper.clone(),
-                )) == Some(true)
+    let endpoints = endpoint_keys(right)
+        .into_iter()
+        .map(|key| (key, false))
+        .chain(endpoint_keys(left).into_iter().map(|key| (key, true)));
+    endpoints
+        .flat_map(move |(key, forward)| {
+            assumptions
+                .signed_order_bounds
+                .get(&key)
+                .into_iter()
+                .flat_map(|bounds| bounds.written_signed_operands())
+                .filter(move |(_, _, _, own_is_lower)| *own_is_lower == forward)
+                .map(move |(own, other, strict, _)| {
+                    if forward {
+                        (own, other, strict)
+                    } else {
+                        (other, own, strict)
+                    }
+                })
         })
-        .filter(move |(_, fact_upper)| {
-            fact_upper == right
-                || crate::kernel::reasoning::int32_values_proven_equal_for_memory_resolution(
-                    fact_upper,
-                    right,
-                    assumptions,
-                )
+        .filter(move |(_, upper, _)| {
+            crate::kernel::reasoning::int32_operand_values_equal_for_memory_resolution(
+                *upper,
+                MachineOperandView::Legacy(right),
+                assumptions,
+            )
         })
 }
 
