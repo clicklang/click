@@ -14,6 +14,10 @@ pub(in crate::kernel) enum ResolutionQuery {
     PointerEqual(Pointer, Pointer),
     OffsetEqual(PointerOffsetTerm, PointerOffsetTerm),
     BitvectorEqual(MachineTerm, MachineTerm),
+    OperandEqual(
+        crate::kernel::SharedMachineIntegerTerm,
+        crate::kernel::SharedMachineIntegerTerm,
+    ),
     SnapshotsMatch(SharedCMemory, SharedCMemory, Pointer),
     CanonicalMemory(SharedCMemory, Pointer),
     RangeDisjoint(Pointer, Pointer),
@@ -127,6 +131,12 @@ enum ResolutionQueryKey {
     PointerEqual(u64, bool, Pointer, Pointer),
     PointerOffsetEqual(u64, bool, PointerOffsetTerm, PointerOffsetTerm),
     BitvectorEqual(u64, bool, MachineTerm, MachineTerm),
+    OperandEqual(
+        u64,
+        bool,
+        crate::kernel::SharedMachineIntegerTerm,
+        crate::kernel::SharedMachineIntegerTerm,
+    ),
 }
 
 thread_local! {
@@ -2159,6 +2169,135 @@ pub(in crate::kernel) fn bitvector_terms_proven_equal_for_memory_resolution(
     });
     memoized_resolution_query(key, || {
         bitvector_terms_equal_for_memory_resolution_unmemoized(left, right, assumptions)
+    })
+}
+
+/// The memory-resolution value rules over retained operands. Only selected
+/// read leaves enter the native snapshot machinery; arithmetic stays shared.
+pub(in crate::kernel) fn int32_operand_values_equal_for_memory_resolution(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    use crate::kernel::machine_integer::{
+        Relation,
+        comparison::{ComparisonOperand, NativeComparisonView},
+    };
+    use crate::kernel::{MachineIntegerType as T, MachineOperandView as V};
+    if let (V::Legacy(left), V::Legacy(right)) = (left, right) {
+        return int32_values_proven_equal_for_memory_resolution(left, right, assumptions);
+    }
+    let _scope = assumptions.enter_id_scope();
+    if assumptions
+        .equality_graph
+        .are_int32_equal_views(left, right)
+    {
+        return true;
+    }
+    // Constants and selected reads are fixed-size leaves, not tree exports.
+    fn leaf(v: V<'_>) -> Option<std::borrow::Cow<'_, MachineTerm>> {
+        v.literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| v.read_source())
+    }
+    if let (Some(left), Some(right)) = (leaf(left), leaf(right)) {
+        return int32_values_proven_equal_for_memory_resolution(&left, &right, assumptions);
+    }
+    let operands = [left.retain(T::Int32), right.retain(T::Int32)];
+    let key = resolution_query_memo_id(assumptions).map(|(id, bridging)| {
+        ResolutionQueryKey::OperandEqual(id, bridging, operands[0].clone(), operands[1].clone())
+    });
+    memoized_resolution_query(key, || {
+        if resolution_interrupted() {
+            return false;
+        }
+        let Some(_guard) = ResolutionQueryGuard::enter(ResolutionQuery::OperandEqual(
+            operands[0].clone(),
+            operands[1].clone(),
+        )) else {
+            return false;
+        };
+        let equal = |a: V<'_>, b: V<'_>| {
+            int32_operand_values_equal_for_memory_resolution(a, b, assumptions)
+        };
+        let origins = [left, right].map(|operand| {
+            operand
+                .variable()
+                .and_then(crate::kernel::eval::registered_load_origin_term_for_variable)
+        });
+        if origins.iter().any(Option::is_some)
+            && equal(
+                origins[0].as_ref().map(V::Legacy).unwrap_or(left),
+                origins[1].as_ref().map(V::Legacy).unwrap_or(right),
+            )
+        {
+            return true;
+        }
+        if assumptions.has_recorded_pointer_offset_equalities()
+            && [1, 4].into_iter().any(|byte_width| {
+                let offset = |v: V<'_>| {
+                    v.word32_constant()
+                        .map(|bits| {
+                            PointerOffsetTerm::Constant(i64::from(bits as i32) * byte_width)
+                        })
+                        .unwrap_or_else(|| PointerOffsetTerm::Int32Scaled {
+                            value: v.retain(T::Int32),
+                            byte_width,
+                        })
+                };
+                assumptions.exact_condition_value(&ConditionTerm::pointer_offset_equal(
+                    offset(left),
+                    offset(right),
+                )) == Some(true)
+            })
+        {
+            return true;
+        }
+        for (read, other) in [(left, right), (right, left)] {
+            if let Some((memory, pointer, LoadKind::Int32)) = read.read()
+                && let Some(CValue::Int32(value)) =
+                    stored_value_at_equal_pointer(memory, pointer, assumptions)
+                && equal(V::Legacy(&value), other)
+            {
+                return true;
+            }
+        }
+        let comparison = NativeComparisonView {
+            format: T::Int32,
+            relation: Relation::Equal,
+            operands: operands.clone().map(ComparisonOperand::Observation),
+        };
+        if let Some(cancelled) = comparison.cancelled_equality() {
+            return equal(
+                cancelled.operands[0].operand_view(),
+                cancelled.operands[1].operand_view(),
+            );
+        }
+        let zero = MachineTerm::constant(0);
+        for (sum, other) in [(left, right), (right, left)] {
+            if let Some((T::Int32, MachineBinaryOp::Add, [a, b])) = sum.binary()
+                && ((equal(a, other) && equal(b, V::Legacy(&zero)))
+                    || (equal(b, other) && equal(a, V::Legacy(&zero))))
+            {
+                return true;
+            }
+        }
+        match (left.binary(), right.binary()) {
+            (Some((lf, lo, [la, lb])), Some((rf, ro, [ra, rb])))
+                if lf == rf
+                    && lf.format().bits() == 32
+                    && lo == ro
+                    && matches!(
+                        lo,
+                        MachineBinaryOp::Add
+                            | MachineBinaryOp::Subtract
+                            | MachineBinaryOp::Multiply
+                    ) =>
+            {
+                equal(la, ra) && equal(lb, rb)
+            }
+            _ => false,
+        }
     })
 }
 
@@ -5042,4 +5181,62 @@ fn external_load_projection_retains_aliases_across_cell_updates() {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/kernel/reasoning/memory_resolution.rs");
+}
+
+#[cfg(test)]
+mod retained_endpoint_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTermExport, KernelTermImport, MachineIntegerType as T, MachineOperandView as V,
+    };
+
+    #[test]
+    fn retained_endpoint_equality_preserves_memory_and_arithmetic_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(993811));
+        let y = MachineTerm::Variable(Variable(993812));
+        let zero = MachineTerm::constant(0);
+        let one = MachineTerm::constant(1);
+        let p = Pointer::symbolic(Variable(993813));
+        let before = crate::kernel::intern_c_memory(CMemory::new());
+        let load = MachineTerm::MemoryLoad(before, Box::new(p), LoadKind::Int32);
+        let terms = [
+            x.clone(),
+            y.clone(),
+            zero.clone(),
+            one.clone(),
+            MachineTerm::add(x.clone(), one.clone()),
+            MachineTerm::add(y.clone(), one),
+            MachineTerm::add(x.clone(), y.clone()),
+            load,
+        ];
+        let contexts = [
+            PureFactContext::new(),
+            PureFactContext::new().assume_condition(ConditionTerm::equal(x, y.clone()), true),
+            PureFactContext::new().assume_condition(ConditionTerm::equal(y, zero), true),
+        ];
+        for context in contexts {
+            let _scope = context.enter_id_scope();
+            for (li, left) in terms.iter().enumerate() {
+                for (ri, right) in terms.iter().enumerate() {
+                    let expected =
+                        int32_values_proven_equal_for_memory_resolution(left, right, &context);
+                    let shared = KernelTermImport::default()
+                        .machine_arithmetic(T::Int32, left)
+                        .unwrap();
+                    let exports = KernelTermExport::machine_export_count();
+                    assert_eq!(
+                        int32_operand_values_equal_for_memory_resolution(
+                            V::Shared(&shared),
+                            V::Legacy(right),
+                            &context
+                        ),
+                        expected,
+                        "operands={li},{ri}"
+                    );
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                }
+            }
+        }
+    }
 }
