@@ -10324,3 +10324,76 @@ fn conjunction_projection_transport_scales_with_written_source() {
         assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
     }
 }
+
+#[test]
+fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
+    fn balanced(leaves: &[String]) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let middle = leaves.len() / 2;
+        format!(
+            "({}) and ({})",
+            balanced(&leaves[..middle]),
+            balanced(&leaves[middle..])
+        )
+    }
+    let mut expansion = Vec::new();
+    let mut replay = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let mut c_args = String::new();
+        let mut args = String::new();
+        let mut requirements = String::new();
+        let mut setup = String::new();
+        let mut premises = String::new();
+        for i in 0..size {
+            c_args.push_str(&format!(", int *q{i}"));
+            args.push_str(&format!(", int32* q{i}"));
+            requirements.push_str(&format!(
+                "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+            ));
+            if i % 2 == 0 {
+                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+            }
+        }
+        let mut leaves = (0..size)
+            .map(|i| format!("*q{i} == {i}"))
+            .collect::<Vec<_>>();
+        let chosen = leaves.iter().step_by(2).rev().cloned().collect::<Vec<_>>();
+        leaves.push("*p == 99".to_owned());
+        let source_fact = balanced(&leaves);
+        let target = balanced(&chosen);
+        let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+        let source = format!(
+            r#"
+            verifying "selection.c";
+            void keep(int32* p{args}) {{ owns *p; {requirements} requires {source_fact}; }} by {{
+                step(); {setup}
+                have {target} by {{ transport(at(statement(0).entry, {source_fact}), {target}) using {{ {premises} }}; }}
+                step();
+            }}
+        "#
+        );
+        let files = [("selection.c", c.as_str())];
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+        });
+        let expanded = expanded.unwrap();
+        expansion.push(work);
+        assert_eq!(expanded.matches("both {").count(), size / 2 - 1);
+        assert_eq!(expanded.matches("preserve(separate(").count(), size / 2);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &files))
+        });
+        verified.unwrap();
+        replay.push(work);
+    }
+    eprintln!("conjunction selection: expansion {expansion:?}, replay {replay:?}");
+    for costs in [expansion, replay] {
+        assert!(costs.iter().all(|cost| *cost > 0));
+        assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+    }
+}

@@ -1059,14 +1059,17 @@ fn comparison_preservation_reads(
     Some(pairs)
 }
 
-/// Select one scalar leaf from the written historical conjunction. Index the
+/// Select scalar leaves from the written historical conjunction. Index the
 /// leaf spellings once: neither ambient facts nor candidate histories are read.
 pub(super) fn conjunction_projection_preservation_steps(
     source: &ClickProposition,
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
-    if !matches!(target, ClickProposition::Comparison { .. }) {
+    if !matches!(
+        target,
+        ClickProposition::Comparison { .. } | ClickProposition::And(..)
+    ) {
         return None;
     }
     let mut pending = vec![(source, None)];
@@ -1099,17 +1102,31 @@ pub(super) fn conjunction_projection_preservation_steps(
     if !conjunction {
         return None;
     }
-    let snapshot = leaves.get(target)?;
-    let selected_source = ClickProposition::At {
-        selector: (*snapshot).clone(),
-        proposition: Box::new(target.clone()),
-    };
-    let premises = premises
-        .iter()
-        .filter(|premise| *premise != source)
-        .cloned()
-        .collect::<Vec<_>>();
-    comparison_preservation_steps(&selected_source, target, &premises)
+    let mut pending = vec![Some(target)];
+    let mut selected = Vec::new();
+    let mut shape = Vec::new();
+    while let Some(node) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match node {
+            Some(ClickProposition::And(left, right)) => {
+                pending.push(None);
+                pending.push(Some(right));
+                pending.push(Some(left));
+            }
+            Some(target @ ClickProposition::Comparison { .. }) => {
+                let snapshot = leaves.get(target)?;
+                let source = ClickProposition::At {
+                    selector: (*snapshot).clone(),
+                    proposition: Box::new(target.clone()),
+                };
+                shape.push(Some(selected.len()));
+                selected.push((source, target));
+            }
+            None => shape.push(None),
+            _ => return None,
+        }
+    }
+    conjunction_leaf_preservation_steps(source, premises, selected, shape)
 }
 
 /// Preserve a written conjunction tree without rescanning its premises at each
@@ -1119,7 +1136,6 @@ pub(super) fn conjunction_preservation_steps(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
-    use std::collections::{HashMap, HashSet};
     if !matches!(target, ClickProposition::And(..)) {
         return None;
     }
@@ -1163,16 +1179,27 @@ pub(super) fn conjunction_preservation_steps(
                 },
                 None => source.clone(),
             };
-            let reads = comparison_preservation_reads(&source, target)?;
             shape.push(Some(leaves.len()));
-            leaves.push((source, target, reads));
+            leaves.push((source, target));
         }
     }
+    conjunction_leaf_preservation_steps(source, premises, leaves, shape)
+}
+
+/// Both matching trees and selected/regrouped trees use one premise index and
+/// the same ordinary scalar proofs. `shape` is the target's postorder tree.
+fn conjunction_leaf_preservation_steps(
+    source: &ClickProposition,
+    premises: &[ClickProposition],
+    leaves: Vec<(ClickProposition, &ClickProposition)>,
+    shape: Vec<Option<usize>>,
+) -> Option<Vec<ProofStep>> {
+    use std::collections::{HashMap, HashSet};
     // Hash each explicit source once, rather than compare the whole conjunction
     // with every premise. Each leaf is still proved by ordinary assumption.
     let mut sources = leaves
         .iter()
-        .map(|(source, _, _)| source)
+        .map(|(source, _)| source)
         .collect::<HashSet<_>>();
     sources.insert(source);
     let mut by_subject = HashMap::<TransportReadSubject, Vec<usize>>::new();
@@ -1196,10 +1223,11 @@ pub(super) fn conjunction_preservation_steps(
             .push(index);
     }
     let mut proofs = Vec::with_capacity(leaves.len());
-    for (source, target, reads) in &leaves {
+    for (source, target) in &leaves {
+        let reads = comparison_preservation_reads(source, target)?;
         let mut selected = Vec::new();
         let mut previous = None;
-        for (_, read) in reads {
+        for (_, read) in &reads {
             let key = transport_read_subject(read)?;
             // Two operands can read the same subject; cite its evidence once.
             if previous.as_ref() == Some(&key) {

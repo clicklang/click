@@ -1161,3 +1161,81 @@ fn conjunction_projection_transport_crosses_multiple_statements() {
     assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
 }
+
+#[test]
+fn conjunction_selection_transport_expands_and_replays() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("views *r;", "owns b: model();")
+        .replace("memory(*q)", "a")
+        .replace("memory(*r)", "b")
+        .replace("*q", "a.value")
+        .replace("*r", "b.value");
+    for source in [
+        source.clone(),
+        source.replace("*q == 7 and *r == 8", "*r == 8 and *q == 7"),
+        source.replace("*q == 7 and *r == 8", "(*r == 8 and *q == 7) and *q == 7"),
+        source.replace("*q == 7 and (*p == 8 and *r == 8)", "(*q == 7 and *q > 0) and (*p == 8 and *r == 8)")
+            .replace("*q == 7 and *r == 8", "(*r == 8 and *q > 0) and *q == 7"),
+        source.replace("at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8))", "at(statement(0).entry, *q == 7) and at(statement(0).entry, *p == 8 and *r == 8)"),
+        source.replace("            separate(statement(0).footprint, memory(*q));", "            at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8));\n            separate(statement(0).footprint, memory(*q));"),
+        resource,
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        assert!(expanded.contains("both {"), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    }
+}
+
+#[test]
+fn conjunction_selection_transport_checks_every_selected_leaf() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
+    for read in ["q", "r"] {
+        let c = files[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
+        let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
+        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+    }
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("requires *q == 7 and (*p == 8 and *r == 8);", "requires *q == 7 and *p == 8;"),
+        source.replace("*q == 7 and *r == 8", "*q == 7 and *r == 9"),
+        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+    ] {
+        assert!(verify_c0_sources(&invalid, &files).is_err());
+    }
+}
+
+#[test]
+fn conjunction_selection_transport_crosses_multiple_statements() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
+    let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 and *r == 8 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have separate(statement(1).footprint, memory(*r)) by {
+        normalize() using { separate(memory(*p), memory(*r)); };
+    }
+    have *q == 7 and *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    let files = [(files[0].0.as_str(), c.as_str())];
+    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
+    assert!(!expanded.contains("transport("));
+    assert!(!expanded.contains("transport_certificate"));
+    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}
