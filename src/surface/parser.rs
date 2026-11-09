@@ -15706,6 +15706,7 @@ impl Parser {
         })
     }
 
+    /// Whether an identifier starts `Name::Variant` or `Name<arguments>::Variant`.
     fn looks_like_algebraic_constructor(&self) -> bool {
         if !matches!(self.peek(), Some(Token::Ident(_))) {
             return false;
@@ -15716,10 +15717,37 @@ impl Parser {
         if self.peek_next() != Some(&Token::LessThan) {
             return false;
         }
+        // A type argument list ends before anything that ends the
+        // proposition around it, so the scan stops there: an ordinary
+        // comparison `x < y` reads only to the end of its own conjunct, not
+        // to the end of the file.
         let mut index = self.position + 2;
         let mut nested = 1usize;
+        let mut enclosed = 0usize;
         while let Some(token) = self.tokens.get(index) {
+            #[cfg(test)]
+            CONSTRUCTOR_LOOKAHEAD_TOKENS.with(|count| count.set(count.get() + 1));
             match token {
+                Token::LParen | Token::LBracket => enclosed += 1,
+                Token::RParen | Token::RBracket if enclosed == 0 => return false,
+                Token::RParen | Token::RBracket => enclosed -= 1,
+                Token::Semicolon if enclosed == 0 => return false,
+                Token::LBrace
+                | Token::RBrace
+                | Token::FatArrow
+                | Token::Equal
+                | Token::EqualEqual
+                | Token::BangEqual
+                | Token::LessEqual
+                | Token::GreaterEqual => return false,
+                Token::Ident(word)
+                    if matches!(
+                        word.as_str(),
+                        "and" | "or" | "implies" | "by" | "using" | "else" | "if" | "produces"
+                    ) =>
+                {
+                    return false;
+                }
                 Token::LessThan => nested += 1,
                 Token::GreaterThan => {
                     nested -= 1;
@@ -17047,6 +17075,17 @@ fn requirement_object_alignment_facts(
         Requirement::Resource(clause) => out.extend(object_alignment_fact(clause, struct_layouts)),
         Requirement::LoadableSegment { .. } | Requirement::Proposition(_) => {}
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Tokens `looks_like_algebraic_constructor` has examined on this thread.
+    static CONSTRUCTOR_LOOKAHEAD_TOKENS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    include!("../scaling_tests/surface/parser.rs");
 }
 
 #[cfg(test)]

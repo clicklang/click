@@ -659,6 +659,15 @@ sums nextest's per-test durations while the gate runs tests in parallel.
   machine 953 tests took half a second or more, 1,093 test-seconds in all,
   although the gate's rule moves such tests to nightly: the rule's wall-clock
   measure depends on the machine and load it was taken on.
+- **Standard-library setup (measured at `fe8c6d9`).** nextest runs each test
+  in its own process, and the parsed Click library is cached per process, so
+  1,578 unit tests each parsed the whole library: 393 of 1,299 test-seconds,
+  and a median 65% of each such test. Parsing library proof bodies, which
+  ordinary verification does not read, was 44% of that load. A constructor
+  lookahead that scanned to the end of the file after every `x < y` was
+  another 24%; it now stops at the end of the comparison's proposition, and
+  a cold load takes 242-255ms instead of 317-364ms. Batching short tests
+  (as `diagnostic_tests` does) would share the remaining load.
 - **mdtests (1,142 test-seconds, 5,065 files).** The slowest files take 6-12s
   each: `consumed_population_predicate_rejects_missing_consumption.md`,
   `authority_pool_control_missing_consumption.md`,
