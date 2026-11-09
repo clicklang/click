@@ -4315,9 +4315,14 @@ function's result read alike. A slice, `Slice<T>` from
 through its data), and the subslices `s[a..b]`, `s[a..]` and `s[..b]`, which
 owe `a <= b <= s.len()` where they are evaluated
 ([Rust slices](../rust.md)). A method the receiver's type lacks is refused
-with the type and the method, "`Slice<uint8>` has no method `size`". A C or
-C++ value keeps its own meaning: `s.f` on a struct and a member access on a
-class are resolved from their declarations as before.
+with the type and the method, "`Slice<uint8>` has no method `size`". Any
+other library type's methods are its library module's functions over it:
+the function named after the method whose first parameter is that type, so
+a `Vec<uint32>` reads `v.len()` as `vec::len(v)`, and its index `v[i]` is
+`vec::get(v, i)` (`mdtests/a_vec_value_reads_with_its_library_methods.md`).
+A program's own pure functions are not methods. A C or C++ value keeps its
+own meaning: `s.f` on a struct and a member access on a class are resolved
+from their declarations as before.
 
 <!-- verified-example: mdtests/a_click_typed_value_reads_with_its_types_methods.md -->
 ```click
