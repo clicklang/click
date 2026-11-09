@@ -28,7 +28,7 @@ impl TermRewrite<'_> {
     /// Comparison mode simplifies arithmetic; substitution preserves raw
     /// operators, and exact Integer congruence also preserves raw casts.
     /// Only comparison results cross queries.
-    /// Other opaque read values retain the compatibility boundary.
+    /// Native opaque replacements remain exact leaves beneath shared parents.
     pub(super) fn shared_machine_operand(&mut self, root: &KernelTerm) -> Option<KernelTerm> {
         // Only the ordinary comparison scope may share work between queries.
         // A nested binder's renamed/opaque reads use this traversal's own memo.
@@ -71,7 +71,10 @@ impl TermRewrite<'_> {
                 })
         };
         let mut sources = HashMap::<MachineIntegerType, Option<KernelTerm>>::new();
-        let mut replacements = HashMap::<MachineIntegerType, Option<KernelTerm>>::new();
+        let mut opaque_sources = self
+            .bitvector
+            .map(|(from, _)| super::super::machine_source_match::MachineSourceMatcher::new(from));
+        let mut replacements = HashMap::<MachineIntegerType, KernelTerm>::new();
         let mut pending = vec![(root.clone(), false)];
         while let Some((term, finish)) = pending.pop() {
             self.visit();
@@ -120,18 +123,27 @@ impl TermRewrite<'_> {
                         Some(from.with_machine_observation_type(format))
                     }
                 });
-                if source.as_ref() == Some(&term) {
+                let mut matches = source.as_ref() == Some(&term);
+                if !matches
+                    && root.has_machine_conversions()
+                    && (source.is_none()
+                        || matches!(from, MachineOperandView::Shared(value) if value.has_machine_conversions()))
+                {
+                    let Some(found) = opaque_sources
+                        .as_mut()
+                        .expect("selected source")
+                        .matches(format, &term)
+                    else {
+                        self.integer_work_exhausted = true;
+                        return None;
+                    };
+                    matches = found;
+                }
+                if matches {
                     let replacement = replacements
                         .entry(format)
-                        .or_insert_with(|| match to {
-                            MachineOperandView::Shared(root) => {
-                                Some(root.with_machine_observation_type(format))
-                            }
-                            MachineOperandView::Legacy(term) => {
-                                KernelTermImport::default().machine_arithmetic(format, term)
-                            }
-                        })
-                        .clone()?;
+                        .or_insert_with(|| KernelTerm::retained_machine_operand(format, to))
+                        .clone();
                     if crate::instrumentation::deadline_exceeded_with_work(0) {
                         self.integer_work_exhausted = true;
                         return None;
@@ -155,26 +167,39 @@ impl TermRewrite<'_> {
             let value = match term.node() {
                 KernelTermNode::Variable(variable) => {
                     let rewritten = self.bits(&MachineTerm::Variable(*variable));
-                    KernelTermImport::default().machine_arithmetic(format, &rewritten)?
+                    KernelTerm::retained_machine_operand(
+                        format,
+                        MachineOperandView::Legacy(&rewritten),
+                    )
                 }
                 KernelTermNode::MemoryLoad { .. } => {
                     let read = term.machine_read_leaf().expect("read leaf");
                     // The selected read owns its snapshot; rewrite its address
                     // directly without manufacturing a reserved variable.
                     let rewritten = self.bits(read);
-                    KernelTermImport::default().machine_arithmetic(format, &rewritten)?
+                    KernelTerm::retained_machine_operand(
+                        format,
+                        MachineOperandView::Legacy(&rewritten),
+                    )
                 }
                 KernelTermNode::MachineLiteral(_) => term.clone(),
                 KernelTermNode::Legacy(_) => {
-                    let value = self.bits(
-                        term.machine_conversion_leaf()
-                            .expect("retained native operand"),
-                    );
-                    KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
+                    let original = term
+                        .machine_conversion_leaf()
+                        .expect("retained native operand");
+                    let value = self.bits(original);
+                    if value == *original {
+                        term.clone()
+                    } else {
+                        KernelTerm::retained_machine_operand(
+                            format,
+                            MachineOperandView::Legacy(&value),
+                        )
+                    }
                 }
                 KernelTermNode::IntegerToMachine { .. } => {
                     let value = self.bits(term.machine_conversion_leaf().expect("conversion leaf"));
-                    KernelTermImport::default().machine_arithmetic(format, &value)?
+                    KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(&value))
                 }
                 KernelTermNode::MachineBinary {
                     format,

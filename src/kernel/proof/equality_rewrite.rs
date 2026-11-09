@@ -848,26 +848,28 @@ impl From<AtomicRewriteRefusal> for String {
 // Address annotations describe a producer's object class, not the bits
 // observed by a numeric equality. Keep the pointer and mask themselves
 // exact; no pointer-value or memory-snapshot identity is substituted.
-fn same_address_observation(left: &MachineTerm, right: &MachineTerm) -> bool {
-    fn key(term: &MachineTerm) -> Option<(&Pointer, Option<u64>)> {
-        if let Some(pointer) = term.address_pointer() {
+fn same_address_observation(left: MachineOperandView<'_>, right: MachineOperandView<'_>) -> bool {
+    fn pointer(term: MachineOperandView<'_>) -> Option<&Pointer> {
+        match term {
+            MachineOperandView::Legacy(term) => term.address_pointer(),
+            MachineOperandView::Shared(term) => term.machine_conversion_leaf()?.address_pointer(),
+        }
+    }
+    fn key(term: MachineOperandView<'_>) -> Option<(&Pointer, Option<u64>)> {
+        if let Some(pointer) = pointer(term) {
             return Some((pointer, None));
         }
-        let MachineTerm::Binary {
-            format: MachineIntegerType::UInt64,
-            op: MachineBinaryOp::BitwiseAnd,
-            left,
-            right,
-        } = term
+        let (MachineIntegerType::UInt64, MachineBinaryOp::BitwiseAnd, [left, right]) =
+            term.binary()?
         else {
             return None;
         };
-        let (pointer, mask) = if let Some(pointer) = left.address_pointer() {
-            (pointer, right.as_ref())
+        let (pointer, mask) = if let Some(pointer) = pointer(left) {
+            (pointer, right)
         } else {
-            (right.address_pointer()?, left.as_ref())
+            (pointer(right)?, left)
         };
-        Some((pointer, Some(mask.uint64_as_const()?)))
+        Some((pointer, Some(mask.uint64_constant()?)))
     }
     matches!((key(left), key(right)), (Some(a), Some(b)) if a == b)
 }
@@ -907,7 +909,7 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
         }
     }
     if term == from
-        || same_address_observation(term, from)
+        || same_address_observation(MachineOperandView::Legacy(term), MachineOperandView::Legacy(from))
         // Load variables and load terms of one atom are the
         // same occurrence.
         || crate::kernel::terms_have_same_canonical_form(term, from)
