@@ -71,6 +71,9 @@ impl TermRewrite<'_> {
                 })
         };
         let mut sources = HashMap::<MachineIntegerType, Option<KernelTerm>>::new();
+        let mut opaque_sources = self
+            .bitvector
+            .map(|(from, _)| super::super::machine_source_match::MachineSourceMatcher::new(from));
         let mut replacements = HashMap::<MachineIntegerType, KernelTerm>::new();
         let mut pending = vec![(root.clone(), false)];
         while let Some((term, finish)) = pending.pop() {
@@ -120,12 +123,23 @@ impl TermRewrite<'_> {
                         Some(from.with_machine_observation_type(format))
                     }
                 });
-                // Keep the native source-matching boundary until opaque
-                // compound sources have a retained matcher of their own.
-                if source.is_none() && root.has_machine_conversions() {
-                    return None;
+                let mut matches = source.as_ref() == Some(&term);
+                if !matches
+                    && root.has_machine_conversions()
+                    && (source.is_none()
+                        || matches!(from, MachineOperandView::Shared(value) if value.has_machine_conversions()))
+                {
+                    let Some(found) = opaque_sources
+                        .as_mut()
+                        .expect("selected source")
+                        .matches(format, &term)
+                    else {
+                        self.integer_work_exhausted = true;
+                        return None;
+                    };
+                    matches = found;
                 }
-                if source.as_ref() == Some(&term) {
+                if matches {
                     let replacement = replacements
                         .entry(format)
                         .or_insert_with(|| KernelTerm::retained_machine_operand(format, to))

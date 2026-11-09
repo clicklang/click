@@ -150,3 +150,64 @@ fn opaque_replacement_rewrites_keep_cold_dags_shared() {
         }
     }
 }
+
+#[test]
+fn opaque_sources_match_growing_sources_and_shared_goals_linearly() {
+    for exact in [false, true] {
+        for hit in [false, true] {
+            let mut samples = Vec::new();
+            for size in [16, 64, 256] {
+                let _session = VerificationSession::enter();
+                let ty = T::Int32;
+                let leaf = MachineTerm::If {
+                    condition: ConditionTerm::Variable(Variable(1006700)).into(),
+                    then_term: MachineTerm::Variable(Variable(1006701)).into(),
+                    else_term: MachineTerm::Variable(Variable(1006702)).into(),
+                };
+                let mut source = leaf.clone();
+                for n in 0..size {
+                    source = MachineTerm::add(source, MachineTerm::Variable(Variable(1006800 + n)));
+                }
+                let mut root = retained(ty, if hit { &source } else { &leaf });
+                let to = MachineTerm::Variable(Variable(1006703));
+                let mut expected = if hit { imported(ty, &to) } else { root.clone() };
+                for _ in 0..size {
+                    root = KernelTerm::machine_binary_shared(ty, O::Add, [root.clone(), root]);
+                    expected =
+                        KernelTerm::machine_binary_shared(ty, O::Add, [expected.clone(), expected]);
+                }
+                let input = IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),
+                );
+                let exports = KernelTermExport::machine_export_count();
+                let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    if exact {
+                        rewrite(&root, &source, &to, |leaf| {
+                            super::super::super::rewrite_term(leaf, &source, &to)
+                        })
+                        .unwrap()
+                    } else {
+                        let mut rewrite =
+                            crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(
+                                &source, &to,
+                            );
+                        let IntegerTerm::Machine(value) = rewrite.integer(&input) else {
+                            panic!("observation")
+                        };
+                        assert!(rewrite.refusal().is_none());
+                        value.shared_operand().unwrap().clone()
+                    }
+                });
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                assert_eq!(result, expected);
+                samples.push(work);
+            }
+            for pair in samples.windows(2) {
+                assert!(
+                    pair[1] <= pair[0] * 5,
+                    "exact={exact}, hit={hit}: {samples:?}"
+                );
+            }
+        }
+    }
+}
