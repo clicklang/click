@@ -868,6 +868,14 @@ pub(in crate::surface) fn walk_written_expressions(
         ContractExpression::AlgebraicConstructor { arguments, .. }
         | ContractExpression::SequenceLiteral(arguments)
         | ContractExpression::Call { arguments, .. } => children.extend(arguments),
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            children.push(receiver);
+            children.extend(arguments);
+        }
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             children.push(scrutinee);
             children.extend(arms.iter().map(|arm| &arm.body));

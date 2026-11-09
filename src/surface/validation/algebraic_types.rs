@@ -1987,6 +1987,9 @@ fn validate_algebraic_expression_node(
 ) -> Result<Option<AlgebraicTypeApplication>, ClickError> {
     match expression {
         ContractExpression::Resource(_) => Ok(None),
+        ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
+            "{context}: the method `{method}` was not resolved by its receiver's type"
+        ))),
         ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
         ContractExpression::IntegerLiteral(_) => Ok(None),
         ContractExpression::Negate(inner) => validate_algebraic_expression(
@@ -3292,7 +3295,9 @@ fn infer_generic_expression_type(
     }
     match expression {
         ContractExpression::Resource(_) => Ok(Some(ClickType::Resource)),
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::MethodCall { .. } => Ok(None),
         ContractExpression::IntegerLiteral(_) => {
             Ok(generics::default_numeral_click_type(expression))
         }

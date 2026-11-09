@@ -6978,6 +6978,30 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             describe_let_value(value),
             describe_let_value(body)
         ),
+        ContractExpression::MethodCall {
+            receiver,
+            method,
+            arguments,
+        } => {
+            let receiver = describe_contract_expression(receiver);
+            let receiver = if receiver.contains(' ') {
+                format!("({receiver})")
+            } else {
+                receiver
+            };
+            let arguments = arguments
+                .iter()
+                .map(describe_contract_expression)
+                .collect::<Vec<_>>();
+            match (method.as_str(), arguments.as_slice()) {
+                ("[]", [index]) => format!("{receiver}[{index}]"),
+                ("[..]", []) => format!("{receiver}[..]"),
+                ("[a..]", [start]) => format!("{receiver}[{start}..]"),
+                ("[..b]", [end]) => format!("{receiver}[..{end}]"),
+                ("[a..b]", [start, end]) => format!("{receiver}[{start}..{end}]"),
+                _ => format!("{receiver}.{method}({})", arguments.join(", ")),
+            }
+        }
         ContractExpression::Call { name, arguments } => {
             let arguments = slice_call_arguments(
                 name,

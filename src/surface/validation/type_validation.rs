@@ -774,6 +774,16 @@ fn contains_scoped_expression_shape(
         | ContractExpression::Call { arguments, .. } => arguments
             .iter()
             .any(|argument| contains_scoped_expression_shape(argument, shape)),
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            contains_scoped_expression_shape(receiver, shape)
+                || arguments
+                    .iter()
+                    .any(|argument| contains_scoped_expression_shape(argument, shape))
+        }
         ContractExpression::SequenceConcat(left, right)
         | ContractExpression::Add(left, right)
         | ContractExpression::Subtract(left, right)
@@ -3352,6 +3362,9 @@ pub(super) fn infer_contract_expression_type(
             .map_err(ClickError::new)?;
             infer_contract_expression_type(&substituted, variables, click_functions, context)
         }
+        ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
+            "{context}: the method `{method}` was not resolved by its receiver's type"
+        ))),
         expression @ ContractExpression::Call { name, .. } if is_integer_truncation(name) => {
             infer_spec_value_type(expression, variables, click_functions, context)?;
             Ok(None)
@@ -4493,6 +4506,9 @@ fn validate_contract_expression_calls(
             validate_contract_expression_calls(value, click_functions, context)?;
             validate_contract_expression_calls(body, click_functions, context)
         }
+        ContractExpression::MethodCall { method, .. } => Err(ClickError::new(format!(
+            "the method `{method}` was not resolved by its receiver's type"
+        ))),
         ContractExpression::Call { name, arguments } => {
             let builtin_arity = if is_integer_truncation(name) {
                 Some(2)

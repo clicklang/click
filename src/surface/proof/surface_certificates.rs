@@ -4447,6 +4447,16 @@ pub(super) fn contract_expression_mentions_c_local(
             contract_expression_mentions_c_local(value, parameter_names)
                 || contract_expression_mentions_c_local(body, parameter_names)
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            contract_expression_mentions_c_local(receiver, parameter_names)
+                || arguments
+                    .iter()
+                    .any(|argument| contract_expression_mentions_c_local(argument, parameter_names))
+        }
         ContractExpression::Call { arguments, .. } => arguments
             .iter()
             .any(|argument| contract_expression_mentions_c_local(argument, parameter_names)),

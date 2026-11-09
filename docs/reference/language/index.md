@@ -4293,6 +4293,40 @@ place is available.
 Concrete folds are unrolled. Symbolic folds remain `RangeFold` value terms in
 the kernel and can be reasoned about by supported fold laws.
 
+
+### Methods
+
+A value of a Click type is read with its type's methods, `receiver.method(args)`,
+in every sidecar language. The parser records the call as written, and
+declaration expansion resolves it by the receiver's type once that type is
+known, so a `match` arm's binder, a `let` binder, a theorem binder and a pure
+function's result read alike. A slice, `Slice<T>` from
+`click::rust::slice`, has `len()`, `as_ptr()`, an index `s[i]` (a read
+through its data), and the subslices `s[a..b]`, `s[a..]` and `s[..b]`, which
+owe `a <= b <= s.len()` where they are evaluated
+([Rust slices](../rust.md)). A method the receiver's type lacks is refused
+with the type and the method, "`Slice<uint8>` has no method `size`". A C or
+C++ value keeps its own meaning: `s.f` on a struct and a member access on a
+class are resolved from their declarations as before.
+
+<!-- verified-example: mdtests/a_click_typed_value_reads_with_its_types_methods.md -->
+```click
+import click::rust::slice;
+
+theorem slice_methods(s: Slice<uint8>) {
+    requires 2u64 <= s.len();
+    ensures s.len() == slice::len(s) by {
+        solve();
+    }
+    ensures s.as_ptr() == slice::as_ptr(s) by {
+        solve();
+    }
+    ensures s[1..].len() == s.len() - 1u64 by {
+        solve();
+    }
+}
+```
+
 ## Predicates
 
 Predicates return Click propositions:

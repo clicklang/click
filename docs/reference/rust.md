@@ -465,9 +465,12 @@ condition, `not established: 5u64 <= bytes.len()`; establish it first, for
 example `have half(bytes).len() == 2u64;` before `half(bytes)[1..]`. A
 literal reversed range, `bytes[3..1]`, is refused as it is read. The length
 is `slice::subslice_len(a, b, bytes.len())` from the
-[slice library](library/index.md#slicesubslice_len). A slice bound by a
-`match` arm or a
-`let` is not yet read with these methods. The
+[slice library](library/index.md#slicesubslice_len). A method means what
+its receiver's type says, however the receiver was introduced, so a slice
+bound by a `match` arm, `Option::Some(s) => s.len()`, or by a `let`,
+`let s = half(bytes); s[..1]`, reads with the same methods; a method the
+type lacks is refused, "`Slice<uint8>` has no method `size`"
+([methods](language/index.md#methods)). The
 [byte-sum example](https://github.com/clicklang/click/blob/master/examples/rust-byte-sum/sum.click)
 sums a prefix with `function prefix(bytes: &[u8], end: usize) -> Integer`,
 whose body adds `to_integer(bytes[k] as i32)`, and calls it as

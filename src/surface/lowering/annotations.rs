@@ -122,6 +122,13 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
         | ContractExpression::Call { arguments, .. } => {
             arguments.iter().find_map(fixed_measure_state)
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            fixed_measure_state(receiver).or_else(|| arguments.iter().find_map(fixed_measure_state))
+        }
         ContractExpression::SequenceLiteral(elements) => {
             elements.iter().find_map(fixed_measure_state)
         }
@@ -6169,6 +6176,9 @@ impl AnnotationLowerer<'_> {
                 }
             }
 
+            ContractExpression::MethodCall { method, .. } => Err(format!(
+                "the method `{method}` was not resolved by its receiver's type"
+            )),
             // A subslice's length, `end - start`, owes `start <= end <= len`
             // where it is evaluated, as Rust panics otherwise.
             ContractExpression::Call { name, arguments }

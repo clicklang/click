@@ -121,6 +121,11 @@ pub(in crate::surface) fn contains_old_expression(expression: &ContractExpressio
         ContractExpression::Let { value, body, .. } => {
             contains_old_expression(value) || contains_old_expression(body)
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => contains_old_expression(receiver) || arguments.iter().any(contains_old_expression),
         ContractExpression::Call { arguments, .. } => arguments.iter().any(contains_old_expression),
     }
 }
@@ -188,6 +193,11 @@ pub(in crate::surface) fn contains_resource_count(expression: &ContractExpressio
         ContractExpression::Let { value, body, .. } => {
             contains_resource_count(value) || contains_resource_count(body)
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => contains_resource_count(receiver) || arguments.iter().any(contains_resource_count),
         ContractExpression::Call { arguments, .. } => arguments.iter().any(contains_resource_count),
     }
 }
@@ -398,6 +408,16 @@ pub(in crate::surface) fn collect_resource_count_families(
             ContractExpression::Let { value, body, .. } => {
                 collect_expression(value, families);
                 collect_expression(body, families);
+            }
+            ContractExpression::MethodCall {
+                receiver,
+                arguments,
+                ..
+            } => {
+                collect_expression(receiver, families);
+                for argument in arguments {
+                    collect_expression(argument, families);
+                }
             }
             ContractExpression::Call { arguments, .. } => {
                 for argument in arguments {
@@ -648,6 +668,11 @@ pub(in crate::surface) fn contains_at_expression(expression: &ContractExpression
         ContractExpression::Let { value, body, .. } => {
             contains_at_expression(value) || contains_at_expression(body)
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => contains_at_expression(receiver) || arguments.iter().any(contains_at_expression),
         ContractExpression::Call { arguments, .. } => arguments.iter().any(contains_at_expression),
     }
 }
@@ -840,6 +865,16 @@ fn collect_click_function_calls_one(expression: &ContractExpression, calls: &mut
         ContractExpression::Let { value, body, .. } => {
             collect_click_function_calls(value, calls);
             collect_click_function_calls(body, calls);
+        }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            collect_click_function_calls(receiver, calls);
+            for argument in arguments {
+                collect_click_function_calls(argument, calls);
+            }
         }
         ContractExpression::Call { name, arguments } => {
             calls.insert(name.clone());
@@ -1417,6 +1452,17 @@ fn validate_recursive_calls_in_expression(
         }
         ContractExpression::ArrayIndex { base, .. } => {
             recurse(base, lower_bounds, structural_subterms)
+        }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            recurse(receiver, lower_bounds, structural_subterms)?;
+            for argument in arguments {
+                recurse(argument, lower_bounds, structural_subterms)?;
+            }
+            Ok(())
         }
         ContractExpression::Call { name, arguments } => {
             for argument in arguments {

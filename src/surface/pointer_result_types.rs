@@ -414,6 +414,16 @@ impl Analysis<'_> {
                     self.check_expression(argument, bindings, definition)?;
                 }
             }
+            ContractExpression::MethodCall {
+                receiver,
+                arguments,
+                ..
+            } => {
+                self.check_expression(receiver, bindings, definition)?;
+                for argument in arguments {
+                    self.check_expression(argument, bindings, definition)?;
+                }
+            }
             ContractExpression::Call { name, arguments } => {
                 if let Some(callee) = self
                     .functions

@@ -428,6 +428,55 @@ impl ConstructorTypes {
         }
     }
 
+    /// The method call `receiver.method(arguments)` as what it means for
+    /// the receiver's type (`design/typed-method-resolution.md`): a slice's
+    /// `len()` is `slice::len(receiver)`, its `[i]` a read through
+    /// `slice::as_ptr(receiver)`, and its `[a..b]` the subslice. A receiver
+    /// whose type has no such method is refused with the type and method.
+    pub(super) fn resolve_method(
+        &self,
+        receiver: ContractExpression,
+        method: &str,
+        arguments: Vec<ContractExpression>,
+    ) -> Result<ContractExpression, ClickError> {
+        let receiver_type = self.known_type(&receiver);
+        if let Some(ClickType::Algebraic(application)) = &receiver_type
+            && application.name == "Slice"
+            && let Some(resolved) =
+                slice_method(application, receiver.clone(), method, arguments.clone())
+        {
+            return Ok(resolved);
+        }
+        // An index on a value of another type, such as a sequence, keeps
+        // the index it always was.
+        if method == "[]"
+            && let [index] = arguments.as_slice()
+            && !matches!(&receiver_type, Some(ClickType::Algebraic(_)))
+        {
+            return Ok(ContractExpression::Index(
+                Box::new(receiver),
+                Box::new(index.clone()),
+            ));
+        }
+        let written = crate::surface::diagnostics::describe_contract_expression(
+            &ContractExpression::MethodCall {
+                receiver: Box::new(receiver),
+                method: method.to_string(),
+                arguments,
+            },
+        );
+        Err(ClickError::new(match receiver_type {
+            Some(click_type) => format!(
+                "`{written}`: `{}` has no method `{method}`",
+                super::describe_click_type(&click_type)
+            ),
+            None => format!(
+                "`{written}`: the receiver's type is not known here, so its method `{method}` \
+                 cannot be resolved; a method applies to a value of a Click type, such as a slice"
+            ),
+        }))
+    }
+
     /// An unapplied side of a comparison takes the other side's type.
     pub(super) fn resolve_comparison(
         &self,
@@ -585,4 +634,76 @@ pub(in crate::surface) fn unapplied_constructor_message(
     format!(
         "cannot infer the type arguments of `{datatype}::{variant}`: neither its arguments nor the type its position expects fix `{parameters}`; write them, as in `{datatype}<...>::{variant}`"
     )
+}
+
+/// A slice method on `receiver`, a value of `application`, `Slice<T>`.
+fn slice_method(
+    application: &AlgebraicTypeApplication,
+    receiver: ContractExpression,
+    method: &str,
+    arguments: Vec<ContractExpression>,
+) -> Option<ContractExpression> {
+    let call = |name: &str, arguments| ContractExpression::Call {
+        name: format!("click::rust::slice::{name}"),
+        arguments,
+    };
+    // A constructed slice's fields are its data and its length, by the
+    // library's definition, so they need no unfold.
+    let (pointer, length) = match &receiver {
+        ContractExpression::AlgebraicConstructor {
+            variant, arguments, ..
+        } if variant == "Slice" && arguments.len() == 2 => {
+            (arguments[0].clone(), arguments[1].clone())
+        }
+        _ => (
+            call("as_ptr", vec![receiver.clone()]),
+            call("len", vec![receiver.clone()]),
+        ),
+    };
+    // A bound is a `usize`, as in Rust.
+    let usize_bound = |bound: ContractExpression| match &bound {
+        ContractExpression::IntegerLiteral(text) => text
+            .parse::<u64>()
+            .map(|value| {
+                ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
+                    crate::kernel::MachineTerm::uint64_constant(value),
+                )))
+            })
+            .unwrap_or(bound),
+        _ => bound,
+    };
+    let (start, end) = match (method, arguments.as_slice()) {
+        ("len", []) => return Some(length),
+        ("as_ptr", []) => return Some(pointer),
+        ("[]", [index]) => {
+            return Some(ContractExpression::Index(
+                Box::new(pointer),
+                Box::new(index.clone()),
+            ));
+        }
+        ("[..]", []) => (None, None),
+        ("[a..]", [start]) => (Some(usize_bound(start.clone())), None),
+        ("[..b]", [end]) => (None, Some(usize_bound(end.clone()))),
+        ("[a..b]", [start, end]) => (
+            Some(usize_bound(start.clone())),
+            Some(usize_bound(end.clone())),
+        ),
+        _ => return None,
+    };
+    let zero = ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
+        crate::kernel::MachineTerm::uint64_constant(0),
+    )));
+    let data = match &start {
+        Some(start) => ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
+        None => pointer,
+    };
+    let end = end.unwrap_or_else(|| length.clone());
+    Some(ContractExpression::AlgebraicConstructor {
+        algebraic_type: application.clone(),
+        variant: "Slice".to_string(),
+        arguments: vec![
+            data,
+            call("subslice_len", vec![start.unwrap_or(zero), end, length]),
+        ],
+    })
 }

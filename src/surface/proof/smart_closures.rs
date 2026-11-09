@@ -175,6 +175,16 @@ fn collect_signed_surface_terms<'a>(
                     pending.push(argument);
                 }
             }
+            ContractExpression::MethodCall {
+                receiver,
+                arguments,
+                ..
+            } => {
+                pending.push(receiver);
+                for argument in arguments {
+                    pending.push(argument);
+                }
+            }
             ContractExpression::Field { base, .. }
             | ContractExpression::ArrayIndex { base, .. } => pending.push(base),
             ContractExpression::If {
