@@ -904,6 +904,85 @@ pub(super) fn comparison_preservation_steps(
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
     let pairs = comparison_preservation_reads(source, target)?;
+    read_preservation_rewrite_steps(source, pairs, premises)
+}
+
+/// Preserve matching logical trees under an implication. Walk only the written
+/// trees, deduplicate exact read pairs, and let equality closure connect the
+/// whole fact after preservation. Rewriting the whole goal once per read would
+/// make replay quadratic in the number of distinct reads.
+pub(super) fn implication_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    if !matches!(target, ClickProposition::Implies(..)) {
+        return None;
+    }
+    let mut pending = vec![(source, target, None)];
+    let mut seen = std::collections::HashSet::new();
+    let mut pairs = Vec::new();
+    while let Some((source, target, snapshot)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match (source, target) {
+            (
+                ClickProposition::At {
+                    selector,
+                    proposition,
+                },
+                _,
+            ) if snapshot.is_none() => {
+                pending.push((proposition.as_ref(), target, Some(selector)));
+            }
+            (ClickProposition::And(sl, sr), ClickProposition::And(tl, tr))
+            | (ClickProposition::Or(sl, sr), ClickProposition::Or(tl, tr))
+            | (ClickProposition::Implies(sl, sr), ClickProposition::Implies(tl, tr)) => {
+                pending.push((sr.as_ref(), tr.as_ref(), snapshot));
+                pending.push((sl.as_ref(), tl.as_ref(), snapshot));
+            }
+            (ClickProposition::Not(source), ClickProposition::Not(target)) => {
+                pending.push((source.as_ref(), target.as_ref(), snapshot));
+            }
+            (ClickProposition::Comparison { .. }, ClickProposition::Comparison { .. }) => {
+                let historical = match snapshot {
+                    Some(selector) => ClickProposition::At {
+                        selector: selector.clone(),
+                        proposition: Box::new(source.clone()),
+                    },
+                    None => source.clone(),
+                };
+                for pair in comparison_preservation_reads(&historical, target)? {
+                    if seen.insert(pair.clone()) {
+                        pairs.push(pair);
+                    }
+                }
+            }
+            _ => return None,
+        }
+    }
+    let (mut steps, _) = read_preservation_steps(source, pairs, premises)?;
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
+fn read_preservation_rewrite_steps(
+    source: &ClickProposition,
+    pairs: Vec<(ContractExpression, ContractExpression)>,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    let (mut steps, equalities) = read_preservation_steps(source, pairs, premises)?;
+    steps.extend(equalities.into_iter().map(ProofStep::Rewrite));
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
+/// Construct the ordinary read equalities. Premise selection is indexed by
+/// written subject, so many logical leaves do not rescan all separations.
+fn read_preservation_steps(
+    source: &ClickProposition,
+    pairs: Vec<(ContractExpression, ContractExpression)>,
+    premises: &[ClickProposition],
+) -> Option<(Vec<ProofStep>, Vec<ClickProposition>)> {
     let separations = premises
         .iter()
         .filter(|p| *p != source)
@@ -912,14 +991,17 @@ pub(super) fn comparison_preservation_steps(
     let selected = if pairs.len() == 1 {
         vec![separations]
     } else {
-        let mut selected = vec![Vec::new(), Vec::new()];
-        // Build each written read's C shape once, including on a miss. A long
-        // pointer expression must not be cloned again for every other premise.
-        let read_shapes = pairs
-            .iter()
-            .map(|(_, read)| contract_expression_as_c_fragment(read))
-            .collect::<Vec<_>>();
+        let mut selected = vec![Vec::new(); pairs.len()];
+        let mut by_subject = std::collections::HashMap::<TransportReadSubject, Vec<usize>>::new();
+        for (index, (_, read)) in pairs.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            by_subject
+                .entry(transport_read_subject(read)?)
+                .or_default()
+                .push(index);
+        }
         for premise in separations {
+            crate::instrumentation::record_deterministic_work(1);
             let ClickProposition::Separate {
                 left: ResourceSubject::Footprint(_),
                 right,
@@ -927,15 +1009,12 @@ pub(super) fn comparison_preservation_steps(
             else {
                 return None;
             };
-            let mut used = false;
-            for (index, (_, read)) in pairs.iter().enumerate() {
-                if separation_subject_names_read(right, read, read_shapes[index].as_ref()) {
-                    selected[index].push(premise.clone());
-                    used = true;
-                }
-            }
-            if !used {
-                return None;
+            let indices = by_subject.get(&transport_separation_subject(right)?)?;
+            // Each visit emits this explicitly supplied preservation in a
+            // selected read proof, including several fields of one resource.
+            for &index in indices {
+                crate::instrumentation::record_deterministic_work(1);
+                selected[index].push(premise.clone());
             }
         }
         selected
@@ -947,7 +1026,7 @@ pub(super) fn comparison_preservation_steps(
     // The written source is a premise, not a new assumption. Each written
     // separation is used by at least one preservation proof and checked there.
     let mut steps = vec![have(source.clone(), vec![ProofStep::Assumption])];
-    let mut rewrites = Vec::new();
+    let mut equalities = Vec::new();
     for ((historical, current), separations) in pairs.into_iter().zip(selected) {
         let reflexive = ClickProposition::Comparison {
             left: historical.clone(),
@@ -961,11 +1040,9 @@ pub(super) fn comparison_preservation_steps(
         };
         let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
         steps.push(have(bridge.clone(), equality_steps));
-        rewrites.push(ProofStep::Rewrite(bridge));
+        equalities.push(bridge);
     }
-    steps.extend(rewrites);
-    steps.push(ProofStep::Assumption);
-    Some(steps)
+    Some((steps, equalities))
 }
 
 /// Read bridges selected by the written comparison only.
@@ -1059,6 +1136,76 @@ fn comparison_preservation_reads(
     Some(pairs)
 }
 
+/// Select scalar leaves from the written historical conjunction. Index the
+/// leaf spellings once: neither ambient facts nor candidate histories are read.
+pub(super) fn conjunction_projection_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    if !matches!(
+        target,
+        ClickProposition::Comparison { .. } | ClickProposition::And(..)
+    ) {
+        return None;
+    }
+    let mut pending = vec![(source, None)];
+    let mut leaves = std::collections::HashMap::new();
+    let mut conjunction = false;
+    while let Some((proposition, snapshot)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match proposition {
+            ClickProposition::And(left, right) => {
+                conjunction = true;
+                pending.push((right.as_ref(), snapshot));
+                pending.push((left.as_ref(), snapshot));
+            }
+            ClickProposition::At {
+                selector,
+                proposition,
+            } if snapshot.is_none() => {
+                pending.push((proposition.as_ref(), Some(selector)));
+            }
+            ClickProposition::Comparison { .. } => {
+                if let Some(snapshot) = snapshot {
+                    // One selected witness. Failure of its ordinary proof does
+                    // not retry another snapshot or discover extra premises.
+                    leaves.entry(proposition).or_insert(snapshot);
+                }
+            }
+            _ => {}
+        }
+    }
+    if !conjunction {
+        return None;
+    }
+    let mut pending = vec![Some(target)];
+    let mut selected = Vec::new();
+    let mut shape = Vec::new();
+    while let Some(node) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match node {
+            Some(ClickProposition::And(left, right)) => {
+                pending.push(None);
+                pending.push(Some(right));
+                pending.push(Some(left));
+            }
+            Some(target @ ClickProposition::Comparison { .. }) => {
+                let snapshot = leaves.get(target)?;
+                let source = ClickProposition::At {
+                    selector: (*snapshot).clone(),
+                    proposition: Box::new(target.clone()),
+                };
+                shape.push(Some(selected.len()));
+                selected.push((source, target));
+            }
+            None => shape.push(None),
+            _ => return None,
+        }
+    }
+    conjunction_leaf_preservation_steps(source, premises, selected, shape)
+}
+
 /// Preserve a written conjunction tree without rescanning its premises at each
 /// branch. Only scalar leaves are copied; the tree is traversed by reference.
 pub(super) fn conjunction_preservation_steps(
@@ -1066,7 +1213,6 @@ pub(super) fn conjunction_preservation_steps(
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
-    use std::collections::{HashMap, HashSet};
     if !matches!(target, ClickProposition::And(..)) {
         return None;
     }
@@ -1110,16 +1256,27 @@ pub(super) fn conjunction_preservation_steps(
                 },
                 None => source.clone(),
             };
-            let reads = comparison_preservation_reads(&source, target)?;
             shape.push(Some(leaves.len()));
-            leaves.push((source, target, reads));
+            leaves.push((source, target));
         }
     }
+    conjunction_leaf_preservation_steps(source, premises, leaves, shape)
+}
+
+/// Both matching trees and selected/regrouped trees use one premise index and
+/// the same ordinary scalar proofs. `shape` is the target's postorder tree.
+fn conjunction_leaf_preservation_steps(
+    source: &ClickProposition,
+    premises: &[ClickProposition],
+    leaves: Vec<(ClickProposition, &ClickProposition)>,
+    shape: Vec<Option<usize>>,
+) -> Option<Vec<ProofStep>> {
+    use std::collections::{HashMap, HashSet};
     // Hash each explicit source once, rather than compare the whole conjunction
     // with every premise. Each leaf is still proved by ordinary assumption.
     let mut sources = leaves
         .iter()
-        .map(|(source, _, _)| source)
+        .map(|(source, _)| source)
         .collect::<HashSet<_>>();
     sources.insert(source);
     let mut by_subject = HashMap::<TransportReadSubject, Vec<usize>>::new();
@@ -1143,10 +1300,11 @@ pub(super) fn conjunction_preservation_steps(
             .push(index);
     }
     let mut proofs = Vec::with_capacity(leaves.len());
-    for (source, target, reads) in &leaves {
+    for (source, target) in &leaves {
+        let reads = comparison_preservation_reads(source, target)?;
         let mut selected = Vec::new();
         let mut previous = None;
-        for (_, read) in reads {
+        for (_, read) in &reads {
             let key = transport_read_subject(read)?;
             // Two operands can read the same subject; cite its evidence once.
             if previous.as_ref() == Some(&key) {
@@ -1226,32 +1384,6 @@ fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportRe
             Some(TransportReadSubject::Cell(segment.base.clone()))
         }
         _ => None,
-    }
-}
-
-/// Select from the two written read subjects, never from ambient resources.
-/// This deliberately does not discover aliases or infer range containment.
-fn separation_subject_names_read(
-    subject: &ResourceSubject,
-    read: &ContractExpression,
-    read_shape: Option<&CExpression>,
-) -> bool {
-    match (subject, read) {
-        (ResourceSubject::Instance { identity, .. }, ContractExpression::ResourceField(field)) => {
-            field.children.is_empty() && identity == &field.identity
-        }
-        (ResourceSubject::Memory(segment), _) if segment.state == ContractSegmentState::Current => {
-            let pointer = match read_shape {
-                Some(CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. }) => {
-                    pointer
-                }
-                _ => return false,
-            };
-            pointer.as_ref() == &segment.base
-                && segment.start == CExpression::Value(crate::kernel::int32(0))
-                && segment.end == CExpression::Value(crate::kernel::int32(1))
-        }
-        _ => false,
     }
 }
 

@@ -10261,6 +10261,297 @@ fn nested_conjunction_transport_scales_with_written_leaves() {
 }
 
 #[test]
+fn conjunction_projection_transport_scales_with_written_source() {
+    fn balanced(leaves: &[String]) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let middle = leaves.len() / 2;
+        format!(
+            "({}) and ({})",
+            balanced(&leaves[..middle]),
+            balanced(&leaves[middle..])
+        )
+    }
+    let mut expansion = Vec::new();
+    let mut replay = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let mut leaves = (0..size - 1)
+            .map(|i| format!("*p >= {i}"))
+            .collect::<Vec<_>>();
+        leaves.push("*q == 7".to_owned());
+        let fact = balanced(&leaves);
+        let source = format!(
+            r#"
+            verifying "projection.c";
+            void keep(int32* p, int32* q) {{
+                owns *p; views *q;
+                requires separate(memory(*p), memory(*q));
+                requires {fact};
+            }} by {{
+                step();
+                have separate(statement(0).footprint, memory(*q)) by {{
+                    normalize() using {{ separate(memory(*p), memory(*q)); }};
+                }}
+                have *q == 7 by {{
+                    transport(at(statement(0).entry, {fact}), *q == 7) using {{
+                        separate(statement(0).footprint, memory(*q));
+                    }};
+                }}
+                step();
+            }}
+        "#
+        );
+        let files = [("projection.c", "void keep(int *p, int *q) { *p = 0; }")];
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+        });
+        let expanded = expanded.unwrap();
+        expansion.push(work);
+        assert_eq!(expanded.matches("preserve(separate(").count(), 1);
+        assert!(!expanded.contains("both {"));
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &files))
+        });
+        verified.unwrap();
+        replay.push(work);
+    }
+    eprintln!("conjunction projection: expansion {expansion:?}, replay {replay:?}");
+    for costs in [expansion, replay] {
+        assert!(costs.iter().all(|cost| *cost > 0));
+        assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+    }
+}
+
+#[test]
+fn conjunction_selection_transport_scales_with_sources_targets_and_premises() {
+    fn balanced(leaves: &[String]) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let middle = leaves.len() / 2;
+        format!(
+            "({}) and ({})",
+            balanced(&leaves[..middle]),
+            balanced(&leaves[middle..])
+        )
+    }
+    let mut expansion = Vec::new();
+    let mut replay = Vec::new();
+    for size in [4, 8, 16, 32] {
+        let mut c_args = String::new();
+        let mut args = String::new();
+        let mut requirements = String::new();
+        let mut setup = String::new();
+        let mut premises = String::new();
+        for i in 0..size {
+            c_args.push_str(&format!(", int *q{i}"));
+            args.push_str(&format!(", int32* q{i}"));
+            requirements.push_str(&format!(
+                "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+            ));
+            if i % 2 == 0 {
+                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+            }
+        }
+        let mut leaves = (0..size)
+            .map(|i| format!("*q{i} == {i}"))
+            .collect::<Vec<_>>();
+        let chosen = leaves.iter().step_by(2).rev().cloned().collect::<Vec<_>>();
+        leaves.push("*p == 99".to_owned());
+        let source_fact = balanced(&leaves);
+        let target = balanced(&chosen);
+        let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+        let source = format!(
+            r#"
+            verifying "selection.c";
+            void keep(int32* p{args}) {{ owns *p; {requirements} requires {source_fact}; }} by {{
+                step(); {setup}
+                have {target} by {{ transport(at(statement(0).entry, {source_fact}), {target}) using {{ {premises} }}; }}
+                step();
+            }}
+        "#
+        );
+        let files = [("selection.c", c.as_str())];
+        let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+            expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+        });
+        let expanded = expanded.unwrap();
+        expansion.push(work);
+        assert_eq!(expanded.matches("both {").count(), size / 2 - 1);
+        assert_eq!(expanded.matches("preserve(separate(").count(), size / 2);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &files))
+        });
+        verified.unwrap();
+        replay.push(work);
+    }
+    eprintln!("conjunction selection: expansion {expansion:?}, replay {replay:?}");
+    for costs in [expansion, replay] {
+        assert!(costs.iter().all(|cost| *cost > 0));
+        assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+    }
+}
+
+#[test]
+fn implication_transport_replay_scales_with_explicit_links() {
+    let mut costs = Vec::new();
+    for size in [2, 4, 8, 16] {
+        let c = format!(
+            "void keep(int *p, int *q, int *r) {{ {} }}",
+            (0..size).map(|i| format!("*p = {i};")).collect::<String>()
+        );
+        let mut setup = String::new();
+        let mut premises = String::new();
+        for i in 0..size {
+            setup.push_str("step();");
+            for read in ["q", "r"] {
+                setup.push_str(&format!("have separate(statement({i}).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}"));
+                premises.push_str(&format!(
+                    "separate(statement({i}).footprint, memory(*{read}));"
+                ));
+            }
+        }
+        let source = format!(
+            r#"
+            verifying "chain.c";
+            void keep(int32* p, int32* q, int32* r) {{
+                owns *p; views *q; views *r;
+                requires separate(memory(*p), memory(*q));
+                requires separate(memory(*p), memory(*r));
+                requires *q == 7 implies *r == 8;
+            }} by {{
+                {setup}
+                have *q == 7 implies *r == 8 by {{
+                    transport(at(statement(0).entry, *q == 7 implies *r == 8), *q == 7 implies *r == 8) using {{ {premises} }};
+                }}
+                step();
+            }}
+        "#
+        );
+        let sources = [("chain.c", c.as_str())];
+        let expanded = expand_c0_claim_source_by_label(&source, &sources, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), 2 * size);
+        assert!(!expanded.contains("transport("));
+        assert!(!expanded.contains("transport_certificate"));
+        let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        });
+        verified.unwrap();
+        costs.push(work);
+    }
+    eprintln!("implication replay work: {costs:?}");
+    assert!(costs.iter().all(|cost| *cost > 0));
+    assert!(
+        costs.windows(2).all(|pair| pair[1] <= pair[0] * 3),
+        "{costs:?}"
+    );
+}
+
+#[test]
+fn compound_implication_transport_scales_with_reads_and_logical_depth() {
+    fn tree(leaves: &[String], op: &str, skewed: bool) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let middle = if skewed { 1 } else { leaves.len() / 2 };
+        format!(
+            "({}) {op} ({})",
+            tree(&leaves[..middle], op, skewed),
+            tree(&leaves[middle..], op, skewed)
+        )
+    }
+    // Distinct reads with a wide guard; distinct reads under nested implications;
+    // repeated uses of two reads in a wide guard. Stay within parser depth limits.
+    for mode in [0, 1, 2] {
+        let mut expansion = Vec::new();
+        let mut replay = Vec::new();
+        let sizes = if mode == 1 {
+            [2, 4, 8, 12]
+        } else {
+            [4, 8, 16, 32]
+        };
+        for size in sizes {
+            let read_count = if mode == 2 { 2 } else { size };
+            let mut c_args = String::new();
+            let mut args = String::new();
+            let mut requirements = String::new();
+            let mut setup = String::new();
+            let mut premises = String::new();
+            for i in 0..read_count {
+                c_args.push_str(&format!(", int *q{i}"));
+                args.push_str(&format!(", int32* q{i}"));
+                requirements.push_str(&format!(
+                    "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+                ));
+                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+            }
+            let leaves = (0..size)
+                .map(|i| {
+                    if mode == 2 {
+                        if i == size - 1 {
+                            "*q1 == 8".to_owned()
+                        } else {
+                            format!("*q0 >= {i}")
+                        }
+                    } else {
+                        format!("*q{i} == {i}")
+                    }
+                })
+                .collect::<Vec<_>>();
+            let fact = if mode == 1 {
+                tree(&leaves, "implies", true)
+            } else {
+                format!(
+                    "({}) implies {}",
+                    tree(&leaves[..size - 1], "and", false),
+                    leaves[size - 1]
+                )
+            };
+            let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+            let source = format!(
+                r#"
+                verifying "compound.c";
+                void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
+                    step(); {setup}
+                    have {fact} by {{ transport(at(statement(0).entry, {fact}), {fact}) using {{ {premises} }}; }}
+                    step();
+                }}
+            "#
+            );
+            let files = [("compound.c", c.as_str())];
+            let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+                expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+            });
+            let expanded = expanded.unwrap();
+            expansion.push(work);
+            assert_eq!(expanded.matches("preserve(separate(").count(), read_count);
+            assert!(!expanded.contains("rewrite("));
+            assert!(!expanded.contains("transport("));
+            assert!(!expanded.contains("transport_certificate"));
+            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::proof::without_implicit_solve(|| {
+                    verify_c0_sources(&expanded, &files)
+                })
+            });
+            verified.unwrap();
+            replay.push(work);
+        }
+        eprintln!("compound implication mode={mode}: expansion {expansion:?}, replay {replay:?}");
+        for costs in [expansion, replay] {
+            assert!(costs.iter().all(|cost| *cost > 0));
+            assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+        }
+    }
+}
+
+#[test]
 fn volatile_read_results_use_selected_event_indexes() {
     use crate::kernel::{MachineTerm, Variable};
     let mut samples = Vec::new();

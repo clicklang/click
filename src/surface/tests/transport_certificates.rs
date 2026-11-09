@@ -1092,3 +1092,368 @@ fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
         assert!(verify_c0_sources(&invalid, &files).is_err());
     }
 }
+
+#[test]
+fn conjunction_projection_transport_expands_only_the_selected_leaf() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("memory(*q)", "a")
+        .replace("*q", "a.value");
+    for source in [
+        source.clone(),
+        source.replace("*p == 8 and *q == 7", "*q == 7 and *p == 8"),
+        source.replace("*p == 8 and *q == 7", "*p == 8 and (*p > 0 and *q == 7)"),
+        source.replace("at(statement(0).entry, *p == 8 and *q == 7)", "at(statement(0).entry, *p == 8) and at(statement(0).entry, *q == 7)"),
+        source.replace("            separate(statement(0).footprint", "            at(statement(0).entry, *p == 8 and *q == 7);\n            separate(statement(0).footprint"),
+        resource,
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), 1, "{expanded}");
+        assert!(!expanded.contains("both {"), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    }
+}
+
+#[test]
+fn conjunction_projection_transport_checks_source_and_preservation() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
+    let changed_c = files[0].1.replace("*p = 0;", "*q = 0;");
+    let changed = source.replace("views *q;", "owns *q;");
+    assert!(verify_c0_sources(&changed, &[(files[0].0.as_str(), changed_c.as_str())]).is_err());
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("requires *p == 8 and *q == 7;", "requires *p == 8;"),
+        source.replace("at(statement(0).entry, *p == 8 and *q == 7)", "at(statement(0).entry, *p == 8 and *q == 9)"),
+        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+    ] {
+        assert!(verify_c0_sources(&invalid, &files).is_err());
+    }
+}
+
+#[test]
+fn conjunction_projection_transport_crosses_multiple_statements() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_projection_transport_expansion.md");
+    let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have *q == 7 by"#).replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*q));");
+    let files = [(files[0].0.as_str(), c.as_str())];
+    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    assert_eq!(expanded.matches("preserve(separate(").count(), 2);
+    assert!(!expanded.contains("transport("));
+    assert!(!expanded.contains("transport_certificate"));
+    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}
+
+#[test]
+fn conjunction_selection_transport_expands_and_replays() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("views *r;", "owns b: model();")
+        .replace("memory(*q)", "a")
+        .replace("memory(*r)", "b")
+        .replace("*q", "a.value")
+        .replace("*r", "b.value");
+    for source in [
+        source.clone(),
+        source.replace("*q == 7 and *r == 8", "*r == 8 and *q == 7"),
+        source.replace("*q == 7 and *r == 8", "(*r == 8 and *q == 7) and *q == 7"),
+        source.replace("*q == 7 and (*p == 8 and *r == 8)", "(*q == 7 and *q > 0) and (*p == 8 and *r == 8)")
+            .replace("*q == 7 and *r == 8", "(*r == 8 and *q > 0) and *q == 7"),
+        source.replace("at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8))", "at(statement(0).entry, *q == 7) and at(statement(0).entry, *p == 8 and *r == 8)"),
+        source.replace("            separate(statement(0).footprint, memory(*q));", "            at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8));\n            separate(statement(0).footprint, memory(*q));"),
+        resource,
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        assert!(expanded.contains("both {"), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    }
+}
+
+#[test]
+fn conjunction_selection_transport_checks_every_selected_leaf() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
+    for read in ["q", "r"] {
+        let c = files[0].1.replace("*p = 0;", &format!("*{read} = 0;"));
+        let invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"));
+        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+    }
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("requires *q == 7 and (*p == 8 and *r == 8);", "requires *q == 7 and *p == 8;"),
+        source.replace("*q == 7 and *r == 8", "*q == 7 and *r == 9"),
+        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+    ] {
+        assert!(verify_c0_sources(&invalid, &files).is_err());
+    }
+}
+
+#[test]
+fn conjunction_selection_transport_crosses_multiple_statements() {
+    let (source, files) = mdtest_sources("mdtests/conjunction_selection_transport_expansion.md");
+    let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 and *r == 8 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have separate(statement(1).footprint, memory(*r)) by {
+        normalize() using { separate(memory(*p), memory(*r)); };
+    }
+    have *q == 7 and *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    let files = [(files[0].0.as_str(), c.as_str())];
+    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
+    assert!(!expanded.contains("transport("));
+    assert!(!expanded.contains("transport_certificate"));
+    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}
+
+#[test]
+fn implication_transport_expands_by_preserving_guard_and_conclusion() {
+    let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("views *r;", "owns b: model();")
+        .replace("memory(*q)", "a")
+        .replace("memory(*r)", "b")
+        .replace("*q", "a.value")
+        .replace("*r", "b.value");
+    let shared = source.replace("*r == 8", "*q > 0").replace(
+        "            separate(statement(0).footprint, memory(*r));",
+        "",
+    );
+    for (source, preserves) in [
+        (source.clone(), 2),
+        (source.replace("*q == 7 implies *r == 8", "*q > 0 implies *r != 8"), 2),
+        (source.replace("*q == 7 implies *r == 8", "*q < *r implies *r == 8"), 2),
+        (source.replace("at(statement(0).entry, *q == 7 implies *r == 8)", "at(statement(0).entry, *q == 7) implies at(statement(0).entry, *r == 8)"), 2),
+        (source.replace("            separate(statement(0).footprint, memory(*q));", "            at(statement(0).entry, *q == 7 implies *r == 8);\n            separate(statement(0).footprint, memory(*q));"), 2),
+        (resource, 2),
+        (shared, 1),
+    ] {
+        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        assert_eq!(expanded.matches("preserve(separate(").count(), preserves, "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    }
+}
+
+#[test]
+fn implication_transport_handles_four_distinct_reads() {
+    let (mut source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
+    let c = files[0].1.replace("int *r)", "int *r, int *s, int *t)");
+    source = source
+        .replace("int32* r)", "int32* r, int32* s, int32* t)")
+        .replace("*q == 7 implies *r == 8", "*q < *r implies *s < *t");
+    for read in ["s", "t"] {
+        source = source.replace("    views *q;", &format!("    views *{read};\n    requires separate(memory(*p), memory(*{read}));\n    views *q;"))
+            .replace("    have *q < *r implies *s < *t by", &format!("    have separate(statement(0).footprint, memory(*{read})) by {{ normalize() using {{ separate(memory(*p), memory(*{read})); }}; }}\n    have *q < *r implies *s < *t by"))
+            .replace("            separate(statement(0).footprint, memory(*q));", &format!("            separate(statement(0).footprint, memory(*{read}));\n            separate(statement(0).footprint, memory(*q));"));
+    }
+    let files = [(files[0].0.as_str(), c.as_str())];
+    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
+    assert!(!expanded.contains("transport("));
+    assert!(!expanded.contains("transport_certificate"));
+    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}
+
+#[test]
+fn implication_transport_rejects_changed_guard_and_conclusion() {
+    let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
+    for (read, initial, write) in [
+        ("q", "*q == 0 and *r == 0", "*q = 7;"),
+        ("r", "*q == 7 and *r == 8", "*r = 0;"),
+    ] {
+        // Old implication holds in both cases; the resulting implication is false.
+        // Supply only genuine preservation of the other read, so refusal cannot
+        // come from an earlier attempt to prove a false footprint separation.
+        let c = files[0].1.replace("*p = 0;", write);
+        let mut invalid = source.replace(&format!("views *{read};"), &format!("owns *{read};"))
+            .replace("    requires *q == 7 implies *r == 8;", &format!("    requires {initial};\n    requires separate(memory(*q), memory(*r));\n    requires *q == 7 implies *r == 8;"));
+        let block = format!(
+            "    have separate(statement(0).footprint, memory(*{read})) by {{\n        normalize() using {{ separate(memory(*p), memory(*{read})); }};\n    }}\n"
+        );
+        invalid = invalid
+            .replace(&block, "")
+            .replace(
+                &format!("            separate(statement(0).footprint, memory(*{read}));"),
+                "            at(statement(0).entry, *q == 7 implies *r == 8);",
+            )
+            .replace(
+                "normalize() using { separate(memory(*p), memory(*q)); };",
+                "normalize() using { separate(memory(*q), memory(*r)); };",
+            )
+            .replace(
+                "normalize() using { separate(memory(*p), memory(*r)); };",
+                "normalize() using { separate(memory(*q), memory(*r)); };",
+            );
+        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+    }
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace("    requires *q == 7 implies *r == 8;", ""),
+        source.replace("            separate(statement(0).footprint, memory(*q));", "            separate(statement(0).footprint, memory(*q));\n            separate(statement(0).footprint, memory(*p));"),
+    ] {
+        assert!(verify_c0_sources(&invalid, &files).is_err());
+    }
+}
+
+#[test]
+fn implication_transport_crosses_multiple_statements() {
+    let (source, files) = mdtest_sources("mdtests/implication_transport_expansion.md");
+    let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have *q == 7 implies *r == 8 by", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have separate(statement(1).footprint, memory(*r)) by {
+        normalize() using { separate(memory(*p), memory(*r)); };
+    }
+    have *q == 7 implies *r == 8 by"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    let files = [(files[0].0.as_str(), c.as_str())];
+    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
+    assert!(!expanded.contains("transport("));
+    assert!(!expanded.contains("transport_certificate"));
+    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}
+
+#[test]
+fn compound_implication_transport_expands_without_whole_goal_rewrites() {
+    let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    let original = "(*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)";
+    let resource = source
+        .replace(
+            "void keep(int32*",
+            "abstract resource model() { field value: int32; }\nvoid keep(int32*",
+        )
+        .replace("views *q;", "owns a: model();")
+        .replace("views *r;", "owns b: model();")
+        .replace("memory(*q)", "a")
+        .replace("memory(*r)", "b")
+        .replace("*q", "a.value")
+        .replace("*r", "b.value");
+    let mut variants = vec![resource, source.replace(&format!("at(statement(0).entry, {original})"),
+        "at(statement(0).entry, *q == 7 and *r > 0) implies at(statement(0).entry, *q > 0 implies *r == 8)")];
+    for formula in [
+        original,
+        "(*q == 7 or *r == 0) implies (*q > 0 implies *r == 8)",
+        "not (*q != 7) implies (not (*r != 8) and (*q > 0 implies *r == 8))",
+        "(*q == 7 implies *r == 8) implies (*r > 0 implies *q > 0)",
+        "(*q == 7 and *r > 0) implies ((*q > 0 and *r == 8) or *q == 0)",
+    ] {
+        variants.push(source.replace(original, formula));
+    }
+    for source in variants {
+        let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+        assert_eq!(
+            expanded.matches("preserve(separate(").count(),
+            2,
+            "{expanded}"
+        );
+        assert!(!expanded.contains("rewrite("), "{expanded}");
+        assert!(!expanded.contains("transport("), "{expanded}");
+        assert!(!expanded.contains("transport_certificate"), "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+    }
+}
+
+#[test]
+fn compound_implication_transport_rejects_changed_nested_guards() {
+    let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
+    let original = "(*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)";
+    for formula in [
+        original,
+        "(*r > 0) implies (*q == 7 implies *r == 8)",
+        "(*q == 7 or *r == 0) implies *r == 8",
+    ] {
+        // q=0,r=7 satisfies each historical fact; q=7,r=7 falsifies each target.
+        let c = files[0].1.replace("*p = 0;", "*q = 7;");
+        let invalid = source.replace(original, formula).replace("views *q;", "owns *q;")
+            .replace(&format!("    requires {formula};"), &format!("    requires *q == 0 and *r == 7;\n    requires separate(memory(*q), memory(*r));\n    requires {formula};"))
+            .replace("    have separate(statement(0).footprint, memory(*q)) by {\n        normalize() using { separate(memory(*p), memory(*q)); };\n    }\n", "")
+            .replace("normalize() using { separate(memory(*p), memory(*r)); };", "normalize() using { separate(memory(*q), memory(*r)); };")
+            .replace("            separate(statement(0).footprint, memory(*q));", &format!("            at(statement(0).entry, {formula});"));
+        assert!(verify_c0_sources(&invalid, &[(files[0].0.as_str(), c.as_str())]).is_err());
+    }
+    let files = files
+        .iter()
+        .map(|(n, s)| (n.as_str(), s.as_str()))
+        .collect::<Vec<_>>();
+    for invalid in [
+        source.replace(&format!("    requires {original};"), ""),
+        source.replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(0).footprint, memory(*p));"),
+    ] { assert!(verify_c0_sources(&invalid, &files).is_err()); }
+}
+
+#[test]
+fn compound_implication_transport_crosses_multiple_statements() {
+    let (source, files) = mdtest_sources("mdtests/compound_implication_transport_expansion.md");
+    let c = files[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
+    let source = source.replace("    have (*q == 7 and *r > 0) implies", r#"
+    step();
+    have separate(statement(1).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have separate(statement(1).footprint, memory(*r)) by {
+        normalize() using { separate(memory(*p), memory(*r)); };
+    }
+    have (*q == 7 and *r > 0) implies"#).replace("            separate(statement(0).footprint, memory(*r));", "            separate(statement(0).footprint, memory(*r));\n            separate(statement(1).footprint, memory(*q));\n            separate(statement(1).footprint, memory(*r));");
+    let files = [(files[0].0.as_str(), c.as_str())];
+    let expanded = expand_c0_claim_source_by_label(&source, &files, "keep.contract").unwrap();
+    assert_eq!(expanded.matches("preserve(separate(").count(), 4);
+    assert!(!expanded.contains("rewrite("));
+    assert!(!expanded.contains("transport("));
+    assert!(!expanded.contains("transport_certificate"));
+    without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}

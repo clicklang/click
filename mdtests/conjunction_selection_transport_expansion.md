@@ -1,0 +1,38 @@
+# Select and regroup historical conjuncts
+
+```c filename=keep.c
+void keep(int *p, int *q, int *r) { *p = 0; }
+```
+
+```click
+verifying "keep.c";
+void keep(int32* p, int32* q, int32* r) {
+    owns *p;
+    views *q;
+    views *r;
+    requires separate(memory(*p), memory(*q));
+    requires separate(memory(*p), memory(*r));
+    requires *q == 7 and (*p == 8 and *r == 8);
+    ensures *q == 7 and *r == 8;
+} by {
+    step();
+    have separate(statement(0).footprint, memory(*q)) by {
+        normalize() using { separate(memory(*p), memory(*q)); };
+    }
+    have separate(statement(0).footprint, memory(*r)) by {
+        normalize() using { separate(memory(*p), memory(*r)); };
+    }
+    have *q == 7 and *r == 8 by {
+        transport(at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8)), *q == 7 and *r == 8) using {
+            separate(statement(0).footprint, memory(*q));
+            separate(statement(0).footprint, memory(*r));
+        };
+    }
+    step();
+    assumption();
+}
+```
+
+```expect
+pass
+```

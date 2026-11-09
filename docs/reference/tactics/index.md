@@ -3455,8 +3455,8 @@ Every supplied separation must be used and checked. See
 Conjunction trees of supported scalar comparisons also expand: for example,
 `transport(at(statement(0).entry, *q == 7 and (*r == 8 and *s == 9)), *q == 7 and (*r == 8 and *s == 9))`.
 Expansion emits nested ordinary `both` proofs, preserving the written grouping,
-with a preservation/rewrite proof for each scalar leaf. Source and target must
-have matching conjunction structure. The source can wrap the whole tree, a
+with a preservation/rewrite proof for each scalar leaf. This form handles
+matching conjunction structure; selection and regrouping are described below. The source can wrap the whole tree, a
 subtree, or individual leaves in `at(...)`; nested snapshot wrappers are not
 handled by this route. Each leaf checks its earlier fact with `assumption()`
 and uses the supplied footprint separations for its changing reads. This covers
@@ -3465,6 +3465,43 @@ The explicit separations are indexed once by their written cell or resource,
 and every supplied separation must be used and checked. No aliases or range
 containment facts are discovered. See `mdtests/conjunction_transport_expansion.md`
 and `mdtests/nested_conjunction_transport_expansion.md`.
+
+A historical conjunction can also transport selected scalar comparison leaves:
+`transport(at(statement(0).entry, *p == 8 and *q == 7), *q == 7)` keeps one,
+while `transport(at(statement(0).entry, *q == 7 and (*p == 8 and *r == 8)), *r == 8 and *q == 7)`
+keeps two in a different order. The target may regroup or repeat selected
+leaves in a conjunction tree.
+The driver indexes the written source's snapshotted comparison leaves once and
+selects each target leaf by exact spelling. It emits a `have` for each selected
+historical leaf using `assumption()`, followed by its ordinary preservation/rewrite
+proof, and combines the results with `both` in the target's written shape.
+Discarded conjuncts need not remain true; only the selected reads need footprint
+separations. The supplied separations are indexed once and must all be used and
+checked. Whole-tree and subtree `at(...)` wrappers are supported. An exact
+leaf spelling selects one snapshot; this route does not retry other snapshots
+or discover additional evidence. Non-comparison leaves and operand-level
+snapshot spellings remain outside this selection route.
+See `mdtests/conjunction_projection_transport_expansion.md` and
+`mdtests/conjunction_selection_transport_expansion.md`.
+
+Implications also expand when source and target have matching logical structure
+built from `and`, `or`, `not`, nested `implies`, and supported scalar comparison
+leaves. For example,
+`transport(at(statement(0).entry, (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)), (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8))`
+uses footprint separations for reads throughout the guard and conclusion.
+Expansion retains the earlier whole fact with `assumption()`, proves each
+selected read's preservation, then closes the whole goal with `assumption()`
+using those equalities. It emits no whole-goal rewrites and does not assume
+that any guard is true. Exact shared read pairs use one preservation chain.
+The driver traverses the written logical trees once and indexes explicit
+separations by written subject. It does not search for aliases or discover
+additional premises. Source snapshots may wrap the whole implication or
+individual subtrees/comparisons; repeated snapshot wrappers are unsupported.
+Memory reads, named resource fields, two-read comparisons and multiple cited
+statements use the same form. Quantifiers and non-comparison leaves remain
+outside this route, as do logical regrouping and top-level disjunction transport.
+See `mdtests/implication_transport_expansion.md` and
+`mdtests/compound_implication_transport_expansion.md`.
 
 Other transport routes still retain their existing form.
 
