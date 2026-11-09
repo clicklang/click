@@ -10452,3 +10452,101 @@ fn implication_transport_replay_scales_with_explicit_links() {
         "{costs:?}"
     );
 }
+
+#[test]
+fn compound_implication_transport_scales_with_reads_and_logical_depth() {
+    fn tree(leaves: &[String], op: &str, skewed: bool) -> String {
+        if leaves.len() == 1 {
+            return leaves[0].clone();
+        }
+        let middle = if skewed { 1 } else { leaves.len() / 2 };
+        format!(
+            "({}) {op} ({})",
+            tree(&leaves[..middle], op, skewed),
+            tree(&leaves[middle..], op, skewed)
+        )
+    }
+    // Distinct reads with a wide guard; distinct reads under nested implications;
+    // repeated uses of two reads in a wide guard. Stay within parser depth limits.
+    for mode in [0, 1, 2] {
+        let mut expansion = Vec::new();
+        let mut replay = Vec::new();
+        let sizes = if mode == 1 {
+            [2, 4, 8, 12]
+        } else {
+            [4, 8, 16, 32]
+        };
+        for size in sizes {
+            let read_count = if mode == 2 { 2 } else { size };
+            let mut c_args = String::new();
+            let mut args = String::new();
+            let mut requirements = String::new();
+            let mut setup = String::new();
+            let mut premises = String::new();
+            for i in 0..read_count {
+                c_args.push_str(&format!(", int *q{i}"));
+                args.push_str(&format!(", int32* q{i}"));
+                requirements.push_str(&format!(
+                    "views *q{i}; requires separate(memory(*p), memory(*q{i}));"
+                ));
+                setup.push_str(&format!("have separate(statement(0).footprint, memory(*q{i})) by {{ normalize() using {{ separate(memory(*p), memory(*q{i})); }}; }}"));
+                premises.push_str(&format!("separate(statement(0).footprint, memory(*q{i}));"));
+            }
+            let leaves = (0..size)
+                .map(|i| {
+                    if mode == 2 {
+                        if i == size - 1 {
+                            "*q1 == 8".to_owned()
+                        } else {
+                            format!("*q0 >= {i}")
+                        }
+                    } else {
+                        format!("*q{i} == {i}")
+                    }
+                })
+                .collect::<Vec<_>>();
+            let fact = if mode == 1 {
+                tree(&leaves, "implies", true)
+            } else {
+                format!(
+                    "({}) implies {}",
+                    tree(&leaves[..size - 1], "and", false),
+                    leaves[size - 1]
+                )
+            };
+            let c = format!("void keep(int *p{c_args}) {{ *p = 0; }}");
+            let source = format!(
+                r#"
+                verifying "compound.c";
+                void keep(int32* p{args}) {{ owns *p; {requirements} requires {fact}; }} by {{
+                    step(); {setup}
+                    have {fact} by {{ transport(at(statement(0).entry, {fact}), {fact}) using {{ {premises} }}; }}
+                    step();
+                }}
+            "#
+            );
+            let files = [("compound.c", c.as_str())];
+            let (expanded, work) = crate::instrumentation::measure_deterministic_work(|| {
+                expand_c0_claim_source_by_label(&source, &files, "keep.contract")
+            });
+            let expanded = expanded.unwrap();
+            expansion.push(work);
+            assert_eq!(expanded.matches("preserve(separate(").count(), read_count);
+            assert!(!expanded.contains("rewrite("));
+            assert!(!expanded.contains("transport("));
+            assert!(!expanded.contains("transport_certificate"));
+            let (verified, work) = crate::instrumentation::measure_deterministic_work(|| {
+                crate::surface::proof::without_implicit_solve(|| {
+                    verify_c0_sources(&expanded, &files)
+                })
+            });
+            verified.unwrap();
+            replay.push(work);
+        }
+        eprintln!("compound implication mode={mode}: expansion {expansion:?}, replay {replay:?}");
+        for costs in [expansion, replay] {
+            assert!(costs.iter().all(|cost| *cost > 0));
+            assert!(costs.windows(2).all(|p| p[1] <= 3 * p[0]), "{costs:?}");
+        }
+    }
+}

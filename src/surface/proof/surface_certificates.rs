@@ -907,53 +907,82 @@ pub(super) fn comparison_preservation_steps(
     read_preservation_rewrite_steps(source, pairs, premises)
 }
 
-/// Preserve both sides of one scalar implication. Rewriting the whole goal
-/// avoids assuming its guard, which need not be true in the current state.
+/// Preserve matching logical trees under an implication. Walk only the written
+/// trees, deduplicate exact read pairs, and let equality closure connect the
+/// whole fact after preservation. Rewriting the whole goal once per read would
+/// make replay quadratic in the number of distinct reads.
 pub(super) fn implication_preservation_steps(
     source: &ClickProposition,
     target: &ClickProposition,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
-    let ClickProposition::Implies(target_guard, target_conclusion) = target else {
+    if !matches!(target, ClickProposition::Implies(..)) {
         return None;
-    };
-    let (source_guard, source_conclusion) = match source {
-        ClickProposition::Implies(guard, conclusion) => {
-            (guard.as_ref().clone(), conclusion.as_ref().clone())
-        }
-        ClickProposition::At {
-            selector,
-            proposition,
-        } => {
-            let ClickProposition::Implies(guard, conclusion) = proposition.as_ref() else {
-                return None;
-            };
-            let at = |proposition: &ClickProposition| ClickProposition::At {
-                selector: selector.clone(),
-                proposition: Box::new(proposition.clone()),
-            };
-            (at(guard), at(conclusion))
-        }
-        _ => return None,
-    };
-    let mut pairs = comparison_preservation_reads(&source_guard, target_guard)?;
-    for pair in comparison_preservation_reads(&source_conclusion, target_conclusion)? {
-        // At most four written read pairs; a shared guard/conclusion read needs
-        // only one preservation chain. No equality or alias discovery here.
-        if !pairs.contains(&pair) {
-            pairs.push(pair);
+    }
+    let mut pending = vec![(source, target, None)];
+    let mut seen = std::collections::HashSet::new();
+    let mut pairs = Vec::new();
+    while let Some((source, target, snapshot)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        match (source, target) {
+            (
+                ClickProposition::At {
+                    selector,
+                    proposition,
+                },
+                _,
+            ) if snapshot.is_none() => {
+                pending.push((proposition.as_ref(), target, Some(selector)));
+            }
+            (ClickProposition::And(sl, sr), ClickProposition::And(tl, tr))
+            | (ClickProposition::Or(sl, sr), ClickProposition::Or(tl, tr))
+            | (ClickProposition::Implies(sl, sr), ClickProposition::Implies(tl, tr)) => {
+                pending.push((sr.as_ref(), tr.as_ref(), snapshot));
+                pending.push((sl.as_ref(), tl.as_ref(), snapshot));
+            }
+            (ClickProposition::Not(source), ClickProposition::Not(target)) => {
+                pending.push((source.as_ref(), target.as_ref(), snapshot));
+            }
+            (ClickProposition::Comparison { .. }, ClickProposition::Comparison { .. }) => {
+                let historical = match snapshot {
+                    Some(selector) => ClickProposition::At {
+                        selector: selector.clone(),
+                        proposition: Box::new(source.clone()),
+                    },
+                    None => source.clone(),
+                };
+                for pair in comparison_preservation_reads(&historical, target)? {
+                    if seen.insert(pair.clone()) {
+                        pairs.push(pair);
+                    }
+                }
+            }
+            _ => return None,
         }
     }
-    read_preservation_rewrite_steps(source, pairs, premises)
+    let (mut steps, _) = read_preservation_steps(source, pairs, premises)?;
+    steps.push(ProofStep::Assumption);
+    Some(steps)
 }
 
-/// Comparisons and scalar implications share ordinary preservation/rewrite
-/// construction. The caller selects at most four read pairs from written input.
 fn read_preservation_rewrite_steps(
     source: &ClickProposition,
     pairs: Vec<(ContractExpression, ContractExpression)>,
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
+    let (mut steps, equalities) = read_preservation_steps(source, pairs, premises)?;
+    steps.extend(equalities.into_iter().map(ProofStep::Rewrite));
+    steps.push(ProofStep::Assumption);
+    Some(steps)
+}
+
+/// Construct the ordinary read equalities. Premise selection is indexed by
+/// written subject, so many logical leaves do not rescan all separations.
+fn read_preservation_steps(
+    source: &ClickProposition,
+    pairs: Vec<(ContractExpression, ContractExpression)>,
+    premises: &[ClickProposition],
+) -> Option<(Vec<ProofStep>, Vec<ClickProposition>)> {
     let separations = premises
         .iter()
         .filter(|p| *p != source)
@@ -963,13 +992,16 @@ fn read_preservation_rewrite_steps(
         vec![separations]
     } else {
         let mut selected = vec![Vec::new(); pairs.len()];
-        // Build each written read's C shape once, including on a miss. A long
-        // pointer expression must not be cloned again for every other premise.
-        let read_shapes = pairs
-            .iter()
-            .map(|(_, read)| contract_expression_as_c_fragment(read))
-            .collect::<Vec<_>>();
+        let mut by_subject = std::collections::HashMap::<TransportReadSubject, Vec<usize>>::new();
+        for (index, (_, read)) in pairs.iter().enumerate() {
+            crate::instrumentation::record_deterministic_work(1);
+            by_subject
+                .entry(transport_read_subject(read)?)
+                .or_default()
+                .push(index);
+        }
         for premise in separations {
+            crate::instrumentation::record_deterministic_work(1);
             let ClickProposition::Separate {
                 left: ResourceSubject::Footprint(_),
                 right,
@@ -977,15 +1009,12 @@ fn read_preservation_rewrite_steps(
             else {
                 return None;
             };
-            let mut used = false;
-            for (index, (_, read)) in pairs.iter().enumerate() {
-                if separation_subject_names_read(right, read, read_shapes[index].as_ref()) {
-                    selected[index].push(premise.clone());
-                    used = true;
-                }
-            }
-            if !used {
-                return None;
+            let indices = by_subject.get(&transport_separation_subject(right)?)?;
+            // Each visit emits this explicitly supplied preservation in a
+            // selected read proof, including several fields of one resource.
+            for &index in indices {
+                crate::instrumentation::record_deterministic_work(1);
+                selected[index].push(premise.clone());
             }
         }
         selected
@@ -997,7 +1026,7 @@ fn read_preservation_rewrite_steps(
     // The written source is a premise, not a new assumption. Each written
     // separation is used by at least one preservation proof and checked there.
     let mut steps = vec![have(source.clone(), vec![ProofStep::Assumption])];
-    let mut rewrites = Vec::new();
+    let mut equalities = Vec::new();
     for ((historical, current), separations) in pairs.into_iter().zip(selected) {
         let reflexive = ClickProposition::Comparison {
             left: historical.clone(),
@@ -1011,11 +1040,9 @@ fn read_preservation_rewrite_steps(
         };
         let equality_steps = statement_preservation_steps(&reflexive, &bridge, &separations, 1)?;
         steps.push(have(bridge.clone(), equality_steps));
-        rewrites.push(ProofStep::Rewrite(bridge));
+        equalities.push(bridge);
     }
-    steps.extend(rewrites);
-    steps.push(ProofStep::Assumption);
-    Some(steps)
+    Some((steps, equalities))
 }
 
 /// Read bridges selected by the written comparison only.
@@ -1357,32 +1384,6 @@ fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportRe
             Some(TransportReadSubject::Cell(segment.base.clone()))
         }
         _ => None,
-    }
-}
-
-/// Select from the two written read subjects, never from ambient resources.
-/// This deliberately does not discover aliases or infer range containment.
-fn separation_subject_names_read(
-    subject: &ResourceSubject,
-    read: &ContractExpression,
-    read_shape: Option<&CExpression>,
-) -> bool {
-    match (subject, read) {
-        (ResourceSubject::Instance { identity, .. }, ContractExpression::ResourceField(field)) => {
-            field.children.is_empty() && identity == &field.identity
-        }
-        (ResourceSubject::Memory(segment), _) if segment.state == ContractSegmentState::Current => {
-            let pointer = match read_shape {
-                Some(CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. }) => {
-                    pointer
-                }
-                _ => return false,
-            };
-            pointer.as_ref() == &segment.base
-                && segment.start == CExpression::Value(crate::kernel::int32(0))
-                && segment.end == CExpression::Value(crate::kernel::int32(1))
-        }
-        _ => false,
     }
 }
 

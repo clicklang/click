@@ -3484,19 +3484,24 @@ snapshot spellings remain outside this selection route.
 See `mdtests/conjunction_projection_transport_expansion.md` and
 `mdtests/conjunction_selection_transport_expansion.md`.
 
-An implication with a supported scalar comparison as both guard and conclusion
-also expands. For example,
-`transport(at(statement(0).entry, *q == 7 implies *r == 8), *q == 7 implies *r == 8)`
-uses footprint separations for reads in both comparisons. Expansion retains the
-earlier implication with `assumption()`, proves each read's preservation,
-rewrites the whole target implication to the earlier reads, and closes with
-`assumption()`. It does not assume the guard or require either comparison to
-hold unconditionally. A shared guard/conclusion read uses one preservation
-chain. The source can wrap the whole implication in `at(...)` or spell the
-snapshots on its comparisons separately. Memory and named resource fields,
-two-read comparisons, and multiple cited statements use the same form.
-Compound guards, nested implications, and quantified facts remain outside this
-route. See `mdtests/implication_transport_expansion.md`.
+Implications also expand when source and target have matching logical structure
+built from `and`, `or`, `not`, nested `implies`, and supported scalar comparison
+leaves. For example,
+`transport(at(statement(0).entry, (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8)), (*q == 7 and *r > 0) implies (*q > 0 implies *r == 8))`
+uses footprint separations for reads throughout the guard and conclusion.
+Expansion retains the earlier whole fact with `assumption()`, proves each
+selected read's preservation, then closes the whole goal with `assumption()`
+using those equalities. It emits no whole-goal rewrites and does not assume
+that any guard is true. Exact shared read pairs use one preservation chain.
+The driver traverses the written logical trees once and indexes explicit
+separations by written subject. It does not search for aliases or discover
+additional premises. Source snapshots may wrap the whole implication or
+individual subtrees/comparisons; repeated snapshot wrappers are unsupported.
+Memory reads, named resource fields, two-read comparisons and multiple cited
+statements use the same form. Quantifiers and non-comparison leaves remain
+outside this route, as do logical regrouping and top-level disjunction transport.
+See `mdtests/implication_transport_expansion.md` and
+`mdtests/compound_implication_transport_expansion.md`.
 
 Other transport routes still retain their existing form.
 
