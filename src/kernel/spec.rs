@@ -9154,7 +9154,33 @@ pub(super) fn c_value_comparison_proposition(
     if matches!(left, CValue::Int128(_) | CValue::UInt128(_))
         || matches!(right, CValue::Int128(_) | CValue::UInt128(_))
     {
-        return crate::kernel::eval::wide_integer_comparison_condition(operator, left, right)
+        // An unsuffixed literal (an `int32` constant) compared with a
+        // 128-bit value takes that value's format, by C's conversion, as it
+        // does against a 64-bit value: `0 < v` is `0i128 < v`.
+        let wide_literal = |value: &CValue, other: &CValue| -> Option<CValue> {
+            let CValue::Int32(word) = value else {
+                return None;
+            };
+            word.as_const()?;
+            let convert = |ty| {
+                crate::kernel::machine_integer::conversion::convert_term(
+                    MachineIntegerType::Int32,
+                    ty,
+                    word.clone(),
+                )
+            };
+            match other {
+                CValue::Int128(_) => Some(CValue::Int128(convert(MachineIntegerType::Int128))),
+                CValue::UInt128(_) => Some(CValue::UInt128(convert(MachineIntegerType::UInt128))),
+                _ => None,
+            }
+        };
+        let (left, right) = match (wide_literal(left, right), wide_literal(right, left)) {
+            (Some(literal), _) => (literal, right.clone()),
+            (_, Some(literal)) => (left.clone(), literal),
+            _ => (left.clone(), right.clone()),
+        };
+        return crate::kernel::eval::wide_integer_comparison_condition(operator, &left, &right)
             .map(|condition| Proposition::ConditionIs(condition, true));
     }
     let pointer_condition = match (left, right) {

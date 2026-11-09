@@ -998,7 +998,11 @@ the conversion to write, such as `x as uint8`
 of a cast such as `(a + b) as uint8` has no expected type and keeps C's
 promoted `int` operation. Unsuffixed literals are Integer unless their context gives
 them a machine type
-([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md)).
+([standard library roadmap item](https://github.com/clicklang/click/blob/master/roadmap/standard-library.md));
+compared with a 64- or 128-bit value, a literal is converted to that
+value's format as C converts it, so `0 < v` on an `int128` reads
+`0 < to_integer(v)`
+(`mdtests/a_literal_compared_with_a_128_bit_value_takes_its_format.md`).
 
 Specification `/` and `%`, which always have a machine type, are total. A
 zero divisor leaves the kernel's opaque quotient or remainder: a fixed value

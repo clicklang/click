@@ -124,9 +124,6 @@ enum Gap {
     /// only; the Integer certificate has no `!=` step, so `a <= b`,
     /// `a != b` gives `a < b` at `int32` alone (and not over `Integer`).
     NotEqualOrder,
-    /// A bare literal compared with a 128-bit value is typed `int32` and
-    /// refused (`0 < v`); `0 < to_integer(v)` lowers.
-    WideLiteralComparison,
     /// `solve` plans in-range identities for `+` and `-` only; a product's
     /// identity needs its Integer bounds from `integer_product_bounds` and an
     /// explicit `integer_operation_identity` certificate.
@@ -143,10 +140,7 @@ enum Gap {
 impl Gap {
     /// A substring of the refusal's diagnostic.
     fn refusal(self) -> &'static str {
-        match self {
-            Self::WideLiteralComparison => "cannot compare `int32` and",
-            _ => "`solve` failed for",
-        }
+        "`solve` failed for"
     }
 }
 
@@ -405,7 +399,7 @@ const FAMILIES: &[Family] = &[
                 f.name
             )
         },
-        gaps: gaps_at!(Gap::WideLiteralComparison; Ty::Int128, Ty::UInt128),
+        gaps: &[],
     },
     // Range of an observation.
     Family {
