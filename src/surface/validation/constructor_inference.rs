@@ -57,6 +57,10 @@ pub(super) struct ConstructorTypes {
     functions: BTreeMap<String, Signature>,
     predicates: BTreeMap<String, Signature>,
     theorems: BTreeMap<String, Signature>,
+    /// Each library type's methods: the Click library functions over it,
+    /// by the type's name, the method's name and its argument count. A name
+    /// two library functions share is ambiguous and maps to `None`.
+    methods: BTreeMap<(String, String, usize), Option<String>>,
     variables: std::cell::RefCell<ScopedNames<Option<ClickType>>>,
     /// Whether any datatype takes type arguments; without one there is
     /// nothing to infer and every hook returns at once.
@@ -80,17 +84,35 @@ impl ConstructorTypes {
         if !active {
             return Self::inactive();
         }
+        let functions = functions
+            .into_iter()
+            .map(|definition| {
+                let mut signature =
+                    Signature::new(definition.type_parameters(), definition.parameters());
+                signature.result = Some(definition.return_type_with_object_class());
+                (definition.name().to_string(), signature)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let mut methods = BTreeMap::new();
+        for (name, signature) in &functions {
+            if let Some(module_function) = name.strip_prefix("click::")
+                && let Some((_, method)) = module_function.rsplit_once("::")
+                && let Some(ClickType::Algebraic(first)) = signature.parameters.first()
+            {
+                methods
+                    .entry((
+                        first.name.clone(),
+                        method.to_string(),
+                        signature.parameters.len() - 1,
+                    ))
+                    .and_modify(|function: &mut Option<String>| *function = None)
+                    .or_insert_with(|| Some(name.clone()));
+            }
+        }
         Self {
             datatypes,
-            functions: functions
-                .into_iter()
-                .map(|definition| {
-                    let mut signature =
-                        Signature::new(definition.type_parameters(), definition.parameters());
-                    signature.result = Some(definition.return_type_with_object_class());
-                    (definition.name().to_string(), signature)
-                })
-                .collect(),
+            functions,
+            methods,
             predicates: predicates
                 .into_iter()
                 .map(|definition| {
@@ -120,6 +142,7 @@ impl ConstructorTypes {
             functions: BTreeMap::new(),
             predicates: BTreeMap::new(),
             theorems: BTreeMap::new(),
+            methods: BTreeMap::new(),
             variables: Default::default(),
             active: false,
         }
@@ -428,6 +451,19 @@ impl ConstructorTypes {
         }
     }
 
+    /// The library function a method of `type_name` names: the function of
+    /// the Click library called `method` whose first parameter is a
+    /// `type_name` and which takes `arguments` more. A library type's
+    /// methods are its library module's functions over it, so a new type
+    /// brings its methods with its functions, and a program's own pure
+    /// functions are not methods. One lookup in the index built with the
+    /// signatures.
+    fn library_method(&self, type_name: &str, method: &str, arguments: usize) -> Option<&str> {
+        self.methods
+            .get(&(type_name.to_string(), method.to_string(), arguments))?
+            .as_deref()
+    }
+
     /// The method call `receiver.method(arguments)` as what it means for
     /// the receiver's type (`design/typed-method-resolution.md`): a slice's
     /// `len()` is `slice::len(receiver)`, its `[i]` a read through
@@ -454,6 +490,27 @@ impl ConstructorTypes {
                 slice_method(application, receiver.clone(), method, arguments.clone())
         {
             return Ok(resolved);
+        }
+        if let Some(ClickType::Algebraic(application)) = &receiver_type {
+            // A vector's index `v[i]` is `vec::get(v, i)`, as Rust's `Index`.
+            if application.name == "Vec"
+                && method == "[]"
+                && let [index] = arguments.as_slice()
+            {
+                return Ok(ContractExpression::Call {
+                    name: "click::rust::vec::get".to_string(),
+                    arguments: vec![receiver, index.clone()],
+                });
+            }
+            // Any other method is the library function of that name over
+            // the receiver's type: `v.len()` is `vec::len(v)`.
+            if let Some(function) = self.library_method(&application.name, method, arguments.len())
+            {
+                return Ok(ContractExpression::Call {
+                    name: function.to_string(),
+                    arguments: std::iter::once(receiver).chain(arguments).collect(),
+                });
+            }
         }
         // An index on a value of another type, such as a sequence, keeps
         // the index it always was.

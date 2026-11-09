@@ -1,8 +1,10 @@
 # Typed method resolution
 
-Status: steps 1 and 2 implemented. Every slice method, index and subslice,
-on a slice value or a slice parameter, goes through the one resolution in
-declaration expansion. Step 3 remains.
+Status: steps 1 to 3 implemented for slices and `Vec`. Every slice method,
+index and subslice, on a slice value or a slice parameter, goes through the
+one resolution in declaration expansion, and a library type's methods are
+its library functions, so `Vec` reads `v.len()` with no row of its own. The
+iterator model's methods arrive with its types.
 
 ## Problem
 
@@ -68,9 +70,17 @@ table keyed by the type and the method name:
 | `Slice<T>` | `[i]` | `slice::as_ptr(x)[i]` |
 | `Slice<T>` | `[a..b]` | the subslice, `Slice::Slice(slice::as_ptr(x) + a, slice::subslice_len(a, b, slice::len(x)))` |
 
-A library type adds rows, not parser code. A method a library declares
-for its type (`impl` functions on a library `type`, such as `Vec`) is
-resolved the same way, by its declaring type.
+A library type adds rows, not parser code, and most methods need no row.
+A method on a value of a library type is the Click library function of that
+name whose first parameter is that type and which takes the method's
+arguments after it: `v.len()` on a `Vec<T>` is `vec::len(v)`. Resolution
+reads this from an index built with the signatures, by the type's name,
+the method's name and its argument count, so a new library type brings its
+methods with its functions. Only a program's library functions count: a
+program's own pure function over its own enum is not a method (open
+question 1). Rows remain for what a function cannot say by its name: an
+index, `v[i]` as `vec::get(v, i)` and a slice's read through its data, and
+the slice's subslices and the reductions of a slice built from its parts.
 
 Declaration expansion resolves a `MethodCall` before validation, where
 constructor type inference already knows the type of every name in scope
@@ -120,8 +130,10 @@ fact-stable.
    rewrites stay.
 2. Move the parser's eager slice rewrites onto the same table, and delete
    them.
-3. `Vec`'s and the iterator model's methods as rows of the table, when those
-   types land.
+3. Done for `Vec`: its methods are its library functions, and `v[i]` is a
+   row. The iterator model's methods come with its types. A `Vec`
+   parameter's `v.len()` and `v[i]` keep their direct spellings, which the
+   parser writes as the same library calls.
 
 ## Open questions
 
