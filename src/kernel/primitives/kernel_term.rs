@@ -576,23 +576,35 @@ impl KernelTerm {
                 )
                 .with_machine_observation_type(format)
             }
-            MachineOperandView::Legacy(value) => KernelTermImport::default()
-                .machine_arithmetic(format, value)
-                .unwrap_or_else(|| {
-                    // Native equality can ignore object-class evidence and
-                    // snapshot authority. Preserve this exact producer payload;
-                    // checking may relate it to another leaf separately.
-                    use std::sync::atomic::{AtomicU64, Ordering};
-                    static NEXT: AtomicU64 = AtomicU64::new(0);
-                    let id = NEXT
-                        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
-                        .expect("retained machine leaf identity exhausted");
-                    Self::legacy_at(
-                        PureFunctionArgument::Value(machine::wrap_exact(format, value.clone())),
-                        LegacyIdentity::Machine(id),
-                    )
-                }),
+            MachineOperandView::Legacy(value) => {
+                Self::retained_native_machine_operand(format, value)
+            }
         }
+    }
+
+    /// Import one explicit native operand without splitting an opaque
+    /// composite. Its native observation identity must survive when a checker
+    /// puts it beside a shared operand in a new operation.
+    pub(crate) fn retained_native_machine_operand(
+        format: MachineIntegerType,
+        value: &MachineTerm,
+    ) -> Self {
+        KernelTermImport::default()
+            .machine_arithmetic(format, value)
+            .unwrap_or_else(|| {
+                // Native equality can ignore object-class evidence and
+                // snapshot authority. Preserve this exact producer payload;
+                // checking may relate it to another leaf separately.
+                use std::sync::atomic::{AtomicU64, Ordering};
+                static NEXT: AtomicU64 = AtomicU64::new(0);
+                let id = NEXT
+                    .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                    .expect("retained machine leaf identity exhausted");
+                Self::legacy_at(
+                    PureFunctionArgument::Value(machine::wrap_exact(format, value.clone())),
+                    LegacyIdentity::Machine(id),
+                )
+            })
     }
 
     fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {
