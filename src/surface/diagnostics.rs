@@ -40,7 +40,8 @@ pub(crate) use object_fields::{clear_ambient_object_fields, enter_ambient_object
 use rust_spelling::rust_scalar_spelling;
 pub(crate) use rust_spelling::{
     LoopPhaseSpelling, enter_rust_spelling, record_pure_function_slices, rust_spelling,
-    rust_variable_spelling, slice_call_arguments, slice_call_spelling, slice_spelling,
+    rust_variable_spelling, slice_call_arguments, slice_call_spelling, slice_type_spelling,
+    subslice_of_length, subslice_spelling,
 };
 
 const MAX_DIAGNOSTIC_ITEMS: usize = 12;
@@ -6663,15 +6664,30 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
                         .join(", ")
                 )
             };
+            let written_arguments = arguments;
             let arguments = arguments
                 .iter()
                 .map(describe_contract_expression)
                 .collect::<Vec<_>>();
-            if algebraic_type.name == "Slice"
-                && variant == "Slice"
-                && let [pointer, length] = arguments.as_slice()
-            {
-                return slice_spelling(pointer, length);
+            if algebraic_type.name == "Slice" && variant == "Slice" && rust_spelling() {
+                // A subslice, built from its length's call.
+                if let [
+                    _,
+                    ContractExpression::Call {
+                        name,
+                        arguments: parts,
+                    },
+                ] = written_arguments.as_slice()
+                    && name == crate::surface::RUST_SUBSLICE_LEN
+                    && let [start, end, len] = parts.as_slice()
+                    && let Some(subslice) = subslice_of_length(
+                        &describe_contract_expression(start),
+                        &describe_contract_expression(end),
+                        &describe_contract_expression(len),
+                    )
+                {
+                    return subslice;
+                }
             }
             format!(
                 "{}{type_arguments}::{variant}({})",
@@ -7222,6 +7238,7 @@ pub(super) fn describe_code_region_ref(region: &CodeRegionRef) -> String {
                 SourcePathStep::Call(function, index) => format!("call({function}, {index})"),
                 SourcePathStep::Assignment(local, index) => format!("assignment({local}, {index})"),
                 SourcePathStep::Read(index) => format!("read({index})"),
+                SourcePathStep::ReadEvent(index) => format!("read_event({index})"),
             })
             .collect::<Vec<_>>()
             .join("."),

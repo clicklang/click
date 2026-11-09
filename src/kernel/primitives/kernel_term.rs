@@ -112,6 +112,7 @@ pub struct KernelLegacyTerm {
 #[derive(Clone, Debug, Eq, PartialEq, Hash)]
 enum LegacyIdentity {
     Integer(u64),
+    Machine(u64),
     ApplicationArgument(SharedPureApplication, usize),
     Fresh(u64),
 }
@@ -200,7 +201,10 @@ impl NodeKey {
         let opaque_observation_boundary = match &node {
             KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::Legacy(value) | KernelTermNode::LegacyBool(value) => {
-                matches!(value.identity, LegacyIdentity::Fresh(_))
+                matches!(
+                    value.identity,
+                    LegacyIdentity::Fresh(_) | LegacyIdentity::Machine(_)
+                )
             }
             KernelTermNode::Call { arguments, .. }
             | KernelTermNode::IntegerOperation { arguments, .. } => arguments
@@ -230,6 +234,7 @@ impl NodeKey {
         let shared_machine_operand = match &node {
             KernelTermNode::MachineLiteral(_) | KernelTermNode::MemoryLoad { .. } => true,
             KernelTermNode::IntegerToMachine { .. } => !opaque_observation_boundary,
+            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
             KernelTermNode::Variable(_) => {
                 matches!(&ty, KernelType::C(c) if MachineIntegerType::from_c_type(*c).is_some())
             }
@@ -242,6 +247,7 @@ impl NodeKey {
         };
         let machine_conversions = match &node {
             KernelTermNode::IntegerToMachine { .. } => true,
+            KernelTermNode::Legacy(value) => matches!(value.identity, LegacyIdentity::Machine(_)),
             KernelTermNode::MachineBinary { arguments, .. } => {
                 arguments.iter().any(KernelTerm::has_machine_conversions)
             }
@@ -533,6 +539,62 @@ impl KernelTerm {
         };
         Self::legacy_at(argument, identity)
     }
+    /// Retain an already-native opaque machine operand at a shared parent.
+    /// The identity belongs to its explicit typed input, never to an export of
+    /// a shared tree. This temporary payload uses the existing legacy boundary.
+    pub(crate) fn retained_machine_operand(
+        format: MachineIntegerType,
+        operand: MachineOperandView<'_>,
+    ) -> Self {
+        match operand {
+            MachineOperandView::Shared(root) => root.with_machine_observation_type(format),
+            MachineOperandView::Legacy(_) if operand.binary().is_some() => {
+                let (operation_format, op, children) = operand.binary().unwrap();
+                Self::machine_binary_shared_as(
+                    format,
+                    operation_format,
+                    op,
+                    children.map(|child| Self::retained_machine_operand(operation_format, child)),
+                )
+            }
+            MachineOperandView::Legacy(_) if operand.unary().is_some() => {
+                let (operation_format, op, child) = operand.unary().unwrap();
+                Self::machine_unary_shared(
+                    operation_format,
+                    op,
+                    Self::retained_machine_operand(operation_format, child),
+                )
+                .with_machine_observation_type(format)
+            }
+            MachineOperandView::Legacy(_) if operand.cast().is_some() => {
+                let (encoding, source, destination, child) = operand.cast().unwrap();
+                Self::machine_cast_shared(
+                    encoding,
+                    source,
+                    destination,
+                    Self::retained_machine_operand(source, child),
+                )
+                .with_machine_observation_type(format)
+            }
+            MachineOperandView::Legacy(value) => KernelTermImport::default()
+                .machine_arithmetic(format, value)
+                .unwrap_or_else(|| {
+                    // Native equality can ignore object-class evidence and
+                    // snapshot authority. Preserve this exact producer payload;
+                    // checking may relate it to another leaf separately.
+                    use std::sync::atomic::{AtomicU64, Ordering};
+                    static NEXT: AtomicU64 = AtomicU64::new(0);
+                    let id = NEXT
+                        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+                        .expect("retained machine leaf identity exhausted");
+                    Self::legacy_at(
+                        PureFunctionArgument::Value(machine::wrap_exact(format, value.clone())),
+                        LegacyIdentity::Machine(id),
+                    )
+                }),
+        }
+    }
+
     fn legacy_at(argument: PureFunctionArgument, identity: LegacyIdentity) -> Self {
         let ty = match &argument {
             PureFunctionArgument::Integer(_) => KernelType::Integer,

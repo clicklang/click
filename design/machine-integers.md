@@ -213,6 +213,15 @@ width-specific promotion logic of their own.
 
 ### Library
 
+Status (maintainer, 2026-11-09): neither option below is taken. There is no
+generic `T: intn` library mechanism and no per-format template. The kernel
+rules are stated once over a format (Stage 1) and the per-width library
+lemmas remain for existing proofs; the surface fixture
+`src/surface/tests/width_uniformity.rs` checks that the omitted proof
+closes each family at every format, with its gaps listed
+([Decisions](#decisions), 2026-11-09). The text below is the plan as
+accepted on 2026-10-22.
+
 A width-indexed library fact is one statement over a format parameter, not
 a family of copies. The two ways to do that are:
 
@@ -973,7 +982,9 @@ Progress:
   a wider cell still builds `b & 0xFF` (`byte_view::integer_cell_with_byte`).
   Rust narrow checked arithmetic is `Binary` in the operand's format
   (step 7's fifth PR, 2026-11-02); its panic checks keep their 32-bit
-  spelling. Remaining for Stage 4: the library families.
+  spelling. Remaining for Stage 4: the library families. Decided
+  2026-11-09: no generic statement; the width-uniformity fixture checks the
+  families instead ([Decisions](#decisions)).
 
 ### Stage 5. A logical `bool`
 
@@ -1099,7 +1110,7 @@ Maintainer direction, 2026-10-21:
   theorem over a type parameter constrained to machine integers (option 1
   under [Library](#library)), not a template expanded per format. If the
   generic machinery cannot yet state one, extend it rather than generate
-  copies.
+  copies. Superseded on 2026-11-09: no generic mechanism (entry below).
 - **`bool` is logical; C's `_Bool` is an integer.** Superseded on
   2026-10-26 (Stage 5): C's `_Bool` and C++'s `bool` denote the logical
   `Bool`, and there is no {0, 1} integer format; see that entry below,
@@ -1674,3 +1685,19 @@ reasoning:
   `sign_cast_construction_and_word_reads_do_constant_work_on_deep_operands`
   states that building σ of σ is one unit and reading its observation the
   same work at every operand size.
+
+Maintainer decision, 2026-11-09 (library families):
+
+- **No generic `T: intn` library mechanism.** The width-lemma families are
+  not restated as generic theorems or per-format templates. Their kernel
+  rules are stated once over a format (Stage 1, checked by
+  `machine_integer/matrix_tests.rs`), and
+  `src/surface/tests/width_uniformity.rs` states each family at every
+  format in `FORMATS` and proves it by the omitted proof with no library
+  import, so a format a rule misses fails a test. Each family/format pair
+  is proved, excluded (the statement does not apply: a signed-only law at
+  an unsigned format, an operation at 128 bits, definedness outside `int32`
+  and `int64`) or a listed gap that the nightly checks is still refused.
+  The per-width lemmas in `library/integer.click` stay for the proofs that
+  cite them; deleting unused ones is deferred, not decided. The open gaps
+  are listed in `roadmap/standard-library.md` ("Width-uniformity gaps").

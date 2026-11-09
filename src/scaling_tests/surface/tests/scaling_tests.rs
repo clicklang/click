@@ -10550,3 +10550,68 @@ fn compound_implication_transport_scales_with_reads_and_logical_depth() {
         }
     }
 }
+
+#[test]
+fn volatile_read_results_use_selected_event_indexes() {
+    use crate::kernel::{MachineTerm, Variable};
+    let mut samples = Vec::new();
+    let mut repeated_samples = Vec::new();
+    for size in [16usize, 64, 256, 1024] {
+        let mut points = RecordedSnapshots::new();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            for index in 0..size {
+                let value = CValue::Int32(MachineTerm::Variable(Variable(800000 + index as u64)));
+                points.record_read_event_values(index, std::iter::once(&value));
+                assert!(points.read_event_naming_value(&value).is_some());
+            }
+        });
+        samples.push(work);
+        let first = CValue::Int32(MachineTerm::Variable(Variable(800000)));
+        let branch = points.clone();
+        points.record_read_event_values(0, std::iter::empty());
+        assert!(points.read_event_naming_value(&first).is_none());
+        assert!(branch.read_event_naming_value(&first).is_some());
+        assert!(
+            points
+                .region_result_value(&CodeRegionRef::Region(0))
+                .is_err()
+        );
+        assert_eq!(
+            branch
+                .region_result_value(&CodeRegionRef::Region(0))
+                .unwrap(),
+            first
+        );
+        let (_, repeated_work) = crate::instrumentation::measure_deterministic_work(|| {
+            points.record_read_event_values(size, std::iter::repeat_n(&first, size));
+            points.record_read_event_values(size + 1, std::iter::once(&first));
+            points.record_read_event_values(size + 1, std::iter::empty());
+            assert_eq!(
+                points.read_event_naming_value(&first),
+                Some(points.read_event_region(size, size - 1))
+            );
+            points.record_read_event_values(size, std::iter::empty());
+            assert!(points.read_event_naming_value(&first).is_none());
+        });
+        repeated_samples.push(repeated_work);
+        points.insert(
+            ProgramPointRef {
+                region: CodeRegionRef::Region(0),
+                kind: ProgramPointKind::Exit,
+            },
+            crate::kernel::CState::new(),
+        );
+        points.record_read_event_values(0, std::iter::once(&first));
+        points.remove(&ProgramPointRef {
+            region: CodeRegionRef::Region(0),
+            kind: ProgramPointKind::Exit,
+        });
+        assert!(points.read_event_naming_value(&first).is_none());
+    }
+    for samples in [samples, repeated_samples] {
+        assert!(
+            samples.windows(2).all(|pair| pair[1] <= pair[0] * 6 + 128),
+            "{samples:?}"
+        );
+    }
+}

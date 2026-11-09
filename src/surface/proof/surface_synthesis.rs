@@ -1110,6 +1110,11 @@ pub(in crate::surface) fn synthesize_surface_value(
     }) {
         return Some(ContractExpression::CFragment(CExpression::Variable(name)));
     }
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS
+        .with(|points| points.borrow().as_ref()?.read_event_naming_value(value))
+    {
+        return Some(ContractExpression::RegionResult(region));
+    }
     let _scope = SurfaceSynthesisScope::enter();
     match value {
         CValue::Pointer(pointer) => synthesize_surface_pointer_expression(
@@ -3693,6 +3698,11 @@ fn synthesize_surface_bitvector(
         return Some(ContractExpression::CFragment(CExpression::Variable(name)));
     }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
+        .with(|points| points.borrow().as_ref()?.read_event_naming_scalar(term))
+    {
+        return Some(ContractExpression::RegionResult(region));
+    }
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|slot| slot.borrow().as_ref()?.call_result_naming_integer(term))
     {
         return Some(ContractExpression::RegionResult(region));
@@ -5305,6 +5315,11 @@ fn synthesize_surface_pointer_expression(
     bound_variables: &BTreeMap<Variable, String>,
 ) -> Option<ContractExpression> {
     let _frame = SurfaceSynthesisFrame::enter("pointer-expression")?;
+    if let Some(region) = SYNTHESIS_RECORDED_POINTS
+        .with(|points| points.borrow().as_ref()?.read_event_naming_pointer(pointer))
+    {
+        return Some(ContractExpression::RegionResult(region));
+    }
     if let Some(region) = SYNTHESIS_RECORDED_POINTS
         .with(|points| points.borrow().as_ref()?.allocation_result(pointer))
     {

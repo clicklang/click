@@ -1164,6 +1164,9 @@ impl SourceExecutionLayout {
                             .into(),
                     );
                 }
+                SourcePathStep::ReadEvent(_) => {
+                    return Err("`read_event(i)` selects a volatile observation's `.result`, not a statement boundary".into());
+                }
                 SourcePathStep::Loop(_) => {
                     return Err("`loop(i)` starts a chained region".into());
                 }

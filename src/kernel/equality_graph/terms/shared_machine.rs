@@ -436,7 +436,7 @@ impl TermClasses {
                         }
                     }
                 }
-                N::IntegerToMachine { .. } => self.intern_typed_machine(
+                N::IntegerToMachine { .. } | N::Legacy(_) => self.intern_typed_machine(
                     term.machine_conversion_leaf().expect("conversion leaf"),
                     width,
                 ),

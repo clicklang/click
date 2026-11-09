@@ -531,20 +531,43 @@ impl PureFactContext {
         if let Some(value) = self.decide_shared_mask_zero(condition, &mut Default::default()) {
             return Some(value);
         }
-        // Wide equality retains its compatibility boundary until tagged-address
-        // forms and opaque operands have shared consumers.
-        if !crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
-            .is_some_and(|view| {
-                matches!(
-                    view.format,
-                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
-                ) || matches!(
-                    view.relation,
-                    crate::kernel::machine_integer::Relation::Less
-                        | crate::kernel::machine_integer::Relation::LessEqual
-                )
-            })
-            && let Some((native, truth)) = native_comparison_of_integer_observation(condition, true)
+        // Wide tagged-address reasoning reads the original retained operands.
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+            && view.format.format().bits() == 64
+            && matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Equal
+                    | crate::kernel::machine_integer::Relation::NotEqual
+            )
+            && let Some(value) = self.decide_uint64_equality_extras_views(
+                view.operands[0].operand_view(),
+                view.operands[1].operand_view(),
+                &mut Default::default(),
+            )
+        {
+            return Some(
+                value == (view.relation == crate::kernel::machine_integer::Relation::Equal),
+            );
+        }
+        // Fixed-size atoms and already-native operands can still use their
+        // native comparison rules. Shared arithmetic is never exported here.
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::native_comparison_view(condition, true)
+            && !matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+            && !matches!(
+                view.relation,
+                crate::kernel::machine_integer::Relation::Less
+                    | crate::kernel::machine_integer::Relation::LessEqual
+            )
+            && let (native, truth) = view.retained_condition()
+            && matches!(
+                native,
+                ConditionTerm::Compare { .. } | ConditionTerm::Constant(_)
+            )
             && &native != condition
             && let Some(value) = self.decide(&native)
         {
@@ -3491,3 +3514,52 @@ mod shared_singleton_bound_evidence_tests {
 }
 
 mod legacy_search;
+
+#[cfg(test)]
+mod wide_observation_tag_regression {
+    use super::*;
+    use crate::kernel::{IntegerTerm, KernelTermImport, SharedMachineIntegerTerm};
+
+    #[test]
+    fn wide_observation_keeps_tagged_address_equality_rules() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let x = MachineTerm::Variable(Variable(993801));
+        let one = MachineTerm::uint64_constant(1);
+        let next = MachineTerm::uint64_add(x.clone(), one.clone());
+        let tagged = MachineTerm::uint64_add(
+            MachineTerm::pointer_address(Pointer::symbolic(Variable(993803))),
+            one,
+        );
+        let observed = |value: &MachineTerm| {
+            IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(
+                    format,
+                    KernelTermImport::default()
+                        .machine_arithmetic(format, value)
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+        };
+        let source = Proposition::ConditionIs(ConditionTerm::uint64_equal(x.clone(), tagged), true);
+        let parent = PureFactContext::new();
+        let branch = parent.clone().assume_proposition(source.clone());
+        let goal = ConditionTerm::integer_equal(observed(&x), observed(&next));
+        let exports = crate::kernel::KernelTermExport::machine_export_count();
+        assert_eq!(branch.decide(&goal), Some(false));
+        assert_eq!(
+            branch.decide(&ConditionTerm::integer_not_equal(
+                observed(&x),
+                observed(&next)
+            )),
+            Some(true)
+        );
+        assert_eq!(parent.decide(&goal), None);
+        assert_eq!(branch.without_exact_fact(&source).decide(&goal), None);
+        assert_eq!(
+            crate::kernel::KernelTermExport::machine_export_count(),
+            exports
+        );
+    }
+}

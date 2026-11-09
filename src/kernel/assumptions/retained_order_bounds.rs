@@ -27,6 +27,9 @@ pub(super) fn order_view(
 #[derive(Clone, Debug, Default)]
 pub(in crate::kernel) struct Bounds {
     entries: PersistentMap<BoundKey, PersistentSet<Proposition>>,
+    // Original true signed <=/< sources, retained separately from normalized
+    // reversed/negated edges for the memory-containment premise rule.
+    written_signed: PersistentMap<BoundKey, PersistentSet<Proposition>>,
 }
 impl Bounds {
     pub(in crate::kernel) fn sourced_operands(
@@ -44,6 +47,16 @@ impl Bounds {
                 )
             })
     }
+    pub(super) fn written_signed_operands(
+        &self,
+    ) -> impl Iterator<Item = (V<'_>, V<'_>, bool, bool)> {
+        self.written_signed
+            .keys()
+            .map(|(own, other, strict, forward)| {
+                (own.operand_view(), other.operand_view(), *strict, *forward)
+            })
+    }
+
     pub(in crate::kernel) fn operand_keys(
         &self,
     ) -> impl Iterator<Item = (V<'_>, V<'_>, bool, bool)> {
@@ -100,6 +113,10 @@ impl OrderBoundIndex {
             .each_ref()
             .map(|operand| operand.operand_view());
         let strict = view.relation == Relation::Less;
+        let written_signed = matches!(source, Proposition::ConditionIs(condition, true)
+            if crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+                .is_some_and(|view| view.format == MachineIntegerType::Int32 && !view.negated
+                    && matches!(view.relation, CompareRelation::LessThan | CompareRelation::LessEqual)));
         for (own, other, forward) in [(left, right, true), (right, left, false)] {
             let key = Key::for_format(view.format, own);
             let canonical = Key::canonical(view.format, own);
@@ -124,6 +141,23 @@ impl OrderBoundIndex {
                 } else {
                     bounds.entries.with_inserted(bound.clone(), sources)
                 };
+                if written_signed {
+                    let sources = bounds
+                        .written_signed
+                        .get(&bound)
+                        .cloned()
+                        .unwrap_or_default();
+                    let sources = if insert {
+                        sources.with_value(source.clone())
+                    } else {
+                        sources.without_value(source)
+                    };
+                    bounds.written_signed = if sources.is_empty() {
+                        bounds.written_signed.without_key(&bound)
+                    } else {
+                        bounds.written_signed.with_inserted(bound.clone(), sources)
+                    };
+                }
                 self.endpoints = if bounds.entries.is_empty() {
                     self.endpoints.without_key(&endpoint)
                 } else {

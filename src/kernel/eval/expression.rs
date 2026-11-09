@@ -3333,6 +3333,7 @@ fn read_c_lvalue_paths_without_ranges(
                 };
                 let mut facts = facts;
                 if lvalue.is_volatile()
+                    && !SpecificationAccessScope::is_active()
                     && let CExpressionOutcome::Value(value) = &outcome
                     && let Some(pointer) = lvalue.pointer(state)
                 {
@@ -3462,7 +3463,8 @@ fn read_c_lvalue_paths_without_ranges(
                     obligations,
                     assumptions,
                     is_external && has_read_resource,
-                    lvalue.is_volatile(),
+                    // A specification names a value, not another C access.
+                    lvalue.is_volatile() && !SpecificationAccessScope::is_active(),
                     source,
                     budget.c_byte_order(),
                 );
@@ -3506,7 +3508,7 @@ fn read_c_lvalue_paths_without_ranges(
                         }
                     }
                 }
-                if !lvalue.is_volatile() {
+                if !lvalue.is_volatile() || SpecificationAccessScope::is_active() {
                     return Ok(paths);
                 }
                 for path in &mut paths {

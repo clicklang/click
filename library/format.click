@@ -909,16 +909,12 @@ theorem decimal_digit_power_nonzero(v: uint64, k: uint64) {
     }
 }
 
-// The `k`th digit of an `n`-digit value. The statement divides by
-// `pow10(n - 1 - k)`, so it states that power is not zero as a premise; for a
-// known `n` and `k`, `pow10_e` gives its value.
+// The `k`th digit of an `n`-digit value; for a known `n` and `k`, `pow10_e`
+// gives the power of ten it divides by.
 theorem decimal_digit_of_length(v: uint64, n: uint64, k: uint64) {
     requires format::decimal_length(v) == n;
     requires k < n;
-    requires format::pow10(n - 1u64 - k) != 0u64;
     ensures format::decimal_digit(v, k) == (48u64 + v / format::pow10(n - 1u64 - k) % 10u64) as uint8 by {
-        have k < format::decimal_length(v) by { solve(); }
-        apply(format::decimal_digit_power_nonzero(v, k));
         unfold(format::decimal_digit(v, k));
         rewrite(format::decimal_length(v) == n);
         normalize() using { k < n; };

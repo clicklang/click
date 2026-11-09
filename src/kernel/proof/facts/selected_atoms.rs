@@ -36,7 +36,9 @@ fn syntax_atoms(root: &KernelTerm) -> Option<PersistentSet<BitvectorEqualityAtom
                         .expect("read atom"),
                 ),
                 // The native collector treats conversions as opaque too.
-                KernelTermNode::IntegerToMachine { .. } => PersistentSet::default(),
+                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_) => {
+                    PersistentSet::default()
+                }
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
                     if !finish {

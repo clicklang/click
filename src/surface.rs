@@ -309,6 +309,7 @@ pub const SURFACE_CLICK_WORDS: &[&str] = &[
     "premise",
     "produces",
     "read",
+    "read_event",
     "requires",
     "resource",
     "region",
@@ -361,6 +362,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "at-expression",
     "region-allocation",
     "region-footprint",
+    "read-event-result",
     "auto",
     "bool",
     "by",
@@ -3335,6 +3337,9 @@ const CELL_POINTS_OFFERED: usize = 4;
 /// How many recorded points holding a pointer's block the speller tries.
 const POINTER_POINTS_OFFERED: usize = 4;
 
+type ReadEventNames<T> =
+    crate::persistent::PersistentMap<T, crate::persistent::PersistentSet<(usize, usize)>>;
+
 #[derive(Clone)]
 struct RecordedSnapshots {
     effect_log: imbl::Vector<crate::kernel::CResource>,
@@ -3393,6 +3398,11 @@ struct RecordedSnapshots {
     /// Values produced at call exits, independent of destination locals.
     call_results: crate::persistent::PersistentMap<usize, CValue>,
     call_result_points: crate::persistent::PersistentMap<(u64, usize), ()>,
+    read_event_results: crate::persistent::PersistentMap<(usize, usize), CValue>,
+    read_event_counts: crate::persistent::PersistentMap<usize, usize>,
+    read_event_names: ReadEventNames<CValue>,
+    read_event_scalar_names: ReadEventNames<crate::kernel::MachineTerm>,
+    read_event_pointer_names: ReadEventNames<crate::kernel::Pointer>,
     /// The call that produced each algebraic value a call returned, a Rust
     /// enum's: the value is spelled `<region>.result`.
     algebraic_call_results: crate::persistent::PersistentMap<crate::kernel::AlgebraicTerm, usize>,
@@ -3460,6 +3470,11 @@ impl Default for RecordedSnapshots {
             allocation_results: crate::persistent::PersistentMap::default(),
             call_results: crate::persistent::PersistentMap::default(),
             call_result_points: crate::persistent::PersistentMap::default(),
+            read_event_results: Default::default(),
+            read_event_counts: Default::default(),
+            read_event_names: Default::default(),
+            read_event_scalar_names: Default::default(),
+            read_event_pointer_names: Default::default(),
             algebraic_call_results: crate::persistent::PersistentMap::default(),
             loop_iterations: crate::persistent::PersistentMap::default(),
             loop_iteration_variables: crate::persistent::PersistentMap::default(),
@@ -3818,14 +3833,180 @@ impl RecordedSnapshots {
         }
     }
 
-    fn region_result_value(&self, region: &CodeRegionRef) -> Result<CValue, String> {
-        let index = self.result_region_index(region)?;
-        self.call_results.get(&index).cloned().ok_or_else(|| {
-            format!(
-                "`{}.result` has no recorded non-void result at this call's exit",
-                diagnostics::describe_code_region_ref(region)
-            )
+    fn read_event_region(&self, index: usize, event: usize) -> CodeRegionRef {
+        let mut steps = self
+            .source_layout
+            .as_ref()
+            .and_then(|layout| layout.source_path_spelling(index, ProgramPointKind::Exit))
+            .unwrap_or_else(|| vec![SourcePathStep::Region(index)]);
+        steps.push(SourcePathStep::ReadEvent(event));
+        CodeRegionRef::Path(steps)
+    }
+
+    fn add_read_event_name<T: Ord + Clone>(
+        names: &mut ReadEventNames<T>,
+        value: &T,
+        event: (usize, usize),
+    ) {
+        let events = names
+            .get(value)
+            .cloned()
+            .unwrap_or_default()
+            .with_value(event);
+        names.insert(value.clone(), events);
+    }
+
+    fn remove_read_event_name<T: Ord + Clone>(
+        names: &mut ReadEventNames<T>,
+        value: &T,
+        event: (usize, usize),
+    ) {
+        let Some(events) = names.get(value) else {
+            return;
+        };
+        let events = events.without_value(&event);
+        if events.is_empty() {
+            names.remove(value);
+        } else {
+            names.insert(value.clone(), events);
+        }
+    }
+
+    fn record_read_events(&mut self, index: usize, facts: &crate::kernel::ExecutionFacts) {
+        self.record_read_event_values(
+            index,
+            facts.iter().filter_map(|fact| {
+                crate::instrumentation::record_deterministic_work(1);
+                fact.volatile_read_result()
+            }),
+        );
+    }
+
+    fn record_read_event_values<'a>(
+        &mut self,
+        index: usize,
+        values: impl Iterator<Item = &'a CValue>,
+    ) {
+        // Only this completed statement's output is visited, never prior facts.
+        for event in 0..self.read_event_counts.get(&index).copied().unwrap_or(0) {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (index, event);
+            if let Some(value) = self.read_event_results.get(&key).cloned() {
+                self.read_event_results.remove(&key);
+                Self::remove_read_event_name(&mut self.read_event_names, &value, key);
+                match &value {
+                    CValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
+                        Self::remove_read_event_name(&mut self.read_event_scalar_names, term, key);
+                    }
+                    CValue::Pointer(pointer) => {
+                        Self::remove_read_event_name(
+                            &mut self.read_event_pointer_names,
+                            pointer.pointer(),
+                            key,
+                        );
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut count = 0;
+        for value in values {
+            crate::instrumentation::record_deterministic_work(1);
+            let key = (index, count);
+            self.read_event_results.insert(key, value.clone());
+            Self::add_read_event_name(&mut self.read_event_names, value, key);
+            match value {
+                CValue::Bool(term) | crate::kernel::integer_c_value!(term) => {
+                    Self::add_read_event_name(&mut self.read_event_scalar_names, term, key);
+                }
+                CValue::Pointer(pointer) => {
+                    Self::add_read_event_name(
+                        &mut self.read_event_pointer_names,
+                        pointer.pointer(),
+                        key,
+                    );
+                }
+                _ => {}
+            }
+            count += 1;
+        }
+        if count == 0 {
+            self.read_event_counts.remove(&index);
+        } else {
+            self.read_event_counts.insert(index, count);
+        }
+    }
+
+    fn read_event_values(&self, index: usize) -> impl Iterator<Item = &CValue> {
+        (0..self.read_event_counts.get(&index).copied().unwrap_or(0)).map(move |event| {
+            self.read_event_results
+                .get(&(index, event))
+                .expect("recorded read")
         })
+    }
+
+    fn read_event_naming_value(&self, value: &CValue) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let &(index, event) = self.read_event_names.get(value)?.last()?;
+        Some(self.read_event_region(index, event))
+    }
+
+    fn read_event_naming_scalar(
+        &self,
+        value: &crate::kernel::MachineTerm,
+    ) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let &(index, event) = self.read_event_scalar_names.get(value)?.last()?;
+        Some(self.read_event_region(index, event))
+    }
+
+    fn read_event_naming_pointer(&self, value: &crate::kernel::Pointer) -> Option<CodeRegionRef> {
+        crate::instrumentation::record_deterministic_work(1);
+        let &(index, event) = self.read_event_pointer_names.get(value)?.last()?;
+        Some(self.read_event_region(index, event))
+    }
+
+    fn region_result_value(&self, region: &CodeRegionRef) -> Result<CValue, String> {
+        if let CodeRegionRef::Path(steps) = region
+            && let Some((SourcePathStep::ReadEvent(event), parent)) = steps.split_last()
+        {
+            let index = match parent {
+                [SourcePathStep::Region(index)] => *index,
+                _ => self.result_region_index(&CodeRegionRef::Path(parent.to_vec()))?,
+            };
+            return self
+                .read_event_results
+                .get(&(index, *event))
+                .cloned()
+                .ok_or_else(|| {
+                    format!(
+                        "`{}.result` has no recorded volatile read result",
+                        diagnostics::describe_code_region_ref(region)
+                    )
+                });
+        }
+        let index = self.result_region_index(region)?;
+        if let Some(result) = self.call_results.get(&index) {
+            return Ok(result.clone());
+        }
+        if self.read_event_counts.get(&index) == Some(&1) {
+            return Ok(self
+                .read_event_results
+                .get(&(index, 0))
+                .expect("recorded read")
+                .clone());
+        }
+        if self
+            .read_event_counts
+            .get(&index)
+            .is_some_and(|count| *count > 1)
+        {
+            return Err("multiple volatile reads: select `.read_event(i).result`".into());
+        }
+        Err(format!(
+            "`{}.result` has no recorded non-void result at this region's exit",
+            diagnostics::describe_code_region_ref(region)
+        ))
     }
 
     fn record_call_result(&mut self, index: usize, value: Option<CValue>) {
@@ -4396,6 +4577,7 @@ impl RecordedSnapshots {
         }) = &selector
         {
             self.record_call_result(*index, None);
+            self.record_read_event_values(*index, std::iter::empty());
         }
 
         if let Some(memory) = prior
@@ -4475,7 +4657,21 @@ impl RecordedSnapshots {
         for selector in changed {
             match (self.get(&selector), other.get(&selector)) {
                 (Some(left), Some(right)) if left == right => {
-                    common.insert(selector, left.clone());
+                    common.insert(selector.clone(), left.clone());
+                    if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+                        region: CodeRegionRef::Region(index),
+                        kind: ProgramPointKind::Exit,
+                    }) = selector
+                    {
+                        if self
+                            .read_event_values(index)
+                            .eq(other.read_event_values(index))
+                        {
+                            common.record_read_event_values(index, self.read_event_values(index));
+                        } else {
+                            common.record_read_event_values(index, std::iter::empty());
+                        }
+                    }
                 }
                 _ => {
                     common.remove(&selector);
@@ -4579,6 +4775,13 @@ impl RecordedSnapshots {
             let mut state = state.clone();
             if keep(selector, &mut state) {
                 retained.insert(selector.clone(), state);
+                if let SnapshotSelector::ProgramPoint(ProgramPointRef {
+                    region: CodeRegionRef::Region(index),
+                    kind: ProgramPointKind::Exit,
+                }) = selector
+                {
+                    retained.record_read_event_values(*index, self.read_event_values(*index));
+                }
             }
         }
         *self = retained;
@@ -6756,6 +6959,8 @@ pub enum SourcePathStep {
     /// The statement's `j`th own region with an explicit scalar memory load,
     /// in executable order; a chain's end.
     Read(usize),
+    /// One completed volatile read within an atomic region; only `.result`.
+    ReadEvent(usize),
 }
 
 impl CodeRegionRef {

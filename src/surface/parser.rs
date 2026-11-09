@@ -8882,19 +8882,46 @@ impl Parser {
         index: Option<ContractExpression>,
     ) -> ContractExpression {
         // A slice built from its parts has those parts as its fields, by
-        // the library's definition: `slice::from_raw_parts(p, n).len()` is
-        // `n`. A subslice of a slice value is built this way.
-        if let ContractExpression::Call { name, arguments } = &slice
-            && is_slice_from_raw_parts(name)
-            && let [pointer, count] = arguments.as_slice()
-        {
-            return match (length, index) {
-                (true, _) => count.clone(),
-                (false, Some(index)) => {
-                    ContractExpression::Index(Box::new(pointer.clone()), Box::new(index))
+        // the library's definition: `slice::from_raw_parts(p, n).len()` and
+        // `Slice::Slice(p, n).len()` are `n`. A subslice is built this way,
+        // so `bytes[k..].len()` needs no unfold.
+        let parts = match &slice {
+            ContractExpression::Call { name, arguments } if is_slice_from_raw_parts(name) => {
+                Some(arguments.as_slice())
+            }
+            ContractExpression::AlgebraicConstructor {
+                algebraic_type,
+                variant,
+                arguments,
+            } if algebraic_type.name() == "Slice" && variant == "Slice" => {
+                Some(arguments.as_slice())
+            }
+            _ => None,
+        };
+        if let Some([pointer, count]) = parts {
+            if length {
+                return count.clone();
+            }
+            match index {
+                None => return pointer.clone(),
+                // A read through a constructed slice, such as a subslice,
+                // keeps its spelling `bytes[1..3][1]`; it reads through
+                // `slice::as_ptr` below.
+                Some(index)
+                    if !matches!(slice, ContractExpression::AlgebraicConstructor { .. }) =>
+                {
+                    return ContractExpression::Index(Box::new(pointer.clone()), Box::new(index));
                 }
-                (false, None) => pointer.clone(),
-            };
+                Some(index) => {
+                    return ContractExpression::Index(
+                        Box::new(ContractExpression::Call {
+                            name: "click::rust::slice::as_ptr".to_string(),
+                            arguments: vec![slice],
+                        }),
+                        Box::new(index),
+                    );
+                }
+            }
         }
         // A pointer is not a `match` result the kernel lowers as a value;
         // the library function names it, at the slice's element type, so an
@@ -12318,6 +12345,14 @@ impl Parser {
                 }
             }
         }
+        if self.chained_region_follows(&["read_event"]) {
+            self.expect(Token::Dot)?;
+            self.expect_ident("read_event")?;
+            self.expect(Token::LParen)?;
+            let event = self.expect_index("read event index")?;
+            self.expect(Token::RParen)?;
+            steps.push(SourcePathStep::ReadEvent(event));
+        }
         if matches!(steps.as_slice(), [SourcePathStep::Loop(_)]) {
             return Ok(CodeRegionRef::Loop(match steps[0] {
                 SourcePathStep::Loop(index) => index,
@@ -12350,6 +12385,9 @@ impl Parser {
                 self.expect(Token::LParen)?;
                 let index = self.expect_index("region index")?;
                 self.expect(Token::RParen)?;
+                if self.chained_region_follows(&["read_event"]) {
+                    return self.parse_source_path(vec![SourcePathStep::Region(index)]);
+                }
                 Ok(CodeRegionRef::Region(index))
             }
             Some(Token::Ident(kind)) if kind == "statement" && self.peek() == Some(&Token::LParen) => {

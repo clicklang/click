@@ -2546,6 +2546,7 @@ mod step_shape_scaling_tests;
 mod surface_syntax;
 mod tactic_call_syntax;
 mod tactic_tests;
+mod width_uniformity;
 
 #[test]
 fn integer_resource_fields_enforce_types_facts_and_snapshots() {

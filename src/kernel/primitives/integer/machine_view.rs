@@ -49,6 +49,7 @@ pub(crate) fn shared_machine_syntax_variables(
                 }
                 KernelTermNode::MachineLiteral(_)
                 | KernelTermNode::IntegerToMachine { .. }
+                | KernelTermNode::Legacy(_)
                 | KernelTermNode::MemoryLoad { .. } => Default::default(),
                 KernelTermNode::MachineUnary { operand, .. }
                 | KernelTermNode::MachineCast { operand, .. } => {
@@ -107,7 +108,12 @@ pub(crate) fn shared_machine_conversion_leaves(
     shared_machine_selected_leaves(
         root,
         &SHARED_MACHINE_CONVERSIONS,
-        |node| matches!(node, KernelTermNode::IntegerToMachine { .. }),
+        |node| {
+            matches!(
+                node,
+                KernelTermNode::IntegerToMachine { .. } | KernelTermNode::Legacy(_)
+            )
+        },
         visit,
     )
 }
@@ -458,6 +464,12 @@ impl SharedMachineIntegerTerm {
 impl<'a> MachineOperandView<'a> {
     /// Inspect a read without rebuilding its address or surrounding arithmetic.
     pub(crate) fn read(self) -> Option<(&'a SharedCMemory, &'a Pointer, LoadKind)> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).read();
+        }
+
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MemoryLoad {
@@ -537,6 +549,12 @@ impl<'a> MachineOperandView<'a> {
         MachineIntegerType,
         Self,
     )> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).cast();
+        }
+
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineCast {
@@ -556,6 +574,12 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn variable(self) -> Option<&'a Variable> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).variable();
+        }
+
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::Variable(variable) => Some(variable),
@@ -567,6 +591,12 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn binary(self) -> Option<(MachineIntegerType, MachineBinaryOp, [Self; 2])> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).binary();
+        }
+
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineBinary {
@@ -591,6 +621,12 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn unary(self) -> Option<(MachineIntegerType, MachineUnaryOp, Self)> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).unary();
+        }
+
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineUnary {
@@ -654,6 +690,12 @@ impl<'a> MachineOperandView<'a> {
 
     /// Literal payload only, without descending through an operation.
     pub(crate) fn literal(self) -> Option<MachineTerm> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).literal();
+        }
+
         match self {
             Self::Shared(term) => match term.node() {
                 KernelTermNode::MachineLiteral(value) => {
@@ -718,6 +760,12 @@ impl<'a> MachineOperandView<'a> {
     }
 
     pub(crate) fn root_width(self) -> Option<CarrierWidth> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).root_width();
+        }
+
         match self {
             Self::Legacy(value) => crate::kernel::root_width(value),
             Self::Shared(term) => match term.node() {
@@ -796,6 +844,12 @@ impl<'a> MachineOperandView<'a> {
     /// lend their retained native leaf; compatibility variables cost O(1).
     /// Explicit shared operators are never recursively resolved here.
     pub(crate) fn read_source(self) -> Option<std::borrow::Cow<'a, MachineTerm>> {
+        if let Self::Shared(root) = self
+            && let Some(value) = root.machine_conversion_leaf()
+        {
+            return Self::Legacy(value).read_source();
+        }
+
         match self {
             Self::Legacy(value) => Some(std::borrow::Cow::Borrowed(value)),
             Self::Shared(term) => match term.node() {

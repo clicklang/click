@@ -1741,9 +1741,9 @@ The contract, for `buffer`, `size`, and the arguments `a0`, `a1`, ...:
 
 A proof that names these functions imports `click::format`. The theorems
 `format::decimal_length_n` (for 1 to 10 digits), `format::pow10_e`, and
-`format::decimal_digit_of_length` evaluate them; the last needs `k < n` and its
-power `format::pow10(n - 1u64 - k)` stated nonzero, which `format::pow10_e`
-gives for known `n` and `k`
+`format::decimal_digit_of_length` evaluate them; the last needs `k < n`, and
+`format::pow10_e` gives its power `format::pow10(n - 1u64 - k)` for known `n`
+and `k`
 (`mdtests/snprintf_with_a_literal_format_states_each_character.md`,
 `mdtests/snprintf_counts_the_characters_that_do_not_fit.md`,
 `mdtests/snprintf_copies_a_c_string_the_caller_views.md`,

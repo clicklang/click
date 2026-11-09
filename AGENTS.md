@@ -37,7 +37,10 @@ For prose-only changes, use `scripts/check.sh --docs-only`.
 Preserve the gate's ten-minute budget. Keep slow audits and mutations in nightly
 and add tests for distinct behavior, not duplicate coverage. For expected timings
 and cache-state comparisons, use the
-[gate timing baselines](docs/internals/testing.md#gate-timing-baselines). Do not run the
+[gate timing baselines](docs/internals/testing.md#gate-timing-baselines). Before changing
+compiler flags, build profiles, or runners to speed up the gate, read
+[what has been tried](docs/internals/testing.md#speeding-up-the-gate-what-has-been-tried);
+prefer test-level work. Do not run the
 nightly suite (`scripts/check.sh --nightly`, `CLICK_NIGHTLY`, or
 `--run-ignored`) before a PR: it takes hours, and the nightly workflow runs it.
 At most run the few nightly tests or fixtures the change plausibly affects,

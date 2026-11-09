@@ -2553,15 +2553,28 @@ impl Printer<'_> {
                         .text,
                     );
                 }
+                // A subslice the kernel recorded where it was constructed,
+                // whose bounds were owed there, is spelled as written.
                 if value.algebraic_type.name == "Slice"
                     && variant == "Slice"
+                    && crate::surface::diagnostics::rust_spelling()
+                    && crate::kernel::is_required_construction(value)
                     && let [pointer, length] = spelled_fields.as_slice()
+                    && let Some(subslice) =
+                        crate::surface::diagnostics::subslice_spelling(pointer, length)
                 {
-                    return Some(atom(crate::surface::diagnostics::slice_spelling(
-                        pointer, length,
-                    )));
+                    return Some(atom(subslice));
                 }
-                let name = format!("{}::{variant}", value.algebraic_type.name);
+                let type_name = match value.algebraic_type.arguments.as_slice() {
+                    [crate::kernel::AlgebraicValueType::C(element)]
+                        if value.algebraic_type.name == "Slice" =>
+                    {
+                        crate::surface::diagnostics::slice_type_spelling(element)
+                    }
+                    _ => None,
+                }
+                .unwrap_or_else(|| value.algebraic_type.name.clone());
+                let name = format!("{type_name}::{variant}");
                 Some(atom(if spelled_fields.is_empty() {
                     name
                 } else {

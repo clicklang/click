@@ -4296,3 +4296,62 @@ fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
         }
     }
 }
+
+#[test]
+fn specification_volatile_reads_do_not_create_execution_events() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let pointer = Pointer {
+        block: "cell".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let initial = CState::new()
+        .with_resource_context(own_memory_context(pointer.clone(), 0, 1))
+        .with_memory(
+            CMemory::new()
+                .with_block("cell", 4)
+                .store(pointer.clone(), int32(7)),
+        );
+    let function = c_function(
+        CType::Int32,
+        "f",
+        vec![
+            c_parameter("value", CType::Int32).with_volatile(true),
+            c_parameter("p", CType::Int32Pointer).with_pointee_volatile(true),
+        ],
+        c_return(c_variable("value")),
+    );
+    let state = bind_c_function_arguments(
+        &initial,
+        &function,
+        &[
+            int32(7),
+            CValue::typed_pointer(pointer, CType::Int32Pointer),
+        ],
+    )
+    .unwrap();
+    let _specification = crate::kernel::eval::SpecificationReadScope::enter();
+    for expression in [
+        c_variable("value"),
+        c_typed_load(c_variable("p"), CType::Int32),
+    ] {
+        let paths = evaluate_c_expression_paths(
+            &state,
+            &expression,
+            &PureFactContext::new(),
+            &mut ExecutionBudget::beside_live_state(),
+        )
+        .expect("a specification must not allocate an execution event");
+        assert_eq!(paths.len(), 1);
+        assert!(
+            matches!(paths[0].outcome, CExpressionOutcome::Value(_)),
+            "{expression:?}: {:?}",
+            paths[0].outcome
+        );
+        assert!(
+            paths[0]
+                .facts
+                .iter()
+                .all(|fact| fact.volatile_read_result().is_none())
+        );
+    }
+}
