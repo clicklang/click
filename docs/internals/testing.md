@@ -1427,6 +1427,36 @@ are checked in, so the gate loads them offline. The nightly
 and extraction. After changing a source, run `click import lock` on its
 directory with its toolchain.
 
+## Width-uniformity fixture
+
+`src/surface/tests/width_uniformity.rs` states each machine-integer lemma
+family of `library/integer.click` (comparison bridges, order laws, the
+range, in-range sum, difference and product identities, increment and
+predecessor forms, definedness forms, the round trip) at every format in
+`machine_integer::FORMATS` and proves it by the omitted proof, with no
+`import click::integer`, so no library lemma is in scope. It is the
+surface counterpart of the kernel's per-format matrix
+(`src/kernel/machine_integer/matrix_tests.rs`), and it replaces a generic
+`T: intn` library mechanism (maintainer, 2026-11-09). Statements are honest
+at each format: in-range identities take Integer-range premises, never
+`defined`; arithmetic is written `let r: T = a + b;`, the native operator
+at `T` (inside `to_integer(...)` an 8- or 16-bit sum is C's promoted `int32`
+sum); `defined(...)` families apply only where
+`representation::files_definedness` holds (`int32`, `int64`).
+
+Each family/format pair is proved, excluded with a reason (`Exclusion`), or
+a gap (`Gap`) with its recorded refusal. The gate runs
+`every_format_is_tested_and_every_pair_is_accounted_for`, which fails on a
+format with no test or a gap listed where its family is excluded, and
+`width_family_representatives_close_at_every_format`, which proves the
+`<=` bridge and the range at all ten formats in about 0.4s, most of it the
+first verification's library setup. The per-format
+`width_families_close_at_*` tests (0.4s to 1.3s each) and
+`width_family_gaps_are_still_refused` (about 2s) are nightly. Closing a gap
+fails the nightly test until the gap is removed from its family; the open
+gaps are listed in `roadmap/standard-library.md` ("Width-uniformity
+gaps").
+
 ## Example project tests
 
 Example projects live under `examples/`. The integration test in
