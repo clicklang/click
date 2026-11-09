@@ -16,7 +16,7 @@ This issue also tracks Integer-default specification arithmetic
 library lemmas survive. That work adds kernel rules; each one carries its
 own soundness argument and regressions.
 
-## Status (2026-11-06)
+## Status (2026-11-09)
 
 Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
 generic width-free names, step 6, and the generic `permutation::count` of
@@ -27,11 +27,11 @@ kernel standard theorems.
 
 Open:
 
-- Generic width-lemma families: each surviving family stated once over a
-  machine-integer format, with generic width-free names
-  (`integer::wrapping_add`), which needs generic theorems over a type
-  constrained to machine integers ([step 5](#delivery-order),
-  [One machine-integer design](#one-machine-integer-design)).
+- The width-uniformity gaps: family/format pairs the omitted proof does
+  not close ([below](#width-uniformity-gaps)). Decided 2026-11-09: no
+  generic `T: intn` library mechanism; the kernel rules are stated once
+  over a format and `src/surface/tests/width_uniformity.rs` guards width
+  uniformity ([One machine-integer design](#one-machine-integer-design)).
 - `size_t` byte counts for `allocation`, after a 64-bit heap-block extent
   in the kernel ([step 7](#delivery-order)).
 - Rust names for the lemmas a Rust proof applies
@@ -279,12 +279,10 @@ Each step is a separate PR that leaves every example verifying:
      `integer::int32_less_equal_transitive`. With every library module
      qualified, no library theorem is cited by a bare name without a
      selective import.
-   - Next: generic width-free names (`uint32_wrapping_add` becomes
-     `integer::wrapping_add`), one statement over a format parameter. This
-     needs generic theorems over a type constrained to machine integers,
-     machinery Click does not have yet
-     ([design/machine-integers.md](../design/machine-integers.md),
-     Library, option 1).
+   - Not taken (maintainer, 2026-11-09): generic width-free names
+     (`uint32_wrapping_add` becoming `integer::wrapping_add`). There is no
+     generic `T: intn` mechanism; the width-prefixed names stay
+     ([One machine-integer design](#one-machine-integer-design)).
 6. Done: document the primitives in the language reference, and describe
    the library per module in the reference. The language reference's
    "Verifier primitives" section states each primitive's declaration and
@@ -308,8 +306,10 @@ Each step is a separate PR that leaves every example verifying:
      symbolic `size_t` `malloc(n)` is refused, and a 64-bit size is accepted
      only when its value is concrete. Stating `allocation`'s byte count as
      `size_t` needs a 64-bit heap-block extent in the kernel first.
-   - Open: the width-lemma families, as one statement over a format
-     ([below](#one-machine-integer-design)).
+   - Done, by decision (maintainer, 2026-11-09): the width-lemma
+     families are not restated over a format. The width-uniformity fixture
+     checks each family at every format; its gaps stay open
+     ([below](#width-uniformity-gaps)).
 
 ## Design
 
@@ -339,6 +339,13 @@ Each step is a separate PR that leaves every example verifying:
 - Each width-indexed lemma family is either complete over the supported
   widths (`int8` through `uint64`) or replaced by one generic statement.
   A checked list of families and widths keeps each family complete.
+  Resolved 2026-11-09 (maintainer): neither. The library lemmas stay as
+  they are for existing proofs (deleting unused ones is deferred, not
+  decided); what is kept complete is the kernel's reach. The checked list
+  is `FAMILIES` in `src/surface/tests/width_uniformity.rs`: each family's
+  statement at every format in `machine_integer::FORMATS`, proved by the
+  omitted proof with no library import, or excluded with a reason, or a
+  listed gap ([below](#width-uniformity-gaps)).
 - Container and array predicates are generic over the element type where
   the kernel supports it. `permutation::count` and
   `permutation::permutation` become generic if the kernel's generic folds
@@ -436,9 +443,8 @@ Still open from the flip:
   full solver calls. The profile budget test is retuned to that cost.
 - Most of the width lemmas below are now bridges nothing needs.
 - The library's respelled lemmas still state C results
-  (`to_integer(value + 1)`); restating the surviving families over Integer
-  and giving them generic names in the merged `click::integer` module are
-  later work.
+  (`to_integer(value + 1)`). Restating them over a format with generic
+  names is not planned (maintainer, 2026-11-09).
 
 Sequencing with the library: most of the width lemmas exist only to
 bridge machine arithmetic, so once the default flips they are deleted rather
@@ -459,11 +465,14 @@ term and condition family, one conversion table, and rules stated once over a
 format. It supersedes the 2026-10-16 wontfix rulings in
 [design/typed-indices.md](../design/typed-indices.md#rulings).
 
-It decides the width-lemma families here: a surviving family is stated once
-over a format, not completed per width. So the consistency rule "each
-width-indexed lemma family is either complete over the supported widths or
-replaced by one generic statement" resolves to the generic statement, and the
-merge into `integer` with its rename follows its Stage 1.
+It decided the width-lemma families here: a surviving family is stated once
+over a format, not completed per width, and the merge into `integer` with
+its rename followed its Stage 1. Revised by the maintainer on 2026-11-09:
+there is no generic `T: intn` library mechanism. The kernel rules are
+stated once over a format (the Stage 1 matrix), the per-width library
+lemmas remain for existing proofs, and the width-uniformity fixture
+(`src/surface/tests/width_uniformity.rs`) checks the families at every
+format at the surface ([gaps](#width-uniformity-gaps)).
 
 Progress: Stage 0 is done (2026-10-23). A narrow value's word is the
 canonical carrier of its format, checked in debug builds, and `auto` and
@@ -552,10 +561,78 @@ lemmas that are about to be removed. The archived Charon-trial sidecars under
 Done when the lemmas a Rust example applies have Rust spellings and a Rust
 fixture applies them by those names.
 
+## Width-uniformity gaps
+
+`src/surface/tests/width_uniformity.rs` states 39 families at the ten
+formats of `machine_integer::FORMATS` (`int8` to `uint128`). The omitted
+proof closes 215 statements; 69 are gaps, open here, and the nightly
+`width_family_gaps_are_still_refused` checks each is still refused with
+its recorded diagnostic. Division and remainder by a symbolic divisor have
+no kernel rule (they stay kernel standard theorems, maintainer decision)
+and are not families there; neither are the byte-packing laws
+(`uint32_pack_uint16_*`, `uint32_unpack_uint16_*`, `uint64_*_uint16_*`,
+`uint32_from_le_bytes`), which state a field layout of particular widths.
+No gap is a kernel-rule change made here; each needs a decision.
+
+- **Narrow native comparison** (`int8`, `uint8`, `int16`, `uint16`: the
+  increment, predecessor and positive-difference families, 22 pairs).
+  `let n: int8 = v + 1; ensures to_integer(n) <= to_integer(u);` from
+  `v < u` closes at 32 and 64 bits and not at 8 or 16. Trace: the goal is
+  lowered as the native narrow comparison `int8 <=(v + 1i8, u)` (rule K8),
+  and `solve` tries only `normalize` and `assumption` on it; at 32 and 64
+  bits a comparison with an operation side keeps its Integer reading
+  (`condition_for_operand_views`, "shared arithmetic stays in exact
+  observations"), which `solve` plans through `integer_operation_identity`.
+  Proposed fix: give K8's narrow comparison with an operation side the
+  same Integer reading, or let `solve`'s identity planner read a native
+  narrow comparison through it.
+- **`<=` and `!=` give `<`** (every format but `int32`, 9 pairs).
+  `less_than_from_not_equal` is a node of the `signed_int32` certificate
+  only; the Integer certificate has no `!=` step, so the law fails at
+  `int64` and over plain `Integer` too. Proposed fix: one Integer
+  certificate node, which `solve` plans at every format.
+- **128-bit order certificate** (`int128`, `uint128`: transitivity and
+  `<` gives `<=`, 12 pairs). `solve`'s Integer certificate fails to lower
+  its addition result ("type mismatch"); the certificate `solve` builds at
+  `int64`, retyped to `int128`, verifies. Proposed fix: spell 128-bit
+  observations in the candidate as the 64-bit path does.
+- **128-bit literal comparison** (`int128`, `uint128`:
+  `positive_is_nonnegative`, 2 pairs). `0 < v` types the literal `int32`
+  and is refused ("cannot compare `int32` and `int128`"); at 64 bits the
+  literal takes the operand's reading. `0 < to_integer(v)` lowers.
+  Proposed fix: give a bare literal against a 128-bit value the Integer
+  reading the other formats give it.
+- **Product identity** (`multiply_to_integer` at the eight formats with
+  operations, `defined_multiply_to_integer` at `int32` and `int64`, 10
+  pairs). `solve` plans in-range identities for `+` and `-` only, and does
+  not derive `0 <= to_integer(a) * to_integer(b)`; the kernel's
+  `integer_operation_identity` accepts the product with explicit
+  `integer_product_bounds` premises. Proposed fix: plan the product's
+  bounds and identity in `solve`.
+- **Round trip** (all ten formats, 10 pairs). `to_T(z)` lowers to an
+  opaque bounded operation no rule relates to `z`; the library's eight
+  `to_*_round_trip` laws are kernel standard theorems. Proposed fix: a
+  conversion rule reading `to_integer(to_T(z))` as `z` under its range
+  obligation, or keep the axioms.
+- **Wrapping difference order** (`difference_decreases_after_increment`
+  at `uint8` to `uint64`, 4 pairs). The library's `uint32` proof is about
+  120 lines of modular reasoning `solve` does not plan.
+
+Excluded pairs are statements that do not apply: an operation at 128 bits
+(no operator node), `defined(...)` outside `int32` and `int64` (C has no
+undefined arithmetic there), a signed-only law at an unsigned format and
+an unsigned-only law at a signed one, where each is false.
+
 ## Intended regression
 
 - A fixture that applies the same comparison and `to_integer` lemma family
-  at every supported width, so a missing width fails the gate.
+  at every supported width, so a missing width fails the gate. Done:
+  `width_family_representatives_close_at_every_format` proves the
+  `<=`-to-`to_integer` bridge and the range at every format in the gate,
+  `every_format_is_tested_and_every_pair_is_accounted_for` fails on a
+  format with no test or a family/format pair with no verdict, and the
+  nightly `width_families_close_at_*` tests prove every family
+  (`src/surface/tests/width_uniformity.rs`).
 - `mdtests/stdlib_list*.md`-style positive and negative clients for a
   generic `permutation` over a non-`int32` element type, such as a `uint8`
   byte buffer. Done for the generic count:
@@ -585,10 +662,14 @@ fixture applies them by those names.
   shrunk accordingly.
 - The checked list of width-lemma families has no gaps, and the decision on
   each family follows the Integer-default arithmetic decision described
-  above.
-- If [design/machine-integers.md](../design/machine-integers.md) is
+  above. The list exists (`FAMILIES` in
+  `src/surface/tests/width_uniformity.rs`); its gaps are open
+  ([Width-uniformity gaps](#width-uniformity-gaps)).
+- ~~If [design/machine-integers.md](../design/machine-integers.md) is
   accepted, each surviving width-lemma family is one statement over a
-  machine-integer format.
+  machine-integer format.~~ Withdrawn (maintainer, 2026-11-09): no generic
+  mechanism; the kernel rules are stated once over a format and the
+  fixture guards width uniformity.
 - `count` and `permutation` are generic, or their restriction is documented
   as a kernel limit.
 - `allocation` and other library sizes use `size_t`.
