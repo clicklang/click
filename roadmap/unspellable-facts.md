@@ -135,6 +135,24 @@ The last dependency probe had no loads and still exported the index.
 Temporary probes are not retained as tests requiring undesirable behavior;
 each migration must replace its reproduction with a zero-export regression.
 
+#### Opaque-replacement migration
+
+The general and exact-equality walkers now retain an opaque native replacement
+under shared arithmetic, including range endpoints. Variable, read and conversion
+leaf callbacks use the same exact native-leaf boundary. An unchanged retained
+leaf keeps its identity, so an absent source does not manufacture a rewrite.
+Cold DAG regressions cover 16, 64 and 256 shared operators in both rewrite routes,
+with zero exports and near-linear deterministic work; parity controls cover
+whole-expression replacement, missing sources and both endpoint formats.
+
+R1/R2 are **partly closed**, not removed from the inventory. A native **source**
+containing opaque syntax still uses the existing native matching boundary when
+the goal contains retained conversion/opaque leaves. Descending past that
+boundary would miss a whole compound-source match; a regression preserves its
+existing result. Migrating that source matcher is distinct from retaining the
+replacement, and remains necessary before removing the fallback. R3–R7 are
+unchanged by this increment.
+
 #### Classified boundaries and retained coverage
 
 - `variable_collection::visit_machine_carrier_leaves`, ordinary shared Integer
@@ -179,11 +197,11 @@ The audit reran the existing shared rewrite, source, collector, atom, read-evide
 and registry controls: 59 syntax/rewrite controls and 13 registry/dependency
 controls passed. This scoped evidence does not close the reproduced gaps above.
 
-**Delivery order:** retain opaque replacements in R1/R2; close mixed operation
+**Delivery order:** finish opaque-source matching in R1/R2; close mixed operation
 construction R3; migrate modular rewrite projection R4; migrate address walkers
 R7 and address reconstruction R5; finish mixed read-evidence matching R6. Keep
-one coherent PR open at a time. R1/R2 should reuse the exact native-leaf boundary
-introduced for tagged addresses, rather than redesign opaque term families.
+one coherent PR open at a time. The replacement migration reuses the exact native-leaf boundary introduced for
+tagged addresses; do not redesign opaque term families to finish source matching.
 
 ### 2. Finish expression producers
 
@@ -289,7 +307,7 @@ nesting depth; cached answers retain their source evidence. Multi-size growing
 DAG tests cover repeated misses and reuse of checked prefixes.
 
 The completed checker audit above now supplies step 1's concrete R1–R7 closure
-list. Start with opaque replacement handling in R1/R2, then follow its delivery
+list. Finish the remaining opaque-source boundary in R1/R2, then follow its delivery
 order before proceeding through steps 2–4. Do not resume the
 census backlog as the default next task.
 
