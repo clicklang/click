@@ -99,8 +99,8 @@ pub(crate) fn operation_word(
 }
 
 /// Construct an observation while retaining arithmetic operands already stored
-/// in the shared arena. Opaque legacy operands keep their existing representation;
-/// this adapter changes neither conversion rules nor the operation's spelling.
+/// in the shared arena. A native operand beside a shared one becomes an exact
+/// retained leaf; neither conversion rules nor the operation's spelling change.
 pub(crate) fn operation_observation(
     ty: MachineIntegerType,
     operation: Operation,
@@ -109,8 +109,13 @@ pub(crate) fn operation_observation(
 ) -> Option<crate::kernel::IntegerTerm> {
     use crate::kernel::{IntegerTerm, KernelTerm, KernelTermImport, SharedMachineIntegerTerm};
     let format = operator_format(ty)?;
-    if let (Some(left), Some(right)) = (left.shared_operand(), right.shared_operand()) {
-        let operand = |term: &KernelTerm| {
+    if left.shared_operand().is_some() || right.shared_operand().is_some() {
+        let operand = |value: &SharedMachineIntegerTerm| {
+            let term = value.shared_operand().cloned().unwrap_or_else(|| {
+                // This branch receives an explicitly native operand. Retain
+                // opaque composites whole so their observation identity survives.
+                KernelTerm::retained_native_machine_operand(format, value.value())
+            });
             // operation_word uses the legacy word spelling for 32-bit literal
             // operands. Only the root literal needs adapting; no child is read.
             if word(ty) == Word::Bits32
@@ -479,4 +484,148 @@ pub(crate) fn narrow_cast_word(
             MachineTerm::constant(sign),
         ),
     })
+}
+
+#[cfg(test)]
+mod mixed_observation_tests {
+    use super::*;
+    use crate::kernel::*;
+
+    fn opaque() -> MachineTerm {
+        MachineTerm::If {
+            condition: ConditionTerm::Variable(Variable(1007000)).into(),
+            then_term: MachineTerm::Variable(Variable(1007001)).into(),
+            else_term: MachineTerm::Variable(Variable(1007002)).into(),
+        }
+    }
+
+    #[test]
+    fn mixed_operations_preserve_native_formats_and_operand_order_without_export() {
+        let _session = VerificationSession::enter();
+        use MachineIntegerType as T;
+        for ty in [
+            T::Int8,
+            T::UInt8,
+            T::Int16,
+            T::UInt16,
+            T::Int32,
+            T::UInt32,
+            T::Int64,
+            T::UInt64,
+        ] {
+            let native = opaque();
+            let legacy = SharedMachineIntegerTerm::intern(ty, native.clone());
+            assert!(legacy.shared_operand().is_none());
+            for source in [
+                MachineTerm::Constant {
+                    format: ty,
+                    bits: 3,
+                },
+                MachineTerm::Binary {
+                    format: ty,
+                    op: MachineBinaryOp::Add,
+                    left: MachineTerm::Variable(Variable(1007003)).into(),
+                    right: MachineTerm::Variable(Variable(1007004)).into(),
+                },
+            ] {
+                let shared = SharedMachineIntegerTerm::from_shared(
+                    ty,
+                    KernelTermImport::default()
+                        .machine_arithmetic(ty, &source)
+                        .unwrap(),
+                )
+                .unwrap();
+                for reverse in [false, true] {
+                    let (left, right, a, b) = if reverse {
+                        (&legacy, &shared, &native, &source)
+                    } else {
+                        (&shared, &legacy, &source, &native)
+                    };
+                    for op in Operation::ALL {
+                        let expected =
+                            operation_word(ty, op, a.clone().into(), b.clone().into()).unwrap();
+                        let exports = KernelTermExport::machine_export_count();
+                        let result = operation_observation(ty, op, left, right).unwrap();
+                        assert_eq!(KernelTermExport::machine_export_count(), exports);
+                        let IntegerTerm::Machine(result) = result else {
+                            panic!("observation")
+                        };
+                        assert!(result.shared_operand().is_some());
+                        assert_eq!(
+                            result.value(),
+                            &expected,
+                            "{ty:?}, {op:?}, reverse={reverse}"
+                        );
+                    }
+                }
+            }
+        }
+        for ty in [T::Int128, T::UInt128] {
+            let shared = SharedMachineIntegerTerm::from_shared(
+                ty,
+                KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007005)),
+            )
+            .unwrap();
+            let native = SharedMachineIntegerTerm::intern(ty, opaque());
+            let exports = KernelTermExport::machine_export_count();
+            for op in Operation::ALL {
+                assert!(operation_observation(ty, op, &shared, &native).is_none());
+                assert!(operation_observation(ty, op, &native, &shared).is_none());
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn mixed_operation_readings_still_require_each_exact_range_premise() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007010));
+        let shared = SharedMachineIntegerTerm::from_shared(
+            ty,
+            KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]),
+        )
+        .unwrap();
+        for native in [
+            opaque(),
+            MachineTerm::add(opaque(), MachineTerm::Variable(Variable(1007011))),
+        ] {
+            let legacy = SharedMachineIntegerTerm::intern(ty, native);
+            let exact = Operation::Add.exact(
+                IntegerTerm::Machine(shared.clone()),
+                IntegerTerm::Machine(legacy),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let (observed, bounds) =
+                super::super::identity::machine_operation_of_integer_value(&exact, ty).unwrap();
+            assert_eq!(bounds.len(), 2);
+            let (format, reading) = super::super::identity::mathematical(&observed).unwrap();
+            assert_eq!(format, ty);
+            assert!(super::super::identity::same_exact_value(&reading, &exact));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_less_than(exact, IntegerTerm::constant_i64(0)),
+                true,
+            );
+            let premises: Vec<_> = bounds
+                .iter()
+                .map(|b| b.stating_facts()[0].clone())
+                .collect();
+            let missing = crate::kernel::proof::ProofFacts::default();
+            let lower = missing.clone().with_fact(premises[0].clone());
+            let upper = missing.clone().with_fact(premises[1].clone());
+            let full = lower.clone().with_fact(premises[1].clone());
+            let exports = KernelTermExport::machine_export_count();
+            assert!(missing.shared_operation_reading(&goal).is_none());
+            assert!(lower.shared_operation_reading(&goal).is_none());
+            assert!(upper.shared_operation_reading(&goal).is_none());
+            assert!(full.shared_operation_reading(&goal).is_some());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/machine_integer/representation.rs");
+    }
 }
