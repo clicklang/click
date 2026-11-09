@@ -3929,6 +3929,20 @@ fn expand_declared_resource_expression_children(
             );
             ContractExpression::Call { name, arguments }
         }
+        ContractExpression::MethodCall {
+            receiver,
+            method,
+            arguments,
+        } => {
+            let receiver = recurse(*receiver)?;
+            let arguments = arguments
+                .into_iter()
+                .map(recurse)
+                .collect::<Result<Vec<_>, _>>()?;
+            resource_definitions
+                .constructors
+                .resolve_method(receiver, &method, arguments)?
+        }
         expression => expression,
     })
 }

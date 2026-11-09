@@ -3025,6 +3025,16 @@ pub(crate) fn collect_current_contract_expression_variables(
             collect_current_contract_expression_variables(value, names);
             collect_current_contract_expression_variables(body, names);
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            collect_current_contract_expression_variables(receiver, names);
+            for argument in arguments {
+                collect_current_contract_expression_variables(argument, names);
+            }
+        }
         ContractExpression::Call { arguments, .. } => {
             for argument in arguments {
                 collect_current_contract_expression_variables(argument, names);
@@ -3126,6 +3136,17 @@ pub enum SurfaceTerm {
     AlgebraicConstructor {
         algebraic_type: AlgebraicTypeApplication,
         variant: String,
+        arguments: Vec<ContractExpression>,
+    },
+    /// A method call on a value of a Click type, `s.len()`, as written: its
+    /// meaning comes from the receiver's type, so declaration expansion
+    /// resolves it once types are known
+    /// (`design/typed-method-resolution.md`). An index `s[i]` and a range
+    /// index `s[a..b]` on such a receiver are the methods `[]` and `[..]`,
+    /// `[a..]`, `[..b]` or `[a..b]`, with the written bounds as arguments.
+    MethodCall {
+        receiver: Box<ContractExpression>,
+        method: String,
         arguments: Vec<ContractExpression>,
     },
     /// A Click-native binder whose value is not a C object or scalar.
@@ -7655,6 +7676,16 @@ fn contract_expression_reads_memory(
         ContractExpression::Let { value, body, .. } => {
             contract_expression_reads_memory(value, callees)
                 || contract_expression_reads_memory(body, callees)
+        }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            contract_expression_reads_memory(receiver, callees)
+                || arguments
+                    .iter()
+                    .any(|argument| contract_expression_reads_memory(argument, callees))
         }
         ContractExpression::Call { name, arguments } => {
             callees.push(name.clone());

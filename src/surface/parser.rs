@@ -8731,6 +8731,85 @@ impl Parser {
         self.tokens.get(at) == Some(&Token::LBracket)
     }
 
+    /// Whether `expression` is a value of a Click type whose methods the
+    /// parser cannot place, because its type is known only once types are
+    /// inferred: a binder, a pure function's result, a constructed value, a
+    /// method's result, or one of those at another point. A C object or a
+    /// resource instance is not: the parser resolves its fields.
+    fn is_click_valued_receiver(&self, expression: &ContractExpression) -> bool {
+        match expression {
+            ContractExpression::Binding(name) => {
+                !self.names.global_array_shapes.contains_key(name)
+                    && !self.names.resource_bindings.contains_key(name)
+            }
+            ContractExpression::AlgebraicVariable { .. }
+            | ContractExpression::AlgebraicConstructor { .. }
+            | ContractExpression::MethodCall { .. }
+            | ContractExpression::Call { .. } => true,
+            ContractExpression::Old(inner)
+            | ContractExpression::At {
+                expression: inner, ..
+            } => self.is_click_valued_receiver(inner),
+            _ => false,
+        }
+    }
+
+    /// `receiver[i]`, `receiver[a..b]`, `receiver[a..]`, `receiver[..b]` or
+    /// `receiver[..]` as the method `[]` or a range method, with the written
+    /// bounds as its arguments.
+    fn parse_method_index(
+        &mut self,
+        receiver: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let range = self.contract_bracket_is_range();
+        self.expect(Token::LBracket)?;
+        let method_call = |method: &str, arguments| ContractExpression::MethodCall {
+            receiver: Box::new(receiver),
+            method: method.to_string(),
+            arguments,
+        };
+        if !range {
+            let index = self.parse_place_index()?;
+            self.expect(Token::RBracket)?;
+            return Ok(method_call("[]", vec![index]));
+        }
+        let start = (self.peek() != Some(&Token::DotDot))
+            .then(|| self.parse_contract_expression())
+            .transpose()?;
+        self.expect(Token::DotDot)?;
+        let end = (self.peek() != Some(&Token::RBracket))
+            .then(|| self.parse_contract_expression())
+            .transpose()?;
+        self.expect(Token::RBracket)?;
+        Ok(match (start, end) {
+            (None, None) => method_call("[..]", vec![]),
+            (Some(start), None) => method_call("[a..]", vec![start]),
+            (None, Some(end)) => method_call("[..b]", vec![end]),
+            (Some(start), Some(end)) => method_call("[a..b]", vec![start, end]),
+        })
+    }
+
+    /// A method call's parenthesized arguments.
+    fn parse_method_arguments(&mut self) -> Result<Vec<ContractExpression>, ClickError> {
+        self.expect(Token::LParen)?;
+        let mut arguments = Vec::new();
+        if self.peek() != Some(&Token::RParen) {
+            loop {
+                arguments.push(self.parse_contract_expression()?);
+                match self.peek() {
+                    Some(Token::Comma) => self.position += 1,
+                    Some(Token::RParen) => break,
+                    Some(token) => {
+                        return Err(self.error(format!("expected `,` or `)`, got {token}")));
+                    }
+                    None => return Err(self.error("expected `,` or `)`, got end of input")),
+                }
+            }
+        }
+        self.expect(Token::RParen)?;
+        Ok(arguments)
+    }
+
     /// Whether `expression` is a slice value a Rust sidecar reads with
     /// Rust's slice methods: a call of a pure function whose result is a
     /// slice, or a `Slice` binder.
@@ -14559,6 +14638,11 @@ impl Parser {
                     self.expect(Token::RBracket)?;
                     expression = Self::slice_value_field(expression, false, Some(index));
                 }
+                // An index or range index on a value of a Click type is a
+                // method, resolved by the receiver's type.
+                Some(Token::LBracket) if self.is_click_valued_receiver(&expression) => {
+                    expression = self.parse_method_index(expression)?;
+                }
                 Some(Token::LBracket) => {
                     self.position += 1;
                     let index = self.parse_place_index()?;
@@ -14838,6 +14922,23 @@ impl Parser {
                         let length = method == "len";
                         self.position += 4;
                         expression = Self::slice_value_field(expression, length, None);
+                        continue;
+                    }
+                    // A method on a value of a Click type, resolved by the
+                    // receiver's type during declaration expansion.
+                    if self.peek() == Some(&Token::Dot)
+                        && self.is_click_valued_receiver(&expression)
+                        && matches!(self.tokens.get(self.position + 1), Some(Token::Ident(_)))
+                        && self.tokens.get(self.position + 2) == Some(&Token::LParen)
+                    {
+                        self.position += 1;
+                        let method = self.expect_ident("method name")?;
+                        let arguments = self.parse_method_arguments()?;
+                        expression = ContractExpression::MethodCall {
+                            receiver: Box::new(expression),
+                            method,
+                            arguments,
+                        };
                         continue;
                     }
                     if struct_array_element_width.is_some() {

@@ -194,9 +194,10 @@ not lower under arithmetic (`s.len() - 1u64`) or as a pointer. A subslice
 `.len()` and `.as_ptr()` of a slice built by `slice::from_raw_parts(p, n)`
 are `n` and `p` as soon as they are parsed. `subslice_len` lowers to the
 kernel's `SpecExpression::Requires`, so it owes `a <= b <= s.len()` as an
-evaluation condition, guarded like signed arithmetic, where Rust panics. Still
-open: slices bound by `match` arms or `let`, and the importer's slice locals
-and returns.
+evaluation condition, guarded like signed arithmetic, where Rust panics. A
+slice bound by a `match` arm or a `let` reads with the same methods, which
+are resolved by the receiver's type (`design/typed-method-resolution.md`).
+Still open: the importer's slice locals and returns.
 
 ## Importer
 

@@ -3120,6 +3120,16 @@ pub(super) fn click_function_applications(
                 expression(left, known_facts, applications);
                 expression(right, known_facts, applications);
             }
+            ContractExpression::MethodCall {
+                receiver,
+                arguments,
+                ..
+            } => {
+                expression(receiver, known_facts, applications);
+                for argument in arguments {
+                    expression(argument, known_facts, applications);
+                }
+            }
             ContractExpression::Call { name, arguments } => {
                 for argument in arguments {
                     expression(argument, known_facts, applications);

@@ -924,6 +924,16 @@ fn collect_contract_expression_binding_names(
             collect_contract_expression_binding_names(value, names);
             collect_contract_expression_binding_names(body, names);
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            collect_contract_expression_binding_names(receiver, names);
+            for argument in arguments {
+                collect_contract_expression_binding_names(argument, names);
+            }
+        }
         ContractExpression::Call { arguments, .. } => {
             for argument in arguments {
                 collect_contract_expression_binding_names(argument, names);
@@ -1891,6 +1901,29 @@ fn rewrite_contract_expression_exact(
                 value_changed || body_changed,
             )
         }
+        ContractExpression::MethodCall {
+            receiver,
+            method,
+            arguments,
+        } => {
+            let (receiver, mut changed) = unary(receiver);
+            let arguments = arguments
+                .iter()
+                .map(|argument| {
+                    let (argument, argument_changed) = unary(argument);
+                    changed |= argument_changed;
+                    argument
+                })
+                .collect();
+            (
+                ContractExpression::MethodCall {
+                    receiver: Box::new(receiver),
+                    method: method.clone(),
+                    arguments,
+                },
+                changed,
+            )
+        }
         ContractExpression::Call { name, arguments } => {
             let mut changed = false;
             let arguments = arguments
@@ -2773,6 +2806,16 @@ fn collect_contract_expression_referenced_names_one(
             names.remove(name);
             if previous {
                 names.insert(name.clone());
+            }
+        }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            collect_contract_expression_referenced_names(receiver, names);
+            for argument in arguments {
+                collect_contract_expression_referenced_names(argument, names);
             }
         }
         ContractExpression::Call { arguments, .. } => {
@@ -3842,6 +3885,18 @@ pub(in crate::surface) fn substitute_contract_expression_in(
                 body: Box::new(body),
             })
         }
+        ContractExpression::MethodCall {
+            receiver,
+            method,
+            arguments,
+        } => Ok(ContractExpression::MethodCall {
+            receiver: Box::new(substitute_contract_expression_in(receiver, substitutions)?),
+            method: method.clone(),
+            arguments: arguments
+                .iter()
+                .map(|argument| substitute_contract_expression_in(argument, substitutions))
+                .collect::<Result<Vec<_>, _>>()?,
+        }),
         ContractExpression::Call { name, arguments } => Ok(ContractExpression::Call {
             name: name.clone(),
             arguments: arguments
@@ -4404,6 +4459,7 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
         ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }
         | ContractExpression::Let { .. } => None,
+        ContractExpression::MethodCall { .. } => None,
         ContractExpression::Call { .. } => None,
     }
 }
@@ -4533,6 +4589,7 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
         ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }
         | ContractExpression::Let { .. } => None,
+        ContractExpression::MethodCall { .. } => None,
         ContractExpression::Call { .. } => None,
     }
 }

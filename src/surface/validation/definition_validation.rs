@@ -2658,6 +2658,24 @@ fn collect_resource_fact_reads_from_contract_expression(
             )?;
             Ok(())
         }
+        ContractExpression::MethodCall {
+            receiver,
+            arguments,
+            ..
+        } => {
+            for expression in std::iter::once(receiver.as_ref()).chain(arguments) {
+                collect_resource_fact_reads_from_contract_expression(
+                    expression,
+                    predicate_definitions,
+                    click_function_definitions,
+                    visited_predicates,
+                    visited_functions,
+                    reads,
+                    resource_name,
+                )?;
+            }
+            Ok(())
+        }
         ContractExpression::Call { name, arguments } => {
             for argument in arguments {
                 collect_resource_fact_reads_from_contract_expression(

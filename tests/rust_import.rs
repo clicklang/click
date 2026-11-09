@@ -6342,6 +6342,57 @@ fn rust_pure_function_slice_arguments_are_one_value() {
 /// read it, `s.len()`, `s[i]` and `s.as_ptr()`, a slice parameter takes it
 /// as one argument, and a failure prints it in those spellings.
 #[cfg(not(feature = "fast-gate"))]
+/// A method means what its receiver's type says, however the receiver was
+/// introduced: a slice bound by a `match` arm or a `let` reads with Rust's
+/// slice methods, resolved once its type is known
+/// (`design/typed-method-resolution.md`).
+#[test]
+fn rust_methods_resolve_by_the_receivers_type() {
+    let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = |claims: &str| {
+        format!(
+            "import click::rust::slice;\nverifying \"borrow.rs\";\n\
+             function half(bytes: &[u8]) -> &[u8] {{ slice::from_raw_parts(bytes, bytes.len() / 2u64) }}\n\
+             function some_half(bytes: &[u8]) -> Option<&[u8]> {{ Option::Some(half(bytes)) }}\n\
+             fn first(bytes: &[u8]) -> u8 {{\n    requires bytes.len() == 4u64;\n    views bytes[0..4];\n    ensures result == bytes[0];\n}} by {{\n    \
+             have half(bytes).len() == 2u64;\n    \
+             have some_half(bytes) == Option::Some(half(bytes)) by {{ unfold(some_half(bytes)); solve(); }}\n{claims}\n    \
+             step_until(function.exit);\n    solve();\n}}\n"
+        )
+    };
+    let accepted = sidecar(
+        "    have (match some_half(bytes) { Option::Some(s) => s.len(), Option::None => 0u64 }) == 2u64;\n    \
+         have (let s = half(bytes); s.len()) == 2u64;\n    \
+         have (let s = half(bytes); s[..1].len()) == 1u64;",
+    );
+    C0VerificationSession::new_program_prepared(&accepted, &prepared).unwrap();
+    for (claim, printed) in [
+        (
+            "have (match some_half(bytes) { Option::Some(s) => s.size(), Option::None => 0u64 }) == 2u64;",
+            "`Slice<uint8>` has no method `size`",
+        ),
+        (
+            "have (match some_half(bytes) { Option::Some(s) => s[1..].len(), Option::None => 0u64 }) == 1u64;",
+            "implies 1u64 <= s.len()",
+        ),
+        (
+            "have (match some_half(bytes) { Option::Some(s) => s[1], Option::None => 0u8 }) == 7u8;",
+            "Some(s) => old(s[1])",
+        ),
+    ] {
+        let error = C0VerificationSession::new_program_prepared(&sidecar(claim), &prepared)
+            .err()
+            .unwrap_or_else(|| panic!("`{claim}` must fail"))
+            .to_string();
+        assert!(
+            error.contains(printed),
+            "`{claim}` prints `{printed}`: {error}"
+        );
+    }
+}
+
 #[test]
 fn rust_slice_values_read_with_rust_methods() {
     let p = Project::new("pub fn first(bytes: &[u8]) -> u8 { bytes[0] }\n");

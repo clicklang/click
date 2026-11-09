@@ -2877,7 +2877,8 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
         | ContractExpression::At { .. }
         | ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }
-        | ContractExpression::Call { .. } => Err(ClickError::new(
+        | ContractExpression::Call { .. }
+        | ContractExpression::MethodCall { .. } => Err(ClickError::new(
             "declared resource arguments currently support current-state C expressions only",
         )),
         ContractExpression::Let { body, .. } => {
