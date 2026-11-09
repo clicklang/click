@@ -74,22 +74,24 @@ be treated as a current to-do list. The detailed evidence is preserved in
 
 Finish the checker consumers before enabling the remaining shared producers.
 The bounded caller audit below is complete as of 2026-11-09, at upstream
-`fe8c6d931` (PR #2500). Step 1 is **not closed**: seven route groups still have
-checker exports. Close these concrete routes before enabling more producers.
+`fe8c6d931` (PR #2500). R1/R2 are now closed; step 1 is **not closed**:
+five route groups (R3–R7) still have checker exports. Close these concrete
+routes before enabling more producers.
 A textual accessor occurrence alone is not evidence of a checker dependency.
 
 | Route/group | Evidence and required closure |
 | --- | --- |
 | Wide comparison dispatch — closed | `decision.rs` sends retained operands to tagged-address reasoning. Residual tag arithmetic stays shared, exact source premises and selected native read transport are preserved, and the dispatcher no longer exports shared operands. Fixed-size atoms and already-native comparisons retain their native rules. |
 | Memory-resolution bounds — closed | `recorded_less_equal_candidates` retains operand views and the order index retains original true signed `<`/`<=` source membership. Memory equality reads shared arithmetic and selected native read leaves without exporting endpoints; parity, withdrawal, direction and DAG scaling controls cover this boundary. |
-| Mixed operands and reconstruction — open | R1–R6 below identify live callers and reproductions; successful all-shared cases do not close their mixed/opaque fallback paths. |
+| Mixed operands and reconstruction — open | R1/R2 source and replacement matching is closed. R3–R6 below identify remaining live callers and reproductions; successful all-shared cases do not close their mixed/opaque fallback paths. |
 | Dependency and atom walkers — partly closed | Ordinary scalar carriers, selected atoms and shared memory dependencies retain their operands. Shared pointer-index payloads still reach native walkers through implicit `Deref`: R7. |
 | Output and dead helpers — classified | See the separate boundary inventory below. Native output construction, diagnostics and test references do not establish that a checker inspected a shared tree. |
 
 - [x] Close the memory-resolution endpoint export.
 - [x] Close the wide-comparison export after migrating its tagged-address consumer.
 - [x] Classify the remaining audit groups and record legitimate native/output boundaries.
-- [ ] Close R1–R7 with parity, refusal, no-export and deterministic scaling regressions.
+- [x] Close R1/R2 opaque source and replacement matching with retained operands.
+- [ ] Close R3–R7 with parity, refusal, no-export and deterministic scaling regressions.
 - [ ] Remove the obsolete checker adapters and retain no-export regressions.
 
 **Done when:** no checker exports a shared expression to a boxed tree to inspect
@@ -107,8 +109,8 @@ result already supports shared storage (notably pointer indices).
 
 | ID | Caller and boundary | Reproduction and required closure |
 | --- | --- | --- |
-| R1 | `proof/term_rewrite.rs`: `TermRewrite::integer` → `shared_machine_operand` → `.value()` fallback; `range_endpoint` has the same pattern. Fast checked substitution, also used by fold instantiation. | Replace a variable inside a shared sum by a native `MachineTerm::If`. The shared replacement importer declines and the entire sum is exported. Retain the exact opaque replacement under shared parents; preserve capture avoidance, carrier types, checked refusals and fold scope. |
-| R2 | `proof/equality_rewrite.rs`: `rewrite_with_admitted_equality_as_written` → `rewrite_integer_observation` → `shared::rewrite`; the range-endpoint closure repeats this boundary. Fast exact-equality substitution. | An admitted `x == (if b { 1 } else { 2 })` rewrites the Integer observation of shared `x + x`, but exports the source on shared-import failure. Keep the source shared through replacement construction; test an unavailable source, bound variables, read snapshots and both endpoint formats. |
+| R1 — closed | `proof/term_rewrite.rs`: `TermRewrite::integer` → `shared_machine_operand` → `.value()` fallback; `range_endpoint` has the same pattern. Fast checked substitution, also used by fold instantiation. | Replace a variable inside a shared sum by a native `MachineTerm::If`. The shared replacement importer declines and the entire sum is exported. Retain the exact opaque replacement under shared parents; preserve capture avoidance, carrier types, checked refusals and fold scope. |
+| R2 — closed | `proof/equality_rewrite.rs`: `rewrite_with_admitted_equality_as_written` → `rewrite_integer_observation` → `shared::rewrite`; the range-endpoint closure repeats this boundary. Fast exact-equality substitution. | An admitted `x == (if b { 1 } else { 2 })` rewrites the Integer observation of shared `x + x`, but exports the source on shared-import failure. Keep the source shared through replacement construction; test an unavailable source, bound variables, read snapshots and both endpoint formats. |
 | R3 | `machine_integer/representation.rs::operation_observation`, called by `identity::machine_operation_of_integer_value`, then `comparison_view_through_integer_operations` and checked consumers such as `ProofFacts::shared_operation_reading`. | One shared arithmetic operand and one native opaque operand miss the both-shared branch; `.value()` exports the shared operand. Retain mixed operands in the common operation node, preserving the existing format map and exact range obligations. All-native construction is a separate legitimate input boundary. |
 | R4 | `machine_integer/modular.rs::wrapped_equality_at`, called by `rewrite_with_admitted_equality` after the exact rewrite does not apply. Fast explicit rewrite consequence. | Project `to_integer(shared(x + x)) == 0` to its 32-bit word equality. The projection calls `machine.value()`. Its existing 64-node limit counts outer Integer syntax, not nodes inside a machine observation. Retain residue operands and their comparison, preserving width, polarity and the existing admission/refusal rule; do not increase the limit. |
 | R5 | `TermRewrite::offset` → `index_bits` → `structural_value`, then `scaled_int32_node`/`scale_int64`. Fast address reconstruction. | Rename `x` to `y` in an `Int32Scaled` offset containing shared `x + x`. Even a successful shared rewrite exports and reimports the result. The destination offset already stores `SharedMachineIntegerTerm`; retain it directly, preserving stride, signedness and the checked unsigned-index narrowing rule. |
@@ -135,7 +137,7 @@ The last dependency probe had no loads and still exported the index.
 Temporary probes are not retained as tests requiring undesirable behavior;
 each migration must replace its reproduction with a zero-export regression.
 
-#### Opaque-replacement migration
+#### Opaque-source and replacement migration
 
 The general and exact-equality walkers now retain an opaque native replacement
 under shared arithmetic, including range endpoints. Variable, read and conversion
@@ -145,13 +147,21 @@ Cold DAG regressions cover 16, 64 and 256 shared operators in both rewrite route
 with zero exports and near-linear deterministic work; parity controls cover
 whole-expression replacement, missing sources and both endpoint formats.
 
-R1/R2 are **partly closed**, not removed from the inventory. A native **source**
-containing opaque syntax still uses the existing native matching boundary when
-the goal contains retained conversion/opaque leaves. Descending past that
-boundary would miss a whole compound-source match; a regression preserves its
-existing result. Migrating that source matcher is distinct from retaining the
-replacement, and remains necessary before removing the fallback. R3–R7 are
-unchanged by this increment.
+R1/R2 are **closed**. `proof/machine_source_match.rs` builds query-local
+structural keys for the selected source and shared goal. Each shared node is
+visited once; parent keys use child IDs, while opaque leaves use the existing
+native equality rule. These keys never replace term identities or snapshot
+authority. Source imports are retained per carrier; native leaf hashing is
+charged, including its payload cost. Neither matching nor a miss exports the
+shared expression.
+
+Exact equality rewriting uses the same matcher for its existing canonical-read
+comparison. Its numeric address/mask comparison now uses operand views and keeps
+its existing operand-order rule. Controls cover changed snapshots, absent
+sources, native and shared source inputs, and the deliberate refusal of composite
+sources beneath C-item fold binders. Scaling grows both native source length and
+shared goal depth at 16, 64 and 256 nodes, for hits and misses in both routes.
+The original opaque-source fallback is removed; R3–R7 remain separate work.
 
 #### Classified boundaries and retained coverage
 
@@ -166,7 +176,7 @@ unchanged by this increment.
   observations as shared atoms; no new boxed checker dependency was found in
   these audited adapters.
 - Shared `IntegerTerm::RangeFold` bodies and endpoints retain their shared
-  walkers on the supported path. Opaque replacement failures belong to R1/R2,
+  walkers on the supported path. Opaque source and replacement handling is covered by the closed R1/R2 paths,
   not an independent unspecified “fold-output” task. `TermRewrite::bits` may
   materialize a replacement for an existing native `MachineTerm`/`CValue` output,
   including a native machine-fold body. That output-family migration belongs to
@@ -197,11 +207,11 @@ The audit reran the existing shared rewrite, source, collector, atom, read-evide
 and registry controls: 59 syntax/rewrite controls and 13 registry/dependency
 controls passed. This scoped evidence does not close the reproduced gaps above.
 
-**Delivery order:** finish opaque-source matching in R1/R2; close mixed operation
+**Delivery order:** close mixed operation
 construction R3; migrate modular rewrite projection R4; migrate address walkers
 R7 and address reconstruction R5; finish mixed read-evidence matching R6. Keep
-one coherent PR open at a time. The replacement migration reuses the exact native-leaf boundary introduced for
-tagged addresses; do not redesign opaque term families to finish source matching.
+one coherent PR open at a time. R1/R2 reuse the exact native-leaf boundary
+introduced for tagged addresses; no opaque term-family redesign was required.
 
 ### 2. Finish expression producers
 
@@ -307,8 +317,8 @@ nesting depth; cached answers retain their source evidence. Multi-size growing
 DAG tests cover repeated misses and reuse of checked prefixes.
 
 The completed checker audit above now supplies step 1's concrete R1–R7 closure
-list. Finish the remaining opaque-source boundary in R1/R2, then follow its delivery
-order before proceeding through steps 2–4. Do not resume the
+list. R1/R2 are closed; start with mixed operation construction R3, then follow
+its delivery order before proceeding through steps 2–4. Do not resume the
 census backlog as the default next task.
 
 ## Spellability follow-up — outside the split's finish line
