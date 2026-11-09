@@ -2947,13 +2947,7 @@ impl<'a> Proof<'a> {
         term: &crate::kernel::IntegerTerm,
         written: &[ContractExpression],
     ) -> Option<ContractExpression> {
-        // Only a widening of a narrow value is read through: the observation
-        // the planner reads a native narrow comparison by.
-        let read = term.value_read();
-        let reads_through = !std::ptr::eq(read, term)
-            && matches!(read, crate::kernel::IntegerTerm::Machine(narrow)
-                if narrow.ty().format().bits() < 32);
-        let mut through = None;
+        let mut observed = Vec::with_capacity(written.len());
         for expression in written {
             let probe = ClickProposition::Comparison {
                 left: expression.clone(),
@@ -2973,19 +2967,29 @@ impl<'a> Proof<'a> {
                     .into_iter()
                     .next()
                     .unwrap_or(lowered);
-            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(observed, _), true) =
-                lowered
+            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(value, _), true) = lowered
             else {
                 continue;
             };
-            if observed.as_ref() == term {
+            if value.as_ref() == term {
                 return Some(expression.clone());
             }
-            if reads_through && through.is_none() && observed.value_read() == read {
-                through = Some(expression.clone());
-            }
+            observed.push((expression, value));
         }
-        through
+        // Only on a miss, and only a widening of a narrow value, is read
+        // through: the observation the planner reads a native narrow
+        // comparison by.
+        let read = term.value_read();
+        if std::ptr::eq(read, term)
+            || !matches!(read, crate::kernel::IntegerTerm::Machine(narrow)
+                if narrow.ty().format().bits() < 32)
+        {
+            return None;
+        }
+        observed
+            .into_iter()
+            .find(|(_, value)| value.value_read() == read)
+            .map(|(expression, _)| expression.clone())
     }
 
     /// Spell the type range of each machine observation a `TypeRange` node
