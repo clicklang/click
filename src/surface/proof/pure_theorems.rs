@@ -336,6 +336,18 @@ impl PureTheoremContext {
                     .integer_values
                     .with_inserted(captured.clone(), value);
                 ContractExpression::Binding(captured)
+            } else if crate::surface::lowering::narrow_typed_arithmetic(click_type.as_ref(), &value)
+            {
+                // A narrow typed `let` names its native sum (G2), as the
+                // clauses read it; the bare value would be C's promoted one.
+                ContractExpression::Let {
+                    name: name.clone(),
+                    click_type: click_type.clone(),
+                    value: Box::new(value),
+                    body: Box::new(ContractExpression::CFragment(CExpression::Variable(
+                        name.clone(),
+                    ))),
+                }
             } else {
                 value
             };

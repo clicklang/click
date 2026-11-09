@@ -565,7 +565,7 @@ fixture applies them by those names.
 
 `src/surface/tests/width_uniformity.rs` states 39 families at the ten
 formats of `machine_integer::FORMATS` (`int8` to `uint128`). The omitted
-proof closes 215 statements; 69 are gaps, open here, and the nightly
+proof closes 251 statements; 33 are gaps, open here, and the nightly
 `width_family_gaps_are_still_refused` checks each is still refused with
 its recorded diagnostic. Division and remainder by a symbolic divisor have
 no kernel rule (they stay kernel standard theorems, maintainer decision)
@@ -574,34 +574,11 @@ and are not families there; neither are the byte-packing laws
 `uint32_from_le_bytes`), which state a field layout of particular widths.
 No gap is a kernel-rule change made here; each needs a decision.
 
-- **Narrow native comparison** (`int8`, `uint8`, `int16`, `uint16`: the
-  increment, predecessor and positive-difference families, 22 pairs).
-  `let n: int8 = v + 1; ensures to_integer(n) <= to_integer(u);` from
-  `v < u` closes at 32 and 64 bits and not at 8 or 16. Trace: the goal is
-  lowered as the native narrow comparison `int8 <=(v + 1i8, u)` (rule K8),
-  and `solve` tries only `normalize` and `assumption` on it; at 32 and 64
-  bits a comparison with an operation side keeps its Integer reading
-  (`condition_for_operand_views`, "shared arithmetic stays in exact
-  observations"), which `solve` plans through `integer_operation_identity`.
-  Proposed fix: give K8's narrow comparison with an operation side the
-  same Integer reading, or let `solve`'s identity planner read a native
-  narrow comparison through it.
 - **`<=` and `!=` give `<`** (every format but `int32`, 9 pairs).
   `less_than_from_not_equal` is a node of the `signed_int32` certificate
   only; the Integer certificate has no `!=` step, so the law fails at
   `int64` and over plain `Integer` too. Proposed fix: one Integer
   certificate node, which `solve` plans at every format.
-- **128-bit order certificate** (`int128`, `uint128`: transitivity and
-  `<` gives `<=`, 12 pairs). `solve`'s Integer certificate fails to lower
-  its addition result ("type mismatch"); the certificate `solve` builds at
-  `int64`, retyped to `int128`, verifies. Proposed fix: spell 128-bit
-  observations in the candidate as the 64-bit path does.
-- **128-bit literal comparison** (`int128`, `uint128`:
-  `positive_is_nonnegative`, 2 pairs). `0 < v` types the literal `int32`
-  and is refused ("cannot compare `int32` and `int128`"); at 64 bits the
-  literal takes the operand's reading. `0 < to_integer(v)` lowers.
-  Proposed fix: give a bare literal against a 128-bit value the Integer
-  reading the other formats give it.
 - **Product identity** (`multiply_to_integer` at the eight formats with
   operations, `defined_multiply_to_integer` at `int32` and `int64`, 10
   pairs). `solve` plans in-range identities for `+` and `-` only, and does

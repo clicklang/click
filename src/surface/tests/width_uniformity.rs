@@ -114,23 +114,10 @@ impl Applies {
 /// `roadmap/standard-library.md` ("Width-uniformity gaps").
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Gap {
-    /// K8 lowers a comparison of two 8- or 16-bit values natively even when a
-    /// side is an operation (`int8 <=(v + 1i8, u)`); at 32 and 64 bits such a
-    /// comparison keeps its Integer reading, the form `solve` plans an
-    /// in-range identity through. `solve` tries only `normalize` and
-    /// `assumption` on the native narrow goal.
-    NarrowNativeComparison,
     /// `less_than_from_not_equal` is a node of the `signed_int32` certificate
     /// only; the Integer certificate has no `!=` step, so `a <= b`,
     /// `a != b` gives `a < b` at `int32` alone (and not over `Integer`).
     NotEqualOrder,
-    /// At 128 bits `solve`'s Integer order certificate fails to lower its
-    /// addition result ("type mismatch"); the same certificate written out
-    /// with `to_integer` observations verifies.
-    WideOrderCertificate,
-    /// A bare literal compared with a 128-bit value is typed `int32` and
-    /// refused (`0 < v`); `0 < to_integer(v)` lowers.
-    WideLiteralComparison,
     /// `solve` plans in-range identities for `+` and `-` only; a product's
     /// identity needs its Integer bounds from `integer_product_bounds` and an
     /// explicit `integer_operation_identity` certificate.
@@ -147,10 +134,7 @@ enum Gap {
 impl Gap {
     /// A substring of the refusal's diagnostic.
     fn refusal(self) -> &'static str {
-        match self {
-            Self::WideLiteralComparison => "cannot compare `int32` and",
-            _ => "`solve` failed for",
-        }
+        "`solve` failed for"
     }
 }
 
@@ -168,13 +152,6 @@ macro_rules! gaps_at {
         &[$(($ty, $gap)),*]
     };
 }
-
-const NARROW_GAPS: &[(Ty, Gap)] =
-    gaps_at!(Gap::NarrowNativeComparison; Ty::Int8, Ty::UInt8, Ty::Int16, Ty::UInt16);
-const NARROW_SIGNED_GAPS: &[(Ty, Gap)] = gaps_at!(Gap::NarrowNativeComparison; Ty::Int8, Ty::Int16);
-const NARROW_UNSIGNED_GAPS: &[(Ty, Gap)] =
-    gaps_at!(Gap::NarrowNativeComparison; Ty::UInt8, Ty::UInt16);
-const WIDE_ORDER_GAPS: &[(Ty, Gap)] = gaps_at!(Gap::WideOrderCertificate; Ty::Int128, Ty::UInt128);
 
 fn integer(value: &BigInt) -> String {
     value.to_string()
@@ -313,7 +290,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires b <= c;\n    ensures a <= c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_transitive",
@@ -324,7 +301,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    requires b < c;\n    ensures a < c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_equal_less_than_transitive",
@@ -335,7 +312,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires b < c;\n    ensures a < c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_less_equal_transitive",
@@ -346,7 +323,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    requires b <= c;\n    ensures a < c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "greater_equal_transitive",
@@ -357,13 +334,13 @@ const FAMILIES: &[Family] = &[
                 "    requires a >= b;\n    requires b >= c;\n    ensures a >= c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_implies_less_equal",
         applies: Applies::Everywhere,
         statement: |f| two(f, "    requires a < b;\n    ensures a <= b;\n"),
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_implies_not_greater_equal",
@@ -410,7 +387,7 @@ const FAMILIES: &[Family] = &[
                 f.name
             )
         },
-        gaps: gaps_at!(Gap::WideLiteralComparison; Ty::Int128, Ty::UInt128),
+        gaps: &[],
     },
     // Range of an observation.
     Family {
@@ -475,7 +452,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, u: {t}) {{\n    requires v < u;\n    let n: {t} = v + 1;\n    ensures to_integer(n) <= to_integer(u);\n}}"
             )
         },
-        gaps: NARROW_GAPS,
+        gaps: &[],
     },
     Family {
         name: "increment_strictly_increases",
@@ -486,7 +463,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, u: {t}) {{\n    requires v < u;\n    let n: {t} = v + 1;\n    ensures to_integer(v) < to_integer(n);\n}}"
             )
         },
-        gaps: NARROW_GAPS,
+        gaps: &[],
     },
     Family {
         name: "increment_lower_bound",
@@ -497,7 +474,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, l: {t}, u: {t}) {{\n    requires l <= v;\n    requires v < u;\n    let n: {t} = v + 1;\n    ensures to_integer(l) <= to_integer(n);\n}}"
             )
         },
-        gaps: NARROW_GAPS,
+        gaps: &[],
     },
     Family {
         name: "positive_predecessor_is_nonnegative",
@@ -508,7 +485,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}) {{\n    requires 0 < v;\n    let p: {t} = v - 1;\n    ensures 0 <= to_integer(p);\n}}"
             )
         },
-        gaps: NARROW_SIGNED_GAPS,
+        gaps: &[],
     },
     Family {
         name: "positive_predecessor_strictly_decreases",
@@ -519,7 +496,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}) {{\n    requires 0 < v;\n    let p: {t} = v - 1;\n    ensures to_integer(p) < to_integer(v);\n}}"
             )
         },
-        gaps: NARROW_GAPS,
+        gaps: &[],
     },
     Family {
         name: "nonnegative_predecessor_upper_bound",
@@ -530,7 +507,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, b: {t}) {{\n    requires 0 <= v;\n    requires v <= b;\n    let p: {t} = v - 1;\n    ensures to_integer(p) <= to_integer(b);\n}}"
             )
         },
-        gaps: NARROW_SIGNED_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_implies_positive_difference",
@@ -541,7 +518,7 @@ const FAMILIES: &[Family] = &[
                 "(v: {t}, u: {t}) {{\n    requires v < u;\n    let d: {t} = u - v;\n    ensures 0 < to_integer(d);\n}}"
             )
         },
-        gaps: NARROW_UNSIGNED_GAPS,
+        gaps: &[],
     },
     Family {
         name: "difference_decreases_after_increment",
