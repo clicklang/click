@@ -725,10 +725,10 @@ CI uses these internal modes for code-affecting changes:
 - `--ci-prepare ARTIFACTS` builds both exporters and compiles the single
   fast-gate test executable into an archive. It does not execute tests.
 - `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
-  without compiling Click or either exporter. Six deterministic nextest
-  hash partitions cover the unit, C, and C++ import tests, and three more cover
-  the Rust import tests, which alone need Charon; mdtests run on three
-  runners, each taking every third file by `MDTEST_PARTITION`; examples run
+  without compiling Click or either exporter. Seven deterministic nextest
+  hash partitions cover the unit, C, and C++ import tests, and two more cover
+  the Rust import tests, which alone need Charon; mdtests run on four
+  runners, each taking every fourth file by `MDTEST_PARTITION`; examples run
   on two, by `EXAMPLE_PARTITION`. The build job saves its build snapshot only
   on a push to `master`, because every shard waits for that job to end. The build job takes about six of the ten minutes, so a shard has to
   finish in under four.

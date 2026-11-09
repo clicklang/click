@@ -199,18 +199,19 @@ jobs:
           # The build job takes about six of them, so a shard has to finish
           # in under four, download and restore included. Add shards before
           # any one of them gets there, or move slow tests to nightly.yml.
-          - { suite: unit, partition: '1/6' }
-          - { suite: unit, partition: '2/6' }
-          - { suite: unit, partition: '3/6' }
-          - { suite: unit, partition: '4/6' }
-          - { suite: unit, partition: '5/6' }
-          - { suite: unit, partition: '6/6' }
-          - { suite: rust, partition: '1/3' }
-          - { suite: rust, partition: '2/3' }
-          - { suite: rust, partition: '3/3' }
-          - { suite: mdtests, partition: '1/3' }
-          - { suite: mdtests, partition: '2/3' }
-          - { suite: mdtests, partition: '3/3' }
+          - { suite: unit, partition: '1/7' }
+          - { suite: unit, partition: '2/7' }
+          - { suite: unit, partition: '3/7' }
+          - { suite: unit, partition: '4/7' }
+          - { suite: unit, partition: '5/7' }
+          - { suite: unit, partition: '6/7' }
+          - { suite: unit, partition: '7/7' }
+          - { suite: rust, partition: '1/2' }
+          - { suite: rust, partition: '2/2' }
+          - { suite: mdtests, partition: '1/4' }
+          - { suite: mdtests, partition: '2/4' }
+          - { suite: mdtests, partition: '3/4' }
+          - { suite: mdtests, partition: '4/4' }
           - { suite: examples, partition: '1/2' }
           - { suite: examples, partition: '2/2' }
     steps:
