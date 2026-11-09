@@ -451,6 +451,19 @@ pub(crate) fn structural_native_comparison_view(
     comparison_view_at_format(condition, value)
 }
 
+/// Whether `proposition` is an Integer comparison of exact observations of
+/// a 128-bit format (or of one and a constant it represents): the reading
+/// of that format's native comparison, which keeps its Integer spelling
+/// ([`representation::spells_comparison_natively`]). One match on the root
+/// and the two sides.
+pub(crate) fn reads_wide_integer_observations(proposition: &Proposition) -> bool {
+    let Proposition::ConditionIs(condition, value) = proposition else {
+        return false;
+    };
+    comparison_view_at_format(condition, *value)
+        .is_some_and(|view| !representation::spells_comparison_natively(view.format))
+}
+
 /// [`native_comparison_of_integer_observation`] at every format, whatever
 /// its spelling: the forward map the converse reading checks against.
 fn native_comparison_at_format(

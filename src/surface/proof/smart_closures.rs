@@ -554,10 +554,13 @@ pub(super) fn observed_native_surface_comparison(
     };
     // The kernel form is a native comparison with an Integer reading (a
     // promoted comparison of widenings among them), or that Integer reading
-    // itself, spelled by the native fact it reads.
+    // itself, spelled by the native fact it reads. A 128-bit comparison is
+    // held in its Integer reading, so the native fact written `a < b` is
+    // that reading too.
     if crate::kernel::machine_integer::comparison::integer_readings_with_promotions(kernel)
         .is_empty()
         && crate::kernel::assumptions::native_reading_of_integer_observation_fact(kernel).is_none()
+        && !crate::kernel::machine_integer::comparison::reads_wide_integer_observations(kernel)
     {
         return written.clone();
     }

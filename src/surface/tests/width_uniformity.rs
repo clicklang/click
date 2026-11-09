@@ -124,10 +124,6 @@ enum Gap {
     /// only; the Integer certificate has no `!=` step, so `a <= b`,
     /// `a != b` gives `a < b` at `int32` alone (and not over `Integer`).
     NotEqualOrder,
-    /// At 128 bits `solve`'s Integer order certificate fails to lower its
-    /// addition result ("type mismatch"); the same certificate written out
-    /// with `to_integer` observations verifies.
-    WideOrderCertificate,
     /// A bare literal compared with a 128-bit value is typed `int32` and
     /// refused (`0 < v`); `0 < to_integer(v)` lowers.
     WideLiteralComparison,
@@ -174,7 +170,6 @@ const NARROW_GAPS: &[(Ty, Gap)] =
 const NARROW_SIGNED_GAPS: &[(Ty, Gap)] = gaps_at!(Gap::NarrowNativeComparison; Ty::Int8, Ty::Int16);
 const NARROW_UNSIGNED_GAPS: &[(Ty, Gap)] =
     gaps_at!(Gap::NarrowNativeComparison; Ty::UInt8, Ty::UInt16);
-const WIDE_ORDER_GAPS: &[(Ty, Gap)] = gaps_at!(Gap::WideOrderCertificate; Ty::Int128, Ty::UInt128);
 
 fn integer(value: &BigInt) -> String {
     value.to_string()
@@ -313,7 +308,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires b <= c;\n    ensures a <= c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_transitive",
@@ -324,7 +319,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    requires b < c;\n    ensures a < c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_equal_less_than_transitive",
@@ -335,7 +330,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a <= b;\n    requires b < c;\n    ensures a < c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_less_equal_transitive",
@@ -346,7 +341,7 @@ const FAMILIES: &[Family] = &[
                 "    requires a < b;\n    requires b <= c;\n    ensures a < c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "greater_equal_transitive",
@@ -357,13 +352,13 @@ const FAMILIES: &[Family] = &[
                 "    requires a >= b;\n    requires b >= c;\n    ensures a >= c;\n",
             )
         },
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_implies_less_equal",
         applies: Applies::Everywhere,
         statement: |f| two(f, "    requires a < b;\n    ensures a <= b;\n"),
-        gaps: WIDE_ORDER_GAPS,
+        gaps: &[],
     },
     Family {
         name: "less_than_implies_not_greater_equal",

@@ -565,7 +565,7 @@ fixture applies them by those names.
 
 `src/surface/tests/width_uniformity.rs` states 39 families at the ten
 formats of `machine_integer::FORMATS` (`int8` to `uint128`). The omitted
-proof closes 215 statements; 69 are gaps, open here, and the nightly
+proof closes 227 statements; 57 are gaps, open here, and the nightly
 `width_family_gaps_are_still_refused` checks each is still refused with
 its recorded diagnostic. Division and remainder by a symbolic divisor have
 no kernel rule (they stay kernel standard theorems, maintainer decision)
@@ -591,11 +591,6 @@ No gap is a kernel-rule change made here; each needs a decision.
   only; the Integer certificate has no `!=` step, so the law fails at
   `int64` and over plain `Integer` too. Proposed fix: one Integer
   certificate node, which `solve` plans at every format.
-- **128-bit order certificate** (`int128`, `uint128`: transitivity and
-  `<` gives `<=`, 12 pairs). `solve`'s Integer certificate fails to lower
-  its addition result ("type mismatch"); the certificate `solve` builds at
-  `int64`, retyped to `int128`, verifies. Proposed fix: spell 128-bit
-  observations in the candidate as the 64-bit path does.
 - **128-bit literal comparison** (`int128`, `uint128`:
   `positive_is_nonnegative`, 2 pairs). `0 < v` types the literal `int32`
   and is refused ("cannot compare `int32` and `int128`"); at 64 bits the
