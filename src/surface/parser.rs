@@ -1907,10 +1907,19 @@ impl Parser {
                         index + 1
                     )));
                 }
-                // A slice value passes its pointer and its length.
-                argument if self.is_rust_slice_value(&argument) => {
-                    spread.push(Self::slice_value_field(argument.clone(), false, None));
-                    spread.push(Self::slice_value_field(argument, true, None));
+                // A slice value passes its pointer and its length, its
+                // methods `as_ptr()` and `len()`, resolved by its type.
+                argument
+                    if self.is_rust_slice_value(&argument)
+                        || self.is_click_valued_receiver(&argument) =>
+                {
+                    let method = |method: &str| ContractExpression::MethodCall {
+                        receiver: Box::new(argument.clone()),
+                        method: method.to_string(),
+                        arguments: vec![],
+                    };
+                    spread.push(method("as_ptr"));
+                    spread.push(method("len"));
                 }
                 _ => {
                     return Err(self.error(format!(
@@ -8781,6 +8790,23 @@ impl Parser {
             .then(|| self.parse_contract_expression())
             .transpose()?;
         self.expect(Token::RBracket)?;
+        let literal = |bound: &Option<ContractExpression>| match bound {
+            Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
+            Some(bound @ ContractExpression::CFragment(CExpression::Value(_))) => {
+                crate::surface::diagnostics::describe_contract_expression(bound)
+                    .strip_suffix("u64")?
+                    .parse::<u64>()
+                    .ok()
+            }
+            _ => None,
+        };
+        if let (Some(start), Some(end)) = (literal(&start), literal(&end))
+            && start > end
+        {
+            return Err(self.error(format!(
+                "the subslice `[{start}..{end}]` starts past its end; Rust panics on a reversed range"
+            )));
+        }
         Ok(match (start, end) {
             (None, None) => method_call("[..]", vec![]),
             (Some(start), None) => method_call("[a..]", vec![start]),
@@ -8846,179 +8872,24 @@ impl Parser {
         }
     }
 
-    /// `slice[a..b]`, `slice[a..]` or `slice[..b]` of a slice parameter or a
-    /// slice value: the subslice from `a` to `b`, the slice value with data
-    /// `slice + a` and length `b - a`, `slice::from_raw_parts(slice + a, b - a)`. Like
-    /// any slice value it grants no access; reading it reads `slice`'s
-    /// elements under the caller's `views`. A missing bound is the slice's
-    /// start or its length.
-    fn parse_rust_subslice(
-        &mut self,
-        slice: ContractExpression,
-    ) -> Result<ContractExpression, ClickError> {
-        self.expect(Token::LBracket)?;
-        let start = if self.peek() == Some(&Token::DotDot) {
-            None
-        } else {
-            Some(self.parse_contract_expression()?)
-        };
-        self.expect(Token::DotDot)?;
-        let end = if self.peek() == Some(&Token::RBracket) {
-            None
-        } else {
-            Some(self.parse_contract_expression()?)
-        };
-        self.expect(Token::RBracket)?;
-        // A bound is a `usize`, as in Rust. An unsuffixed literal bound
-        // takes that type here, so `3 - 1` is the `usize` length 2 and not
-        // an `int32` that no `uint64` field holds.
-        let usize_bound = |bound: ContractExpression| match &bound {
-            ContractExpression::IntegerLiteral(text) => text
-                .parse::<u64>()
-                .map(|value| {
-                    ContractExpression::CFragment(CExpression::Value(
-                        crate::kernel::CValue::UInt64(crate::kernel::MachineTerm::uint64_constant(
-                            value,
-                        )),
-                    ))
-                })
-                .unwrap_or(bound),
-            _ => bound,
-        };
-        let literal = |bound: &Option<ContractExpression>| match bound {
-            Some(ContractExpression::IntegerLiteral(text)) => text.parse::<u64>().ok(),
-            Some(bound @ ContractExpression::CFragment(CExpression::Value(_))) => {
-                crate::surface::diagnostics::describe_contract_expression(bound)
-                    .strip_suffix("u64")?
-                    .parse::<u64>()
-                    .ok()
-            }
-            _ => None,
-        };
-        if let (Some(start), Some(end)) = (literal(&start), literal(&end))
-            && start > end
-        {
-            return Err(self.error(format!(
-                "the subslice `[{start}..{end}]` starts past its end; Rust panics on a reversed range"
-            )));
-        }
-        let start = start.map(usize_bound);
-        let end = end.map(usize_bound);
-        let element = self
-            .rust_slice_parameter_read(&slice)
-            .and_then(|parameter| self.rust_slice_elements.get(parameter).copied());
-        let (pointer, length) = match self.rust_slice_parameter_read(&slice) {
-            Some(parameter) => (
-                slice.clone(),
-                ContractExpression::CFragment(CExpression::Variable(format!("{parameter}_len"))),
-            ),
-            None => (
-                Self::slice_value_field(slice.clone(), false, None),
-                Self::slice_value_field(slice, true, None),
-            ),
-        };
-        let end = end.unwrap_or_else(|| length.clone());
-        let zero = || {
-            ContractExpression::CFragment(CExpression::Value(crate::kernel::CValue::UInt64(
-                crate::kernel::MachineTerm::uint64_constant(0),
-            )))
-        };
-        let pointer = match &start {
-            Some(start) => ContractExpression::Add(Box::new(pointer), Box::new(start.clone())),
-            None => pointer,
-        };
-        // Its length owes `start <= end <= len`, as Rust panics otherwise.
-        let count = ContractExpression::Call {
-            name: crate::surface::RUST_SUBSLICE_LEN.to_string(),
-            arguments: vec![start.unwrap_or_else(zero), end, length],
-        };
-        // The constructor itself, so its fields select at once, at the
-        // parameter's element type. A slice value's element type is not
-        // written here, so its subslice is the library's constructor call.
-        let Some(element) = element else {
-            return Ok(ContractExpression::Call {
-                name: "click::rust::slice::from_raw_parts".to_string(),
-                arguments: vec![pointer, count],
-            });
-        };
-        Ok(ContractExpression::AlgebraicConstructor {
+    /// The slice value a slice parameter read stands for, `bytes` or
+    /// `old(bytes)`: the constructor of its pointer, as written, and its
+    /// length, which a parameter never changes, at its element type.
+    fn slice_parameter_value(&self, expression: &ContractExpression) -> Option<ContractExpression> {
+        let parameter = self.rust_slice_parameter_read(expression)?;
+        let element = *self.rust_slice_elements.get(parameter)?;
+        Some(ContractExpression::AlgebraicConstructor {
             algebraic_type: AlgebraicTypeApplication {
                 rigid: false,
                 name: "Slice".to_string(),
                 arguments: vec![ClickType::C(element)],
             },
             variant: "Slice".to_string(),
-            arguments: vec![pointer, count],
+            arguments: vec![
+                expression.clone(),
+                ContractExpression::CFragment(CExpression::Variable(format!("{parameter}_len"))),
+            ],
         })
-    }
-
-    /// A field of the slice value `slice`: its length, as a `match` on its
-    /// constructor that selects it at once when the slice is constructed,
-    /// or its data pointer. `index` reads the element there instead.
-    fn slice_value_field(
-        slice: ContractExpression,
-        length: bool,
-        index: Option<ContractExpression>,
-    ) -> ContractExpression {
-        // A slice built from its parts has those parts as its fields, by
-        // the library's definition: `slice::from_raw_parts(p, n).len()` and
-        // `Slice::Slice(p, n).len()` are `n`. A subslice is built this way,
-        // so `bytes[k..].len()` needs no unfold.
-        let parts = match &slice {
-            ContractExpression::Call { name, arguments } if is_slice_from_raw_parts(name) => {
-                Some(arguments.as_slice())
-            }
-            ContractExpression::AlgebraicConstructor {
-                algebraic_type,
-                variant,
-                arguments,
-            } if algebraic_type.name() == "Slice" && variant == "Slice" => {
-                Some(arguments.as_slice())
-            }
-            _ => None,
-        };
-        if let Some([pointer, count]) = parts {
-            if length {
-                return count.clone();
-            }
-            match index {
-                None => return pointer.clone(),
-                // A read through a constructed slice, such as a subslice,
-                // keeps its spelling `bytes[1..3][1]`; it reads through
-                // `slice::as_ptr` below.
-                Some(index)
-                    if !matches!(slice, ContractExpression::AlgebraicConstructor { .. }) =>
-                {
-                    return ContractExpression::Index(Box::new(pointer.clone()), Box::new(index));
-                }
-                Some(index) => {
-                    return ContractExpression::Index(
-                        Box::new(ContractExpression::Call {
-                            name: "click::rust::slice::as_ptr".to_string(),
-                            arguments: vec![slice],
-                        }),
-                        Box::new(index),
-                    );
-                }
-            }
-        }
-        // A pointer is not a `match` result the kernel lowers as a value;
-        // the library function names it, at the slice's element type, so an
-        // element read reads one element of that type.
-        if !length {
-            let pointer = ContractExpression::Call {
-                name: "click::rust::slice::as_ptr".to_string(),
-                arguments: vec![slice],
-            };
-            return match index {
-                Some(index) => ContractExpression::Index(Box::new(pointer), Box::new(index)),
-                None => pointer,
-            };
-        }
-        ContractExpression::Call {
-            name: "click::rust::slice::len".to_string(),
-            arguments: vec![slice],
-        }
     }
 
     fn declares_integer_result(&self, start: usize) -> bool {
@@ -14624,19 +14495,13 @@ impl Parser {
             self.check_expression_chain_limit(postfixes)?;
             postfixes += 1;
             match self.peek() {
+                // A slice parameter is a pointer and a length; its subslice
+                // is the method on the slice value it stands for.
                 Some(Token::LBracket)
-                    if self.verifies_rust()
-                        && self.contract_bracket_is_range()
-                        && (self.is_rust_slice_value(&expression)
-                            || self.rust_slice_parameter_read(&expression).is_some()) =>
+                    if self.contract_bracket_is_range()
+                        && let Some(slice) = self.slice_parameter_value(&expression) =>
                 {
-                    expression = self.parse_rust_subslice(expression)?;
-                }
-                Some(Token::LBracket) if self.is_rust_slice_value(&expression) => {
-                    self.position += 1;
-                    let index = self.parse_place_index()?;
-                    self.expect(Token::RBracket)?;
-                    expression = Self::slice_value_field(expression, false, Some(index));
+                    expression = self.parse_method_index(slice)?;
                 }
                 // An index or range index on a value of a Click type is a
                 // method, resolved by the receiver's type.
@@ -14911,17 +14776,6 @@ impl Parser {
                             field_index: 0,
                             click_type: None,
                         });
-                        continue;
-                    }
-                    if self.is_rust_slice_value(&expression)
-                        && self.tokens.get(self.position + 2) == Some(&Token::LParen)
-                        && self.tokens.get(self.position + 3) == Some(&Token::RParen)
-                        && let Some(Token::Ident(method)) = self.tokens.get(self.position + 1)
-                        && matches!(method.as_str(), "len" | "as_ptr")
-                    {
-                        let length = method == "len";
-                        self.position += 4;
-                        expression = Self::slice_value_field(expression, length, None);
                         continue;
                     }
                     // A method on a value of a Click type, resolved by the
