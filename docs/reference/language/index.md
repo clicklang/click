@@ -991,7 +991,10 @@ signedness and owe nothing
 `mdtests/narrow_arithmetic_at_a_narrow_result_or_parameter_is_native.md`);
 a theorem's typed `let` names that native operation in its clauses and in
 every proof step
-(`mdtests/a_theorem_let_names_its_native_operation_in_a_proof_step.md`);
+(`mdtests/a_theorem_let_names_its_native_operation_in_a_proof_step.md`),
+and `solve` relates its observation to its operands' by the in-range
+identity, as at 32 and 64 bits, where bounds keep it from wrapping
+(`mdtests/solve_plans_a_narrow_comparison_through_its_operation_identity.md`);
 arithmetic there over an operand of another machine type is refused, naming
 the conversion to write, such as `x as uint8`
 (`mdtests/a_narrow_typed_let_of_mixed_operands_is_refused.md`); the operand

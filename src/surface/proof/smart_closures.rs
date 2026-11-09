@@ -2936,41 +2936,56 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The written expression among `written` that lowers to `term`.
+    /// The written expression among `written` that lowers to `term`, else,
+    /// for the observation of a narrow value's widening, one that lowers to
+    /// the narrow value's observation, the same value (rule W): the planner
+    /// reads a native narrow comparison through its `int32` widenings
+    /// (rule K8), whose observations are the narrow ones written. Each
+    /// written expression is lowered at most once.
     fn spell_written_integer_observation(
         &self,
         term: &crate::kernel::IntegerTerm,
         written: &[ContractExpression],
     ) -> Option<ContractExpression> {
-        written
-            .iter()
-            .find(|expression| {
-                let probe = ClickProposition::Comparison {
-                    left: (*expression).clone(),
-                    operator: ComparisonOperator::LessEqual,
-                    right: ContractExpression::IntegerLiteral("0".into()),
-                };
-                // The probe of an exact observation lowers to its native
-                // comparison, which is read back as the Integer one. Zero is
-                // the probe's upper side because `0 <= v` of an unsigned `v`
-                // folds to true.
-                let Ok(lowered) =
-                    self.lower_integer_surface_proposition(&probe, "integer observation")
-                else {
-                    return false;
-                };
-                let lowered =
-                    crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(&lowered)
-                        .into_iter()
-                        .next()
-                        .unwrap_or(lowered);
-                matches!(
-                    lowered,
-                    Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(observed, _), true)
-                        if observed.as_ref() == term
-                )
-            })
-            .cloned()
+        // Only a widening of a narrow value is read through: the observation
+        // the planner reads a native narrow comparison by.
+        let read = term.value_read();
+        let reads_through = !std::ptr::eq(read, term)
+            && matches!(read, crate::kernel::IntegerTerm::Machine(narrow)
+                if narrow.ty().format().bits() < 32);
+        let mut through = None;
+        for expression in written {
+            let probe = ClickProposition::Comparison {
+                left: expression.clone(),
+                operator: ComparisonOperator::LessEqual,
+                right: ContractExpression::IntegerLiteral("0".into()),
+            };
+            // The probe of an exact observation lowers to its native
+            // comparison, which is read back as the Integer one. Zero is the
+            // probe's upper side because `0 <= v` of an unsigned `v` folds to
+            // true.
+            let Ok(lowered) = self.lower_integer_surface_proposition(&probe, "integer observation")
+            else {
+                continue;
+            };
+            let lowered =
+                crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(&lowered)
+                    .into_iter()
+                    .next()
+                    .unwrap_or(lowered);
+            let Proposition::ConditionIs(ConditionTerm::IntegerLessEqual(observed, _), true) =
+                lowered
+            else {
+                continue;
+            };
+            if observed.as_ref() == term {
+                return Some(expression.clone());
+            }
+            if reads_through && through.is_none() && observed.value_read() == read {
+                through = Some(expression.clone());
+            }
+        }
+        through
     }
 
     /// Spell the type range of each machine observation a `TypeRange` node
