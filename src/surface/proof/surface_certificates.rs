@@ -904,6 +904,56 @@ pub(super) fn comparison_preservation_steps(
     premises: &[ClickProposition],
 ) -> Option<Vec<ProofStep>> {
     let pairs = comparison_preservation_reads(source, target)?;
+    read_preservation_rewrite_steps(source, pairs, premises)
+}
+
+/// Preserve both sides of one scalar implication. Rewriting the whole goal
+/// avoids assuming its guard, which need not be true in the current state.
+pub(super) fn implication_preservation_steps(
+    source: &ClickProposition,
+    target: &ClickProposition,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
+    let ClickProposition::Implies(target_guard, target_conclusion) = target else {
+        return None;
+    };
+    let (source_guard, source_conclusion) = match source {
+        ClickProposition::Implies(guard, conclusion) => {
+            (guard.as_ref().clone(), conclusion.as_ref().clone())
+        }
+        ClickProposition::At {
+            selector,
+            proposition,
+        } => {
+            let ClickProposition::Implies(guard, conclusion) = proposition.as_ref() else {
+                return None;
+            };
+            let at = |proposition: &ClickProposition| ClickProposition::At {
+                selector: selector.clone(),
+                proposition: Box::new(proposition.clone()),
+            };
+            (at(guard), at(conclusion))
+        }
+        _ => return None,
+    };
+    let mut pairs = comparison_preservation_reads(&source_guard, target_guard)?;
+    for pair in comparison_preservation_reads(&source_conclusion, target_conclusion)? {
+        // At most four written read pairs; a shared guard/conclusion read needs
+        // only one preservation chain. No equality or alias discovery here.
+        if !pairs.contains(&pair) {
+            pairs.push(pair);
+        }
+    }
+    read_preservation_rewrite_steps(source, pairs, premises)
+}
+
+/// Comparisons and scalar implications share ordinary preservation/rewrite
+/// construction. The caller selects at most four read pairs from written input.
+fn read_preservation_rewrite_steps(
+    source: &ClickProposition,
+    pairs: Vec<(ContractExpression, ContractExpression)>,
+    premises: &[ClickProposition],
+) -> Option<Vec<ProofStep>> {
     let separations = premises
         .iter()
         .filter(|p| *p != source)
@@ -912,7 +962,7 @@ pub(super) fn comparison_preservation_steps(
     let selected = if pairs.len() == 1 {
         vec![separations]
     } else {
-        let mut selected = vec![Vec::new(), Vec::new()];
+        let mut selected = vec![Vec::new(); pairs.len()];
         // Build each written read's C shape once, including on a miss. A long
         // pointer expression must not be cloned again for every other premise.
         let read_shapes = pairs

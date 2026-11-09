@@ -3484,6 +3484,20 @@ snapshot spellings remain outside this selection route.
 See `mdtests/conjunction_projection_transport_expansion.md` and
 `mdtests/conjunction_selection_transport_expansion.md`.
 
+An implication with a supported scalar comparison as both guard and conclusion
+also expands. For example,
+`transport(at(statement(0).entry, *q == 7 implies *r == 8), *q == 7 implies *r == 8)`
+uses footprint separations for reads in both comparisons. Expansion retains the
+earlier implication with `assumption()`, proves each read's preservation,
+rewrites the whole target implication to the earlier reads, and closes with
+`assumption()`. It does not assume the guard or require either comparison to
+hold unconditionally. A shared guard/conclusion read uses one preservation
+chain. The source can wrap the whole implication in `at(...)` or spell the
+snapshots on its comparisons separately. Memory and named resource fields,
+two-read comparisons, and multiple cited statements use the same form.
+Compound guards, nested implications, and quantified facts remain outside this
+route. See `mdtests/implication_transport_expansion.md`.
+
 Other transport routes still retain their existing form.
 
 The frame carries a fact across the steps between its snapshot and the

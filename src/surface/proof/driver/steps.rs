@@ -165,6 +165,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             && driver_proof.surface_goal() == Some(target)
             && let Some(steps) = multiple_statement_preservation_steps(source, target, premises)
                 .or_else(|| comparison_preservation_steps(source, target, premises))
+                .or_else(|| implication_preservation_steps(source, target, premises))
                 .or_else(|| conjunction_preservation_steps(source, target, premises))
                 .or_else(|| conjunction_projection_preservation_steps(source, target, premises))
         {
