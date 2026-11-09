@@ -13,6 +13,24 @@ fn imported(format: T, term: &MachineTerm) -> KernelTerm {
         .machine_arithmetic(format, term)
         .expect("arithmetic reconstruction")
 }
+fn retained(format: T, term: &MachineTerm) -> KernelTerm {
+    KernelTerm::retained_machine_operand(format, MachineOperandView::Legacy(term))
+}
+// Preserve the retained identity when the native rewrite reports no change.
+// Native leaves can carry snapshot authority not used by native equality;
+// retaining the original on that path also matches the native observation rule.
+fn rewrite_retained_leaf(
+    term: &KernelTerm,
+    rewrite: impl FnOnce(&MachineTerm) -> MachineTerm,
+) -> Option<KernelTerm> {
+    let original = leaf(term)?;
+    let rewritten = rewrite(&original);
+    if matches!(term.node(), KernelTermNode::Legacy(_)) && rewritten == original {
+        Some(term.clone())
+    } else {
+        Some(retained(format(term), &rewritten))
+    }
+}
 fn constant(format: T, bits: u64) -> KernelTerm {
     imported(
         format,
@@ -350,10 +368,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
                     KernelTerm::machine_cast_shared(*encoding, *source, *destination, operand)
                 }
             }
-            _ => KernelTermImport::default().machine_arithmetic(
-                format(term),
-                &crate::kernel::eval::canonical_term(&leaf(term)?),
-            )?,
+            _ => rewrite_retained_leaf(term, crate::kernel::eval::canonical_term)?,
         }
         .with_machine_observation_type(format(term));
         values.insert(term.id(), value);
@@ -363,7 +378,7 @@ fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64
 
 /// The only native callback receives an atomic leaf, including a retained
 /// Integer-conversion payload. Shared arithmetic is matched and rebuilt here.
-/// A result outside the shared fragment is an explicit producer boundary.
+/// Opaque native replacements remain exact leaves beneath shared parents.
 pub(super) fn rewrite(
     root: &KernelTerm,
     from: &MachineTerm,
@@ -394,7 +409,7 @@ pub(super) fn rewrite(
         .map(|_| crate::kernel::eval::canonical_term(from));
     let mut sources = HashMap::<T, Option<KernelTerm>>::new();
     let mut canonical_sources = HashMap::<T, Option<KernelTerm>>::new();
-    let mut replacements = HashMap::<T, Option<KernelTerm>>::new();
+    let mut replacements = HashMap::<T, KernelTerm>::new();
     let mut values = HashMap::<u64, KernelTerm>::new();
     let mut pending = vec![(root, false)];
     while let Some((term, finish)) = pending.pop() {
@@ -408,16 +423,20 @@ pub(super) fn rewrite(
         let source = sources
             .entry(ty)
             .or_insert_with(|| KernelTermImport::default().machine_arithmetic(ty, from));
+        // The native compound-source matcher has not migrated yet. Do not
+        // descend past a possible whole-source match containing opaque leaves.
+        // Retaining replacements must not change that existing rewrite rule.
+        if source.is_none() && root.has_machine_conversions() {
+            return None;
+        }
         let cache_key = if canonical_values.is_none() && static_syntax(term)? {
-            source
-                .clone()
-                .zip(
-                    replacements
-                        .entry(ty)
-                        .or_insert_with(|| KernelTermImport::default().machine_arithmetic(ty, to))
-                        .clone(),
-                )
-                .map(|(from, to)| (from, to, term.id()))
+            source.clone().map(|from| {
+                let to = replacements
+                    .entry(ty)
+                    .or_insert_with(|| retained(ty, to))
+                    .clone();
+                (from, to, term.id())
+            })
         } else {
             None
         };
@@ -442,8 +461,8 @@ pub(super) fn rewrite(
         if source.as_ref() == Some(term) || canonical_match {
             let replacement = replacements
                 .entry(ty)
-                .or_insert_with(|| KernelTermImport::default().machine_arithmetic(ty, to))
-                .clone()?;
+                .or_insert_with(|| retained(ty, to))
+                .clone();
             values.insert(term.id(), replacement);
             continue;
         }
@@ -480,7 +499,7 @@ pub(super) fn rewrite(
                 *destination,
                 values[&operand.id()].clone(),
             ),
-            _ => KernelTermImport::default().machine_arithmetic(ty, &rewrite_leaf(&leaf(term)?))?,
+            _ => rewrite_retained_leaf(term, &rewrite_leaf)?,
         }
         .with_machine_observation_type(ty);
         if let Some(key) = cache_key {
@@ -528,6 +547,147 @@ fn static_syntax(root: &KernelTerm) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn opaque_replacements_and_retained_leaves_match_native_without_export() {
+        let _session = VerificationSession::enter();
+        for ty in [T::Int32, T::UInt64] {
+            let x = MachineTerm::Variable(Variable(1006400));
+            let opaque = MachineTerm::If {
+                condition: ConditionTerm::Variable(Variable(1006401)).into(),
+                then_term: x.clone().into(),
+                else_term: MachineTerm::Variable(Variable(1006402)).into(),
+            };
+            let sum = MachineTerm::Binary {
+                format: ty,
+                op: O::Add,
+                left: x.clone().into(),
+                right: x.clone().into(),
+            };
+            for native in [sum.clone(), opaque.clone()] {
+                let root = retained(ty, &native);
+                for from in [
+                    x.clone(),
+                    sum.clone(),
+                    MachineTerm::Variable(Variable(1006403)),
+                ] {
+                    let expected = super::super::rewrite_term(&native, &from, &opaque);
+                    let exports = KernelTermExport::machine_export_count();
+                    let result = rewrite(&root, &from, &opaque, |leaf| {
+                        super::super::rewrite_term(leaf, &from, &opaque)
+                    })
+                    .unwrap();
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    if expected == native {
+                        assert_eq!(result, root, "missing sources must retain identity");
+                    }
+                    assert_eq!(KernelTermExport::machine(&result).unwrap(), expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn opaque_exact_replacements_retain_both_fold_endpoint_formats() {
+        let _session = VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1006410));
+        let to = MachineTerm::If {
+            condition: ConditionTerm::Variable(Variable(1006411)).into(),
+            then_term: x.clone().into(),
+            else_term: MachineTerm::Variable(Variable(1006412)).into(),
+        };
+        for ty in [T::Int32, T::UInt64] {
+            let native = MachineTerm::Binary {
+                format: ty,
+                op: O::Add,
+                left: x.clone().into(),
+                right: x.clone().into(),
+            };
+            let start = SharedIntegerRangeEndpoint::intern(x.clone())
+                .with_shared_operand(imported(ty, &native).with_machine_observation_type(T::Int32))
+                .unwrap();
+            let end = SharedIntegerRangeEndpoint::intern(MachineTerm::Variable(Variable(1006413)));
+            let body: SharedIntegerTerm = IntegerTerm::Variable(Variable(1006414)).into();
+            let fold = IntegerTerm::RangeFold {
+                index: if ty == T::Int32 {
+                    IntegerRangeFoldIndex::Int32 { start, end }
+                } else {
+                    IntegerRangeFoldIndex::UInt64 { start, end }
+                },
+                initial: IntegerTerm::constant_i64(0).into(),
+                accumulator: Variable(1006414),
+                item: Variable(1006415),
+                body: body.clone(),
+            };
+            let goal = Proposition::ConditionIs(
+                ConditionTerm::integer_equal(fold, IntegerTerm::constant_i64(0)),
+                true,
+            );
+            let equality =
+                Proposition::ConditionIs(ConditionTerm::equal(x.clone(), to.clone()), true);
+            let exports = KernelTermExport::machine_export_count();
+            let result =
+                super::super::rewrite_with_admitted_equality_as_written(&goal, &equality).unwrap();
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, _), true) = result
+            else {
+                panic!("integer equality")
+            };
+            let IntegerTerm::RangeFold {
+                index,
+                body: actual_body,
+                ..
+            } = left.as_ref()
+            else {
+                panic!("fold")
+            };
+            assert_eq!(actual_body, &body);
+            let (IntegerRangeFoldIndex::Int32 { start, .. }
+            | IntegerRangeFoldIndex::UInt64 { start, .. }) = index
+            else {
+                panic!("machine endpoints")
+            };
+            assert!(start.machine_operand().shared_operand().is_some());
+            assert_eq!(start.value(), &super::super::rewrite_term(&native, &x, &to));
+        }
+    }
+
+    #[test]
+    fn opaque_compound_sources_keep_the_existing_whole_match() {
+        let _session = VerificationSession::enter();
+        let opaque = MachineTerm::If {
+            condition: ConditionTerm::Variable(Variable(1006420)).into(),
+            then_term: MachineTerm::Variable(Variable(1006421)).into(),
+            else_term: MachineTerm::Variable(Variable(1006422)).into(),
+        };
+        let source = MachineTerm::add(opaque.clone(), opaque);
+        let replacement = MachineTerm::constant(7);
+        let root = retained(T::Int32, &source);
+        let input =
+            IntegerTerm::Machine(SharedMachineIntegerTerm::from_shared(T::Int32, root).unwrap());
+        let mut rewrite = crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(
+            &source,
+            &replacement,
+        );
+        assert_eq!(rewrite.integer(&input), IntegerTerm::constant_i64(7));
+        assert!(rewrite.refusal().is_none());
+        drop(rewrite);
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(input, IntegerTerm::constant_i64(0)),
+            true,
+        );
+        let equality = Proposition::ConditionIs(ConditionTerm::equal(source, replacement), true);
+        assert_eq!(
+            super::super::rewrite_with_admitted_equality_as_written(&goal, &equality).unwrap(),
+            Proposition::ConditionIs(
+                ConditionTerm::IntegerEqual(
+                    IntegerTerm::constant_i64(7).into(),
+                    IntegerTerm::constant_i64(0).into()
+                ),
+                true
+            ),
+        );
+    }
 
     fn differential(format: T) {
         let _session = VerificationSession::enter();

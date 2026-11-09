@@ -144,3 +144,60 @@ fn retained_sources_preserve_fold_shadowing_capture_and_refusal() {
         }
     }
 }
+
+#[test]
+fn opaque_replacements_keep_shared_observations_and_fold_endpoints() {
+    let _session = VerificationSession::enter();
+    for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+        let x = MachineTerm::Variable(Variable(992520));
+        let sum = MachineTerm::Binary {
+            format,
+            op: MachineBinaryOp::Add,
+            left: x.clone().into(),
+            right: x.clone().into(),
+        };
+        let replacement = MachineTerm::If {
+            condition: ConditionTerm::Variable(Variable(992521)).into(),
+            then_term: x.clone().into(),
+            else_term: MachineTerm::Variable(Variable(992522)).into(),
+        };
+        // Include a whole-subexpression replacement and a missing source.
+        for source in [
+            x.clone(),
+            sum.clone(),
+            MachineTerm::Variable(Variable(992523)),
+        ] {
+            let expected = TermRewrite::for_bits_checked(&source, &replacement).bits(&sum);
+            let root = imported(format, &sum);
+            let input = IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(format, root.clone()).unwrap(),
+            );
+            let exports = KernelTermExport::machine_export_count();
+            let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
+            let result = rewrite.integer(&input);
+            assert!(rewrite.refusal().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let IntegerTerm::Machine(value) = result else {
+                panic!("machine observation")
+            };
+            if source != sum {
+                assert!(value.shared_operand().is_some());
+            }
+            // A whole-root replacement may be the native opaque leaf itself;
+            // only its enclosing arithmetic must remain shared.
+            assert_eq!(value.value(), &expected);
+
+            // Both range syntaxes retain the existing Int32 endpoint carrier.
+            let endpoint = SharedIntegerRangeEndpoint::intern(x.clone())
+                .with_shared_operand(root.with_machine_observation_type(MachineIntegerType::Int32))
+                .unwrap();
+            let exports = KernelTermExport::machine_export_count();
+            let mut rewrite = TermRewrite::for_bits_checked(&source, &replacement);
+            let result = rewrite.range_endpoint(&endpoint);
+            assert!(rewrite.refusal().is_none());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(result.machine_operand().shared_operand().is_some());
+            assert_eq!(result.value(), &expected);
+        }
+    }
+}

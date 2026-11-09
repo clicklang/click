@@ -93,3 +93,60 @@ fn exact_rewrite_keeps_cold_and_growing_shared_goals() {
         }
     }
 }
+
+#[test]
+fn opaque_replacement_rewrites_keep_cold_dags_shared() {
+    for exact in [false, true] {
+        for ty in [T::Int32, T::UInt64] {
+            let mut samples = Vec::new();
+            for size in [16, 64, 256] {
+                let _session = VerificationSession::enter();
+                let x = MachineTerm::Variable(Variable(1006500));
+                let to = MachineTerm::If {
+                    condition: ConditionTerm::Variable(Variable(1006501)).into(),
+                    then_term: x.clone().into(),
+                    else_term: MachineTerm::Variable(Variable(1006502)).into(),
+                };
+                let mut root = imported(ty, &x);
+                for _ in 0..size {
+                    root = KernelTerm::machine_binary_shared(ty, O::Add, [root.clone(), root]);
+                }
+                let input = IntegerTerm::Machine(
+                    SharedMachineIntegerTerm::from_shared(ty, root.clone()).unwrap(),
+                );
+                let exports = KernelTermExport::machine_export_count();
+                let (mut result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                    if exact {
+                        rewrite(&root, &x, &to, |leaf| {
+                            super::super::super::rewrite_term(leaf, &x, &to)
+                        })
+                        .unwrap()
+                    } else {
+                        let mut rewrite =
+                            crate::kernel::proof::term_rewrite::TermRewrite::for_bits_checked(
+                                &x, &to,
+                            );
+                        let IntegerTerm::Machine(value) = rewrite.integer(&input) else {
+                            panic!("observation")
+                        };
+                        assert!(rewrite.refusal().is_none());
+                        value.shared_operand().unwrap().clone()
+                    }
+                });
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+                for _ in 0..size {
+                    let KernelTermNode::MachineBinary { arguments, .. } = result.node() else {
+                        panic!("shared sum")
+                    };
+                    assert_eq!(arguments[0], arguments[1]);
+                    result = arguments[0].clone();
+                }
+                assert_eq!(KernelTermExport::machine(&result).unwrap(), to);
+                samples.push(work);
+            }
+            for pair in samples.windows(2) {
+                assert!(pair[1] <= pair[0] * 5, "exact={exact}, {ty:?}: {samples:?}");
+            }
+        }
+    }
+}
