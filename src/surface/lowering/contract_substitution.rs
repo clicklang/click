@@ -2961,22 +2961,32 @@ pub(in crate::surface) fn contract_let_substitutions(
 /// Whether `binding` is `let name: T = value;` at an 8- or 16-bit `T` with
 /// arithmetic at the root of its value.
 fn narrow_typed_arithmetic_let(binding: &ContractLetBinding) -> bool {
+    binding
+        .value()
+        .is_some_and(|value| narrow_typed_arithmetic(binding.click_type.as_ref(), value))
+}
+
+/// Whether `value` at type `click_type` is arithmetic at an 8- or 16-bit
+/// type: its operators are that type's (G2), which spelling the value
+/// alone, outside its typed binding, would lose to C's promotion.
+pub(in crate::surface) fn narrow_typed_arithmetic(
+    click_type: Option<&ClickType>,
+    value: &ContractExpression,
+) -> bool {
     matches!(
-        binding.click_type,
+        click_type,
         Some(ClickType::C(
             C0Type::Int8 | C0Type::UInt8 | C0Type::Int16 | C0Type::UInt16
         ))
     ) && matches!(
-        binding.value(),
-        Some(
-            ContractExpression::Add(..)
-                | ContractExpression::Subtract(..)
-                | ContractExpression::Multiply(..)
-                | ContractExpression::BitwiseAnd(..)
-                | ContractExpression::BitwiseOr(..)
-                | ContractExpression::BitwiseXor(..)
-                | ContractExpression::BitwiseNot(..)
-        )
+        value,
+        ContractExpression::Add(..)
+            | ContractExpression::Subtract(..)
+            | ContractExpression::Multiply(..)
+            | ContractExpression::BitwiseAnd(..)
+            | ContractExpression::BitwiseOr(..)
+            | ContractExpression::BitwiseXor(..)
+            | ContractExpression::BitwiseNot(..)
     )
 }
 

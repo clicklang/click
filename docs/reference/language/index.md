@@ -989,6 +989,9 @@ are that type's own operators, which wrap modulo 2^8 or 2^16 at either
 signedness and owe nothing
 (`mdtests/narrow_specification_arithmetic_is_the_operator_at_its_type.md`,
 `mdtests/narrow_arithmetic_at_a_narrow_result_or_parameter_is_native.md`);
+a theorem's typed `let` names that native operation in its clauses and in
+every proof step
+(`mdtests/a_theorem_let_names_its_native_operation_in_a_proof_step.md`);
 arithmetic there over an operand of another machine type is refused, naming
 the conversion to write, such as `x as uint8`
 (`mdtests/a_narrow_typed_let_of_mixed_operands_is_refused.md`); the operand
