@@ -15,6 +15,7 @@ fn clause(value: CValue) -> SpecProposition {
             result_type: CType::Int32,
             pointer_result: None,
             result_object_class: None,
+            projection: None,
             arguments: vec![SpecPureFunctionArgument::ObjectPointer {
                 argument: Box::new(SpecPureFunctionArgument::Value(SpecExpression::Value(
                     value,

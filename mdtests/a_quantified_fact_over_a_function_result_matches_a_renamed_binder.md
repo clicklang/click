@@ -45,7 +45,7 @@ unsigned long walk(unsigned char *p, unsigned long n) {
             } by {
                 intro();
                 intro();
-                apply(chunks_exact::nth_chunks_exact(p, n, 4u64, j));
+                apply(chunks_exact::nth_chunks_exact(Slice<uint8>::Slice(p, n), 4u64, j));
             }
             have forall (j: uint64) {
                 j < n / 4u64 implies
@@ -54,7 +54,7 @@ unsigned long walk(unsigned char *p, unsigned long n) {
             } by {
                 intro();
                 intro();
-                apply(chunks_exact::nth_chunks_exact(p, n, 4u64, j));
+                apply(chunks_exact::nth_chunks_exact(Slice<uint8>::Slice(p, n), 4u64, j));
             }
             solve();
         }

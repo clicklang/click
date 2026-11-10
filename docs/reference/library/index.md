@@ -6247,8 +6247,7 @@ a slice. `nth` is an observation that consumes nothing, not Rust's consuming
 `Iterator::nth`. The axioms say what `chunks_exact` builds and what one
 `next()` leaves; they are trusted, not proved. A value reads with its
 methods, `s.chunks_exact(4u64).nth(k).len()`
-([methods](../language/index.md#methods)). The construction axioms take the
-slice as its data pointer and length. A Rust unit with `"iterators":
+([methods](../language/index.md#methods)). A Rust unit with `"iterators":
 "library"` imports its `chunks_exact` iterators as values of this type
 ([Rust](../rust.md#library-iterators)); see `design/rust-iterators.md`.
 
@@ -6303,24 +6302,23 @@ function after_next<T>(it: ChunksExact<T>) -> ChunksExact<T>;
 ### `chunks_exact::len_chunks_exact`
 
 ```click
-axiom len_chunks_exact<T>(p: T*, m: uint64, n: uint64) {
+axiom len_chunks_exact<T>(s: Slice<T>, n: uint64) {
     requires n != 0u64;
-    ensures chunks_exact::len(chunks_exact::chunks_exact(Slice<T>::Slice(p, m), n)) == m / n;
+    ensures chunks_exact::len(chunks_exact::chunks_exact(s, n)) == slice::len(s) / n;
 }
 ```
 
-The construction axioms are stated over a slice built from its data pointer `p` and length `m`, the form a slice has in a proof about a program: nothing has to be unfolded to apply one. **Axiom:** trusted, not proved.
+**Axiom:** trusted, not proved.
 
 ### `chunks_exact::nth_chunks_exact`
 
 ```click
-axiom nth_chunks_exact(p: uint8*, m: uint64, n: uint64, k: uint64) {
+axiom nth_chunks_exact(s: Slice<uint8>, n: uint64, k: uint64) {
     requires n != 0u64;
-    requires k < m / n;
-    ensures slice::as_ptr(chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n), k))
-        == p + k * n;
-    ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n), k))
-        == n;
+    requires k < slice::len(s) / n;
+    ensures slice::as_ptr(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k))
+        == slice::as_ptr(s) + k * n;
+    ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k)) == n;
 }
 ```
 
@@ -6329,16 +6327,16 @@ Chunk `k` is the `n` elements from element `k * n`. Stated for bytes: an offset 
 ### `chunks_exact::remainder_chunks_exact`
 
 ```click
-axiom remainder_chunks_exact(p: uint8*, m: uint64, n: uint64) {
+axiom remainder_chunks_exact(s: Slice<uint8>, n: uint64) {
     requires n != 0u64;
-    ensures slice::as_ptr(chunks_exact::remainder(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n)))
-        == p + (m - m % n);
-    ensures slice::len(chunks_exact::remainder(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n)))
-        == m % n;
+    ensures slice::as_ptr(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
+        == slice::as_ptr(s) + (slice::len(s) - slice::len(s) % n);
+    ensures slice::len(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
+        == slice::len(s) % n;
 }
 ```
 
-The remainder is the last `m % n` elements. Stated for bytes, as `nth_chunks_exact` is. **Axiom:** trusted, not proved.
+The remainder is the last `len(s) % n` elements. Stated for bytes, as `nth_chunks_exact` is. **Axiom:** trusted, not proved.
 
 ### `chunks_exact::len_after_next`
 
