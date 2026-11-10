@@ -5,10 +5,8 @@ A call of a pure function that returns a pointer is a pointer operand, so
 meaning. Before, the parser did not know the call returned a pointer and
 read the comparison as one of exact Integers, which has no value for a
 pointer: the claim was refused as lowering to no path. The same holds for
-the method spelling, `s.as_ptr() + k`, and for a literal offset. A generic
-axiom may state such arithmetic over its own `T*`, as
-`click::rust::chunks_exact` does; it is lowered where it is applied, at a
-concrete element type.
+the method spelling, `s.as_ptr() + k`, and for a literal offset. An offset
+from a `T*` at an abstract `T` is still refused, since it needs `T`'s size.
 
 ```click
 import click::rust::slice;

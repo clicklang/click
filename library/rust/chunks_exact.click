@@ -35,8 +35,9 @@ axiom len_chunks_exact<T>(s: Slice<T>, n: uint64) {
     ensures chunks_exact::len(chunks_exact::chunks_exact(s, n)) == slice::len(s) / n;
 }
 
-// Chunk `k` is the `n` elements from element `k * n`.
-axiom nth_chunks_exact<T>(s: Slice<T>, n: uint64, k: uint64) {
+// Chunk `k` is the `n` elements from element `k * n`. Stated for bytes: an
+// offset from a `T*` needs `T`'s size, which a generic axiom does not have.
+axiom nth_chunks_exact(s: Slice<uint8>, n: uint64, k: uint64) {
     requires n != 0u64;
     requires k < slice::len(s) / n;
     ensures slice::as_ptr(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k))
@@ -44,8 +45,9 @@ axiom nth_chunks_exact<T>(s: Slice<T>, n: uint64, k: uint64) {
     ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k)) == n;
 }
 
-// The remainder is the last `len(s) % n` elements.
-axiom remainder_chunks_exact<T>(s: Slice<T>, n: uint64) {
+// The remainder is the last `len(s) % n` elements. Stated for bytes, as
+// `nth_chunks_exact` is.
+axiom remainder_chunks_exact(s: Slice<uint8>, n: uint64) {
     requires n != 0u64;
     ensures slice::as_ptr(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
         == slice::as_ptr(s) + (slice::len(s) - slice::len(s) % n);
