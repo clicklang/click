@@ -67,7 +67,16 @@ impl Boundary<'_> {
         if ((self.path == "src/surface/proof/proof_object/splits_and_scopes.rs"
             && self.function == "begin_have")
             || (self.path == "src/surface/proof/proof_object/outcomes_and_focus.rs"
-                && self.function == "begin_contract_claim"))
+                && self.function == "begin_contract_claim")
+            || (self.path == "src/surface/proof/proof_object/scope.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "join"
+                        | "join_inner"
+                        | "close_open_scope_from"
+                        | "join_nested"
+                        | "join_nested_result"
+                )))
             && (matches!(name, "ProofDriver" | "ProofSearch" | "DriveProof")
                 || proof_search_boundary::TARGETS
                     .lines()

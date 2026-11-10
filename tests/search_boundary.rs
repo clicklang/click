@@ -1199,3 +1199,26 @@ fn contract_claim_primitive_cannot_schedule_proofs_or_search() {
         "impl Proof { fn begin_contract_claim(&self) { refuse_or_record_open_obligation(error)?; } }"
     ).is_ok());
 }
+
+#[test]
+fn resource_scope_completion_cannot_schedule_proofs_or_search() {
+    let path = "src/surface/proof/proof_object/scope.rs";
+    for source in [
+        "impl ProofScope { fn join_inner(&self) { self.body.driver().close_scope_with_body_fact_proof(); } }",
+        "impl ProofScope { fn close_open_scope_from(&self) { ProofSearch::proves(facts, goal); } }",
+        "impl ProofScope { fn join_inner(&self) { invoke!(self.body.driver()); } }",
+        "impl ProofScope { fn join_inner(&self) { let run = ProofDriver::complete_scope; } }",
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+    assert!(
+        boundary::check_source(
+            path,
+            "impl ProofScope { fn join_inner(&self) { refuse_or_record_open_obligation(error)?; } }"
+        )
+        .is_ok()
+    );
+}

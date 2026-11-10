@@ -1920,7 +1920,7 @@ fn try_check_structural_function_proof_inner<'a>(
                     proof_site.as_ref(),
                     owning_source_index,
                 ));
-                proof = scope.join()?;
+                proof = scope.driver().complete_scope()?;
                 current = continuation;
             }
             InternalProofNode::Branch {
@@ -3135,7 +3135,7 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                         "`{claim_label}` tactic {index}: `open` did not verify as a checked preservation operation"
                     )));
                 };
-                proof = scope.join()?;
+                proof = scope.driver().complete_scope()?;
                 node = continuation;
                 last_tactic = Some((*index, "open"));
                 continue;
@@ -4066,7 +4066,10 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     proof_site,
                     owning_source_index,
                 ));
-                proof = scope.join()?.restore_execution_tactic_attribution(&owner)?;
+                proof = scope
+                    .driver()
+                    .complete_scope()?
+                    .restore_execution_tactic_attribution(&owner)?;
                 region = continuation;
                 branch_continuation = None;
             }
@@ -5135,7 +5138,7 @@ fn advance_checked_open_scope<'a>(
             proof_site,
             owning_source_index,
         ));
-        let scope = scope.join_nested(nested)?;
+        let scope = scope.driver().complete_nested_scope(nested)?;
         return advance_checked_open_scope(
             scope,
             continuation,

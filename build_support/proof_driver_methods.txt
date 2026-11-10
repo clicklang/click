@@ -19,6 +19,8 @@ close_with_unsigned_lemma
 complete_fixed_state_obligations
 complete_fixed_state_obligations_inner
 complete_fixed_state_obligations_since
+complete_nested_scope
+complete_scope
 discharge_entry_requirements
 have_by_integer_arithmetic
 open_contract_claim

@@ -24,7 +24,7 @@ without changing its behavior. The frozen
 [dependency inventory](../build_support/proof_search_edges.tsv) records existing
 callers and separates operation dependencies from the explicit `ProofDriver`
 and mixed callers classified in the [caller audit](../design/proof-boundary-classification.md). The driver owns proof interpretation and the
-choice between explicit obligation proofs and implicit solving. Its 13
+choice between explicit obligation proofs and implicit solving. Its 12
 operation-to-driver reference records remain a separate migration list;
 implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
 Existing test names below identify evidence to retain and inspect, not new
@@ -63,17 +63,16 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **610 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 14 operation references, 13 operation-to-driver references,
-19 mixed references, 103 driver references, 423 search references, 6 presentation
+The frozen inventory has **612 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 14 operation references, 12 operation-to-driver references,
+19 mixed references, 106 driver references, 423 search references, 6 presentation
 references, 1 dispatch and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 14
 operation references.
 
 - **Confirmed architectural exceptions:** explicit legacy transport invokes
-  discovery; resource-scope completion still schedules proofs internally;
-  ordinary failure diagnostics can execute and implicitly solve more steps.
+  discovery; ordinary failure diagnostics can execute and implicitly solve more steps.
   T5 also retains uncharged transition-assumption reconstruction. No fresh
   scaling curve was run for this reconciliation.
 - **Unmeasured candidates:** seven kernel bridges map to five groups, L1, R2,
@@ -82,7 +81,7 @@ operation references.
   performance regressions.
 - **Legitimate search:** driver-owned implicit solve and explicit smart
   planning. Generating obligations is fast work; solving them may be slow and
-  expandable. Have/claim obligation scheduling is no longer an open extraction.
+  expandable. Have/claim and resource-scope obligation scheduling are no longer open extractions.
 - **Transport coverage:** T1–T5 below describe remaining routes. Scalar
   conjunction selection/regrouping and matching compound/nested implications
   with scalar leaves have ordinary expansion coverage. They do not settle
@@ -95,8 +94,8 @@ operation references.
   do not prohibit every search call during expanded replay or detect arbitrary
   loops, shared-term export and copying. No global fast-proof guarantee yet.
 
-Next boundary extraction: return resource-scope closing obligations to the
-driver. Next independent scaling experiment: L1 through an actual write.
+Resource-scope completion now reports obligations to the driver, including
+nested opens; function-exit deferral is unchanged. Next scaling experiment: L1 through an actual write.
 Transport work should target a named T1–T5 route and its retirement criterion,
 not accumulate more examples of an already-covered shape. These are separate
 work items; this reconciliation changes no behavior.

@@ -3,6 +3,67 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Schedule a resource close's outstanding body fact, retaining its proof
+    /// as the open scope's `by`. The primitive close only reports obligations.
+    pub(in crate::surface::proof) fn complete_scope(&self) -> Result<Proof<'a>, ClickError> {
+        let scope = self.proof;
+        let ProofScopeStructure::Open {
+            resource,
+            source_index,
+            preserve_exposed_body,
+            written_close_proof,
+        } = scope.structure.as_ref()
+        else {
+            return scope.clone().join();
+        };
+        if scope.body.is_at_function_exit() {
+            return scope.close_open_scope_from(
+                &scope.body,
+                resource,
+                *source_index,
+                *preserve_exposed_body,
+                written_close_proof,
+            );
+        }
+        let (closed, close_proof) = scope.body.driver().close_scope_with_body_fact_proof(
+            resource,
+            written_close_proof.as_deref(),
+            &|body| {
+                scope.close_open_scope_from(
+                    body,
+                    resource,
+                    *source_index,
+                    *preserve_exposed_body,
+                    written_close_proof,
+                )
+            },
+        )?;
+        let Some(close_proof) = close_proof else {
+            return Ok(closed);
+        };
+        Ok(Proof {
+            node: ProofNode::step_child(
+                &scope.root.node,
+                closed.focused_branch_id(),
+                Arc::new(ProofStep::Open {
+                    resource: resource.clone(),
+                    proof: Box::new(scope.body.certificate()),
+                    close_proof: Some(close_proof),
+                }),
+            ),
+            ..closed
+        })
+    }
+
+    pub(in crate::surface::proof) fn complete_nested_scope(
+        &self,
+        nested: ProofScope<'a>,
+    ) -> Result<ProofScope<'a>, ClickError> {
+        self.proof.require_nested_root(&nested)?;
+        let closed = nested.driver().complete_scope()?;
+        self.proof.join_nested_result(closed)
+    }
+
     /// Applies one checked step inside the nested body. Failed
     /// candidates leave the enclosing scope value unchanged.
     pub(in crate::surface::proof) fn apply_step(
