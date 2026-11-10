@@ -53,10 +53,10 @@ fn shared_wide_constant_capture_scales_with_dag_and_selected_sources() {
             samples.push((size as usize, unrelated, work));
         }
     }
-    for pair in samples.chunks_exact(2) {
+    for pair in samples.as_chunks::<2>().0 {
         assert!(pair[1].2 <= pair[0].2 + 32, "{samples:?}");
     }
-    for pair in samples.chunks_exact(2).collect::<Vec<_>>().windows(2) {
+    for pair in samples.as_chunks::<2>().0.windows(2) {
         let (small, _, sw) = pair[0][0];
         let (large, _, lw) = pair[1][0];
         assert!(lw * small <= sw * large * 2, "{samples:?}");
