@@ -1170,15 +1170,33 @@ fn expand_declared_resources_in_function_block(
     function: &mut FunctionBlock,
     resource_definitions: &DeclaredResourceScope,
 ) -> Result<(), ClickError> {
+    // A library-valued loop iterator is a value of its library type, under
+    // its local's name and, inside its loop, `iter`.
+    let library_iterators = function
+        .signature()
+        .rust_loop_iterators()
+        .iter()
+        .flatten()
+        .filter_map(|iterator| {
+            let click_type = crate::surface::rust_library_iterator_type(iterator)?;
+            Some([
+                (iterator.local.clone(), click_type.clone()),
+                ("iter".to_string(), click_type),
+            ])
+        })
+        .flatten()
+        .collect::<Vec<_>>();
     resource_definitions.constructors.enter_declaration(
-        declaration_parameter_types(function.signature().parameters()).chain(
-            (function.signature().return_type() != C0Type::Void).then(|| {
-                (
-                    "result".to_string(),
-                    ClickType::C(function.signature().return_type()),
-                )
-            }),
-        ),
+        declaration_parameter_types(function.signature().parameters())
+            .chain(
+                (function.signature().return_type() != C0Type::Void).then(|| {
+                    (
+                        "result".to_string(),
+                        ClickType::C(function.signature().return_type()),
+                    )
+                }),
+            )
+            .chain(library_iterators),
     );
     crate::surface::enter_ambient_declaration(function.signature().name());
     *resource_definitions.character_parameters.borrow_mut() = function

@@ -1255,6 +1255,7 @@ pub(in crate::surface) fn annotated_loop_function_extending(
                     parameter.c_type().to_kernel_type(),
                 )
             })
+            .chain(library_iterator_local_types(parsed_function))
             .collect(),
         local_type_state: None,
         pointer_element_types: parsed_function
@@ -1719,6 +1720,7 @@ fn annotate_function(
                     parameter.c_type().to_kernel_type(),
                 )
             })
+            .chain(library_iterator_local_types(parsed_function))
             .collect(),
         local_type_state: None,
         pointer_element_types: parsed_function
@@ -2026,6 +2028,7 @@ pub(in crate::surface) fn lower_branch_interface_fact(
                     parameter.c_type().to_kernel_type(),
                 )
             })
+            .chain(library_iterator_local_types(parsed_function))
             .collect(),
         local_type_state: Some(current_state),
         pointer_element_types: parsed_function
@@ -2564,6 +2567,7 @@ pub(in crate::surface) fn function_contract_summary(
                     parameter.c_type().to_kernel_type(),
                 )
             })
+            .chain(library_iterator_local_types(parsed_function))
             .collect(),
         local_type_state: None,
         pointer_element_types: parsed_function
@@ -3261,6 +3265,40 @@ pub(in crate::surface) fn lower_integer_certificate_proposition(
 }
 
 /// The decimal spelling of an integer literal, negated or not.
+/// The C type of each local of `function` that holds a library-valued loop
+/// iterator, `ChunksExact<uint8>`: a clause read with no state in hand, such
+/// as a loop's `decreases`, still knows the local holds a spec value.
+fn library_iterator_local_types(
+    function: &crate::languages::c::syntax::C0Function,
+) -> Vec<(String, CType)> {
+    function
+        .loop_iterators()
+        .iter()
+        .flatten()
+        .filter_map(|iterator| {
+            let ClickType::Algebraic(application) =
+                crate::surface::rust_library_iterator_type(iterator)?
+            else {
+                return None;
+            };
+            let arguments = application
+                .arguments
+                .iter()
+                .map(|argument| match argument {
+                    ClickType::C(c_type) => Some(AlgebraicValueType::C(c_type.to_kernel_type())),
+                    _ => None,
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Some((
+                iterator.local.clone(),
+                CType::Parameter(crate::kernel::TypeParameterName::of(
+                    &generics::primitive_instance_type(&application.name, &arguments),
+                )),
+            ))
+        })
+        .collect()
+}
+
 fn integer_literal_spelling(expression: &ContractExpression) -> Option<String> {
     match expression {
         ContractExpression::IntegerLiteral(text) => Some(text.clone()),

@@ -176,6 +176,29 @@ impl Context<'_> {
                 ("pointer", CType::UInt8Pointer, true),
                 ("len", CType::UInt64, false),
             ]
+        } else if library_iterators() {
+            // One value of the library's `ChunksExact<uint8>`. A slice is
+            // still a pointer and a length here, so the fixed remainder is
+            // read once into two locals, and a terminator's condition is an
+            // expression, so the number of chunks left is read into one.
+            self.chunk_iterators.insert(name.into());
+            self.mir_chunk_iterators.insert(name.into());
+            let mut result = c_declare(name, CType::Parameter(super::chunks_exact_type()));
+            for (suffix, ty, constant) in [
+                ("left", CType::UInt64, false),
+                ("tail", CType::UInt8Pointer, true),
+                ("tail_len", CType::UInt64, false),
+            ] {
+                let field = format!("{name}_{suffix}");
+                if !self.locals.insert(field.clone()) {
+                    return Err("chunk metadata identity collision".into());
+                }
+                result = c_seq(
+                    result,
+                    c_declare_with_all_qualifiers(field, ty, false, false, false, constant),
+                );
+            }
+            return Ok(result);
         } else {
             self.chunk_iterators.insert(name.into());
             self.mir_chunk_iterators.insert(name.into());
@@ -211,6 +234,11 @@ impl Context<'_> {
         if !self.mir_chunk_iterators.contains(iterator) {
             return Err("unknown MIR chunk iterator".into());
         }
+        // The library model keeps no liveness flag: the compiler has
+        // already checked each use is of a live iterator.
+        if library_iterators() {
+            return Ok(c_skip());
+        }
         Ok(c_assert(c_equal(
             c_variable(format!("{iterator}_live")),
             c_int32_literal(1),
@@ -239,6 +267,30 @@ impl Context<'_> {
         )?;
         let (l_capture, l) = self.capture_operand(length, &Type::Usize)?;
         let (size_prefix, size) = self.prepared_expr(size)?;
+        if library_iterators() {
+            let call = |target: String, operation: &str, arguments| {
+                c_call_assign(
+                    target,
+                    super::super::standard_library::chunks_exact_function(operation),
+                    arguments,
+                )
+            };
+            let value = || vec![c_variable(iterator)];
+            return Ok(c_seq(
+                c_seq(p_capture, c_seq(l_capture, size_prefix)),
+                c_seq(
+                    call(
+                        iterator.to_string(),
+                        "new",
+                        vec![c_variable(&p), c_variable(&l), size],
+                    ),
+                    c_seq(
+                        call(format!("{iterator}_tail"), "remainder_ptr", value()),
+                        call(format!("{iterator}_tail_len"), "remainder_len", value()),
+                    ),
+                ),
+            ));
+        }
         let prefix = c_seq(
             c_assert(c_equal(
                 c_variable(format!("{iterator}_live")),
@@ -255,6 +307,19 @@ impl Context<'_> {
     pub(super) fn chunk_move(&self, target: &str, source: &str) -> Result<CStatement, String> {
         if target == source || !self.mir_chunk_iterators.contains(target) {
             return Err("invalid chunk move destination".into());
+        }
+        if library_iterators() {
+            let mut result = c_assign(target, c_variable(source));
+            for suffix in ["tail", "tail_len"] {
+                result = c_seq(
+                    result,
+                    c_assign(
+                        format!("{target}_{suffix}"),
+                        c_variable(format!("{source}_{suffix}")),
+                    ),
+                );
+            }
+            return Ok(result);
         }
         let mut result = c_seq(
             self.chunk_live(source)?,
@@ -284,13 +349,58 @@ impl Context<'_> {
         if !self.mir_chunk_iterators.contains(iterator) {
             return Err("unknown MIR chunk iterator".into());
         }
+        if library_iterators() {
+            return Ok(c_less_than(
+                c_uint64_literal(0),
+                c_variable(format!("{iterator}_left")),
+            ));
+        }
         let remaining = c_variable(format!("{iterator}_remaining"));
         let size = c_variable(format!("{iterator}_size"));
         Ok(chunk_has_whole(remaining, size))
     }
+    /// Reads how many chunks the library iterator will still yield into its
+    /// `_left` local. Each test of it reads it afresh first, and the
+    /// `next()` the test leads to uses that read, so no loop has to carry
+    /// the local's meaning across its head.
+    pub(super) fn chunk_read_left(&self, iterator: &str) -> CStatement {
+        c_call_assign(
+            format!("{iterator}_left"),
+            super::super::standard_library::chunks_exact_function("len"),
+            vec![c_variable(iterator)],
+        )
+    }
     pub(super) fn chunk_next(&self, iterator: &str, option: &str) -> Result<CStatement, String> {
         if !self.chunk_options.contains(option) {
             return Err("unknown chunk Option".into());
+        }
+        if library_iterators() {
+            let call = |target: String, operation: &str, arguments| {
+                c_call_assign(
+                    target,
+                    super::super::standard_library::chunks_exact_function(operation),
+                    arguments,
+                )
+            };
+            let value = || vec![c_variable(iterator)];
+            // `next()`: the first chunk still to come, then the iterator
+            // after it.
+            let some = c_seq(
+                c_assign(format!("{option}_some"), c_int32_literal(1)),
+                c_seq(
+                    call(format!("{option}_pointer"), "item_ptr", value()),
+                    c_seq(
+                        call(format!("{option}_len"), "item_len", value()),
+                        call(iterator.to_string(), "after_next", value()),
+                    ),
+                ),
+            );
+            // The test that led here read `_left` from this iterator.
+            return Ok(c_if(
+                self.chunk_has_next(iterator)?,
+                some,
+                c_assign(format!("{option}_some"), c_int32_literal(0)),
+            ));
         }
         let cursor = format!("{iterator}_cursor");
         let remaining = format!("{iterator}_remaining");

@@ -141,6 +141,114 @@ fn option_unwrap_contract(function: &super::schema::Function) -> String {
 }
 
 /// The `extern fn` contract of each core method `export` declares.
+/// The prefix of the `core_method` of each `ChunksExact` operation the
+/// library-iterator model calls, `ChunksExact::new`.
+pub(super) const CHUNKS_EXACT: &str = "ChunksExact::";
+
+/// The name of the external function for the `ChunksExact` operation
+/// `operation` over bytes.
+pub(super) fn chunks_exact_function(operation: &str) -> String {
+    let mut name = super::names::qualified_name(["ChunksExact", operation]);
+    super::names::push_type_argument(&mut name, "u8");
+    name
+}
+
+/// Switches `export` to the library-iterator model: an iterator is a value
+/// of its Click library type. Declares the external functions a
+/// `chunks_exact` iterator's operations call, when the export has one.
+pub(super) fn use_library_iterators(export: &mut RustExport) {
+    use super::schema::{Function, Place, Span};
+    export.library_iterators = true;
+    let has_chunks = export.functions.iter().any(|function| {
+        function.mir.as_ref().is_some_and(|mir| {
+            mir.locals
+                .iter()
+                .any(|local| local.value_type == Type::ChunkIterator)
+        })
+    });
+    if !has_chunks {
+        return;
+    }
+    let bytes = || Type::ByteSlice { mutable: false };
+    let byte_pointer = || Type::Reference {
+        mutable: false,
+        pointee: Box::new(Type::U8),
+    };
+    let iterator = || ("it", Type::ChunkIterator);
+    let operations: [(&str, Vec<(&str, Type)>, Type); 7] = [
+        (
+            "new",
+            vec![("s", bytes()), ("n", Type::Usize)],
+            Type::ChunkIterator,
+        ),
+        ("remainder_ptr", vec![iterator()], byte_pointer()),
+        ("remainder_len", vec![iterator()], Type::Usize),
+        ("len", vec![iterator()], Type::Usize),
+        ("item_ptr", vec![iterator()], byte_pointer()),
+        ("item_len", vec![iterator()], Type::Usize),
+        ("after_next", vec![iterator()], Type::ChunkIterator),
+    ];
+    for (operation, parameters, return_type) in operations {
+        export.functions.push(Function {
+            name: chunks_exact_function(operation),
+            return_type,
+            parameters: parameters
+                .into_iter()
+                .map(|(name, value_type)| Place {
+                    name: name.into(),
+                    value_type,
+                    span: Span { line: 1, column: 1 },
+                })
+                .collect(),
+            body: vec![],
+            mir: None,
+            external: true,
+            captures: 0,
+            implements: None,
+            instance_of: None,
+            core_method: Some(format!("{CHUNKS_EXACT}{operation}")),
+            span: Span { line: 1, column: 1 },
+        });
+    }
+}
+
+/// The contract of the `ChunksExact` operation `operation`: the call stated
+/// with the library's `click::rust::chunks_exact`. A slice is still a
+/// pointer and a length in the importer's model, so a chunk and the
+/// remainder are each read as their data and their length.
+fn chunks_exact_contract(function: &super::schema::Function, operation: &str) -> String {
+    const LIBRARY: &str = "click::rust::chunks_exact";
+    const SLICE: &str = "click::rust::slice";
+    let name = &function.name;
+    let iterator = "ChunksExact<u8>";
+    let body = match operation {
+        // Rust panics on a zero chunk size.
+        "new" => format!(
+            "extern fn {name}(s: &[u8], n: usize) -> {iterator} {{\n    requires n != 0u64;\n    ensures result == {LIBRARY}::chunks_exact(Slice<u8>::Slice(s, s.len()), n);\n}}"
+        ),
+        "remainder_ptr" => format!(
+            "extern fn {name}(it: {iterator}) -> &u8 {{\n    ensures result == {SLICE}::as_ptr({LIBRARY}::remainder(it));\n}}"
+        ),
+        "remainder_len" => format!(
+            "extern fn {name}(it: {iterator}) -> usize {{\n    ensures result == {SLICE}::len({LIBRARY}::remainder(it));\n}}"
+        ),
+        "len" => format!(
+            "extern fn {name}(it: {iterator}) -> usize {{\n    ensures result == {LIBRARY}::len(it);\n}}"
+        ),
+        "item_ptr" => format!(
+            "extern fn {name}(it: {iterator}) -> &u8 {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {SLICE}::as_ptr({LIBRARY}::nth(it, 0u64));\n}}"
+        ),
+        "item_len" => format!(
+            "extern fn {name}(it: {iterator}) -> usize {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {SLICE}::len({LIBRARY}::nth(it, 0u64));\n}}"
+        ),
+        "after_next" => format!(
+            "extern fn {name}(it: {iterator}) -> {iterator} {{\n    requires 0u64 < {LIBRARY}::len(it);\n    ensures result == {LIBRARY}::after_next(it);\n}}"
+        ),
+        _ => unreachable!("declared by `use_library_iterators`"),
+    };
+    format!("\n{body}\n")
+}
+
 pub(super) fn contracts(export: &RustExport) -> String {
     let mut source = String::new();
     for function in &export.functions {
@@ -153,6 +261,10 @@ pub(super) fn contracts(export: &RustExport) -> String {
         }
         if specification == SLICE_SWAP {
             source.push_str(&slice_swap_contract(function));
+            continue;
+        }
+        if let Some(operation) = specification.strip_prefix(CHUNKS_EXACT) {
+            source.push_str(&chunks_exact_contract(function, operation));
             continue;
         }
         if specification == OPTION_UNWRAP {
@@ -270,6 +382,7 @@ mod tests {
             span: span.clone(),
         };
         let export = RustExport {
+            library_iterators: false,
             schema: super::super::schema::SCHEMA,
             compiler_commit: String::new(),
             target: String::new(),
