@@ -106,20 +106,20 @@ Roles distinguish the work remaining:
 | `dispatch` | Source drivers explicitly select a smart tactic or implicit closing. |
 | `presentation` | Spelling and trace helpers depend on discovery helpers. Audit independently of semantic steps. |
 | `search` | Calls made within the extracted search interface or planning modules. |
-| `mixed` | Mixed drivers and auxiliary planners still requiring caller-level classification. |
+| `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory contains 602 records: 7 legacy bridges, 22 kernel callers,
+The current inventory at `e9222a222` contains 610 records: 7 legacy bridges, 22 kernel callers,
 14 Surface operation dependencies, 13 operation-to-driver dependencies,
-98 driver records, 1 other dispatch record, 6 presentation records,
-420 search-internal records, 19 mixed records and 2 imports. These are reference
+103 driver records, 1 other dispatch record, 6 presentation records,
+423 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
 callers reach the same traversal; dispatch and search-to-search calls are
 expected. The `operation`, `operation-to-driver` and legacy rows are the migration list;
-`mixed` rows are explicitly unresolved, not silently declared fast. Four of the
-operation records belong to explicit tactic/theorem handlers now implemented
+`mixed` rows have caller-level roles in the linked audit; classification does
+not certify their callees as fast. Four of the operation records belong to explicit tactic/theorem handlers now implemented
 on `ProofDriver`: moving dispatch must not hide those search dependencies or
 reclassify them as legitimate implicit solving. Driver placement alone is not
 an efficiency guarantee.
@@ -182,8 +182,8 @@ Claim lowering, goal transformations, and state preparation are unchanged.
 
 ## Detailed caller classification
 
-The [caller audit](proof-boundary-classification.md) classifies the original 19 mixed and
-15 operation-to-driver records (13 remain after extracting have and claim opening) by why they invoke search or interpretation.
+The [caller audit](proof-boundary-classification.md) classifies the current 19 mixed and
+13 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation, diagnostic execution, and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or

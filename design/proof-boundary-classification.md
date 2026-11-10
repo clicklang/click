@@ -1,22 +1,21 @@
 # Proof boundary classification
 
-Source audit of `6e59bda97` (PR #2459), following the proof/search/driver split.
-This classifies all 19 `mixed` and 15 `operation-to-driver` reference records in
-`build_support/proof_search_edges.tsv`. It changes no verifier behavior or
-machine inventory. A classified call is not a complexity proof for its callee.
-No new scaling measurements were made for this audit.
+Source reconciliation at `e9222a222` (2026-11-09). This classifies all 19
+`mixed` and 13 `operation-to-driver` reference records in
+`build_support/proof_search_edges.tsv`, and groups the remaining operation
+references below. It changes no verifier behavior or machine inventory.
+A classified call is not a complexity proof for its callee. No new scaling
+measurements were made for this audit.
 
-## Current migration status
+## Current boundary
 
-The have prerequisite callback described below has been extracted:
-`Proof::begin_have` now reports requirements without scheduling their proofs;
-`ProofDriver::open_have` owns the ordinary obligation-solving orchestration.
-Contract-claim opening now follows the same boundary: `Proof::begin_contract_claim`
-reports definedness obligations, and `ProofDriver::open_contract_claim` handles
-their proofs. The enforced inventory now contains 13 operation-to-driver records.
-The tables below retain their explicitly identified audit snapshot; resource
-scope completion still has its obligation callback. This extraction
-does not resolve the separate cost of separation observation during have setup.
+`Proof::begin_have` and `Proof::begin_contract_claim` return prerequisites;
+`ProofDriver::open_have` and `ProofDriver::open_contract_claim` schedule their
+proofs. These are no longer outstanding operation-to-driver records.
+Resource-scope completion still has its obligation callback. Creating an
+obligation is allowed fast work; choosing an omitted proof's ordinary solve is
+legitimate driver work. The remaining separation-observation setup cost is a
+separate question from who solves its obligations.
 
 ## Findings
 
@@ -54,7 +53,7 @@ Paths below are relative to `src/surface/`.
 | `Carried::establish` | 2 | Search support. Called from `selected_arithmetic/search.rs`; constructs selected arithmetic bridges, including proving missing bounds. |
 | `plan_explicit_loadability_transport` | 1 | Search support. `surface_certificates.rs` selects/minimizes premises and returns written tactics for solve. Here “explicit” describes the output, not the planner's cost. |
 | `plan_explicit_predecessor_upper_bound` | 1 | Search support. Used by solve directly and by the recorded signed-order planner; may plan equality rewrites. |
-| `plan_explicit_fact_transport` | 1 | Smart transport planner. Reached from smart execution and the bare-transport adapters on `Proof`; builds contexts from available facts/effects and tests derivability. Its output is an explicit `TransportUsing` operation, whose separate remaining search is not excused by this classification. |
+| `plan_explicit_fact_transport` | 1 | Smart transport planner. Reached from smart execution and the bare-transport adapters on `Proof`; builds contexts from available facts/effects and tests derivability. Ordinary expansion covers the scalar routes listed in T1–T5; surviving legacy output still uses `TransportUsing`, whose remaining search is not excused by this classification. |
 | `segment_contains_pointer` | 1 | Declaration-validation search. `checking/segments.rs` calls `ProofSearch::proves` for bounds; the production caller is resource-definition read-coverage validation in `validation/definition_validation.rs`. This is not ordinary implicit solve on a user proof obligation. Determine the declaration-input cost bound and how expensive reasoning can be replaced by explicit evidence. |
 
 Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
@@ -62,7 +61,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 15 operation-to-driver reference records
+## The 13 operation-to-driver reference records
 
 Methods below are on `Proof` except `ProofScope::join_inner`.
 
@@ -71,8 +70,6 @@ Methods below are on `Proof` except `ProofScope::join_inner`.
 | `apply_execution_branch_within` | Nested-script interpretation: dispatches the written arm steps. Move orchestration off the primitive interface; splitting, focusing and joining remain operations. |
 | `apply_execution_if_within` | Nested-script interpretation: dispatches then/else scripts. Same separation. |
 | `apply_focused_expanded_execution_arm` | Expanded-script interpretation: dispatches the retained arm with `expanded=true`. That flag is not proof that every transitively called helper avoids search. |
-| `begin_have_spelled` | Hidden obligation dispatch: unless implicit solving is disabled, calls `with_proved_lowering_requirements`, which probes, solves, and reruns the operation. Return the obligations to the outer driver instead. |
-| `focus_bare_kernel_claim_goal` | Hidden obligation dispatch: calls `discharge_entry_requirements` before returning the focused goal. The resulting proof prefix is retained, but focusing is not a purely fast API today. |
 | `ProofScope::join_inner` | Hidden obligation dispatch in the resource-open case: calls `close_scope_with_body_fact_proof`; this may execute the written closing proof or invoke ordinary solve. Split raw scope completion from scheduling its required proof. |
 | `plan_invariant_bundle_closure` | Search/orchestration adapter on the wrong interface: forwards to the driver planner and records the missed member. Used by invariant-closing orchestration. |
 | `solve_open_for_missing_resource` | Search helper on the wrong interface: selects a resource to unfold, called from smart retry. |
@@ -84,7 +81,7 @@ Methods below are on `Proof` except `ProofScope::join_inner`.
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
 | `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
-Totals: 3 nested-script interpreters, 3 implicit-obligation callbacks, 6
+Totals: 3 nested-script interpreters, 1 implicit-obligation callback, 6
 search/support adapters, 2 specific-operation dispatch adapters, and 1 diagnostic
 execution callback. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
@@ -122,7 +119,7 @@ No second checker or producer/rechecker layer is needed.
 - Primitive operations return a successor or outstanding obligations. They
   cannot acquire a driver or invoke a proof script. The outer driver executes
   supplied proofs, invokes solve when omitted, and resumes the operation.
-  Start with `begin_have_spelled`, focusing, and resource-scope completion;
+  Have and claim opening already follow this rule. Extract resource-scope completion;
   move the identified script/search adapters out of the primitive interface.
 - Make search access explicit at every discovery entry, including compatibility
   wrappers: a driver-owned access capability passed to search, never stored in
@@ -143,10 +140,56 @@ No second checker or producer/rechecker layer is needed.
   Treat further speculative execution as an explicitly requested diagnostic
   search rather than work silently performed to report a fast failure.
 
-The immediate implementation proposal should therefore establish and test one
-non-reentrant primitive boundary, rather than starting another unrelated scan
-removal. The hidden lowering-obligation callback in `begin_have_spelled` is a
-concrete first slice. The remaining legacy searches then become named migration
-exceptions to remove with the red-test/design/build cycle. Definition-validation
-proof support and a general change to diagnostic behavior need separate design
-review; they are findings here, not implementation authorization.
+The next boundary extraction is resource-scope completion, not have or claim
+opening. Separate the required closing fact from scheduling its written or
+omitted proof. Definition-validation proof support and normal diagnostic search
+need separate design review; this audit does not authorize behavior changes.
+
+## Reconciled operation dependencies
+
+The 14 `operation` records are not 14 independent slow walks:
+
+| Group | Records | Current interpretation and remaining evidence |
+| --- | ---: | --- |
+| Explicit tactic/theorem handlers on `ProofDriver` | 4 | `apply_step_without_outcome_wrapping` calls disequality refutation, unsigned order and wide arithmetic; `apply_theorem_application` selects an application. Driver placement does not make explicit tactic checking search-free. Audit each selected-input bound and expansion route. |
+| Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
+| Planned transport adapters | 2 | `apply_planned_fact_transport_inner` and `apply_planned_outcome_fact_transport` perform smart discovery. Search is legitimate here, but the emitted `TransportUsing` is not yet generally search-free. |
+| Transition, branch-path and initializer handling | 3 | `certified_transitions_from_execution`, `surface_branch_path_for_outcome`, and `capture_resource_field_initializer` need caller-specific input/cost and reachability evidence. Do not infer a measured violation merely from `derive_atomic_proposition` or `proves`. |
+| Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
+
+The seven kernel bridges and their 22 callers map to five roadmap groups:
+L1 has loan aliases and loan access; R2 has ownership candidates and overlap;
+F1 has owned-anchor distinctness; F2 has composition reconstruction; C1 has
+call framing. These five candidate groups cover seven bridges; they are not seven measured
+defects. R1 is a separate reachability question. Their source
+traversals remain candidates until complete-operation red curves fix the input
+and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.md).
+
+## Evidence and ownership
+
+- **Confirmed boundary problems:** legacy simple transport can access search;
+  resource-scope completion schedules an obligation proof inside `ProofScope`;
+  normal failure diagnostics speculatively execute driver steps. These are
+  source-established architectural findings, not newly measured scaling curves.
+- **Known cost violation:** T5 reconstructs transition assumptions using
+  `assume_proposition_uncharged`. Ordinary transport expansions cover selected
+  cases but do not make the surviving legacy route bounded.
+- **Legitimate expandable work:** omitted-obligation solve, explicit smart
+  tactics, and discovery planners. Their generated operations still owe the
+  fast-checking guarantee; being called from search grants no exemption.
+- **Unmeasured/coverage work:** the five bridge groups, transition/branch/
+  initializer checks, declaration validation, and operation-map growth axes.
+  An unresolved label is an investigation task, not proof of a bug.
+- **Owned elsewhere:** `roadmap/unspellable-facts.md` has live R4–R7 shared-term
+  export reproductions (modular projection, address reconstruction, mixed read
+  evidence, and pointer-index walkers). Its R1–R3 are closed. These are costs
+  possible without any `ProofSearch` call; do not duplicate their fixes here.
+  Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
+  scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
+
+The inventory contains 610 reference records, not 610 obligations to remove.
+The classified mixed records are no longer an unknown pile. What remains
+unknown is complete-operation cost on the named routes, and whether the
+unreviewed parts of the verifier contain additional routes. Consequently this
+reconciliation supplies a finite investigation list, not a global bug count or
+a claim that expanded proofs cannot create `ProofSearch`.

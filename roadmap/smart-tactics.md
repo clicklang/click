@@ -16,14 +16,14 @@ Expensive discovery belongs in budgeted, expandable search, whose expanded
 steps satisfy the same checking rule. A fast special case does not establish
 this guarantee for an operation's other routes.
 
-This is the operation inventory from source inspection at `5610ff660`.
+This operation inventory was reconciled against `e9222a222` on 2026-11-09.
 It organizes the next measurements; it is not a claim that all checking paths
 have been audited, or that every candidate below is a reproduced defect.
 The interface refactor now exposes discovery through `kernel::search::ProofSearch`
 without changing its behavior. The frozen
 [dependency inventory](../build_support/proof_search_edges.tsv) records existing
 callers and separates operation dependencies from the explicit `ProofDriver`
-and unclassified mixed callers. The driver owns proof interpretation and the
+and mixed callers classified in the [caller audit](../design/proof-boundary-classification.md). The driver owns proof interpretation and the
 choice between explicit obligation proofs and implicit solving. Its 13
 operation-to-driver reference records remain a separate migration list;
 implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
@@ -60,6 +60,46 @@ argument across repeated steps and persistent forks, as well as cold misses.
 There is no defensible total bug count yet. Rows are operations, not bugs;
 several rows share helpers and a row can contain multiple routes. The previous
 six-group estimate covered only resource/loan candidates, not the verifier.
+
+## Reconciled status and ownership
+
+The frozen inventory has **610 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 14 operation references, 13 operation-to-driver references,
+19 mixed references, 103 driver references, 423 search references, 6 presentation
+references, 1 dispatch and 2 imports. These are neither independent walks nor
+runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
+classifies every mixed and operation-to-driver record and groups all 14
+operation references.
+
+- **Confirmed architectural exceptions:** explicit legacy transport invokes
+  discovery; resource-scope completion still schedules proofs internally;
+  ordinary failure diagnostics can execute and implicitly solve more steps.
+  T5 also retains uncharged transition-assumption reconstruction. No fresh
+  scaling curve was run for this reconciliation.
+- **Unmeasured candidates:** seven kernel bridges map to five groups, L1, R2,
+  F1, F2 and C1. Other transition/branch/initializer and declaration checks
+  need caller-specific evidence. Preserve these as candidates, not confirmed
+  performance regressions.
+- **Legitimate search:** driver-owned implicit solve and explicit smart
+  planning. Generating obligations is fast work; solving them may be slow and
+  expandable. Have/claim obligation scheduling is no longer an open extraction.
+- **Transport coverage:** T1–T5 below describe remaining routes. Scalar
+  conjunction selection/regrouping and matching compound/nested implications
+  with scalar leaves have ordinary expansion coverage. They do not settle
+  non-scalar leaves, binders, other proof contexts or legacy retirement.
+- **Separate owners:** the representation split in
+  [unspellable facts](unspellable-facts.md) owns live shared-term export groups
+  R4–R7; its R1–R3 are closed. These identifiers are local to that document,
+  not this ledger's R1/R2. M1, E1 and Q1 retain the adjacent owners below.
+- **Enforcement gap:** lexical dependency freezing and selected work counters
+  do not prohibit every search call during expanded replay or detect arbitrary
+  loops, shared-term export and copying. No global fast-proof guarantee yet.
+
+Next boundary extraction: return resource-scope closing obligations to the
+driver. Next independent scaling experiment: L1 through an actual write.
+Transport work should target a named T1–T5 route and its retirement criterion,
+not accumulate more examples of an already-covered shape. These are separate
+work items; this reconciliation changes no behavior.
 
 ## Operation map
 
@@ -264,7 +304,7 @@ complete-operation scaling controls; neither mechanism alone proves the rule.
 The behavior-preserving architectural split is described in
 [Separate proof operations from proof search](../design/proof-operations-and-search.md).
 Use its frozen dependency inventory to remove operation-to-search calls one
-route at a time. Mixed callers still need classification; no strict search-free
+route at a time. Mixed callers now have semantic classifications; no strict search-free
 execution guarantee is claimed. The measurements below feed that migration.
 
 1. Review this inventory, then measure L1 through an actual write: it has a
@@ -289,7 +329,7 @@ execution guarantee is claimed. The measurements below feed that migration.
    documentation and retain their tests when rows are resolved.
 
 Persistent branches retain their parent contexts. Proof repairs preserve the
-original C and contracts, using explicit separation and transport certificates
+original C and contracts, using explicit separation and ordinary preservation/equality steps
 at exact footprint entry/exit snapshots. Whole-region preservation must be
 explicit composition, not a hidden transition walk. Inconclusive checking
 cannot establish equality or preservation, and explicit proof application must
