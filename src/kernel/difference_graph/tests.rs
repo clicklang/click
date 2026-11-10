@@ -2429,3 +2429,51 @@ fn a_rounded_down_value_stays_below_the_bound_of_its_dividend() {
         assert_eq!(graph(&[]).decide(&at_most(&value, &length)), None);
     }
 }
+
+#[test]
+fn offset_sources_retain_shared_indices_and_full_width() {
+    use crate::kernel::{KernelTermExport, SharedMachineIntegerTerm as S};
+    let _session = crate::kernel::VerificationSession::enter();
+    let x = plus(&variable(1017131), 2);
+    let y = plus(&variable(1017132), 2);
+    for wide in [false, true] {
+        let offset = |term| {
+            if wide {
+                PointerOffsetTerm::Int64Scaled {
+                    value: S::index(MachineIntegerType::Int64, MachineTerm::int64_from_32(term)),
+                    byte_width: 4,
+                    unsigned: false,
+                }
+            } else {
+                PointerOffsetTerm::Int32Scaled {
+                    value: S::index(MachineIntegerType::Int32, term),
+                    byte_width: 4,
+                }
+            }
+        };
+        let a = offset(x.clone());
+        let b = offset(y.clone());
+        let exports = KernelTermExport::machine_export_count();
+        let equality = offset_equality(&ConditionTerm::pointer_offset_equal(a.clone(), b))
+            .expect("same stride");
+        let view =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(&equality)
+                .unwrap();
+        assert_eq!(
+            view.format,
+            if wide {
+                MachineIntegerType::Int64
+            } else {
+                MachineIntegerType::Int32
+            }
+        );
+        assert!(
+            offset_equality(&ConditionTerm::pointer_offset_equal(
+                a,
+                PointerOffsetTerm::Constant(3)
+            ))
+            .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+}

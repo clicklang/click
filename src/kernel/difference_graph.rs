@@ -2411,7 +2411,7 @@ fn flip_sign(domain: Domain, value: i128) -> i128 {
 /// A pointer offset as `value * width` for an `int32` value, or a constant
 /// byte offset. Exact: the product is formed in 64 bits.
 enum ScaledOffset<'a> {
-    Scaled(&'a MachineTerm, i64),
+    Scaled(V<'a>, i64),
     Bytes(i64),
 }
 
@@ -2419,7 +2419,7 @@ fn scaled_offset(offset: &crate::kernel::PointerOffsetTerm) -> Option<ScaledOffs
     use crate::kernel::PointerOffsetTerm as O;
     match offset {
         O::Int32Scaled { value, byte_width } if *byte_width != 0 => {
-            Some(ScaledOffset::Scaled(value, *byte_width))
+            Some(ScaledOffset::Scaled(value.operand_view(), *byte_width))
         }
         O::Constant(bytes) => Some(ScaledOffset::Bytes(*bytes)),
         _ => None,
@@ -2457,7 +2457,7 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
                 byte_width: wb,
                 unsigned: ub,
             },
-        ) if wa == wb && *wa != 0 && ua == ub => Some((a.as_ref().clone(), b.as_ref().clone())),
+        ) if wa == wb && *wa != 0 && ua == ub => Some((a.clone(), b.clone())),
         (
             O::Int64Scaled {
                 value,
@@ -2480,32 +2480,55 @@ fn offset_equality(condition: &ConditionTerm) -> Option<ConditionTerm> {
             } else {
                 MachineTerm::int64_constant(count)
             };
-            Some((value.as_ref().clone(), count))
+            Some((
+                value.clone(),
+                V::Legacy(&count).retain(MachineIntegerType::Int64),
+            ))
         }
         _ => None,
     };
     if let Some((a, b)) = wide {
-        return Some(ConditionTerm::int64_equal(a, b));
+        // Equality compares all 64 bits. The native int64 equality accepted
+        // either literal spelling; the shared observation needs the literal
+        // expressed at its signed comparison format.
+        let operands = [a.operand_view(), b.operand_view()];
+        let literals = operands.map(|operand| {
+            operand
+                .uint64_constant()
+                .map(|bits| MachineTerm::int64_constant(bits as i64))
+        });
+        return Some(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int64,
+                CompareRelation::Equal,
+                std::array::from_fn(|i| literals[i].as_ref().map(V::Legacy).unwrap_or(operands[i])),
+            ),
+        );
     }
     let (a, b) = match (scaled_offset(a)?, scaled_offset(b)?) {
-        (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => {
-            (a.clone(), b.clone())
-        }
+        (ScaledOffset::Scaled(a, wa), ScaledOffset::Scaled(b, wb)) if wa == wb => (
+            a.retain(MachineIntegerType::Int32),
+            b.retain(MachineIntegerType::Int32),
+        ),
         (ScaledOffset::Scaled(value, width), ScaledOffset::Bytes(bytes))
         | (ScaledOffset::Bytes(bytes), ScaledOffset::Scaled(value, width))
             if bytes % width == 0 =>
         {
             let count = i32::try_from(bytes / width).ok()?;
-            (value.clone(), MachineTerm::constant(count as u32))
+            (
+                value.retain(MachineIntegerType::Int32),
+                V::Legacy(&MachineTerm::constant(count as u32)).retain(MachineIntegerType::Int32),
+            )
         }
         _ => return None,
     };
-    Some(ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: CompareRelation::Equal,
-        left: Box::new(a),
-        right: Box::new(b),
-    })
+    Some(
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::Int32,
+            CompareRelation::Equal,
+            [a.operand_view(), b.operand_view()],
+        ),
+    )
 }
 
 /// The bases of two offsets that add one constant field offset to each
@@ -2782,11 +2805,11 @@ fn offset_residue(offset: &PointerOffsetTerm) -> Option<Residue> {
     charge();
     match offset {
         O::Constant(bytes) => Some(Residue::exact(*bytes as u64)),
-        O::Int32Scaled { value, byte_width } => match value.as_ref() {
-            bits32_constant!(index) => Some(Residue::exact(
-                i64::from(constant_u32(*index) as i32).wrapping_mul(*byte_width) as u64,
+        O::Int32Scaled { value, byte_width } => match value.operand_view().word32_constant() {
+            Some(index) => Some(Residue::exact(
+                i64::from(index as i32).wrapping_mul(*byte_width) as u64,
             )),
-            _ => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
+            None => (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0)),
         },
         O::Int64Scaled { byte_width, .. } => {
             (*byte_width != 0).then(|| Residue::new(byte_width.trailing_zeros(), 0))

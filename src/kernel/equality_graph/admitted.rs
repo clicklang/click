@@ -133,6 +133,10 @@ pub(in crate::kernel) struct InputData {
         ConditionTerm,
         (SharedMachineIntegerTerm, SharedMachineIntegerTerm),
     >,
+    /// Direct written scalar-to-literal equalities, independent of native vs
+    /// shared comparison spelling. Counts preserve independent supports.
+    pub(in crate::kernel) scalar_literal_inputs:
+        crate::persistent::PersistentMap<(SharedMachineIntegerTerm, u32), usize>,
     /// Canonical source endpoints and their exact admitted premises. Used only
     /// for evidence enumeration and paths, never as a second equality decision.
     pub(in crate::kernel) scalar_evidence_inputs: crate::persistent::PersistentMap<

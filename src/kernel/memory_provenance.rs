@@ -4117,22 +4117,41 @@ pub(crate) fn explicit_atomic_equality_from_memory_derivations(
     right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
+    explicit_atomic_equality_from_memory_derivations_views(
+        crate::kernel::MachineOperandView::Legacy(left),
+        crate::kernel::MachineOperandView::Legacy(right),
+        assumptions,
+    )
+}
+
+pub(in crate::kernel) fn explicit_atomic_equality_from_memory_derivations_views(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
     let _assumptions_id_scope = assumptions.enter_id_scope();
     let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
     let result = with_extended_dag_bridging(|| {
-        if atomic_loads_equal_along_memory_derivations(left, right, assumptions) {
+        if left
+            .read_source()
+            .zip(right.read_source())
+            .is_some_and(|(left, right)| {
+                atomic_loads_equal_along_memory_derivations(&left, &right, assumptions)
+            })
+        {
             return true;
         }
-        let resolves_to = |load: &MachineTerm, value: &MachineTerm| {
-            let MachineTerm::MemoryLoad(memory, pointer, kind) = load else {
+        let resolves_to = |load: crate::kernel::MachineOperandView<'_>,
+                           value: crate::kernel::MachineOperandView<'_>| {
+            let Some((memory, pointer, kind)) = load.read() else {
                 return false;
             };
-            let bytes = crate::kernel::load_term_access_width(memory, pointer, *kind);
+            let bytes = crate::kernel::load_term_access_width(memory, pointer, kind);
             matches!(
                 memory_dag_cell_source(memory, pointer, bytes, assumptions, true)
-                    .and_then(|cell| cell.resolved_value(pointer, *kind)),
+                    .and_then(|cell| cell.resolved_value(pointer, kind)),
                 Some(crate::kernel::integer32_c_value!(resolved))
-                    if resolved == *value
+                    if crate::kernel::MachineOperandView::Legacy(&resolved).retain(MachineIntegerType::Int32) == value.retain(MachineIntegerType::Int32)
             )
         };
         resolves_to(left, right) || resolves_to(right, left)
@@ -6209,7 +6228,40 @@ fn collect_condition_memories(condition: &ConditionTerm, memories: &mut Vec<Shar
 }
 
 fn collect_pointer_offset_memories(offset: &PointerOffsetTerm, memories: &mut Vec<SharedCMemory>) {
-    offset.for_each_scaled_value(|value| collect_bitvector_memories(value, memories));
+    use crate::kernel::MachineOperandView as V;
+    // These memories are search candidates: retain the native walk's first
+    // occurrence order, while visiting shared arithmetic nodes only once.
+    let mut seen = BTreeSet::new();
+    offset.for_each_scaled_operand(|value| {
+        let mut pending = vec![value.operand_view()];
+        while let Some(operand) = pending.pop() {
+            crate::instrumentation::record_deterministic_work(1);
+            let V::Shared(root) = operand else {
+                let V::Legacy(term) = operand else {
+                    unreachable!()
+                };
+                collect_bitvector_memories(term, memories);
+                continue;
+            };
+            if !seen.insert(root.id()) {
+                continue;
+            }
+            if let Some(leaf) = root.machine_conversion_leaf() {
+                collect_bitvector_memories(leaf, memories);
+            } else if let Some((memory, _, _)) = operand.read() {
+                if !memories.contains(memory) {
+                    memories.push(memory.clone());
+                }
+            } else if let Some((_, _, [left, right])) = operand.binary() {
+                pending.push(right);
+                pending.push(left);
+            } else if let Some((_, _, child)) = operand.unary() {
+                pending.push(child);
+            } else if let Some((_, _, _, child)) = operand.cast() {
+                pending.push(child);
+            }
+        }
+    });
 }
 
 fn collect_bitvector_memories(term: &MachineTerm, memories: &mut Vec<SharedCMemory>) {

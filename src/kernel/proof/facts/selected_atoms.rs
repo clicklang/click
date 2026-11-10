@@ -190,3 +190,22 @@ mod tests {
         include!("../../../scaling_tests/kernel/proof/facts/selected_atoms.rs");
     }
 }
+
+/// Root-only atom selection for bounded registered-address inspection.
+pub(super) fn root_atom(operand: MachineOperandView<'_>) -> Option<BitvectorEqualityAtomKey> {
+    match operand {
+        MachineOperandView::Legacy(term) => bitvector_equality_atom_key(term),
+        MachineOperandView::Shared(root) => match root.node() {
+            KernelTermNode::Variable(variable) => {
+                Some(BitvectorEqualityAtomKey::Variable(*variable))
+            }
+            KernelTermNode::MachineLiteral(literal) => {
+                bitvector_equality_atom_key(&literal.legacy_term())
+            }
+            KernelTermNode::MemoryLoad { .. } => {
+                bitvector_equality_atom_key(root.machine_read_leaf().expect("read leaf"))
+            }
+            _ => None,
+        },
+    }
+}
