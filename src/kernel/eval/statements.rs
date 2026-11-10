@@ -1362,24 +1362,27 @@ pub(super) fn execute_c_heap_allocate_paths(
             ));
             continue;
         };
-        let (bytes, valid_size) = if element_count_expression.is_some() {
-            let positive = allocation_size_is_positive(&size, &effective_assumptions);
-            let fits =
-                allocation_size_fits_element_width(&size, element_width, &effective_assumptions);
+        let (bytes, size_refusal) = if element_count_expression.is_some() {
+            let refusal = allocation_size_validity_refusal(
+                &size,
+                element_width,
+                true,
+                &effective_assumptions,
+            );
             (
                 MachineTerm::multiply(size.term.clone(), MachineTerm::constant(element_width)),
-                positive && fits,
+                refusal,
             )
         } else {
             // Heap blocks are byte-addressed even when the receiving pointer
             // has a wider logical element type. Typed accesses still carry
             // their own width and must fit in the resulting byte extent.
-            let valid = allocation_size_is_positive(&size, &effective_assumptions);
-            (size.term, valid)
+            let refusal = allocation_size_validity_refusal(&size, 1, false, &effective_assumptions);
+            (size.term, refusal)
         };
-        if !valid_size {
+        if let Some(refusal) = size_refusal {
             paths.push(CStatementExecutionPath::new(
-                CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                CStatementOutcome::RuntimeError(refusal),
                 facts,
                 obligations,
             ));
@@ -1512,6 +1515,9 @@ fn heap_range_element_count(bytes: &MachineTerm, requested_width: u32) -> (Machi
 struct AllocationSize {
     term: MachineTerm,
     unsigned: bool,
+    /// The size's type admits values above `INT32_MAX` (`uint32`), so the
+    /// facts must bound it to the signed 32-bit heap extent.
+    needs_extent_bound: bool,
 }
 
 /// The refusal for a size [`allocation_size_value`] does not accept: a
@@ -1526,40 +1532,49 @@ fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
 /// C heap blocks currently use the target's checked 32-bit address extent.
 /// Preserve symbolic 32-bit sizes, and accept a 64-bit `size_t`/`long` size
 /// when its concrete value fits that representation. A symbolic 64-bit size
-/// cannot be safely narrowed into a memory block extent yet.
+/// cannot be safely narrowed into a memory block extent yet
+/// (`design/heap-extents.md`). A `uint32` size is admitted here and must
+/// still be bounded by `INT32_MAX` ([`allocation_size_validity_refusal`]).
 fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option<AllocationSize> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
         CValue::Bool(term) => Some(AllocationSize {
             term,
             unsigned: true,
+            needs_extent_bound: false,
         }),
         CValue::Int8(term) => Some(AllocationSize {
             term,
             unsigned: false,
+            needs_extent_bound: false,
         }),
         CValue::Int16(term) | CValue::UInt8(term) | CValue::UInt16(term) => Some(AllocationSize {
             term,
             unsigned: false,
+            needs_extent_bound: false,
         }),
         CValue::Int32(term) => Some(AllocationSize {
             term,
             unsigned: false,
+            needs_extent_bound: false,
         }),
         CValue::UInt32(term) => Some(AllocationSize {
             term,
             unsigned: true,
+            needs_extent_bound: true,
         }),
         CValue::Int64(term) => exact_signed_size_value(&term, assumptions).and_then(|value| {
             u32::try_from(value).ok().map(|value| AllocationSize {
                 term: MachineTerm::constant(value),
                 unsigned: false,
+                needs_extent_bound: false,
             })
         }),
         CValue::UInt64(term) => exact_unsigned_size_value(&term, assumptions).and_then(|value| {
             u32::try_from(value).ok().map(|value| AllocationSize {
                 term: MachineTerm::constant(value),
                 unsigned: false,
+                needs_extent_bound: false,
             })
         }),
         CValue::Int128(_)
@@ -1678,22 +1693,48 @@ fn allocation_size_is_positive(size: &AllocationSize, assumptions: &PureFactCont
     assumptions.decide(&condition) == Some(true)
 }
 
+/// Whether `size` elements of `element_width` bytes fit the checked signed
+/// 32-bit heap extent. The block's token and range store the extent as an
+/// `int32`, so an unsigned size is bounded by `INT32_MAX` too: a `uint32`
+/// at or above 2^31 would read there as a negative count.
 fn allocation_size_fits_element_width(
     size: &AllocationSize,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
-    let maximum = if size.unsigned {
-        u32::MAX / element_width
-    } else {
-        i32::MAX as u32 / element_width
-    };
+    let maximum = i32::MAX as u32 / element_width;
     let condition = if size.unsigned {
         ConditionTerm::unsigned_less_equal(size.term.clone(), MachineTerm::constant(maximum))
     } else {
         ConditionTerm::signed_less_equal(size.term.clone(), MachineTerm::constant(maximum))
     };
     assumptions.decide(&condition) == Some(true)
+}
+
+/// Why an admitted allocation size cannot be a heap extent, if it cannot. An
+/// element count must be positive and fit with `element_width`; a raw byte
+/// count must be positive and, for a `uint32`, at most `INT32_MAX`.
+fn allocation_size_validity_refusal(
+    size: &AllocationSize,
+    element_width: u32,
+    element_count: bool,
+    assumptions: &PureFactContext,
+) -> Option<CRuntimeError> {
+    if !allocation_size_is_positive(size, assumptions) {
+        return Some(CRuntimeError::TypeMismatch);
+    }
+    let fits = if element_count || size.needs_extent_bound {
+        allocation_size_fits_element_width(size, element_width, assumptions)
+    } else {
+        true
+    };
+    if fits {
+        None
+    } else if size.needs_extent_bound {
+        Some(CRuntimeError::HeapAllocationSizeAboveInt32)
+    } else {
+        Some(CRuntimeError::TypeMismatch)
+    }
 }
 
 pub(crate) fn execute_c_realloc_assign_paths(
@@ -1895,12 +1936,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 continue;
             };
             let new_bytes = if element_count_expression.is_some() {
-                let positive = allocation_size_is_positive(&size, &size_assumptions);
-                let fits =
-                    allocation_size_fits_element_width(&size, element_width, &size_assumptions);
-                if !positive || !fits {
+                if let Some(refusal) =
+                    allocation_size_validity_refusal(&size, element_width, true, &size_assumptions)
+                {
                     paths.push(CStatementExecutionPath::new(
-                        CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                        CStatementOutcome::RuntimeError(refusal),
                         size_facts,
                         size_obligations,
                     ));
@@ -1912,6 +1952,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                         MachineTerm::constant(element_width),
                     ),
                     unsigned: size.unsigned,
+                    needs_extent_bound: false,
                 }
             } else {
                 size
@@ -1927,9 +1968,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
             };
             let effective_assumptions =
                 assumptions_with_path_context(assumptions, &all_facts, &all_obligations);
-            if !allocation_size_is_positive(&new_bytes, &effective_assumptions) {
+            if let Some(refusal) =
+                allocation_size_validity_refusal(&new_bytes, 1, false, &effective_assumptions)
+            {
                 paths.push(CStatementExecutionPath::new(
-                    CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
+                    CStatementOutcome::RuntimeError(refusal),
                     all_facts,
                     all_obligations,
                 ));

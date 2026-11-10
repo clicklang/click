@@ -1,8 +1,9 @@
 # Heap-block extents: 64-bit (`size_t`) sizes
 
 Status: option (a) accepted by the maintainer, 2026-11-10 (decisions D1-D6
-below). Nothing of the plan has landed. Line numbers are at `origin/master`
-b247d7499.
+below). PR 0 (this note and a bug fix) has landed. Line numbers are at
+`origin/master` b247d7499 plus PR 0's changes (`statements.rs`,
+`primitives.rs`).
 
 This is the kernel prerequisite for `roadmap/standard-library.md` step 7,
 "`size_t` sizes for `allocation`", and its intended regression ("an
@@ -28,17 +29,17 @@ contract happens to prove.
   `allocation_value` (`:11593-11609`) match `CValue::Int32` only. The token
   carries lifetime and free authority, not access.
 - **Access.** A separate owned range `p[0..count]`, built by
-  `resolve_pending_heap_allocations` (`src/kernel/eval/statements.rs:2517-2660`)
+  `resolve_pending_heap_allocations` (`src/kernel/eval/statements.rs:2560-2705`)
   with `CMemoryRange::new_with_element_width`, so always
   `RangeIndexKind::Int32`. Its width is the pointee width when the byte count
   is `k*w` or a multiple of `w`, else bytes (`heap_range_element_width/_count`,
-  `statements.rs:1498-1511`, via `element_count_from_bytes`,
+  `statements.rs:1501-1512`, via `element_count_from_bytes`,
   `src/kernel/reasoning/path_facts.rs:834-861`, which matches only an Int32
   `Multiply` or a 32-bit constant).
-- **Heap state.** `CHeapMemory` (`src/kernel/primitives.rs:8488-8535`) maps
+- **Heap state.** `CHeapMemory` (`src/kernel/primitives.rs:8495-8542`) maps
   pointers to untyped `MachineTerm` extents (live, deallocated, pending,
   zeroed-prefix); so do `CPendingReallocation.old_bytes` and `CBlock.size`
-  (`primitives.rs:8668-8670`). The width is implicit; `memory_state.rs:4008`
+  (`primitives.rs:8675-8677`). The width is implicit; `memory_state.rs:4008`
   labels a reallocation's old bytes `CValue::Int32`.
 - **Offsets** are already width-typed (`PointerOffsetTerm::Int32Scaled` /
   `Int64Scaled{unsigned}`, `primitives.rs:1018-1035`). `pointer_index_term`
@@ -46,27 +47,27 @@ contract happens to prove.
   always zero-extends `uint32`. `pointer_block_bounds` (`operators.rs:2884-2990`)
   reads `CBlock.size` as unsigned 32 bits in its wide arms and as `int32` in
   its narrow arm.
-- **malloc/calloc.** `execute_c_heap_allocate_paths` (`statements.rs:1287-1471`).
+- **malloc/calloc.** `execute_c_heap_allocate_paths` (`statements.rs:1288-1474`).
   The C front end lowers `calloc(n, w)` to `Multiply(n, w)` with
   `zeroed = true` (`src/languages/c/syntax.rs:14703-14826`).
-  `heap_element_count_expression` (`statements.rs:1575-1592`) recognizes
+  `heap_element_count_expression` (`statements.rs:1590-1607`) recognizes
   `e * w` / `w * e` syntactically and evaluates only `e`. `allocation_size_value`
-  (`:1530-1573`) admits every value of 32 bits or narrower symbolically, and
-  `Int64`/`UInt64` only when `exact_signed/unsigned_size_value` (`:1594-1670`)
+  (`:1538-1588`) admits every value of 32 bits or narrower symbolically, and
+  `Int64`/`UInt64` only when `exact_signed/unsigned_size_value` (`:1609-1685`)
   reduce it to a constant that fits `u32` (directly, through fact-proven
   equalities, or by `+ - *` of such constants). The element path decides
-  positivity and `n <= i32::MAX / w` (`u32::MAX / w` for `uint32`,
-  `:1672-1697`) and forms the Int32 `multiply(n, w)`; the raw path decides
-  positivity. The object-class check
-  (`enough_space`, `:1411-1414`) is a 32-bit compare.
-- **realloc** (`execute_c_realloc_assign_paths`, `statements.rs:1699-2210`)
-  repeats the admission (`:1888-1935`); its prefix-preservation conditions are
-  32-bit compares keyed on `AllocationSize.unsigned` (`:2076-2140`); a zeroed
-  prefix must be constant (`:1948-1966`); `realloc(NULL, n)` reuses malloc.
-- **free** (`execute_c_heap_free_paths`, `statements.rs:2212`) finds the token
-  by base (`own_designated_allocation(pointer, 0)`, `:2265`), then consumes it
+  positivity and `n <= i32::MAX / w` (`allocation_size_validity_refusal`,
+  `:1687-1738`) and forms the Int32 `multiply(n, w)`; the raw path decides
+  positivity, and for a `uint32` also `bytes <= INT32_MAX` (PR 0). The
+  object-class check (`enough_space`, `:1414-1417`) is a 32-bit compare.
+- **realloc** (`execute_c_realloc_assign_paths`, `statements.rs:1740-2253`)
+  repeats the admission (`:1929-1979`); its prefix-preservation conditions are
+  32-bit compares keyed on `AllocationSize.unsigned` (`:2119-2184`); a zeroed
+  prefix must be constant (`:1981-2006`); `realloc(NULL, n)` reuses malloc.
+- **free** (`execute_c_heap_free_paths`, `statements.rs:2255`) finds the token
+  by base (`own_designated_allocation(pointer, 0)`, `:2308`), then consumes it
   and the full byte range `new_with_element_width(p, 0, bytes, 1)`
-  (`:2360-2366`), independent of how the extent was spelled.
+  (`:2403-2409`), independent of how the extent was spelled.
 - **Contracts.** `allocation(result, e)` in a contract is evaluated at
   `src/kernel/functions.rs:19235-19300`, with its own `e * 4` shortcut that
   matches only the `int32` literal and a `CValue::Int32` count. `allocation`
@@ -82,14 +83,15 @@ contract happens to prove.
   gives up on wide ranges (`contracts.rs:2433-2439`): wide ranges are never
   interval-indexed.
 - **Diagnostic.** `CRuntimeError::HeapAllocationSize` (`primitives.rs:7406`,
-  message `:7744`; `src/surface/diagnostics.rs:1662`;
+  message `:7747`; `HeapAllocationSizeAboveInt32` beside them;
+  `src/surface/diagnostics.rs:1662`;
   `src/kernel/api/contract_certification.rs:841`).
 - **Docs.** `docs/reference/language/c.md:2154-2159, 2606-2650, 2675-2681`,
   `docs/reference/language/index.md:2820` ("checked 32-bit extent").
 
 Why 32-bit: the heap model predates typed indices, when every range was
 `Int32`; stage 2 widened contract ranges and left the heap constructor alone
-(comment at `statements.rs:1525-1529`). 085788448 (2026-11-07) added
+(comment at `statements.rs:1532-1537`). 085788448 (2026-11-07) added
 `HeapAllocationSize`.
 
 ### Sites a 64-bit extent touches
@@ -100,11 +102,11 @@ Why 32-bit: the heap model predates typed indices, when every range was
 | `type_validation.rs:3055-3066` | 64-bit refusal hint |
 | `resource_algebra.rs:11544-11609` | token built and matched as `CValue::Int32` |
 | `resource_algebra.rs:11623-11660`, `path_facts.rs:834-861` | separation via `element_count_from_bytes` (Int32 only) |
-| `statements.rs:1366-1414` | `multiply(n, w)` Int32; `enough_space` |
-| `statements.rs:1498-1697` | element width/count, size admission, positivity/fit |
-| `statements.rs:1888-1966, 2076-2140` | realloc admission and fit compares |
-| `statements.rs:2265, 2360-2366, 2517-2660` | free's range and token; pending resolution |
-| `primitives.rs:8488-8535, 8668-8670`; `memory_state.rs:3582-3587, 3946-3980, 4008` | untyped extents, implicit 32-bit reading |
+| `statements.rs:1372-1417` | `multiply(n, w)` Int32; `enough_space` |
+| `statements.rs:1501-1738` | element width/count, size admission, positivity/fit |
+| `statements.rs:1929-2006, 2119-2184` | realloc admission and fit compares |
+| `statements.rs:2308, 2403-2409, 2560-2705` | free's range and token; pending resolution |
+| `primitives.rs:8495-8542, 8675-8677`; `memory_state.rs:3582-3587, 3946-3980, 4008` | untyped extents, implicit 32-bit reading |
 | `operators.rs:2884-2990` | `pointer_block_bounds` |
 | `functions.rs:19235-19300` | contract `allocation(p, e*4)` |
 | `resource_algebra.rs:145, 1177-1182` | interval-index coordinates (not heap-specific) |
@@ -202,11 +204,17 @@ the `UInt64` kind.
 
 ## 5. Staged plan
 
-0. **Bug fix and this note.** `allocation_size_value` admits a `uint32` size
-   as unsigned, deciding only positivity or `n <= u32::MAX / w`, and stores it
-   in the `int32` token and Int32 range, where `>= 2^31` reads negative. Refuse
-   a `uint32` size not decided at most `INT32_MAX` bytes (raw) or
-   `INT32_MAX / w` elements at the allocation, naming the bound.
+0. **Landed: bug fix and this note.** `allocation_size_value` admitted a
+   `uint32` size as unsigned, deciding only positivity or `n <= u32::MAX / w`,
+   and stored it in the `int32` token and Int32 range, where `>= 2^31` read
+   negative. A `uint32` size (`AllocationSize.needs_extent_bound`) must now be
+   decided at most `INT32_MAX` bytes (raw) or `INT32_MAX / w` elements, for
+   `malloc`, `calloc` and `realloc`; otherwise the allocation is refused with
+   `CRuntimeError::HeapAllocationSizeAboveInt32`. Regressions:
+   `mdtests/a_uint32_malloc_size_above_int32_max_is_refused_at_the_malloc.md`,
+   `a_uint32_element_count_above_the_int32_heap_extent_is_refused.md`,
+   `a_uint32_realloc_size_above_int32_max_is_refused_at_the_realloc.md`,
+   `a_uint32_malloc_size_bounded_by_int32_max_allocates.md`.
 1. **Tagged extent, no behavior change.** `HeapExtent { term, kind }` in
    `CHeapMemory`, `CPendingReallocation`, `CBlock`, the token constructors and
    `AllocationSize`, all `Int32`. Gate green; `memory_scaling_tests` work
