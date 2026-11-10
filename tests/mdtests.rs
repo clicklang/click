@@ -52,7 +52,8 @@ const NIGHTLY: &[&str] = &[
     // limit; `an_automatically_closed_loop_splits_at_its_c_branches.md`
     // keeps loop-body splitting in the gate.
     "a_loop_body_stops_at_the_split_limit.md",
-    // 1.9s focused; the named scaling regression also checks its work.
+    // 1.9s focused; retain the full stack-pop case alongside the isolated
+    // constructor-guard scaling regression.
     "refuted_implication_after_stack_pop.md",
     // 2.60s in its focused harness run; the unit regression stays in the gate.
     "equal_object_origins_frame_neighbor_fields.md",

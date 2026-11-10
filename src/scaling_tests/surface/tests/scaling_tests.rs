@@ -2,81 +2,101 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
-#[ignore = "nightly: checks the complete stack-pop proof at four clause counts"]
+#[ignore = "nightly: constructor closure at three heap-history sizes and cold replay"]
 fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
-    let fixture = crate::cli::parse_mdtest(
-        std::path::Path::new("refuted_implication_after_stack_pop.md"),
-        include_str!("../../../../mdtests/refuted_implication_after_stack_pop.md"),
-    )
-    .unwrap();
-    let original = fixture.click_source.as_deref().unwrap();
-    let c = fixture
-        .c_sources
-        .iter()
-        .map(|(name, source)| (name.as_str(), source.as_str()))
-        .collect::<Vec<_>>();
-    let clause = "    ensures old(before.items) == List<int32>::Nil implies result == false;\n";
-    assert_eq!(original.matches(clause).count(), 1);
+    // The complete pop/deallocate/refold path remains in
+    // mdtests/refuted_implication_after_stack_pop.md. Isolate the closure here:
+    // its constructor payload names the same cell whose store history grows.
+    let guard = "old(before.items) == List<int32>::Nil implies result == 0";
     let mut samples = Vec::new();
-    for size in [1, 2, 4, 8] {
-        // Keep the original native C and proof. Only the number of contract
-        // guards grows, each with a distinct consequent the empty path holds.
-        let extra = (1..size)
-            .map(|index| {
-                format!("    ensures old(before.items) == List<int32>::Nil implies result == false or old(s->count) == {index}u64;\n")
-            })
-            .collect::<String>();
-        let source = original.replace(clause, &format!("{clause}{extra}"));
-        let (verified, sample) = scaling_sample(size, || verify_c0_sources(&source, &c));
-        let verified =
-            verified.unwrap_or_else(|error| panic!("{size} clauses: {}", error.message()));
+    for size in [0, 8, 32] {
+        let stores = (0..size).map(|i| format!("*p = {i}; ")).collect::<String>();
+        let c = format!("int probe(int *p) {{ {stores}return 1; }}");
+        let steps = "step(); ".repeat(size + 1);
+        let source = format!(
+            r#"
+verifying "probe.c";
+resource cell(p: int32*) {{
+    field items: List<int32>;
+    owns p[0..1];
+    fact items == List<int32>::Cons(p[0], List<int32>::Nil);
+}}
+int32 probe(int32* p) {{
+    consumes before: cell(p);
+    produces after: cell(p);
+    ensures result == 1;
+}} by {{
+    unfold(before);
+    {steps}
+    have {guard} by solve();
+    let after = fold(cell(p), {{ items: List<int32>::Cons(p[0], List<int32>::Nil) }});
+}}
+"#
+        );
+        let sources = [("probe.c", c.as_str())];
+        eprintln!("constructor guard: {size} stores");
+        let ((verified, tactics), sample) = scaling_sample(size, || {
+            crate::instrumentation::collect_tactic_work(|| verify_c0_sources(&source, &sources))
+        });
+        verified.unwrap_or_else(|error| panic!("{size} stores: {}", error.message()));
+        let guards = tactics
+            .iter()
+            .filter(|t| t.tactic.tactic_name == "have")
+            .collect::<Vec<_>>();
+        assert_eq!(
+            guards.len(),
+            1,
+            "exactly one constructor guard is measured: {tactics:?}"
+        );
+        assert!(!guards[0].failed);
         let spelling = sample
             .named_work
             .get("operation `solve closure: premise spelling`")
             .copied()
             .unwrap_or(0);
-        assert!(
-            spelling <= 40_000 * size,
-            "refuted guards searched connected heap facts: {sample:?}"
-        );
-        if size == 1 {
-            let expanded = expand_checked_grouped_claim(&source, &verified, "pop").unwrap();
-            crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &c))
-                .expect("the emitted guard refutation checks in a fresh proof");
-            assert_eq!(expanded.matches(clause).count(), 1);
-            let false_expanded = expanded.replace(
-                clause,
-                "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
-            );
-            assert!(
-                crate::surface::proof::without_implicit_solve(|| {
-                    verify_c0_sources(&false_expanded, &c)
-                })
-                .is_err(),
-                "the emitted proof cannot establish the false nonempty-list claim"
-            );
+        samples.push((size, guards[0].work, spelling));
+        if size == 8 {
+            let offset = source.find("solve();").unwrap();
+            let position = super::super::expansion::position_at_offset(&source, offset);
+            let expanded =
+                expand_c0_tactic_source_at(&source, &sources, position.line, position.column)
+                    .expect("the selected constructor guard expands");
+            assert!(!expanded.contains("solve();"), "{expanded}");
+            crate::surface::proof::without_implicit_solve(|| {
+                verify_c0_sources(&expanded, &sources)
+            })
+            .expect("the explicit guard refutation cold-replays");
+            // The opposite guard holds for this nonempty constructor, while
+            // the returned value is 1. Reject it with and without the certificate.
+            for (proof, explicit) in [(&source, false), (&expanded, true)] {
+                let invalid = proof.replace(
+                    "old(before.items) == List<int32>::Nil",
+                    "old(before.items) != List<int32>::Nil",
+                );
+                assert_ne!(&invalid, proof);
+                let verify = || verify_c0_sources(&invalid, &sources);
+                let result = if explicit {
+                    crate::surface::proof::without_implicit_solve(verify)
+                } else {
+                    verify()
+                };
+                let error = result.unwrap_err();
+                assert!(!error.message().contains("budget"), "{error}");
+            }
         }
-        samples.push(sample);
     }
+    eprintln!("constructor guard (stores, closure work, premise spelling): {samples:?}");
     assert!(
-        samples
-            .windows(2)
-            .all(|pair| pair[1].work <= 3 * pair[0].work),
-        "guard closure grew faster than clause count: {samples:?}"
+        samples.iter().all(|(_, _, spelling)| *spelling == 0),
+        "{samples:?}"
     );
-    eprintln!("refuted constructor guards: {samples:?}");
-    // The same native program returns true for the nonempty list. Reversing
-    // the guard must expose that false consequent rather than close it.
-    let false_source = original.replace(
-        clause,
-        "    ensures old(before.items) != List<int32>::Nil implies result == false;\n",
-    );
-    let error = verify_c0_sources(&false_source, &c).unwrap_err();
-    assert!(
-        !error.message().contains("budget"),
-        "the false claim must be refused without exhausting search: {}",
-        error.message()
-    );
+    // `have` accounting includes opening and checking the goal, not just
+    // search. Bound its growth separately from the zero-spelling assertion:
+    // the second interval adds three times as many stores, so allow at most
+    // four times the added work. Subtract setup so it cannot hide curvature.
+    let first_increment = samples[1].1.saturating_sub(samples[0].1);
+    let next_increment = samples[2].1.saturating_sub(samples[1].1);
+    assert!(next_increment <= 4 * first_increment, "{samples:?}");
 }
 
 #[test]
