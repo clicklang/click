@@ -3746,7 +3746,9 @@ fn memory_view_query_miss_ignores_fragment_frontier() {
     eprintln!("memory view query lookup (fragments, first/last/miss x3 work): {curves:?}");
     assert!(
         curves
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .all(|curve| curve.windows(2).all(|pair| pair[0]
                 .1
                 .iter()
@@ -3807,7 +3809,9 @@ fn memory_view_consumption_miss_ignores_fragment_frontier() {
     eprintln!("memory view consumption lookup (fragments, first/last/miss x3 work): {curves:?}");
     assert!(
         curves
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .all(|curve| curve.windows(2).all(|pair| pair[0]
                 .1
                 .iter()
