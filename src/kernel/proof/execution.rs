@@ -10129,6 +10129,7 @@ impl ExecutionProofCore {
     /// Derive an ordinary instance fold and retain its checked event together.
     /// The caller supplies the instance and child choices, never a proposed
     /// successor or fact delta that would require recomputing the fold.
+    #[cfg(test)]
     pub(crate) fn fold_resource_instance_with_children(
         &mut self,
         function: &CFunction,
@@ -10428,6 +10429,7 @@ impl ExecutionProofCore {
 
     /// Construct the published exchange and retain its exact output. The
     /// surface supplies a checked outcome, never a proposed successor or facts.
+    #[cfg(test)]
     pub(crate) fn rewrite_return_resource_instance_with_children(
         &mut self,
         function: &CFunction,

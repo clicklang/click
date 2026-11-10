@@ -466,16 +466,21 @@ void use(struct root* root) {
         expanded.contains("have whole.model == old(cell.model) by"),
         "the expansion should read the unfolded child through the produced binder: {expanded}"
     );
-    crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
-        .unwrap();
+    crate::surface::proof::without_implicit_solve_for_claim("use.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
     assert!(
-        crate::surface::proof::without_implicit_solve(|| verify_c0_sources(
-            &expanded.replace(
-                "ensures whole.model == old(cell.model);",
-                "ensures whole.model == old(cell.model) + 1;"
-            ),
-            &sources,
-        ))
+        crate::surface::proof::without_implicit_solve_for_claim("use.contract", || {
+            verify_c0_sources(
+                &expanded.replace(
+                    "ensures whole.model == old(cell.model);",
+                    "ensures whole.model == old(cell.model) + 1;",
+                ),
+                &sources,
+            )
+            .map_err(|error| error.report())
+        })
         .is_err()
     );
 }

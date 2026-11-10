@@ -105,6 +105,31 @@ work items; this reconciliation changes no behavior.
 
 ### Remaining obligation generation
 
+The step/fold migration on `codex/solve-exact-first` is a **local, unlanded
+checkpoint**, not ready to publish. The broad run passed 1,770 unit, expansion,
+boundary and scaling tests, but the normal mdtest corpus reported 104
+expected-pass failures and 161 expected-error mismatches. Final focused checks
+passed all four new related/unrelated scaling controls, the new expansion
+batch and 11 repaired expansion cases. Do not update negative expectations
+until the changed refusals have been reviewed.
+
+Before landing, separate and repair these prerequisite families:
+
+- Named callback contracts: `c_named_function_contract.md` now leaves
+  `Comparator(&compare)` open. Call preparation previously invoked
+  `function_contract_requirement_is_proven`, including contract refinement;
+  ordinary solve does not discharge this newly emitted obligation. Establish
+  its explicit proof form before moving that reasoning into solve.
+- Fold source/binding preservation: `fold_through_a_pointer_alias.md` leaves
+  a pointer nonnull fact open despite the unfolded alias facts, and
+  `resource_witness_unfold_fold.md` reports a body requirement without a
+  source spelling. These reproduce on the final local binary. Repair the
+  produced obligation/source pair rather than reintroducing inline discharge.
+- Other corpus failures include assert false-path spelling, call-load and
+  resource-body spellings, and implicit fold proofs. Reconcile these only
+  after the representative failures above; the full run is recorded in
+  `/tmp/step-fold-final-broad.log` in the current workspace.
+
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver
 proves each obligation with a written block or ordinary `solve`. This does not

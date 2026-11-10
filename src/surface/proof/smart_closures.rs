@@ -3380,6 +3380,30 @@ impl<'a> Proof<'a> {
                     surface: surface.clone(),
                 }));
         }
+        // Reuse an exact recorded source by its proposition key. This keeps
+        // proof-local binders and opaque function calls that structural
+        // synthesis cannot reconstruct from C locals. A stale recorded source
+        // is a spelling defect, not a reason to search other spellings.
+        let recorded = if requirement.call_site.is_none() {
+            self.local_surface_facts()
+                .recorded_surface(&requirement.proposition)
+                .or_else(|| {
+                    self.context_surface_propositions()?
+                        .recorded_surface(&requirement.proposition)
+                })
+        } else {
+            // Call requirements keep their authoritative source carrier below.
+            None
+        };
+        if let Some(surface) = recorded {
+            let lowered = self.lower_surface_goal(surface, "recorded tactic requirement")?;
+            if !lowered_states_requirement(&lowered, requirement) {
+                return Err(self.step_error("a recorded tactic requirement does not round-trip"));
+            }
+            return Ok(Some(RequirementSpelling {
+                surface: surface.clone(),
+            }));
+        }
         // Fixed-state and focused-outcome requirements can refer to reads
         // retained from an intermediate statement. Give their speller the
         // same indexed historical names as ordinary facts and goals.
@@ -3426,8 +3450,8 @@ impl<'a> Proof<'a> {
         };
         if let Some(surface) = non_execution_surface {
             let surface = surface.ok_or_else(|| self.step_error(
-                "a proof definedness requirement has no Surface spelling; this is a spellability defect",
-            ))?;
+                "a generated prerequisite has no Surface spelling; this is a spellability defect",
+            ).with_unresolved_requirement(&ProofObligation::verification_condition(requirement.proposition.clone())))?;
             let lowered = self.lower_surface_goal(&surface, "proof definedness requirement")?;
             if !lowered_states_requirement(&lowered, requirement) {
                 return Err(self.step_error(
@@ -3449,11 +3473,12 @@ impl<'a> Proof<'a> {
         let _qualified_sources = super::surface_synthesis::QualifiedSynthesisScope::enter(
             execution_view.surface_propositions,
         );
-        let admit = |candidate: ClickProposition| match self
-            .lower_surface_goal(&candidate, "step obligation")
-        {
-            Ok(lowered) if lowered_states_requirement(&lowered, requirement) => Some(candidate),
-            _ => None,
+        let admit = |candidate: ClickProposition| {
+            let lowered = self.lower_surface_goal(&candidate, "step obligation");
+            match lowered {
+                Ok(lowered) if lowered_states_requirement(&lowered, requirement) => Some(candidate),
+                _ => None,
+            }
         };
         // An `assert`'s false-path truthiness obligation (`0 == 1`) holds only
         // where that path is unreachable; at the pre-state, the requirement it
@@ -4092,7 +4117,9 @@ fn source_backed_call_requirement_surface(
             let source = ordinary_source?.get(source_ordinal)?;
             let proposition = match source {
                 FunctionRequirementSource::Proposition(proposition) => proposition.clone(),
-                FunctionRequirementSource::LoadableSegment(_) => return None,
+                FunctionRequirementSource::LoadableSegment(segment) => ClickProposition::Loadable {
+                    segment: segment.clone(),
+                },
             };
             let function = context
                 .function_environment

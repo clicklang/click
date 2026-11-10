@@ -510,6 +510,22 @@ impl FunctionSourceRegistry {
         })
     }
 
+    /// Register the exact source-to-execution name mapping during preparation,
+    /// so a static inline call needs only the ordinary indexed lookup later.
+    pub(in crate::surface) fn with_execution_names(
+        mut self,
+        names: &BTreeMap<String, String>,
+    ) -> Self {
+        for (source, execution) in names {
+            if source != execution
+                && let Some(requirements) = self.functions.get(source).cloned()
+            {
+                self.functions.insert(execution.clone(), requirements);
+            }
+        }
+        self
+    }
+
     pub(in crate::surface) fn claim_entries(&self) -> &ClaimEntryCache {
         &self.claim_entries
     }

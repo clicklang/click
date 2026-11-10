@@ -2273,9 +2273,6 @@ fn verify_c0_sources_in_context(
     let selected_target = file.selected_c_target();
     let selected_thread_runtime = file.selected_thread_runtime();
     let external_and_user_function_blocks = combined_external_function_blocks(&file)?;
-    let function_source_registry = Arc::new(FunctionSourceRegistry::from_function_blocks(
-        &external_and_user_function_blocks,
-    )?);
     // A sidecar contract names a C function with its ordinary spelling, but a
     // header `static inline` body executes under a translation-unit-qualified
     // name, which is the name its call sites carry and the name the kernel
@@ -2283,6 +2280,10 @@ fn verify_c0_sources_in_context(
     // executing name, so a helper's own ranked loop is planned where its body
     // runs instead of under a spelling no call graph mentions.
     let termination_kernel_names = executing_function_names(&parsed_sources, &file)?;
+    let function_source_registry = Arc::new(
+        FunctionSourceRegistry::from_function_blocks(&external_and_user_function_blocks)?
+            .with_execution_names(&termination_kernel_names),
+    );
     let (mut termination_plans, mut requested_termination) = c_function_termination_plans(
         &file,
         selected_functions.as_ref(),

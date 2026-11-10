@@ -819,6 +819,13 @@ impl<'a> Proof<'a> {
             );
         }
         for clause in clause_presentations {
+            // Keep the producer's paired declaration spelling in the exact
+            // source index as well as its binder metadata. A later fold can
+            // state this obligation without recovering proof-local names.
+            execution
+                .presentation
+                .surface_propositions
+                .record_lowering(&clause.source, &clause.checked.proposition)?;
             execution.presentation.resource_body_clauses.push(clause);
         }
         // The unfold exposed this arm's cells; name them in the snapshot so

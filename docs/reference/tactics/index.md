@@ -408,7 +408,8 @@ context. One `step()` executes exactly one of these:
   selected case to its `break`.
 
 The diagnostic `the frontier is at statement N, ...` names the next statement,
-and `click expand` on the implicit tail prints one `step();` per statement.
+and `click expand` on the implicit tail prints one `step` per statement,
+with explicit prerequisite proofs where needed.
 
 The context decides a condition when the kernel refutes the other path from
 the facts. It uses exact facts, the conjuncts of an `and` fact, the condition
@@ -416,17 +417,17 @@ of the enclosing proof `if` or `cases` arm, constants and assigned values, and
 linear bounds it combines: `x > y` and `y > 3` decide `x > 3`, and
 `x > 10` and `x < 100` decide `x * 2 > 3`.
 
-A statement's requirements are of two kinds:
+Call preconditions and emitted verification conditions become obligations at the
+step's pre-state. Each obligation is proved by a written `step() by { ... }`
+body or ordinary implicit `solve()`, even if the fact is already available.
+An exact known precondition normally expands to `step() by { assumption(); }`.
+This solving is smart and may miss; for example, it can prove a callee's
+`requires a > 0` from `requires x == 5 or x == 7`.
 
-- Definedness of arithmetic (signed overflow, division by zero, shift range),
-  call preconditions, and asserted conditions (a global-array bound, a Rust
-  overflow `assert`) are checked against facts that state them exactly and
-  against kernel decisions. Any that this fast check leaves open is proved by
-  the implicit closer at the step's pre-state, or by a written
-  `step() by { ... }` body. **That part is smart**: it may miss. For example,
-  `requires x == 5 or x == 7` meets a callee's `requires a > 0`, and the
-  definedness of `x + 1`, through it. A definedness requirement is the
-  defined path's condition, such as `s >= 0 and s < 32` for `x << s`.
+Arithmetic evaluation still decides some safety conditions before generating
+an obligation; migrating those decisions is separate remaining work. An emitted
+definedness requirement states the defined path's condition, such as
+`s >= 0 and s < 32` for `x << s`.
 
 The step produces one successor state:
 
@@ -480,8 +481,8 @@ by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
 `step() by { ... }`. When the implicit closer cannot spell or prove an obligation, the
-step is refused at it with the fast path's diagnostic. The fast path itself
-never searches the proof context for an obligation.
+step is refused at that obligation. Requirement generation does not invoke
+proof search; the driver runs the implicit closer.
 
 An `assert`'s false-path obligation (as a Rust overflow check lowers to) is
 spelled as the asserted condition at the pre-state, less any disjunct an exact

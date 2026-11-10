@@ -81,7 +81,8 @@ slow and expandable. An omitted obligation proof invokes the same
 `ProofSearch::try_solve_closure` entry point as written `solve()`. The driver
 provides no private witness heuristic, extra premise list or caller-requirement
 shortcut. Such strategies belong in the shared solver. The implicit tail
-schedules the remaining C and outstanding goals; it is not another solver. Step preparation now retains required prerequisites even when already known,
+schedules the remaining C and outstanding goals; it is not another solver.
+Step preparation retains emitted prerequisites even when already known,
 and fold body facts use the same obligation driver. The driver handles every
 unwritten slot through ordinary solve. The raw fold operation no longer
 re-enters the driver. Failed statement preparations and folds still use the
@@ -110,7 +111,7 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory after exact-goal solve selection contains 613 records: 7 legacy bridges, 22 kernel callers,
+The current inventory after step/fold obligation dispatch contains 613 records: 7 legacy bridges, 22 kernel callers,
 14 Surface operation dependencies, 8 operation-to-driver dependencies,
 110 driver records, 1 other dispatch record, 6 presentation records,
 424 search-internal records, 19 mixed records and 2 imports. These are reference

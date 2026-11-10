@@ -475,15 +475,28 @@ fn write_tactic(output: &mut String, tactic: &ProofTactic, indent: usize) {
             line(output, &prefix, &format!("{};", step_head_spelling(tactic)))
         }
         ProofTactic::StepProved { step, proof } => {
-            let head = step_head_spelling(step);
+            let (head, record) = if matches!(step.as_ref(), ProofTactic::FoldResource(_)) {
+                let mut written = String::new();
+                write_tactic(&mut written, step, 0);
+                let written = written.trim_end();
+                // The standalone fold's own suffix is a line comment. Put
+                // the proof opener before it, so the comment cannot swallow
+                // `by {` or the opening brace of `requires` entries.
+                match written.rsplit_once("; // record ") {
+                    Some((head, record)) => (head.to_owned(), format!(" // record {record}")),
+                    None => (written.trim_end_matches(';').to_owned(), String::new()),
+                }
+            } else {
+                (step_head_spelling(step), String::new())
+            };
             match proof {
                 StepProof::By(body) => {
-                    line(output, &prefix, &format!("{head} by {{"));
+                    line(output, &prefix, &format!("{head} by {{{record}"));
                     write_tactics(output, body, indent + 1);
                     line(output, &prefix, "}");
                 }
                 StepProof::Requires(entries) => {
-                    line(output, &prefix, &format!("{head} {{"));
+                    line(output, &prefix, &format!("{head} {{{record}"));
                     let entry_prefix = "    ".repeat(indent + 1);
                     for entry in entries {
                         output.push_str(&entry_prefix);

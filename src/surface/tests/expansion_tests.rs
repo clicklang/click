@@ -1053,7 +1053,7 @@ fn expansion_shows_a_folds_hidden_record_as_a_comment() {
     let expanded = expand_function_proof_source(source, &sources, "get")
         .expect("the hidden-record proof expands");
     assert!(
-        expanded.contains("fold(pair(p), { first: c }); // record { first.v: c.v }"),
+        expanded.contains("fold(pair(p), { first: c }) { // record { first.v: c.v }"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).expect("the commented expansion verifies");
@@ -3470,7 +3470,7 @@ fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
     let proof = &expanded[expanded.rfind("} by {").unwrap()..];
     let arm = proof.find("Maybe::Some(value) => {").expect("the live arm");
     let fold = proof
-        .find("let c = fold(cell(node), { model: Maybe::Some(value) });")
+        .find("let c = fold(cell(node), { model: Maybe::Some(value) }) by {")
         .expect("the arm's fold");
     let arm_end = arm + proof[arm..].find("\n        }\n").expect("the arm closes");
     assert!(arm < fold && fold < arm_end, "{proof}");
@@ -13907,8 +13907,10 @@ fn outcome_solve_transports_loadability_on_the_checked_proof() {
     let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
         .expect("the retained viewability transport should expand");
     assert!(expanded.contains("transport"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the retained viewability transport should check independently");
+    without_implicit_solve_for_claim("use_summary.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the retained viewability transport should check without implicit solve");
 }
 
 #[test]
