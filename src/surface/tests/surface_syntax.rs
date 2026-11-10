@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
 fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
     for (c_type, expression) in [
         ("int32", "-2147483648"),
@@ -26,6 +27,7 @@ fn integer_parameter_preserves_machine_literal_and_cast_behavior() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
 fn integer_constant_aliases_stay_shared_before_a_tactic_starts() {
     // Setup retains the repeated-squaring DAG instead of allocating an
     // exponentially large numeral. Reflexivity needs no evaluation.
@@ -52,6 +54,7 @@ fn integer_constant_aliases_stay_shared_before_a_tactic_starts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
 fn integer_solve_expansion_rechecks_without_smart_search() {
     for (parameters, requires, claim, proof) in [
         ("x: Integer", "", "2 * x + 1 > x + x", "solve();"),
@@ -76,6 +79,7 @@ fn integer_solve_expansion_rechecks_without_smart_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_00")]
 fn integer_source_certificates_reject_missing_facts_and_tampered_nodes() {
     for (requires, claim, nodes, conclusion, diagnostic) in [
         (
@@ -124,6 +128,7 @@ fn integer_source_certificates_reject_missing_facts_and_tampered_nodes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_01")]
 fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
     for depth in [8, 16, 32, 64] {
         let mut source = String::from("theorem aliases(x: Integer) { let a0: Integer = x;\n");
@@ -151,6 +156,7 @@ fn integer_alias_certificates_preserve_types_and_linear_source_on_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_01")]
 fn parser_deep_const_rejects_qualification_beyond_first_pointer_level() {
     for spelling in [
         "const int **",
@@ -181,6 +187,7 @@ fn parser_deep_const_rejects_qualification_beyond_first_pointer_level() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_01")]
 fn parser_deep_const_preserves_supported_pointer_qualifier_levels() {
     for (spelling, constant, pointee_constant) in [
         ("int **", false, false),
@@ -223,6 +230,7 @@ fn parser_deep_const_preserves_supported_pointer_qualifier_levels() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_01")]
 fn plain_char_needs_a_c_target_and_takes_its_signedness() {
     use crate::languages::c::syntax::PlainChar;
     let source = "int is_negative(char c) { ensures result == 0; }";
@@ -271,6 +279,7 @@ fn plain_char_needs_a_c_target_and_takes_its_signedness() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_02")]
 fn parser_plain_char_sidecars_preserve_source_compatibility() {
     use crate::surface::validation::click_types_compatible;
     let file = parser::parse_file_items(
@@ -308,6 +317,7 @@ fn parser_plain_char_sidecars_preserve_source_compatibility() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_02")]
 fn false_library_list_equality_has_a_bounded_diagnostic() {
     let error = verify_click_theorems(
         r#"
@@ -332,6 +342,7 @@ fn false_library_list_equality_has_a_bounded_diagnostic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_02")]
 fn parser_accepts_its_supported_parenthesis_depth() {
     let source = super::scaling_tests::theorem_with_parenthesized_requirement(
         parser::PARENTHESIS_NESTING_LIMIT,
@@ -340,6 +351,7 @@ fn parser_accepts_its_supported_parenthesis_depth() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_02")]
 fn parser_accepts_standard_c_type_spellings_in_sidecars() {
     let file = parser::parse_file_items(
         r#"
@@ -371,6 +383,7 @@ fn parser_accepts_standard_c_type_spellings_in_sidecars() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_03")]
 fn parser_accepts_bodyless_external_function_contracts() {
     let file = parse(
         r#"
@@ -392,6 +405,7 @@ fn parser_accepts_bodyless_external_function_contracts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_03")]
 fn parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic() {
     let source = super::scaling_tests::theorem_with_parenthesized_requirement(
         parser::PARENTHESIS_NESTING_LIMIT + 1,
@@ -408,6 +422,7 @@ fn parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_03")]
 fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
     let supported_not = "not ".repeat(32);
     let supported_source = format!(
@@ -578,6 +593,7 @@ fn parser_bounds_non_parenthesized_surface_nesting_before_ast_construction() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_03")]
 fn supported_surface_depth_boundaries_survive_consumption() {
     let expression_chain_depth = parser::EXPRESSION_CHAIN_LIMIT;
     let implications = (0..expression_chain_depth)
@@ -707,6 +723,7 @@ fn supported_surface_depth_boundaries_survive_consumption() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_04")]
 fn parser_preserves_mixed_grouped_proposition_and_contract_expression_syntax() {
     let source = r#"
         theorem mixed_parentheses(x: int32, y: int32) {
@@ -719,6 +736,7 @@ fn parser_preserves_mixed_grouped_proposition_and_contract_expression_syntax() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_04")]
 fn parses_expanded_typed_loads_and_old_loadability() {
     let source = r#"
         int32 example(int32 owner[], int32 data[]) {
@@ -771,6 +789,7 @@ fn parses_expanded_typed_loads_and_old_loadability() {
 /// The `target` directive selects the C implementation target. Absent, the
 /// file keeps the default; the accepted spellings come from `CTarget`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_04")]
 fn parses_the_c_target_directive() {
     let file = parse("verifying \"fill3.c\";").expect("a sidecar without a target should parse");
     assert_eq!(file.declared_c_target(), None);
@@ -794,6 +813,7 @@ fn parses_the_c_target_directive() {
 /// Include expansion needs the target before the sidecar is parsed, so the
 /// pre-parse scan must agree with the parser about what a directive is.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_04")]
 fn the_pre_parse_target_scan_agrees_with_the_parser() {
     use crate::languages::c::target::CTarget;
 
@@ -842,6 +862,7 @@ fn the_pre_parse_target_scan_agrees_with_the_parser() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_05")]
 fn rejects_an_unknown_or_repeated_c_target() {
     let error = parse("target \"x86_64-linux-embedded\";").expect_err("unknown target name");
     assert!(
@@ -860,6 +881,7 @@ fn rejects_an_unknown_or_repeated_c_target() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_05")]
 fn parses_checked_signature_and_contract_clauses() {
     let file = parse(FILL3_CLICK).expect("sidecar should parse");
 
@@ -926,6 +948,7 @@ fn parses_checked_signature_and_contract_clauses() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_05")]
 fn parses_void_c_function_contracts_without_a_result_binding() {
     let source = r#"
         verifying "destroy.c";
@@ -958,6 +981,7 @@ fn parses_void_c_function_contracts_without_a_result_binding() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_05")]
 fn parses_pure_theorem_definition() {
     let source = r#"
             theorem preserves_nonnegative(x: int32) {
@@ -988,6 +1012,7 @@ fn parses_pure_theorem_definition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_06")]
 fn parses_integer_theorem_parameters_and_keeps_decimal_spelling() {
     let source = r#"
         theorem exact_integer(x: Integer) {
@@ -1008,12 +1033,14 @@ fn parses_integer_theorem_parameters_and_keeps_decimal_spelling() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_06")]
 fn rejects_integer_as_an_algebraic_type_name() {
     let error = parse("spec enum Integer { zero }").expect_err("Integer is reserved");
     assert!(error.message().contains("reserved"));
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_06")]
 fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
     let source = r#"
             theorem callback_identity(
@@ -1037,6 +1064,7 @@ fn parses_c_function_pointer_type_in_pure_theorem_parameter() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_06")]
 fn parses_and_prints_pure_induction_tactics() {
     let source = r#"
         theorem induction_shape(n: int32) {
@@ -1093,6 +1121,7 @@ fn parses_and_prints_pure_induction_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
 fn parses_and_prints_structural_induction_arms() {
     let source = r#"
         spec enum TestList<T> {
@@ -1151,6 +1180,7 @@ fn parses_and_prints_structural_induction_arms() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
 fn parses_and_prints_pure_function_unfold() {
     let source = r#"
         function clamp(n: int32) -> int32 {
@@ -1179,6 +1209,7 @@ fn parses_and_prints_pure_function_unfold() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
 fn parses_and_prints_pure_function_unfold_with_guards() {
     let source = r#"
         function icount(lo: int32, hi: int32) -> Integer {
@@ -1245,6 +1276,7 @@ fn parses_and_prints_pure_function_unfold_with_guards() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_07")]
 fn parses_and_prints_arithmetic_certificates() {
     let source = r#"
         theorem arithmetic_forms(n: int32) {
@@ -1290,6 +1322,7 @@ fn parses_and_prints_arithmetic_certificates() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
 fn arithmetic_certificate_is_the_only_integer_family_spelling() {
     let source = |spelling: &str| {
         format!(
@@ -1313,6 +1346,7 @@ fn arithmetic_certificate_is_the_only_integer_family_spelling() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
 fn integer_certificate_refutation_and_division_round_trip() {
     let source = r#"
         theorem refutation_forms(x: Integer) {
@@ -1359,6 +1393,7 @@ fn integer_certificate_refutation_and_division_round_trip() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
 fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
     let source = r#"
         theorem signed_certificate_forms(n: int32) {
@@ -1442,6 +1477,7 @@ fn signed_int32_arithmetic_certificate_round_trips_every_step_spelling() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_08")]
 fn signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs() {
     let source = r#"
         theorem signed_pair_certificate(n: int32) {
@@ -1476,6 +1512,7 @@ fn signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
 fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
     let source = r#"
         theorem signed_compound_certificate(n: int32) {
@@ -1511,6 +1548,7 @@ fn signed_int32_compound_certificate_public_nodes_recheck_and_tamper() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
 fn signed_int32_direct_compound_interval_is_publicly_checked() {
     let source = r#"
         theorem signed_direct_compound(n: int32) {
@@ -1559,6 +1597,7 @@ fn signed_int32_direct_compound_interval_is_publicly_checked() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
 fn signed_int32_interval_intersect_round_trips() {
     let source = r#"
         theorem signed_intersect_forms(n: int32) {
@@ -1589,6 +1628,7 @@ fn signed_int32_interval_intersect_round_trips() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_09")]
 fn signed_int32_arithmetic_certificate_applies_and_rejects_tampering() {
     let source = r#"
         theorem signed_certificate_direct(x: int32) {
@@ -1612,6 +1652,7 @@ fn signed_int32_arithmetic_certificate_applies_and_rejects_tampering() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
 fn signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine_comparisons() {
     let integer_in_machine = r#"
         theorem integer_in_machine(x: Integer) {
@@ -1648,6 +1689,7 @@ fn signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
 fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
     let source = r#"import click::integer;
 
@@ -1687,6 +1729,7 @@ fn integer_certificate_can_follow_a_checked_int32_to_integer_bridge() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
 fn signed_int32_certificate_rejects_duplicate_premises_and_forward_nodes() {
     let duplicate = r#"
         theorem signed_certificate_duplicate(x: int32) {
@@ -1747,6 +1790,7 @@ fn signed_int32_certificate_rejects_duplicate_premises_and_forward_nodes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_10")]
 fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
     let source = r#"
         theorem special_certificate_forms(p: int32) {
@@ -1814,6 +1858,7 @@ fn special_arithmetic_certificate_round_trips_and_rejects_bad_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
 fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
     let nested = format!("{}aligned(p, 8)", "aligned(p, 8) and ".repeat(260),);
     let source = format!(
@@ -1858,6 +1903,7 @@ fn special_certificate_accepts_deep_identity_and_rejects_late_mismatch() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
 fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_bounds() {
     let source = r#"
         theorem product_bounds(x: Integer, y: Integer) {
@@ -1929,6 +1975,7 @@ fn integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
 fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
     let source = r#"
         theorem finite_float_reflexive(value: float) {
@@ -1954,6 +2001,7 @@ fn float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_11")]
 fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
     let source = r#"
         theorem signed_smart_double(n: int32) {
@@ -1997,6 +2045,7 @@ fn signed_arithmetic_smart_planner_expands_to_structural_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_12")]
 fn signed_arithmetic_using_requires_every_needed_exact_premise() {
     let source = r#"
         theorem signed_missing_explicit_premise(n: int32) {
@@ -2015,6 +2064,7 @@ fn signed_arithmetic_using_requires_every_needed_exact_premise() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_12")]
 fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
     let source = r#"
         theorem integer_smart_bound(x: Integer) {
@@ -2039,6 +2089,7 @@ fn integer_arithmetic_uses_checked_unified_certificate_without_replanning() {
 /// The bounded affine planner combines at most three listed premises; a
 /// longer chain needs simplex, the last engine `arithmetic` tries.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_12")]
 fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
     let source = r#"
         theorem integer_chain(a: Integer, b: Integer, c: Integer, d: Integer, e: Integer) {
@@ -2067,6 +2118,7 @@ fn integer_arithmetic_using_proves_a_chain_longer_than_three_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_12")]
 fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
     let source = r#"
         theorem integer_missing_extra(x: Integer) {
@@ -2085,6 +2137,7 @@ fn integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
 fn signed_arithmetic_smart_planner_preserves_explicit_definedness() {
     let source = r#"
         theorem defined_addition(a: int32, b: int32) {
@@ -2163,6 +2216,7 @@ fn signed_arithmetic_smart_planner_handles_deep_supported_terms_iteratively() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
 fn verifies_pure_theorem_definition() {
     let source = r#"
             theorem preserves_nonnegative(x: int32) {
@@ -2184,6 +2238,7 @@ fn verifies_pure_theorem_definition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
 fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
     let source = r#"
         theorem equality_symmetric(first: int32, second: int32) {
@@ -2239,6 +2294,7 @@ fn pure_bare_apply_builds_a_checked_proof_object_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_13")]
 fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
     let source = r#"
         theorem positive_is_nonnegative(x: int32) {
@@ -2255,6 +2311,7 @@ fn pure_solve_exposes_an_explicit_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_14")]
 fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
     let source = r#"
         predicate equality_chain(x: int32, y: int32, z: int32) {
@@ -2285,6 +2342,7 @@ fn pure_solve_after_unfold_exposes_an_explicit_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_14")]
 fn branching_pure_solve_exposes_explicit_branch_certificates() {
     let source = r#"
         theorem equality_is_decidable(x: int32) {
@@ -2310,6 +2368,7 @@ fn branching_pure_solve_exposes_explicit_branch_certificates() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_14")]
 fn verifies_explicit_structural_logic_tactics() {
     let source = r#"
         theorem conjunction_rule(x: int32) {
@@ -2402,6 +2461,7 @@ fn verifies_explicit_structural_logic_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_14")]
 fn verifies_atomic_derivation_from_explicit_premises() {
     let source = r#"
         theorem derives_nonnegative(x: int32) {
@@ -2433,6 +2493,7 @@ fn verifies_atomic_derivation_from_explicit_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn records_checked_surface_forms_for_lowered_propositions() {
     let left = ClickProposition::Comparison {
         left: current_var("x"),
@@ -2496,6 +2557,7 @@ fn records_checked_surface_forms_for_lowered_propositions() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn surface_synthesis_qualifies_a_c_local_named_result() {
     let local = MachineTerm::Variable(Variable(42));
     let proposition = Proposition::ConditionIs(
@@ -2518,6 +2580,7 @@ fn surface_synthesis_qualifies_a_c_local_named_result() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
     let function = syntax::parse_function(
         r#"
@@ -2561,6 +2624,7 @@ fn surface_synthesis_omits_a_predicates_hidden_resource_state_argument() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_15")]
 fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
     let function =
         syntax::parse_function("void lock(int32* m) {}").expect("parameter should parse");
@@ -2618,6 +2682,7 @@ fn surface_synthesis_spells_reserved_predicates_by_their_click_names() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_16")]
 fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
     let function = syntax::parse_function(
         r#"
@@ -2705,6 +2770,7 @@ fn surface_synthesis_prefers_struct_field_places_to_typed_loads() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_16")]
 fn proof_source_printing_preserves_proposition_precedence() {
     let comparison = |operator, value| ClickProposition::Comparison {
         left: current_var("x"),
@@ -2755,6 +2821,7 @@ fn proof_source_printing_preserves_proposition_precedence() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_16")]
 fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes() {
     for size in [8, 16, 32, 64] {
         let sum = std::iter::repeat_n("a", size)
@@ -2809,6 +2876,7 @@ fn proof_source_printing_preserves_long_sum_association_without_nested_prefixes(
 /// `enumerate`, which checks the quantifier's own named instances -- here,
 /// none.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_16")]
 fn normalize_does_not_close_quantified_contradictions() {
     let opaque = r#"
 theorem impossible_interval() {
@@ -2836,6 +2904,7 @@ theorem impossible_interval() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
 fn normalization_does_not_hide_context_free_conjunction_derivation() {
     let opaque = r#"
 theorem reflexive_pair() {
@@ -2867,6 +2936,7 @@ theorem cited_pair(x: int32) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
 fn normalization_does_not_hide_context_free_disjunction_derivation() {
     let opaque = r#"
 theorem reflexive_choice() {
@@ -2910,6 +2980,7 @@ theorem cited_choice(x: int32) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
 fn smart_context_free_disjunction_retains_explicit_choice() {
     let source = r#"
 theorem choose_left() {
@@ -2947,6 +3018,7 @@ theorem choose_right() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_17")]
 fn normalization_does_not_hide_context_free_implication_derivation() {
     let opaque = r#"
 theorem reflexive_implication(x: int32) {
@@ -2979,6 +3051,7 @@ theorem cited_implication(x: int32) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn smart_context_free_implication_retains_explicit_introduction() {
     let source = r#"
 theorem reflexive_implication(x: int32) {
@@ -3051,6 +3124,7 @@ theorem false_guard(x: int32) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
     let current = ClickProposition::Comparison {
         left: current_var("x"),
@@ -3090,6 +3164,7 @@ fn retains_distinct_surface_spellings_for_the_same_kernel_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn recorded_surface_fact_resolves_only_one_available_kernel_fact() {
     let surface = ClickProposition::Comparison {
         left: current_var("x"),
@@ -3110,6 +3185,7 @@ fn recorded_surface_fact_resolves_only_one_available_kernel_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_18")]
 fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
     fn indexed_pair(index: u32) -> (ClickProposition, Proposition) {
         (
@@ -3147,6 +3223,7 @@ fn surface_lowering_map_forks_and_local_updates_scale_logarithmically() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_19")]
 fn rejects_byte_counting_loadable_syntax() {
     let source = r#"
             verifying "fill.c";
@@ -3161,6 +3238,7 @@ fn rejects_byte_counting_loadable_syntax() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_19")]
 fn parses_loadable_segment_syntax() {
     let source = r#"
             verifying "fill.c";
@@ -3193,6 +3271,7 @@ fn parses_loadable_segment_syntax() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_19")]
 fn parses_parenthesized_loaded_pointer_segment_base() {
     let source = r#"
             verifying "read.c";
@@ -3207,6 +3286,7 @@ fn parses_parenthesized_loaded_pointer_segment_base() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_19")]
 fn parses_loadable_segment_proposition() {
     let source = r#"
             verifying "read.c";
@@ -3263,6 +3343,7 @@ fn parses_loadable_segment_proposition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_20")]
 fn parses_resource_relation_propositions() {
     let source = r#"
             resource backing(p: int32*, n: int32) {
@@ -3308,6 +3389,7 @@ fn parses_resource_relation_propositions() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_20")]
 fn parses_memory_separate_requirement() {
     let source = r#"
             verifying "copy.c";
@@ -3327,6 +3409,7 @@ fn parses_memory_separate_requirement() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_20")]
 fn restricted_solve_premises_retain_declared_resource_argument_types() {
     let source = r#"
         resource wrapper(owner: int32*) {}
@@ -3365,6 +3448,7 @@ fn restricted_solve_premises_retain_declared_resource_argument_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_20")]
 fn transport_using_retains_declared_resource_argument_types() {
     let source = r#"
         resource wrapper(owner: int32*) {}
@@ -3414,6 +3498,7 @@ fn transport_using_retains_declared_resource_argument_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_21")]
 fn rejects_reversed_constant_loadable_segment() {
     let c_source = r#"
             int32 read_second(int32* p) {
@@ -3442,6 +3527,7 @@ fn rejects_reversed_constant_loadable_segment() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_21")]
 fn parses_array_parameter_signature_as_pointer() {
     let source = FILL3_CLICK.replace("int32* p", "int32 p[3]");
     let file = parse(&source).expect("array parameter signature should parse");
@@ -3462,6 +3548,7 @@ fn parses_array_parameter_signature_as_pointer() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_21")]
 fn parses_pilot_struct_pointer_signature_and_field_load() {
     let source = r#"
             verifying "json_object_ref_count.c";
@@ -3519,6 +3606,7 @@ fn parses_pilot_struct_pointer_signature_and_field_load() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_21")]
 fn parses_struct_pointer_callback_signature() {
     let source = r#"
             verifying "struct_callback.c";
@@ -3536,6 +3624,7 @@ fn parses_struct_pointer_callback_signature() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_22")]
 fn parses_chained_struct_fields_with_imported_pointee_types() {
     let c_source = r#"
         struct leaf {
@@ -3582,6 +3671,7 @@ fn parses_chained_struct_fields_with_imported_pointee_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_22")]
 fn nested_field_segments_keep_the_terminal_field_offset() {
     let c_source = r#"
         struct leaf {
@@ -3632,6 +3722,7 @@ fn nested_field_segments_keep_the_terminal_field_offset() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_22")]
 fn parses_struct_object_segments_without_exposing_layout_cells() {
     let c_source = r#"
         struct vector {
@@ -3681,6 +3772,7 @@ fn parses_struct_object_segments_without_exposing_layout_cells() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_22")]
 fn an_embedded_struct_is_viewed_as_a_place() {
     let c_source = r#"
         struct inner {
@@ -3710,6 +3802,7 @@ fn an_embedded_struct_is_viewed_as_a_place() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_23")]
 fn parses_pilot_struct_field_owned_segment() {
     let source = r#"
             verifying "json_object_set_ref_count.c";
@@ -3748,6 +3841,7 @@ fn parses_pilot_struct_field_owned_segment() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_23")]
 fn rejects_legacy_mutable_field_effect_spelling() {
     let source = r#"
             verifying "json_object_set_ref_count.c";
@@ -3767,6 +3861,7 @@ fn rejects_legacy_mutable_field_effect_spelling() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_23")]
 fn rejects_legacy_read_write_resource_spelling() {
     for resource_clause in ["views read(p[0..1]);", "owns write(p[0..1]);"] {
         let source = format!(
@@ -3787,6 +3882,7 @@ fn rejects_legacy_read_write_resource_spelling() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_23")]
 fn parses_block_by_clause() {
     let source = FILL3_CLICK.replace("== 2;", "== 2 by { solve(); }");
     let file = parse(&source).expect("sidecar should parse");
@@ -3799,6 +3895,7 @@ fn parses_block_by_clause() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_24")]
 fn parses_sequence_literals_snapshots_and_concatenation() {
     let source = r#"
         verifying "join.c";
@@ -3831,6 +3928,7 @@ fn parses_sequence_literals_snapshots_and_concatenation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_24")]
 fn integer_datatype_match_bindings_shadow_each_source_carrier() {
     let source = r#"
         spec enum Pair { Make(int32, Integer) }
@@ -3849,6 +3947,7 @@ fn integer_datatype_match_bindings_shadow_each_source_carrier() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_24")]
 fn integer_datatype_match_iota_survives_function_substitution_and_recheck() {
     let source = r#"
         spec enum Box { Empty, Wrapped(Integer) }
@@ -3882,6 +3981,7 @@ fn integer_datatype_match_iota_survives_function_substitution_and_recheck() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_24")]
 fn integer_datatype_match_numeral_arm_inherits_integer_result_and_rechecks() {
     let source = r#"
         spec enum Box { Empty, Wrapped(Integer) }
@@ -3920,6 +4020,7 @@ fn integer_datatype_match_numeral_arm_inherits_integer_result_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_25")]
 fn integer_match_constructor_fields_retain_unused_conversion_definedness() {
     let source = r#"
         spec enum Pair { Make(Integer, Integer) }
@@ -3955,6 +4056,7 @@ fn integer_match_constructor_fields_retain_unused_conversion_definedness() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_25")]
 fn symbolic_integer_datatype_matches_reject_invalid_arms() {
     let missing = r#"
         spec enum Box { Empty, Wrapped(Integer) }
@@ -3991,6 +4093,7 @@ fn symbolic_integer_datatype_matches_reject_invalid_arms() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_25")]
 fn symbolic_integer_datatype_match_does_not_capture_outer_binding() {
     let source = r#"
         spec enum Box { Empty, Wrapped(Integer) }
@@ -4015,6 +4118,7 @@ fn symbolic_integer_datatype_match_does_not_capture_outer_binding() {
 /// `diverges` is contextual: it means "may not return" only right after a
 /// parameter list, so existing C spellings keep working.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_25")]
 fn diverges_stays_an_ordinary_identifier_elsewhere() {
     let c_source = r#"
             int32 diverges(int32 diverges) {
@@ -4035,6 +4139,7 @@ fn diverges_stays_an_ordinary_identifier_elsewhere() {
 /// The signature markers have one order, so a reader never has to know that
 /// two spellings mean the same thing.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_26")]
 fn diverges_must_follow_throws_in_a_signature() {
     let c_source = "int32 f(int32 x) { return x; }";
     let click_source = r#"
@@ -4069,6 +4174,7 @@ fn diverges_must_follow_throws_in_a_signature() {
 /// An `external` contract is a signature too, so it takes the marker; it
 /// still has no body to rank, so `decreases` stays refused there.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_26")]
 fn external_contracts_accept_diverges_and_still_reject_decreases() {
     let c_source = r#"
             int32 caller(int32 fd) {
@@ -4109,6 +4215,7 @@ fn external_contracts_accept_diverges_and_still_reject_decreases() {
 /// Expansion re-emits the proof script it checked, so a `loop diverges` head
 /// must survive the round trip.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_26")]
 fn loop_diverges_round_trips_through_expansion() {
     let c_source = r#"
             int32 spin() {
@@ -4166,6 +4273,7 @@ fn loop_diverges_round_trips_through_expansion() {
 /// The marker withholds whole-function termination evidence even when the
 /// function ranks some of its loops.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_26")]
 fn a_diverges_function_never_yields_termination_evidence() {
     let c_source = r#"
             int32 drain_then_wait(int32 n, int32 x) {
@@ -4217,6 +4325,7 @@ fn a_diverges_function_never_yields_termination_evidence() {
 /// either side of a comparison, inside arithmetic, and inside parentheses,
 /// while user-style calls keep the call interpretation.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn parses_built_in_expressions_on_either_comparison_side() {
     let loads = [
         "load_int32",
@@ -4264,6 +4373,7 @@ fn parses_built_in_expressions_on_either_comparison_side() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn resource_array_extent_excludes_struct_padding() {
     let c_source = "struct packet { uint8 bytes[3]; int64 aligned; }; uint8 read(struct packet* p) { return p->bytes[2]; }";
     let click_source = r#"
@@ -4284,6 +4394,7 @@ fn resource_array_extent_excludes_struct_padding() {
 /// A resource owns a child resource with `owns`, the clause it uses for
 /// everything else it holds. A name is for reading the child's fields.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn a_child_resource_is_owned_like_any_other() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
@@ -4318,6 +4429,7 @@ fn a_child_resource_is_owned_like_any_other() {
 /// An `invariant` takes a label as `ensures` does, and the label names it in
 /// a failure, where an unlabelled one is named by position.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_27")]
 fn an_invariant_label_names_it_in_a_failure() {
     let c_source = "int32 count(int32 n) { int32 i = 0; while (i < n) { i = i + 1; } return i; }";
     let sidecar = |invariant: &str| {
@@ -4342,6 +4454,7 @@ fn an_invariant_label_names_it_in_a_failure() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_28")]
 fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
     let c = "struct node { uint64 tag; struct node *other; struct node *next; }; void check(struct node *p, struct node *q) {}";
     let source = r#"
@@ -4367,6 +4480,7 @@ fn nonzero_member_addresses_preserve_their_typed_place_when_printed() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_28")]
 fn pointer_storage_views_name_the_field_alone() {
     let c_source =
         "struct packet { int32* data; }; int32 read(struct packet* p) { return p->data[0]; }";
@@ -4394,6 +4508,7 @@ fn pointer_storage_views_name_the_field_alone() {
 /// A function cannot return two owners of one place. The contract is refused
 /// where it is declared, whether or not it has a proof.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_28")]
 fn a_contract_cannot_return_one_place_twice() {
     let c_source = "struct cell { int32 value; int32 other; int32* data; }; \
         int32 get(struct cell* p) { return p->value; }";
@@ -4460,6 +4575,7 @@ fn a_contract_cannot_return_one_place_twice() {
 /// C has no references, so a C sidecar that declares one does not match its
 /// function.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_28")]
 fn a_reference_parameter_does_not_match_a_c_pointer() {
     let c_source = "int32 read(int32* p) { return p[0]; }";
     let source = "verifying \"read.c\"; int32 read(int32& p) { views p; ensures result == p; } \
@@ -4477,6 +4593,7 @@ fn a_reference_parameter_does_not_match_a_c_pointer() {
 /// Two different clauses that return overlapping memory are refused where
 /// the contract is set up, naming both places, with or without a proof.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_29")]
 fn a_contract_cannot_return_overlapping_places() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 get(struct cell* p) { return p->value; }";
@@ -4531,6 +4648,7 @@ fn a_contract_cannot_return_overlapping_places() {
 /// record the author does not write, so the child must already be declared
 /// for the record to be laid out.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_29")]
 fn a_hidden_record_needs_its_child_declared_first() {
     let source = "resource pair(p: struct pair*) { owns p->a; owns first: counted(p->a); } \
         resource counted(c: struct cell*) { field v: int32; owns c->value; } \
@@ -4553,6 +4671,7 @@ fn a_hidden_record_needs_its_child_declared_first() {
 /// comparison, so a Rust sidecar needs no parentheses around a bitwise
 /// comparison operand; a C sidecar still does.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_29")]
 fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
     let bare =
         "verifying \"flip.rs\"; fn flip(b: u32) -> u32 { ensures result == b ^ 1u32; } by solve();";
@@ -4577,6 +4696,7 @@ fn a_rust_sidecar_compares_a_bitwise_operand_without_parentheses() {
 
 /// contract representation as a C signature, and `expr as T` is the scalar cast.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_29")]
 fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
     let c_shaped = "verifying \"arithmetic.c\"; \
         uint32 add_byte(uint32 sum, uint8 byte) { requires sum <= 4294967040u32; \
@@ -4862,6 +4982,7 @@ fn a_rust_sidecar_states_its_signature_in_rust_syntax() {
 
 /// A missing memory fact is reported as the place a clause would name.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn a_missing_memory_fact_is_reported_as_a_place() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         struct pad { int32* data; int32 n; }; \
@@ -4905,6 +5026,7 @@ fn a_missing_memory_fact_is_reported_as_a_place() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
     use crate::kernel::{
         CMemoryRange, CPointerValue, CType, MachineTerm, Pointer, PointerBlock, PointerOffsetTerm,
@@ -4948,6 +5070,7 @@ fn memory_ranges_use_fields_or_correctly_scaled_source_elements() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn held_recursive_struct_range_and_bound_load_name_their_fields() {
     let c_source = "struct node { struct node* left; struct node* right; int32 augmented; }; void relink(struct node* node) { node->right = 0; }";
     let click_source = r#"
@@ -4983,6 +5106,7 @@ void relink(struct node* node) { requires node != 0; owns links: pair(node); own
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_30")]
 fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
     let c_source = "struct cell { int32 a; int32 b; }; int32 release(struct cell* p) { return 0; }";
     let source = r#"verifying "cell.c"; int32 release(struct cell* p) { produces p[0..1]; ensures result == 0; }"#;
@@ -5000,6 +5124,7 @@ fn a_production_obligation_names_the_same_struct_place_as_its_missing_fact() {
 /// A range on a struct pointer counts structs, and `*link` for a
 /// `struct T**` is one pointer slot, not a struct.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_31")]
 fn a_struct_pointer_range_counts_structs() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         int32 second(struct cell* p) { return p[1].other; } \
@@ -5034,6 +5159,7 @@ fn a_struct_pointer_range_counts_structs() {
 /// `*p` is the object behind a pointer, and a place written alone is its own
 /// storage: a global, an element, a field.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_31")]
 fn a_resource_clause_names_a_place() {
     let c_source = "struct cell { int32 value; int32 other; }; \
         struct node { struct node* next; int32 v; }; \
@@ -5097,6 +5223,7 @@ fn a_resource_clause_names_a_place() {
 /// A whole struct is viewed like any other place: it reads every field and
 /// writes none.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_31")]
 fn a_whole_struct_view_reads_and_does_not_write() {
     let c_source = "struct packet { int32 data; int32 other; }; \
         int32 read(struct packet* p) { return p->other; } \
@@ -5116,6 +5243,7 @@ fn a_whole_struct_view_reads_and_does_not_write() {
 /// spelling for the address inside, so it renders as the `aligned` sugar
 /// read at that snapshot rather than as an unparseable `p as uint64`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_31")]
 fn snapshot_read_alignment_fact_renders_as_aligned() {
     let source = "theorem entry_alignment(arena: int32*) { \
         requires at(function.entry, address(arena) & 7u64) == at(function.entry, 0u64); \
@@ -5129,6 +5257,7 @@ fn snapshot_read_alignment_fact_renders_as_aligned() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_32")]
 fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_equality() {
     let source = r#"
         theorem unrelated_cast(x: Integer, y: Integer) {
@@ -5162,6 +5291,7 @@ fn integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_e
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_32")]
 fn inline_callback_identity_rejects_ambiguous_translation_units() {
     let source = r#"
         verifying "alpha.c";
@@ -5194,6 +5324,7 @@ fn inline_callback_identity_rejects_ambiguous_translation_units() {
 /// spellings read the same types. (The mdtest format has no Rust source, so
 /// these verify a sidecar of theorems beside an empty source.)
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_32")]
 fn a_rust_sidecar_writes_click_types_in_rust() {
     let rust_source = [("bytes.rs", "")];
     let accepted = "verifying \"bytes.rs\";
@@ -5284,6 +5415,7 @@ fn a_rust_sidecar_writes_click_types_in_rust() {
 /// C-style integer cast may; a cast to another type still needs a current
 /// expression.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_32")]
 fn rust_integer_casts_read_historical_operands() {
     let contract = |cast: &str| {
         format!(
@@ -5319,6 +5451,7 @@ mod scaling_tests {
 /// interface's `ensures`, labeled as the interface's, and its `requires`
 /// when the implementation writes none, whichever block comes first.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_33")]
 fn a_rust_trait_implementation_inherits_its_interface() {
     let interface = "trait shapes::Shape { fn area(&self, scale: i32) -> i32 { \
         requires 0 <= scale and scale <= 1000; ensures scale < result; } }";
@@ -5391,6 +5524,7 @@ fn a_rust_trait_implementation_inherits_its_interface() {
 // its type parameter replaced by the instance's argument, and an instance's
 // own block adds its clauses to that instance's interface.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_33")]
 fn a_generic_rust_trait_block_is_read_at_each_instance() {
     let source = "verifying \"shapes.rs\";
 trait shapes::Scale<T> { fn scale(&self, x: T) -> T { ensures result != x; } }
@@ -5463,6 +5597,7 @@ trait shapes::Scale<i32> { fn scale(&self, x: i32) -> i32 { requires 0 <= x; ens
 // generic sealed resource: the generic block holds it at `T`, and each
 // instance at its types, `Bag<i32>`'s at `i32`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_33")]
 fn a_generic_rust_trait_object_is_a_generic_resource() {
     let source = "verifying \"shapes.rs\";
 trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensures last(self) == x; } }";
@@ -5504,6 +5639,7 @@ trait bags::Bag<T> { function last(self) -> T; fn insert(&mut self, x: T) { ensu
 /// its own memory with the interface inherited there, and the struct's pack
 /// and unpack carry the definitions.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_33")]
 fn a_rust_trait_function_is_its_object_field() {
     let source = "verifying \"shapes.rs\"; \
         trait shapes::Shape { function size(self) -> i32; \
@@ -5598,6 +5734,7 @@ fn a_rust_trait_function_is_its_object_field() {
 /// method and a `const Shape&` parameter read as the object's fields; a
 /// direct subclass defines them, and its method is stated on its memory.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_34")]
 fn a_cpp_class_function_is_its_object_field() {
     let source = "verifying \"shapes.cpp\"; \
         class Shape { function size(this) -> int32; } \
@@ -5659,6 +5796,7 @@ fn a_cpp_class_function_is_its_object_field() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_34")]
 fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
     // `x == 1` stands for a source atom (such as a contract `separate`) whose
     // lowering adds conditions beside the fact it states.
@@ -5729,6 +5867,7 @@ fn a_conjunct_of_one_source_facts_lowering_finds_that_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_34")]
 fn printed_machine_arithmetic_keeps_exact_transport_premises() {
     for (ty, one, operator, authored) in [
         (
@@ -5775,6 +5914,7 @@ fn printed_machine_arithmetic_keeps_exact_transport_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by surface_syntax_batch_34")]
 fn synthesized_signed_difference_preserves_its_type_without_literals() {
     let less_equal = |left, right| ConditionTerm::Compare {
         format: MachineIntegerType::Int32,
@@ -5826,4 +5966,220 @@ fn synthesized_signed_difference_preserves_its_type_without_literals() {
     )
     .unwrap();
     assert_eq!(lowered, original, "{printed}");
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "surface_syntax.rs",
+    marker: "surface_syntax_batch_",
+    surface_syntax_batch_00: [
+        integer_parameter_preserves_machine_literal_and_cast_behavior,
+        integer_constant_aliases_stay_shared_before_a_tactic_starts,
+        integer_solve_expansion_rechecks_without_smart_search,
+        integer_source_certificates_reject_missing_facts_and_tampered_nodes,
+    ],
+    surface_syntax_batch_01: [
+        integer_alias_certificates_preserve_types_and_linear_source_on_expansion,
+        parser_deep_const_rejects_qualification_beyond_first_pointer_level,
+        parser_deep_const_preserves_supported_pointer_qualifier_levels,
+        plain_char_needs_a_c_target_and_takes_its_signedness,
+    ],
+    surface_syntax_batch_02: [
+        parser_plain_char_sidecars_preserve_source_compatibility,
+        false_library_list_equality_has_a_bounded_diagnostic,
+        parser_accepts_its_supported_parenthesis_depth,
+        parser_accepts_standard_c_type_spellings_in_sidecars,
+    ],
+    surface_syntax_batch_03: [
+        parser_accepts_bodyless_external_function_contracts,
+        parser_rejects_excessive_parenthesis_depth_with_a_source_diagnostic,
+        parser_bounds_non_parenthesized_surface_nesting_before_ast_construction,
+        supported_surface_depth_boundaries_survive_consumption,
+    ],
+    surface_syntax_batch_04: [
+        parser_preserves_mixed_grouped_proposition_and_contract_expression_syntax,
+        parses_expanded_typed_loads_and_old_loadability,
+        parses_the_c_target_directive,
+        the_pre_parse_target_scan_agrees_with_the_parser,
+    ],
+    surface_syntax_batch_05: [
+        rejects_an_unknown_or_repeated_c_target,
+        parses_checked_signature_and_contract_clauses,
+        parses_void_c_function_contracts_without_a_result_binding,
+        parses_pure_theorem_definition,
+    ],
+    surface_syntax_batch_06: [
+        parses_integer_theorem_parameters_and_keeps_decimal_spelling,
+        rejects_integer_as_an_algebraic_type_name,
+        parses_c_function_pointer_type_in_pure_theorem_parameter,
+        parses_and_prints_pure_induction_tactics,
+    ],
+    surface_syntax_batch_07: [
+        parses_and_prints_structural_induction_arms,
+        parses_and_prints_pure_function_unfold,
+        parses_and_prints_pure_function_unfold_with_guards,
+        parses_and_prints_arithmetic_certificates,
+    ],
+    surface_syntax_batch_08: [
+        arithmetic_certificate_is_the_only_integer_family_spelling,
+        integer_certificate_refutation_and_division_round_trip,
+        signed_int32_arithmetic_certificate_round_trips_every_step_spelling,
+        signed_int32_pair_affine_conclusion_round_trips_and_preserves_refs,
+    ],
+    surface_syntax_batch_09: [
+        signed_int32_compound_certificate_public_nodes_recheck_and_tamper,
+        signed_int32_direct_compound_interval_is_publicly_checked,
+        signed_int32_interval_intersect_round_trips,
+        signed_int32_arithmetic_certificate_applies_and_rejects_tampering,
+    ],
+    surface_syntax_batch_10: [
+        signed_certificates_refuse_integer_propositions_and_integer_ones_read_machine_comparisons,
+        integer_certificate_can_follow_a_checked_int32_to_integer_bridge,
+        signed_int32_certificate_rejects_duplicate_premises_and_forward_nodes,
+        special_arithmetic_certificate_round_trips_and_rejects_bad_premises,
+    ],
+    surface_syntax_batch_11: [
+        special_certificate_accepts_deep_identity_and_rejects_late_mismatch,
+        integer_product_bounds_round_trip_reverify_and_reject_unavailable_or_altered_bounds,
+        float_reflexive_smart_expansion_has_one_finite_premise_and_rechecks,
+        signed_arithmetic_smart_planner_expands_to_structural_certificate,
+    ],
+    surface_syntax_batch_12: [
+        signed_arithmetic_using_requires_every_needed_exact_premise,
+        integer_arithmetic_uses_checked_unified_certificate_without_replanning,
+        integer_arithmetic_using_proves_a_chain_longer_than_three_premises,
+        integer_arithmetic_using_rejects_an_unavailable_irrelevant_extra,
+    ],
+    surface_syntax_batch_13: [
+        signed_arithmetic_smart_planner_preserves_explicit_definedness,
+        verifies_pure_theorem_definition,
+        pure_bare_apply_builds_a_checked_proof_object_certificate,
+        pure_solve_exposes_an_explicit_arithmetic_certificate,
+    ],
+    surface_syntax_batch_14: [
+        pure_solve_after_unfold_exposes_an_explicit_certificate,
+        branching_pure_solve_exposes_explicit_branch_certificates,
+        verifies_explicit_structural_logic_tactics,
+        verifies_atomic_derivation_from_explicit_premises,
+    ],
+    surface_syntax_batch_15: [
+        records_checked_surface_forms_for_lowered_propositions,
+        surface_synthesis_qualifies_a_c_local_named_result,
+        surface_synthesis_omits_a_predicates_hidden_resource_state_argument,
+        surface_synthesis_spells_reserved_predicates_by_their_click_names,
+    ],
+    surface_syntax_batch_16: [
+        surface_synthesis_prefers_struct_field_places_to_typed_loads,
+        proof_source_printing_preserves_proposition_precedence,
+        proof_source_printing_preserves_long_sum_association_without_nested_prefixes,
+        normalize_does_not_close_quantified_contradictions,
+    ],
+    surface_syntax_batch_17: [
+        normalization_does_not_hide_context_free_conjunction_derivation,
+        normalization_does_not_hide_context_free_disjunction_derivation,
+        smart_context_free_disjunction_retains_explicit_choice,
+        normalization_does_not_hide_context_free_implication_derivation,
+    ],
+    surface_syntax_batch_18: [
+        smart_context_free_implication_retains_explicit_introduction,
+        retains_distinct_surface_spellings_for_the_same_kernel_fact,
+        recorded_surface_fact_resolves_only_one_available_kernel_fact,
+        surface_lowering_map_forks_and_local_updates_scale_logarithmically,
+    ],
+    surface_syntax_batch_19: [
+        rejects_byte_counting_loadable_syntax,
+        parses_loadable_segment_syntax,
+        parses_parenthesized_loaded_pointer_segment_base,
+        parses_loadable_segment_proposition,
+    ],
+    surface_syntax_batch_20: [
+        parses_resource_relation_propositions,
+        parses_memory_separate_requirement,
+        restricted_solve_premises_retain_declared_resource_argument_types,
+        transport_using_retains_declared_resource_argument_types,
+    ],
+    surface_syntax_batch_21: [
+        rejects_reversed_constant_loadable_segment,
+        parses_array_parameter_signature_as_pointer,
+        parses_pilot_struct_pointer_signature_and_field_load,
+        parses_struct_pointer_callback_signature,
+    ],
+    surface_syntax_batch_22: [
+        parses_chained_struct_fields_with_imported_pointee_types,
+        nested_field_segments_keep_the_terminal_field_offset,
+        parses_struct_object_segments_without_exposing_layout_cells,
+        an_embedded_struct_is_viewed_as_a_place,
+    ],
+    surface_syntax_batch_23: [
+        parses_pilot_struct_field_owned_segment,
+        rejects_legacy_mutable_field_effect_spelling,
+        rejects_legacy_read_write_resource_spelling,
+        parses_block_by_clause,
+    ],
+    surface_syntax_batch_24: [
+        parses_sequence_literals_snapshots_and_concatenation,
+        integer_datatype_match_bindings_shadow_each_source_carrier,
+        integer_datatype_match_iota_survives_function_substitution_and_recheck,
+        integer_datatype_match_numeral_arm_inherits_integer_result_and_rechecks,
+    ],
+    surface_syntax_batch_25: [
+        integer_match_constructor_fields_retain_unused_conversion_definedness,
+        symbolic_integer_datatype_matches_reject_invalid_arms,
+        symbolic_integer_datatype_match_does_not_capture_outer_binding,
+        diverges_stays_an_ordinary_identifier_elsewhere,
+    ],
+    surface_syntax_batch_26: [
+        diverges_must_follow_throws_in_a_signature,
+        external_contracts_accept_diverges_and_still_reject_decreases,
+        loop_diverges_round_trips_through_expansion,
+        a_diverges_function_never_yields_termination_evidence,
+    ],
+    surface_syntax_batch_27: [
+        parses_built_in_expressions_on_either_comparison_side,
+        resource_array_extent_excludes_struct_padding,
+        a_child_resource_is_owned_like_any_other,
+        an_invariant_label_names_it_in_a_failure,
+    ],
+    surface_syntax_batch_28: [
+        nonzero_member_addresses_preserve_their_typed_place_when_printed,
+        pointer_storage_views_name_the_field_alone,
+        a_contract_cannot_return_one_place_twice,
+        a_reference_parameter_does_not_match_a_c_pointer,
+    ],
+    surface_syntax_batch_29: [
+        a_contract_cannot_return_overlapping_places,
+        a_hidden_record_needs_its_child_declared_first,
+        a_rust_sidecar_compares_a_bitwise_operand_without_parentheses,
+        a_rust_sidecar_states_its_signature_in_rust_syntax,
+    ],
+    surface_syntax_batch_30: [
+        a_missing_memory_fact_is_reported_as_a_place,
+        memory_ranges_use_fields_or_correctly_scaled_source_elements,
+        held_recursive_struct_range_and_bound_load_name_their_fields,
+        a_production_obligation_names_the_same_struct_place_as_its_missing_fact,
+    ],
+    surface_syntax_batch_31: [
+        a_struct_pointer_range_counts_structs,
+        a_resource_clause_names_a_place,
+        a_whole_struct_view_reads_and_does_not_write,
+        snapshot_read_alignment_fact_renders_as_aligned,
+    ],
+    surface_syntax_batch_32: [
+        integer_cast_identity_round_trips_and_cannot_establish_an_unrelated_integer_equality,
+        inline_callback_identity_rejects_ambiguous_translation_units,
+        a_rust_sidecar_writes_click_types_in_rust,
+        rust_integer_casts_read_historical_operands,
+    ],
+    surface_syntax_batch_33: [
+        a_rust_trait_implementation_inherits_its_interface,
+        a_generic_rust_trait_block_is_read_at_each_instance,
+        a_generic_rust_trait_object_is_a_generic_resource,
+        a_rust_trait_function_is_its_object_field,
+    ],
+    surface_syntax_batch_34: [
+        a_cpp_class_function_is_its_object_field,
+        a_conjunct_of_one_source_facts_lowering_finds_that_fact,
+        printed_machine_arithmetic_keeps_exact_transport_premises,
+        synthesized_signed_difference_preserves_its_type_without_literals,
+    ],
 }

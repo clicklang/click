@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
 fn inline_array_element_addresses_are_logical_without_granting_access() {
     let source = r#"
         struct packet { int32 values[4]; uint8 bytes[4]; };
@@ -56,6 +57,7 @@ fn inline_array_element_addresses_are_logical_without_granting_access() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
 fn historical_wide_view_bound_reads_the_marked_counter() {
     let c = "unsigned long f(const unsigned char *p, unsigned n) { n = n - 1; return 0; }";
     for extent in [16, 32] {
@@ -217,6 +219,7 @@ fn native_contract_byte_casts_do_not_grant_memory_access() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
 fn unsigned_word_array_field_contracts_decay_to_typed_addresses() {
     let source = "struct packet { uint32 values[4]; }; uint32 read(struct packet* p, int32 k) { return p->values[k]; }";
     let proof = r#"verifying "fields.c";
@@ -236,6 +239,7 @@ fn unsigned_word_array_field_contracts_decay_to_typed_addresses() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_00")]
 fn modular_exceptional_call_continues_through_a_normal_assignment() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -270,6 +274,7 @@ fn modular_exceptional_call_continues_through_a_normal_assignment() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_01")]
 fn successive_modular_exceptional_calls_keep_each_throw_path() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -295,6 +300,7 @@ fn successive_modular_exceptional_calls_keep_each_throw_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_01")]
 fn exceptional_call_before_a_normal_branch_retains_its_exit() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -320,6 +326,7 @@ fn exceptional_call_before_a_normal_branch_retains_its_exit() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_01")]
 fn exceptional_call_before_two_returning_normal_arms_retains_its_exit() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -344,6 +351,7 @@ fn exceptional_call_before_two_returning_normal_arms_retains_its_exit() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_01")]
 fn nonterminal_exceptional_call_rejects_a_false_caller_claim() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -373,6 +381,7 @@ fn nonterminal_exceptional_call_rejects_a_false_caller_claim() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_02")]
 fn nonterminal_call_cannot_drop_an_unconstrained_exception() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -400,6 +409,7 @@ fn nonterminal_call_cannot_drop_an_unconstrained_exception() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_02")]
 fn modular_exceptional_call_completes_both_caller_claim_families() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -447,6 +457,7 @@ fn modular_exceptional_call_completes_both_caller_claim_families() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_02")]
 fn modular_exceptional_call_rejects_a_false_caller_claim() {
     let c_source = r#"
         int32 helper(int32 x) { return x; }
@@ -472,6 +483,7 @@ fn modular_exceptional_call_rejects_a_false_caller_claim() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_02")]
 fn targeted_exceptional_caller_assumes_but_does_not_certify_an_unselected_callee() {
     let c_source = r#"
         int32 helper(int32 x) { return x + 1; }
@@ -505,6 +517,7 @@ fn targeted_exceptional_caller_assumes_but_does_not_certify_an_unselected_callee
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_03")]
 fn exceptional_contracts_publish_distinct_claim_families() {
     let c_source = r#"
             int32 helper(int32 x) {
@@ -544,6 +557,7 @@ fn exceptional_contracts_publish_distinct_claim_families() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_03")]
 fn exceptional_contract_bindings_are_family_specific() {
     let c_source = "int32 identity(int32 x) { return x; }";
     for (source, expected) in [
@@ -613,6 +627,7 @@ fn exceptional_contract_bindings_are_family_specific() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_03")]
 fn abstract_resource_construction_adds_one_authorized_token() {
     let c_source = r#"
             int32 open_thing() {
@@ -638,6 +653,7 @@ fn abstract_resource_construction_adds_one_authorized_token() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_03")]
 fn abstract_resource_construction_requires_function_authorization() {
     let c_source = r#"
             int32 fake_open() {
@@ -668,6 +684,7 @@ fn abstract_resource_construction_requires_function_authorization() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_04")]
 fn contradiction_closes_an_impossible_concrete_outcome() {
     let c_source = r#"
             int32 always_zero(int32* data) {
@@ -695,6 +712,7 @@ fn contradiction_closes_an_impossible_concrete_outcome() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_04")]
 fn flat_function_proof_stays_on_proof_through_claim_acceptance() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -720,6 +738,7 @@ fn flat_function_proof_stays_on_proof_through_claim_acceptance() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_04")]
 fn individual_linear_open_proof_stays_on_proof_through_claim_acceptance() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -1027,6 +1046,7 @@ fn following_c_if_splits_one_symbolic_call_successor() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_04")]
 fn proof_if_splits_one_frontier_after_execution_has_started() {
     let c_source = r#"
             int32 identity_after_prefix(int32 x) {
@@ -1079,6 +1099,7 @@ fn proof_if_splits_one_frontier_after_execution_has_started() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_05")]
 fn post_execution_resource_fold_completes_without_a_body_rerun() {
     let c_source = r#"
         int32 preserve_cell(int32 p[]) {
@@ -1114,6 +1135,7 @@ fn post_execution_resource_fold_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_05")]
 fn implicitly_closed_population_entry_completes_without_a_body_rerun() {
     let c_source = r#"
         int32 inspect_counts(void* p, void* q) {
@@ -1152,6 +1174,7 @@ fn implicitly_closed_population_entry_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_05")]
 fn callee_subrange_requirement_completes_without_a_body_rerun() {
     let write_at = r#"
         int32 write_at(int32 p[], int32 i) {
@@ -1200,6 +1223,7 @@ fn callee_subrange_requirement_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_05")]
 fn token_quantity_entry_completes_without_a_body_rerun() {
     let c_source = "int32 preserve(int32 x) { return x; }";
     let click_source = r#"
@@ -1227,6 +1251,7 @@ fn token_quantity_entry_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_06")]
 fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -1277,6 +1302,7 @@ fn grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_06")]
 fn grouped_n_way_function_outcomes_stay_on_one_proof() {
     let c_source = r#"
             int32 classify(int32 x) {
@@ -1326,6 +1352,7 @@ fn grouped_n_way_function_outcomes_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_06")]
 fn grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof() {
     let c_source = r#"
             int32 pointer_is_null(int32* p) {
@@ -1363,6 +1390,7 @@ fn grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_06")]
 fn grouped_calls_keep_contract_transitions_on_proof() {
     let set_source = r#"
             void set_one(int32* data, int32 permit) {
@@ -1499,6 +1527,7 @@ fn outcome_solve_spells_a_call_postcondition_across_two_snapshots() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_07")]
 fn grouped_opaque_calls_keep_declared_composite_resources_on_proof() {
     let borrow_source = r#"
             int32 borrow_token(int32 key) {
@@ -1752,6 +1781,7 @@ fn grouped_mutable_composite_calls_continue_on_proof_after_preparatory_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_07")]
 fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
     let c_source = r#"
             int32 add_twice(int32 x) {
@@ -1824,6 +1854,7 @@ fn grouped_sequential_top_level_scopes_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_07")]
 fn grouped_predicate_contracts_stay_on_one_proof() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -1883,6 +1914,7 @@ fn grouped_predicate_contracts_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_07")]
 fn heap_backed_predicate_contract_stays_on_checked_proof() {
     let c_source = r#"
             int32 read_first(int32 p[2]) {
@@ -1923,6 +1955,7 @@ fn heap_backed_predicate_contract_stays_on_checked_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_08")]
 fn quantified_heap_scope_stays_on_checked_proof() {
     let c_source = r#"
             int32 read_first(int32 p[2]) {
@@ -1967,6 +2000,7 @@ fn quantified_heap_scope_stays_on_checked_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_08")]
 fn grouped_leading_resource_relations_stay_on_one_proof() {
     let c_source = r#"
             int32 inspect_pair(int32 left[], int32 right[]) {
@@ -2120,6 +2154,7 @@ fn grouped_unfolded_resource_relations_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_08")]
 fn grouped_owned_outcome_resources_stay_on_one_proof() {
     let c_source = r#"
             int32 set_seven(int32* cell) {
@@ -2165,6 +2200,7 @@ fn grouped_owned_outcome_resources_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_08")]
 fn flat_function_expansion_rewrites_and_rejects_tampering() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -2204,6 +2240,7 @@ fn flat_function_expansion_rewrites_and_rejects_tampering() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_09")]
 fn post_execution_frame_using_relowers_a_preceding_have_fact() {
     let c_source = r#"
             int32 clear_first(int32* data) {
@@ -2231,6 +2268,7 @@ fn post_execution_frame_using_relowers_a_preceding_have_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_09")]
 fn ordinary_verification_stops_at_the_tactic_work_budget() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -2279,6 +2317,7 @@ fn ordinary_verification_stops_at_the_tactic_work_budget() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_09")]
 fn verifies_omitted_proof_with_default_prover() {
     let c_source = r#"
             int32 zero() {
@@ -2301,6 +2340,7 @@ fn verifies_omitted_proof_with_default_prover() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_09")]
 fn solve_rejects_loop_backed_claims() {
     let c_source = r#"
             int32 count_to_three() {
@@ -2333,6 +2373,7 @@ fn solve_rejects_loop_backed_claims() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_10")]
 fn verifies_memory_postcondition() {
     let source = FILL3_CLICK.replace(
         "ensures returns_second: result == 2",
@@ -2353,6 +2394,7 @@ fn verifies_memory_postcondition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_10")]
 fn verifies_quantified_old_memory_postcondition() {
     let c_source = r#"
             int32 write_second(int32* p) {
@@ -2464,6 +2506,7 @@ fn quantified_old_memory_rejects_overwritten_cell() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_10")]
 fn owned_segment_rejects_write_outside_owned_memory() {
     let c_source = r#"
             int32 write_second(int32* p) {
@@ -2498,6 +2541,7 @@ fn owned_segment_rejects_write_outside_owned_memory() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_10")]
 fn sequence_contracts_reject_mixed_and_non_equality_types() {
     let c_source = r#"
         void inspect(int32* words, uint8_t* bytes) {}
@@ -2538,6 +2582,7 @@ fn sequence_contracts_reject_mixed_and_non_equality_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_11")]
 fn source_have_failures_keep_the_written_operation_in_each_execution_phase() {
     let c_source = "int32 identity(int32 x) { return x; }";
     for (before, after) in [
@@ -2617,6 +2662,7 @@ fn grouped_outcome_fold_is_local_to_the_returning_branch() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_11")]
 fn aggregate_return_claims_retain_checked_completions() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/struct_aggregate_return_postcondition.md");
@@ -2646,6 +2692,7 @@ fn aggregate_return_claims_retain_checked_completions() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_11")]
 fn sorry_without_the_flag_is_rejected_at_parse() {
     let c_source = "int32 f(int32 x) { return x + 1; }";
     let click_source = r#"
@@ -2668,6 +2715,7 @@ fn sorry_without_the_flag_is_rejected_at_parse() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_11")]
 fn sorry_admits_a_grouped_contract_under_the_flag_without_counting_it_verified() {
     let c_source = "int32 f(int32 x) { return x + 1; }";
     let click_source = r#"
@@ -2693,6 +2741,7 @@ fn sorry_admits_a_grouped_contract_under_the_flag_without_counting_it_verified()
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_12")]
 fn bare_mid_script_sorry_is_rejected_to_keep_holes_minimal() {
     let c_source = "int32 f(int32 x) { int32 y = x; return y; }";
     let click_source = r#"
@@ -2718,6 +2767,7 @@ fn bare_mid_script_sorry_is_rejected_to_keep_holes_minimal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_12")]
 fn have_sorry_admits_one_fact_while_the_rest_checks() {
     let c_source = "int32 f(int32 x) { return x; }";
     let click_source = r#"
@@ -2845,6 +2895,7 @@ uint64 nested(uint64 total) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_12")]
 fn a_function_cannot_assume_its_own_pointer_return_type_guarantee() {
     let c = [(
         "return.c",
@@ -2872,6 +2923,7 @@ fn a_function_cannot_assume_its_own_pointer_return_type_guarantee() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_12")]
 fn casts_of_resource_fields_keep_their_declared_scalar_types() {
     let c = "void preserve(int32* p) {}";
     let source = r#"
@@ -2901,6 +2953,7 @@ fn casts_of_resource_fields_keep_their_declared_scalar_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_13")]
 fn contract_claims_cannot_hide_overflow_behind_reflexivity() {
     let c = "int32 identity(int32 x) { return x; }";
     // Specification `/` and `%` are total at a zero divisor, so only signed
@@ -2937,6 +2990,7 @@ fn contract_claims_cannot_hide_overflow_behind_reflexivity() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_13")]
 fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
     let c = "int32 identity(int32 x) { return x; }";
     for (claim, proof, passes) in [
@@ -2977,6 +3031,7 @@ fn contract_quantifier_domains_keep_the_chosen_witness_and_polarity() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_13")]
 fn contract_logical_read_facts_do_not_grant_access() {
     let c = "int32 identity(int32* p) { return 0; }";
     let source = r#"verifying "domain.c";
@@ -2989,6 +3044,7 @@ fn contract_logical_read_facts_do_not_grant_access() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_13")]
 fn opaque_contract_predicate_proof_still_owes_its_body_domain() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "domain.c";
@@ -3006,6 +3062,7 @@ fn opaque_contract_predicate_proof_still_owes_its_body_domain() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_14")]
 fn exceptional_contract_claims_discharge_their_own_domains() {
     let c = "int32 helper(int32 x) { return x; } int32 caller(int32 x) { return helper(x); }";
     for (exception, claim, passes) in [
@@ -3044,6 +3101,7 @@ fn exceptional_contract_claims_discharge_their_own_domains() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_14")]
 fn contract_arithmetic_domain_refusal_retains_the_actual_goal_and_checked_context() {
     let source = r#"verifying "claim_domain.c";
         int32 identity(int32 x) {
@@ -3070,6 +3128,7 @@ fn contract_arithmetic_domain_refusal_retains_the_actual_goal_and_checked_contex
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by contract_batch_14")]
 fn contract_domain_refusal_retains_the_actual_goal_and_checked_context() {
     let source = r#"verifying "claim_domain.c";
         int32 identity(int32 x) {
@@ -3098,4 +3157,99 @@ fn contract_domain_refusal_retains_the_actual_goal_and_checked_context() {
     let report = error.report();
     assert!(report.contains("goal:"), "{report}");
     assert!(report.contains("evaluation requirement"), "{report}");
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "contract_tests.rs",
+    marker: "contract_batch_",
+    contract_batch_00: [
+        inline_array_element_addresses_are_logical_without_granting_access,
+        historical_wide_view_bound_reads_the_marked_counter,
+        unsigned_word_array_field_contracts_decay_to_typed_addresses,
+        modular_exceptional_call_continues_through_a_normal_assignment,
+    ],
+    contract_batch_01: [
+        successive_modular_exceptional_calls_keep_each_throw_path,
+        exceptional_call_before_a_normal_branch_retains_its_exit,
+        exceptional_call_before_two_returning_normal_arms_retains_its_exit,
+        nonterminal_exceptional_call_rejects_a_false_caller_claim,
+    ],
+    contract_batch_02: [
+        nonterminal_call_cannot_drop_an_unconstrained_exception,
+        modular_exceptional_call_completes_both_caller_claim_families,
+        modular_exceptional_call_rejects_a_false_caller_claim,
+        targeted_exceptional_caller_assumes_but_does_not_certify_an_unselected_callee,
+    ],
+    contract_batch_03: [
+        exceptional_contracts_publish_distinct_claim_families,
+        exceptional_contract_bindings_are_family_specific,
+        abstract_resource_construction_adds_one_authorized_token,
+        abstract_resource_construction_requires_function_authorization,
+    ],
+    contract_batch_04: [
+        contradiction_closes_an_impossible_concrete_outcome,
+        flat_function_proof_stays_on_proof_through_claim_acceptance,
+        individual_linear_open_proof_stays_on_proof_through_claim_acceptance,
+        proof_if_splits_one_frontier_after_execution_has_started,
+    ],
+    contract_batch_05: [
+        post_execution_resource_fold_completes_without_a_body_rerun,
+        implicitly_closed_population_entry_completes_without_a_body_rerun,
+        callee_subrange_requirement_completes_without_a_body_rerun,
+        token_quantity_entry_completes_without_a_body_rerun,
+    ],
+    contract_batch_06: [
+        grouped_flat_function_proof_stays_on_one_proof_through_claim_acceptance,
+        grouped_n_way_function_outcomes_stay_on_one_proof,
+        grouped_n_way_outcomes_discard_exactly_infeasible_siblings_on_proof,
+        grouped_calls_keep_contract_transitions_on_proof,
+    ],
+    contract_batch_07: [
+        grouped_opaque_calls_keep_declared_composite_resources_on_proof,
+        grouped_sequential_top_level_scopes_stay_on_one_proof,
+        grouped_predicate_contracts_stay_on_one_proof,
+        heap_backed_predicate_contract_stays_on_checked_proof,
+    ],
+    contract_batch_08: [
+        quantified_heap_scope_stays_on_checked_proof,
+        grouped_leading_resource_relations_stay_on_one_proof,
+        grouped_owned_outcome_resources_stay_on_one_proof,
+        flat_function_expansion_rewrites_and_rejects_tampering,
+    ],
+    contract_batch_09: [
+        post_execution_frame_using_relowers_a_preceding_have_fact,
+        ordinary_verification_stops_at_the_tactic_work_budget,
+        verifies_omitted_proof_with_default_prover,
+        solve_rejects_loop_backed_claims,
+    ],
+    contract_batch_10: [
+        verifies_memory_postcondition,
+        verifies_quantified_old_memory_postcondition,
+        owned_segment_rejects_write_outside_owned_memory,
+        sequence_contracts_reject_mixed_and_non_equality_types,
+    ],
+    contract_batch_11: [
+        source_have_failures_keep_the_written_operation_in_each_execution_phase,
+        aggregate_return_claims_retain_checked_completions,
+        sorry_without_the_flag_is_rejected_at_parse,
+        sorry_admits_a_grouped_contract_under_the_flag_without_counting_it_verified,
+    ],
+    contract_batch_12: [
+        bare_mid_script_sorry_is_rejected_to_keep_holes_minimal,
+        have_sorry_admits_one_fact_while_the_rest_checks,
+        a_function_cannot_assume_its_own_pointer_return_type_guarantee,
+        casts_of_resource_fields_keep_their_declared_scalar_types,
+    ],
+    contract_batch_13: [
+        contract_claims_cannot_hide_overflow_behind_reflexivity,
+        contract_quantifier_domains_keep_the_chosen_witness_and_polarity,
+        contract_logical_read_facts_do_not_grant_access,
+        opaque_contract_predicate_proof_still_owes_its_body_domain,
+    ],
+    contract_batch_14: [
+        exceptional_contract_claims_discharge_their_own_domains,
+        contract_arithmetic_domain_refusal_retains_the_actual_goal_and_checked_context,
+        contract_domain_refusal_retains_the_actual_goal_and_checked_context,
+    ],
 }

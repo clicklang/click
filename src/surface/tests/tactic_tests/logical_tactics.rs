@@ -27,6 +27,7 @@ fn solve_composite_machine_equalities_require_defined_operations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_00")]
 fn fixed_state_solve_closes_from_false_without_leaking_into_other_contracts() {
     let c_source = "int32 f(int32 x) { return x; }\n";
     let source = r#"
@@ -62,6 +63,7 @@ fn fixed_state_solve_closes_from_false_without_leaking_into_other_contracts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_00")]
 fn solve_rewrites_constructor_equality_before_disequality() {
     let click_source = r#"
             spec enum Mark { Clear, Set }
@@ -85,6 +87,7 @@ fn solve_rewrites_constructor_equality_before_disequality() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_00")]
 fn solve_orients_pure_function_equality_inside_constructor_goal() {
     let click_source = r#"
             spec enum Shape {
@@ -121,6 +124,7 @@ fn solve_orients_pure_function_equality_inside_constructor_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_00")]
 fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
     let c_source = r#"
             int32 add_nonnegative(int32 value, int32 amount) {
@@ -164,6 +168,7 @@ fn explicit_nonnegative_add_definedness_certifies_the_whole_contract() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_01")]
 fn apply_using_checks_only_with_its_explicit_premises() {
     let c_source = r#"
             int32 increment(int32 x) {
@@ -211,6 +216,7 @@ fn apply_using_checks_only_with_its_explicit_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_01")]
 fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
     let c_source = r#"
             int32 first(int32* data) {
@@ -246,6 +252,7 @@ fn apply_using_uses_ambient_loadability_only_to_lower_explicit_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_01")]
 fn source_expander_makes_theorem_application_premises_explicit() {
     let c_source = r#"
             int32 increment(int32 x) {
@@ -308,6 +315,7 @@ fn source_expander_makes_theorem_application_premises_explicit() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_01")]
 fn defined_rejects_concrete_undefined_expression() {
     let click_source = r#"
             theorem overflow_is_defined() {
@@ -327,6 +335,7 @@ fn defined_rejects_concrete_undefined_expression() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
 fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
     let c_source = r#"
         int32 read(int32* data) {
@@ -363,6 +372,7 @@ fn failed_fixed_state_normalize_does_not_dump_internal_memory() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
 fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
     let c_source = r#"
         int32 keep(int32 x, int32 y) {
@@ -417,6 +427,7 @@ fn assumption_reuses_facts_but_does_not_normalize_or_extract_implications() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
 fn parses_local_have_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -446,6 +457,7 @@ fn parses_local_have_proof_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_02")]
 fn contract_lets_do_not_capture_later_quantifier_binders() {
     let false_claims = [
         r#"
@@ -505,6 +517,7 @@ fn contract_lets_do_not_capture_later_quantifier_binders() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_03")]
 fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
     let source = r#"
         theorem universal(x: Integer) {
@@ -541,6 +554,7 @@ fn capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_03")]
 fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
     let c_source = r#"
         int32 forall_scope(int32 value) {
@@ -573,6 +587,7 @@ fn fixed_state_proof_intro_places_forall_binder_in_surface_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_03")]
 fn parses_proof_if_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -596,6 +611,7 @@ fn parses_proof_if_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_03")]
 fn parses_existential_proof_tactics() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -625,6 +641,7 @@ fn parses_existential_proof_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_04")]
 fn rejects_named_requirement() {
     let source = r#"
             verifying "id.c";
@@ -642,6 +659,7 @@ fn rejects_named_requirement() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_04")]
 fn parses_unnamed_ensure_clause() {
     let source = FILL3_CLICK.replace("ensures returns_second: result == 2", "ensures result == 2");
     let file = parse(&source).expect("sidecar should parse");
@@ -659,6 +677,7 @@ fn parses_unnamed_ensure_clause() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_04")]
 fn parses_solve_tactic() {
     let source = FILL3_CLICK.replace("== 2;", "== 2 by solve();");
     let file = parse(&source).expect("sidecar should parse");
@@ -670,6 +689,7 @@ fn parses_solve_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_04")]
 fn parses_old_memory_postcondition() {
     let source = FILL3_CLICK.replace("result == 2", "p[0] == old(p[0])");
     let file = parse(&source).expect("sidecar should parse");
@@ -686,6 +706,7 @@ fn parses_old_memory_postcondition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_05")]
 fn rejects_legacy_structural_region_syntax() {
     let source = r#"
             verifying "count.c";
@@ -708,6 +729,7 @@ fn rejects_legacy_structural_region_syntax() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_05")]
 fn rejects_legacy_proof_tactic_region_syntax() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -723,6 +745,7 @@ fn rejects_legacy_proof_tactic_region_syntax() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_05")]
 fn parses_click_proposition_syntax() {
     let source = r#"
             verifying "logic.c";
@@ -774,6 +797,7 @@ fn parses_click_proposition_syntax() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_05")]
 fn parses_rust_style_let_annotations() {
     let source = r#"
             function inc_with_let(x: int32) -> int32 {
@@ -795,6 +819,7 @@ fn parses_rust_style_let_annotations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_06")]
 fn parses_contract_level_let_bindings() {
     let source = r#"
             verifying "identity.c";
@@ -822,6 +847,7 @@ fn parses_contract_level_let_bindings() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_06")]
 fn parses_contract_level_let_where_bindings() {
     let source = r#"
             verifying "identity.c";
@@ -848,6 +874,7 @@ fn parses_contract_level_let_where_bindings() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_06")]
 fn parses_proposition_let_where_bindings() {
     let source = r#"
             verifying "identity.c";
@@ -873,6 +900,7 @@ fn parses_proposition_let_where_bindings() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_06")]
 fn rejects_contract_let_parameter_name_conflict() {
     let source = r#"
             verifying "identity.c";
@@ -893,6 +921,7 @@ fn rejects_contract_let_parameter_name_conflict() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
 fn rejects_unknown_predicate_call() {
     let source = r#"
             verifying "identity.c";
@@ -912,6 +941,7 @@ fn rejects_unknown_predicate_call() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
 fn rejects_same_object_with_non_pointer_arguments() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -940,6 +970,7 @@ fn rejects_same_object_with_non_pointer_arguments() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
 fn rejects_redefinition_of_same_object() {
     let source = r#"
             predicate same_object(x: int32) {
@@ -959,6 +990,7 @@ fn rejects_redefinition_of_same_object() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_07")]
 fn rejects_predicate_call_with_wrong_arity() {
     let source = r#"
             verifying "identity.c";
@@ -1018,6 +1050,7 @@ fn verifies_opaque_predicate_from_requirement() {
 /// loadability its loads need, or a proof could help itself to the readability
 /// of the very memory it is making a claim about.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_08")]
 fn heap_dependent_ensures_still_owes_its_loads() {
     let c_source = r#"
             int32 claim_sorted(int32* p) {
@@ -1050,6 +1083,7 @@ fn heap_dependent_ensures_still_owes_its_loads() {
 /// definedness rule; if it ever starts passing, the assumption side has become
 /// a way to manufacture readability out of nothing.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_08")]
 fn call_site_owes_the_definedness_of_a_heap_dependent_precondition() {
     let callee_source = r#"
             int32 needs_sorted(int32* p) {
@@ -1092,6 +1126,7 @@ fn call_site_owes_the_definedness_of_a_heap_dependent_precondition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_08")]
 fn unfolds_predicate_requirement_to_prove_consequence() {
     let c_source = r#"
             int32 keep_pair(int32* p) {
@@ -1134,6 +1169,7 @@ fn unfolds_predicate_requirement_to_prove_consequence() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_08")]
 fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
     let c_source = r#"
             int32 compare_swap2(int32* p) {
@@ -1173,6 +1209,7 @@ fn unfolds_predicate_goal_to_prove_compare_swap_sorted() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
 fn unfolds_general_sorted_predicate() {
     let c_source = r#"
             int32 keep_sorted(int32* p, int32 n) {
@@ -1234,6 +1271,7 @@ fn unfolds_general_sorted_predicate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
 fn verifies_click_proposition_logic() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -1256,6 +1294,7 @@ fn verifies_click_proposition_logic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
 fn single_solve_call_and_block_have_the_same_frontier_semantics() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let solve_errors = ["by solve();", "by { solve(); }"].map(|proof| {
@@ -1274,6 +1313,7 @@ fn single_solve_call_and_block_have_the_same_frontier_semantics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_09")]
 fn every_claim_proof_form_retains_expandable_provenance() {
     let c_source = r#"
             int32 clamp(int32 p[1], int32 x) {
@@ -1309,6 +1349,7 @@ fn every_claim_proof_form_retains_expandable_provenance() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_10")]
 fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
     let c_source = "int32 current_have(int32 x) { return x; }";
     let click_source = r#"
@@ -1382,6 +1423,7 @@ fn mid_execution_witness_solve_have_expands_to_a_simple_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_10")]
 fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
     let c_source = "int32 choose_witness(int32 x) { return x; }";
     let click_source = r#"
@@ -1465,6 +1507,7 @@ fn mid_execution_choose_witness_solve_retains_the_checked_proof_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_10")]
 fn explicit_mid_execution_witness_certificate_checks_and_expands() {
     let c_source = "int32 explicit_witness(int32 x) { return x; }";
     let click_source = r#"
@@ -1502,6 +1545,7 @@ fn explicit_mid_execution_witness_certificate_checks_and_expands() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_10")]
 fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
     let c_source = "int32 witness_pair(int32 x, int32 y) { return x; }";
     let click_source = r#"
@@ -1552,6 +1596,7 @@ fn fixed_state_witness_retains_a_structural_surface_goal_for_solve() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_11")]
 fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
     let c_source = r#"
             int32 sign_partition(int32 x) {
@@ -1604,6 +1649,7 @@ fn mid_execution_proof_if_have_expands_to_a_simple_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_11")]
 fn outcome_instantiate_uses_the_checked_proof_path() {
     let c_source = r#"
         int32 pick(int32 value) {
@@ -1635,6 +1681,7 @@ fn outcome_instantiate_uses_the_checked_proof_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_11")]
 fn instantiate_does_not_discharge_guards_from_ambient_facts() {
     let c_source = r#"
         int32 pick(int32 value, int32 n) {
@@ -1674,6 +1721,7 @@ fn instantiate_does_not_discharge_guards_from_ambient_facts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_11")]
 fn constant_bound_weakenings_lower_to_named_theorem_chains() {
     let c_source = r#"
         int32 keep(int32 n) {
@@ -1695,6 +1743,7 @@ fn constant_bound_weakenings_lower_to_named_theorem_chains() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_12")]
 fn cases_eliminates_a_disjunctive_premise() {
     let c_source = r#"
         int32 keep_small(int32 x) {
@@ -1730,6 +1779,7 @@ fn cases_eliminates_a_disjunctive_premise() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_12")]
 fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
     let c_source = r#"
         int32 keep_small(int32 x) {
@@ -1772,6 +1822,7 @@ fn cases_refuses_alternatives_that_do_not_cover_the_premise() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_12")]
 fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
     let c_source = r#"
         int32 keep_small(int32 x) {
@@ -1816,6 +1867,7 @@ fn cases_checks_each_branch_under_exactly_its_own_disjunct() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_12")]
 fn pure_cases_certificate_uses_checked_proof_branches() {
     let click_source = r#"
         theorem retain_sign_case(x: int32) {
@@ -1839,6 +1891,7 @@ fn pure_cases_certificate_uses_checked_proof_branches() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_13")]
 fn pure_if_certificate_uses_checked_proof_branches() {
     let click_source = r#"
         theorem equality_excluded_middle(x: int32) {
@@ -1857,6 +1910,7 @@ fn pure_if_certificate_uses_checked_proof_branches() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_13")]
 fn pure_have_certificate_uses_checked_proof_scope() {
     let click_source = r#"
         theorem retain_zero(x: int32) {
@@ -1876,6 +1930,7 @@ fn pure_have_certificate_uses_checked_proof_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_13")]
 fn pure_unfold_then_solve_retains_the_checked_proof_path() {
     let click_source = r#"
         predicate reflexive(x: int32) {
@@ -1895,6 +1950,7 @@ fn pure_unfold_then_solve_retains_the_checked_proof_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_13")]
 fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
     let click_source = r#"
         theorem restate_zero(x: int32) {
@@ -1922,6 +1978,7 @@ fn smart_pure_have_theorem_search_retains_the_checked_scope_body_directly() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_14")]
 fn smart_pure_theorem_application_discharges_exact_goal() {
     let click_source = r#"
         theorem positive_predecessor_decreases(value: int32) {
@@ -1946,6 +2003,7 @@ fn smart_pure_theorem_application_discharges_exact_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_14")]
 fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
     let c_source = r#"
         int32 keep(int32 x) {
@@ -2021,6 +2079,7 @@ fn smart_fixed_state_nested_have_theorem_search_retains_checked_scopes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_14")]
 fn leading_logical_have_decomposition_stays_on_one_proof() {
     let c_source = "int32 logical_haves(int32 x, int32 y) { return x; }";
     let click_source = r#"
@@ -2095,6 +2154,7 @@ fn leading_logical_have_decomposition_stays_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_14")]
 fn leading_universal_have_scopes_stay_on_one_proof() {
     let c_source = "int32 universal_haves(int32 x) { return x; }";
     let click_source = r#"
@@ -2192,6 +2252,7 @@ fn leading_universal_have_scopes_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_15")]
 fn grouped_top_level_existential_operations_verify_without_fallback() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let cases = [
@@ -2234,6 +2295,7 @@ fn grouped_top_level_existential_operations_verify_without_fallback() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_15")]
 fn smart_pure_if_retains_checked_arm_proofs_directly() {
     let click_source = r#"
         theorem equality_case(x: int32) {
@@ -2268,6 +2330,7 @@ fn smart_pure_if_retains_checked_arm_proofs_directly() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_15")]
 fn smart_pure_cases_retains_checked_arm_proofs_directly() {
     let click_source = r#"
         theorem retain_sign_case_smart(x: int32) {
@@ -2291,6 +2354,7 @@ fn smart_pure_cases_retains_checked_arm_proofs_directly() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_15")]
 fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
     let c_source = r#"
         int32 keep(int32 x) {
@@ -2324,6 +2388,7 @@ fn fixed_state_have_cases_certificate_uses_checked_proof_branches() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_16")]
 fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
     let c_source = r#"
         int32 keep(int32 x) {
@@ -2393,6 +2458,7 @@ fn smart_fixed_state_have_if_retains_checked_arm_proofs_directly() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_16")]
 fn leading_universal_contradiction_scope_stays_on_proof() {
     let c_source = "int32 impossible_universal(int32 x) { return x; }";
     let click_source = r#"
@@ -2419,6 +2485,7 @@ fn leading_universal_contradiction_scope_stays_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_16")]
 fn enumerate_closes_a_constant_bounded_universal_goal() {
     let c_source = r#"
         int32 keep(int32 x) {
@@ -2447,6 +2514,7 @@ fn enumerate_closes_a_constant_bounded_universal_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_16")]
 fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
     let c_source = r#"
         int32 keep(int32 x) {
@@ -2484,6 +2552,7 @@ fn enumerate_requires_each_in_range_instance_as_an_available_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_17")]
 fn enumerate_requires_a_constant_bounded_universal_goal() {
     let c_source = r#"
         int32 keep(int32 x) {
@@ -2519,6 +2588,7 @@ fn enumerate_requires_a_constant_bounded_universal_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_17")]
 fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
     let c_source = r#"
         int32 select_first(int32* left, int32* right, int32 choose_left) {
@@ -2588,6 +2658,7 @@ fn disjunctive_premise_solve_expands_to_a_replayable_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_17")]
 fn explicit_pointer_translation_checks_only_named_premises() {
     let source = r#"
         theorem translated(p: int32*, arr: int32*, i: int32, n: int32) {
@@ -2616,6 +2687,7 @@ fn explicit_pointer_translation_checks_only_named_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_17")]
 fn pure_rewrite_rejects_an_int32_equality_that_is_not_available() {
     // `offset == 1` is not an available fact, so the explicit rewrite
     // certificate must be rejected instead of substituting an unproven
@@ -2648,6 +2720,7 @@ fn pure_rewrite_rejects_an_int32_equality_that_is_not_available() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_18")]
 fn branching_pure_disjunction_lowers_to_left_right_certificate() {
     let click_source = r#"
         theorem int32_sign_split(x: int32) {
@@ -2667,6 +2740,7 @@ fn branching_pure_disjunction_lowers_to_left_right_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_18")]
 fn assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
     // The then-branch assumes `x <= 3`, which is neither `x <= 0` nor
     // `x > 5`; `assumption` looks the two sides up and derives nothing.
@@ -2692,6 +2766,7 @@ fn assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_18")]
 fn smart_nonstrict_then_strict_transitivity_closes_a_pure_goal() {
     let click_source = r#"
         theorem below_from_le_lt(x: int32, y: int32) {
@@ -2710,6 +2785,7 @@ fn smart_nonstrict_then_strict_transitivity_closes_a_pure_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_18")]
 fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
     // Without `0 <= x` as an available fact the theorem's first requirement
     // has no proof, so the explicit application must fail instead of
@@ -2744,6 +2820,7 @@ fn apply_le_lt_transitive_requires_its_nonstrict_leg_listed() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_19")]
 fn smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound() {
     // Substituting `x == 0` inside `x + 1` leaves the two-constant `0 + 1`,
     // which the rewrite folds so the strict constant bound closes through
@@ -2765,6 +2842,7 @@ fn smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_19")]
 fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
     // `2 < 2` is false, so the constant leg cannot be discharged by
     // normalization and the application must fail.
@@ -2798,6 +2876,7 @@ fn apply_lt_le_transitive_rejects_a_false_constant_leg() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_19")]
 fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
     let click_source = r#"
         theorem nonnegative_predecessor_upper_bound(value: int32, bound: int32) {
@@ -2827,6 +2906,7 @@ fn apply_predecessor_upper_bound_closes_from_both_listed_legs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_19")]
 fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
     // The decrement's kernel derivation pins `p->low` through the written
     // equality, so the nonnegativity leg of the predecessor rule is not a
@@ -2873,6 +2953,7 @@ fn outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_20")]
 fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
     // Without `0 <= value` established, the theorem's first requirement has
     // no proof, so the explicit application must fail instead of
@@ -2907,6 +2988,7 @@ fn apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_20")]
 fn apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg() {
     // `0 <= -1` is false, so the nonnegative leg cannot be discharged by
     // normalization and the application must fail.
@@ -2964,6 +3046,7 @@ theorem three_way(x: int32) {
 /// eliminate `x == 1 or x == 2 or x == 3`, and expansion of the smart
 /// tactic in the middle arm keeps every arm in place and reverifies.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_20")]
 fn three_arm_cases_verifies_and_expands() {
     verify_c0_sources(THREE_WAY_CASES, &[]).unwrap_or_else(|error| panic!("{}", error.message()));
     let expanded = expand_c0_claim_source_by_label(THREE_WAY_CASES, &[], "three_way.ensures_0")
@@ -2979,6 +3062,7 @@ fn three_arm_cases_verifies_and_expands() {
 /// Reordering the alternatives is valid, but each body must still prove its
 /// goal from its own written assumption rather than the old arm position.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_20")]
 fn reordered_cases_check_bodies_under_their_written_assumptions() {
     let reordered = THREE_WAY_CASES
         .replacen("x == 1 => {", "x == 0 => {", 1)
@@ -3000,6 +3084,7 @@ fn reordered_cases_check_bodies_under_their_written_assumptions() {
 /// `outcomes` names its arms like `match` does, so they may come in either
 /// order, each exactly once.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_21")]
 fn parses_outcomes_arms_in_either_order() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -3034,6 +3119,7 @@ fn parses_outcomes_arms_in_either_order() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_21")]
 fn pure_machine_witness_instantiates_supported_c_binders() {
     let source = r#"
         theorem split_sum(n: int32) {
@@ -3059,6 +3145,7 @@ fn pure_machine_witness_instantiates_supported_c_binders() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_21")]
 fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
     for (source, expected, actual) in [
         (
@@ -3099,6 +3186,7 @@ fn pure_machine_witness_rejects_wrong_types_with_binder_and_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_21")]
 fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
     for pointer_type in [
         "void*", "int8*", "uint8*", "int16*", "uint16*", "int32*", "uint32*", "int64*", "uint64*",
@@ -3120,6 +3208,7 @@ fn pure_machine_witness_preserves_lexical_bindings_and_pointer_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_22")]
 fn pure_machine_witness_preserves_binder_widths() {
     for scalar_type in [
         "int8", "int16", "int32", "uint8", "uint16", "uint32", "int64", "uint64",
@@ -3144,6 +3233,7 @@ fn pure_machine_witness_preserves_binder_widths() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_22")]
 fn pure_machine_witness_rejects_different_widths_and_signedness() {
     for (binder, witness) in [
         ("int64", "int32"),
@@ -3221,6 +3311,7 @@ fn pure_witness_captures_declaration_aliases_and_reverifies_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_22")]
 fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
     for (ty, annotation) in [("int32", ""), ("Integer", ": Integer")] {
         let source = format!(
@@ -3247,6 +3338,7 @@ fn pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_22")]
 fn pure_witness_declaration_aliases_keep_literal_types_and_source_scope() {
     let source = r#"
         theorem literals() {
@@ -3306,6 +3398,7 @@ const TERMINAL_BINDINGS_CLICK: &str = r#"
     "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_23")]
 fn terminal_if_tactics_keep_their_call_bindings_in_their_own_arms() {
     let source = TERMINAL_BINDINGS_CLICK;
     let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
@@ -3317,6 +3410,7 @@ fn terminal_if_tactics_keep_their_call_bindings_in_their_own_arms() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_23")]
 fn terminal_if_tactics_refuse_sibling_bindings_and_false_results() {
     let source = TERMINAL_BINDINGS_CLICK;
     let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
@@ -3335,6 +3429,7 @@ fn terminal_if_tactics_refuse_sibling_bindings_and_false_results() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by logical_tactics_batch_23")]
 fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
     let source = TERMINAL_BINDINGS_CLICK;
     let sources = [("terminal_bindings.c", TERMINAL_BINDINGS_C)];
@@ -3349,4 +3444,153 @@ fn terminal_if_tactics_keep_claim_local_existential_witnesses() {
         );
     verify_c0_sources(&existential, &sources)
         .expect("post-execution existence proofs retain their own obtained witnesses");
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "logical_tactics.rs",
+    marker: "logical_tactics_batch_",
+    logical_tactics_batch_00: [
+        fixed_state_solve_closes_from_false_without_leaking_into_other_contracts,
+        solve_rewrites_constructor_equality_before_disequality,
+        solve_orients_pure_function_equality_inside_constructor_goal,
+        explicit_nonnegative_add_definedness_certifies_the_whole_contract,
+    ],
+    logical_tactics_batch_01: [
+        apply_using_checks_only_with_its_explicit_premises,
+        apply_using_uses_ambient_loadability_only_to_lower_explicit_premises,
+        source_expander_makes_theorem_application_premises_explicit,
+        defined_rejects_concrete_undefined_expression,
+    ],
+    logical_tactics_batch_02: [
+        failed_fixed_state_normalize_does_not_dump_internal_memory,
+        assumption_reuses_facts_but_does_not_normalize_or_extract_implications,
+        parses_local_have_proof_tactic,
+        contract_lets_do_not_capture_later_quantifier_binders,
+    ],
+    logical_tactics_batch_03: [
+        capture_avoiding_contract_lets_preserve_written_proof_names_and_expansion,
+        fixed_state_proof_intro_places_forall_binder_in_surface_scope,
+        parses_proof_if_tactic,
+        parses_existential_proof_tactics,
+    ],
+    logical_tactics_batch_04: [
+        rejects_named_requirement,
+        parses_unnamed_ensure_clause,
+        parses_solve_tactic,
+        parses_old_memory_postcondition,
+    ],
+    logical_tactics_batch_05: [
+        rejects_legacy_structural_region_syntax,
+        rejects_legacy_proof_tactic_region_syntax,
+        parses_click_proposition_syntax,
+        parses_rust_style_let_annotations,
+    ],
+    logical_tactics_batch_06: [
+        parses_contract_level_let_bindings,
+        parses_contract_level_let_where_bindings,
+        parses_proposition_let_where_bindings,
+        rejects_contract_let_parameter_name_conflict,
+    ],
+    logical_tactics_batch_07: [
+        rejects_unknown_predicate_call,
+        rejects_same_object_with_non_pointer_arguments,
+        rejects_redefinition_of_same_object,
+        rejects_predicate_call_with_wrong_arity,
+    ],
+    logical_tactics_batch_08: [
+        heap_dependent_ensures_still_owes_its_loads,
+        call_site_owes_the_definedness_of_a_heap_dependent_precondition,
+        unfolds_predicate_requirement_to_prove_consequence,
+        unfolds_predicate_goal_to_prove_compare_swap_sorted,
+    ],
+    logical_tactics_batch_09: [
+        unfolds_general_sorted_predicate,
+        verifies_click_proposition_logic,
+        single_solve_call_and_block_have_the_same_frontier_semantics,
+        every_claim_proof_form_retains_expandable_provenance,
+    ],
+    logical_tactics_batch_10: [
+        mid_execution_witness_solve_have_expands_to_a_simple_certificate,
+        mid_execution_choose_witness_solve_retains_the_checked_proof_path,
+        explicit_mid_execution_witness_certificate_checks_and_expands,
+        fixed_state_witness_retains_a_structural_surface_goal_for_solve,
+    ],
+    logical_tactics_batch_11: [
+        mid_execution_proof_if_have_expands_to_a_simple_certificate,
+        outcome_instantiate_uses_the_checked_proof_path,
+        instantiate_does_not_discharge_guards_from_ambient_facts,
+        constant_bound_weakenings_lower_to_named_theorem_chains,
+    ],
+    logical_tactics_batch_12: [
+        cases_eliminates_a_disjunctive_premise,
+        cases_refuses_alternatives_that_do_not_cover_the_premise,
+        cases_checks_each_branch_under_exactly_its_own_disjunct,
+        pure_cases_certificate_uses_checked_proof_branches,
+    ],
+    logical_tactics_batch_13: [
+        pure_if_certificate_uses_checked_proof_branches,
+        pure_have_certificate_uses_checked_proof_scope,
+        pure_unfold_then_solve_retains_the_checked_proof_path,
+        smart_pure_have_theorem_search_retains_the_checked_scope_body_directly,
+    ],
+    logical_tactics_batch_14: [
+        smart_pure_theorem_application_discharges_exact_goal,
+        smart_fixed_state_nested_have_theorem_search_retains_checked_scopes,
+        leading_logical_have_decomposition_stays_on_one_proof,
+        leading_universal_have_scopes_stay_on_one_proof,
+    ],
+    logical_tactics_batch_15: [
+        grouped_top_level_existential_operations_verify_without_fallback,
+        smart_pure_if_retains_checked_arm_proofs_directly,
+        smart_pure_cases_retains_checked_arm_proofs_directly,
+        fixed_state_have_cases_certificate_uses_checked_proof_branches,
+    ],
+    logical_tactics_batch_16: [
+        smart_fixed_state_have_if_retains_checked_arm_proofs_directly,
+        leading_universal_contradiction_scope_stays_on_proof,
+        enumerate_closes_a_constant_bounded_universal_goal,
+        enumerate_requires_each_in_range_instance_as_an_available_fact,
+    ],
+    logical_tactics_batch_17: [
+        enumerate_requires_a_constant_bounded_universal_goal,
+        disjunctive_premise_solve_expands_to_a_replayable_certificate,
+        explicit_pointer_translation_checks_only_named_premises,
+        pure_rewrite_rejects_an_int32_equality_that_is_not_available,
+    ],
+    logical_tactics_batch_18: [
+        branching_pure_disjunction_lowers_to_left_right_certificate,
+        assumption_rejects_a_disjunction_neither_side_of_which_is_a_fact,
+        smart_nonstrict_then_strict_transitivity_closes_a_pure_goal,
+        apply_le_lt_transitive_requires_its_nonstrict_leg_listed,
+    ],
+    logical_tactics_batch_19: [
+        smart_rewrite_folds_substituted_constants_to_a_strict_constant_bound,
+        apply_lt_le_transitive_rejects_a_false_constant_leg,
+        apply_predecessor_upper_bound_closes_from_both_listed_legs,
+        outcome_predecessor_upper_bound_writes_a_rewritten_nonnegative_leg,
+    ],
+    logical_tactics_batch_20: [
+        apply_predecessor_upper_bound_requires_its_nonnegative_leg_listed,
+        apply_predecessor_upper_bound_rejects_a_false_nonnegative_leg,
+        three_arm_cases_verifies_and_expands,
+        reordered_cases_check_bodies_under_their_written_assumptions,
+    ],
+    logical_tactics_batch_21: [
+        parses_outcomes_arms_in_either_order,
+        pure_machine_witness_instantiates_supported_c_binders,
+        pure_machine_witness_rejects_wrong_types_with_binder_and_types,
+        pure_machine_witness_preserves_lexical_bindings_and_pointer_types,
+    ],
+    logical_tactics_batch_22: [
+        pure_machine_witness_preserves_binder_widths,
+        pure_machine_witness_rejects_different_widths_and_signedness,
+        pure_witness_aliases_preserve_outer_binding_and_do_not_prove_false_bodies,
+        pure_witness_declaration_aliases_keep_literal_types_and_source_scope,
+    ],
+    logical_tactics_batch_23: [
+        terminal_if_tactics_keep_their_call_bindings_in_their_own_arms,
+        terminal_if_tactics_refuse_sibling_bindings_and_false_results,
+        terminal_if_tactics_keep_claim_local_existential_witnesses,
+    ],
 }

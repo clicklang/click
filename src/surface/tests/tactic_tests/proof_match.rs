@@ -235,6 +235,7 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by proof_match_batch_00")]
 fn proof_match_nested_impossible_arms_keep_their_scopes() {
     let source = r#"
 verifying "id.c";
@@ -345,6 +346,7 @@ fn proof_match_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by proof_match_batch_00")]
 fn proof_match_int64_payloads_are_typed() {
     let source = SOURCE.replace("int", "int64");
     let c = C.replace("int", "int64");
@@ -352,6 +354,7 @@ fn proof_match_int64_payloads_are_typed() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by proof_match_batch_00")]
 fn proof_match_compound_scrutinee_expansion_rechecks() {
     let source = r#"
 verifying "read.c";
@@ -384,6 +387,7 @@ int read(int x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by proof_match_batch_00")]
 fn proof_match_nested_generic_fields_and_repeated_values() {
     let source = r#"
 verifying "id.c";
@@ -411,4 +415,16 @@ int id(int x) {
         .expect("repeated matching gets fresh witnesses, not a second model");
     let expanded = expand_c0_claim_source(source, &c, "id", CProofClaim::Grouped).unwrap();
     verify_c0_sources(&expanded, &c).expect("nested match certificate");
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "proof_match.rs",
+    marker: "proof_match_batch_",
+    proof_match_batch_00: [
+        proof_match_nested_impossible_arms_keep_their_scopes,
+        proof_match_int64_payloads_are_typed,
+        proof_match_compound_scrutinee_expansion_rechecks,
+        proof_match_nested_generic_fields_and_repeated_values,
+    ],
 }
