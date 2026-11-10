@@ -149,19 +149,10 @@ pub(super) fn differences(left: &KernelTerm, right: &KernelTerm) -> Option<Diffe
 
 /// Explicit native evidence still owns native operands. Materialize only its
 /// selected leaf, never the arithmetic traversed to find that leaf.
-pub(super) fn evidence_operand(term: &KernelTerm) -> MachineTerm {
+pub(super) fn evidence_operand(term: &KernelTerm) -> Option<MachineTerm> {
     let view = MachineOperandView::Shared(term);
-    if let Some(variable) = view.variable() {
-        MachineTerm::Variable(*variable)
-    } else if view.read().is_some() {
-        term.machine_read_leaf().expect("read leaf").clone()
-    } else if let Some(literal) = view.literal() {
-        literal
-    } else if let Some(conversion) = term.machine_conversion_leaf() {
-        conversion.clone()
-    } else {
-        KernelTermExport::machine(term).expect("shared machine evidence operand")
-    }
+    view.literal()
+        .or_else(|| view.read_source().map(|leaf| leaf.into_owned()))
 }
 
 #[cfg(test)]
@@ -311,6 +302,138 @@ mod tests {
                 )
                 .is_none()
         );
+    }
+
+    fn observed(value: SharedMachineIntegerTerm) -> Proposition {
+        Proposition::ConditionIs(
+            ConditionTerm::IntegerEqual(
+                IntegerTerm::Machine(value).into(),
+                IntegerTerm::constant_i64(0).into(),
+            ),
+            true,
+        )
+    }
+
+    #[test]
+    fn mixed_read_evidence_refuses_opaque_mismatch_without_export() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007330));
+        let sum = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
+        let opaque = MachineTerm::If {
+            condition: ConditionTerm::Variable(Variable(1007331)).into(),
+            then_term: MachineTerm::constant(1).into(),
+            else_term: MachineTerm::constant(2).into(),
+        };
+        let native = SharedMachineIntegerTerm::intern(ty, opaque);
+        assert!(native.shared_operand().is_none());
+        let a = observed(SharedMachineIntegerTerm::from_shared(ty, sum).unwrap());
+        let b = observed(native);
+        let before = KernelTermExport::machine_export_count();
+        assert!(
+            ProofFacts::default()
+                .with_checked_rewritten_loads(&a, &b)
+                .is_none()
+        );
+        assert!(
+            ProofFacts::default()
+                .with_checked_rewritten_loads(&b, &a)
+                .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
+
+    #[test]
+    fn arithmetic_read_evidence_keeps_its_exact_source_authority() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let pointer = Pointer::symbolic(Variable(1007340));
+        let load = MachineTerm::MemoryLoad(
+            intern_c_memory(CMemory::new()),
+            pointer.into(),
+            LoadKind::Int32,
+        );
+        let sum = MachineTerm::add(
+            MachineTerm::Variable(Variable(1007341)),
+            MachineTerm::Variable(Variable(1007341)),
+        );
+        let read = SharedMachineIntegerTerm::intern(ty, load.clone());
+        let arithmetic = SharedMachineIntegerTerm::intern(ty, sum.clone());
+        let source = Proposition::ConditionIs(ConditionTerm::equal(load, sum), true);
+        let facts = ProofFacts::from_ordered(&[source]);
+        let (a, b) = (observed(read), observed(arithmetic));
+        let before = KernelTermExport::machine_export_count();
+        assert!(facts.with_checked_rewritten_loads(&a, &b).is_some());
+        assert!(
+            ProofFacts::default()
+                .with_checked_rewritten_loads(&a, &b)
+                .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
+
+    #[test]
+    fn shared_read_evidence_preserves_stored_and_origin_chain_sources() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let pointer = CMemory::global_pointer("shared-read-source");
+        let sum = MachineTerm::add(
+            MachineTerm::Variable(Variable(1007350)),
+            MachineTerm::Variable(Variable(1007350)),
+        );
+        let initial = CMemory::new().with_block("shared-read-source", 4);
+        let stored = initial
+            .clone()
+            .store(pointer.clone(), CValue::Int32(sum.clone()));
+        let load = |memory| {
+            MachineTerm::MemoryLoad(
+                intern_c_memory(memory),
+                pointer.clone().into(),
+                LoadKind::Int32,
+            )
+        };
+        let observe = |value| observed(SharedMachineIntegerTerm::intern(ty, value));
+        let arithmetic = observe(sum.clone());
+        let stored_read = observe(load(stored));
+        let before = KernelTermExport::machine_export_count();
+        for (a, b) in [(&stored_read, &arithmetic), (&arithmetic, &stored_read)] {
+            assert!(
+                ProofFacts::default()
+                    .with_checked_rewritten_loads(a, b)
+                    .is_some()
+            );
+        }
+        let early = load(initial.clone());
+        let later = load(initial.clone().with_block("unrelated", 4));
+        let facts = ProofFacts::from_ordered(&[Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::UInt32,
+                relation: CompareRelation::Equal,
+                left: early.clone().into(),
+                right: sum.into(),
+            },
+            true,
+        )]);
+        let later = observe(later);
+        assert!(
+            facts
+                .with_checked_rewritten_loads(&later, &arithmetic)
+                .is_some()
+        );
+        assert!(
+            ProofFacts::default()
+                .with_checked_rewritten_loads(&later, &arithmetic)
+                .is_none()
+        );
+        let overwritten = observe(load(
+            initial.store(pointer.clone(), CValue::Int32(MachineTerm::constant(7))),
+        ));
+        assert!(
+            facts
+                .with_checked_rewritten_loads(&overwritten, &arithmetic)
+                .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), before);
     }
 
     mod scaling_tests {

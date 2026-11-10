@@ -2787,6 +2787,62 @@ impl ScalarReadBridgeSide for MachineTerm {
     }
 }
 
+// The shared counterpart used by rewritten-load evidence. Only the original
+// int32 word-equality rule participates; arithmetic stays in its retained DAG.
+impl ScalarReadBridgeSide for KernelTerm {
+    fn scalar_read(&self) -> Option<MachineTerm> {
+        let source = MachineOperandView::Shared(self).read_source()?;
+        crate::kernel::eval::viewed_as_memory_load(&source)
+    }
+
+    fn equality_sides(proposition: &Proposition) -> Option<(Self, Self)> {
+        let Proposition::ConditionIs(condition, true) = proposition else {
+            return None;
+        };
+        let view =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+        if view.negated
+            || view.relation != CompareRelation::Equal
+            || !matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+        {
+            return None;
+        }
+        // The original bridge relates 32-bit words across signed/unsigned
+        // comparison spellings. Preserve each operation's format, but use one
+        // observation carrier for the endpoints, as the native rule does.
+        let [left, right] = view.operands.each_ref().map(|operand| {
+            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, operand.operand_view())
+        });
+        Some((left, right))
+    }
+
+    fn equality(left: Self, right: Self) -> Proposition {
+        Proposition::ConditionIs(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::Equal,
+                [
+                    MachineOperandView::Shared(&left),
+                    MachineOperandView::Shared(&right),
+                ],
+            ),
+            true,
+        )
+    }
+}
+
+pub(super) fn shared_premise_bridged_by_load_chain(
+    premise: &Proposition,
+    facts: &[Proposition],
+    assumptions: &PureFactContext,
+) -> bool {
+    bridged_by_load_variable_edges::<KernelTerm>(premise, facts)
+        || bridged_with_origins::<KernelTerm>(premise, facts, assumptions)
+}
+
 /// Whether an equality premise follows from recorded equalities through
 /// selected read endpoints. The existing bounded closure visits each side once;
 /// it no longer needs to create a reserved name to recognize a read.

@@ -1542,12 +1542,27 @@ pub(crate) struct CSubstitutionScope {
     scope_id: u64,
 }
 
+#[derive(PartialEq, Eq, Hash)]
+enum BoundedIndexKey {
+    Variable(Variable),
+    Term(SharedMachineIntegerTerm),
+}
+
+impl BoundedIndexKey {
+    fn of(value: &SharedMachineIntegerTerm) -> Self {
+        match value.operand_view().variable() {
+            Some(variable) => Self::Variable(*variable),
+            None => Self::Term(value.clone()),
+        }
+    }
+}
+
 // Build once, on the first unsigned wide-offset query, from explicitly cited
 // conditions. Later offset queries check their full-width index by key. Scalar
 // normalization never prepares this pointer-only index.
 fn bounded_uint64_indices(
     conditions: &HashMap<ConditionTerm, bool>,
-) -> std::collections::HashSet<MachineTerm> {
+) -> std::collections::HashSet<BoundedIndexKey> {
     conditions
         .iter()
         .filter_map(|(condition, value)| {
@@ -1629,7 +1644,16 @@ fn bounded_uint64_indices(
             };
             let limit = upper.uint64_as_const()?;
             let limit = if strict { limit.checked_sub(1)? } else { limit };
-            (limit <= i32::MAX as u64).then(|| lower.as_ref().clone())
+            (limit <= i32::MAX as u64).then(|| {
+                if let MachineTerm::Variable(variable) = lower.as_ref() {
+                    BoundedIndexKey::Variable(*variable)
+                } else {
+                    BoundedIndexKey::Term(SharedMachineIntegerTerm::index(
+                        MachineIntegerType::Int64,
+                        lower.as_ref().clone(),
+                    ))
+                }
+            })
         })
         .collect()
 }
@@ -1674,7 +1698,7 @@ pub(crate) struct TermRewrite<'a> {
     conditions: Option<&'a HashMap<ConditionTerm, bool>>,
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     cited_comparison_context: Option<&'a PureFactContext>,
-    bounded_uint64_indices: Option<std::collections::HashSet<MachineTerm>>,
+    bounded_uint64_indices: Option<std::collections::HashSet<BoundedIndexKey>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
@@ -5249,26 +5273,91 @@ impl<'a> TermRewrite<'a> {
             offset,
         }
     }
-    fn index_bits(&mut self, value: &SharedMachineIntegerTerm) -> MachineTerm {
-        // These are already native leaves. Re-importing and exporting a
-        // renamed variable would add cold-cache work without any children.
-        if value.shared_operand().is_some_and(|root| {
-            matches!(
-                root.node(),
-                KernelTermNode::Variable(_) | KernelTermNode::MachineLiteral(_)
-            )
-        }) {
-            return self.bits(value);
-        }
-        if let Some(root) = value.shared_operand()
-            && let Some(rewritten) = self.shared_machine_operand(root)
+    fn index_bits(&mut self, value: &SharedMachineIntegerTerm) -> SharedMachineIntegerTerm {
+        let operand = value.operand_view();
+        // Root atoms retain the cheap native rewrite path without exporting.
+        if let Some(atom) = operand
+            .literal()
+            .or_else(|| operand.variable().map(|v| MachineTerm::Variable(*v)))
         {
-            return SharedMachineIntegerTerm::from_shared(value.ty(), rewritten)
-                .expect("rewritten index retains its machine carrier")
-                .structural_value()
-                .clone();
+            return SharedMachineIntegerTerm::index(value.ty(), self.bits(&atom));
         }
-        self.bits(value)
+        if let Some(root) = value.shared_operand() {
+            return match self.shared_machine_operand(root) {
+                Some(rewritten) => SharedMachineIntegerTerm::from_shared(value.ty(), rewritten)
+                    .expect("rewritten index retains its machine carrier"),
+                None => {
+                    self.unsupported_integer_scope = true;
+                    value.clone()
+                }
+            };
+        }
+        SharedMachineIntegerTerm::index(value.ty(), self.bits(value.value()))
+    }
+
+    fn rebuilt_index(
+        &self,
+        value: SharedMachineIntegerTerm,
+        byte_width: i64,
+        wide: Option<bool>,
+    ) -> PointerOffsetTerm {
+        let view = value.operand_view();
+        // Native input and fixed-size leaves use the existing constant policy.
+        let native = view
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| view.read_source());
+        if let Some(native) = native {
+            let native = if self.resolve_registered_loads {
+                canonicalize_integer_to_machine_constant(native.into_owned())
+            } else {
+                native.into_owned()
+            };
+            return match (wide, self.resolve_registered_loads) {
+                (None, true) => PointerOffsetTerm::scale_int32(native, byte_width),
+                (None, false) => PointerOffsetTerm::scaled_int32_node(native, byte_width),
+                (Some(unsigned), true) => {
+                    PointerOffsetTerm::scale_int64(native, byte_width, unsigned)
+                }
+                (Some(unsigned), false) => {
+                    PointerOffsetTerm::scaled_int64_node(native, byte_width, unsigned)
+                }
+            };
+        }
+        if wide == Some(false) && self.resolve_registered_loads {
+            let widened = |v: MachineOperandView<'_>| match v.cast() {
+                Some((MachineCastSpelling::Int64From32, _, _, child)) => {
+                    Some(child.retain(MachineIntegerType::Int32))
+                }
+                _ => None,
+            };
+            if u32::try_from(byte_width).is_ok()
+                && let Some(child) = widened(view)
+            {
+                return self.rebuilt_index(child, byte_width, None);
+            }
+            if let Some((MachineIntegerType::Int64, MachineBinaryOp::Multiply, [left, right])) =
+                view.binary()
+            {
+                for (index, stride) in [(left, right), (right, left)] {
+                    if let (Some(index), Some(stride)) = (widened(index), stride.int64_constant())
+                        && let Ok(stride) = u32::try_from(stride)
+                        && let Some(width) = i64::from(stride).checked_mul(byte_width)
+                        && u32::try_from(width).is_ok()
+                    {
+                        return self.rebuilt_index(index, width, None);
+                    }
+                }
+            }
+        }
+        match wide {
+            None => PointerOffsetTerm::Int32Scaled { value, byte_width },
+            Some(unsigned) => PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width,
+                unsigned,
+            },
+        }
     }
 
     fn offset(&mut self, v: &PointerOffsetTerm) -> PointerOffsetTerm {
@@ -5302,14 +5391,7 @@ impl<'a> TermRewrite<'a> {
             }
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                 let value = self.index_bits(value);
-                if self.resolve_registered_loads {
-                    PointerOffsetTerm::scale_int32(
-                        canonicalize_integer_to_machine_constant(value),
-                        *byte_width,
-                    )
-                } else {
-                    PointerOffsetTerm::scaled_int32_node(value, *byte_width)
-                }
+                self.rebuilt_index(value, *byte_width, None)
             }
             PointerOffsetTerm::Int64Scaled {
                 value,
@@ -5321,22 +5403,29 @@ impl<'a> TermRewrite<'a> {
                     && self.conditions.is_some_and(|conditions| {
                         self.bounded_uint64_indices
                             .get_or_insert_with(|| bounded_uint64_indices(conditions))
-                            .contains(&value)
+                            .contains(&BoundedIndexKey::of(&value))
                     });
                 if bounded {
                     self.changed = true;
-                    PointerOffsetTerm::scaled_int32_node(
-                        MachineTerm::uint32_from_64(value),
-                        *byte_width,
-                    )
-                } else if self.resolve_registered_loads {
-                    PointerOffsetTerm::scale_int64(
-                        canonicalize_integer_to_machine_constant(value),
-                        *byte_width,
-                        *unsigned,
-                    )
+                    let narrowed = if let Some(root) = value.shared_operand() {
+                        SharedMachineIntegerTerm::from_shared(
+                            MachineIntegerType::Int32,
+                            root.checking_low_word(),
+                        )
+                        .expect("low-word index")
+                    } else {
+                        SharedMachineIntegerTerm::index(
+                            MachineIntegerType::Int32,
+                            MachineTerm::uint32_from_64(value.value().clone()),
+                        )
+                    };
+                    // The checked narrowing keeps a written scaled node.
+                    PointerOffsetTerm::Int32Scaled {
+                        value: narrowed,
+                        byte_width: *byte_width,
+                    }
                 } else {
-                    PointerOffsetTerm::scaled_int64_node(value, *byte_width, *unsigned)
+                    self.rebuilt_index(value, *byte_width, Some(*unsigned))
                 }
             }
         };
@@ -6317,6 +6406,123 @@ mod tests {
     use crate::kernel::{
         AlgebraicSchemas, AlgebraicType, AlgebraicValueType, AlgebraicVariantType,
     };
+
+    #[test]
+    fn shared_pointer_index_reconstruction_matches_native_rules() {
+        let _session = VerificationSession::enter();
+        let source = MachineTerm::Variable(Variable(1007300));
+        let target = MachineTerm::Variable(Variable(1007301));
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let mut cases = vec![MachineTerm::Binary {
+                format: ty,
+                op: MachineBinaryOp::Add,
+                left: source.clone().into(),
+                right: source.clone().into(),
+            }];
+            if ty == MachineIntegerType::Int64 {
+                let widened =
+                    MachineTerm::int64_from_32(MachineTerm::add(source.clone(), source.clone()));
+                cases.push(widened.clone());
+                cases.push(MachineTerm::int64_multiply(
+                    widened,
+                    MachineTerm::int64_constant(3),
+                ));
+            }
+            for native in cases {
+                for resolving in [false, true] {
+                    for stride in [0, 4, -4] {
+                        let container = if ty == MachineIntegerType::Int32 {
+                            ty
+                        } else {
+                            MachineIntegerType::Int64
+                        };
+                        let root = KernelTermImport::default()
+                            .machine_arithmetic(container, &native)
+                            .unwrap();
+                        let value = SharedMachineIntegerTerm::from_shared(container, root).unwrap();
+                        let offset = if ty == MachineIntegerType::Int32 {
+                            PointerOffsetTerm::Int32Scaled {
+                                value,
+                                byte_width: stride,
+                            }
+                        } else {
+                            PointerOffsetTerm::Int64Scaled {
+                                value,
+                                byte_width: stride,
+                                unsigned: ty == MachineIntegerType::UInt64,
+                            }
+                        };
+                        let mut reference = TermRewrite::for_bits_checked(&source, &target);
+                        reference.resolve_registered_loads = resolving;
+                        let expected = reference.bits(&native);
+                        let expected = match (ty, resolving) {
+                            (MachineIntegerType::Int32, false) => {
+                                PointerOffsetTerm::scaled_int32_node(expected, stride)
+                            }
+                            (MachineIntegerType::Int32, true) => {
+                                PointerOffsetTerm::scale_int32(expected, stride)
+                            }
+                            (_, false) => PointerOffsetTerm::scaled_int64_node(
+                                expected,
+                                stride,
+                                ty == MachineIntegerType::UInt64,
+                            ),
+                            (_, true) => PointerOffsetTerm::scale_int64(
+                                expected,
+                                stride,
+                                ty == MachineIntegerType::UInt64,
+                            ),
+                        };
+                        let before = KernelTermExport::machine_export_count();
+                        let mut rewrite = TermRewrite::for_bits_checked(&source, &target);
+                        rewrite.resolve_registered_loads = resolving;
+                        let actual = rewrite.offset(&offset);
+                        assert!(rewrite.refusal().is_none());
+                        assert_eq!(KernelTermExport::machine_export_count(), before);
+                        assert_eq!(actual, expected, "{ty:?}, {stride}, resolving={resolving}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_unsigned_index_narrowing_requires_the_original_bound() {
+        let _session = VerificationSession::enter();
+        let native = MachineTerm::uint64_add(
+            MachineTerm::Variable(Variable(1007310)),
+            MachineTerm::uint64_constant(1),
+        );
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int64, &native)
+            .unwrap();
+        let offset = PointerOffsetTerm::Int64Scaled {
+            value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int64, root).unwrap(),
+            byte_width: 4,
+            unsigned: true,
+        };
+        for limit in [i32::MAX as u64, i32::MAX as u64 + 1] {
+            let conditions = HashMap::from([(
+                ConditionTerm::uint64_less_equal(
+                    native.clone(),
+                    MachineTerm::uint64_constant(limit),
+                ),
+                true,
+            )]);
+            let mut rewrite = TermRewrite::for_conditions(&conditions);
+            let before = KernelTermExport::machine_export_count();
+            let actual = rewrite.offset(&offset);
+            assert_eq!(KernelTermExport::machine_export_count(), before);
+            assert_eq!(
+                matches!(actual, PointerOffsetTerm::Int32Scaled { .. }),
+                limit == i32::MAX as u64
+            );
+        }
+    }
 
     #[test]
     fn signed_byte_offset_constants_fold_only_inside_their_range() {

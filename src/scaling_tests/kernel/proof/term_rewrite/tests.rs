@@ -1659,3 +1659,33 @@ fn one_proposition_read_comparison_batch_scales_with_selected_reads() {
         assert!(pair[1] <= 3 * pair[0], "single proposition batch: {work:?}");
     }
 }
+
+#[test]
+fn pointer_index_reconstruction_keeps_cold_dags_shared() {
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let source = MachineTerm::Variable(Variable(1007320));
+        let target = MachineTerm::Variable(Variable(1007321));
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007320));
+        for _ in 0..depth {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
+            byte_width: 4,
+        };
+        let before = KernelTermExport::machine_export_count();
+        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+            TermRewrite::for_bits_checked(&source, &target).offset(&offset)
+        });
+        assert_ne!(result, offset);
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+        samples.push(work);
+    }
+    for pair in samples.windows(2) {
+        assert!(pair[1] <= pair[0] * 5, "{samples:?}");
+    }
+}

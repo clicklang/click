@@ -1585,8 +1585,26 @@ pub(crate) fn checked_stored_origin_equality(
     right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
+    checked_stored_origin_operand_equality(
+        crate::kernel::MachineOperandView::Legacy(left),
+        crate::kernel::MachineOperandView::Legacy(right),
+        assumptions,
+    )
+}
+
+/// Compare a selected shared value to the native value held by its source
+/// store. The finite evidence owns that stored value, not an exported DAG.
+pub(crate) fn checked_stored_origin_operand_equality(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    use crate::kernel::MachineOperandView as V;
     for (value, load, reversed) in [(left, right, false), (right, left, true)] {
-        let Some(endpoint) = OriginLoadEndpoint::for_term(load) else {
+        let Some(load) = load.read_source() else {
+            continue;
+        };
+        let Some(endpoint) = OriginLoadEndpoint::for_term(&load) else {
             continue;
         };
         let previous = EXPLICIT_DAG_CHECK.with(|flag| flag.replace(true));
@@ -1633,10 +1651,17 @@ pub(crate) fn checked_stored_origin_equality(
         };
         let pointer = &pointer;
         let bytes = endpoint.bytes();
-        if &stored != value
-            || pointer.block != endpoint.pointer.block
-            || written.byte_width() != bytes
-        {
+        let matches = match value {
+            V::Legacy(value) => &stored == value,
+            V::Shared(value) => {
+                crate::kernel::proof::machine_source_match::MachineSourceMatcher::new(V::Legacy(
+                    &stored,
+                ))
+                .matches(MachineIntegerType::Int32, value)
+                    == Some(true)
+            }
+        };
+        if !matches || pointer.block != endpoint.pointer.block || written.byte_width() != bytes {
             continue;
         }
         let Some(offset) = assumptions
@@ -1644,9 +1669,18 @@ pub(crate) fn checked_stored_origin_equality(
         else {
             continue;
         };
+        let selected_value = match value {
+            V::Legacy(value) => value.clone(),
+            V::Shared(_) => stored,
+        };
+        let (left, right) = if reversed {
+            (load.into_owned(), selected_value)
+        } else {
+            (selected_value, load.into_owned())
+        };
         let equality = CheckedLoadEquality {
-            left: left.clone(),
-            right: right.clone(),
+            left,
+            right,
             evidence: CheckedLoadEqualityEvidence::OriginStoredValue {
                 endpoint,
                 cell,
