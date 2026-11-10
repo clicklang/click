@@ -1586,9 +1586,9 @@ int32 caller(int32 x) {
     let expanded =
         expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
             .expect("the call should expand with its consumed precondition");
-    // Both statements run in the whole context; the call's precondition is
-    // proved from it and the expansion names no premise.
-    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
+    // The call retains an explicit proof of its known precondition.
+    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the call steps should check");
 }
 
@@ -1624,9 +1624,9 @@ int32 caller(struct box* p, int32 x) {
     let expanded =
         expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
             .expect("the memory-reading precondition should expand");
-    // Both statements run in the whole context; the call's memory-reading
-    // precondition is proved from it and the expansion names no premise.
-    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
+    // The memory-reading prerequisite retains its explicit proof.
+    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the condition and its ambient view should verify normally");
 }

@@ -116,7 +116,8 @@ fn c_branch_condition_at_frontier(
 }
 
 impl<'a> Proof<'a> {
-    /// Run the selected operation while retaining its unresolved obligations.
+    /// Prepare the selected operation with all its required obligations,
+    /// including prerequisites already present in the input fact index.
     /// The candidate is conditional until the driver proves those obligations
     /// at this original frontier and calls `finish_prepared_step`.
     pub(in crate::surface::proof) fn prepare_step(
@@ -126,7 +127,9 @@ impl<'a> Proof<'a> {
         Result<Self, ClickError>,
         crate::surface::proof::execution_planning::OpenObligationProbe,
     ) {
-        probe_open_obligations(|| self.apply_fast_simple_step(step))
+        crate::surface::proof::execution_planning::probe_step_obligations(|| {
+            self.apply_primitive_step(step)
+        })
     }
 
     /// Refuses an exhausted script at its actual frontier. A disposable
@@ -1208,20 +1211,32 @@ impl<'a> Proof<'a> {
         prepared: Result<Self, ClickError>,
         proved: &Self,
         step: &ProofStep,
+        discharged: &[UnresolvedRequirement],
     ) -> Result<Self, ClickError> {
         // Folds also use obligation probing, but have their own resource-scope
         // publication rather than a statement frontier.
         if matches!(step, ProofStep::FoldResource(_)) {
-            return proved.apply_fast_simple_step(step);
+            return proved.apply_primitive_step(step);
         }
         let mut candidate = match prepared {
             Ok(candidate) => candidate,
-            Err(_) => return proved.apply_fast_simple_step(step),
+            Err(_) => return proved.apply_primitive_step(step),
         };
-        let introduced = proved
+        let mut introduced = proved
             .facts()
             .introduced_since(self.facts())
             .expect("obligation proofs extend their original fact context");
+        // A call precondition can already belong to the input context. Its
+        // proof still supplies evidence to the execution path, whose retained
+        // facts are separate from the frontier's persistent input context.
+        // Other obligation adapters (notably assertion false-path goals)
+        // retain the facts their proofs actually introduce above.
+        introduced.extend(
+            discharged
+                .iter()
+                .filter(|requirement| requirement.call_site.is_some())
+                .map(|requirement| requirement.proposition.clone()),
+        );
         let mut facts = candidate.facts().clone();
         for fact in &introduced {
             facts = facts.with_kernel_checked_fact(fact.clone());
@@ -1326,14 +1341,12 @@ impl<'a> Proof<'a> {
         Ok(candidate)
     }
 
-    /// A simple tactic's fast path: a statement step under the `Fast`
-    /// policy, or a `fold`, whose body checks are exact. Either refuses an
-    /// obligation it cannot close exactly, or records it while probed.
-    fn apply_fast_simple_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
+    /// Construct one primitive transition. Preparation collects its required
+    /// propositions; only the driver supplies their proofs. Recovery retries
+    /// use the established input facts without starting another solve.
+    fn apply_primitive_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
         match step {
-            ProofStep::FoldResource(_) => {
-                without_implicit_solve(|| self.driver().apply_step(step.clone()))
-            }
+            ProofStep::FoldResource(resource) => self.apply_primitive_fold(resource),
             _ => self.apply_execution_statement_step_with_policy(
                 step.clone(),
                 StatementPrerequisitePolicy::Fast,

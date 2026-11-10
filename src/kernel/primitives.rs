@@ -13627,6 +13627,7 @@ impl ReasoningPolicy {
     pub(super) const ASSUME_ENTRY_CLAUSE_EXTENTS: Self = Self(1 << 8);
     /// A held resource carries the arithmetic domains established by its fold.
     pub(super) const ASSUME_HELD_RESOURCE_DOMAINS: Self = Self(1 << 9);
+    pub(super) const RETAIN_REQUIRED_OBLIGATIONS: Self = Self(1 << 10);
 
     pub(super) fn contains(self, choice: Self) -> bool {
         self.0 & choice.0 != 0

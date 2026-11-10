@@ -1277,7 +1277,9 @@ fn add_required_proof_obligation_with_context_and_site(
     // memory/resource checkers. A required verification condition with
     // logical structure is emitted for an ordinary Surface tactic to
     // discharge.
-    if required_obligation_is_exactly_discharged(assumptions, &proposition) {
+    if !assumptions.retains_required_obligations()
+        && required_obligation_is_exactly_discharged(assumptions, &proposition)
+    {
         return;
     }
     let mut obligation = ProofObligation::verification_condition(proposition)
@@ -1342,7 +1344,7 @@ fn add_required_proof_obligation_without_search_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
 ) {
-    if assumptions.proves_exact(&proposition) {
+    if !assumptions.retains_required_obligations() && assumptions.proves_exact(&proposition) {
         return;
     }
     let mut obligation = ProofObligation::new(proposition).with_shared_introductions(introductions);

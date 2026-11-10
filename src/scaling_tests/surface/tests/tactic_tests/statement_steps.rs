@@ -149,3 +149,77 @@ int32 caller(int32 a, int32 unrelated) {{
         }
     }
 }
+
+#[test]
+#[ignore = "nightly: source-level obligation scaling through 512 premises"]
+fn known_step_obligations_do_not_scan_unrelated_facts() {
+    known_obligation_scaling("step", false);
+}
+
+#[test]
+#[ignore = "nightly: source-level obligation scaling through 512 premises"]
+fn known_step_obligations_do_not_scan_related_facts() {
+    known_obligation_scaling("step", true);
+}
+
+#[test]
+#[ignore = "nightly: source-level obligation scaling through 512 premises"]
+fn known_fold_obligations_do_not_scan_unrelated_facts() {
+    known_obligation_scaling("fold", false);
+}
+
+#[test]
+#[ignore = "nightly: source-level obligation scaling through 512 premises"]
+fn known_fold_obligations_do_not_scan_related_facts() {
+    known_obligation_scaling("fold", true);
+}
+
+fn known_obligation_scaling(tactic: &str, related: bool) {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let variable = if related { "x" } else { "y" };
+        let ambient = (0..size)
+            .map(|i| format!("requires {variable} < {};", 100 + i))
+            .collect::<String>();
+        let (body, produces, operation) = if tactic == "step" {
+            ("needs(x);", "", "step() by { assumption(); }")
+        } else {
+            (
+                "",
+                "produces positive(x);",
+                "fold(positive(x)) by { assumption(); }",
+            )
+        };
+        let c = format!("void needs(int32 x) {{}} void check(int32 x, int32 y) {{{body}}}");
+        let click = format!(
+            r#"
+verifying "known.c";
+resource positive(x: int32) {{ fact x > 0; }}
+void needs(int32 x) {{ requires x > 0; ensures 1 == 1; }}
+void check(int32 x, int32 y) {{ requires x > 0; {ambient} {produces} ensures 1 == 1; }} by {{
+    {operation}
+    step_until(function.exit);
+    solve();
+}}
+"#
+        );
+        let (result, work) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&click, &[("known.c", &c)])
+        });
+        result.unwrap_or_else(|error| panic!("{tactic}, related={related}, size={size}: {error}"));
+        let selected = work
+            .iter()
+            // Both written `by` forms are represented by StepProved.
+            .filter(|sample| {
+                sample.tactic.claim == "check.contract" && sample.tactic.tactic_index == 0
+            })
+            .map(|sample| sample.work)
+            .max()
+            .expect("selected tactic work");
+        samples.push(selected);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 128),
+        "{tactic}, related={related}: {samples:?}"
+    );
+}

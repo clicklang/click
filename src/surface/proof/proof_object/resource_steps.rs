@@ -600,11 +600,21 @@ impl<'a> Proof<'a> {
         };
         let instance_value = instance.clone();
         let instance = &instance_value;
+        let collecting =
+            !unfold && crate::surface::proof::execution_planning::collecting_step_requirements();
+        let assumptions = if collecting {
+            self.facts()
+                .assumptions()
+                .clone()
+                .retaining_required_obligations()
+        } else {
+            self.facts().assumptions().clone()
+        };
         let construct_fold = !unfold && outcome.is_none() && !definition.reaches_population();
         let (rewrite, produced_facts) = if let Some(goal) = outcome {
             execution
                 .core
-                .rewrite_return_resource_instance_with_children(
+                .rewrite_return_resource_instance_with_children_under(
                     context.function,
                     goal.path_index,
                     self.facts(),
@@ -612,17 +622,19 @@ impl<'a> Proof<'a> {
                     instance,
                     unfold,
                     selected_children.clone(),
+                    &assumptions,
                 )
                 .map(|(rewrite, facts)| (rewrite, Some(facts)))
         } else if construct_fold {
             execution
                 .core
-                .fold_resource_instance_with_children(
+                .fold_resource_instance_with_children_under(
                     context.function,
                     context.arguments,
                     self.facts(),
                     instance,
                     selected_children.clone(),
+                    &assumptions,
                 )
                 .map(|(rewrite, facts)| (rewrite, Some(facts)))
         } else {
@@ -631,7 +643,7 @@ impl<'a> Proof<'a> {
                 instance,
                 definition,
                 context.function.composite_resource_definitions(),
-                self.facts().assumptions(),
+                &assumptions,
                 unfold,
                 selected_children.as_deref(),
             )
@@ -751,6 +763,14 @@ impl<'a> Proof<'a> {
             .then(|| Arc::new(instance.clone()));
             self.step_error_with_proposed_record(summary, comparison, requirement, proposed)
         })?;
+        if collecting {
+            for clause in &rewrite.body_clauses {
+                crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                    ClickError::new("`fold` requires its body fact")
+                        .with_unresolved_requirement(&clause.obligation()),
+                )?;
+            }
+        }
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
             let source_bindings = rewrite.body_clauses.first().and_then(|clause| {
@@ -2525,6 +2545,52 @@ impl<'a> Proof<'a> {
             branch: Some(branch),
             added_facts: checked.added_facts.clone(),
             checked_facts: checked.added_facts,
+        })
+    }
+
+    /// Construct the fold successor; the driver owns its obligation proofs.
+    pub(super) fn apply_primitive_fold(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<Self, ClickError> {
+        let step = ProofStep::FoldResource(resource.clone());
+        let mut transition = {
+            // Resolve proof bindings before either the execution or
+            // outcome path interprets ordinary resource arguments.
+            let source_resource = resource;
+            let resource = &self.resolve_proof_resource_arguments(resource)?;
+            // A body fact over a witness an unfold named is spelled with
+            // that name.
+            let named_values = self
+                .state()
+                .locals()
+                .values
+                .iter()
+                .filter_map(|(name, value)| match value {
+                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                        Some((value.clone(), name.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            crate::surface::proof::surface_synthesis::with_proof_local_value_names(
+                named_values,
+                || {
+                    if self.focused_outcome_data().is_some() {
+                        self.apply_outcome_resource_fold(resource)
+                    } else {
+                        self.apply_execution_resource_fold(resource, source_resource)
+                    }
+                },
+            )
+        }?;
+        transition.clear_chosen_projection();
+        let state = self.publish_checked_transition(transition)?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
         })
     }
 

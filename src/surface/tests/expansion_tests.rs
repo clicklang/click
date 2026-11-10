@@ -1350,7 +1350,7 @@ int32 caller(int32 x, int32 y) {
         "a simple call must not invoke planning"
     );
     assert!(
-        error.unresolved_requirement().is_some(),
+        error.message().contains("assumption"),
         "{}",
         error.message()
     );
@@ -2310,7 +2310,7 @@ fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
     let error = verify_c0_sources(&stronger, &c_sources)
         .expect_err("a positive value alone does not establish the stronger call requirement");
     assert!(
-        error.unresolved_requirement().is_some(),
+        error.message().contains("assumption"),
         "{}",
         error.message()
     );
@@ -9589,7 +9589,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
     assert_eq!(
         tactics
             .iter()
-            .filter(|tactic| matches!(tactic, ProofTactic::FoldResource(_)))
+            .filter(|tactic| matches!(tactic, ProofTactic::StepProved { step, .. } if matches!(step.as_ref(), ProofTactic::FoldResource(_))))
             .count(),
         1,
         "one source fold must produce exactly one retained step"
@@ -9604,7 +9604,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
     assert_eq!(
         expanded
             .lines()
-            .filter(|line| line.trim() == "fold(marker(x));")
+            .filter(|line| line.trim() == "fold(marker(x)) by {")
             .count(),
         1
     );
@@ -11871,8 +11871,7 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
         .expect("select_ready should be the final verified function")
         .expanded_proof_tactics()
         .expect("the transformed interface should retain an expansion");
-    let arm_retains_fold =
-        |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::FoldResource(_)]);
+    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
     assert!(
         matches!(
             tactics.as_slice(),
@@ -15394,7 +15393,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
     let case = body
         .find("if flag == i")
         .expect("the proof case is retained");
-    let step = body.find("step();").expect("the body step is retained");
+    let step = body.find("step()").expect("the body step is retained");
     assert!(
         case < step,
         "the case must stay before the step it precedes: {expanded}"
@@ -20568,4 +20567,83 @@ fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
         assert_eq!(expanded.matches("have ").count(), 1, "{expanded}");
         without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
     }
+}
+
+#[test]
+fn known_step_and_fold_requirements_still_have_explicit_obligation_proofs() {
+    let sources = [(
+        "known.c",
+        "void needs(int32 x) {} void caller(int32 x) { needs(x); } void make(int32 x) {}",
+    )];
+    let source = r#"
+verifying "known.c";
+resource positive(x: int32) { fact x > 0; }
+void needs(int32 x) { requires x > 0; ensures x > 0; }
+void caller(int32 x) { requires x > 0; ensures x > 0; } by {
+    step() by { assumption(); }
+    step_until(function.exit);
+    solve();
+}
+void make(int32 x) { requires x > 0; produces positive(x); } by {
+    fold(positive(x)) by { assumption(); }
+    step_until(function.exit);
+    solve();
+}
+"#;
+    verify_c0_sources(source, &sources).expect("known requirements still accept written proofs");
+    for (name, written, bare) in [
+        ("caller", "step() by { assumption(); }", "step();"),
+        (
+            "make",
+            "fold(positive(x)) by { assumption(); }",
+            "fold(positive(x));",
+        ),
+    ] {
+        let missing = source.replacen(written, bare, 1);
+        assert!(
+            without_implicit_solve_for_claim(&format!("{name}.contract"), || {
+                verify_c0_sources(&missing, &sources).map_err(|error| error.report())
+            })
+            .is_err(),
+            "{name}: deleting a known obligation's proof must still require solve"
+        );
+    }
+    for name in ["caller", "make"] {
+        let implicit = source.replace(" by { assumption(); }", ";");
+        let expanded = expand_function_proof_source(&implicit, &sources, name).unwrap();
+        let operation = if name != "make" {
+            "step() by {"
+        } else {
+            "fold(positive(x)) by {"
+        };
+        assert!(expanded.contains(operation), "{expanded}");
+        without_implicit_solve_for_claim(&format!("{name}.contract"), || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+fn a_named_fold_generates_its_known_body_fact_obligation() {
+    let sources = [("named.c", "void make(int32 x) {}")];
+    let source = r#"
+verifying "named.c";
+resource positive(x: int32) { field value: int32; fact value > 0; }
+void make(int32 x) { requires x > 0; produces p: positive(x); } by {
+    let p = fold(positive(x), { value: x }) by { assumption(); }
+    step_until(function.exit);
+    solve();
+}
+"#;
+    verify_c0_sources(source, &sources).expect("a named fold exposes its body fact too");
+    assert!(
+        verify_c0_sources(&source.replace("requires x > 0;", ""), &sources).is_err(),
+        "the proposed folded resource cannot prove its own body fact",
+    );
+    let expanded = expand_function_proof_source(source, &sources, "make").unwrap();
+    without_implicit_solve_for_claim("make.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
 }

@@ -5900,16 +5900,19 @@ fn prepare_verified_function_call<'a>(
                 // as it is at the callee's own entry. Only load-shaped
                 // conditions are judged this way; the state check answers
                 // nothing about any other proposition.
-                let load_condition_is_justified = loadability_obligation_shape(
-                    path_obligation.proposition(),
-                )
+                let load_condition_is_justified = !assumptions.retains_required_obligations()
+                    && loadability_obligation_shape(path_obligation.proposition())
                     && super::api::contract_certification::c_state_justifies_loadability_obligation(
                         &precondition_state,
                         &guarded,
                         requirement_assumptions,
                     );
-                if load_condition_is_justified
-                    || required_obligation_is_exactly_discharged(requirement_assumptions, &guarded)
+                if !assumptions.retains_required_obligations()
+                    && (load_condition_is_justified
+                        || required_obligation_is_exactly_discharged(
+                            requirement_assumptions,
+                            &guarded,
+                        ))
                 {
                     super::assumptions::record_reasoning_provenance(
                         requirement_assumptions,
@@ -5926,14 +5929,15 @@ fn prepare_verified_function_call<'a>(
                 }
                 established_requirements.push(guarded);
             }
-            let contract_requirement_is_proven = function_contract_requirement_is_proven(
-                &requirement_path.proposition,
-                &path_assumptions,
-                environment,
-                budget,
-            )?;
-            let requirement_is_proven = super::assumptions::capture_implicit_reasoning_provenance(
-                || {
+            let contract_requirement_is_proven = !assumptions.retains_required_obligations()
+                && function_contract_requirement_is_proven(
+                    &requirement_path.proposition,
+                    &path_assumptions,
+                    environment,
+                    budget,
+                )?;
+            let requirement_is_proven = !assumptions.retains_required_obligations()
+                && super::assumptions::capture_implicit_reasoning_provenance(|| {
                     if contract_requirement_is_proven {
                         return true;
                     }
@@ -5969,8 +5973,7 @@ fn prepare_verified_function_call<'a>(
                         }
                         proposition => path_assumptions.proves_exact(proposition),
                     }
-                },
-            );
+                });
             if requirement_is_proven {
                 super::assumptions::record_reasoning_provenance(
                     &path_assumptions,
@@ -5993,10 +5996,12 @@ fn prepare_verified_function_call<'a>(
                 // Same rule as the guard above: exact routes, then an
                 // emitted required verification condition. The general
                 // prover decides no precondition.
-                if required_obligation_is_exactly_discharged(
-                    requirement_assumptions,
-                    &guarded_requirement,
-                ) {
+                if !assumptions.retains_required_obligations()
+                    && required_obligation_is_exactly_discharged(
+                        requirement_assumptions,
+                        &guarded_requirement,
+                    )
+                {
                     super::assumptions::record_reasoning_provenance(
                         requirement_assumptions,
                         &guarded_requirement,
@@ -6015,10 +6020,14 @@ fn prepare_verified_function_call<'a>(
             // Publishing evidence from that context would let a call prove
             // its own prerequisites. Only the incoming checked context can
             // independently establish an input fact for the continuation.
-            if super::reasoning::path_facts::call_input_fact_is_already_known(
-                assumptions,
-                &guarded_requirement,
-            ) {
+            // Prepared steps publish their input proof delta in the driver.
+            // They must not rediscover or republish that evidence here.
+            if !assumptions.retains_required_obligations()
+                && super::reasoning::path_facts::call_input_fact_is_already_known(
+                    assumptions,
+                    &guarded_requirement,
+                )
+            {
                 retained_requirements.push(guarded_requirement.clone());
             }
             established_requirements.push(guarded_requirement);
@@ -13628,6 +13637,13 @@ pub(crate) struct ResourceBodyClauseRecord {
     pub(crate) introductions: LoweringIntroductions,
 }
 
+impl ResourceBodyClauseRecord {
+    pub(crate) fn obligation(&self) -> ProofObligation {
+        ProofObligation::verification_condition(self.proposition.clone())
+            .with_introductions(self.introductions.clone())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ResourceInstanceRewriteResult {
     /// The body guard case checked by this rewrite. Unknown guards refuse the rewrite.
@@ -13829,6 +13845,7 @@ fn lower_selected_resource_body_clauses(
             context = context.assume_proposition(condition.clone());
         }
         if let Some(established) = established_assumptions
+            && !established.retains_required_obligations()
             && !resource_body_fact_is_established(established, &path.proposition)
         {
             return Err(ResourceRewriteRefusal::BodyFactNotEstablished {

@@ -83,6 +83,7 @@ pub(in crate::surface) struct OpenObligationProbe {
     pub(in crate::surface) recorded: Vec<UnresolvedRequirement>,
     /// The refusal each recorded requirement stood for, in the same order.
     pub(in crate::surface) refusals: Vec<ClickError>,
+    collect_step_requirements: bool,
 }
 
 thread_local! {
@@ -114,6 +115,28 @@ pub(in crate::surface) fn without_open_obligation_probe<R>(operation: impl FnOnc
 pub(in crate::surface) fn probe_open_obligations<R>(
     operation: impl FnOnce() -> R,
 ) -> (R, OpenObligationProbe) {
+    probe_obligations(false, operation)
+}
+
+pub(in crate::surface) fn probe_step_obligations<R>(
+    operation: impl FnOnce() -> R,
+) -> (R, OpenObligationProbe) {
+    probe_obligations(true, operation)
+}
+
+pub(in crate::surface) fn collecting_step_requirements() -> bool {
+    OPEN_OBLIGATION_PROBE.with(|probe| {
+        probe
+            .borrow()
+            .as_ref()
+            .is_some_and(|probe| probe.collect_step_requirements)
+    })
+}
+
+fn probe_obligations<R>(
+    collect_step_requirements: bool,
+    operation: impl FnOnce() -> R,
+) -> (R, OpenObligationProbe) {
     struct Restore(Option<OpenObligationProbe>);
     impl Drop for Restore {
         fn drop(&mut self) {
@@ -121,8 +144,12 @@ pub(in crate::surface) fn probe_open_obligations<R>(
             OPEN_OBLIGATION_PROBE.with(|probe| *probe.borrow_mut() = previous);
         }
     }
-    let previous = OPEN_OBLIGATION_PROBE
-        .with(|probe| probe.borrow_mut().replace(OpenObligationProbe::default()));
+    let previous = OPEN_OBLIGATION_PROBE.with(|probe| {
+        probe.borrow_mut().replace(OpenObligationProbe {
+            collect_step_requirements,
+            ..OpenObligationProbe::default()
+        })
+    });
     let restore = Restore(previous);
     let result = operation();
     let met = OPEN_OBLIGATION_PROBE
@@ -513,6 +540,9 @@ pub(in crate::surface) fn certified_statement_transitions(
     if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
         assumptions = assumptions.defer_non_exact_condition_reasoning();
     }
+    if collecting_step_requirements() {
+        assumptions = assumptions.retaining_required_obligations();
+    }
     let mut budget = ExecutionBudget::continuing_from(*next_kernel_variable)
         .with_next_opaque_call(*next_opaque_call);
     let executed_under = assumptions.clone();
@@ -768,6 +798,12 @@ fn certified_transitions_from_execution(
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
+                if collecting_step_requirements() && !obligation.is_assumable() {
+                    refuse_or_probe(prerequisite_policy, ClickError::new(format!(
+                        "{context_label} requires an explicit prerequisite proof"
+                    )).with_unresolved_requirement(obligation))?;
+                    continue;
+                }
                 let derivation = match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact => {
                         // An exact conjunct is also the availability the

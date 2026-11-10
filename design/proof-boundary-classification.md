@@ -72,7 +72,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 9 operation-to-driver reference records
+## The 8 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
@@ -84,7 +84,6 @@ Methods below are on `Proof`.
 | `apply_signed_definedness_certificate` | Search-support adapter: called by signed-definedness search; constructs an explicit arithmetic certificate and dispatches it. Separate the generator from direct certificate application; do not count this edge alone as a hidden ambient scan. |
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
-| `apply_fast_simple_step` | Compatibility adapter: folds re-enter `apply_step` under `without_implicit_solve`. This suppresses implicit solving, not all discovery. Extract the direct fold operation rather than granting general driver access. |
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
 | `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
@@ -193,7 +192,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 614 reference records, not 614 obligations to remove.
+The inventory contains 613 reference records, not 613 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

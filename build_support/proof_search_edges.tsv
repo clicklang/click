@@ -208,7 +208,6 @@ src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try
 src/surface/proof/proof_object/execution_statements.rs	dispatch	Proof::close_bundle_member_by_solve	try_solve_closure	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_fact_transport_inner	derive_proposition	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_outcome_fact_transport	derive_proposition	1
-src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_fast_simple_step	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::plan_invariant_bundle_closure	driver	1

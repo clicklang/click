@@ -10143,6 +10143,34 @@ impl ExecutionProofCore {
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
+        self.fold_resource_instance_with_children_under(
+            function,
+            arguments,
+            before_facts,
+            instance,
+            selected_children,
+            before_facts.assumptions(),
+        )
+    }
+
+    /// Prepare under the caller's evaluation policy while preserving the
+    /// original fact context in the execution record. With retained obligations,
+    /// the caller must keep this successor private until its body facts are proved.
+    pub(crate) fn fold_resource_instance_with_children_under(
+        &mut self,
+        function: &CFunction,
+        arguments: &[CExpression],
+        before_facts: &ProofFacts,
+        instance: &crate::kernel::ResourceInstance,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+        assumptions: &PureFactContext,
+    ) -> Result<
+        (
+            crate::kernel::functions::ResourceInstanceRewriteResult,
+            ProofFacts,
+        ),
+        crate::kernel::ResourceRewriteRefusal,
+    > {
         if self.evidence_completed {
             return Err("a resource rewrite was recorded after the trace completed".into());
         }
@@ -10160,7 +10188,7 @@ impl ExecutionProofCore {
             instance,
             definition,
             function.composite_resource_definitions(),
-            before_facts.assumptions(),
+            assumptions,
             false,
             selected_children.as_deref(),
         )?;
@@ -10416,6 +10444,36 @@ impl ExecutionProofCore {
         ),
         crate::kernel::ResourceRewriteRefusal,
     > {
+        self.rewrite_return_resource_instance_with_children_under(
+            function,
+            path_index,
+            before_facts,
+            before,
+            instance,
+            unfold,
+            selected_children,
+            before_facts.assumptions(),
+        )
+    }
+
+    /// Return-outcome counterpart of conditional instance preparation.
+    pub(crate) fn rewrite_return_resource_instance_with_children_under(
+        &mut self,
+        function: &CFunction,
+        path_index: usize,
+        before_facts: &ProofFacts,
+        before: &CState,
+        instance: &crate::kernel::ResourceInstance,
+        unfold: bool,
+        selected_children: Option<Arc<[(String, Variable)]>>,
+        assumptions: &PureFactContext,
+    ) -> Result<
+        (
+            crate::kernel::functions::ResourceInstanceRewriteResult,
+            ProofFacts,
+        ),
+        crate::kernel::ResourceRewriteRefusal,
+    > {
         let definition = function
             .proof_composite_resource_definition(instance.name())
             .ok_or("instance definition is not registered on the function")?;
@@ -10427,7 +10485,7 @@ impl ExecutionProofCore {
             instance,
             definition,
             function.composite_resource_definitions(),
-            before_facts.assumptions(),
+            assumptions,
             unfold,
             selected_children.as_deref(),
         )?;

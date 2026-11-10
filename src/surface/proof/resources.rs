@@ -4409,9 +4409,11 @@ fn fold_composite_resources_on_outcome_with_facts(
             // The kernel's condition decision settles a condition body fact
             // as it settles a step's: the difference graph, then the
             // decision's checked rules (a tagged pointer word's low bits, say).
-            let exactly_available = pure_facts
-                .exact_available_across_effects(&required, execution_pure_facts)
-                || decided_by_kernel_condition_decision(&body_assumptions, &required);
+            let collecting =
+                crate::surface::proof::execution_planning::collecting_step_requirements();
+            let exactly_available = !collecting
+                && (pure_facts.exact_available_across_effects(&required, execution_pure_facts)
+                    || decided_by_kernel_condition_decision(&body_assumptions, &required));
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it. A
@@ -4419,12 +4421,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             // folds again.
             // A body fact reading a stored cell can hold by evaluation of the
             // value stored there (the read-over-write authority).
-            let open = !exactly_available
-                && !matches!(
-                    normalize_proposition(&required),
-                    NormalizedProposition::True
-                )
-                && !crate::kernel::holds_by_read_over_write(&required);
+            let open = collecting
+                || (!exactly_available
+                    && !matches!(
+                        normalize_proposition(&required),
+                        NormalizedProposition::True
+                    )
+                    && !crate::kernel::holds_by_read_over_write(&required));
             // A witness the proof cannot name has no source expression, so
             // its body fact has no requirement spelling and the fold refuses
             // it. A fact read in the projected authority state is spelled as
@@ -4481,6 +4484,24 @@ fn fold_composite_resources_on_outcome_with_facts(
             } else {
                 None
             };
+            if collecting {
+                let spelled = spelled.ok_or_else(|| {
+                    ClickError::new("fold body requirement has no source spelling")
+                })?;
+                refuse_or_record_open_obligation(
+                    ClickError::new(format!(
+                        "`{claim_label}` path {path_index}: `fold({})` requires {}",
+                        describe_resource_clause(spelling_resource),
+                        crate::surface::printing::source_click_proposition(&spelled),
+                    ))
+                    .with_spelled_requirement(
+                        required,
+                        spelled,
+                        "fold body fact".to_owned(),
+                    ),
+                )?;
+                continue;
+            }
             if open {
                 let available_pure_facts = pure_facts.materialize();
                 let resources = match &outcome {

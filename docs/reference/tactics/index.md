@@ -968,8 +968,10 @@ Expansion reprints the map and pattern unchanged.
 **Expansion output.** `click expand` writes it; by hand, write it only to give
 an obligation a different proof than the implicit closer. Any `step` form,
 including `let` and call forms, followed by the proof of the one obligation its
-fast path leaves open. The fast path checks each requirement against facts that
-state it exactly and local kernel decisions, with no search.
+primitive generates. Emitted verification conditions and call preconditions
+remain obligations even when known: their ordinary `solve()` proof is usually
+`assumption()`. Arithmetic evaluation still has safety decisions that precede
+obligation generation; those are not yet migrated.
 
 The body proves that obligation at the step's pre-state, as a `have` would, and
 the step then runs with it stated. The body is one tactic call, such as
@@ -977,7 +979,7 @@ the step then runs with it stated. The body is one tactic call, such as
 
 **Failure, checking, and tools:**
 
-Refused when the fast path leaves no obligation open (superfluous) or more than
+Refused when the operation generates no obligation (superfluous) or more than
 one; the second refusal spells every open obligation as a `requires` entry to
 copy. The default `step()` already invokes the implicit closer for open obligations, so
 write `step()` rather than a `by` that only repeats it. Expansion keeps the
@@ -995,7 +997,7 @@ linear script and in a `branch` arm
 several open obligations their own proofs. Any `step` form followed by one
 `requires [label:] P by ...;` entry per obligation it proves. Each `P` is
 written at the step's pre-state over the caller's locals and the call's
-arguments, must state exactly one obligation the fast path leaves open, and is
+arguments, must state exactly one generated obligation, and is
 proved there as a `have`.
 
 Entries may appear in any order. An obligation no entry writes is checked as a
@@ -1003,8 +1005,7 @@ bare `step()` checks it.
 
 **Failure, checking, and tools:**
 
-An entry that states no open obligation, including one the fast path already
-closes, or that repeats an earlier entry's obligation, fails where it is written
+An entry that states no generated obligation, or that repeats an earlier entry's obligation, fails where it is written
 and lists the open obligations. Expansion keeps each entry and prints its body's
 checked steps. Like the `by` form, it is checked in a `branch` arm.
 
@@ -3693,12 +3694,11 @@ execution frontier, or at a function outcome after the C has returned) or in a
   child resource; the iterated ownership fact with nothing taken out. Arguments
   match up to equality by current facts: under `requires p == q;`,
   `fold(cell(q))` consumes `p`'s cells.
-- Each body `fact` is an available fact, normalizes to true without context,
-  or is a condition the kernel's condition decision settles (`p[0] >= 0`
-  from `p[0] == 3`). These are the fold's fast path.
+- Each body `fact` is proved by its written obligation proof or by ordinary
+  implicit `solve()`. An already-known fact is still an obligation.
 
 It consumes the clauses' facts and adds the folded resource; the pure facts
-stay. A body fact the fast path leaves open goes to the implicit closer
+stay. Each body fact without a written proof goes to the implicit closer
 described below, which is smart: its miss is not a `fold` bug.
 
 **Outside it**, with what to write instead:
@@ -3716,10 +3716,9 @@ described below, which is smart: its miss is not a `fold` bug.
 
 **Failure, checking, and tools:**
 
-A body fact no fact states exactly is left open and proved by the implicit
-closer as the fold's `by`, which expansion prints; one the implicit closer
-cannot prove fails, naming it. Before that, the kernel's condition decision settles a body
-fact that is a condition, as a step's fast path does.
+Every body fact is an obligation, including exactly available and trivially
+true facts. The driver uses its written proof or ordinary `solve()`, and
+expansion retains that proof. A failed proof names the body fact.
 
 A body fact over a witness the proof cannot name has no requirement spelling, so
 the fold is refused at it; the fold never searches. A missing body member, false
@@ -3739,7 +3738,7 @@ a body fact, and profiling charges its body.
 
 **Expansion output.** `click expand` writes it; by hand, write it only to give
 an open body fact a different proof than the implicit closer. Any `fold` form
-followed by the proof of the one body fact its fast path leaves open, written as
+followed by the proof of its one body fact, written as
 the resource's body fact over the fold's arguments and proved at the fold, as a
 `have` would.
 
@@ -3747,12 +3746,12 @@ The body is one tactic call, such as `solve();`, or a block.
 
 **Failure, checking, and tools:**
 
-Refused when the fast path leaves no body fact open (superfluous) or more than
+Refused when the selected body has no fact obligation (superfluous) or more than
 one; the second refusal spells each as a `requires` entry to copy. `fold(...) by
 auto` is a syntax error: it means `fold(...)`. Expansion keeps the `by` and
 prints the body's checked steps.
 
-**Checked examples:** [`fold_by_proves_its_one_open_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_proves_its_one_open_body_fact.md), [`fold_by_with_no_open_body_fact_is_superfluous.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_with_no_open_body_fact_is_superfluous.md)
+**Checked examples:** [`fold_by_proves_its_one_open_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_proves_its_one_open_body_fact.md), [`fold_by_proves_an_already_known_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_proves_an_already_known_body_fact.md)
 
 ### Folding with several obligations
 
@@ -3761,7 +3760,7 @@ prints the body's checked steps.
 **Expansion output.** `click expand` writes it; by hand, write it only to give
 several open body facts their own proofs. Any `fold` form followed by one
 `requires [label:] P by ...;` entry per body fact it proves. Each `P` states
-exactly one body fact the fast path leaves open; one no entry writes goes to the
+exactly one body fact; one no entry writes goes to the
 implicit closer.
 
 **Failure, checking, and tools:**

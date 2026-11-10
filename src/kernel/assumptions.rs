@@ -7145,6 +7145,18 @@ impl PureFactContext {
         crate::kernel::search::ProofSearch::<PureFactContext>::composition_context(self)
     }
 
+    /// Return required verification conditions even when the input already
+    /// proves them. Statement preparation leaves their proofs to its driver;
+    /// this policy changes obligations, never the terms being evaluated.
+    pub(crate) fn retaining_required_obligations(self) -> Self {
+        self.with_reasoning_policy(ReasoningPolicy::RETAIN_REQUIRED_OBLIGATIONS)
+    }
+
+    pub(crate) fn retains_required_obligations(&self) -> bool {
+        self.reasoning_policy
+            .contains(ReasoningPolicy::RETAIN_REQUIRED_OBLIGATIONS)
+    }
+
     /// Keep contextual loadability consequences as explicit proof obligations
     /// instead of silently discharging them while symbolic execution is being
     /// planned.
