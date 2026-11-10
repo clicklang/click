@@ -249,6 +249,14 @@ pub(super) fn instantiate_click_type(
                         struct_name: struct_name.clone(),
                     });
                 }
+                // The enclosing declaration's own type parameter: `T*`
+                // stays a pointer to it, as a generic declaration that
+                // calls another at its own `T` writes.
+                TypeArgument::Value(ClickType::Parameter(parameter)) => {
+                    return Ok(ClickType::C(C0Type::ParameterPointer(
+                        crate::kernel::TypeParameterName::intern(parameter),
+                    )));
+                }
                 TypeArgument::Value(element) => element,
             };
             let pointer = element

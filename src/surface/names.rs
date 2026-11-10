@@ -149,6 +149,84 @@ pub(super) fn library_integer_parameters() -> &'static BTreeMap<String, Vec<usiz
     })
 }
 
+/// The Click library functions whose declared result is a pointer, by the
+/// name a reference to each resolves to: a call of one is a pointer operand.
+/// Read from the library's tokens once per process.
+pub(super) fn library_pointer_result_functions() -> &'static BTreeSet<String> {
+    static FUNCTIONS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
+    FUNCTIONS.get_or_init(|| {
+        let mut functions = BTreeSet::new();
+        for (identity, source) in super::CLICK_LIBRARY_MODULES {
+            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
+                continue;
+            };
+            for declaration in top_level_declarations(&tokens) {
+                if declaration.kind == DeclarationKind::Function
+                    && declares_pointer_result(&tokens, declaration.at + 1)
+                {
+                    functions.insert(resolved_name(identity, &declaration.name));
+                }
+            }
+        }
+        functions
+    })
+}
+
+/// The method names that are a Click library function returning a pointer,
+/// such as `as_ptr`: a method call of one is a pointer operand, whatever
+/// its receiver, since a library type's methods are its library functions.
+pub(super) fn library_pointer_result_methods() -> &'static BTreeSet<&'static str> {
+    static METHODS: std::sync::OnceLock<BTreeSet<&'static str>> = std::sync::OnceLock::new();
+    METHODS.get_or_init(|| {
+        library_pointer_result_functions()
+            .iter()
+            .filter_map(|name| name.rsplit("::").next())
+            .collect()
+    })
+}
+
+/// Whether the pure function whose type parameters or parameter list start
+/// at `start` declares a pointer result: `-> T*`, `-> uint8*`,
+/// `-> struct node*`, or Rust's `-> *const u8`.
+pub(super) fn declares_pointer_result(tokens: &[Token], start: usize) -> bool {
+    let mut at = start;
+    if tokens.get(at) == Some(&Token::LessThan) {
+        let Some(close) = tokens[at..]
+            .iter()
+            .position(|token| *token == Token::GreaterThan)
+        else {
+            return false;
+        };
+        at += close + 1;
+    }
+    if tokens.get(at) != Some(&Token::LParen) {
+        return false;
+    }
+    let mut depth = 0usize;
+    let mut close = None;
+    for (index, token) in tokens.iter().enumerate().skip(at) {
+        match token {
+            Token::LParen => depth += 1,
+            Token::RParen => {
+                depth -= 1;
+                if depth == 0 {
+                    close = Some(index);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let Some(close) = close else {
+        return false;
+    };
+    tokens.get(close + 1) == Some(&Token::Arrow)
+        && tokens[close + 2..]
+            .iter()
+            .take_while(|token| !matches!(token, Token::LBrace | Token::Semicolon))
+            .any(|token| *token == Token::Star)
+}
+
 /// The names a library module declares of the kinds `kinds`.
 fn library_names_of<'k>(
     identity: &str,
@@ -226,6 +304,7 @@ const QUALIFIED_MODULES: &[&str] = &[
     "library/rust/usize.click",
     "library/rust/vec.click",
     "library/rust/slice.click",
+    "library/rust/chunks_exact.click",
 ];
 
 /// Whether the library declaration `name` in module `identity` is known to
