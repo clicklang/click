@@ -1,6 +1,10 @@
 # Rust iterators: one generic model, per-type library contracts
 
-Status: proposal. Nothing here is implemented yet.
+Status: step 1 in progress. `library/rust/chunks_exact.click` declares
+`ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and the
+axioms relating them, and a proof reads a value with those methods. The
+importer does not use it yet. The loop's starting iterator is spelled with
+the existing snapshot form, `at(loop(i).entry, iter)` (open question 2).
 
 ## Problem
 

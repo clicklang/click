@@ -6064,6 +6064,9 @@ impl AnnotationLowerer<'_> {
             && self
                 .contract_pointer_element_type(current, environment)
                 .is_none()
+            && self
+                .call_pointer_element_width(current, environment)?
+                .is_none()
         {
             operands.push(current);
             let mut lowered = self.lower_contract_expression_to_spec_one(
@@ -6591,6 +6594,23 @@ impl AnnotationLowerer<'_> {
             }
             // Arithmetic on a pointer offsets it by whole elements, as C does.
             ContractExpression::Add(left, right) => {
+                // A pointer-valued pure call steps by its result's pointee,
+                // `slice::as_ptr(s) + k`, on either side.
+                for (pointer, elements) in [(left, right), (right, left)] {
+                    if let Some(element_width) =
+                        self.call_pointer_element_width(pointer, environment)?
+                    {
+                        return Ok(SpecExpression::PointerOffset {
+                            pointer: Box::new(
+                                self.lower_contract_expression_to_spec(pointer, environment)?,
+                            ),
+                            elements: Box::new(
+                                self.lower_contract_expression_to_spec(elements, environment)?,
+                            ),
+                            byte_width: element_width,
+                        });
+                    }
+                }
                 if let Some(element_width) = self.contract_pointer_element_width(left, environment)
                 {
                     return Ok(SpecExpression::PointerOffset {
@@ -8900,6 +8920,24 @@ impl AnnotationLowerer<'_> {
             }
             _ => CType::Int32,
         }
+    }
+
+    /// The element width a pure call's result steps by when the call
+    /// returns a pointer: its declared result's pointee, at the call's own
+    /// type arguments. `None` for any other expression or result.
+    fn call_pointer_element_width(
+        &mut self,
+        expression: &ContractExpression,
+        environment: &SpecElaborationContext,
+    ) -> Result<Option<u32>, String> {
+        if !matches!(expression, ContractExpression::Call { .. }) {
+            return Ok(None);
+        }
+        Ok(self
+            .infer_unconstrained_call_argument_type(expression, environment)?
+            .and_then(|result| result.c_type())
+            .and_then(|result| result.pointee_type())
+            .map(|element| element.to_kernel_type().byte_width()))
     }
 
     /// Physical element widths take precedence over scalar resource carriers.

@@ -454,6 +454,7 @@ pub(super) fn parse_file_items_for_module(
     imported_resources: &[&ResourceDefinition],
     imported_declarations: &[(names::DeclarationKind, String)],
     imported_integer_functions: &BTreeSet<String>,
+    imported_pointer_functions: &BTreeSet<String>,
     imported_integer_parameters: &BTreeMap<String, Vec<usize>>,
     layouts: ProgramLayouts,
 ) -> Result<ClickFile, ClickError> {
@@ -474,6 +475,10 @@ pub(super) fn parse_file_items_for_module(
     parser
         .integer_function_names
         .extend(imported_integer_functions.iter().cloned());
+    // An imported pointer result has only a C meaning, as a local one has.
+    parser
+        .pointer_result_functions
+        .extend(imported_pointer_functions.iter().cloned());
     parser.integer_parameter_positions.extend(
         imported_integer_parameters
             .iter()
@@ -982,6 +987,10 @@ struct Parser {
     /// Pure functions declared `-> Integer`, whose calls are Integer
     /// operands.
     integer_function_names: BTreeSet<String>,
+    /// The pure functions whose declared result is a pointer: a call of one
+    /// is a pointer operand, so arithmetic on it is pointer arithmetic and
+    /// a comparison of it keeps its C meaning.
+    pointer_result_functions: BTreeSet<String>,
     /// The positions of the `Integer` parameters of each pure function and
     /// theorem this module declares or imports, where an argument's
     /// arithmetic is exact.
@@ -1634,6 +1643,7 @@ impl Parser {
             pure_function_slices: BTreeMap::new(),
             slice_result_functions: BTreeSet::new(),
             integer_function_names: BTreeSet::new(),
+            pointer_result_functions: BTreeSet::new(),
             integer_parameter_positions: BTreeMap::new(),
             let_operands: Default::default(),
             spec_parameter_types: BTreeMap::new(),
@@ -1741,6 +1751,9 @@ impl Parser {
                     }
                     if self.declares_slice_result(parameters) {
                         self.slice_result_functions.insert(name.clone());
+                    }
+                    if names::declares_pointer_result(&self.tokens, parameters) {
+                        self.pointer_result_functions.insert(name.clone());
                     }
                     if let Some(positions) =
                         spec_arithmetic::written_integer_parameters(&self.tokens, parameters)

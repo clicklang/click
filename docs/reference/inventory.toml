@@ -4104,6 +4104,54 @@ id = "library.function.slice::subslice_len"
 path = "reference/library/index.md#slicesubslice_len"
 
 [[item]]
+id = "library.type.ChunksExact"
+path = "reference/library/index.md#chunksexact"
+
+[[item]]
+id = "library.function.chunks_exact::chunks_exact"
+path = "reference/library/index.md#chunks_exactchunks_exact"
+
+[[item]]
+id = "library.function.chunks_exact::len"
+path = "reference/library/index.md#chunks_exactlen"
+
+[[item]]
+id = "library.function.chunks_exact::nth"
+path = "reference/library/index.md#chunks_exactnth"
+
+[[item]]
+id = "library.function.chunks_exact::remainder"
+path = "reference/library/index.md#chunks_exactremainder"
+
+[[item]]
+id = "library.function.chunks_exact::after_next"
+path = "reference/library/index.md#chunks_exactafter_next"
+
+[[item]]
+id = "library.theorem.chunks_exact::len_chunks_exact"
+path = "reference/library/index.md#chunks_exactlen_chunks_exact"
+
+[[item]]
+id = "library.theorem.chunks_exact::nth_chunks_exact"
+path = "reference/library/index.md#chunks_exactnth_chunks_exact"
+
+[[item]]
+id = "library.theorem.chunks_exact::remainder_chunks_exact"
+path = "reference/library/index.md#chunks_exactremainder_chunks_exact"
+
+[[item]]
+id = "library.theorem.chunks_exact::len_after_next"
+path = "reference/library/index.md#chunks_exactlen_after_next"
+
+[[item]]
+id = "library.theorem.chunks_exact::nth_after_next"
+path = "reference/library/index.md#chunks_exactnth_after_next"
+
+[[item]]
+id = "library.theorem.chunks_exact::remainder_after_next"
+path = "reference/library/index.md#chunks_exactremainder_after_next"
+
+[[item]]
 id = "library.type.Vec"
 path = "reference/library/index.md#vec"
 

@@ -556,6 +556,20 @@ impl Parser {
             {
                 true
             }
+            // A call of a pure function that returns a pointer.
+            ContractExpression::Call { name, .. }
+                if self.pointer_result_functions.contains(name)
+                    || names::library_pointer_result_functions().contains(name) =>
+            {
+                true
+            }
+            // A method that is a library function returning a pointer,
+            // `s.as_ptr()`.
+            ContractExpression::MethodCall { method, .. }
+                if names::library_pointer_result_methods().contains(method.as_str()) =>
+            {
+                true
+            }
             // An address, `&r->arr[0]`, or a value cast to a pointer type.
             ContractExpression::CFragment(
                 CExpression::AddressOf(_) | CExpression::CheckedObjectAddress(_),
