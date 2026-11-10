@@ -922,6 +922,41 @@ pub(in crate::kernel) fn element_count_from_bytes(
     }
 }
 
+/// The element count of a 64-bit (`uint64`) byte count: `n` of `n * w` at
+/// `uint64`, or a `uint64` constant divisible by `w`.
+///
+/// Reading `n * w` as `n` elements needs the product not to have wrapped. A
+/// heap block's `uint64` extent is admitted only once `n <= PTRDIFF_MAX / w`
+/// is decided for each constant factor `w` of a top-level product
+/// (`allocation_size_validity_refusal` in `eval/statements.rs`), so this is
+/// for such extents only, never for an arbitrary `uint64` term.
+pub(in crate::kernel) fn uint64_element_count_from_bytes(
+    bytes: &MachineTerm,
+    element_width: u32,
+) -> Option<MachineTerm> {
+    if element_width == 0 {
+        return None;
+    }
+    if element_width == 1 {
+        return Some(bytes.clone());
+    }
+    let width = MachineTerm::uint64_constant(u64::from(element_width));
+    match bytes {
+        binary_term!(UInt64, Multiply, left, right) if right.as_ref() == &width => {
+            Some(left.as_ref().clone())
+        }
+        binary_term!(UInt64, Multiply, left, right) if left.as_ref() == &width => {
+            Some(right.as_ref().clone())
+        }
+        _ => {
+            let bytes = bytes.uint64_as_const()?;
+            bytes
+                .is_multiple_of(u64::from(element_width))
+                .then(|| MachineTerm::uint64_constant(bytes / u64::from(element_width)))
+        }
+    }
+}
+
 pub(in crate::kernel) fn int32_element_count_from_bytes(
     bytes: &MachineTerm,
 ) -> Option<MachineTerm> {
