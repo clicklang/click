@@ -305,7 +305,10 @@ Each step is a separate PR that leaves every example verifying:
      extent (`allocation_size_value` in `src/kernel/eval/statements.rs`): a
      symbolic `size_t` `malloc(n)` is refused, and a 64-bit size is accepted
      only when its value is concrete. Stating `allocation`'s byte count as
-     `size_t` needs a 64-bit heap-block extent in the kernel first.
+     `size_t` needs a 64-bit heap-block extent in the kernel first. Design
+     and staged plan: [`design/heap-extents.md`](../design/heap-extents.md)
+     (a tagged 32/64-bit extent chosen by the size's C type; accepted
+     2026-11-10).
    - Done, by decision (maintainer, 2026-11-09): the width-lemma
      families are not restated over a format. The width-uniformity fixture
      checks each family at every format; its gaps stay open
