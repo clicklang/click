@@ -21,7 +21,17 @@ enough as the C++ launch demonstration: `MoneyRange`, the `FeeFrac`
 arithmetic, `EvaluateFeeDown/Up`, `CFeeRate::GetFee` and `GetFeePerK`,
 `GetSizeOfCompactSize`, and the `std::span` helpers through `SpanPopBack`.
 The same holds for [the basic C++ example](../examples/basic-cpp/README.md).
-P1 does not require more examples or broader C++ coverage.
+P1 does not require more examples or broader C++ coverage, with the one
+exception below.
+
+Maintainer direction, 2026-11-10: Click's public claim is that it supports
+C, C++, and Rust, with no ranking among them. Two gaps make a C++ user
+disagree within minutes of trying it, so both are launch work. The first,
+that a released Click cannot verify C++ at all, is this file's existing P1
+goal. The second is new to P1: a C++ project is more than one translation
+unit, and Click accepts one
+([design requirement 6](#design-requirements)). The Rust half of the same
+direction is [rust-support.md](rust-support.md).
 
 The P1 work is the front-end pipeline. Getting from a C++ project to a
 verified sidecar should be well designed, not ad hoc. The
@@ -128,6 +138,21 @@ What already works and should be kept:
    documented in their READMEs that do not use `cargo run`. Turning the
    `.click.in` fee templates into plain sidecars is not required.
 
+6. **More than one translation unit.** Today the front end accepts one
+   C++20 translation unit, with every lowered declaration and source span
+   coming from that file or one configured project header it includes
+   ([`click import`](../docs/reference/cli/import.md#preliminary-c-semantic-artifact)).
+   A call from the selected function into a definition in another `.cpp`
+   file is outside that boundary. A project unit must be able to name
+   several translation units and their project headers, and a verified
+   function must be able to call a function defined in another of them:
+   against its verified body, or against its contract with the proof of
+   that contract checked in its own unit. The lock records every unit's
+   inputs. The one-definition assumptions this relies on are checked or
+   stated: two units that define the same entity differently are refused.
+   This is about project structure, not language coverage; the constructs
+   admitted inside each unit stay as documented.
+
 The build description, lean per-project configuration, portable locks, and
 diagnostics for unsupported flags and stale locks are delivered by the
 [project configuration](../docs/reference/cli/import.md#project-units).
@@ -190,6 +215,14 @@ installer would place it. It then:
 
 The hermetic `MoneyRange` fixture runs the same way.
 
+For requirement 6, a C++ counterpart of
+[`examples/multifile-registry/`](../examples/multifile-registry/): two
+`.cpp` files and a shared header, where a verified function in one calls a
+function defined in the other. It locks and verifies offline in the same
+installed layout. Two refusals are checked: a caller whose callee has
+neither a verified body nor a contract, and two units whose definitions of
+one entity differ.
+
 ## Violated invariant
 
 A user who installs a Click release can verify a C++ project with that
@@ -210,6 +243,10 @@ machine that wrote it.
   and are byte-identical across machines for equal inputs.
 - The installed-layout regression and its negative cases pass. The C++
   documentation describes the installed workflow.
+- A project unit with several translation units locks and verifies; the
+  multi-file regression and its two refusals pass. The "definitions from
+  one logical source" wording leaves
+  [coverage.md](../docs/reference/coverage.md) when this lands.
 
 When these criteria land, the P1 part of this file is done. Whether the
 After launch section then becomes a separate P2 issue is the user's call.
