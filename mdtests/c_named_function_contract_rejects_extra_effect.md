@@ -47,12 +47,21 @@ int32 apply_store(
     ensures result == value;
 }
 
+theorem proposed_store_with_scratch_contract() {
+    ensures Store(&store_with_scratch) by {
+        unfold(Store);
+        solve();
+    }
+}
+
 int32 extra_effect_caller(int32* output) {
     owns output[0..2];
     ensures result == 42;
+} by {
+    apply(proposed_store_with_scratch_contract());
 }
 ```
 
 ```expect
-fail: function `store_with_scratch` does not satisfy named contract `Store`
+fail: contract-refinement proof does not establish `Store(&store_with_scratch)`
 ```

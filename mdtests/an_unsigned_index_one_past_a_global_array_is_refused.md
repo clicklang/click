@@ -24,5 +24,5 @@ void write_global(uint32 x) {
 ```
 
 ```expect
-fail: could not show `x >= 0 && x < 4`
+fail: unproved obligation: `x >= 0 and x < 4`
 ```

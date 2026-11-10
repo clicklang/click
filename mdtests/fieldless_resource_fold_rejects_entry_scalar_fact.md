@@ -18,5 +18,5 @@ void value(int32 x) {
 ```
 
 ```expect
-fail: requires an exact body fact
+fail: unproved obligation: `x == 7`
 ```

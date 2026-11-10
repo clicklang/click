@@ -30,5 +30,5 @@ int32 fill_too_many_second_fields() {
 ```
 
 ```expect
-fail: could not show `i >= 0 && i < 4`
+fail: unproved obligation: `i >= 0 and i < 4`
 ```

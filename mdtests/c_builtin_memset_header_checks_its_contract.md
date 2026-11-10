@@ -23,5 +23,5 @@ int32 fill(uint8 d[]) {
 ```
 
 ```expect
-fail: precondition clause 2 of `memset`
+fail: unproved obligation: `300 <= 255`
 ```

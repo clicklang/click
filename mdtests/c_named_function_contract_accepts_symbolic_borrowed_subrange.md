@@ -57,6 +57,10 @@ int32 apply_read(
     ensures result == cells[index];
 }
 
+theorem read_at_satisfies_ReadAt() {
+    ensures ReadAt(&read_at) by { unfold(ReadAt); solve(); }
+}
+
 int32 symbolic_borrowed_subrange_caller(
     int32* cells,
     int32 index,
@@ -66,7 +70,7 @@ int32 symbolic_borrowed_subrange_caller(
     requires index < length;
     owns cells[0..length];
     ensures result == cells[index];
-}
+} by { apply(read_at_satisfies_ReadAt()); }
 ```
 
 ```expect

@@ -3067,6 +3067,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     /// Whether a scalar field of the resource body being defined is replaced
     /// by the C name the kernel binds it to (see `resource_body_c_fragment`).
     body_fields_as_c_names: bool,
+    body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
     current_c_values: bool,
 }
@@ -3078,6 +3079,7 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
             body_fields_as_c_names: false,
+            body_field_values: None,
             contract_result_only: false,
             current_c_values: false,
         }
@@ -3132,8 +3134,22 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(instance_renames),
             body_fields_as_c_names: false,
+            body_field_values: None,
             contract_result_only: false,
             current_c_values: false,
+        }
+    }
+
+    /// Instantiate the body of an explicit fold with its written field
+    /// initializers. These are definition-bound fields, not reads of a
+    /// newly constructed (and not yet owned) instance.
+    pub(in crate::surface) fn for_fold_body(
+        values: &'a BTreeMap<String, ContractExpression>,
+        instance_renames: &'a BTreeMap<String, InstanceRename>,
+    ) -> Self {
+        Self {
+            body_field_values: Some(values),
+            ..Self::with_instance_renames(values, instance_renames)
         }
     }
 
@@ -3197,6 +3213,7 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Owned(values),
             instance_renames,
             body_fields_as_c_names: self.body_fields_as_c_names,
+            body_field_values: self.body_field_values,
             contract_result_only: self.contract_result_only,
             current_c_values: self.current_c_values,
         }
@@ -3618,6 +3635,19 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         }
 
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
+        ContractExpression::ResourceField(access)
+            if let Some(fields) = substitutions.body_field_values
+                && access.identity == Variable(u64::MAX)
+                && access.owner == "__body"
+                && access.children.is_empty() =>
+        {
+            fields.get(&access.field).cloned().ok_or_else(|| {
+                format!(
+                    "fold body field `{}` has no written initializer",
+                    access.field
+                )
+            })
+        }
         ContractExpression::ResourceField(_)
             if substitutions.body_fields_as_c_names
                 && let Some(name) = resource_body_c_fragment(expression) =>
@@ -3757,19 +3787,30 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             lowered,
             offset_bytes,
             pointee_struct,
-        } => Ok(ContractExpression::Field {
-            pointee_struct: pointee_struct.clone(),
-            base: Box::new(substitute_contract_expression_in(base, substitutions)?),
-            field: field.clone(),
-            lowered: if substitutions.is_contract_result_binding()
-                && contract_expression_has_explicit_c_result_base(base)
-            {
-                lowered.clone()
-            } else {
-                substitute_c_fragment_in(lowered, substitutions)?
-            },
-            offset_bytes: *offset_bytes,
-        }),
+        } => {
+            let substituted_base = substitute_contract_expression_in(base, substitutions)?;
+            // Snapshot field lowering uses the Surface base and only the
+            // operation/type shape of `lowered`. An `old(...)` base cannot
+            // be embedded in the cached C fragment.
+            let snapshot_base = matches!(
+                &substituted_base,
+                ContractExpression::Old(_) | ContractExpression::At { .. }
+            );
+            Ok(ContractExpression::Field {
+                pointee_struct: pointee_struct.clone(),
+                base: Box::new(substituted_base),
+                field: field.clone(),
+                lowered: if snapshot_base
+                    || (substitutions.is_contract_result_binding()
+                        && contract_expression_has_explicit_c_result_base(base))
+                {
+                    lowered.clone()
+                } else {
+                    substitute_c_fragment_in(lowered, substitutions)?
+                },
+                offset_bytes: *offset_bytes,
+            })
+        }
         ContractExpression::Old(_) | ContractExpression::At { .. }
             if substitutions.contract_result_only =>
         {

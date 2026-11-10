@@ -801,7 +801,10 @@ fn certified_transitions_from_execution(
                 if collecting_step_requirements() && !obligation.is_assumable() {
                     refuse_or_probe(prerequisite_policy, ClickError::new(format!(
                         "{context_label} requires an explicit prerequisite proof"
-                    )).with_unresolved_requirement(obligation))?;
+                    )).with_unresolved_requirement(obligation)
+                        .with_assertion_condition(
+                            crate::surface::proof::fact_reasoning::asserted_condition(proposition, statement),
+                        ))?;
                     continue;
                 }
                 let derivation = match prerequisite_policy {

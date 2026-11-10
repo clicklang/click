@@ -41,5 +41,5 @@ int32 probe(int32 *left, int32 *visited, int32 n, int32 cur) {
 ```
 
 ```expect
-fail: precondition clause 1 of `use`
+fail: unproved obligation: `left[cur] < 0`
 ```

@@ -3384,6 +3384,8 @@ impl<'a> Proof<'a> {
         // proof-local binders and opaque function calls that structural
         // synthesis cannot reconstruct from C locals. A stale recorded source
         // is a spelling defect, not a reason to search other spellings.
+        // Calls have their own authoritative source at this frontier. A
+        // context fact's source may instead be relative to function entry.
         let recorded = if requirement.call_site.is_none() {
             self.local_surface_facts()
                 .recorded_surface(&requirement.proposition)
@@ -3392,7 +3394,6 @@ impl<'a> Proof<'a> {
                         .recorded_surface(&requirement.proposition)
                 })
         } else {
-            // Call requirements keep their authoritative source carrier below.
             None
         };
         if let Some(surface) = recorded {
@@ -3403,6 +3404,11 @@ impl<'a> Proof<'a> {
             return Ok(Some(RequirementSpelling {
                 surface: surface.clone(),
             }));
+        }
+        if requirement.call_site.is_none()
+            && let Some(spelling) = literal_requirement_spelling(requirement)
+        {
+            return Ok(Some(spelling));
         }
         // Fixed-state and focused-outcome requirements can refer to reads
         // retained from an intermediate statement. Give their speller the
@@ -3499,7 +3505,7 @@ impl<'a> Proof<'a> {
             let Some(registry_surface) =
                 source_backed_call_requirement_surface(requirement, step, execution, context)
             else {
-                return Ok(None);
+                return Ok(literal_requirement_spelling(requirement));
             };
             let direct_caller =
                 source_backed_direct_caller_requirement(requirement, step, execution, context);
@@ -3516,6 +3522,7 @@ impl<'a> Proof<'a> {
                 }
                 None => registry_surface.proposition,
             };
+
             if let Some(surface) = admit(candidate) {
                 return Ok(Some(RequirementSpelling { surface }));
             }
@@ -3891,6 +3898,31 @@ fn asserted_condition_proposition(condition: &CExpression) -> ClickProposition {
     }
 }
 
+/// A completely evaluated obligation still goes through an ordinary proof.
+/// Prefer its authoritative source when one exists; this literal is the
+/// complete source for an evaluated inlined call without an outer source clause.
+fn literal_requirement_spelling(
+    requirement: &UnresolvedRequirement,
+) -> Option<RequirementSpelling> {
+    let Proposition::ConditionIs(ConditionTerm::Constant(value), polarity) =
+        &requirement.proposition
+    else {
+        return None;
+    };
+    if requirement.assertion_condition.is_some() {
+        return None;
+    }
+    Some(RequirementSpelling {
+        surface: ClickProposition::Comparison {
+            left: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(0))),
+            operator: ComparisonOperator::Equal,
+            right: ContractExpression::CFragment(CExpression::Value(crate::kernel::int32(
+                u32::from(value != polarity),
+            ))),
+        },
+    })
+}
+
 pub(super) fn lowered_states_requirement(
     lowered: &Proposition,
     requirement: &UnresolvedRequirement,
@@ -3937,6 +3969,14 @@ fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposit
             (Proposition::Not(body), Proposition::Not(other_body)) => {
                 work.push((body, other_body));
             }
+            (
+                Proposition::ConditionIs(ConditionTerm::Constant(value), expected),
+                Proposition::ConditionIs(ConditionTerm::Constant(other), other_expected),
+            ) => {
+                if (value == expected) != (other == other_expected) {
+                    return false;
+                }
+            }
             (Proposition::ConditionIs(_, _), Proposition::ConditionIs(_, _)) => {
                 let left = crate::kernel::canonical_condition_fact(left);
                 let right = crate::kernel::canonical_condition_fact(right);
@@ -3952,6 +3992,22 @@ fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposit
         }
     }
     true
+}
+
+#[test]
+fn literal_requirement_matching_respects_both_truth_and_polarity() {
+    for value in [false, true] {
+        for polarity in [false, true] {
+            let requirement = Proposition::ConditionIs(ConditionTerm::Constant(value), polarity);
+            for written in [false, true] {
+                let spelling = Proposition::ConditionIs(ConditionTerm::Constant(written), true);
+                assert_eq!(
+                    propositions_match_after_canonical_loads(&spelling, &requirement),
+                    written == (value == polarity),
+                );
+            }
+        }
+    }
 }
 
 fn source_backed_refusal(
@@ -4039,24 +4095,25 @@ fn source_backed_call_requirement_surface(
     // every other carrier must name the exact current C callee.
     let named_interface_alias =
         site.callee.as_str() == site.interface.as_ref() && ordinary_source.is_none();
+    let source_callee = site.source_callee.as_deref().unwrap_or(&site.callee);
     match step {
         ProofStep::StepContract(_) => {
             // A named callback interface still belongs to the exact C call
             // that produced the refusal.  The selected named-contract alias
             // above is the only indirect representation that may differ.
-            if callee != site.callee && !named_interface_alias {
+            if callee != source_callee && !named_interface_alias {
                 return None;
             }
         }
         ProofStep::StepCall(transport) if transport.is_named_contract() => {
-            if callee != site.callee && !named_interface_alias {
+            if callee != source_callee && !named_interface_alias {
                 return None;
             }
         }
         ProofStep::StepCall(_) => {
             // StepCall is the concrete-call operation: both the C symbol and
             // the selected interface must be the carrier's concrete callee.
-            if callee != site.callee || site.interface.as_ref() != site.callee {
+            if callee != source_callee || site.interface.as_ref() != site.callee {
                 return None;
             }
         }
@@ -4064,7 +4121,7 @@ fn source_backed_call_requirement_surface(
             // Even an indirect callback must retain the exact function-pointer
             // expression named by the carrier before routing through its
             // selected interface, except for the named-contract alias above.
-            if callee != site.callee && !named_interface_alias {
+            if callee != source_callee && !named_interface_alias {
                 return None;
             }
         }
@@ -4139,10 +4196,15 @@ fn source_backed_call_requirement_surface(
             )
         };
 
-    if source_parameter_names.len() != site.source_arguments.len() {
+    let value_parameter_count = if use_named_interface {
+        site.value_arguments.len()
+    } else {
+        0
+    };
+    if source_parameter_names.len() != site.source_arguments.len() + value_parameter_count {
         return None;
     }
-    let substitutions = source_parameter_names
+    let mut substitutions = source_parameter_names
         .iter()
         .zip(&source_parameter_types)
         .zip(site.source_arguments.iter())
@@ -4164,6 +4226,42 @@ fn source_backed_call_requirement_surface(
             (parameter.clone(), argument)
         })
         .collect::<BTreeMap<_, _>>();
+    let written_values = match step {
+        ProofStep::StepCall(transport) => transport
+            .value_arguments()
+            .iter()
+            .map(|(name, value)| (name.as_str(), value))
+            .collect::<BTreeMap<_, _>>(),
+        _ => BTreeMap::new(),
+    };
+    // Value parameters belong to the selected contract application, not the
+    // C argument list. Use the exact held-term index (one selected name),
+    // or the value's literal; do not enumerate aliases or ambient facts.
+    for (name, value) in site.value_arguments.iter() {
+        let expression = if let Some(written) = written_values.get(name.as_str()) {
+            (*written).clone()
+        } else if super::resources::is_integer_constant(value) {
+            ContractExpression::CFragment(CExpression::Value(value.clone()))
+        } else {
+            let term = match value {
+                CValue::Int32(term)
+                | CValue::UInt32(term)
+                | CValue::Int64(term)
+                | CValue::UInt64(term) => term,
+                _ => return None,
+            };
+            let local = execution
+                .core
+                .state
+                .locals()
+                .names_holding_integer(term)
+                .next()?;
+            ContractExpression::CFragment(CExpression::Variable(
+                crate::kernel::c_local_source_name(local).to_owned(),
+            ))
+        };
+        substitutions.insert(name.clone(), expression);
+    }
     // Match contract lowering: adapt a signed character argument to the
     // predicate's byte parameter before substituting the call arguments.
     // Keep the original source clause for source-ID and parameter selection.
@@ -4183,6 +4281,15 @@ fn source_backed_call_requirement_surface(
     );
     // A call step's binder map names the caller instance each callee binder
     // is: the callee's field reads become reads of that caller instance.
+    let mut referenced_instances = BTreeSet::new();
+    crate::surface::proof::fixed_state_proofs::conversion_conditions::walk_written_expressions_in_proposition(
+        &source_proposition,
+        &mut |expression| {
+            if let ContractExpression::ResourceField(access) = expression {
+                referenced_instances.insert(access.identity);
+            }
+        },
+    );
     let instance_renames = match step {
         ProofStep::StepCall(transport) => transport
             .binders()
@@ -4198,8 +4305,24 @@ fn source_backed_call_requirement_surface(
                 )
             })
             .collect::<BTreeMap<_, _>>(),
-        _ => BTreeMap::new(),
+        _ => site
+            .resource_arguments
+            .iter()
+            .filter(|(_, identity, _)| referenced_instances.contains(identity))
+            .map(|(binder, identity, actual)| {
+                let name = crate::kernel::model_fields::registered_instance_spelling(*actual)?;
+                Some((
+                    binder.clone(),
+                    crate::surface::lowering::InstanceRename {
+                        name: name.to_string(),
+                        identity: *identity,
+                        target_identity: Some(*actual),
+                    },
+                ))
+            })
+            .collect::<Option<BTreeMap<_, _>>>()?,
     };
+
     let proposition = crate::surface::lowering::substitute_click_proposition_in(
         elaborated.as_ref().unwrap_or(&source_proposition),
         &crate::surface::lowering::ContractSubstitutions::with_instance_renames(

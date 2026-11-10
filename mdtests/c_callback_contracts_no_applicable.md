@@ -17,6 +17,6 @@ int32 invoke(int32 (*callback)(int32), int32 x) {
 ```
 
 ```expect
-fail: precondition
+fail: unproved obligation: `x < 0`
 ```
 

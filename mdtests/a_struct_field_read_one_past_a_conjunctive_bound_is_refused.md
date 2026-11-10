@@ -30,5 +30,5 @@ int32 f(int32 x) {
 ```
 
 ```expect
-fail: missing prerequisite (array subobject index must be at least 0 and less than 2): could not show `x >= 0 && x < 2`
+fail: unproved obligation: `x >= 0 and x < 2`
 ```

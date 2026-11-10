@@ -70,5 +70,5 @@ void retain_many(struct child* obj) {
 ```
 
 ```expect
-fail: precondition clause 1 of `child_retain`
+fail: unproved obligation: `to_integer(count(child_ref(obj))) < 8`
 ```

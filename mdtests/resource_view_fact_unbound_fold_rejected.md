@@ -31,5 +31,5 @@ int32 make_readback(int32 p[]) {
 ```
 
 ```expect
-fail: missing pure fact: old(p[0]) == 0
+fail: unproved obligation: `p[0] == 0`
 ```

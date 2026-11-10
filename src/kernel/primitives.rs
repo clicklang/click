@@ -8876,6 +8876,10 @@ impl CMemorySnapshotIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallRequirementSite {
     pub(crate) callee: String,
+    /// Original indirect invocation, distinct from the selected concrete target.
+    pub(crate) source_callee: Option<std::sync::Arc<str>>,
+    pub(crate) value_arguments: std::sync::Arc<[(String, CValue)]>,
+    pub(crate) resource_arguments: std::sync::Arc<[(String, Variable, Variable)]>,
     pub(crate) interface: std::sync::Arc<str>,
     pub(crate) candidate_ordinal: usize,
     pub(crate) source_arguments: std::sync::Arc<Vec<CExpression>>,
@@ -8896,6 +8900,9 @@ impl CallRequirementSite {
         });
         Self {
             callee: callee.into(),
+            source_callee: None,
+            value_arguments: std::sync::Arc::from([]),
+            resource_arguments: std::sync::Arc::from([]),
             interface: std::sync::Arc::from(interface),
             candidate_ordinal,
             source_arguments: std::sync::Arc::new(source_arguments.to_vec()),

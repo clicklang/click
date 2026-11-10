@@ -31,5 +31,5 @@ int32 fill_first_fields_unbounded_below() {
 ```
 
 ```expect
-fail: could not show `i >= 0 && i < 4` from the facts `i < 2`, `i <= 2`
+fail: unproved obligation: `i >= 0 and i < 4`
 ```

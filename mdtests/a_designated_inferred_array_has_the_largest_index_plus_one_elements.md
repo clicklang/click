@@ -24,5 +24,5 @@ uint32 padded(int32 index) {
 ```
 
 ```expect
-fail: array subobject index must be at least 0 and less than 4
+fail: unproved obligation: `index >= 0 and index < 4`
 ```

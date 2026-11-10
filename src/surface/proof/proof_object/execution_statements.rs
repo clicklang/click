@@ -723,6 +723,10 @@ impl<'a> Proof<'a> {
             let mut bindings = BTreeMap::new();
             for binding in transport.binders().iter().chain(transport.produced()) {
                 crate::instrumentation::record_deterministic_work(1);
+                crate::kernel::model_fields::register_instance_spelling(
+                    binding.identity(),
+                    binding.instance(),
+                );
                 if bindings
                     .insert(binding.binder_identity(), binding.identity())
                     .is_some()

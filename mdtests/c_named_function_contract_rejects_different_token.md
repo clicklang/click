@@ -46,12 +46,21 @@ int32 apply_token(
     ensures result == key;
 }
 
+theorem proposed_use_other_token_contract() {
+    ensures UseKey(&use_other_token) by {
+        unfold(UseKey);
+        solve();
+    }
+}
+
 int32 different_token_caller(int32 key, int32 other) {
     owns permit(key);
     ensures result == key;
+} by {
+    apply(proposed_use_other_token_contract());
 }
 ```
 
 ```expect
-fail: function `use_other_token` does not satisfy named contract `UseKey`
+fail: contract-refinement proof does not establish `UseKey(&use_other_token)`
 ```

@@ -102,7 +102,7 @@ int32 peek(struct cell* c) {
         Owned::Held(owner, v) => {
             unfold(t);
             step_until(function.exit);
-            let t = fold(cell_at(c), { model: old(t.model) });
+            let t = fold(cell_at(c), { model: Owned::Held(owner, v) });
             solve();
         },
     }

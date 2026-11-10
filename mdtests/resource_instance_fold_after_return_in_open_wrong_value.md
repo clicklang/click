@@ -33,5 +33,5 @@ int32 f(int32* p, int32* q) {
 ```
 
 ```expect
-fail: fold requires the instance body facts
+fail: unproved obligation: `*q == 8`
 ```

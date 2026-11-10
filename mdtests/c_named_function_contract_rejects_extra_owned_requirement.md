@@ -41,13 +41,22 @@ void apply_step(void (*step)(int32*), int32* cells) {
     ensures old(cells[0]) < cells[0];
 }
 
+theorem proposed_needs_two_cells_contract() {
+    ensures Progress(&needs_two_cells) by {
+        unfold(Progress);
+        solve();
+    }
+}
+
 void extra_resource_caller(int32* cells) {
     requires cells[0] < 100;
     owns cells[0..1];
     ensures old(cells[0]) < cells[0];
+} by {
+    apply(proposed_needs_two_cells_contract());
 }
 ```
 
 ```expect
-fail: function `needs_two_cells` does not satisfy named contract `Progress`
+fail: contract-refinement proof does not establish `Progress(&needs_two_cells)`
 ```

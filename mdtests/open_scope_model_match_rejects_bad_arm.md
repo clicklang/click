@@ -43,5 +43,5 @@ int32 read(int32* p) {
 ```
 
 ```expect
-fail: goal: old(p[0]) == 0
+fail: unproved obligation: `*p == 0`
 ```

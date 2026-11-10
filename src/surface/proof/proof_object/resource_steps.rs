@@ -571,6 +571,9 @@ impl<'a> Proof<'a> {
                     })
                     .map(|(slot, name, identity)| {
                         let identity = if unfold {
+                            crate::kernel::model_fields::register_instance_spelling(
+                                *identity, name,
+                            );
                             *identity
                         } else {
                             before
@@ -764,10 +767,193 @@ impl<'a> Proof<'a> {
             self.step_error_with_proposed_record(summary, comparison, requirement, proposed)
         })?;
         if collecting {
+            // Explicit constructors already provide the source of their
+            // arguments and fields. Pair body clauses by the producer's
+            // ordinal, rather than reconstructing those values from state.
+            let mut written = BTreeMap::new();
+            let source_body = if let (Some(fields), ResourceClause::Named { resource, .. }) =
+                (&binding.fold_fields, resource)
+                && let ResourceClause::Declared {
+                    name, arguments, ..
+                } = resource.as_ref()
+                && let Some(source_definition) = context.resource_environment.get(name)
+                && let Some(body) = source_definition.composite_body()
+            {
+                written.extend(
+                    source_definition.parameters().iter().zip(arguments).map(
+                        |(parameter, argument)| (parameter.name().to_owned(), argument.clone()),
+                    ),
+                );
+                written.extend(fields.iter().cloned());
+                // A field supplies the type of a contextual literal.
+                // Preserve that type when the initializer is substituted
+                // into an independently written obligation.
+                for field in source_definition.fields() {
+                    if *field.click_type() == ClickType::Integer
+                        && let Some(value) = written.get_mut(field.name())
+                    {
+                        *value = ContractExpression::Let {
+                            name: "field_value".to_owned(),
+                            click_type: Some(ClickType::Integer),
+                            value: Box::new(value.clone()),
+                            body: Box::new(ContractExpression::Binding("field_value".to_owned())),
+                        };
+                    }
+                }
+                match &body.matched {
+                    None => {
+                        let normalized = crate::surface::validation::resource_unmatched_body_scope(
+                            source_definition,
+                            |name| context.resource_environment.get(name),
+                        )?;
+                        Some(
+                            normalized
+                                .as_ref()
+                                .unwrap_or(source_definition)
+                                .composite_body()
+                                .expect("selected resource has a body")
+                                .clone(),
+                        )
+                    }
+                    Some(matched) => match written.get(&matched.field) {
+                        Some(ContractExpression::AlgebraicConstructor {
+                            variant,
+                            arguments,
+                            ..
+                        }) => {
+                            let scopes = crate::surface::validation::resource_match_arm_scopes(
+                                source_definition,
+                                |name| {
+                                    context
+                                        .spec_definitions
+                                        .functions
+                                        .algebraic_type_definitions
+                                        .get(name)
+                                },
+                                |name| context.resource_environment.get(name),
+                            )?;
+                            let (_, bindings, arm) = scopes
+                                .into_iter()
+                                .find(|(name, _, _)| name == variant)
+                                .ok_or_else(|| {
+                                    self.step_error("fold constructor has no source arm")
+                                })?;
+                            let arguments = arguments.clone();
+                            // Constructor fields have their declared types,
+                            // including the implicit object-pointer coercion
+                            // of a void* field. Preserve that conversion in
+                            // the source obligation just as constructor
+                            // lowering does in the kernel term.
+                            written.extend(bindings.into_iter().zip(arguments).map(
+                                |((name, click_type), argument)| {
+                                    let value = if click_type == ClickType::Integer {
+                                        ContractExpression::Let {
+                                            name: "field_value".to_owned(),
+                                            click_type: Some(ClickType::Integer),
+                                            value: Box::new(argument),
+                                            body: Box::new(ContractExpression::Binding(
+                                                "field_value".to_owned(),
+                                            )),
+                                        }
+                                    } else {
+                                        crate::surface::lowering::pure_function_parameter_argument(
+                                            &FunctionParameter {
+                                                name: name.clone(),
+                                                click_type,
+                                                struct_name: None,
+                                                function_pointer_signature: None,
+                                                constant: false,
+                                                pointee_constant: false,
+                                                reference: false,
+                                            },
+                                            &argument,
+                                        )
+                                    };
+                                    (name, value)
+                                },
+                            ));
+                            Some(
+                                arm.composite_body()
+                                    .expect("selected arm has a body")
+                                    .clone(),
+                            )
+                        }
+                        _ => None,
+                    },
+                }
+            } else {
+                None
+            };
+            let selected_by_name = selected_children
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .cloned()
+                .collect::<BTreeMap<_, _>>();
+            let mut child_renames = BTreeMap::new();
+            if let Some(body) = source_body.as_ref() {
+                let children = body
+                    .children
+                    .iter()
+                    .map(|child| (&child.name, child.identity))
+                    .chain(body.contains().iter().filter_map(|clause| {
+                        if let ResourceClause::Named { binding, .. } = clause {
+                            Some((&binding.name, binding.identity))
+                        } else {
+                            None
+                        }
+                    }));
+                for (child_name, child_identity) in children {
+                    let actual = selected_by_name.get(child_name).ok_or_else(|| {
+                        self.step_error("fold body child has no selected instance")
+                    })?;
+                    let name =
+                        crate::kernel::model_fields::registered_instance_spelling(*actual)
+                            .ok_or_else(|| self.step_error("fold body child has no source name"))?;
+                    child_renames.insert(
+                        child_name.clone(),
+                        crate::surface::lowering::InstanceRename {
+                            name: name.to_string(),
+                            identity: child_identity,
+                            target_identity: Some(*actual),
+                        },
+                    );
+                }
+            }
             for clause in &rewrite.body_clauses {
+                let mut refusal = ClickError::new("`fold` requires its body fact")
+                    .with_unresolved_requirement(&clause.obligation());
+                if let Some(body) = source_body.as_ref() {
+                    let source_ordinal = if clause.arm.is_none() {
+                        definition
+                            .fact_source_index(clause.ordinal)
+                            .ok_or_else(|| {
+                                self.step_error("fold body clause lost its source index")
+                            })?
+                    } else {
+                        clause.ordinal
+                    };
+                    let source = body.facts().get(source_ordinal).ok_or_else(|| {
+                        self.step_error("fold body clause lost its source ordinal")
+                    })?;
+                    let source = crate::surface::lowering::substitute_click_proposition_in(
+                        source,
+                        &crate::surface::lowering::ContractSubstitutions::for_fold_body(
+                            &written,
+                            &child_renames,
+                        ),
+                    )
+                    .map_err(ClickError::new)?;
+                    std::sync::Arc::make_mut(
+                        refusal
+                            .unresolved_requirement
+                            .as_mut()
+                            .expect("just attached"),
+                    )
+                    .surface = Some(source);
+                }
                 crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
-                    ClickError::new("`fold` requires its body fact")
-                        .with_unresolved_requirement(&clause.obligation()),
+                    refusal,
                 )?;
             }
         }

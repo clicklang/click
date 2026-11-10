@@ -61,5 +61,5 @@ int32 run() {
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields: fact 2 of 2 of the resource body is not established
+fail: unproved obligation: `to_integer(1) == to_integer(count(reference(obj)))`
 ```

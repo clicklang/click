@@ -3,9 +3,9 @@
 `run_suite` is verified against named contracts on its table fields alone, the
 way `c_named_function_contract_fields.md` verifies `use_callbacks`: two fields
 share a signature and carry different behavior. The caller passes
-`&suite`, so each required fact is discharged by concrete formation from the
-address the initializer named — `propagate` must refine `Propagate` and `copy`
-must refine `Copy`. Binding a field to the other function changes the result,
+`&suite`, so explicit refinement theorems establish `Propagate(&propagate)` and
+`Copy(&copy)`. Ordinary equality reasoning carries those contracts to the
+corresponding initialized fields before the call. Binding a field to the other function changes the result,
 so the two facts cannot be confused.
 
 ```c filename=abstract_table.c
@@ -71,11 +71,22 @@ int32 run_suite(const struct callbacks *callbacks) {
     ensures result == 35;
 }
 
+theorem propagate_contract() {
+    ensures Propagate(&propagate) by { unfold(Propagate); solve(); }
+}
+theorem copy_contract() {
+    ensures Copy(&copy) by { unfold(Copy); solve(); }
+}
+
 int32 caller() {
     views suite.propagate;
     views suite.copy;
     ensures result == 35;
 } by {
+    apply(propagate_contract());
+    apply(copy_contract());
+    have Propagate(suite.propagate) by solve();
+    have Copy(suite.copy) by solve();
     fold(callbacks_storage(&suite));
 }
 ```

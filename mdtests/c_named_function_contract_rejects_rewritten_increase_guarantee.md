@@ -45,14 +45,23 @@ void apply_step(void (*step)(int32*), int32* cell) {
     ensures cell[0] < old(cell[0]);
 }
 
+theorem proposed_increment_contract() {
+    ensures Decrease(&increment) by {
+        unfold(Decrease);
+        solve();
+    }
+}
+
 void rewritten_increase_caller(int32* cell) {
     requires 0 < cell[0];
     requires cell[0] < 100;
     owns cell[0..1];
     ensures cell[0] < old(cell[0]);
+} by {
+    apply(proposed_increment_contract());
 }
 ```
 
 ```expect
-fail: function `increment` does not satisfy named contract `Decrease`
+fail: contract-refinement proof does not establish `Decrease(&increment)`
 ```

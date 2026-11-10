@@ -22,5 +22,5 @@ int32 read_byte(uint8 x) {
 ```
 
 ```expect
-fail: could not show `x >= 0 && x < 4`
+fail: unproved obligation: `x >= 0 and x < 4`
 ```

@@ -22,5 +22,5 @@ void any(const uint8* bytes, int32 i, uint64 length) {
 ```
 
 ```expect
-fail: missing prerequisite (touch range bounds)
+fail: unproved obligation: `((i as int32) as uint64) <= length`
 ```

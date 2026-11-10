@@ -55,12 +55,21 @@ int32 apply_guarded_effect(
     }
 }
 
+theorem proposed_overly_general_effect_contract() {
+    ensures GuardedEffect(&overly_general_effect) by {
+        unfold(GuardedEffect);
+        solve();
+    }
+}
+
 int32 weaker_guard_caller(int32* cell) {
     owns maybe_cell(1, cell);
     ensures result == 1;
+} by {
+    apply(proposed_overly_general_effect_contract());
 }
 ```
 
 ```expect
-fail: function `overly_general_effect` does not satisfy named contract `GuardedEffect`
+fail: contract-refinement proof does not establish `GuardedEffect(&overly_general_effect)`
 ```

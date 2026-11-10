@@ -67,5 +67,5 @@ void clear(struct cell* c, struct cell* other) {
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields
+fail: unproved obligation: `is_owner(Owned::Held(other, 0), c) == 1`
 ```

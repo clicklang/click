@@ -5812,13 +5812,31 @@ fn prepare_verified_function_call<'a>(
             }
             let site = call_requirement_site
                 .get_or_insert_with(|| {
-                    std::sync::Arc::new(CallRequirementSite::for_requirement(
+                    let mut site = CallRequirementSite::for_requirement(
                         application.name,
                         application.interface_name,
                         candidate_ordinal,
                         source_arguments,
                         &caller_state.memory,
-                    ))
+                    );
+                    site.value_arguments = contract_interface
+                        .value_parameters()
+                        .iter()
+                        .zip(application_value_arguments)
+                        .map(|(parameter, value)| (parameter.name().to_owned(), value.clone()))
+                        .collect();
+                    if let Some(selected) = resource_application {
+                        site.resource_arguments = selected
+                            .parameters
+                            .iter()
+                            .filter_map(|parameter| {
+                                let identity = parameter.binding_identity()?;
+                                let actual = selected.bindings.get(&identity)?;
+                                Some((parameter.binding_name()?.to_owned(), identity, *actual))
+                            })
+                            .collect();
+                    }
+                    std::sync::Arc::new(site)
                 })
                 .clone();
             let source = std::sync::Arc::new(CallRequirementSource::new(

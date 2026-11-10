@@ -1,6 +1,21 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: initialized callback field prerequisite expansion and cold replay"]
+fn initialized_callback_field_obligations_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/const_callback_table_abstract.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[ignore = "nightly: callback prerequisite expansion and cold replay"]
 fn explicit_callback_contract_obligation_expands_and_cold_replays() {
     let (source, sources) = mdtest_sources("mdtests/c_named_function_contract.md");

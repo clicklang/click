@@ -21,5 +21,5 @@ void probe(int32* p, int32* q) {
 }
 ```
 ```expect
-fail: fold requires the instance body facts for the proposed fields
+fail: unproved obligation: `SavedPointer::At(q) == SavedPointer::At(old(p))`
 ```
