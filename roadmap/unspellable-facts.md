@@ -258,7 +258,8 @@ The traits cannot yet be deleted. In particular:
   and are removed. The retained alternatives are `for_each_scaled_operand` and
   `any_scaled_operand`. `scaled_values` remains at native diagnostic/test
   boundaries; checker root queries use `scaled_operands`.
-- Still live: native byte/element reconstruction in `reasoning/path_facts.rs`,
+- Live at the contract-certification checkpoint (superseded below): native
+  byte/element reconstruction in `reasoning/path_facts.rs`,
   exact-rebuild and selected-index order checks in `condition_reasoning/order_paths`,
   plus native consumers in `assumptions::{memory_reasoning,proposition_reasoning}`.
   `scalar_evidence_class` and `single_scaled_index_equal_to_constant` also retain
@@ -307,10 +308,46 @@ trait removal was restored byte-for-byte. The live exact-rebuild calls in
 `condition_reasoning/order_paths.rs` and the Integer carrier scope call in
 `spec.rs` are explicit next targets alongside the reconstruction services.
 
-**Next cleanup:** migrate the byte/element reconstruction and order-path
-consumers above, then repeat the compiler-assisted trait-removal check. Keep
-legitimate native output boundaries explicit; do not replace a hidden export
-with an explicit export inside a checker just to compile.
+**Byte/element reconstruction increment:** `shared_byte_offset_from_pointer_offset`
+and `shared_element_index_from_offset_with_facts` retain the index DAG while
+building the same residues. The existing shared element builder is also the
+implementation behind the native-output adapter. Full-width constants and
+range evidence still control wide-to-word projection; low-word evidence,
+unsupported widths and missing bounds do not suffice. The wide-equality
+adjacency index now accepts retained query keys while preserving the native
+syntax order of its source buckets.
+
+Offset equality decision, offset-derived scalar path facts and exact-rebuild
+checks consume those shared results. `single_scaled_index_equal_to_constant`
+returns the retained index. Add/multiply exactness uses the existing shared
+overflow query; accepting equal residues still requires exact rebuilds, while
+unequal residues can refute equality without that premise. The obsolete native
+signed-wide bound wrapper is removed. The difference-graph dispatcher routes
+retained machine-order comparisons through its existing shared order checker;
+this preserves full-width subtraction bounds and byte-array address proofs.
+Native literal outputs bypass the general exporter, preserving the existing
+per-cell store-work budget. Ambient-fact scaling tests use a fresh session per
+size so cold and warm syntax caches are not compared. The fork/join sidecar
+now proves its `range_filled` bridge by introducing the index and bounds,
+instantiating the returned range fact, then rewriting the job fields. Those
+simple steps pass on retained operands; the previous implicit closure exhausted
+its unchanged work budget after the comparison representation changed. The C
+program and claims are unchanged; no search fallback or budget increase was added.
+
+The native-output adapters remain live in memory resolution and range checks;
+they are **not** classified as completed checker migrations. Next migrate those
+consumers together with shallow scalar comparison/exact-constant queries, and
+migrate `ExactElementDelta`'s native index field. The Integer carrier scope call
+in `spec.rs` also remains. Keep legitimate native output boundaries explicit;
+do not replace a hidden export inside a checker with an explicit export merely
+to compile.
+
+Validation: `scripts/check.sh --no-fail-fast` passed: 7,094 unit/API tests,
+58 example projects, and 5,130 mdtests, including the scaling regressions.
+Focused coverage includes missing/withdrawn full-width bounds, low-word-only
+refusal, overflow refusal, and zero-export growing-DAG checks. The gate took
+10m08s and emitted its ten-minute-budget warning; no limits were increased.
+No nightly suite was run.
 
 #### Classified boundaries and retained coverage
 

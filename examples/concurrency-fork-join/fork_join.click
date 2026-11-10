@@ -251,10 +251,22 @@ int fill_parallel(int output[4]) {
         have first_job.end == 2;
         have first_job.value == 11;
         unfold(filled_range(output, 0, 2, 11));
-        have range_filled(&first_job);
+        // Select the returned range at this index before rewriting the job fields.
         have forall (k: int32) {
             first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
-        } by { unfold(range_filled); assumption(); }
+        } by {
+            intro() as k;
+            intro();
+            have 0 <= k by { rewrite(0 == first_job.begin); assumption(); }
+            have k < 2 by { rewrite(2 == first_job.end); assumption(); }
+            instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
+                0 <= k; k < 2;
+            };
+            rewrite(first_job.output == output);
+            rewrite(first_job.value == 11);
+            assumption();
+        }
+        have range_filled(&first_job) by { unfold(range_filled); assumption(); }
         have first_job.output[0] == first_job.value;
         have first_job.output[1] == first_job.value;
         have output[0] == 11;
@@ -268,10 +280,22 @@ int fill_parallel(int output[4]) {
     have first_job.end == 2;
     have first_job.value == 11;
     unfold(filled_range(output, 0, 2, 11));
-    have range_filled(&first_job);
+    // Select the returned range at this index before rewriting the job fields.
     have forall (k: int32) {
         first_job.begin <= k and k < first_job.end implies first_job.output[k] == first_job.value
-    } by { unfold(range_filled); assumption(); }
+    } by {
+        intro() as k;
+        intro();
+        have 0 <= k by { rewrite(0 == first_job.begin); assumption(); }
+        have k < 2 by { rewrite(2 == first_job.end); assumption(); }
+        instantiate(forall (j: int32) { 0 <= j and j < 2 implies output[j] == 11 }, k) using {
+            0 <= k; k < 2;
+        };
+        rewrite(first_job.output == output);
+        rewrite(first_job.value == 11);
+        assumption();
+    }
+    have range_filled(&first_job) by { unfold(range_filled); assumption(); }
     have first_job.output[0] == first_job.value;
     have first_job.output[1] == first_job.value;
     have output[0] == 11;

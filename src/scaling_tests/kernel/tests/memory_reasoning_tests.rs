@@ -498,6 +498,7 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
     );
     let mut measured = Vec::new();
     for count in [0, 2, 16, 128] {
+        let _session = crate::kernel::VerificationSession::enter();
         let mut facts = bounded.clone().assume_condition(equality.clone(), true);
         for i in 0..count {
             facts = facts.assume_condition(
@@ -508,8 +509,15 @@ fn bounded_unsigned_native_indices_project_only_with_full_width_evidence() {
                 true,
             );
         }
-        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| project(&facts));
-        assert_eq!(answer, Some(projected.clone()));
+        // Measure the retained checking service. Native output export has a
+        // process-wide memo, independent of the per-session syntax caches.
+        let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+            crate::kernel::reasoning::shared_element_index_from_offset_with_facts(&query, 4, &facts)
+        });
+        assert_eq!(
+            answer.map(|index| index.structural_value().clone()),
+            Some(projected.clone())
+        );
         measured.push(work);
         assert!(facts.element_index_rebuild_is_exact_for_width(&query, 4));
         // Element projection is exact even though scaling the largest index
