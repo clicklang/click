@@ -3594,3 +3594,44 @@ test_batches! {
         terminal_if_tactics_keep_claim_local_existential_witnesses,
     ],
 }
+
+#[test]
+fn solve_trivial_disjuncts_expand_and_replay() {
+    check_trivial_disjuncts_expand_and_replay(&["true or n == 1u64", "n == 1u64 or n + 0u64 == n"]);
+}
+
+#[test]
+fn solve_nested_trivial_disjuncts_expand_and_replay() {
+    check_trivial_disjuncts_expand_and_replay(&[
+        "n == 1u64 or (n == 2u64 or true)",
+        "n == 1u64 implies (n == 2u64 or n == 1u64)",
+    ]);
+}
+
+fn check_trivial_disjuncts_expand_and_replay(goals: &[&str]) {
+    for goal in goals {
+        let source = format!("theorem trivial(n: uint64) {{ ensures {goal} by solve(); }}");
+        // Selected expansion verifies the source before producing its certificate.
+        let position = crate::surface::expansion::position_at_offset(
+            &source,
+            source.find("solve();").unwrap(),
+        );
+        let expanded = expand_c0_tactic_source_at(&source, &[], position.line, position.column)
+            .expect("the direct disjunct has an explicit proof");
+        assert!(!expanded.contains("solve();"), "{expanded}");
+        crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &[]))
+            .expect("the disjunct certificate cold-replays");
+    }
+}
+
+#[test]
+fn solve_trivial_disjuncts_reject_false_goals() {
+    for goal in [
+        "false or n == 1u64",
+        "n == 1u64 or false",
+        "(n == 1u64 implies false) or n == 2u64",
+    ] {
+        let source = format!("theorem invalid(n: uint64) {{ ensures {goal} by solve(); }}");
+        verify_c0_sources(&source, &[]).expect_err("neither disjunct holds for every n");
+    }
+}
