@@ -2,7 +2,7 @@
 
 Status: option (a) accepted by the maintainer, 2026-11-10 (decisions D1-D6
 below). PR 0 (this note and a bug fix) has landed. Line numbers are at
-`origin/master` b247d7499 plus PR 0's changes (`statements.rs`,
+`origin/master` e01ca8136 plus PR 0's changes (`statements.rs`,
 `primitives.rs`).
 
 This is the kernel prerequisite for `roadmap/standard-library.md` step 7,
@@ -36,10 +36,10 @@ contract happens to prove.
   `statements.rs:1501-1512`, via `element_count_from_bytes`,
   `src/kernel/reasoning/path_facts.rs:834-861`, which matches only an Int32
   `Multiply` or a 32-bit constant).
-- **Heap state.** `CHeapMemory` (`src/kernel/primitives.rs:8495-8542`) maps
+- **Heap state.** `CHeapMemory` (`src/kernel/primitives.rs:8508-8555`) maps
   pointers to untyped `MachineTerm` extents (live, deallocated, pending,
   zeroed-prefix); so do `CPendingReallocation.old_bytes` and `CBlock.size`
-  (`primitives.rs:8675-8677`). The width is implicit; `memory_state.rs:4008`
+  (`primitives.rs:8688-8690`). The width is implicit; `memory_state.rs:4008`
   labels a reallocation's old bytes `CValue::Int32`.
 - **Offsets** are already width-typed (`PointerOffsetTerm::Int32Scaled` /
   `Int64Scaled{unsigned}`, `primitives.rs:1018-1035`). `pointer_index_term`
@@ -82,8 +82,8 @@ contract happens to prove.
   (`resource_algebra.rs:145`, `:1150-1182`), and `concrete_memory_range_bounds`
   gives up on wide ranges (`contracts.rs:2433-2439`): wide ranges are never
   interval-indexed.
-- **Diagnostic.** `CRuntimeError::HeapAllocationSize` (`primitives.rs:7406`,
-  message `:7747`; `HeapAllocationSizeAboveInt32` beside them;
+- **Diagnostic.** `CRuntimeError::HeapAllocationSize` (`primitives.rs:7419`,
+  message `:7760`; `HeapAllocationSizeAboveInt32` beside them;
   `src/surface/diagnostics.rs:1662`;
   `src/kernel/api/contract_certification.rs:841`).
 - **Docs.** `docs/reference/language/c.md:2154-2159, 2606-2650, 2675-2681`,
@@ -106,7 +106,7 @@ Why 32-bit: the heap model predates typed indices, when every range was
 | `statements.rs:1501-1738` | element width/count, size admission, positivity/fit |
 | `statements.rs:1929-2006, 2119-2184` | realloc admission and fit compares |
 | `statements.rs:2308, 2403-2409, 2560-2705` | free's range and token; pending resolution |
-| `primitives.rs:8495-8542, 8675-8677`; `memory_state.rs:3582-3587, 3946-3980, 4008` | untyped extents, implicit 32-bit reading |
+| `primitives.rs:8508-8555, 8688-8690`; `memory_state.rs:3582-3587, 3946-3980, 4008` | untyped extents, implicit 32-bit reading |
 | `operators.rs:2884-2990` | `pointer_block_bounds` |
 | `functions.rs:19235-19300` | contract `allocation(p, e*4)` |
 | `resource_algebra.rs:145, 1177-1182` | interval-index coordinates (not heap-specific) |
