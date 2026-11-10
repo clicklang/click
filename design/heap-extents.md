@@ -2,7 +2,7 @@
 
 Status: option (a) accepted by the maintainer, 2026-11-10 (decisions D1-D6
 below). PR 0 (this note and a bug fix) has landed; PR 1 (the tagged extent,
-stage 1) is done. Line numbers in section 1 are at `origin/master` e01ca8136
+stage 1) and PR 2 (kernel 64-bit `malloc` and `free`, stage 2) are done. Line numbers in section 1 are at `origin/master` e01ca8136
 plus PR 0's changes (`statements.rs`, `primitives.rs`); stage 1 names its
 sites by function.
 
@@ -269,31 +269,76 @@ the `UInt64` kind.
    `int32`; stage 3 makes it refuse a cross-kind pair (D5). Free's token
    lookup indexes by name, arity and base, so it already finds a `uint64`
    token.
-2. **Kernel 64-bit malloc and free, with the size proof.** Symbolic
-   `UInt64`/`Int64` sizes: raw path decides `0 < E <= i64::MAX`; element path
-   decides `1 <= n <= i64::MAX / w` and forms the exact `uint64 multiply(n, w)`;
-   if that guard is undecided, malloc evaluates the C product as the raw size
-   (a wrapped value is a real block). `new_wide` range, `UInt64` token,
-   kind-aware free, `pointer_block_bounds` reads a `UInt64` size as `uint64`,
-   `element_count_from_bytes` gains a `UInt64 Multiply` / `uint64` constant
-   arm, `enough_space` in the size's format, separation through the widened
-   `element_count_from_bytes`. Message for an undecided guard names the
-   `PTRDIFF_MAX` bound (D3). Regressions (mdtests):
-   - bounded `size_t` `malloc(n * sizeof(uint32_t))`, `p[n - 1]` written and freed;
-   - `malloc(len + 1)`, `p[len] = 0`; `malloc((size_t)count * sizeof(T))`;
-   - unbounded `size_t n` refused with the new message (replaces
-     `a_symbolic_64_bit_malloc_size_names_the_32_bit_heap_extent.md`);
-   - `n <= 2^62`, `malloc(n * 8)` refused (guard undecided);
-   - `n == 2^62 + 1`, `malloc(n * 4)` is the wrapped 4-byte block; `p[1]` refused;
-   - interior free and double free of a wide block refused.
-
-   Kernel unit tests for the token and range kinds after resolution. Scaling:
-   wide-heap copies of `normalizing_allocation_tokens_in_distinct_heap_blocks_is_linear`
-   (`src/scaling_tests/kernel/tests/memory_scaling_tests.rs:349`),
-   `one_heap_store_is_logarithmic_in_unrelated_allocations` (`:434`),
-   `stores_beside_many_owned_ranges_scale_near_linearly`, and one of
-   `src/scaling_tests/kernel/functions/allocation_continuity_tests.rs`, at
-   N, 2N, 4N, 8N.
+2. **Done: kernel 64-bit malloc and free, with the size proof.**
+   `allocation_size_value` gives a symbolic `Int64`/`UInt64` size
+   `kind: UInt64` (a `long` as its `size_t` conversion, so a negative one
+   fails the guard); a 64-bit size the facts fix to a constant stays a
+   32-bit constant when it fits `uint32` (D2) and is a `uint64` constant
+   otherwise. `allocation_size_validity_refusal` decides, through
+   `uint64_allocation_size_is_exact`: element path `1 <= n <= i64::MAX / w`,
+   then the exact `uint64 n * w`; raw path `1 <= E <= i64::MAX`, and when
+   `E` is itself a top-level `uint64` product with a constant `k`,
+   `1 <= other <= i64::MAX / k` instead (a product of two symbolic factors
+   is refused). That last rule is what makes the kind-aware reader sound: a
+   `size_t` product may wrap without undefined behavior, and its wrapped
+   value at most `PTRDIFF_MAX` says nothing about its factor, so a reader
+   may take `n * k` bytes as `n` elements only because every admitted
+   `uint64` product extent has its factor bound decided. Wrapped products:
+   when the element guard is undecided for a `size_t` count, the size is
+   C's `size_t` product `uint64 n * w`, evaluated through the same constant
+   folding (D2) and admitted as a raw size. A count the facts fix gives the
+   wrapped constant (`n == 2^62 + 1`, `malloc(n * 4)` is 4 bytes); a
+   symbolic one is a top-level product whose factor bound already failed,
+   so it is refused. A `long` count is never wrapped (`long * int` may
+   overflow). calloc and `realloc` to or of a `UInt64` size stay refused
+   (stage 4); calloc never forms its product. `realloc(NULL, n)` is
+   `malloc(n)` and admits one.
+   Readers: `element_count_from_bytes` is unchanged; the kind-aware entry
+   point is `HeapExtent::element_count` (`uint64_element_count_from_bytes`
+   for a `UInt64` extent: `n` of `uint64 n * w`, or a divisible `uint64`
+   constant), used by the heap range of malloc, free and pending resolution
+   (`heap_range_element_count`) and by `is_proven_separate_from_allocation*`.
+   `pointer_block_bounds`: a 64-bit offset into a `UInt64` block compares
+   with its element count where the extent spells one; a 32-bit offset
+   (`wide_block_bounds_of_32_bit_offset`) compares a sign-extended scaled
+   `int32` index with that count at `int64`, any other exact offset with
+   the byte count, and an offset with no exact reading has no normal path.
+   Left conservative for a `UInt64` block (each gives up rather than
+   misreads): `pointer_at_block_end_condition` (may be the end),
+   `proves_access_from_memory_block` (not loadable from the block alone;
+   access comes from the owned range), the derivation and
+   `CHeapAllocationFreed` byte terms (a free in the allocating function
+   matches the live extent; reinstating a claimed `UInt64` block's extent is
+   stage 3), zeroed prefixes. Diagnostic: `HeapAllocationSize` now reads
+   "heap allocation size must be proved to fit a heap block" and names the
+   `PTRDIFF_MAX` bounds. A 64-bit block cannot cross a call until stage 3
+   (a sidecar cannot spell its token). Regressions (mdtests):
+   `a_bounded_size_t_element_count_allocates_a_64_bit_block`,
+   `a_size_t_byte_count_plus_one_allocates_a_64_bit_block`,
+   `an_int_count_cast_to_size_t_allocates_a_64_bit_block`,
+   `a_size_t_product_byte_count_allocates_its_elements`,
+   `an_int_and_a_size_t_index_address_a_64_bit_block`,
+   `a_loop_writes_every_element_of_a_64_bit_block`,
+   `an_unbounded_size_t_malloc_size_is_refused` (replaces
+   `a_symbolic_64_bit_malloc_size_names_the_32_bit_heap_extent.md`),
+   `a_size_t_element_count_whose_product_may_wrap_is_refused`,
+   `a_wrapping_size_t_product_allocates_only_the_wrapped_bytes`,
+   `a_product_of_two_symbolic_size_t_sizes_is_refused`,
+   `a_store_past_a_64_bit_block_is_refused`,
+   `a_64_bit_block_freed_twice_is_refused`,
+   `an_interior_free_of_a_64_bit_block_is_refused`,
+   `a_store_into_a_freed_64_bit_block_is_refused`,
+   `a_symbolic_size_t_calloc_count_is_refused`,
+   `a_realloc_of_a_64_bit_block_is_refused`. Kernel unit tests
+   (`heap_tests.rs`: the token, extent and wide range after resolution; the
+   refusals; the wrapped block; `heap_extent_tests.rs`: the element count).
+   Scaling (`memory_scaling_tests.rs`):
+   `one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocations`
+   (pointer formation against the 64-bit extent and the store, beside N
+   wide-owned 64-bit blocks) and
+   `normalizing_64_bit_allocation_tokens_in_distinct_heap_blocks_is_linear`.
+   The surface `stores_beside_many_owned_ranges` and `allocation_continuity`
+   copies need a 64-bit block to cross a call, so they move to stage 3.
 3. **Sidecar and contract 64-bit byte count, and docs.** `allocation` argument 1
    accepts `uint64` (D4: `primitives.click`, `declaration_expansion.rs:926`,
    `type_validation.rs:3055-3090`); `functions.rs:19235` accepts `n * 8u64` and
@@ -315,7 +360,9 @@ the `UInt64` kind.
 
 Soundness of (a): a `UInt64` extent `E` is admitted only with `0 < E <= i64::MAX`
 decided (raw) or `1 <= n <= i64::MAX / w` and `E = n*w` (element, no wrap, so
-`E` is C's `size_t` value). Token and range both name `E`; the wide-range
+`E` is C's `size_t` value); a raw `E` that is a product with a constant `k`
+is admitted only with its other factor decided at most `i64::MAX / k`, so
+reading it back as elements is exact. Token and range both name `E`; the wide-range
 extent guard holds by construction; wide membership makes the scaled offset
 mathematical; calloc never evaluates its product; free and realloc consume
 exactly the recorded kind and extent. No new trusted assumption

@@ -2661,13 +2661,46 @@ This is a modeled C builtin, not general libc compatibility. Zero-size
 allocation, incomplete types, allocator results declared as `void *`,
 unmodeled allocator prototypes, and non-concrete zeroed-prefix `realloc` cases
 remain unsupported.
-Heap byte extents still use Click's checked 32-bit memory-block extent; a
-64-bit `size_t` extent is accepted when it is concrete or reduced by exact
-contract facts to a value that fits that extent. An upper bound on a symbolic
-64-bit size is not enough: `malloc`, `calloc` and `realloc` refuse it with
-`heap allocation size must be a 32-bit value or a known constant`
-(`mdtests/a_symbolic_64_bit_malloc_size_names_the_32_bit_heap_extent.md`).
-That extent is signed: a `uint32` byte count must also be bounded by
+
+A heap block's byte extent has the format of its size's C type
+(`design/heap-extents.md`). A size of 32 bits or narrower is a checked 32-bit
+extent, and so is a 64-bit (`size_t` or `long`) size that is concrete or that
+exact contract facts reduce to a constant that fits `uint32`. Any other 64-bit
+`malloc` size makes a 64-bit block: its `allocation` token holds a `uint64`
+byte count and its owned range has 64-bit indices, like a `size_t` parameter
+range, so `int`, `uint32` and `size_t` indices all address it. Verification
+must prove the size at least 1 and at most `PTRDIFF_MAX` bytes; there is no
+assumption that `malloc` returns null for a larger size. For
+`malloc(n * sizeof(T))` (or `malloc(n * w)`) with a 64-bit `n` it must prove
+`1 <= n <= PTRDIFF_MAX / w`; the block is then `n * w` bytes, owned as
+`data[0..n]`
+(`mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md`,
+`mdtests/an_int_count_cast_to_size_t_allocates_a_64_bit_block.md`,
+`mdtests/a_size_t_byte_count_plus_one_allocates_a_64_bit_block.md`,
+`mdtests/an_int_and_a_size_t_index_address_a_64_bit_block.md`). Otherwise
+the size is C's `size_t` product, which wraps without undefined behavior: a
+count the facts fix to a constant allocates the wrapped number of bytes
+(`n == 2^62 + 1` makes `malloc(n * 4)` a 4-byte block,
+`mdtests/a_wrapping_size_t_product_allocates_only_the_wrapped_bytes.md`), and
+a symbolic product is refused
+(`mdtests/a_size_t_element_count_whose_product_may_wrap_is_refused.md`). A
+byte count that is itself a product with a constant, such as
+`size_t bytes = n * 4; malloc(bytes)`, needs the same bound on its other
+factor; a product of two symbolic sizes is refused. A `long` count is never
+taken as a wrapped product. These refusals say
+`heap allocation size must be proved to fit a heap block`
+(`mdtests/an_unbounded_size_t_malloc_size_is_refused.md`). `free` of a 64-bit
+block consumes its `uint64` token and its complete wide range; a double free,
+an interior free, and a use after free are refused as for any block.
+`calloc` of a symbolic 64-bit size, `realloc` to one, and `realloc` of a
+64-bit block are not supported yet and are refused with the same message
+(`mdtests/a_symbolic_size_t_calloc_count_is_refused.md`,
+`mdtests/a_realloc_of_a_64_bit_block_is_refused.md`); `realloc(NULL, n)` is
+`malloc(n)`. A sidecar `allocation` byte count is still `int32`, so a 64-bit
+block cannot yet be returned to a caller or passed to a callee that frees
+it: it must be freed in the function that allocates it.
+
+A 32-bit extent is signed: a `uint32` byte count must also be bounded by
 `INT32_MAX`, and a `uint32` element count by `INT32_MAX` divided by the
 element size. Otherwise `malloc`, `calloc` and `realloc` refuse it with
 `heap allocation size must be known to fit the signed 32-bit heap extent`
