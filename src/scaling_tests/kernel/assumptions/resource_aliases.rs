@@ -90,7 +90,7 @@ fn selected_read_validity_and_kept_frames_ignore_large_alias_classes() {
         };
         let field = source.offset_by_bytes(4);
         let memory = CMemory::new()
-            .with_heap_allocation_claim(source.clone(), 16)
+            .with_heap_allocation_claim(source.clone(), HeapExtent::int32(16))
             .unwrap();
         let mut context =
             PureFactContext::new().assume_proposition(Proposition::CMemoryReadDefined {

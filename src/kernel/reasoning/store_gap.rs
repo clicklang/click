@@ -59,9 +59,11 @@
 //! bulk selection with per-cell stores; production stores do not recheck the
 //! cells their producer has already proved separate.
 
+#[cfg(test)]
+use crate::kernel::MachineTerm;
 use crate::kernel::binary_term;
 use crate::kernel::bits32_constant;
-use crate::kernel::{MachineTerm, Pointer, PointerOffsetTerm, PureFactContext};
+use crate::kernel::{Pointer, PointerOffsetTerm, PureFactContext};
 
 /// The widest cell there is: no `CValue` is wider, and a cell holding
 /// `Void` stands in this width too.
@@ -206,9 +208,9 @@ pub(in crate::kernel) fn anchor_is_normal(
         return false;
     }
     if !anchor
-        .scaled_values()
+        .scaled_operands()
         .into_iter()
-        .all(|value| matches!(value, MachineTerm::Variable(_)))
+        .all(|value| value.operand_view().variable().is_some())
     {
         return false;
     }

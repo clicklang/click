@@ -710,7 +710,7 @@ fn checks_population_authority_exchange(
     if !imported_retirement
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-                && before.memory.live_heap_block_size(anchor).is_some()
+                && before.memory.live_heap_block_extent(anchor).is_some()
                 || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population authority rewrite requires live base storage".into());
@@ -921,7 +921,7 @@ fn checks_population_member_exchange(
     if !imported_member_exchange
         && (anchor.offset != crate::kernel::PointerOffsetTerm::Constant(0)
             || !(matches!(&anchor.block, crate::kernel::PointerBlock::Heap(_))
-                && before.memory.live_heap_block_size(anchor).is_some()
+                && before.memory.live_heap_block_extent(anchor).is_some()
                 || anchor.block.is_local_block() && before.memory.has_block(&anchor.block)))
     {
         return Err("population member rewrite requires live base storage".into());

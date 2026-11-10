@@ -1017,7 +1017,10 @@ fn materialized_load_is_unchanged(
             Pointer {
                 offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
                 ..
-            } => load_of(bits),
+            } => bits
+                .operand_view()
+                .read_source()
+                .and_then(|leaf| load_of(&leaf)),
             _ => return false,
         },
         _ => return false,
@@ -2251,16 +2254,20 @@ fn heap_free_effect_is_valid(
     allocation_base: &Pointer,
     bytes: &MachineTerm,
 ) -> bool {
-    let Some(live) = (if before.live_heap_block_size(allocation_base).is_some() {
+    // The effect states a byte term only; a claim it reinstates is 32-bit,
+    // so a 64-bit block's free is not matched here (`design/heap-extents.md`).
+    let Some(live) = (if before.live_heap_block_extent(allocation_base).is_some() {
         Some(before.clone())
     } else {
         before
             .clone()
-            .with_heap_allocation_claim(allocation_base.clone(), bytes.clone())
+            .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(bytes.clone()))
     }) else {
         return false;
     };
-    live.live_heap_block_size(allocation_base) == Some(bytes)
+    live.live_heap_block_extent(allocation_base)
+        .map(HeapExtent::bytes)
+        == Some(bytes)
         && live
             .free_heap_block(allocation_base, &PureFactContext::new())
             .is_ok_and(|expected| expected == *after)
@@ -3580,7 +3587,7 @@ mod heap_status_equality_tests {
         let mut base = CMemory::new().with_block(block.block.clone(), 4);
         std::sync::Arc::make_mut(&mut base.heap)
             .live_allocations
-            .insert(block.clone(), MachineTerm::constant(4));
+            .insert(block.clone(), HeapExtent::int32(4));
         std::sync::Arc::make_mut(&mut base.heap)
             .zeroed_allocations
             .insert(block.clone());

@@ -4205,6 +4205,37 @@ pub(crate) fn offsets_have_same_canonical_form(
 /// Whether a term contains any load atom the canonical form could rewrite.
 /// Load-free terms are fixed points of [`canonical_term`], which the
 /// comparators use to answer load-free mismatches without a walk.
+pub(in crate::kernel) fn operand_mentions_a_memory_load(
+    operand: crate::kernel::MachineOperandView<'_>,
+) -> bool {
+    use crate::kernel::MachineOperandView as V;
+    let V::Shared(root) = operand else {
+        let V::Legacy(term) = operand else {
+            unreachable!()
+        };
+        return term_mentions_a_memory_load(term);
+    };
+    if operand.read().is_some() {
+        return true;
+    }
+    if let Some(leaf) = root.machine_conversion_leaf() {
+        return term_mentions_a_memory_load(leaf);
+    }
+    let checkpoint = || !crate::instrumentation::deadline_exceeded_with_work(1);
+    let Some(reads) = crate::kernel::shared_machine_read_leaves(root, checkpoint) else {
+        return true;
+    };
+    if !reads.is_empty() {
+        return true;
+    }
+    let Some(leaves) = crate::kernel::shared_machine_conversion_leaves(root, checkpoint) else {
+        return true;
+    };
+    leaves.iter().any(|(_, leaf)| {
+        term_mentions_a_memory_load(leaf.machine_conversion_leaf().expect("conversion leaf"))
+    })
+}
+
 pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool {
     match term {
         bits32_constant!(_)
@@ -4213,9 +4244,9 @@ pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool
         | uint64_constant!(_)
         | native_constant!(_, _) => false,
         MachineTerm::MemoryLoad(_, _, _) => true,
-        MachineTerm::PointerAddress(pointer, _) => {
-            pointer.offset.any_scaled_value(term_mentions_a_memory_load)
-        }
+        MachineTerm::PointerAddress(pointer, _) => pointer
+            .offset
+            .any_scaled_operand(|value| operand_mentions_a_memory_load(value.operand_view())),
         MachineTerm::If {
             condition,
             then_term,
@@ -4253,10 +4284,13 @@ pub(in crate::kernel) fn term_mentions_a_memory_load(term: &MachineTerm) -> bool
 
 fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
     match condition {
-        ConditionTerm::PointerValueEqual(left, right) => left
-            .pointers()
-            .chain(right.pointers())
-            .any(|p| p.offset.any_scaled_value(term_mentions_a_memory_load)),
+        ConditionTerm::PointerValueEqual(left, right) => {
+            left.pointers().chain(right.pointers()).any(|p| {
+                p.offset.any_scaled_operand(|value| {
+                    operand_mentions_a_memory_load(value.operand_view())
+                })
+            })
+        }
 
         // Until memory canonicalization traverses ADTs, conservatively disable
         // the memory-free fast path for this logical condition.
@@ -4295,7 +4329,7 @@ fn condition_mentions_a_memory_load(condition: &ConditionTerm) -> bool {
 }
 
 fn offset_mentions_a_memory_load(offset: &PointerOffsetTerm) -> bool {
-    offset.any_scaled_value(term_mentions_a_memory_load)
+    offset.any_scaled_operand(|value| operand_mentions_a_memory_load(value.operand_view()))
 }
 
 /// The load variable representing one load identity: the pair of a memory

@@ -1,5 +1,4 @@
 use super::*;
-use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 use crate::kernel::{MachineCastSpelling, MachineTerm};
 use crate::kernel::{bits32_constant, constant_u32};
@@ -1919,21 +1918,22 @@ fn drop_aligned_scaled_addends(
     let alignment = i64::try_from(alignment).ok()?;
     // A struct pointer steps by `(uint8 *)p + i * sizeof(struct)`, so the
     // scale may sit inside the index as a constant factor.
-    fn constant_factor(term: &MachineTerm) -> Option<i64> {
-        match term {
-            binary_term!(Int32, Multiply, left, right) => left
-                .as_const()
-                .map(|constant| i64::from(constant as i32))
-                .or_else(|| right.as_const().map(|constant| i64::from(constant as i32))),
-            _ => None,
-        }
+    fn constant_factor(term: crate::kernel::MachineOperandView<'_>) -> Option<i64> {
+        let (MachineIntegerType::Int32, crate::kernel::MachineBinaryOp::Multiply, [left, right]) =
+            term.binary()?
+        else {
+            return None;
+        };
+        left.word32_constant()
+            .or_else(|| right.word32_constant())
+            .map(|constant| i64::from(constant as i32))
     }
     let divisible = |part: &PointerOffsetTerm| match part {
         PointerOffsetTerm::Int32Scaled { value, byte_width }
         | PointerOffsetTerm::Int64Scaled {
             value, byte_width, ..
         } => {
-            let scale = constant_factor(value)
+            let scale = constant_factor(value.operand_view())
                 .and_then(|factor| factor.checked_mul(*byte_width))
                 .unwrap_or(*byte_width);
             scale != 0 && scale % alignment == 0

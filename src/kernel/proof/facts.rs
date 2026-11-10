@@ -3412,10 +3412,10 @@ fn collect_load_address_atoms(
             }
             PointerOffsetTerm::Int32Scaled { value, .. }
             | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                if let Some(atom) = bitvector_equality_atom_key(value) {
+                if let Some(atom) = selected_atoms::root_atom(value.operand_view()) {
                     atoms.insert(atom);
                 }
-                if let MachineTerm::Variable(inner) = value.as_ref() {
+                if let Some(inner) = value.operand_view().variable() {
                     collect_load_address_atoms(*inner, atoms, depth + 1);
                 }
             }
@@ -3444,7 +3444,7 @@ fn collect_pointer_offset_bitvector_atoms(
     offset: &PointerOffsetTerm,
     atoms: &mut BTreeSet<BitvectorEqualityAtomKey>,
 ) {
-    offset.for_each_scaled_value(|value| collect_bitvector_atoms(value, atoms));
+    offset.for_each_scaled_operand(|value| selected_atoms::collect(value, atoms));
 }
 
 fn index_quantified_fact(

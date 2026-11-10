@@ -96,6 +96,36 @@ impl EqualityGraph {
         } else {
             None
         };
+        if let Some(view) =
+            crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+            && matches!(
+                view.format,
+                MachineIntegerType::Int32 | MachineIntegerType::UInt32
+            )
+            && view.relation == CompareRelation::Equal
+            && !view.negated
+        {
+            let [a, b] = view.operands.each_ref().map(|v| v.operand_view());
+            for (term, literal) in [(a, b), (b, a)] {
+                if let Some(bits) = literal.word32_constant() {
+                    crate::instrumentation::record_deterministic_work(1);
+                    let key = (term.retain(MachineIntegerType::Int32), bits);
+                    let count = self
+                        .admitted
+                        .scalar_literal_inputs
+                        .get(&key)
+                        .copied()
+                        .unwrap_or(0);
+                    if insert {
+                        self.admitted.scalar_literal_inputs.insert(key, count + 1);
+                    } else if count > 1 {
+                        self.admitted.scalar_literal_inputs.insert(key, count - 1);
+                    } else {
+                        self.admitted.scalar_literal_inputs.remove(&key);
+                    }
+                }
+            }
+        }
         let (variables, deferred) = if insert {
             let mut variables = BTreeSet::new();
             let deferred =
@@ -359,6 +389,27 @@ impl EqualityGraph {
     /// The existing class summary nominates the constant, but does not supply
     /// the written premise. State that equality explicitly when a chain or
     /// arithmetic folding is needed to derive it. Ambiguous classes decline.
+    pub(in crate::kernel) fn direct_scalar_constant_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<u32> {
+        if let MachineOperandView::Legacy(term) = term {
+            return self.direct_scalar_constant(term);
+        }
+        if let Some(bits) = term.word32_constant() {
+            return Some(bits);
+        }
+        use crate::kernel::assumptions::SignedConstantResolution as R;
+        let (_, R::Known(value)) = self.scalar_normalization_class_view(term)? else {
+            return None;
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        self.admitted
+            .scalar_literal_inputs
+            .contains_key(&(term.retain(MachineIntegerType::Int32), value as u32))
+            .then_some(value as u32)
+    }
+
     pub(in crate::kernel) fn direct_scalar_constant(&self, term: &MachineTerm) -> Option<u32> {
         if let Some(value) = term.as_const() {
             return Some(value);

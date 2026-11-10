@@ -429,7 +429,7 @@ fn a_release_of_another_object_keeps_one_version() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(fresh.clone(), 16)
+        .with_heap_allocation_claim(fresh.clone(), HeapExtent::int32(16))
         .expect("a fresh allocation claim");
     let freed = live
         .clone()
@@ -465,7 +465,7 @@ fn a_release_inside_the_argument_object_stops_a_block_fact() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = entry_memory()
-        .with_heap_allocation_claim(inside.clone(), 16)
+        .with_heap_allocation_claim(inside.clone(), HeapExtent::int32(16))
         .expect("a fresh allocation claim");
     let freed = live
         .free_heap_block(&inside, &PureFactContext::new())
@@ -531,7 +531,7 @@ fn a_pending_allocation_records_nothing_a_block_can_observe() {
             block: PointerBlock::Symbolic(Variable(1_000)),
             offset: PointerOffsetTerm::Constant(0),
         },
-        MachineTerm::constant(16),
+        HeapExtent::int32(16),
         false,
     );
     assert_eq!(entry.blocks, requested.blocks);

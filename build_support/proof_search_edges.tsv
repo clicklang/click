@@ -344,7 +344,8 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_constructor_g
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_constructor_guard_refutation	try_direct_model_equality_rewrite_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_constructor_witness_exists_closure	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_constructor_witness_exists_closure	try_solve_closure_with_surfaces	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	driver	3
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	driver	6
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	try_discharged_consequent_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_logical_closure	try_quantified_conjunct_projection_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_direct_model_equality_rewrite_closure	try_indexed_direct_equality_rewrite	1

@@ -675,9 +675,10 @@ sums nextest's per-test durations while the gate runs tests in parallel.
   `an_interface_fact_needs_its_terms_defined_in_each_arm.md` and
   `array_fact_does_not_survive_a_branch_that_may_write_it.md`.
 - **Examples (384 test-seconds, 58 projects).** `arena` takes 80s and
-  `rbtree/rbtree-model` 53s. `EXAMPLE_PARTITION` takes every n-th sorted
-  name, which puts both in shard 2/2: 248 test-seconds against 136, the cause
-  of CI's 113s and 59s examples shards.
+  `rbtree/rbtree-model` 53s. `EXAMPLE_PARTITION` once took every n-th
+  sorted name, which put both in shard 2/2: 248 test-seconds against 136, the
+  cause of CI's 113s and 59s examples shards. It now balances the shards by
+  `EXAMPLE_COSTS` in `tests/examples.rs`.
 - **Shard overhead.** Each of the 14 CI shards spends 20-30s on checkout,
   artifact download and setup. A Rust shard spent 11s downloading Charon and
   14s restoring its compiler runtime to run 23s of tests.
@@ -753,11 +754,12 @@ CI uses these internal modes for code-affecting changes:
 - `--ci-prepare ARTIFACTS` builds both exporters and compiles the single
   fast-gate test executable into an archive. It does not execute tests.
 - `--ci-shard ARTIFACTS SUITE [SHARD/TOTAL]` runs the selected archive tests
-  without compiling Click or either exporter. Seven deterministic nextest
+  without compiling Click or either exporter. Six deterministic nextest
   hash partitions cover the unit, C, and C++ import tests, and two more cover
-  the Rust import tests, which alone need Charon; mdtests run on four
-  runners, each taking every fourth file by `MDTEST_PARTITION`; examples run
-  on two, by `EXAMPLE_PARTITION`. The build job saves its build snapshot only
+  the Rust import tests, which alone need Charon; mdtests run on five
+  runners, each taking every fifth file by `MDTEST_PARTITION`; examples run
+  on two, split by `EXAMPLE_PARTITION` so that their recorded costs
+  (`EXAMPLE_COSTS` in `tests/examples.rs`) balance. The build job saves its build snapshot only
   on a push to `master`, because every shard waits for that job to end. The build job takes about six of the ten minutes, so a shard has to
   finish in under four.
 

@@ -2886,14 +2886,21 @@ fn pointer_block_bounds(
     pointer: &Pointer,
     byte_width: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let Some(block_size) = state.memory().block_size(&pointer.block).cloned() else {
+    // The block's byte count is read through its extent kind: a 32-bit
+    // extent (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
+    // and is an `int32` in the 32-bit ones; the 32-bit comparisons have no
+    // reading of a 64-bit extent.
+    let Some(extent) = state.memory().block_extent(&pointer.block).cloned() else {
         return Some(Vec::new());
     };
 
     // Concrete offsets can exceed the signed bitvector representation. Check
     // those directly against the byte-sized block instead of silently
     // rebuilding them through a wrapping int32 term.
-    if let (Some(offset), Some(size)) = (pointer.offset.as_const(), block_size.as_const()) {
+    if let (Some(offset), Some(size)) = (
+        pointer.offset.as_const(),
+        extent.int32_bytes().and_then(MachineTerm::as_const),
+    ) {
         if offset < 0 || offset > i64::from(size) {
             return Some(vec![PointerFormationGuard {
                 condition: ConditionTerm::signed_less_equal(
@@ -2917,14 +2924,14 @@ fn pointer_block_bounds(
         // the block can hold. Rebuilding it as a 32-bit residue can certify an
         // index several GiB past the block as a small in-bounds number.
         let limit = if *unsigned {
-            let bytes = MachineTerm::uint64_from_32(block_size.clone());
+            let bytes = extent.uint64_bytes();
             if *scale == 1 {
                 bytes
             } else {
                 MachineTerm::uint64_divide(bytes, MachineTerm::uint64_constant(*scale as u64))
             }
         } else {
-            let bytes = MachineTerm::int64_from_uint32(block_size.clone());
+            let bytes = extent.int64_bytes();
             if *scale == 1 {
                 bytes
             } else {
@@ -2969,16 +2976,14 @@ fn pointer_block_bounds(
                 value: true,
             },
             PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_less_equal(
-                    offset,
-                    MachineTerm::int64_from_uint32(block_size),
-                ),
+                condition: ConditionTerm::int64_signed_less_equal(offset, extent.int64_bytes()),
                 value: true,
             },
         ]);
         return Some(guards);
     }
 
+    let block_size = extent.int32_bytes().cloned()?;
     if byte_width == 1
         && let Some(guards) = strided_block_bounds(&pointer.offset, &block_size)
     {
@@ -5257,7 +5262,13 @@ fn pointer_at_block_end_condition(state: &CState, pointer: &Pointer) -> Option<C
     if displacement.as_const() == Some(0) {
         return None;
     }
-    let Some(size) = state.memory().block_size(&pointer.block).cloned() else {
+    // The end is compared as a 32-bit offset; a 64-bit extent may be it.
+    let Some(size) = state
+        .memory()
+        .block_extent(&pointer.block)
+        .and_then(HeapExtent::int32_bytes)
+        .cloned()
+    else {
         return Some(ConditionTerm::Constant(true));
     };
     match (displacement.as_const(), size.as_const()) {

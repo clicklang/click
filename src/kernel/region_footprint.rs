@@ -125,19 +125,14 @@ impl RegionFootprint {
                 if let Some(contents) = memory.blocks.get(block) {
                     // Zero-sized entries include execution bookkeeping markers;
                     // they name no program storage affected by the transition.
-                    if contents.size.as_const() == Some(0) {
+                    if contents.size().as_const() == Some(0) {
                         continue;
                     }
                     extra_effect = true;
-                    members.push_back(CResource::Memory(CMemoryRange::new_with_element_width(
-                        Pointer {
-                            block: block.clone(),
-                            offset: PointerOffsetTerm::Constant(0),
-                        },
-                        0u32.into(),
-                        contents.size.clone(),
-                        1,
-                    )));
+                    members.push_back(CResource::Memory(contents.extent().byte_range(Pointer {
+                        block: block.clone(),
+                        offset: PointerOffsetTerm::Constant(0),
+                    })));
                 }
             }
         }

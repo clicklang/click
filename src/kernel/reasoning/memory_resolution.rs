@@ -3269,14 +3269,14 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     let mut uninitialized = heap_shell.clone();
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), MachineTerm::constant(4));
+        .insert(heap_pointer.clone(), HeapExtent::int32(4));
     std::sync::Arc::make_mut(&mut uninitialized.heap)
         .uninitialized_allocations
         .insert(heap_pointer.clone());
     let mut zeroed = heap_shell;
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .live_allocations
-        .insert(heap_pointer.clone(), MachineTerm::constant(4));
+        .insert(heap_pointer.clone(), HeapExtent::int32(4));
     std::sync::Arc::make_mut(&mut zeroed.heap)
         .zeroed_allocations
         .insert(heap_pointer.clone());
@@ -3304,7 +3304,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
                 block: PointerBlock::Heap(7_620_003),
                 offset: PointerOffsetTerm::Constant(0),
             },
-            MachineTerm::constant(4),
+            HeapExtent::int32(4),
         );
     assert!(
         memories_match_for_pointer_load(&concrete_memory, &with_unrelated_heap, &concrete),
@@ -3335,7 +3335,7 @@ fn unrelated_snapshots_do_not_erase_object_or_heap_state_visible_to_the_load() {
     };
     let with_pending = concrete_memory.clone().with_pending_heap_allocation(
         pending_base,
-        MachineTerm::constant(4),
+        HeapExtent::int32(4),
         false,
     );
     assert!(

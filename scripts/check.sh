@@ -81,9 +81,9 @@ if [[ "${1:-}" == "--ci-shard" ]]; then
             export MDTEST_PARTITION="$partition"
             ;;
         examples)
-            # The example-project harness takes every n-th example by
-            # `EXAMPLE_PARTITION`; the binary's other tests run in the unit
-            # shards.
+            # The example-project harness takes one cost-balanced shard of
+            # the examples by `EXAMPLE_PARTITION`; the binary's other tests
+            # run in the unit shards.
             filter='test(=gate_tests::examples::example_projects)'
             nextest_args=(--no-capture)
             export EXAMPLE_PARTITION="$partition"

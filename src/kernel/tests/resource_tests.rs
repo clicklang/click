@@ -6156,7 +6156,7 @@ fn named_population_members_keep_identity_and_fields_independent_of_count() {
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
-                .with_heap_allocation_claim(pointer, 4)
+                .with_heap_allocation_claim(pointer, HeapExtent::int32(4))
                 .unwrap(),
         );
     created.record_population_storage_creation(block.clone());
@@ -6316,7 +6316,7 @@ fn predicate_population_snapshot_reads_saved_count_without_transfer_rights() {
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
-                .with_heap_allocation_claim(pointer.clone(), 4)
+                .with_heap_allocation_claim(pointer.clone(), HeapExtent::int32(4))
                 .unwrap(),
         );
     created.record_population_storage_creation(pointer.block.clone());

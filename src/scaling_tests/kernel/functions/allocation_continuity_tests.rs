@@ -37,7 +37,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
             for index in 0..size {
                 let object = heap(931_000 + index as u64);
                 memory = memory
-                    .with_heap_allocation_claim(object.clone(), bytes.clone())
+                    .with_heap_allocation_claim(object.clone(), HeapExtent::int32(bytes.clone()))
                     .expect("a fresh live object");
                 kept = kept.unchecked_with_fact(CResourceFact::own_composite(
                     "boxed".into(),
@@ -66,7 +66,7 @@ fn allocating_call_does_not_expand_the_callers_kept_objects() {
             });
             let (after, _, retired) = result.expect("an allocating call");
             assert!(retired.is_empty());
-            assert!(after.live_heap_block_size(&created).is_some());
+            assert!(after.live_heap_block_extent(&created).is_some());
             (size, work)
         })
         .collect::<Vec<_>>();

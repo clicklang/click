@@ -187,9 +187,30 @@ pub(in crate::kernel) fn signed_byte_sum_is_nonwrapping(
     sum: &MachineTerm,
     mut proves_signed_less_equal: impl FnMut(&MachineTerm, &MachineTerm) -> bool,
 ) -> bool {
+    signed_byte_sum_is_nonwrapping_views(
+        MachineOperandView::Legacy(left),
+        MachineOperandView::Legacy(right),
+        MachineOperandView::Legacy(sum),
+        |left, right| {
+            let (MachineOperandView::Legacy(left), MachineOperandView::Legacy(right)) =
+                (left, right)
+            else {
+                unreachable!()
+            };
+            proves_signed_less_equal(left, right)
+        },
+    )
+}
+
+pub(in crate::kernel) fn signed_byte_sum_is_nonwrapping_views(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+    sum: MachineOperandView<'_>,
+    mut proves_signed_less_equal: impl FnMut(MachineOperandView<'_>, MachineOperandView<'_>) -> bool,
+) -> bool {
     let zero = MachineTerm::constant(0);
-    proves_signed_less_equal(&zero, left)
-        && proves_signed_less_equal(&zero, right)
+    proves_signed_less_equal(MachineOperandView::Legacy(&zero), left)
+        && proves_signed_less_equal(MachineOperandView::Legacy(&zero), right)
         && proves_signed_less_equal(left, sum)
 }
 
@@ -1479,14 +1500,19 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        let Some(block) = memory.blocks.get(&pointer.block) else {
+        // The region proof compares 32-bit extents.
+        let Some(bytes) = memory
+            .blocks
+            .get(&pointer.block)
+            .and_then(|block| block.extent().int32_bytes())
+        else {
             return false;
         };
         let base = Pointer {
             block: pointer.block.clone(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        self.proves_loadable_cell_from_region(&base, block.size(), pointer, byte_width)
+        self.proves_loadable_cell_from_region(&base, bytes, pointer, byte_width)
     }
 
     /// Coverage through an element count whose byte extent has its validity

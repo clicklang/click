@@ -70,6 +70,10 @@ struct UnitJson {
     /// A Rust unit's crate description.
     #[serde(default, rename = "crate")]
     crate_config: Option<CrateConfig>,
+    /// A Rust unit's iterator model: `"library"` reads an iterator through
+    /// its Click library contract. Temporary, while proofs migrate
+    /// (`design/rust-iterators.md`).
+    iterators: Option<String>,
     /// Whether a C++ unit is compiled with exceptions.
     exceptions: Option<bool>,
     /// Whether a C++ unit is compiled with RTTI.
@@ -338,6 +342,7 @@ impl Project {
                 .join(format!("{ARTIFACT_DIRECTORY}/{name}/{source}.ullbc")),
             source,
             crate_config: unit.spec.crate_config.clone(),
+            library_iterators: unit.spec.iterators.as_deref() == Some("library"),
             lock_path: self.lock_path(),
         })
     }
@@ -649,6 +654,19 @@ fn validate_unit(name: &str, unit: &UnitJson) -> Result<(), String> {
             "unit `{name}` names its compiler's variables in `environment`, which is now `env`; rename the field"
         ));
     }
+    match (unit.language.as_str(), unit.iterators.as_deref()) {
+        (_, None) | ("rust", Some("library")) => {}
+        ("rust", Some(other)) => {
+            return Err(format!(
+                "Rust unit `{name}` has `iterators` `{other}`; the only value is `library`"
+            ));
+        }
+        (_, Some(_)) => {
+            return Err(format!(
+                "unit `{name}` takes no `iterators`; only a Rust unit does"
+            ));
+        }
+    }
     match unit.language.as_str() {
         "c" => {
             if unit.crate_config.is_some() || unit.exceptions.is_some() || unit.rtti.is_some() {
@@ -820,6 +838,14 @@ mod tests {
             (
                 r#"{"typo": {"language": "c", "source": {"a.c": {}}}}"#,
                 "unknown field `source`",
+            ),
+            (
+                r#"{"c": {"language": "c", "iterators": "library", "sources": {"a.c": {}}}}"#,
+                "only a Rust unit does",
+            ),
+            (
+                r#"{"rs": {"language": "rust", "iterators": "hidden", "sources": {"a.rs": {}}}}"#,
+                "the only value is `library`",
             ),
         ] {
             let (_scratch, project) = project_with(units);

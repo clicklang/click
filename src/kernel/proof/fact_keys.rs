@@ -861,6 +861,8 @@ enum AlphaPureFunctionArgumentKey {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 enum AlphaCValueKey {
     Void,
+    /// A value of a specification type, keyed as the algebraic term it is.
+    Parameter(Box<AlphaAlgebraicKey>),
     Scalar(CType, AlphaBitvectorKey),
     Pointer {
         c_type: CType,
@@ -882,6 +884,13 @@ enum AlphaAlgebraicKey {
         algebraic_type: crate::kernel::AlgebraicType,
         variant: String,
         fields: Vec<AlphaAlgebraicValueKey>,
+    },
+    /// A function's algebraic result, such as the slice a library iterator
+    /// yields at an index: a binder among its arguments renames.
+    PureFunctionApplication {
+        algebraic_type: crate::kernel::AlgebraicType,
+        name: String,
+        arguments: Vec<AlphaPureFunctionArgumentKey>,
     },
 }
 
@@ -991,6 +1000,12 @@ enum AlphaPointerBlockKey {
     LoadedRead(AlphaRegisteredLoadId),
     Heap(u64),
     Temporary(u64),
+    /// A function's pointer result, such as a slice's data pointer: a binder
+    /// among its arguments renames.
+    PureFunctionApplication {
+        name: String,
+        arguments: Vec<AlphaPureFunctionArgumentKey>,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -2008,10 +2023,25 @@ fn alpha_pointer_key_with_bindings<const ALLOW_LOADS: bool>(
 ) -> Option<AlphaPointerKey> {
     alpha_work_checkpoint(bindings, 1)?;
     let block = match &pointer.block {
-        // Do not flatten a shared pointer-application DAG into a tree key.
-        // Exact identities and the checked substitution fallback remain
-        // available; refusing this optional alpha index cannot prove a fact.
-        PointerBlock::PureFunctionApplication(_) => return None,
+        // Keyed as the scalar and algebraic applications are, argument by
+        // argument: a quantified fact is found only by its key, so a block
+        // with none would hide every universal over a pointer result.
+        PointerBlock::PureFunctionApplication(application) => {
+            AlphaPointerBlockKey::PureFunctionApplication {
+                name: application.name().to_string(),
+                arguments: application
+                    .arguments()
+                    .iter()
+                    .map(|argument| {
+                        alpha_pure_function_argument_key_with_bindings::<ALLOW_LOADS>(
+                            argument,
+                            bindings,
+                            next_binder,
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            }
+        }
         PointerBlock::Concrete(name) => AlphaPointerBlockKey::Concrete(name.clone()),
         PointerBlock::StringLiteral { identity, bytes } => AlphaPointerBlockKey::StringLiteral {
             identity: identity.clone(),
@@ -2078,8 +2108,9 @@ fn alpha_c_value_key_with_bindings<const ALLOW_LOADS: bool>(
     alpha_work_checkpoint(bindings, 1)?;
     Some(match value {
         CValue::Void => AlphaCValueKey::Void,
-        // An abstract value has no scalar key; as an algebraic term does not.
-        CValue::Parameter(_) => return None,
+        CValue::Parameter(term) => AlphaCValueKey::Parameter(Box::new(
+            alpha_algebraic_key_with_bindings::<ALLOW_LOADS>(term, bindings, next_binder)?,
+        )),
         CValue::Pointer(pointer) => AlphaCValueKey::Pointer {
             c_type: pointer.c_type(),
             pointee_volatile: pointer.pointee_volatile(),
@@ -2193,8 +2224,23 @@ fn alpha_algebraic_key_with_bindings<const ALLOW_LOADS: bool>(
                 })
                 .collect::<Option<Vec<_>>>()?,
         },
+        AlgebraicTermNode::PureFunctionApplication { name, arguments } => {
+            AlphaAlgebraicKey::PureFunctionApplication {
+                algebraic_type: term.algebraic_type.clone(),
+                name: name.clone(),
+                arguments: arguments
+                    .iter()
+                    .map(|argument| {
+                        alpha_pure_function_argument_key_with_bindings::<ALLOW_LOADS>(
+                            argument,
+                            bindings,
+                            next_binder,
+                        )
+                    })
+                    .collect::<Option<Vec<_>>>()?,
+            }
+        }
         AlgebraicTermNode::Match { .. }
-        | AlgebraicTermNode::PureFunctionApplication { .. }
         | AlgebraicTermNode::If { .. }
         | AlgebraicTermNode::MemoryLoad { .. } => {
             return None;

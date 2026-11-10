@@ -5624,7 +5624,7 @@ fn freed_external_allocation_is_not_still_available() {
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(93_503)), 4),
     };
     let live = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), MachineTerm::constant(8))
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
         .expect("a fresh external allocation claim is accepted");
     let freed = live
         .clone()
@@ -8143,20 +8143,23 @@ fn existential_obligation_ignores_unrelated_facts() {
 /// unrelated loadable facts of other blocks.
 #[test]
 fn loadability_coverage_ignores_other_blocks() {
-    let memory = CMemory::new();
-    let base = Pointer {
-        block: "coverage-target".into(),
-        offset: PointerOffsetTerm::Constant(0),
-    };
-    let goal = Proposition::CMemoryLoadable {
-        memory: memory.clone(),
-        base: base.clone(),
-        bytes: MachineTerm::constant(16),
-        wide: false,
-    };
     let work = [16_usize, 64, 256]
         .into_iter()
         .map(|unrelated| {
+            // Compare cold samples: retained literal initialization must not
+            // be paid only by the first size in this independent-work test.
+            let _session = crate::kernel::VerificationSession::enter();
+            let memory = CMemory::new();
+            let base = Pointer {
+                block: "coverage-target".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let goal = Proposition::CMemoryLoadable {
+                memory: memory.clone(),
+                base: base.clone(),
+                bytes: MachineTerm::constant(16),
+                wide: false,
+            };
             let mut assumptions =
                 PureFactContext::new().assume_proposition(Proposition::CMemoryLoadable {
                     memory: memory.clone(),

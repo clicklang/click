@@ -1142,10 +1142,20 @@ impl Parser {
         let accessor = accessor.filter(|(accessor, _)| {
             crate::surface::RUST_ITERATOR_ACCESSORS.contains(&accessor.as_str())
         });
+        // A library-valued iterator is a value: `iter` names it, and its
+        // methods are resolved by its type.
+        let library = |iterator: &Option<crate::languages::c::syntax::RustLoopIterator>| {
+            iterator
+                .as_ref()
+                .is_some_and(|iterator| crate::surface::rust_library_iterator(iterator).is_some())
+        };
         let Some(index) = loop_index else {
             if self.loop_block_depth == 0 {
                 // Outside a loop, `iter` is the program's own name.
                 return Ok(None);
+            }
+            if self.rust_loop_iterators.iter().any(library) {
+                return Ok(Some(ContractExpression::Binding("iter".to_string())));
             }
             let Some((accessor, width)) = accessor else {
                 return Err(self.error(
@@ -1159,6 +1169,13 @@ impl Parser {
                 "iter.{accessor}"
             ))));
         };
+        if let Some(iterator) = self.rust_loop_iterators.get(index).filter(|i| library(i))
+            && let Some(local) = iterator
+                .as_ref()
+                .and_then(crate::surface::rust_library_iterator)
+        {
+            return Ok(Some(ContractExpression::Binding(local.to_string())));
+        }
         let Some((accessor, width)) = accessor else {
             return Ok(None);
         };

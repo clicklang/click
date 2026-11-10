@@ -244,16 +244,26 @@ The traits cannot yet be deleted. In particular:
   class API preserves syntax-sorted candidate order. Unsupported Integer
   equalities must be rejected before recording pointer-coordinate dependencies;
   they contribute no source edge and must not disable memory-query shortcuts.
-- `api/contract_certification.rs` passes scaled indices into signed bound,
-  memory-cell and selected-condition checks; `contract_claims.rs` also
-  inspects them through a native read helper. These are live checkers.
-- `difference_graph.rs`, `assumptions::{memory_reasoning,proposition_reasoning,
-  variable_chains}` and `condition_reasoning::order_paths` contain additional
-  native index inspectors/adapters. Separate root-only tests from recursive
-  checking and preserve their existing rules.
-- `PointerOffsetTerm::{scaled_values,for_each_scaled_value,any_scaled_value}`
-  still expose native operands. Their callers include checker walks as well
-  as output/diagnostic code; audit callers before deleting these APIs.
+- Contract certification now retains indices through byte bounds, additive
+  endpoint construction, shallow binder-coordinate collection and selected
+  read/cell equality. `contract_claims.rs` selects a read leaf directly. The
+  checking-only simplifier memoizes shared DAG nodes; it does not change lowering.
+- Difference-graph offset equality/residue, variable-chain index recognition,
+  alignment factor inspection, store-gap roots and scope roots use operand views.
+  Memory/binder walkers select retained leaves; memory provenance preserves
+  first-occurrence candidate order. Proof-fact atom collection reuses its shared
+  collector. Load-presence queries use syntax summaries, without enumerating
+  growing free-variable sets.
+- `PointerOffsetTerm::{for_each_scaled_value,any_scaled_value}` have no callers
+  and are removed. The retained alternatives are `for_each_scaled_operand` and
+  `any_scaled_operand`. `scaled_values` remains at native diagnostic/test
+  boundaries; checker root queries use `scaled_operands`.
+- Still live: native byte/element reconstruction in `reasoning/path_facts.rs`,
+  exact-rebuild and selected-index order checks in `condition_reasoning/order_paths`,
+  plus native consumers in `assumptions::{memory_reasoning,proposition_reasoning}`.
+  `scalar_evidence_class` and `single_scaled_index_equal_to_constant` also retain
+  their native outputs. These routes must migrate before removing the implicit
+  traits; the contract increment does not close the entire cleanup audit.
 
 This cleanup increment removes `map_scaled_values`, replacing it with a
 shared-operand mapper. Equality-graph affine keys, offset interning, read-offset
@@ -274,9 +284,33 @@ changes. A separate combined scaling/focused run passed 1,415 tests before the
 final dependency-bookkeeping fix; the final gate reran the scaling tests. Cold
 success/refusal controls at 16, 64 and 256 operators require zero exports.
 
-**Next cleanup:** migrate the contract-certification and remaining native
-index consumers above, then repeat the compiler-assisted trait-removal check. Keep legitimate native output boundaries explicit; do not replace a
-hidden export with an explicit export inside a checker just to compile.
+**Validated cleanup:** the contract-certification and retained walker
+increment includes no-export, snapshot/source-withdrawal and DAG scaling
+controls. Direct scalar-to-literal support is indexed on admission so a native
+written equality and its shared operand query use the same source; this does
+not permit transitive equality to substitute for a direct premise.
+
+Validation: 50 focused arithmetic/loadability tests passed, followed by 72
+focused difference-graph/contract tests after preserving the full-bit reading
+of unsigned wide literals. The full `scripts/check.sh --no-fail-fast` gate
+exited 0: 7,086 unit/API tests and all four fixture phases passed. It took
+12m31s and emitted the ten-minute budget warning; no limits changed and no
+nightly suite ran. The unrelated-block scaling test now creates a fresh
+verification session per sample, retaining its exact work-equality assertion
+instead of comparing one cold sample with two warmed samples.
+
+The repeated production-library trait-removal audit reports 194 diagnostics
+(previously 216); neither contract certification nor the difference graph
+appears in it. This is a compiler-location inventory, not a count of remaining
+checker routes: it also includes native outputs and diagnostics. The temporary
+trait removal was restored byte-for-byte. The live exact-rebuild calls in
+`condition_reasoning/order_paths.rs` and the Integer carrier scope call in
+`spec.rs` are explicit next targets alongside the reconstruction services.
+
+**Next cleanup:** migrate the byte/element reconstruction and order-path
+consumers above, then repeat the compiler-assisted trait-removal check. Keep
+legitimate native output boundaries explicit; do not replace a hidden export
+with an explicit export inside a checker just to compile.
 
 #### Classified boundaries and retained coverage
 

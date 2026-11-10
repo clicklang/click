@@ -39,6 +39,7 @@ fn split_while_headers_preserve_order_and_have_linear_work_and_emitted_size() {
         assert_eq!(flow.loops[&0].headers, (0..width).collect::<Vec<_>>());
         assert_eq!(flow.loops[&0].test, width - 1);
         let export = RustExport {
+            library_iterators: false,
             schema: 8,
             compiler_commit: String::new(),
             target: String::new(),
@@ -109,6 +110,7 @@ fn nested_while_regions_have_linear_analysis_work_and_emitted_size() {
         assert_eq!(flow.loops.len(), depth);
         assert!(work < 64 * depth, "depth {depth}: {work}");
         let export = RustExport {
+            library_iterators: false,
             schema: 8,
             compiler_commit: String::new(),
             target: String::new(),

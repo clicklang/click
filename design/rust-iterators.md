@@ -2,9 +2,15 @@
 
 Status: step 1 in progress. `library/rust/chunks_exact.click` declares
 `ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and the
-axioms relating them, and a proof reads a value with those methods. The
-importer does not use it yet. The loop's starting iterator is spelled with
-the existing snapshot form, `at(loop(i).entry, iter)` (open question 2).
+axioms relating them, and a proof reads a value with those methods. A Rust
+unit with `"iterators": "library"` imports its `chunks_exact` iterators as
+values of that type: construction, `remainder()`, and loops that count or
+rank by `iter.len()` are proved from the contract. A loop that reads through
+its chunk is not yet: the chunk's data pointer is a library function's
+result, and a read through it cannot be placed in the slice's view (open
+question 1). The unit option is temporary and is removed with the old model
+(migration step 4). The loop's starting iterator is spelled with the
+existing snapshot form, `at(loop(i).entry, iter)` (open question 2).
 
 ## Problem
 
@@ -122,7 +128,13 @@ The per-kind accessor table, `RustIteratorKind` and the old spellings
    length, inside an `Option`. Library spec functions that return pointers
    already exist (`examples/rbtree` returns `struct rb_node*`). Carrying
    `Option<&[u8]>` through the importer as a library value is unproven, and
-   may need kernel support.
+   may need kernel support. Found so far: the importer keeps the `Option`
+   as its tag, pointer and length, read from `it.nth(0)`, which needs no
+   kernel support. Reading through that pointer does. It is the function
+   result `slice::as_ptr(it.nth(0))`, equal to `bytes + k * n` by a cited
+   axiom, and the kernel places a read in a view by the pointer's own
+   block; an equality places it only in a view of constant length. The same
+   holds in C for any pointer a contract returns as a function's result.
 2. **Naming `start`.** The loop fact needs the iterator's value at loop
    entry. Candidates:
    - `loop(i).start`, a new built-in like `iterations`;
@@ -153,4 +165,6 @@ The per-kind accessor table, `RustIteratorKind` and the old spellings
    This includes inclusive ranges, currently blocked by
    `bugs/solve-exhausts-its-budget-spelling-premises-of-an-inclusive-range-loop.md`,
    which should be re-checked under the new model.
-4. Remove the per-kind lowering, the accessor table and the old spellings.
+4. Remove the per-kind lowering, the accessor table and the old spellings,
+   and with them the `"iterators": "library"` unit option, which exists only
+   so fixtures can move one at a time.

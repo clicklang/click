@@ -11541,19 +11541,25 @@ impl CResourceFact {
                 .is_some_and(|quantity| resource_quantity_is_positive(quantity, assumptions))
     }
 
+    /// `allocation(base, bytes)` with a 32-bit byte count.
     pub fn own_allocation(base: Pointer, bytes: impl Into<MachineTerm>) -> Self {
-        Self::own_designated_allocation(CPointerValue::new(base, CType::Int32Pointer), bytes)
+        Self::own_heap_allocation(base, &HeapExtent::int32(bytes))
+    }
+
+    /// `allocation(base, bytes)` with the byte count in the extent's format.
+    pub(in crate::kernel) fn own_heap_allocation(base: Pointer, extent: &HeapExtent) -> Self {
+        Self::own_designated_allocation(CPointerValue::new(base, CType::Int32Pointer), extent)
     }
 
     pub(in crate::kernel) fn own_designated_allocation(
         base: CPointerValue,
-        bytes: impl Into<MachineTerm>,
+        extent: &HeapExtent,
     ) -> Self {
         Self::own_token(
             Self::ALLOCATION_RESOURCE_NAME.to_string(),
             vec![
                 CValue::Pointer(base.with_type(CType::Int32Pointer)),
-                int32(bytes.into()),
+                extent.token_value(),
             ],
         )
     }
@@ -11566,31 +11572,45 @@ impl CResourceFact {
         if !self.has_proven_positive_quantity(assumptions) {
             return None;
         }
-        self.allocation()?;
-        let CResource::Token { arguments, .. } = self.resource() else {
-            return None;
+        // The coverage range has the token's extent kind.
+        let (base, bytes) = self.allocation_arguments()?;
+        let range = match bytes {
+            CValue::Int32(bytes) => {
+                CMemoryRange::from_pointer_value(base, 0u32.into(), bytes.clone(), 1)
+            }
+            CValue::UInt64(bytes) => CMemoryRange::from_pointer_value_wide(
+                base,
+                MachineTerm::uint64_constant(0),
+                bytes.clone(),
+                1,
+            ),
+            _ => return None,
         };
-        let [
-            AlgebraicValue::C(CValue::Pointer(base)),
-            AlgebraicValue::C(CValue::Int32(bytes)),
-        ] = arguments.as_ref()
-        else {
-            return None;
-        };
-        base.opaque_coverage_fact(&CMemoryRange::from_pointer_value(
-            base,
-            0u32.into(),
-            bytes.clone(),
-            1,
-        ))
+        base.opaque_coverage_fact(&range)
     }
 
+    /// The base and byte term of an owned `allocation` token of either
+    /// extent kind; [`Self::allocation_extent`] also gives the kind.
     pub fn allocation(&self) -> Option<(&Pointer, &MachineTerm)> {
         self.allocation_value()
             .map(|(base, bytes)| (base.pointer(), bytes))
     }
 
     pub(in crate::kernel) fn allocation_value(&self) -> Option<(&CPointerValue, &MachineTerm)> {
+        let (base, bytes) = self.allocation_arguments()?;
+        let (CValue::Int32(bytes) | CValue::UInt64(bytes)) = bytes else {
+            return None;
+        };
+        Some((base, bytes))
+    }
+
+    /// The base and tagged extent of an owned `allocation` token.
+    pub(in crate::kernel) fn allocation_extent(&self) -> Option<(&CPointerValue, HeapExtent)> {
+        let (base, bytes) = self.allocation_arguments()?;
+        Some((base, HeapExtent::from_token_value(bytes)?))
+    }
+
+    fn allocation_arguments(&self) -> Option<(&CPointerValue, &CValue)> {
         let Self::Own(CResource::Token { name, arguments }, _) = self else {
             return None;
         };
@@ -11599,7 +11619,7 @@ impl CResourceFact {
         }
         let [
             AlgebraicValue::C(CValue::Pointer(base)),
-            AlgebraicValue::C(CValue::Int32(bytes)),
+            AlgebraicValue::C(bytes),
         ] = arguments.as_ref()
         else {
             return None;
@@ -11623,7 +11643,7 @@ impl CResourceFact {
     pub(in crate::kernel) fn is_proven_separate_from_allocation(
         &self,
         base: &Pointer,
-        bytes: &MachineTerm,
+        bytes: &HeapExtent,
         assumptions: &PureFactContext,
     ) -> bool {
         self.is_proven_separate_from_allocation_with_element_width(base, bytes, 4, assumptions)
@@ -11632,21 +11652,17 @@ impl CResourceFact {
     pub(in crate::kernel) fn is_proven_separate_from_allocation_with_element_width(
         &self,
         base: &Pointer,
-        bytes: &MachineTerm,
+        bytes: &HeapExtent,
         element_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
         let Some(element_count) =
-            crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
+            crate::kernel::reasoning::element_count_from_bytes(bytes.bytes(), element_width)
         else {
             return false;
         };
-        let allocation_memory = CResource::Memory(CMemoryRange::new_with_element_width(
-            base.clone(),
-            MachineTerm::constant(0),
-            element_count,
-            element_width,
-        ));
+        let allocation_memory =
+            CResource::Memory(bytes.range(base.clone(), element_count, element_width));
         // Exact fact lookup, then the retained atomic separation checker.
         // The general prover added nothing here but its logical fallbacks
         // (context inconsistency, singleton substitution), which are proof

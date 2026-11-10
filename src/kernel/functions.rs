@@ -4196,7 +4196,7 @@ fn execute_verified_function_applications_with_suspension(
                     && !events.recognizes_imported_population(&description)
                     && (anchor.offset != PointerOffsetTerm::Constant(0)
                         || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                            && post_state.memory.live_heap_block_size(anchor).is_some()
+                            && post_state.memory.live_heap_block_extent(anchor).is_some()
                             || anchor.block.is_local_block()
                                 && post_state.memory.has_block(&anchor.block)))
                 {
@@ -9252,18 +9252,13 @@ mod allocation_continuity_tests;
 fn refuse_retiring_a_lent_allocation(
     ledger: Option<&LoanLedger>,
     base: &Pointer,
-    bytes: &MachineTerm,
+    bytes: &HeapExtent,
     assumptions: &PureFactContext,
 ) -> Result<(), VerifiedAllocationDeltaError> {
     let Some(ledger) = ledger else {
         return Ok(());
     };
-    let whole_allocation = CMemoryRange::new_with_element_width(
-        base.clone(),
-        MachineTerm::constant(0),
-        bytes.clone(),
-        1,
-    );
+    let whole_allocation = bytes.byte_range(base.clone());
     match ledger.memory_access_refusal(
         &whole_allocation,
         assumptions,
@@ -9307,7 +9302,7 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
     lent: &ResourceContext,
     kept: &'a ResourceContext,
     base: &Pointer,
-    bytes: &MachineTerm,
+    bytes: &HeapExtent,
     assumptions: &PureFactContext,
 ) -> Option<&'a CResourceFact> {
     let mut lent_owners_cover_allocation = None;
@@ -9342,20 +9337,15 @@ pub(in crate::kernel) fn caller_resource_left_stale_by_retirement<'a>(
 fn lent_owned_memory_covers_allocation(
     lent: &ResourceContext,
     base: &Pointer,
-    bytes: &MachineTerm,
+    bytes: &HeapExtent,
     assumptions: &PureFactContext,
 ) -> bool {
-    if let Some(bytes) = bytes.as_const()
-        && bytes > 0
+    if let Some(constant) = bytes.int32_bytes().and_then(MachineTerm::as_const)
+        && constant > 0
     {
-        return lent.owns_storage_access(base, bytes, assumptions);
+        return lent.owns_storage_access(base, constant, assumptions);
     }
-    let allocation = CMemoryRange::new_with_element_width(
-        base.clone(),
-        MachineTerm::constant(0),
-        bytes.clone(),
-        1,
-    );
+    let allocation = bytes.byte_range(base.clone());
     lent.directly_supporting_fact(&CResourceFact::own_memory(allocation), assumptions)
         .is_some()
 }
@@ -9411,8 +9401,8 @@ fn apply_verified_heap_allocation_delta(
         .facts()
         .iter()
         .filter_map(|fact| {
-            fact.allocation()
-                .map(|(base, bytes)| (fact, base.clone(), bytes.clone()))
+            fact.allocation_extent()
+                .map(|(base, bytes)| (fact, base.pointer().clone(), bytes))
         })
         .collect::<Vec<_>>();
     // The caller's untouched resources are expanded only when the callee
@@ -9475,7 +9465,7 @@ fn apply_verified_heap_allocation_delta(
             for (output_base, output_bytes) in candidates {
                 match allocation_continuity(
                     &base,
-                    &bytes,
+                    bytes.bytes(),
                     output_base,
                     output_bytes,
                     &allocation_assumptions,
@@ -9515,12 +9505,7 @@ fn apply_verified_heap_allocation_delta(
                 // the scan above cannot see a view the caller still holds
                 // over these bytes; the ledger can (docs/internals/stable-views.md).
                 refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
-                let allocation_range = CMemoryRange::new_with_element_width(
-                    base.clone(),
-                    0u32.into(),
-                    bytes.clone(),
-                    1,
-                );
+                let allocation_range = bytes.byte_range(base.clone());
                 if let Some(error) = super::mutexes::storage_retirement_refusal(
                     mutex_state,
                     &allocation_range,
@@ -9531,7 +9516,7 @@ fn apply_verified_heap_allocation_delta(
 
                 memory = memory.retire_contract_heap_allocation_claim(
                     &base,
-                    &bytes,
+                    bytes.bytes(),
                     &allocation_assumptions,
                 );
                 retired_creations.push(base.block.clone());
@@ -9555,8 +9540,7 @@ fn apply_verified_heap_allocation_delta(
             ));
         }
         refuse_retiring_a_lent_allocation(ledger, &base, &bytes, &allocation_assumptions)?;
-        let allocation_range =
-            CMemoryRange::new_with_element_width(base.clone(), 0u32.into(), bytes.clone(), 1);
+        let allocation_range = bytes.byte_range(base.clone());
         if let Some(error) = super::mutexes::storage_retirement_refusal(
             mutex_state,
             &allocation_range,
@@ -9567,7 +9551,7 @@ fn apply_verified_heap_allocation_delta(
 
         retired_creations.push(base.block.clone());
         let before_free = memory.clone();
-        if memory.live_heap_block_size(&base).is_none() {
+        if memory.live_heap_block_extent(&base).is_none() {
             memory = memory
                 .with_heap_allocation_claim(base.clone(), bytes.clone())
                 .ok_or(VerifiedAllocationDeltaError::Runtime(
@@ -9584,7 +9568,7 @@ fn apply_verified_heap_allocation_delta(
                 before: before_free,
                 after: memory.clone(),
                 allocation_base: base,
-                bytes,
+                bytes: bytes.bytes().clone(),
             },
         ));
     }
@@ -9596,16 +9580,19 @@ fn apply_verified_heap_allocation_delta(
         if let Some(coverage) = fact.allocation_bounds_fact(&allocation_assumptions) {
             effects.push(ExecutionPureFact::new(coverage));
         }
-        let Some((base, bytes)) = fact.allocation() else {
+        let Some((base, _)) = fact.allocation() else {
             continue;
         };
         if input.satisfies_fact(fact, &allocation_assumptions)
-            || memory.live_heap_block_size(base).is_some()
+            || memory.live_heap_block_extent(base).is_some()
         {
             continue;
         }
+        let (_, bytes) = fact
+            .allocation_extent()
+            .expect("an allocation token states its extent");
         memory = memory
-            .with_heap_allocation_claim(base.clone(), bytes.clone())
+            .with_heap_allocation_claim(base.clone(), bytes)
             .ok_or_else(|| {
                 VerifiedAllocationDeltaError::Runtime(CRuntimeError::FunctionContract(
                     "returned allocation conflicts with an existing or deallocated identity"

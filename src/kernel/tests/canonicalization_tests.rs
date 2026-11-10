@@ -1009,7 +1009,7 @@ fn symbolic_memory_block_sizes_are_free_and_substitutable() {
         construction: None,
         blocks: std::sync::Arc::new(MemoryBlocks::from_iter([(
             block.clone(),
-            CBlock::with_symbolic_size(MachineTerm::Variable(size_variable)),
+            CBlock::with_symbolic_size(HeapExtent::int32(MachineTerm::Variable(size_variable))),
         )])),
         cells: std::sync::Arc::default(),
         union_cells: std::sync::Arc::default(),
@@ -1055,7 +1055,9 @@ fn nested_snapshot_load_named(
     };
     let blocks = std::sync::Arc::new(MemoryBlocks::from_iter([(
         block.clone(),
-        CBlock::with_symbolic_size(MachineTerm::constant(8 * depth as u32 + 16)),
+        CBlock::with_symbolic_size(HeapExtent::int32(MachineTerm::constant(
+            8 * depth as u32 + 16,
+        ))),
     )]));
     let level_memory = |cells| CMemory {
         construction: None,

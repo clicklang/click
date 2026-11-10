@@ -1,9 +1,10 @@
 # Heap-block extents: 64-bit (`size_t`) sizes
 
 Status: option (a) accepted by the maintainer, 2026-11-10 (decisions D1-D6
-below). PR 0 (this note and a bug fix) has landed. Line numbers are at
-`origin/master` e01ca8136 plus PR 0's changes (`statements.rs`,
-`primitives.rs`).
+below). PR 0 (this note and a bug fix) has landed; PR 1 (the tagged extent,
+stage 1) is done. Line numbers in section 1 are at `origin/master` e01ca8136
+plus PR 0's changes (`statements.rs`, `primitives.rs`); stage 1 names its
+sites by function.
 
 This is the kernel prerequisite for `roadmap/standard-library.md` step 7,
 "`size_t` sizes for `allocation`", and its intended regression ("an
@@ -215,10 +216,59 @@ the `UInt64` kind.
    `a_uint32_element_count_above_the_int32_heap_extent_is_refused.md`,
    `a_uint32_realloc_size_above_int32_max_is_refused_at_the_realloc.md`,
    `a_uint32_malloc_size_bounded_by_int32_max_allocates.md`.
-1. **Tagged extent, no behavior change.** `HeapExtent { term, kind }` in
-   `CHeapMemory`, `CPendingReallocation`, `CBlock`, the token constructors and
-   `AllocationSize`, all `Int32`. Gate green; `memory_scaling_tests` work
-   counts unchanged.
+1. **Done: tagged extent, no behavior change.** `HeapExtent { bytes, kind }`
+   with `HeapExtentKind::{Int32, UInt64}` (`src/kernel/primitives.rs`). It is
+   the value of `CHeapMemory`'s live, deallocated and pending maps,
+   `CPendingReallocation.old_bytes` and `CBlock`'s size
+   (`CBlock::extent`, `CMemory::block_extent`, `live_heap_block_extent`);
+   `AllocationSize` carries `kind`. Every extent is `Int32`. An `Int32` extent
+   hashes and prints as its byte term, so snapshot hashes, load names and
+   traces are unchanged; equality and ordering compare the kind after the
+   bytes. Threaded through the kind: the token
+   (`own_heap_allocation`/`own_designated_allocation` build `int32` or
+   `uint64` from the extent; `allocation_extent` reads it back;
+   `allocation_value` and `allocation_bounds_fact` accept both); the owned
+   and byte ranges of malloc resolution, realloc resolution, realloc and free
+   (`HeapExtent::range`/`byte_range`, `heap_block_range` in `statements.rs`:
+   `new_wide` for `UInt64`); `AllocationSize::scaled` (the `uint64`
+   product); `enough_space` (`HeapExtent::unsigned_less_equal`); the
+   separation of a retired allocation (`is_proven_separate_from_allocation*`,
+   `caller_resource_left_stale_by_retirement`, `refuse_retiring_a_lent_allocation`,
+   `lent_owned_memory_covers_allocation`); contract claims take the kind
+   from the token; `pointer_block_bounds` reads the size through the tag
+   (`uint64_bytes`/`int64_bytes` in the 64-bit arms, `int32_bytes` in the
+   32-bit ones); `ReadRegionIdentity` compares extents. Refused for a
+   `UInt64` extent until a later stage reads it: `allocation_size_validity_refusal`
+   (`HeapAllocationSize`), realloc of a `UInt64` block or to a `UInt64` size
+   (stage 4), the 32-bit arms of `pointer_block_bounds` (no normal path),
+   `pointer_at_block_end_condition` (may be the end) and
+   `proves_loadable_cell_from_region` (not loadable). Kernel unit tests:
+   `src/kernel/primitives/heap_extent_tests.rs`. No new scaling test: no
+   operation does more work per step (one tag byte per extent, the same
+   hashing, no new scan or index).
+
+   What stage 2 now changes. Allocation sites: `allocation_size_value` gives
+   a symbolic `Int64`/`UInt64` size `kind: UInt64`, and
+   `allocation_size_validity_refusal` replaces its `UInt64` refusal with the
+   size proof below (and keeps calloc refused until stage 4). Two readers:
+   the 32-bit arms of `pointer_block_bounds` compare a widened 32-bit offset
+   with the 64-bit extent instead of refusing (a wide parameter range accepts
+   an `int32` index), and `heap_range_element_count` (the typed width of the
+   wide range) and `is_proven_separate_from_allocation*` need the `uint64`
+   element count (`n * w` at `uint64`, a `uint64` constant). Caution for the
+   plan's "`element_count_from_bytes` gains a `UInt64` arm": its twenty other
+   callers build 32-bit ranges from its result, so an arm added in place
+   hands them a `uint64` count; a kind-aware entry point avoids that (open
+   for stage 2 to settle). Still term-only and conservative for a `UInt64`
+   block while that holds (each gives up rather than misreads): the `bytes` of
+   `CMemoryDerivation::{HeapAllocated, HeapAllocationPending, HeapFreed,
+   ContractAllocationRetired}` (`heap_allocation_proven_separate_from_pointer`
+   reads them as 32-bit), `Proposition::CHeapAllocationFreed.bytes` with
+   `heap_free_effect_is_valid` (reinstates a 32-bit claim), and zeroed
+   prefixes (constant only). `allocation_continuity` compares byte terms at
+   `int32`; stage 3 makes it refuse a cross-kind pair (D5). Free's token
+   lookup indexes by name, arity and base, so it already finds a `uint64`
+   token.
 2. **Kernel 64-bit malloc and free, with the size proof.** Symbolic
    `UInt64`/`Int64` sizes: raw path decides `0 < E <= i64::MAX`; element path
    decides `1 <= n <= i64::MAX / w` and forms the exact `uint64 multiply(n, w)`;

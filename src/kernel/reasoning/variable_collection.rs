@@ -13,6 +13,14 @@ fn visit_machine_carrier_leaves(
 
 fn visit_machine_operand_carrier_leaves(
     operand: MachineOperandView<'_>,
+    visit: impl FnMut(MachineOperandView<'_>),
+) {
+    visit_machine_operand_carrier_leaves_selected(operand, true, visit);
+}
+
+fn visit_machine_operand_carrier_leaves_selected(
+    operand: MachineOperandView<'_>,
+    include_variables: bool,
     mut visit: impl FnMut(MachineOperandView<'_>),
 ) {
     let MachineOperandView::Shared(root) = operand else {
@@ -22,6 +30,9 @@ fn visit_machine_operand_carrier_leaves(
     // A root atom needs no DAG summary. Keep the native collector's one-leaf
     // cost, including its current registry and snapshot handling.
     if let Some(variable) = operand.variable() {
+        if !include_variables {
+            return;
+        }
         visit(MachineOperandView::Legacy(&MachineTerm::Variable(
             *variable,
         )));
@@ -58,6 +69,9 @@ fn visit_machine_operand_carrier_leaves(
             visit(MachineOperandView::Shared(read));
         }
     }
+    if !include_variables {
+        return;
+    }
     if let Some(written) =
         shared_machine_syntax_variables(root, || !checked_collection_checkpoint())
     {
@@ -70,6 +84,22 @@ fn visit_machine_operand_carrier_leaves(
             )));
         }
     }
+}
+
+/// Existing native leaf collectors can inspect a selected read descriptor or
+/// opaque leaf without expanding the surrounding shared arithmetic DAG.
+/// Each collector retains its own registry, snapshot and binder rules.
+pub(in crate::kernel) fn visit_machine_operand_native_leaves(
+    operand: MachineOperandView<'_>,
+    mut visit: impl FnMut(&MachineTerm),
+) {
+    visit_machine_operand_carrier_leaves_selected(operand, false, |leaf| match leaf {
+        MachineOperandView::Legacy(term) => visit(term),
+        MachineOperandView::Shared(_) => {
+            let read = leaf.read_source().expect("shared carrier leaf is a read");
+            visit(&read);
+        }
+    });
 }
 
 /// The machine-variable collector's existing carrier rules on a retained
