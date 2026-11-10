@@ -4055,6 +4055,12 @@ fn fresh_loop_local_value(
         CType::FunctionPointer(_) => {
             CValue::typed_pointer(Pointer::symbolic_function(variable), c_type)
         }
+        // A local holding a spec value, a Rust enum, a `Vec` or a library
+        // iterator, takes a fresh value of its own type.
+        CType::Parameter(parameter) => CValue::Parameter(Box::new(AlgebraicTerm {
+            algebraic_type: parameter.algebraic_type(),
+            node: AlgebraicTermNode::Variable(variable),
+        })),
         // A pointer local reassigned in the body (`p = p + 1`) must not keep
         // its entry value across the abstract iteration, exactly as the join
         // abstraction treats it; an invariant must relate it.

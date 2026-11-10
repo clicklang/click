@@ -465,8 +465,25 @@ pub(crate) fn rust_iterator_accessors(kind: syntax::RustIteratorKind) -> &'stati
         syntax::RustIteratorKind::Enumerate => &["len()"],
         syntax::RustIteratorKind::Range => &["start", "end", "len()"],
         syntax::RustIteratorKind::RangeInclusive => &["start()", "end()"],
-        syntax::RustIteratorKind::Chunks => &[],
+        syntax::RustIteratorKind::Chunks | syntax::RustIteratorKind::ChunksLibrary => &[],
     }
+}
+
+/// The local that holds loop iterator `iterator`'s value, when it is a value
+/// of a Click library type: a proof names it `iter` and reads it with that
+/// type's methods.
+pub(crate) fn rust_library_iterator(iterator: &syntax::RustLoopIterator) -> Option<&str> {
+    (iterator.kind == syntax::RustIteratorKind::ChunksLibrary).then_some(iterator.local.as_str())
+}
+
+/// The Click type of a library-valued loop iterator, `ChunksExact<uint8>`.
+pub(crate) fn rust_library_iterator_type(iterator: &syntax::RustLoopIterator) -> Option<ClickType> {
+    rust_library_iterator(iterator)?;
+    Some(ClickType::Algebraic(AlgebraicTypeApplication {
+        rigid: false,
+        name: "ChunksExact".to_string(),
+        arguments: vec![ClickType::C(C0Type::UInt8)],
+    }))
 }
 
 /// `iter.<accessor>` of `iterator`, read from the state the importer keeps
@@ -503,7 +520,7 @@ pub(crate) fn rust_iterator_method(
                     K::Enumerate => "enumerated",
                     K::Range => "range",
                     K::RangeInclusive => "inclusive range",
-                    K::Chunks => "`chunks_exact`",
+                    K::Chunks | K::ChunksLibrary => "`chunks_exact`",
                 },
                 match rust_iterator_accessors(iterator.kind) {
                     [] => " (it has none yet)".to_string(),
@@ -534,6 +551,14 @@ pub(crate) fn rust_iterator_spelling(
 ) -> Option<String> {
     iterators.iter().enumerate().find_map(|(index, iterator)| {
         let iterator = iterator.as_ref()?;
+        // A library-valued iterator is its own local.
+        if rust_library_iterator(iterator) == Some(name) {
+            return Some(if current == Some(index) {
+                "iter".to_string()
+            } else {
+                format!("loop({index}).iter")
+            });
+        }
         rust_iterator_accessors(iterator.kind)
             .iter()
             .find_map(|accessor| {
@@ -565,6 +590,12 @@ pub(crate) fn loop_iterator_bindings(
     else {
         return Vec::new();
     };
+    if let Some(local) = rust_library_iterator(&iterator) {
+        return vec![(
+            "iter".to_string(),
+            ContractExpression::CFragment(CExpression::Variable(local.to_string())),
+        )];
+    }
     rust_iterator_accessors(iterator.kind)
         .iter()
         .filter_map(|accessor| {

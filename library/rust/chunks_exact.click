@@ -30,29 +30,33 @@ function remainder<T>(it: ChunksExact<T>) -> Slice<T>;
 // `0 < len(it)`.
 function after_next<T>(it: ChunksExact<T>) -> ChunksExact<T>;
 
-axiom len_chunks_exact<T>(s: Slice<T>, n: uint64) {
+// The construction axioms are stated over a slice built from its data
+// pointer `p` and length `m`, the form a slice has in a proof about a
+// program: nothing has to be unfolded to apply one.
+axiom len_chunks_exact<T>(p: T*, m: uint64, n: uint64) {
     requires n != 0u64;
-    ensures chunks_exact::len(chunks_exact::chunks_exact(s, n)) == slice::len(s) / n;
+    ensures chunks_exact::len(chunks_exact::chunks_exact(Slice<T>::Slice(p, m), n)) == m / n;
 }
 
 // Chunk `k` is the `n` elements from element `k * n`. Stated for bytes: an
 // offset from a `T*` needs `T`'s size, which a generic axiom does not have.
-axiom nth_chunks_exact(s: Slice<uint8>, n: uint64, k: uint64) {
+axiom nth_chunks_exact(p: uint8*, m: uint64, n: uint64, k: uint64) {
     requires n != 0u64;
-    requires k < slice::len(s) / n;
-    ensures slice::as_ptr(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k))
-        == slice::as_ptr(s) + k * n;
-    ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(s, n), k)) == n;
+    requires k < m / n;
+    ensures slice::as_ptr(chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n), k))
+        == p + k * n;
+    ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n), k))
+        == n;
 }
 
-// The remainder is the last `len(s) % n` elements. Stated for bytes, as
+// The remainder is the last `m % n` elements. Stated for bytes, as
 // `nth_chunks_exact` is.
-axiom remainder_chunks_exact(s: Slice<uint8>, n: uint64) {
+axiom remainder_chunks_exact(p: uint8*, m: uint64, n: uint64) {
     requires n != 0u64;
-    ensures slice::as_ptr(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
-        == slice::as_ptr(s) + (slice::len(s) - slice::len(s) % n);
-    ensures slice::len(chunks_exact::remainder(chunks_exact::chunks_exact(s, n)))
-        == slice::len(s) % n;
+    ensures slice::as_ptr(chunks_exact::remainder(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n)))
+        == p + (m - m % n);
+    ensures slice::len(chunks_exact::remainder(chunks_exact::chunks_exact(Slice<uint8>::Slice(p, m), n)))
+        == m % n;
 }
 
 axiom len_after_next<T>(it: ChunksExact<T>) {

@@ -414,6 +414,12 @@ pub(super) fn lower(
                     Some(_) => {
                         return Err("destructor body missing from prepared Rust input".into());
                     }
+                    // The library-iterator model keeps no liveness flag.
+                    None if cx.mir_chunk_iterators.contains(local)
+                        && super::library_iterators() =>
+                    {
+                        c_skip()
+                    }
                     None if cx.mir_chunk_iterators.contains(local)
                         || cx.shared_array_iterators.contains_key(local) =>
                     {
@@ -888,6 +894,12 @@ pub(super) fn lower(
                             c_assign(flag, c_int32_literal(0))
                         }
                     }
+                    // The library-iterator model keeps no liveness flag.
+                    None if cx.mir_chunk_iterators.contains(local)
+                        && super::library_iterators() =>
+                    {
+                        c_skip()
+                    }
                     None if cx.mir_chunk_iterators.contains(local)
                         || cx.shared_array_iterators.contains_key(local) =>
                     {
@@ -1080,7 +1092,14 @@ fn loop_iterator(
             let (local, kind) = match statement {
                 S::SharedArrayNext { iterator, .. } => (iterator, K::Slice),
                 S::EnumerateNext { iterator, .. } => (iterator, K::Enumerate),
-                S::ChunkNext { iterator, .. } => (iterator, K::Chunks),
+                S::ChunkNext { iterator, .. } => (
+                    iterator,
+                    if super::library_iterators() {
+                        K::ChunksLibrary
+                    } else {
+                        K::Chunks
+                    },
+                ),
                 S::RangeNext { iterator, .. } => {
                     let inclusive = mir.locals.iter().any(|local| {
                         local.name == *iterator
@@ -1170,6 +1189,14 @@ fn region(
                 &flow.scalar_names,
                 &flow.metadata_names,
             )?;
+            // A library iterator's test reads a value the iterator's own
+            // function returns, so the read is a statement of the header.
+            let library_test = match &condition {
+                E::ChunkHasNext { iterator } if super::library_iterators() => {
+                    Some(cx.chunk_read_left(iterator))
+                }
+                _ => None,
+            };
             let condition = if loop_.body_on_true {
                 condition
             } else {
@@ -1194,6 +1221,10 @@ fn region(
             // once on the final false test, without an artificial break exit.
             // A body that breaks leaves without running them again, so its
             // test exits by `break` too, right after them, as the MIR does.
+            let header_first = library_test.is_some();
+            if let Some(read) = library_test {
+                header = c_seq(header, read);
+            }
             let lowered = if loop_.breaks {
                 let exit = region(
                     cx,
@@ -1209,6 +1240,12 @@ fn region(
                     c_int32_literal(1),
                     Vec::new(),
                     c_seq(header, c_seq(c_if(condition, c_skip(), exit), body)),
+                )
+            } else if header_first {
+                c_while(
+                    c_int32_literal(1),
+                    Vec::new(),
+                    c_seq(header, c_seq(c_if(condition, c_skip(), c_break()), body)),
                 )
             } else {
                 c_seq(
@@ -1291,6 +1328,11 @@ fn region(
                     } else {
                         c_if(cx.condition(condition)?, yes, no)
                     };
+                if let E::ChunkHasNext { iterator } = condition
+                    && super::library_iterators()
+                {
+                    result = c_seq(result, cx.chunk_read_left(iterator));
+                }
                 result = c_seq(result, branch);
                 block = join;
             }
@@ -1551,6 +1593,7 @@ mod tests {
         let mut baseline = None;
         for size in [8, 32, 128] {
             let mut export = RustExport {
+                library_iterators: false,
                 schema: 2,
                 compiler_commit: String::new(),
                 target: String::new(),

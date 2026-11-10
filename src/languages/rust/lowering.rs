@@ -43,6 +43,10 @@ fn reference_view(
 pub(crate) type LoweredRust = (Vec<C0Function>, BTreeMap<String, C0StructLayout>);
 
 thread_local! {
+    /// Whether the export being lowered reads an iterator through its Click
+    /// library contract ([`RustExport::library_iterators`]), set for one
+    /// lowering with the enum types.
+    static LIBRARY_ITERATORS: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
     /// The kernel types of the crate enums being lowered, by name. One
     /// lowering runs on one thread and sets them for its duration
     /// ([`EnumTypes::enter`]), so a type is found from its name alone.
@@ -200,6 +204,9 @@ fn scalar_type(t: &Type) -> Result<C0Type, String> {
             crate::kernel::TypeParameterName::intern(name),
         )),
         Type::Vec { element } => Ok(C0Type::Parameter(vec_type(element)?)),
+        // In the library-iterator model, the iterator is a value of the
+        // library's `ChunksExact<uint8>`.
+        Type::ChunkIterator => Ok(C0Type::Parameter(chunks_exact_type())),
         // A box of a crate struct is its address, as a struct reference is.
         Type::Box { .. } | Type::OptionBox { .. } => Ok(C0Type::Int32Pointer),
         Type::Reference { pointee, .. } => match pointee.as_ref() {
@@ -239,6 +246,18 @@ fn vec_type(element: &Type) -> Result<crate::kernel::TypeParameterName, String> 
     Ok(crate::kernel::TypeParameterName::of(
         &crate::surface::primitive_instance_type("Vec", &[AlgebraicValueType::C(element)]),
     ))
+}
+/// The type of a `chunks_exact` iterator over bytes: the library's primitive
+/// `ChunksExact` at `uint8`.
+fn chunks_exact_type() -> crate::kernel::TypeParameterName {
+    crate::kernel::TypeParameterName::of(&crate::surface::primitive_instance_type(
+        "ChunksExact",
+        &[AlgebraicValueType::C(CType::UInt8)],
+    ))
+}
+/// Whether this lowering reads an iterator through its library contract.
+fn library_iterators() -> bool {
+    LIBRARY_ITERATORS.with(std::cell::Cell::get)
 }
 /// A function-pointer type's signature, as a sidecar's `fn(i32) -> i32`
 /// parameter type spells it.
@@ -352,6 +371,7 @@ pub(crate) fn lower_with_identity(
 ) -> Result<LoweredRust, String> {
     // Enum fields are scalars, so their types need no other enum's.
     let _enums = EnumTypes::enter(export)?;
+    LIBRARY_ITERATORS.with(|library| library.set(export.library_iterators));
     let mut layouts = BTreeMap::new();
     let mut fields = BTreeMap::new();
     for record in &export.records {
@@ -464,7 +484,12 @@ fn lower_function(
                 | Type::Vec { .. }
                 | Type::Box { .. }
                 | Type::OptionBox { .. }
-        ))
+        )
+        // The library-iterator model's own external functions return the
+        // iterator value, and a chunk's or the remainder's data pointer.
+        || f.core_method.as_deref().is_some_and(|method| {
+            method.starts_with(super::standard_library::CHUNKS_EXACT)
+        }))
     {
         return Err("Rust reference/aggregate returns are not supported".into());
     }
