@@ -4,7 +4,7 @@ use super::api::{
 };
 use super::memory_provenance::{AtomicMemoryLoadEqualityEvidence, PointerOffsetEqualityEvidence};
 use super::reasoning::{
-    bitvector_terms_proven_equal_for_memory_resolution, bitvector_variable, collect_or_cases,
+    bitvector_terms_proven_equal_for_memory_resolution, collect_or_cases,
     instantiate_range_fold_step, memory_snapshots_proven_equal_at_pointer,
     pointers_proven_equal_for_memory_resolution, resource_context_has_read,
     signed_bitvector_constant, signed_i64_bitvector_constant,
@@ -13360,8 +13360,8 @@ pub struct PointerWordEvidence {
 /// source/target orientation may be the reverse of its written equality.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct BitvectorEqualityDerivationStep {
-    pub(super) source: MachineTerm,
-    pub(super) target: MachineTerm,
+    pub(super) source: SharedMachineIntegerTerm,
+    pub(super) target: SharedMachineIntegerTerm,
     pub(super) premise: Proposition,
 }
 
@@ -13409,8 +13409,8 @@ pub(super) enum PointerOffsetCongruenceEvidence {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum DirectBitvectorEqualityEvidence {
     AdditiveCancellation {
-        left: MachineTerm,
-        right: MachineTerm,
+        left: SharedMachineIntegerTerm,
+        right: SharedMachineIntegerTerm,
         equality: Box<DirectBitvectorEqualityEvidence>,
     },
     EqualSignedConstants {

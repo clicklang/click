@@ -2154,22 +2154,27 @@ fn orient_surface_bitvector_equality(
     step: &BitvectorEqualityDerivationStep,
     surface: &ClickProposition,
 ) -> Option<ClickProposition> {
-    let Proposition::ConditionIs(
-        ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left: premise_left,
-            right: premise_right,
-        },
-        true,
-    ) = step.premise()
-    else {
+    let Proposition::ConditionIs(condition, true) = step.premise() else {
         return None;
     };
-    let reverse = step.source() == premise_right.as_ref() && step.target() == premise_left.as_ref();
-    if !(reverse
-        || (step.source() == premise_left.as_ref() && step.target() == premise_right.as_ref()))
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+    if view.negated
+        || view.relation != CompareRelation::Equal
+        || !matches!(
+            view.format,
+            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+        )
     {
+        return None;
+    }
+    let [left, right] = view
+        .operands
+        .each_ref()
+        .map(|operand| operand.operand_view().retain(MachineIntegerType::Int32));
+    let source = step.source_view().retain(MachineIntegerType::Int32);
+    let target = step.target_view().retain(MachineIntegerType::Int32);
+    let reverse = source == right && target == left;
+    if !(reverse || source == left && target == right) {
         return None;
     }
     fn oriented(surface: &ClickProposition, reverse: bool) -> Option<ClickProposition> {

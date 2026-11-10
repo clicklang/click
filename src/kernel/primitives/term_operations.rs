@@ -2501,7 +2501,7 @@ impl PointerOffsetTerm {
     /// offset's integer value.
     pub(in crate::kernel) fn int32_scaled_linear_form(
         &self,
-    ) -> Option<(Vec<(&MachineTerm, i64)>, i64)> {
+    ) -> Option<(Vec<(&SharedMachineIntegerTerm, i64)>, i64)> {
         // Each leaf's magnitude stays below `2^31 * 2^24`, so a sum of at
         // most this many of them, and their constant, fits in an `i64`.
         const MAX_LEAVES: usize = 64;
@@ -2527,7 +2527,7 @@ impl PointerOffsetTerm {
                 Self::Int32Scaled { value, byte_width }
                     if byte_width.unsigned_abs() <= MAX_STRIDE as u64 =>
                 {
-                    scaled.push((value.as_ref(), *byte_width));
+                    scaled.push((value, *byte_width));
                 }
                 _ => return None,
             }
@@ -2541,7 +2541,7 @@ impl PointerOffsetTerm {
             Self::Variable(_) => None,
             Self::Add(left, right) => left.as_const()?.checked_add(right.as_const()?),
             Self::Int32Scaled { value, byte_width } => {
-                let value = value.as_const()? as i32 as i64;
+                let value = value.operand_view().word32_constant()? as i32 as i64;
                 value.checked_mul(*byte_width)
             }
             Self::Int64Scaled {
@@ -2550,9 +2550,9 @@ impl PointerOffsetTerm {
                 unsigned,
             } => {
                 let value = if *unsigned {
-                    i64::try_from(value.uint64_as_const()?).ok()?
+                    i64::try_from(value.operand_view().uint64_constant()?).ok()?
                 } else {
-                    value.int64_as_const()?
+                    value.operand_view().int64_constant()?
                 };
                 value.checked_mul(*byte_width)
             }

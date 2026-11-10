@@ -440,7 +440,7 @@ fn library_module_path(identity: &str) -> String {
 /// `uint32` is to the kernel: each has no definition, only the library's
 /// bodyless functions over it and the axioms relating them. Only a library
 /// module declares one, and only one listed here.
-pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec"];
+pub(crate) const LIBRARY_PRIMITIVE_TYPES: &[&str] = &["Vec", "ChunksExact"];
 
 /// The name a loop's invariants and proof read its pass count by: the number
 /// of passes the loop has completed.
@@ -684,6 +684,10 @@ const CLICK_LIBRARY_MODULES: &[(&str, &str)] = &[
     (
         "library/rust/slice.click",
         include_str!("../library/rust/slice.click"),
+    ),
+    (
+        "library/rust/chunks_exact.click",
+        include_str!("../library/rust/chunks_exact.click"),
     ),
 ];
 

@@ -2,7 +2,9 @@
 use super::*;
 use crate::kernel::assumptions::equality_graph_term_key;
 use crate::kernel::{BitvectorEqualityDerivationStep, ConditionTerm, Proposition};
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::{
+    CompareRelation, MachineIntegerType, MachineOperandView, SharedMachineIntegerTerm,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// The two equality-graph keys a true condition records as scalar evidence:
@@ -12,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub(in crate::kernel) fn scalar_evidence_pair(
     condition: &ConditionTerm,
     value: bool,
-) -> Option<(MachineTerm, MachineTerm)> {
+) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
     if !value {
         return None;
     }
@@ -22,13 +24,44 @@ pub(in crate::kernel) fn scalar_evidence_pair(
             relation: CompareRelation::Equal,
             left: a,
             right: b,
-        } => (a.as_ref().clone(), b.as_ref().clone()),
+        } => (
+            evidence_key(MachineOperandView::Legacy(a)),
+            evidence_key(MachineOperandView::Legacy(b)),
+        ),
+        ConditionTerm::IntegerEqual(..) => {
+            let view =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(condition)?;
+            if view.relation != CompareRelation::Equal
+                || view.negated
+                || !matches!(
+                    view.format,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                )
+            {
+                return None;
+            }
+            (
+                evidence_key(view.operands[0].operand_view()),
+                evidence_key(view.operands[1].operand_view()),
+            )
+        }
         other => other.true_pointer_offset_sides().and_then(|(a, b)| {
-            crate::kernel::reasoning::int32_element_index_from_offset(a)
-                .zip(crate::kernel::reasoning::int32_element_index_from_offset(b))
+            crate::kernel::reasoning::shared_element_index_from_offset(a, 4).zip(
+                crate::kernel::reasoning::shared_element_index_from_offset(b, 4),
+            )
         })?,
     };
-    Some((equality_graph_term_key(&a), equality_graph_term_key(&b)))
+    Some((a, b))
+}
+
+fn evidence_key(operand: MachineOperandView<'_>) -> SharedMachineIntegerTerm {
+    match operand {
+        MachineOperandView::Legacy(term) => SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            equality_graph_term_key(term),
+        ),
+        MachineOperandView::Shared(_) => operand.retain(MachineIntegerType::Int32),
+    }
 }
 
 impl EqualityGraph {
@@ -47,11 +80,22 @@ impl EqualityGraph {
                 format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
                 relation: CompareRelation::Equal,
                 ..
-            }
+            } | ConditionTerm::IntegerEqual(..)
         ) && condition.true_pointer_offset_sides().is_none()
         {
             return;
         }
+        // The new shared source form must actually be a machine equality.
+        // Pure Integer equalities do not enter this coordinate index. Keep
+        // the existing conservative dependency rule for pointer sources.
+        let shared_pair = if matches!(condition, ConditionTerm::IntegerEqual(..)) {
+            let Some(pair) = scalar_evidence_pair(condition, value) else {
+                return;
+            };
+            Some(pair)
+        } else {
+            None
+        };
         let (variables, deferred) = if insert {
             let mut variables = BTreeSet::new();
             let deferred =
@@ -100,7 +144,8 @@ impl EqualityGraph {
             }
         }
         let (a, b) = if insert {
-            let Some((a, b)) = scalar_evidence_pair(condition, value) else {
+            let Some((a, b)) = shared_pair.or_else(|| scalar_evidence_pair(condition, value))
+            else {
                 return;
             };
             self.admitted
@@ -154,12 +199,12 @@ impl EqualityGraph {
         left: &PointerOffsetTerm,
         right: &PointerOffsetTerm,
     ) -> Option<&Proposition> {
-        let left_index = crate::kernel::reasoning::int32_element_index_from_offset(left)?;
-        let right_index = crate::kernel::reasoning::int32_element_index_from_offset(right)?;
+        let left_index = crate::kernel::reasoning::shared_element_index_from_offset(left, 4)?;
+        let right_index = crate::kernel::reasoning::shared_element_index_from_offset(right, 4)?;
         self.admitted
             .scalar_evidence_inputs
-            .get(&equality_graph_term_key(&left_index))?
-            .get(&equality_graph_term_key(&right_index))?
+            .get(&left_index)?
+            .get(&right_index)?
             .iter()
             .find_map(|(_, premise)| {
                 crate::instrumentation::record_deterministic_work(1);
@@ -175,7 +220,7 @@ impl EqualityGraph {
         if self.admitted.scalar_evidence_inputs.is_empty() {
             return Vec::new();
         }
-        let start = equality_graph_term_key(term);
+        let start = evidence_key(MachineOperandView::Legacy(term));
         if !self.admitted.scalar_evidence_inputs.contains_key(&start) {
             return Vec::new();
         }
@@ -193,8 +238,14 @@ impl EqualityGraph {
             }
         }
         seen.remove(&start);
-        seen.remove(term);
-        seen.into_iter().collect()
+        seen.remove(&MachineOperandView::Legacy(term).retain(MachineIntegerType::Int32));
+        // This legacy search API orders candidates by native syntax, not by
+        // the allocation order of retained handles.
+        seen.into_iter()
+            .map(|term| term.value().clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect()
     }
 
     /// The pointers joined to `pointer` by a chain of recorded cross-block
@@ -227,27 +278,27 @@ impl EqualityGraph {
 
     pub(in crate::kernel) fn exact_scalar_evidence_path(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
     ) -> Option<Vec<BitvectorEqualityDerivationStep>> {
-        if left == right
-            || equality_graph_term_key(left) != *left
-            || equality_graph_term_key(right) != *right
-        {
+        let left = left.retain(MachineIntegerType::Int32);
+        let right = right.retain(MachineIntegerType::Int32);
+        if left == right {
             return None;
         }
         let mut visited = BTreeSet::new();
-        let mut parents = BTreeMap::<MachineTerm, (MachineTerm, Proposition)>::new();
+        let mut parents =
+            BTreeMap::<SharedMachineIntegerTerm, (SharedMachineIntegerTerm, Proposition)>::new();
         let mut pending = vec![left.clone()];
         while let Some(current) = pending.pop() {
             crate::instrumentation::record_deterministic_work(1);
             if !visited.insert(current.clone()) {
                 continue;
             }
-            if current == *right {
+            if current == right {
                 let mut path = Vec::new();
                 let mut cursor = current;
-                while cursor != *left {
+                while cursor != left {
                     let (source, premise) = parents.get(&cursor)?;
                     path.push(BitvectorEqualityDerivationStep {
                         source: source.clone(),
@@ -267,19 +318,30 @@ impl EqualityGraph {
                     continue;
                 }
                 let Some(premise) = sources.iter().find_map(|(_, premise)| {
-                    let Proposition::ConditionIs(
-                        ConditionTerm::Compare {
-                            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                            relation: CompareRelation::Equal,
-                            left: a,
-                            right: b,
-                        },
-                        true,
-                    ) = premise
-                    else {
+                    let Proposition::ConditionIs(condition, true) = premise else {
                         return None;
                     };
-                    (equality_graph_term_key(a) == **a && equality_graph_term_key(b) == **b)
+                    let view =
+                        crate::kernel::machine_integer::comparison::structural_comparison_view(
+                            condition,
+                        )?;
+                    if view.negated
+                        || view.relation != CompareRelation::Equal
+                        || !matches!(
+                            view.format,
+                            MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                        )
+                    {
+                        return None;
+                    }
+                    view.operands
+                        .iter()
+                        .all(|operand| match operand.operand_view() {
+                            MachineOperandView::Legacy(term) => {
+                                equality_graph_term_key(term) == *term
+                            }
+                            MachineOperandView::Shared(_) => true,
+                        })
                         .then_some(premise)
                 }) else {
                     continue;

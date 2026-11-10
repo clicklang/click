@@ -9864,7 +9864,23 @@ pub(in crate::kernel) fn exact_wide_scaled_offset_constant(
             value,
             byte_width,
             unsigned,
-        } => exact_sixty_four_bit_constant(value, *unsigned, assumptions)?.checked_mul(*byte_width),
+        } => {
+            let view = value.operand_view();
+            let literal = if *unsigned {
+                view.uint64_constant().and_then(|n| i64::try_from(n).ok())
+            } else {
+                view.int64_constant()
+            };
+            let number = literal.or_else(|| {
+                let bits = assumptions.wide_constant_from_equalities_view(view)?;
+                if *unsigned {
+                    i64::try_from(bits).ok()
+                } else {
+                    Some(bits as i64)
+                }
+            })?;
+            number.checked_mul(*byte_width)
+        }
         _ => None,
     }
 }
