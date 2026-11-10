@@ -1,6 +1,5 @@
 use super::*;
 use crate::kernel::CompareRelation;
-use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{
     bits32_constant, constant_i64, constant_u32, constant_u64, int64_constant, uint64_constant,
@@ -416,41 +415,11 @@ pub(in crate::kernel) fn element_index_from_offset(
     offset: &PointerOffsetTerm,
     element_width: u32,
 ) -> Option<MachineTerm> {
-    if element_width == 0 {
-        return None;
+    if let PointerOffsetTerm::Constant(bytes) = offset {
+        return element_index_literal(*bytes, element_width).map(MachineTerm::constant);
     }
-    match offset {
-        PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
-            element_index_from_offset(right, element_width)
-        }
-        PointerOffsetTerm::Add(left, right)
-            if right.as_ref() == &PointerOffsetTerm::Constant(0) =>
-        {
-            element_index_from_offset(left, element_width)
-        }
-        PointerOffsetTerm::Add(left, right) => Some(MachineTerm::add(
-            element_index_from_offset(left, element_width)?,
-            element_index_from_offset(right, element_width)?,
-        )),
-        PointerOffsetTerm::Int32Scaled { value, byte_width }
-            if *byte_width == i64::from(element_width) =>
-        {
-            Some(value.as_ref().clone())
-        }
-        // A byte index is the byte offset. A struct-array element is scaled
-        // by its stride, and its byte offset is the same residue the byte
-        // spelling `items + i * stride` gives.
-        PointerOffsetTerm::Int32Scaled { .. } if element_width == 1 => {
-            byte_offset_from_pointer_offset(offset)
-        }
-        PointerOffsetTerm::Constant(offset) if offset % i64::from(element_width) == 0 => {
-            let index = offset / i64::from(element_width);
-            (i32::MIN as i64..=i32::MAX as i64)
-                .contains(&index)
-                .then_some(MachineTerm::constant((index as i32) as u32))
-        }
-        _ => None,
-    }
+    shared_element_index_from_offset(offset, element_width)
+        .map(|index| index.structural_value().clone())
 }
 
 /// The same residue extraction retaining shared index operands. Native-output
@@ -507,9 +476,8 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
                 ),
             }
         }
-        PointerOffsetTerm::Constant(bytes) if bytes % i64::from(element_width) == 0 => {
-            let n = bytes / i64::from(element_width);
-            i32::try_from(n).ok().map(|n| constant(n as u32))
+        PointerOffsetTerm::Constant(bytes) => {
+            element_index_literal(*bytes, element_width).map(constant)
         }
         _ => None,
     }
@@ -535,16 +503,34 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> Option<MachineTerm> {
+    if let PointerOffsetTerm::Constant(bytes) = offset {
+        return element_index_literal(*bytes, element_width).map(MachineTerm::constant);
+    }
+    shared_element_index_from_offset_with_facts(offset, element_width, assumptions)
+        .map(|index| index.structural_value().clone())
+}
+
+pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
+    offset: &PointerOffsetTerm,
+    element_width: u32,
+    assumptions: &PureFactContext,
+) -> Option<crate::kernel::SharedMachineIntegerTerm> {
+    use crate::kernel::{MachineIntegerType as T, MachineOperandView as V};
+    let low_word = |v: V<'_>| {
+        let root = crate::kernel::KernelTerm::retained_machine_operand(T::UInt64, v)
+            .checking_legacy_machine_conversion(T::UInt64, T::UInt32);
+        V::Shared(&root).retain(T::Int32)
+    };
     if element_width == 0 {
         return None;
     }
-    if let Some(index) = element_index_from_offset(offset, element_width) {
+    if let Some(index) = shared_element_index_from_offset(offset, element_width) {
         return Some(index);
     }
     match offset {
-        PointerOffsetTerm::Add(left, right) => Some(MachineTerm::add(
-            element_index_from_offset_with_facts(left, element_width, assumptions)?,
-            element_index_from_offset_with_facts(right, element_width, assumptions)?,
+        PointerOffsetTerm::Add(left, right) => Some(shared_offset_sum(
+            shared_element_index_from_offset_with_facts(left, element_width, assumptions)?,
+            shared_element_index_from_offset_with_facts(right, element_width, assumptions)?,
         )),
         PointerOffsetTerm::Int64Scaled {
             value,
@@ -556,59 +542,63 @@ pub(in crate::kernel) fn element_index_from_offset_with_facts(
             // leaves the rest, and `exact_signed_constant` accepts those.
             // `unsigned` is part of the question rather than a check after
             // it, because the two readings of one word are different numbers.
-            if let Some(index) = crate::kernel::assumptions::exact_sixty_four_bit_constant(
-                value,
+            if let Some(index) = crate::kernel::assumptions::exact_sixty_four_bit_constant_view(
+                value.operand_view(),
                 *unsigned,
                 assumptions,
             ) {
                 return i32::try_from(index)
                     .ok()
-                    .map(|index| MachineTerm::constant(index as u32));
+                    .map(|index| V::Legacy(&MachineTerm::constant(index as u32)).retain(T::Int32));
             }
             if !*unsigned {
                 // A signed index in `0..=INT_MAX` is its own low word.
                 return assumptions
-                    .int64_index_fits_int32(value)
-                    .then(|| MachineTerm::uint32_from_64(value.as_ref().clone()));
+                    .int64_index_fits_int32_view(value.operand_view())
+                    .then(|| low_word(value.operand_view()));
             }
-            let bounded = |candidate: &MachineTerm| assumptions.uint64_index_fits_int32(candidate);
-            if bounded(value) {
-                return Some(MachineTerm::uint32_from_64(value.as_ref().clone()));
+            let bounded = |candidate: V<'_>| assumptions.uint64_index_fits_int32_view(candidate);
+            if bounded(value.operand_view()) {
+                return Some(low_word(value.operand_view()));
             }
             // Modular calls can name an unchanged native index through a
             // checked scalar-result equality. Transport the bound through
             // that full-width equality, never through equality of low words.
-            for (alias, fact) in assumptions.exact_uint64_equalities(value) {
+            for (alias, fact) in assumptions.exact_uint64_equalities_view(value.operand_view()) {
                 crate::instrumentation::record_deterministic_work(1);
-                if bounded(alias) {
+                if bounded(V::Legacy(alias)) {
                     crate::kernel::assumptions::record_implicit_reasoning_provenance(
                         assumptions,
                         &Proposition::ConditionIs(fact.clone(), true),
                     );
-                    return Some(MachineTerm::uint32_from_64(alias.clone()));
+                    return Some(low_word(V::Legacy(alias)));
                 }
             }
             // A constant subtraction retains equality of the full-width
             // operands. Its bound must still be proved explicitly; this does
             // not infer nonemptiness or arithmetic ranges from a low word.
-            if let MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Subtract,
-                left,
-                right,
-            } = value.as_ref()
-                && right.uint64_as_const().is_some()
+            if let Some((T::UInt64, MachineBinaryOp::Subtract, [left, right])) =
+                value.operand_view().binary()
+                && right.uint64_constant().is_some()
             {
-                for (alias, fact) in assumptions.exact_uint64_equalities(left) {
+                for (alias, fact) in assumptions.exact_uint64_equalities_view(left) {
                     crate::instrumentation::record_deterministic_work(1);
                     let candidate =
-                        MachineTerm::uint64_subtract(alias.clone(), right.as_ref().clone());
-                    if bounded(&candidate) {
+                        crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+                            T::UInt64,
+                            MachineBinaryOp::Subtract,
+                            crate::kernel::KernelTerm::retained_machine_operand(
+                                T::UInt64,
+                                V::Legacy(alias),
+                            ),
+                            crate::kernel::KernelTerm::retained_machine_operand(T::UInt64, right),
+                        );
+                    if bounded(V::Shared(&candidate)) {
                         crate::kernel::assumptions::record_implicit_reasoning_provenance(
                             assumptions,
                             &Proposition::ConditionIs(fact.clone(), true),
                         );
-                        return Some(MachineTerm::uint32_from_64(candidate));
+                        return Some(low_word(V::Shared(&candidate)));
                     }
                 }
             }
@@ -862,31 +852,75 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
     })
 }
 
+// Native output boundaries need no arena round trip for a literal. Share its
+// width/range rule with the retained builder, while retaining compound indices.
+fn element_index_literal(bytes: i64, width: u32) -> Option<u32> {
+    if width == 0 || bytes % i64::from(width) != 0 {
+        return None;
+    }
+    i32::try_from(bytes / i64::from(width))
+        .ok()
+        .map(|index| index as u32)
+}
+
 pub(in crate::kernel) fn byte_offset_from_pointer_offset(
     offset: &PointerOffsetTerm,
 ) -> Option<MachineTerm> {
+    if let PointerOffsetTerm::Constant(bytes) = offset {
+        return element_index_literal(*bytes, 1).map(MachineTerm::constant);
+    }
+    shared_byte_offset_from_pointer_offset(offset).map(|index| index.structural_value().clone())
+}
+
+fn shared_offset_sum(
+    a: crate::kernel::SharedMachineIntegerTerm,
+    b: crate::kernel::SharedMachineIntegerTerm,
+) -> crate::kernel::SharedMachineIntegerTerm {
+    use crate::kernel::{KernelTerm, MachineIntegerType as T, MachineOperandView as V};
+    let root = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+        T::Int32,
+        MachineBinaryOp::Add,
+        KernelTerm::retained_machine_operand(T::Int32, a.operand_view()),
+        KernelTerm::retained_machine_operand(T::Int32, b.operand_view()),
+    );
+    V::Shared(&root).retain(T::Int32)
+}
+
+pub(in crate::kernel) fn shared_byte_offset_from_pointer_offset(
+    offset: &PointerOffsetTerm,
+) -> Option<crate::kernel::SharedMachineIntegerTerm> {
+    use crate::kernel::{KernelTerm, MachineIntegerType as T, MachineOperandView as V};
+    let constant = |n| V::Legacy(&MachineTerm::constant(n)).retain(T::Int32);
     match offset {
         PointerOffsetTerm::Constant(offset) => (i32::MIN as i64..=i32::MAX as i64)
             .contains(offset)
-            .then_some(MachineTerm::constant((*offset as i32) as u32)),
-        PointerOffsetTerm::Add(left, right) => Some(MachineTerm::add(
-            byte_offset_from_pointer_offset(left)?,
-            byte_offset_from_pointer_offset(right)?,
+            .then_some(constant((*offset as i32) as u32)),
+        PointerOffsetTerm::Add(left, right) => Some(shared_offset_sum(
+            shared_byte_offset_from_pointer_offset(left)?,
+            shared_byte_offset_from_pointer_offset(right)?,
         )),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok()?;
             match width {
-                0 => Some(MachineTerm::constant(0)),
-                1 => Some(value.as_ref().clone()),
-                _ => Some(binary_node!(
-                    Int32,
-                    Multiply,
-                    Box::new(value.as_ref().clone()),
-                    Box::new(MachineTerm::constant(width)),
-                )),
+                0 => Some(constant(0)),
+                1 => Some(value.clone()),
+                _ => Some(
+                    V::Shared(&KernelTerm::machine_binary_shared(
+                        T::Int32,
+                        MachineBinaryOp::Multiply,
+                        [
+                            KernelTerm::retained_machine_operand(T::Int32, value.operand_view()),
+                            KernelTerm::retained_machine_operand(
+                                T::Int32,
+                                constant(width).operand_view(),
+                            ),
+                        ],
+                    ))
+                    .retain(T::Int32),
+                ),
             }
         }
-        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(MachineTerm::constant(0)),
+        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(constant(0)),
         // A 64-bit index is not a 32-bit byte residue, even when its stride
         // is one. Callers that need its numeric value must use a 64-bit bound.
         PointerOffsetTerm::Int64Scaled { .. } | PointerOffsetTerm::Variable(_) => None,
@@ -1125,8 +1159,8 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
     // offset disequality may not be read off a residue that could have
     // wrapped onto it.
     if let (Some(left_index), Some(right_index)) = (
-        int32_element_index_from_offset(&left),
-        int32_element_index_from_offset(&right),
+        shared_element_index_from_offset(&left, 4),
+        shared_element_index_from_offset(&right, 4),
     ) && (value
         || assumptions.element_index_rebuild_is_exact(&left)
             && assumptions.element_index_rebuild_is_exact(&right))
@@ -1134,7 +1168,11 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         add_condition_path_fact(
             facts,
             assumptions,
-            ConditionTerm::equal(left_index, right_index),
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::Equal,
+                [left_index.operand_view(), right_index.operand_view()],
+            ),
             value,
         )?;
     } else if let Some((index, element)) = single_scaled_index_equal_to_constant(&left, &right)
@@ -1143,7 +1181,14 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
         add_condition_path_fact(
             facts,
             assumptions,
-            ConditionTerm::equal(index.clone(), MachineTerm::constant(element as u32)),
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::Equal,
+                [
+                    index.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::constant(element as u32)),
+                ],
+            ),
             value,
         )?;
     }
@@ -1160,7 +1205,7 @@ pub(in crate::kernel) fn add_pointer_offset_equality_execution_pure_facts(
 pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
     scaled: &'term PointerOffsetTerm,
     constant: &PointerOffsetTerm,
-) -> Option<(&'term MachineTerm, i32)> {
+) -> Option<(&'term SharedMachineIntegerTerm, i32)> {
     let target = constant.as_const()?;
     let (leaves, offset) = scaled.int32_scaled_linear_form()?;
     let [(index, stride)] = leaves.as_slice() else {
@@ -1172,7 +1217,7 @@ pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
     }
     i32::try_from(delta / stride)
         .ok()
-        .map(|element| (index.structural_value(), element))
+        .map(|element| (*index, element))
 }
 
 pub(in crate::kernel) fn add_proof_obligation(
@@ -2515,5 +2560,143 @@ mod native_observation_guard_tests {
         include!(
             "../../scaling_tests/kernel/reasoning/path_facts/native_observation_guard_tests.rs"
         );
+    }
+}
+
+#[cfg(test)]
+mod shared_reconstruction_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineIntegerType as T, MachineOperandView as V,
+        SharedMachineIntegerTerm as S,
+    };
+
+    fn scaled(value: S, width: i64, wide: bool) -> PointerOffsetTerm {
+        if wide {
+            PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width: width,
+                unsigned: true,
+            }
+        } else {
+            PointerOffsetTerm::Int32Scaled {
+                value,
+                byte_width: width,
+            }
+        }
+    }
+
+    #[test]
+    fn shared_offset_reconstruction_keeps_residues_and_width_refusals() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1018201));
+        let index = S::index(
+            T::Int32,
+            MachineTerm::add(x.clone(), MachineTerm::constant(1)),
+        );
+        let offset = scaled(index.clone(), 4, false);
+        let wide = scaled(S::index(T::Int64, MachineTerm::uint64_from_32(x)), 4, true);
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(shared_element_index_from_offset(&offset, 4), Some(index));
+        assert!(shared_element_index_from_offset(&offset, 0).is_none());
+        assert!(shared_element_index_from_offset(&offset, 8).is_none());
+        let bytes = shared_byte_offset_from_pointer_offset(&offset).unwrap();
+        assert!(matches!(
+            bytes.operand_view().binary(),
+            Some((T::Int32, MachineBinaryOp::Multiply, _))
+        ));
+        assert!(shared_byte_offset_from_pointer_offset(&wide).is_none());
+        assert!(shared_element_index_from_offset(&wide, 4).is_none());
+        let zero = scaled(
+            S::index(T::Int64, MachineTerm::uint64_constant(u64::MAX)),
+            0,
+            true,
+        );
+        assert_eq!(
+            shared_byte_offset_from_pointer_offset(&zero)
+                .unwrap()
+                .operand_view()
+                .word32_constant(),
+            Some(0)
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_wide_element_projection_requires_full_width_support() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let root = KernelTerm::machine_binary_shared(
+            T::UInt64,
+            MachineBinaryOp::Add,
+            [
+                KernelTerm::variable(KernelType::C(T::UInt64.c_type()), Variable(1018202)),
+                KernelTerm::variable(KernelType::C(T::UInt64.c_type()), Variable(1018203)),
+            ],
+        );
+        let offset = scaled(V::Shared(&root).retain(T::Int64), 8, true);
+        let limit = MachineTerm::uint64_constant(i32::MAX as u64);
+        let bound = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            T::UInt64,
+            CompareRelation::LessEqual,
+            [V::Shared(&root), V::Legacy(&limit)],
+        );
+        let empty = PureFactContext::new();
+        let bounded = empty.clone().assume_condition(bound.clone(), true);
+        let withdrawn = bounded.without_exact_fact(&Proposition::ConditionIs(bound, true));
+        let low = root.checking_legacy_machine_conversion(T::UInt64, T::UInt32);
+        let low_bound = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            T::UInt32,
+            CompareRelation::LessEqual,
+            [
+                V::Shared(&low),
+                V::Legacy(&MachineTerm::constant(i32::MAX as u32)),
+            ],
+        );
+        let low_only = empty.clone().assume_condition(low_bound, true);
+        let exports = KernelTermExport::machine_export_count();
+        assert!(shared_element_index_from_offset_with_facts(&offset, 8, &bounded).is_some());
+        for facts in [&empty, &withdrawn, &low_only] {
+            assert!(shared_element_index_from_offset_with_facts(&offset, 8, facts).is_none());
+        }
+        assert!(shared_element_index_from_offset_with_facts(&offset, 4, &bounded).is_none());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_rebuilt_element_sum_needs_nonoverflow_evidence() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1018204));
+        let y = MachineTerm::Variable(Variable(1018205));
+        let offset = PointerOffsetTerm::Add(
+            Box::new(scaled(S::index(T::Int32, x.clone()), 4, false)),
+            Box::new(scaled(S::index(T::Int32, y.clone()), 4, false)),
+        );
+        let empty = PureFactContext::new();
+        let mut bounded = empty.clone();
+        for v in [x, y] {
+            bounded = bounded
+                .assume_condition(
+                    ConditionTerm::signed_greater_equal(v.clone(), MachineTerm::constant(0)),
+                    true,
+                )
+                .assume_condition(
+                    ConditionTerm::signed_less_equal(v, MachineTerm::constant(100)),
+                    true,
+                );
+        }
+        let exports = KernelTermExport::machine_export_count();
+        assert!(!empty.element_index_rebuild_is_exact_for_width(&offset, 4));
+        assert!(bounded.element_index_rebuild_is_exact_for_width(&offset, 4));
+        let wraps = PointerOffsetTerm::Add(
+            Box::new(PointerOffsetTerm::Constant(i64::from(i32::MAX) * 4)),
+            Box::new(PointerOffsetTerm::Constant(4)),
+        );
+        assert!(!empty.element_index_rebuild_is_exact_for_width(&wraps, 4));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/reasoning/path_facts/shared_reconstruction_tests.rs");
     }
 }

@@ -1460,6 +1460,14 @@ impl DifferenceGraph {
             let nonzero = b_low > 0 || b_high < 0 || excludes(0);
             return (no_pair && (!int64 || nonzero)).then_some(false);
         }
+        // Retained machine observations use Integer comparison syntax, but
+        // have the same maintained order graph as native machine conditions.
+        if matches!(condition, C::IntegerLessThan(..) | C::IntegerLessEqual(..))
+            && let Some(view) =
+                crate::kernel::machine_integer::comparison::comparison_view(condition, true)
+        {
+            return self.decide_shared_order(&view);
+        }
         let [(domain, ref lower, ref upper, strict)] = condition_orders(condition, true)[..] else {
             return None;
         };
