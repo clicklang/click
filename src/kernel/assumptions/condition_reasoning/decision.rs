@@ -69,21 +69,30 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> Option<DirectBitvectorEqualityEvidence> {
+        self.direct_bitvector_equality_evidence_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(in crate::kernel) fn direct_bitvector_equality_evidence_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<DirectBitvectorEqualityEvidence> {
         if let Some(evidence) = self.direct_bitvector_equality_leaf_evidence(left, right) {
             return Some(evidence);
         }
-        let mut current = (left.clone(), right.clone());
+        // Inspect native inputs directly. Retain endpoints only after a
+        // cancellation succeeds, rather than importing every failed query.
+        let mut current = shared_bitvector_equality_cancellation(left, right)?;
         let mut reductions = Vec::new();
         loop {
-            let reduced = bitvector_equality_after_additive_cancellation(&current.0, &current.1)?;
-            if reduced == current {
-                return None;
-            }
-            reductions.push(reduced.clone());
-            current = reduced;
-            if let Some(mut evidence) =
-                self.direct_bitvector_equality_leaf_evidence(&current.0, &current.1)
-            {
+            reductions.push(current.clone());
+            if let Some(mut evidence) = self.direct_bitvector_equality_leaf_evidence(
+                current.0.operand_view(),
+                current.1.operand_view(),
+            ) {
                 for (left, right) in reductions.into_iter().rev() {
                     evidence = DirectBitvectorEqualityEvidence::AdditiveCancellation {
                         left,
@@ -93,17 +102,25 @@ impl PureFactContext {
                 }
                 return Some(evidence);
             }
+            let reduced = shared_bitvector_equality_cancellation(
+                current.0.operand_view(),
+                current.1.operand_view(),
+            )?;
+            if reduced == current {
+                return None;
+            }
+            current = reduced;
         }
     }
 
     fn direct_bitvector_equality_leaf_evidence(
         &self,
-        left: &MachineTerm,
-        right: &MachineTerm,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
     ) -> Option<DirectBitvectorEqualityEvidence> {
         if let Some(((left_value, left), (_right_value, right))) = self
-            .signed_constant_evidence(left)
-            .zip(self.signed_constant_evidence(right))
+            .signed_constant_evidence_view(left)
+            .zip(self.signed_constant_evidence_view(right))
             .filter(|((left, _), (right, _))| left == right)
         {
             return Some(DirectBitvectorEqualityEvidence::EqualSignedConstants {
@@ -113,11 +130,19 @@ impl PureFactContext {
             });
         }
         let less_equal = Proposition::ConditionIs(
-            ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::LessEqual,
+                [left, right],
+            ),
             true,
         );
         let not_less_than = Proposition::ConditionIs(
-            ConditionTerm::signed_less_than(left.clone(), right.clone()),
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::LessThan,
+                [left, right],
+            ),
             false,
         );
         if self.contains_assumed_exact(&less_equal) && self.contains_assumed_exact(&not_less_than) {
@@ -129,11 +154,19 @@ impl PureFactContext {
             )));
         }
         let greater_equal = Proposition::ConditionIs(
-            ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::GreaterEqual,
+                [left, right],
+            ),
             true,
         );
         let not_greater_than = Proposition::ConditionIs(
-            ConditionTerm::signed_greater_than(left.clone(), right.clone()),
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::Int32,
+                CompareRelation::GreaterThan,
+                [left, right],
+            ),
             false,
         );
         (self.contains_assumed_exact(&greater_equal)
@@ -164,18 +197,25 @@ impl PureFactContext {
         &self,
         term: &MachineTerm,
     ) -> Option<(i64, SignedConstantEvidence)> {
-        if let Some(value) = signed_bitvector_constant(term) {
+        self.signed_constant_evidence_view(MachineOperandView::Legacy(term))
+    }
+
+    fn signed_constant_evidence_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Option<(i64, SignedConstantEvidence)> {
+        if let Some(value) = term.word32_constant().map(|n| i64::from(n as i32)) {
             return Some((value, SignedConstantEvidence::Constant));
         }
-        if let Some((value, source)) = self.indexed_exact_int32_constant(term) {
+        if let Some((value, source)) = self.indexed_exact_int32_constant_view(term) {
             return Some((value, SignedConstantEvidence::ExactEquality(source)));
         }
-        let variable = bitvector_variable(term)?;
+        let variable = *term.variable()?;
         let mut lower: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         let mut upper: Option<(i64, IndexedSignedOrderBoundEvidence)> = None;
         for source in self
             .checked_order_bounds
-            .constant_evidence_sources(term)
+            .constant_evidence_sources(&MachineTerm::Variable(variable))
             .into_iter()
             .flatten()
         {
@@ -1851,6 +1891,17 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> Option<Vec<BitvectorEqualityDerivationStep>> {
+        self.exact_bitvector_equality_path_evidence_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(in crate::kernel) fn exact_bitvector_equality_path_evidence_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<Vec<BitvectorEqualityDerivationStep>> {
         self.equality_graph.exact_scalar_evidence_path(left, right)
     }
 
@@ -1929,19 +1980,25 @@ impl PureFactContext {
                     byte_width: right_width,
                 },
             ) if left_width == right_width => self
-                .exact_bitvector_equality_path_evidence(left, right)
+                .exact_bitvector_equality_path_evidence_views(
+                    left.operand_view(),
+                    right.operand_view(),
+                )
                 .map(|path| PointerOffsetCongruenceEvidence::Int32Scaled {
                     byte_width: *left_width,
                     path,
                 })
                 .or_else(|| {
-                    self.direct_bitvector_equality_evidence(left, right)
-                        .map(
-                            |equality| PointerOffsetCongruenceEvidence::Int32ScaledDerived {
-                                byte_width: *left_width,
-                                equality,
-                            },
-                        )
+                    self.direct_bitvector_equality_evidence_views(
+                        left.operand_view(),
+                        right.operand_view(),
+                    )
+                    .map(|equality| {
+                        PointerOffsetCongruenceEvidence::Int32ScaledDerived {
+                            byte_width: *left_width,
+                            equality,
+                        }
+                    })
                 }),
             (
                 PointerOffsetTerm::Int64Scaled {
@@ -1958,7 +2015,10 @@ impl PureFactContext {
                 Some(PointerOffsetCongruenceEvidence::Int64Scaled {
                     byte_width: *left_width,
                     unsigned: *left_unsigned,
-                    path: self.exact_bitvector_equality_path_evidence(left, right)?,
+                    path: self.exact_bitvector_equality_path_evidence_views(
+                        left.operand_view(),
+                        right.operand_view(),
+                    )?,
                 })
             }
             _ => None,
@@ -1972,20 +2032,26 @@ impl PureFactContext {
     ) -> Option<PointerOffsetCongruenceEvidence> {
         let byte_width = common_pointer_offset_element_width(left, right)?;
         let (left_index, right_index) = (
-            element_index_from_offset(left, byte_width)?,
-            element_index_from_offset(right, byte_width)?,
+            shared_element_index_from_offset(left, byte_width)?,
+            shared_element_index_from_offset(right, byte_width)?,
         );
-        self.exact_bitvector_equality_path_evidence(&left_index, &right_index)
-            .map(|path| PointerOffsetCongruenceEvidence::ElementIndex { byte_width, path })
-            .or_else(|| {
-                self.direct_bitvector_equality_evidence(&left_index, &right_index)
-                    .map(
-                        |equality| PointerOffsetCongruenceEvidence::ElementIndexDerived {
-                            byte_width,
-                            equality,
-                        },
-                    )
-            })
+        self.exact_bitvector_equality_path_evidence_views(
+            left_index.operand_view(),
+            right_index.operand_view(),
+        )
+        .map(|path| PointerOffsetCongruenceEvidence::ElementIndex { byte_width, path })
+        .or_else(|| {
+            self.direct_bitvector_equality_evidence_views(
+                left_index.operand_view(),
+                right_index.operand_view(),
+            )
+            .map(
+                |equality| PointerOffsetCongruenceEvidence::ElementIndexDerived {
+                    byte_width,
+                    equality,
+                },
+            )
+        })
     }
 
     pub(in crate::kernel) fn load_address_congruence_evidence(
@@ -3560,6 +3626,196 @@ mod wide_observation_tag_regression {
         assert_eq!(
             crate::kernel::KernelTermExport::machine_export_count(),
             exports
+        );
+    }
+}
+
+#[cfg(test)]
+mod shared_offset_evidence_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, SharedMachineIntegerTerm,
+    };
+
+    fn offset(term: &MachineTerm, width: i64) -> PointerOffsetTerm {
+        let root = KernelTerm::retained_machine_operand(
+            MachineIntegerType::Int32,
+            MachineOperandView::Legacy(term),
+        );
+        PointerOffsetTerm::Int32Scaled {
+            value: SharedMachineIntegerTerm::from_shared(MachineIntegerType::Int32, root).unwrap(),
+            byte_width: width,
+        }
+    }
+
+    #[test]
+    fn non_machine_equalities_do_not_register_offset_dependencies() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let mut facts = PureFactContext::new();
+        let source = ConditionTerm::IntegerEqual(
+            crate::kernel::IntegerTerm::Variable(Variable(1008150)).into(),
+            crate::kernel::IntegerTerm::Variable(Variable(1008151)).into(),
+        );
+        facts
+            .equality_graph
+            .adjust_scalar_evidence_input(&source, true, true);
+        assert!(
+            facts
+                .equality_graph
+                .admitted
+                .scalar_evidence_keys
+                .is_empty()
+        );
+        assert!(
+            facts
+                .equality_graph
+                .admitted
+                .scalar_dependency_inputs
+                .is_empty()
+        );
+        facts
+            .equality_graph
+            .adjust_scalar_evidence_input(&source, true, false);
+        assert!(facts.equality_graph.admitted.scalar_dependencies.is_empty());
+    }
+
+    #[test]
+    fn shared_offset_evidence_preserves_native_sources_and_withdrawal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1008100));
+        let y = MachineTerm::Variable(Variable(1008101));
+        let z = MachineTerm::Variable(Variable(1008102));
+        let a = MachineTerm::add(x.clone(), z.clone());
+        let b = MachineTerm::add(y.clone(), z);
+        let cases = [
+            vec![(ConditionTerm::equal(a.clone(), b.clone()), true)],
+            vec![
+                (
+                    ConditionTerm::equal(x.clone(), MachineTerm::constant(3)),
+                    true,
+                ),
+                (
+                    ConditionTerm::equal(y.clone(), MachineTerm::constant(3)),
+                    true,
+                ),
+            ],
+            vec![
+                (ConditionTerm::signed_less_equal(x.clone(), y.clone()), true),
+                (ConditionTerm::signed_less_than(x.clone(), y.clone()), false),
+            ],
+            vec![
+                (
+                    ConditionTerm::signed_greater_equal(x.clone(), y.clone()),
+                    true,
+                ),
+                (
+                    ConditionTerm::signed_greater_than(x.clone(), y.clone()),
+                    false,
+                ),
+            ],
+        ];
+        for sources in cases {
+            let mut facts = PureFactContext::new();
+            for (source, truth) in &sources {
+                facts = facts.assume_condition(source.clone(), *truth);
+            }
+            let left = offset(&a, 4);
+            let right = offset(&b, 4);
+            let exports = KernelTermExport::machine_export_count();
+            let evidence = facts
+                .pointer_offset_congruence_evidence(&left, &right)
+                .expect("original source rule");
+            assert!(evidence.checks(&left, &right, &facts));
+            let withdrawn = facts.without_exact_fact(&Proposition::ConditionIs(
+                sources[0].0.clone(),
+                sources[0].1,
+            ));
+            assert!(!evidence.checks(&left, &right, &withdrawn));
+            assert!(
+                withdrawn
+                    .pointer_offset_congruence_evidence(&left, &right)
+                    .is_none()
+            );
+            assert!(
+                facts
+                    .pointer_offset_congruence_evidence(&left, &offset(&b, 8))
+                    .is_none()
+            );
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+        }
+    }
+
+    #[test]
+    fn shared_offset_evidence_keeps_read_snapshots_and_shared_premises() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = crate::kernel::CMemory::global_pointer("offset-evidence");
+        let memory = crate::kernel::CMemory::new().with_block("offset-evidence", 4);
+        let read = |memory| {
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Int32,
+            )
+        };
+        let old = read(memory.clone());
+        let new = read(memory.store(
+            pointer.clone(),
+            crate::kernel::CValue::Int32(MachineTerm::constant(7)),
+        ));
+        let value = MachineTerm::Variable(Variable(1008130));
+        let (left, right, changed) = (offset(&old, 4), offset(&value, 4), offset(&new, 4));
+        let fact = ConditionTerm::IntegerEqual(
+            crate::kernel::IntegerTerm::Machine(
+                left.int32_scaled_linear_form().unwrap().0[0].0.clone(),
+            )
+            .into(),
+            crate::kernel::IntegerTerm::Machine(
+                right.int32_scaled_linear_form().unwrap().0[0].0.clone(),
+            )
+            .into(),
+        );
+        let facts = PureFactContext::new().assume_condition(fact, true);
+        let exports = KernelTermExport::machine_export_count();
+        let proof = facts
+            .pointer_offset_congruence_evidence(&left, &right)
+            .expect("selected read source");
+        assert!(proof.checks(&left, &right, &facts));
+        assert!(!proof.checks(&changed, &right, &facts));
+        assert!(
+            facts
+                .pointer_offset_congruence_evidence(&changed, &right)
+                .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_element_projection_matches_native_syntax_and_wide_refusal() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1008110));
+        let cases = [
+            offset(&x, 4),
+            offset(&x, -4),
+            PointerOffsetTerm::Add(offset(&x, 4).into(), PointerOffsetTerm::Constant(8).into()),
+            PointerOffsetTerm::Constant(-12),
+        ];
+        for v in cases {
+            for width in [0, 1, 4, 8] {
+                let native = element_index_from_offset(&v, width);
+                let shared = shared_element_index_from_offset(&v, width);
+                assert_eq!(shared.map(|v| v.value().clone()), native);
+            }
+        }
+        for unsigned in [false, true] {
+            let wide = PointerOffsetTerm::scaled_int64_node(x.clone(), 4, unsigned);
+            assert!(shared_element_index_from_offset(&wide, 4).is_none());
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!(
+            "../../../scaling_tests/kernel/assumptions/condition_reasoning/shared_offset_evidence.rs"
         );
     }
 }

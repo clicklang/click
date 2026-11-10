@@ -750,6 +750,36 @@ pub(in crate::kernel) fn bitvector_variable_and_constant(
         .or_else(|| bitvector_variable(right).zip(signed_bitvector_constant(left)))
 }
 
+/// The existing cancellation rule with retained endpoints.
+pub(in crate::kernel) fn shared_bitvector_equality_cancellation(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+) -> Option<(
+    crate::kernel::SharedMachineIntegerTerm,
+    crate::kernel::SharedMachineIntegerTerm,
+)> {
+    use crate::kernel::machine_integer::{
+        Relation,
+        comparison::{ComparisonOperand, NativeComparisonView},
+    };
+    let ty = crate::kernel::MachineIntegerType::Int32;
+    let view = NativeComparisonView {
+        format: ty,
+        relation: Relation::Equal,
+        operands: [left, right].map(|v| match v {
+            crate::kernel::MachineOperandView::Legacy(term) => ComparisonOperand::Written(term),
+            crate::kernel::MachineOperandView::Shared(_) => {
+                ComparisonOperand::Observation(v.retain(ty))
+            }
+        }),
+    };
+    let reduced = view.cancelled_equality()?;
+    Some((
+        reduced.operands[0].operand_view().retain(ty),
+        reduced.operands[1].operand_view().retain(ty),
+    ))
+}
+
 pub(in crate::kernel) fn bitvector_equality_after_additive_cancellation(
     left: &MachineTerm,
     right: &MachineTerm,
