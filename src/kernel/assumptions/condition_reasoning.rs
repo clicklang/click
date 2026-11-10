@@ -7,6 +7,7 @@ pub(super) use bounds::{OrderFact, retain_order_operand, retained_order_fact};
 mod decision;
 mod memory_conditions;
 mod narrowed_casts;
+mod shared_simplification;
 pub(in crate::kernel) use narrowed_casts::narrowed_cast_identity;
 mod order_paths;
 pub(in crate::kernel) use order_paths::cancel_common_offset_addends;

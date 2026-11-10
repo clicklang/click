@@ -1017,7 +1017,10 @@ fn materialized_load_is_unchanged(
             Pointer {
                 offset: PointerOffsetTerm::Int32Scaled { value: bits, .. },
                 ..
-            } => load_of(bits),
+            } => bits
+                .operand_view()
+                .read_source()
+                .and_then(|leaf| load_of(&leaf)),
             _ => return false,
         },
         _ => return false,

@@ -81,7 +81,7 @@ pub(in crate::kernel) use memory_reasoning::parameter_alias_bucket;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_root;
 pub(in crate::kernel) use memory_reasoning::parameter_partition_variable;
 pub(in crate::kernel) use memory_reasoning::read_candidate_byte_width;
-pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping;
+pub(in crate::kernel) use memory_reasoning::signed_byte_sum_is_nonwrapping_views;
 pub(in crate::kernel) use memory_reasoning::{
     frame_composite_definitions, owned_instances_naming_access_base,
 };
@@ -2094,7 +2094,11 @@ fn collect_pointer_offset_memory_load_keys(
     offset: &PointerOffsetTerm,
     keys: &mut BTreeSet<(PointerBlock, u64)>,
 ) {
-    offset.for_each_scaled_value(|value| collect_bitvector_memory_load_keys(value, keys));
+    offset.for_each_scaled_operand(|value| {
+        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
+            collect_bitvector_memory_load_keys(leaf, keys)
+        })
+    });
 }
 
 fn collect_bitvector_memory_load_keys(

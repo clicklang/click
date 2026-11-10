@@ -1099,6 +1099,54 @@ impl PointerOffsetTerm {
         values.pop().expect("one mapped offset")
     }
 
+    /// Retained index operands, in the same order as the legacy value walker.
+    pub(crate) fn scaled_operands(&self) -> Vec<&SharedMachineIntegerTerm> {
+        let mut values = Vec::new();
+        let mut pending = vec![self];
+        while let Some(offset) = pending.pop() {
+            match offset {
+                Self::Constant(_) | Self::Variable(_) => {}
+                Self::Add(left, right) => {
+                    pending.push(left);
+                    pending.push(right);
+                }
+                Self::Int32Scaled { value, .. } | Self::Int64Scaled { value, .. } => {
+                    values.push(value)
+                }
+            }
+        }
+        values
+    }
+
+    pub(crate) fn for_each_scaled_operand(&self, mut visit: impl FnMut(&SharedMachineIntegerTerm)) {
+        self.any_scaled_operand(|value| {
+            visit(value);
+            false
+        });
+    }
+
+    pub(crate) fn any_scaled_operand(
+        &self,
+        mut test: impl FnMut(&SharedMachineIntegerTerm) -> bool,
+    ) -> bool {
+        let mut pending = vec![self];
+        while let Some(offset) = pending.pop() {
+            match offset {
+                Self::Constant(_) | Self::Variable(_) => {}
+                Self::Add(left, right) => {
+                    pending.push(right);
+                    pending.push(left);
+                }
+                Self::Int32Scaled { value, .. } | Self::Int64Scaled { value, .. } => {
+                    if test(value) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Every bitvector term nested in this offset, for traversals that must
     /// look through a pointer embedded in a term.
     pub(crate) fn scaled_values(&self) -> Vec<&MachineTerm> {
@@ -1117,28 +1165,6 @@ impl PointerOffsetTerm {
             }
         }
         values
-    }
-
-    /// Visits each scaled index of this offset, left to right.
-    pub(crate) fn for_each_scaled_value(&self, mut visit: impl FnMut(&MachineTerm)) {
-        self.any_scaled_value(|value| {
-            visit(value);
-            false
-        });
-    }
-
-    /// Whether some scaled index of this offset satisfies `test`, asked left to
-    /// right and stopping at the first that does.
-    pub(crate) fn any_scaled_value(&self, mut test: impl FnMut(&MachineTerm) -> bool) -> bool {
-        fn walk(offset: &PointerOffsetTerm, test: &mut impl FnMut(&MachineTerm) -> bool) -> bool {
-            match offset {
-                PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
-                PointerOffsetTerm::Add(left, right) => walk(left, test) || walk(right, test),
-                PointerOffsetTerm::Int32Scaled { value, .. }
-                | PointerOffsetTerm::Int64Scaled { value, .. } => test(value),
-            }
-        }
-        walk(self, &mut test)
     }
 }
 

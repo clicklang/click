@@ -1,7 +1,10 @@
 use super::*;
-use crate::kernel::{CompareRelation, MachineIntegerType};
+use crate::kernel::unary_term;
+use crate::kernel::{
+    CompareRelation, KernelTerm, MachineBinaryOp, MachineIntegerType,
+    MachineOperandView as Operand, MachineUnaryOp, SharedMachineIntegerTerm,
+};
 use crate::kernel::{MachineCastSpelling, cast_term};
-use crate::kernel::{binary_term, unary_term};
 use crate::kernel::{bits32_constant, constant_u32};
 
 mod contract_claims;
@@ -176,42 +179,70 @@ fn proposition_conjuncts(proposition: &Proposition, into: &mut Vec<Proposition>)
 /// Converts a nonnegative pointer displacement to a byte count. Symbolic
 /// scaling and addition are admitted only with bounds that make the 32-bit
 /// term agree with the pointer offset's exact integer arithmetic.
+fn certification_binary(
+    assumptions: &PureFactContext,
+    operator: MachineBinaryOp,
+    left: Operand<'_>,
+    right: Operand<'_>,
+) -> SharedMachineIntegerTerm {
+    let format = MachineIntegerType::Int32;
+    let root = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+        format,
+        operator,
+        KernelTerm::retained_machine_operand(format, left),
+        KernelTerm::retained_machine_operand(format, right),
+    );
+    assumptions.simplify_machine_operand_under_assumptions(Operand::Shared(&root), format)
+}
+
 fn pointer_offset_bytes(
     assumptions: &PureFactContext,
     offset: &PointerOffsetTerm,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
+    let literal =
+        |n| SharedMachineIntegerTerm::intern(MachineIntegerType::Int32, MachineTerm::constant(n));
     if let Some(bytes) = offset.as_const() {
-        return u32::try_from(bytes).ok().map(MachineTerm::constant);
+        return u32::try_from(bytes).ok().map(literal);
     }
     let zero = MachineTerm::constant(0);
     let max = i32::MAX as u32;
+    let le =
+        |a: Operand<'_>, b: Operand<'_>| certification_proves_signed_le_views(assumptions, a, b);
     match offset {
-        PointerOffsetTerm::Constant(_) => None,
-        PointerOffsetTerm::Variable(_) | PointerOffsetTerm::Int64Scaled { .. } => None,
+        PointerOffsetTerm::Constant(_)
+        | PointerOffsetTerm::Variable(_)
+        | PointerOffsetTerm::Int64Scaled { .. } => None,
         PointerOffsetTerm::Add(left, right) => {
             let left = pointer_offset_bytes(assumptions, left)?;
             let right = pointer_offset_bytes(assumptions, right)?;
-            let sum = assumptions.simplify_bitvector_under_assumptions(&MachineTerm::add(
-                left.clone(),
-                right.clone(),
-            ));
-            (certification_proves_signed_le(assumptions, &zero, &left)
-                && certification_proves_signed_le(assumptions, &zero, &right)
-                && certification_proves_signed_le(assumptions, &zero, &sum)
-                && certification_proves_signed_le(assumptions, &left, &sum)
-                && certification_proves_signed_le(assumptions, &right, &sum))
+            let sum = certification_binary(
+                assumptions,
+                MachineBinaryOp::Add,
+                left.operand_view(),
+                right.operand_view(),
+            );
+            (le(Operand::Legacy(&zero), left.operand_view())
+                && le(Operand::Legacy(&zero), right.operand_view())
+                && le(Operand::Legacy(&zero), sum.operand_view())
+                && le(left.operand_view(), sum.operand_view())
+                && le(right.operand_view(), sum.operand_view()))
             .then_some(sum)
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             let width = u32::try_from(*byte_width).ok().filter(|width| *width > 0)?;
             let limit = MachineTerm::constant(max / width);
-            (certification_proves_signed_le(assumptions, &zero, value)
-                && (width == 1 || certification_proves_signed_le(assumptions, value, &limit)))
+            (le(Operand::Legacy(&zero), value.operand_view())
+                && (width == 1 || le(value.operand_view(), Operand::Legacy(&limit))))
             .then(|| {
                 if width == 1 {
-                    value.as_ref().clone()
+                    value.clone()
                 } else {
-                    MachineTerm::multiply(value.as_ref().clone(), MachineTerm::constant(width))
+                    certification_binary(
+                        assumptions,
+                        MachineBinaryOp::Multiply,
+                        value.operand_view(),
+                        Operand::Legacy(&MachineTerm::constant(width)),
+                    )
                 }
             })
         }
@@ -224,9 +255,12 @@ fn pointer_offset_byte_delta(
     assumptions: &PureFactContext,
     goal_offset: &PointerOffsetTerm,
     fact_offset: &PointerOffsetTerm,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
     if goal_offset == fact_offset {
-        return Some(MachineTerm::constant(0));
+        return Some(SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            MachineTerm::constant(0),
+        ));
     }
     if let PointerOffsetTerm::Add(left, right) = goal_offset {
         if left.as_ref() == fact_offset {
@@ -239,20 +273,16 @@ fn pointer_offset_byte_delta(
     None
 }
 
-/// Splits `term + c` into its base term and additive constant (0 when none).
-fn split_additive_constant(term: &MachineTerm) -> (MachineTerm, u32) {
-    match term {
-        binary_term!(Int32, Add, left, right) => {
-            if let bits32_constant!(value) = right.as_ref() {
-                return (left.as_ref().clone(), constant_u32(*value));
-            }
-            if let bits32_constant!(value) = left.as_ref() {
-                return (right.as_ref().clone(), constant_u32(*value));
-            }
-            (term.clone(), 0)
+fn split_additive_constant(term: Operand<'_>) -> (SharedMachineIntegerTerm, u32) {
+    if let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) = term.binary() {
+        if let Some(value) = right.word32_constant() {
+            return (left.retain(MachineIntegerType::Int32), value);
         }
-        _ => (term.clone(), 0),
+        if let Some(value) = left.word32_constant() {
+            return (right.retain(MachineIntegerType::Int32), value);
+        }
     }
+    (term.retain(MachineIntegerType::Int32), 0)
 }
 
 /// Certifies a loadability goal from an assumed wider loadable fact over the
@@ -458,53 +488,58 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
                 else {
                     return false;
                 };
-                let delta = assumptions.simplify_bitvector_under_assumptions(&delta_bytes);
-                let width = assumptions.simplify_bitvector_under_assumptions(bytes);
-                let span = assumptions.simplify_bitvector_under_assumptions(fact_bytes);
-                // Concrete byte counts are mathematical extents, including counts
-                // above i32::MAX. Never compare their wrapped 32-bit sum.
-                if let (Some(delta), Some(width), Some(span)) =
-                    (delta.as_const(), width.as_const(), span.as_const())
-                {
+                let delta = assumptions.simplify_machine_operand_under_assumptions(
+                    delta_bytes.operand_view(),
+                    MachineIntegerType::Int32,
+                );
+                let width = assumptions.simplify_machine_operand_under_assumptions(
+                    Operand::Legacy(bytes),
+                    MachineIntegerType::Int32,
+                );
+                let span = assumptions.simplify_machine_operand_under_assumptions(
+                    Operand::Legacy(fact_bytes),
+                    MachineIntegerType::Int32,
+                );
+                if let (Some(delta), Some(width), Some(span)) = (
+                    delta.operand_view().word32_constant(),
+                    width.operand_view().word32_constant(),
+                    span.operand_view().word32_constant(),
+                ) {
                     return u64::from(delta) + u64::from(width) <= u64::from(span);
                 }
-
                 let start = MachineTerm::constant(0);
-                let end = assumptions.simplify_bitvector_under_assumptions(&MachineTerm::add(
-                    delta.clone(),
-                    width.clone(),
-                ));
-                // The signed order prover can establish a byte inequality only
-                // while every operand and the sum retain their nonnegative integer
-                // meaning. The sum of two nonnegative signed words cannot wrap the
-                // 32-bit word; end >= delta rules out signed overflow.
-                let nonwrapping_sum = crate::kernel::assumptions::signed_byte_sum_is_nonwrapping(
-                    &delta,
-                    &width,
-                    &end,
-                    |left, right| certification_proves_signed_le(assumptions, left, right),
+                let end = certification_binary(
+                    assumptions,
+                    MachineBinaryOp::Add,
+                    delta.operand_view(),
+                    width.operand_view(),
                 );
+                let le = |a: Operand<'_>, b: Operand<'_>| {
+                    certification_proves_signed_le_views(assumptions, a, b)
+                };
+                // Preserve the signed nonwrapping-sum rule: both addends are
+                // nonnegative and the sum has not fallen below its first one.
+                let nonwrapping_sum =
+                    crate::kernel::assumptions::signed_byte_sum_is_nonwrapping_views(
+                        delta.operand_view(),
+                        width.operand_view(),
+                        end.operand_view(),
+                        le,
+                    );
                 let ends_in_bounds = nonwrapping_sum
-                    && ((certification_proves_signed_le(assumptions, &start, &span)
-                        && certification_proves_signed_le(assumptions, &end, &span))
+                    && ((le(Operand::Legacy(&start), span.operand_view())
+                        && le(end.operand_view(), span.operand_view()))
                         || {
-                            // Strip additive constants in exact unsigned byte counts.
-                            // Two nonnegative signed bases plus nonnegative signed
-                            // shifts cannot wrap a 32-bit word, even when the resulting
-                            // byte span exceeds i32::MAX.
-                            let (end_base, end_shift) = split_additive_constant(&end);
-                            let (span_base, span_shift) = split_additive_constant(&span);
+                            let (end_base, end_shift) = split_additive_constant(end.operand_view());
+                            let (span_base, span_shift) =
+                                split_additive_constant(span.operand_view());
                             end_shift <= i32::MAX as u32
                                 && span_shift <= i32::MAX as u32
                                 && end_shift <= span_shift
-                                && certification_proves_signed_le(assumptions, &start, &end_base)
-                                && certification_proves_signed_le(assumptions, &start, &span_base)
-                                && certification_proves_signed_le(assumptions, &end_base, &end)
-                                && certification_proves_signed_le(
-                                    assumptions,
-                                    &end_base,
-                                    &span_base,
-                                )
+                                && le(Operand::Legacy(&start), end_base.operand_view())
+                                && le(Operand::Legacy(&start), span_base.operand_view())
+                                && le(end_base.operand_view(), end.operand_view())
+                                && le(end_base.operand_view(), span_base.operand_view())
                         });
                 if ends_in_bounds {
                     return true;
@@ -519,20 +554,127 @@ pub fn loadable_covered_by_fact(assumptions: &PureFactContext, goal: &Propositio
 
 /// Certifies `left <= right` by the exact rules: two constants compare,
 /// an exact assumed fact, or the bounded order prover.
-fn certification_proves_signed_le(
+fn certification_proves_signed_le_views(
     assumptions: &PureFactContext,
-    left: &MachineTerm,
-    right: &MachineTerm,
+    left: Operand<'_>,
+    right: Operand<'_>,
 ) -> bool {
-    if let (Some(left), Some(right)) = (
-        signed_bitvector_constant(left),
-        signed_bitvector_constant(right),
-    ) {
-        return left <= right;
+    if let (Some(left), Some(right)) = (left.word32_constant(), right.word32_constant()) {
+        return (left as i32) <= (right as i32);
     }
-    let condition = ConditionTerm::signed_less_equal(left.clone(), right.clone());
+    let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        MachineIntegerType::Int32,
+        CompareRelation::LessEqual,
+        [left, right],
+    );
     assumptions.proves_exact(&Proposition::ConditionIs(condition.clone(), true))
         || assumptions.proves_order_condition_for_memory_resolution(&condition, true)
+}
+
+fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
+    match term {
+        MachineTerm::Cast {
+            spelling: MachineCastSpelling::Generic,
+            ..
+        }
+        | MachineTerm::BoolCast { .. } => {}
+
+        MachineTerm::Constant { .. }
+        | cast_term!(Int64From32, _)
+        | cast_term!(Int64FromUInt32, _)
+        | cast_term!(UInt64From32, _)
+        | cast_term!(UInt32From64, _)
+        | cast_term!(UInt64FromInt32, _)
+        | cast_term!(UInt64FromInt64, _)
+        | crate::kernel::binary_wide_term!(..)
+        | crate::kernel::unary_wide_term!(..) => {}
+        MachineTerm::Variable(variable) => {
+            variables.insert(*variable);
+        }
+        crate::kernel::binary_bitvector32_term!(left, right) => {
+            collect_shallow_term_variables(left, variables);
+            collect_shallow_term_variables(right, variables);
+        }
+        MachineTerm::Float32Binary { left, right, .. }
+        | MachineTerm::Float64Binary { left, right, .. } => {
+            collect_shallow_term_variables(left, variables);
+            collect_shallow_term_variables(right, variables);
+        }
+        unary_term!(Bits32, BitwiseNot, inner)
+        | MachineTerm::Float32Negate(inner)
+        | MachineTerm::Float64Negate(inner) => {
+            collect_shallow_term_variables(inner, variables);
+        }
+        MachineTerm::If {
+            then_term,
+            else_term,
+            ..
+        } => {
+            collect_shallow_term_variables(then_term, variables);
+            collect_shallow_term_variables(else_term, variables);
+        }
+        MachineTerm::RangeFold {
+            start,
+            end,
+            initial,
+            body,
+            ..
+        } => {
+            collect_shallow_term_variables(start, variables);
+            collect_shallow_term_variables(end, variables);
+            collect_shallow_term_variables(initial, variables);
+            collect_shallow_term_variables(body, variables);
+        }
+        MachineTerm::PureFunctionApplication { arguments, .. } => {
+            for argument in arguments {
+                collect_shallow_term_variables(argument, variables);
+            }
+        }
+        MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {}
+        // The memory snapshot may contain a large symbolic state. Only
+        // variables outside nested loads can be the surrounding
+        // quantified index. Variables in the loaded address belong to
+        // the base expression (for example the owner parameter), not to
+        // that index.
+        MachineTerm::MemoryLoad(_, _, _) => {}
+        MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
+    }
+}
+
+fn collect_shallow_operand_variables(term: Operand<'_>, variables: &mut BTreeSet<Variable>) {
+    let mut pending = vec![term];
+    let mut seen = BTreeSet::new();
+    while let Some(term) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if let Operand::Legacy(term) = term {
+            collect_shallow_term_variables(term, variables);
+            continue;
+        }
+        let Operand::Shared(root) = term else {
+            unreachable!()
+        };
+        if !seen.insert(root.id()) {
+            continue;
+        }
+        if let Some(leaf) = root.machine_conversion_leaf() {
+            collect_shallow_term_variables(leaf, variables);
+            continue;
+        }
+        if let Some(variable) = term.variable() {
+            variables.insert(*variable);
+        } else if let Some((format, _, [left, right])) = term.binary() {
+            if format.format().bits() == 32 {
+                pending.push(right);
+                pending.push(left);
+            }
+        } else if let Some((format, MachineUnaryOp::BitwiseNot, child)) = term.unary() {
+            if format.format().bits() == 32 {
+                pending.push(child);
+            }
+        }
+        // Casts, wide operations, reads and Integer payloads are opaque to
+        // this binder-coordinate query, exactly as in its native rule.
+    }
 }
 
 /// Certifies a universally-quantified loadability side-obligation from
@@ -571,76 +713,6 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
     if crate::kernel::assumptions::reasoning_interrupted() {
         return false;
     }
-    fn collect_shallow_term_variables(term: &MachineTerm, variables: &mut BTreeSet<Variable>) {
-        match term {
-            MachineTerm::Cast {
-                spelling: MachineCastSpelling::Generic,
-                ..
-            }
-            | MachineTerm::BoolCast { .. } => {}
-
-            MachineTerm::Constant { .. }
-            | cast_term!(Int64From32, _)
-            | cast_term!(Int64FromUInt32, _)
-            | cast_term!(UInt64From32, _)
-            | cast_term!(UInt32From64, _)
-            | cast_term!(UInt64FromInt32, _)
-            | cast_term!(UInt64FromInt64, _)
-            | crate::kernel::binary_wide_term!(..)
-            | crate::kernel::unary_wide_term!(..) => {}
-            MachineTerm::Variable(variable) => {
-                variables.insert(*variable);
-            }
-            crate::kernel::binary_bitvector32_term!(left, right) => {
-                collect_shallow_term_variables(left, variables);
-                collect_shallow_term_variables(right, variables);
-            }
-            MachineTerm::Float32Binary { left, right, .. }
-            | MachineTerm::Float64Binary { left, right, .. } => {
-                collect_shallow_term_variables(left, variables);
-                collect_shallow_term_variables(right, variables);
-            }
-            unary_term!(Bits32, BitwiseNot, inner)
-            | MachineTerm::Float32Negate(inner)
-            | MachineTerm::Float64Negate(inner) => {
-                collect_shallow_term_variables(inner, variables);
-            }
-            MachineTerm::If {
-                then_term,
-                else_term,
-                ..
-            } => {
-                collect_shallow_term_variables(then_term, variables);
-                collect_shallow_term_variables(else_term, variables);
-            }
-            MachineTerm::RangeFold {
-                start,
-                end,
-                initial,
-                body,
-                ..
-            } => {
-                collect_shallow_term_variables(start, variables);
-                collect_shallow_term_variables(end, variables);
-                collect_shallow_term_variables(initial, variables);
-                collect_shallow_term_variables(body, variables);
-            }
-            MachineTerm::PureFunctionApplication { arguments, .. } => {
-                for argument in arguments {
-                    collect_shallow_term_variables(argument, variables);
-                }
-            }
-            MachineTerm::ClickFunctionApplication { .. } | MachineTerm::AlgebraicMatch { .. } => {}
-            // The memory snapshot may contain a large symbolic state. Only
-            // variables outside nested loads can be the surrounding
-            // quantified index. Variables in the loaded address belong to
-            // the base expression (for example the owner parameter), not to
-            // that index.
-            MachineTerm::MemoryLoad(_, _, _) => {}
-            MachineTerm::PointerAddress(_, _) | MachineTerm::IntegerToMachine { .. } => {}
-        }
-    }
-
     fn collect_shallow_offset_variables(
         offset: &PointerOffsetTerm,
         variables: &mut BTreeSet<Variable>,
@@ -656,7 +728,7 @@ pub(in crate::kernel) fn quantified_int32_fact_certifies_loadable_cell(
             }
             PointerOffsetTerm::Int32Scaled { value, .. }
             | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                collect_shallow_term_variables(value, variables);
+                collect_shallow_operand_variables(value.operand_view(), variables);
             }
         }
     }
@@ -2742,7 +2814,8 @@ fn pointer_offsets_equal_with_resolved_atoms(
         let mut unresolved = Vec::new();
         for atom in atoms {
             if let PointerOffsetTerm::Int32Scaled { value, byte_width } = &atom
-                && let Some(known) = assumptions.known_signed_constant_after_normalization(value)
+                && let Some(known) =
+                    assumptions.known_signed_constant_after_normalization_view(value.operand_view())
             {
                 constant += known * byte_width;
                 continue;
@@ -2758,11 +2831,16 @@ fn pointer_offsets_equal_with_resolved_atoms(
     }
     // Scaled values compare through snapshot-bridged load equality: two
     // forms of one loaded field.
-    let scaled_values_bridged = |left: &MachineTerm, right: &MachineTerm| {
-        left == right
-            || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
-            || assumptions.memory_loads_proven_equal(left, right)
-            || crate::kernel::explicit_atomic_equality_from_memory_derivations(
+    let scaled_values_bridged = |left: Operand<'_>, right: Operand<'_>| {
+        crate::kernel::reasoning::int32_operand_values_equal_for_memory_resolution(
+            left,
+            right,
+            assumptions,
+        ) || left
+            .read_source()
+            .zip(right.read_source())
+            .is_some_and(|(left, right)| assumptions.memory_loads_proven_equal(&left, &right))
+            || crate::kernel::explicit_atomic_equality_from_memory_derivations_views(
                 left,
                 right,
                 assumptions,
@@ -2801,7 +2879,7 @@ fn pointer_offsets_equal_with_resolved_atoms(
         // stated one is an equality-graph edge the bridged comparison reads,
         // and chaining them through snapshot-bridged endpoints was a search
         // over every condition fact.
-        scaled_values_bridged(left_value, right_value)
+        scaled_values_bridged(left_value.operand_view(), right_value.operand_view())
     };
     for atom in &left_atoms {
         let Some(position) = right_atoms
@@ -3156,4 +3234,161 @@ fn contract_endpoints_certify_loadability(
 ) -> bool {
     resources_certify_loadability(entry_state, entry_resources, proposition, assumptions)
         || resources_certify_loadability(post_state, post_resources, proposition, assumptions)
+}
+
+#[cfg(test)]
+mod shared_contract_operand_tests {
+    use super::*;
+    use crate::kernel::KernelTermExport;
+
+    #[test]
+    fn shared_contract_read_matches_stored_arithmetic_without_export() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "contract-expression-cell".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let written = MachineTerm::add(
+            MachineTerm::Variable(Variable(1017151)),
+            MachineTerm::constant(7),
+        );
+        let before = crate::kernel::CMemory::new().with_block("contract-expression-cell", 4);
+        let after = before
+            .clone()
+            .store(pointer.clone(), CValue::Int32(written.clone()));
+        let load = |memory| {
+            SharedMachineIntegerTerm::index(
+                MachineIntegerType::Int32,
+                MachineTerm::MemoryLoad(
+                    crate::kernel::intern_c_memory(memory),
+                    Box::new(pointer.clone()),
+                    crate::kernel::LoadKind::Int32,
+                ),
+            )
+        };
+        let before = load(before);
+        let after = load(after);
+        let written = SharedMachineIntegerTerm::index(MachineIntegerType::Int32, written);
+        let assumptions = PureFactContext::new();
+        let exports = KernelTermExport::machine_export_count();
+        assert!(
+            crate::kernel::explicit_atomic_equality_from_memory_derivations_views(
+                after.operand_view(),
+                written.operand_view(),
+                &assumptions
+            )
+        );
+        assert!(
+            !crate::kernel::explicit_atomic_equality_from_memory_derivations_views(
+                before.operand_view(),
+                written.operand_view(),
+                &assumptions
+            )
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_contract_index_equality_keeps_read_snapshots_and_sources() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let pointer = Pointer {
+            block: "contract-index".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let load = |id| {
+            let memory = crate::kernel::CMemory::new()
+                .with_block("contract-index", 4)
+                .store(
+                    pointer.clone(),
+                    CValue::Int32(MachineTerm::Variable(Variable(id))),
+                );
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory(memory),
+                Box::new(pointer.clone()),
+                crate::kernel::LoadKind::Int32,
+            )
+        };
+        let a = load(1017152);
+        let b = load(1017153);
+        let offset = |term| PointerOffsetTerm::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, term),
+            byte_width: 4,
+        };
+        let left = offset(a.clone());
+        let right = offset(b.clone());
+        let equation = ConditionTerm::equal(
+            MachineTerm::Variable(Variable(1017152)),
+            MachineTerm::Variable(Variable(1017153)),
+        );
+        let empty = PureFactContext::new();
+        let related = empty.clone().assume_condition(equation.clone(), true);
+        let withdrawn = related.without_exact_fact(&Proposition::ConditionIs(equation, true));
+        let exports = KernelTermExport::machine_export_count();
+        assert!(pointer_offsets_equal_with_resolved_atoms(
+            &left, &left, &empty
+        ));
+        assert!(!pointer_offsets_equal_with_resolved_atoms(
+            &left, &right, &empty
+        ));
+        assert!(pointer_offsets_equal_with_resolved_atoms(
+            &left, &right, &related
+        ));
+        assert!(!pointer_offsets_equal_with_resolved_atoms(
+            &left, &right, &withdrawn
+        ));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn shared_byte_offsets_keep_bounds_and_width_authority() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1017121));
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: SharedMachineIntegerTerm::index(MachineIntegerType::Int32, x.clone()),
+            byte_width: 4,
+        };
+        let empty = PureFactContext::new();
+        let lower = ConditionTerm::signed_greater_equal(x.clone(), MachineTerm::constant(0));
+        let upper =
+            ConditionTerm::signed_less_equal(x.clone(), MachineTerm::constant(i32::MAX as u32 / 4));
+        let bounded = empty
+            .clone()
+            .assume_condition(lower.clone(), true)
+            .assume_condition(upper.clone(), true);
+        let exports = KernelTermExport::machine_export_count();
+        assert!(pointer_offset_bytes(&empty, &offset).is_none());
+        let bytes = pointer_offset_bytes(&bounded, &offset).expect("selected bounds");
+        assert!(
+            pointer_offset_bytes(
+                &bounded.without_exact_fact(&Proposition::ConditionIs(upper, true)),
+                &offset
+            )
+            .is_none()
+        );
+        assert!(
+            pointer_offset_bytes(
+                &bounded,
+                &PointerOffsetTerm::Int64Scaled {
+                    value: SharedMachineIntegerTerm::index(
+                        MachineIntegerType::Int64,
+                        MachineTerm::int64_from_32(x)
+                    ),
+                    byte_width: 4,
+                    unsigned: false,
+                }
+            )
+            .is_none()
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert!(bytes.operand_view().binary().is_some());
+    }
+}
+
+#[cfg(test)]
+mod scaling_tests {
+    use super::*;
+    use crate::kernel::KernelTermExport;
+    include!(
+        "../../scaling_tests/kernel/api/contract_certification/shared_contract_operand_tests.rs"
+    );
 }

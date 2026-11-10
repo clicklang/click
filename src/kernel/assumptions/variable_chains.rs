@@ -275,9 +275,7 @@ pub(in crate::kernel) fn array_index(
     let PointerOffsetTerm::Int32Scaled { value, byte_width } = index else {
         return None;
     };
-    let MachineTerm::Variable(variable) = value.as_ref() else {
-        return None;
-    };
+    let variable = value.operand_view().variable()?;
     (*byte_width > 0 && !crate::kernel::is_load_variable(variable)).then_some((
         base,
         *variable,

@@ -2772,16 +2772,14 @@ fn integer_carrier_in_bitvector(term: &MachineTerm, variable: Variable) -> bool 
     if pointer_offset_contains_registered_load(&pointer.offset) {
         return true;
     }
-    if pointer
-        .offset
-        .scaled_values()
-        .iter()
-        .any(|value| match value {
-            MachineTerm::Variable(variable) => crate::kernel::is_load_variable(variable),
-            MachineTerm::Constant { .. } => false,
-            _ => true,
-        })
-    {
+    if pointer.offset.scaled_operands().iter().any(|value| {
+        let operand = value.operand_view();
+        if let Some(variable) = operand.variable() {
+            crate::kernel::is_load_variable(variable)
+        } else {
+            operand.literal().is_none()
+        }
+    }) {
         // A nested registered load is an opaque pointer payload here.  Its
         // own selected address may carry the accumulator, so keep the scope
         // conservatively without expanding the registry DAG.

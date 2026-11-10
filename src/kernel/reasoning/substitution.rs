@@ -3394,7 +3394,11 @@ fn collect_pointer_offset_bound_variables(
     offset: &PointerOffsetTerm,
     variables: &mut BTreeSet<Variable>,
 ) {
-    offset.for_each_scaled_value(|value| collect_bitvector_bound_variables(value, variables));
+    offset.for_each_scaled_operand(|value| {
+        visit_machine_operand_native_leaves(value.operand_view(), |leaf| {
+            collect_bitvector_bound_variables(leaf, variables)
+        })
+    });
 }
 
 pub(in crate::kernel) fn substitute_bitvector_variable_in_term(
