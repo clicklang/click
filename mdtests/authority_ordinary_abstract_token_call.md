@@ -49,10 +49,19 @@ int32 apply_keep(
     ensures result == key;
 }
 
+theorem keep_first_satisfies_PreservePair() {
+    ensures PreservePair(&keep_first) by {
+        unfold(PreservePair);
+        solve();
+    }
+}
+
 int32 framed_token_caller(int32 key, int32 spare) {
     owns permit(key);
     owns permit(spare);
     ensures result == key;
+} by {
+    apply(keep_first_satisfies_PreservePair());
 }
 ```
 

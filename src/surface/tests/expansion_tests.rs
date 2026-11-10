@@ -1,6 +1,54 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: callback prerequisite expansion and cold replay"]
+fn explicit_callback_contract_obligation_expands_and_cold_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_named_function_contract.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "compare_is_comparator.ensures_0")
+            .unwrap();
+    let expanded = expand_function_proof_source(&expanded, &sources, "caller").unwrap();
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: explicit alias-fold obligation expansion and cold replay"]
+fn explicit_alias_fold_obligations_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/fold_through_a_pointer_alias.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "keep").unwrap();
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: named witness fold expansion and cold replay"]
+fn named_witness_fold_obligations_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/resource_witness_unfold_fold.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "unpack").unwrap();
+    without_implicit_solve_for_claim("unpack.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_00")]
 fn mirrored_implication_consequents_expand_to_checked_extraction() {
     for (ty, literal) in [

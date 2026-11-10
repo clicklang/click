@@ -115,20 +115,31 @@ until the changed refusals have been reviewed.
 
 Before landing, separate and repair these prerequisite families:
 
-- Named callback contracts: `c_named_function_contract.md` now leaves
-  `Comparator(&compare)` open. Call preparation previously invoked
-  `function_contract_requirement_is_proven`, including contract refinement;
-  ordinary solve does not discharge this newly emitted obligation. Establish
-  its explicit proof form before moving that reasoning into solve.
-- Fold source/binding preservation: `fold_through_a_pointer_alias.md` leaves
-  a pointer nonnull fact open despite the unfolded alias facts, and
-  `resource_witness_unfold_fold.md` reports a body requirement without a
-  source spelling. These reproduce on the final local binary. Repair the
-  produced obligation/source pair rather than reintroducing inline discharge.
+- Nineteen of the expected-pass corpus failures now have explicit proof
+  repairs, each passing its focused mdtest. The callback, alias-fold, and
+  named-witness cases also pass expansion with implicit solving disabled
+  for the expanded claim. Concrete callbacks use existing refinement theorems (`unfold`
+  for pure interfaces, `executes` with explicit instance maps for modeled
+  interfaces), applied before the call. `fold_through_a_pointer_alias.md`
+  supplies its nonnull and equality body facts in written `requires` blocks;
+  `resource_witness_unfold_fold.md` names its witness at unfold. These cases
+  need no new axiom or inline solver bypass.
+- Call-source metadata still needs repair. In
+  `named_contract_value_parameter.md`, removing the explicit prerequisite
+  block from `apply` reproduces refusal of the already-known
+  `0 <= x and x <= 1000`: the source speller compares all interface parameters
+  (including contract value parameters) against only the C call arguments.
+  Retain the selected value-parameter source bindings with the call;
+  do not recover them by searching ambient facts. The written block proves
+  both existing requirements with `assumption`.
+- Known-target indirect calls also lose the source callee spelling:
+  `struct_function_pointer_field.md` records `compare` as the selected callee,
+  while source validation expects the C call expression's callback name.
+  Preserve the original invocation alongside the selected interface.
 - Other corpus failures include assert false-path spelling, call-load and
-  resource-body spellings, and implicit fold proofs. Reconcile these only
-  after the representative failures above; the full run is recorded in
-  `/tmp/step-fold-final-broad.log` in the current workspace.
+  resource-body spellings, and implicit fold proofs. The initial full run is
+  recorded in `/tmp/step-fold-final-broad.log` in the current workspace;
+  its counts have not been recomputed after the explicit repairs.
 
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver

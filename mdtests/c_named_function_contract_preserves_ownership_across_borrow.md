@@ -39,9 +39,18 @@ int32 apply_read(int32 (*read)(int32*), int32* cells) {
     ensures result == cells[0];
 }
 
+theorem read_first_satisfies_ReadFirst() {
+    ensures ReadFirst(&read_first) by {
+        unfold(ReadFirst);
+        solve();
+    }
+}
+
 void borrow_then_write(int32* cells) {
     owns cells[0..2];
     ensures cells[1] == 7;
+} by {
+    apply(read_first_satisfies_ReadFirst());
 }
 ```
 
