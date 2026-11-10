@@ -1,0 +1,100 @@
+name: pages
+
+# Builds the website (the guide at the root, the AI reference under
+# reference/) and deploys it to GitHub Pages from `master`. A pull request
+# that changes the guide or the site only builds it, so a page that does not
+# render fails there and not after the merge. This check is not required and
+# does not run in the merge queue.
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'guide/**'
+      - 'site/**'
+      - 'docs/**'
+      - 'book.toml'
+      - 'scripts/build-site.sh'
+      - 'scripts/build-ai-reference.sh'
+      - 'scripts/mdbook-build.sh'
+      - 'scripts/tools.sh'
+      - 'tests/support/ai_reference.rs'
+      - '.github/workflows/pages.yml'
+  pull_request:
+    paths:
+      - 'guide/**'
+      - 'site/**'
+      - 'scripts/build-site.sh'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Deployments run one at a time and each one finishes; a build for a pull
+# request is superseded by a newer push to it.
+concurrency:
+  group: pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/click/tools
+          key: ${{ runner.os }}-click-tools-${{ hashFiles('scripts/tools.sh') }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-nextest
+          key: ${{ runner.os }}-click-nextest-${{ hashFiles('scripts/setup-environment.sh') }}
+      - name: Set up documentation environment
+        run: scripts/setup-environment.sh --docs-only
+      # The reference's generated files come from a Rust test. Reuse the test
+      # workflow's latest build snapshot; this job never saves one.
+      - uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/debug
+            target/charon
+          key: ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-click-build-v1-${{ hashFiles('rust-toolchain.toml', '**/Cargo.lock', '**/Cargo.toml', '.cargo/config.toml', 'scripts/charon-toolchain.sh', 'scripts/build-charon.sh', 'src/languages/rust/charon-profile.json') }}-
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+      # Reports the path the site is served under: `/click` for the project
+      # site, empty once a custom domain is set. A pull request build does not
+      # need Pages to be enabled.
+      - uses: actions/configure-pages@v5
+        id: pages
+        if: github.event_name != 'pull_request'
+      - name: Build the site
+        env:
+          CLICK_SITE_BASE: ${{ steps.pages.outputs.base_path }}/
+        run: scripts/build-site.sh "$RUNNER_TEMP/click-pages"
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: ${{ runner.temp }}/click-pages
+
+  deploy:
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment

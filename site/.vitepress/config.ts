@@ -49,7 +49,12 @@ function reloadSidebarOnChange() {
   }
 }
 
+// The URL path the site is served under, with a trailing slash:
+// `scripts/build-site.sh` sets it for a deployment.
+const base = process.env.CLICK_SITE_BASE ?? '/'
+
 export default defineConfig({
+  base,
   srcDir: '../guide',
   // `guide/README.md` is the directory's note on GitHub, not a site page. The
   // home page is `guide/index.md`.
@@ -60,6 +65,9 @@ export default defineConfig({
   title: 'Click',
   description: 'A verifier for existing C, C++, and Rust programs.',
   cleanUrls: true,
+  // The AI reference is a separate mdBook that the deployment serves under
+  // `/reference/`, so a guide link into it has no page here to check.
+  ignoreDeadLinks: [/^\/reference\//],
 
   // The pages are outside this directory, so their compiled imports of Vue
   // can't find `site/node_modules` by walking up from `guide/`. Resolve them
@@ -79,6 +87,11 @@ export default defineConfig({
     outline: { level: [2, 3] },
     search: { provider: 'local' },
     socialLinks: [{ icon: 'github', link: 'https://github.com/clicklang/click' }],
+    // The default theme shows the footer only on a page without a sidebar,
+    // such as a home page with `layout: home`.
+    footer: {
+      message: `AI agents: read the <a href="${base}reference/">reference</a> or <a href="${base}llms.txt">llms.txt</a>.`,
+    },
     editLink: {
       pattern: 'https://github.com/clicklang/click/edit/master/guide/:path',
     },
