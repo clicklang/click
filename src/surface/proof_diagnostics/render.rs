@@ -478,7 +478,7 @@ impl SnapshotLabels {
             Some(CMemoryConstructionKind::Transform {
                 operation: "project memory for pointer read",
                 sources,
-                arguments,
+                ..
             }) if sources.len() == 1 => {
                 let source = sources[0].clone();
                 let described = match self
@@ -490,13 +490,11 @@ impl SnapshotLabels {
                     Some(point) => format!("`{point}`"),
                     None => self.describe_state(&source),
                 };
-                let read = match arguments.as_slice() {
-                    [value @ crate::kernel::CValue::Pointer(_)] => {
-                        surface::source_value(value, self)
-                    }
-                    _ => unreachable!("pointer-read projection records its selected pointer"),
-                };
-                return format!("{described}, projected for the pointer read at {read}");
+                // The projection's construction can retain a binder from the
+                // producer's quantifier, outside the displayed leaf's scope.
+                // The leaf names its read; this annotation identifies only
+                // the source state, without leaking that internal binder.
+                return format!("{described}, projected for one read");
             }
             Some(CMemoryConstructionKind::Transform { .. }) => {
                 return "a memory derived from another state for one read".into();
@@ -2639,7 +2637,7 @@ mod tests {
     use crate::kernel::SharedIntegerTerm;
 
     #[test]
-    fn old_projected_reads_keep_the_recorded_point_and_selected_cell() {
+    fn old_projected_reads_keep_the_recorded_point_without_out_of_scope_values() {
         use crate::surface::{CodeRegionRef, ProgramPointKind, ProgramPointRef, RecordedSnapshots};
         let _session = crate::kernel::VerificationSession::enter();
         let cell = Pointer::symbolic(Variable(989_100));
@@ -2672,11 +2670,12 @@ mod tests {
         labels.recorded_snapshots(&snapshots);
         let description = labels.describe_state(&projected);
         assert!(description.contains("loop(0).entry"), "{description}");
-        assert!(description.contains("pointer read at"), "{description}");
         assert!(
-            !description.contains("projected for one read"),
+            description.ends_with("projected for one read"),
             "{description}"
         );
+        assert!(!description.contains("<pointer"), "{description}");
+        assert!(!description.contains("<unnamed"), "{description}");
         labels.state_label(&projected);
         let legend = labels.trace_legend();
         assert!(legend.contains("loop(0).entry"), "{legend}");
