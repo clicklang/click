@@ -167,6 +167,86 @@ const NIGHTLY: &[(&str, &str)] = &[
     ),
 ];
 
+/// Approximate verification cost of the examples that take much longer than
+/// the rest, in seconds of a debug test build on one core (2026-11-06). The
+/// CI shards are balanced by these; an example not listed costs
+/// `DEFAULT_EXAMPLE_COST`. A stale entry only unbalances the shards: every
+/// example still runs in exactly one.
+const EXAMPLE_COSTS: &[(&str, u32)] = &[
+    ("arena", 80),
+    ("rbtree/rbtree-model", 53),
+    ("owned-vector", 26),
+    ("bounded-pool", 22),
+    ("rust-chunks-exact", 16),
+    ("owned-string", 16),
+    ("rust-iterators", 11),
+    ("concurrency-fork-join", 11),
+];
+const DEFAULT_EXAMPLE_COST: u32 = 4;
+
+/// The shard, from 0, of each of `names` when they are split into `total`
+/// shards: the costliest example first, each into the shard with the least
+/// cost so far. Round-robin over the sorted names put the two costliest
+/// examples in one shard, which then took twice as long as the other.
+fn example_shards(names: &[String], total: usize) -> Vec<usize> {
+    let cost = |name: &str| {
+        EXAMPLE_COSTS
+            .iter()
+            .find(|(listed, _)| *listed == name)
+            .map_or(DEFAULT_EXAMPLE_COST, |(_, cost)| *cost)
+    };
+    let mut order = (0..names.len()).collect::<Vec<_>>();
+    order.sort_by(|&left, &right| {
+        cost(&names[right])
+            .cmp(&cost(&names[left]))
+            .then_with(|| names[left].cmp(&names[right]))
+    });
+    let mut load = vec![0u32; total];
+    let mut shards = vec![0; names.len()];
+    for index in order {
+        let lightest = (0..total)
+            .min_by_key(|&shard| load[shard])
+            .expect("at least one shard");
+        load[lightest] += cost(&names[index]);
+        shards[index] = lightest;
+    }
+    shards
+}
+
+#[test]
+fn example_shards_cover_each_example_once_and_balance_the_costly_ones() {
+    let mut names = EXAMPLE_COSTS
+        .iter()
+        .map(|(name, _)| name.to_string())
+        .collect::<Vec<_>>();
+    names.extend((0..40).map(|index| format!("ordinary-{index:02}")));
+    names.sort();
+    for total in 1..=4 {
+        let shards = example_shards(&names, total);
+        assert_eq!(shards.len(), names.len());
+        assert!(shards.iter().all(|shard| *shard < total));
+        let mut load = vec![0u32; total];
+        for (name, shard) in names.iter().zip(&shards) {
+            load[*shard] += EXAMPLE_COSTS
+                .iter()
+                .find(|(listed, _)| listed == name)
+                .map_or(DEFAULT_EXAMPLE_COST, |(_, cost)| *cost);
+        }
+        let (least, most) = (load.iter().min().unwrap(), load.iter().max().unwrap());
+        assert!(most - least <= 80, "{load:?}");
+        if total == 2 {
+            assert_ne!(
+                shards[names.iter().position(|name| name == "arena").unwrap()],
+                shards[names
+                    .iter()
+                    .position(|name| name == "rbtree/rbtree-model")
+                    .unwrap()],
+            );
+            assert!(most - least <= DEFAULT_EXAMPLE_COST, "{load:?}");
+        }
+    }
+}
+
 #[test]
 fn example_projects() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -206,8 +286,8 @@ fn example_projects() {
         projects.len() != before
     };
     // CI splits the examples across jobs to stay inside the gate's time
-    // budget: `EXAMPLE_PARTITION=k/n` keeps every n-th project from the k-th,
-    // over the sorted names, so the shards cover them exactly once.
+    // budget: `EXAMPLE_PARTITION=k/n` keeps the k-th of n shards, which cover
+    // the examples exactly once.
     let partitioned = std::env::var_os("EXAMPLE_PARTITION").is_some();
     if let Ok(partition) = std::env::var("EXAMPLE_PARTITION") {
         let (shard, total) = partition
@@ -219,10 +299,15 @@ fn example_projects() {
             .unwrap_or_else(|| {
                 panic!("EXAMPLE_PARTITION must be `k/n` with 1 <= k <= n, got `{partition}`")
             });
+        let names = projects
+            .iter()
+            .map(|path| example_name(&examples_dir, path))
+            .collect::<Vec<_>>();
+        let shards = example_shards(&names, total);
         let mut index = 0;
         projects.retain(|_| {
             index += 1;
-            (index - 1) % total == shard - 1
+            shards[index - 1] == shard - 1
         });
     }
     if !run_quarantined {
