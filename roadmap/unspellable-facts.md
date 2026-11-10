@@ -232,9 +232,18 @@ text searches missed. The `fast-gate` test build reports both production and
 test consumers; a diagnostic is not automatically a distinct checker gap.
 The traits cannot yet be deleted. In particular:
 
-- `PureFactContext::pointer_offset_congruence_evidence` passes shared scaled
-  indices to native exact/direct bitvector evidence builders. Migrate the
-  evidence endpoints without dropping their existing source authority.
+- `PureFactContext::pointer_offset_congruence_evidence` now retains shared
+  scaled indices through exact/direct bitvector evidence, additive cancellation,
+  selected-source indexing and existing evidence checking. Offset linear forms
+  retain shared leaves, including the residue test used to construct an offset
+  equality. Surface certificate construction still has explicit native output
+  getters; `scalar_evidence_class` still returns native terms to other
+  consumers. `single_scaled_index_equal_to_constant` likewise still exposes a
+  native index to the remaining order-path/condition-construction callers.
+  Those compatibility boundaries are not closed by this increment. The native
+  class API preserves syntax-sorted candidate order. Unsupported Integer
+  equalities must be rejected before recording pointer-coordinate dependencies;
+  they contribute no source edge and must not disable memory-query shortcuts.
 - `api/contract_certification.rs` passes scaled indices into signed bound,
   memory-cell and selected-condition checks; `contract_claims.rs` also
   inspects them through a native read helper. These are live checkers.
@@ -257,9 +266,16 @@ Validation: all 12 focused tests and the full gate passed (7,733 unit/API tests,
 58 examples, 5,123 mdtests). The gate took 11m06s and emitted its existing
 ten-minute budget warning; no limits changed.
 
-**Next cleanup:** migrate the offset-congruence evidence endpoints and their
-selected consumers above, then repeat the compiler-assisted trait-removal
-check. Keep legitimate native output boundaries explicit; do not replace a
+The offset-evidence increment passed the full gate: 7,742 unit/API tests,
+58 examples and 5,123 mdtests, including the unchanged duplicate-reference
+refusal. The gate exited 0 in 14m18s (the environment restarted during the run,
+but the process survived), with its existing ten-minute warning and no limit
+changes. A separate combined scaling/focused run passed 1,415 tests before the
+final dependency-bookkeeping fix; the final gate reran the scaling tests. Cold
+success/refusal controls at 16, 64 and 256 operators require zero exports.
+
+**Next cleanup:** migrate the contract-certification and remaining native
+index consumers above, then repeat the compiler-assisted trait-removal check. Keep legitimate native output boundaries explicit; do not replace a
 hidden export with an explicit export inside a checker just to compile.
 
 #### Classified boundaries and retained coverage
