@@ -74,8 +74,8 @@ be treated as a current to-do list. The detailed evidence is preserved in
 
 Finish the checker consumers before enabling the remaining shared producers.
 The bounded caller audit below is complete as of 2026-11-09, at upstream
-`fe8c6d931` (PR #2500). R1–R4 are now closed; step 1 is **not closed**:
-three route groups (R5–R7) still have checker exports. Close these concrete
+`fe8c6d931` (PR #2500). R1–R4 and R7 are now closed; step 1 is **not closed**:
+two route groups (R5/R6) still have checker exports. Close these concrete
 routes before enabling more producers.
 A textual accessor occurrence alone is not evidence of a checker dependency.
 
@@ -84,7 +84,7 @@ A textual accessor occurrence alone is not evidence of a checker dependency.
 | Wide comparison dispatch — closed | `decision.rs` sends retained operands to tagged-address reasoning. Residual tag arithmetic stays shared, exact source premises and selected native read transport are preserved, and the dispatcher no longer exports shared operands. Fixed-size atoms and already-native comparisons retain their native rules. |
 | Memory-resolution bounds — closed | `recorded_less_equal_candidates` retains operand views and the order index retains original true signed `<`/`<=` source membership. Memory equality reads shared arithmetic and selected native read leaves without exporting endpoints; parity, withdrawal, direction and DAG scaling controls cover this boundary. |
 | Mixed operands and reconstruction — open | R1/R2 source and replacement matching is closed. R5/R6 below identify remaining live callers and reproductions; successful all-shared cases do not close their mixed/opaque fallback paths. |
-| Dependency and atom walkers — partly closed | Ordinary scalar carriers, selected atoms and shared memory dependencies retain their operands. Shared pointer-index payloads still reach native walkers through implicit `Deref`: R7. |
+| Dependency and atom walkers — closed | Ordinary scalar carriers, selected atoms, shared memory dependencies and R7 pointer-index walkers retain their operands. |
 | Output and dead helpers — classified | See the separate boundary inventory below. Native output construction, diagnostics and test references do not establish that a checker inspected a shared tree. |
 
 - [x] Close the memory-resolution endpoint export.
@@ -93,7 +93,8 @@ A textual accessor occurrence alone is not evidence of a checker dependency.
 - [x] Close R1/R2 opaque source and replacement matching with retained operands.
 - [x] Close R3 mixed operation construction with retained native operands.
 - [x] Close R4 modular equality projection with retained residue operands.
-- [ ] Close R5–R7 with parity, refusal, no-export and deterministic scaling regressions.
+- [x] Close R7 pointer-index dependency, scope, comparison and fingerprint walkers.
+- [ ] Close R5/R6 with parity, refusal, no-export and deterministic scaling regressions.
 - [ ] Remove the obsolete checker adapters and retain no-export regressions.
 
 **Done when:** no checker exports a shared expression to a boxed tree to inspect
@@ -117,14 +118,14 @@ result already supports shared storage (notably pointer indices).
 | R4 — closed | `machine_integer/modular.rs::wrapped_equality_at`, called by `rewrite_with_admitted_equality` after the exact rewrite does not apply. Fast explicit rewrite consequence. | Project `to_integer(shared(x + x)) == 0` to its 32-bit word equality. The projection calls `machine.value()`. Its existing 64-node limit counts outer Integer syntax, not nodes inside a machine observation. Retain residue operands and their comparison, preserving width, polarity and the existing admission/refusal rule; do not increase the limit. |
 | R5 | `TermRewrite::offset` → `index_bits` → `structural_value`, then `scaled_int32_node`/`scale_int64`. Fast address reconstruction. | Rename `x` to `y` in an `Int32Scaled` offset containing shared `x + x`. Even a successful shared rewrite exports and reimports the result. The destination offset already stores `SharedMachineIntegerTerm`; retain it directly, preserving stride, signedness and the checked unsigned-index narrowing rule. |
 | R6 | `ProofFacts::with_checked_rewritten_loads`: mixed observations take `pairs.push((left.value(), right.value()))`; selected unmatched shared pairs can also reach `rewritten_loads::evidence_operand`. Fast checked presentation/evidence matching. | Compare the observation of shared `x + x` with an opaque native conditional. The match correctly refuses, but first exports the shared side. Keep both views through correspondence/refusal; construct native evidence only at a genuine selected native evidence boundary. Preserve binder independence, original snapshots and exact source authority. |
-| R7 | Shared indices inside `PointerOffsetTerm::{Int32Scaled,Int64Scaled}`: variable/capture/binder/scope walkers in `reasoning/variable_collection.rs`; `assumptions::collect_pointer_offset_memory_loads`; related offset equality and memory-blind fingerprint adapters. Fast address/dependency checking. | Passing `value: &SharedMachineIntegerTerm` to an `&MachineTerm` helper invokes `Deref` even without an explicit `.value()` call. Direct pointer-variable collection and current-memory dependency collection both export a shared `x + x` index. Use the existing retained carrier/read/scope summaries and operand views; grow index DAGs and vary snapshot/registry/binder state. No change to pointer semantics is needed. |
+| R7 — closed | Shared indices inside `PointerOffsetTerm::{Int32Scaled,Int64Scaled}`: variable/capture/binder/scope walkers in `reasoning/variable_collection.rs`; `assumptions::collect_pointer_offset_memory_loads`; related offset equality and memory-blind fingerprint adapters. Fast address/dependency checking. | Passing `value: &SharedMachineIntegerTerm` to an `&MachineTerm` helper invokes `Deref` even without an explicit `.value()` call. Direct pointer-variable collection and current-memory dependency collection both export a shared `x + x` index. Use the existing retained carrier/read/scope summaries and operand views; grow index DAGs and vary snapshot/registry/binder state. No change to pointer semantics is needed. |
 
 The R7 call-site review found `collect_pointer_offset_integer_variables`,
 `collect_pointer_offset_capture_variables`, `collect_pointer_offset_scope_summary`,
 `collect_pointer_offset_binder_variables`, `collect_pointer_offset_bitvector_variables`,
 `collect_pointer_offset_memory_loads`, `offsets_equal_with_load_atoms`, and
-`hash_memory_blind_pointer_offset`. These are explicit follow-up targets, not
-covered by the already-green tests of a scalar observation at the root.
+`hash_memory_blind_pointer_offset`. These now use retained operands; their tests enter through scaled pointer
+indices, rather than only a scalar observation at the root.
 
 **Audit evidence.** Eight temporary kernel probes used a cold shared `int32`
 `Add(x, x)` (one operator, one shared variable used twice) and the native
@@ -193,7 +194,16 @@ shared observations, preserving the distinction from signed/unsigned exact
 Integer equality. Its root-only check has cold DAG controls in both orientations.
 Cold
 DAGs at 16, 64 and 256 nodes have constant projection work and zero exports.
-R5–R7 remain separate work.
+R7 is **closed**. Scaled indices use the shared carrier/read/scope summaries for
+variable, capture, binder and current-memory dependency collection. Int32 offset
+comparison uses retained operand views and the existing load authority; Int64
+offset equality keeps its structural rule. Memory-blind fingerprints use one
+encoding for native/shared operands and cached child hashes for shared syntax.
+The cache is session-local, keyed by syntax identity, independent of facts,
+registry changes and snapshot contents. Controls cover conversion/binder
+payloads, registered reads, access widths, changed snapshots and native/shared
+parity. Cold DAGs and growing fingerprint prefixes at 16, 64 and 256 nodes have
+near-linear deterministic work and no exports. R5/R6 remain separate work.
 
 #### Classified boundaries and retained coverage
 
@@ -201,7 +211,7 @@ R5–R7 remain separate work.
   scope collectors, `assumptions::collect_shared_machine_memory_loads`, and
   `proof/facts/selected_atoms` select shared syntax/read/conversion leaves.
   Their native fallback requires an actually native operand. This classification
-  excludes the pointer-index edges in R7. Existing cold-DAG, growing-prefix,
+  includes the pointer-index edges closed in R7. Existing cold-DAG, growing-prefix,
   binder and registry tests remain applicable.
 - `proof/signed_arithmetic/atom_keys` works on shared syntax and retains its
   explicit conversion/opaque refusals. `proof/integer_arithmetic` keeps machine
@@ -239,8 +249,7 @@ The audit reran the existing shared rewrite, source, collector, atom, read-evide
 and registry controls: 59 syntax/rewrite controls and 13 registry/dependency
 controls passed. This scoped evidence does not close the reproduced gaps above.
 
-**Delivery order:** migrate address walkers
-R7 and address reconstruction R5; finish mixed read-evidence matching R6. Keep
+**Delivery order:** migrate address reconstruction R5; finish mixed read-evidence matching R6. Keep
 one coherent PR open at a time. R1/R2 reuse the exact native-leaf boundary
 introduced for tagged addresses; no opaque term-family redesign was required.
 
@@ -348,7 +357,7 @@ nesting depth; cached answers retain their source evidence. Multi-size growing
 DAG tests cover repeated misses and reuse of checked prefixes.
 
 The completed checker audit above now supplies step 1's concrete R1–R7 closure
-list. R1–R4 are closed; start with pointer-index walkers R7, then follow
+list. R1–R4 and R7 are closed; start with pointer-index reconstruction R5, then follow
 its delivery order before proceeding through steps 2–4. Do not resume the
 census backlog as the default next task.
 

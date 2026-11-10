@@ -657,6 +657,8 @@ fn opaque_repeated_symbolic_births_compose_and_return_without_scanning_unrelated
         // Keep term-bridge imports and canonical forms cold at every sample
         // size: a sign-bit equivalent names σ, whose canonical form is
         // built on a cache miss.
+        // Pointer-index fingerprints are syntax-only assumption memos too.
+        crate::kernel::assumptions::clear_assumption_memos();
         crate::kernel::clear_integer_bridge_memo();
         crate::kernel::eval::clear_load_canonicalization_caches();
         crate::kernel::memory_provenance::clear_canonical_form_caches();

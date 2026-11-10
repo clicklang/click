@@ -57,6 +57,7 @@ fn shared_machine_collectors_preserve_carriers_binders_and_loads() {
                 right: leaf.into(),
             };
             let machine = shared(&native, format);
+            check_pointer_index_collectors(&native, &machine);
             let observed = IntegerTerm::Machine(machine);
             let exports = KernelTermExport::machine_export_count();
             let mut expected = BTreeSet::new();
@@ -252,4 +253,55 @@ fn machine_fold_endpoints_retain_mathematical_variables_in_conversions() {
         assert_eq!(variables, BTreeSet::from([item, accumulator]));
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
+}
+
+// The same carrier fixture enters through a scaled pointer index, not a scalar
+// observation: these edges must not implicitly Deref the shared operand.
+fn check_pointer_index_collectors(native: &MachineTerm, machine: &SharedMachineIntegerTerm) {
+    let offset = if machine.ty() == MachineIntegerType::Int32 {
+        PointerOffsetTerm::Int32Scaled {
+            value: machine.clone(),
+            byte_width: 4,
+        }
+    } else {
+        PointerOffsetTerm::Int64Scaled {
+            value: machine.clone(),
+            byte_width: 8,
+            unsigned: true,
+        }
+    };
+    let before = KernelTermExport::machine_export_count();
+    let (mut expected, mut actual) = (BTreeSet::new(), BTreeSet::new());
+    collect_bitvector_integer_variables(native, &mut expected);
+    collect_pointer_offset_integer_variables(&offset, &mut actual, &mut SeenTerms::default());
+    assert_eq!(actual, expected);
+    expected.clear();
+    actual.clear();
+    collect_bitvector_capture_variables_seen(native, &mut expected, &mut SeenTerms::default());
+    collect_pointer_offset_capture_variables(&offset, &mut actual, &mut SeenTerms::default());
+    assert_eq!(actual, expected);
+    expected.clear();
+    actual.clear();
+    collect_bitvector_variables(native, &mut expected);
+    collect_pointer_offset_bitvector_variables(&offset, &mut actual);
+    assert_eq!(actual, expected);
+    let (mut expected_i, mut expected_c, mut actual_i, mut actual_c) = Default::default();
+    collect_bitvector_binder_variables_seen(
+        native,
+        &mut expected_i,
+        &mut expected_c,
+        &mut SeenTerms::default(),
+    );
+    collect_pointer_offset_binder_variables(
+        &offset,
+        &mut actual_i,
+        &mut actual_c,
+        &mut SeenTerms::default(),
+    );
+    assert_eq!((actual_i, actual_c), (expected_i, expected_c));
+    assert_eq!(
+        collect_pointer_offset_scope_summary(&offset, &mut Default::default()).max,
+        collect_bitvector_scope_summary(native, &mut Default::default()).max,
+    );
+    assert_eq!(KernelTermExport::machine_export_count(), before);
 }
