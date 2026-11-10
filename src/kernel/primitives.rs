@@ -1053,9 +1053,9 @@ impl PointerOffsetTerm {
     }
 
     /// Maps scaled index values without changing the offset expression.
-    pub(crate) fn map_scaled_values(
+    pub(crate) fn map_scaled_operands(
         &self,
-        mut map: impl FnMut(&MachineTerm) -> MachineTerm,
+        mut map: impl FnMut(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> Self {
         enum Task<'a> {
             Visit(&'a PointerOffsetTerm),
@@ -1073,7 +1073,7 @@ impl PointerOffsetTerm {
                 }
                 Task::Visit(Self::Int32Scaled { value, byte_width }) => {
                     values.push(Self::Int32Scaled {
-                        value: value.with_mapped_index(map(value)),
+                        value: map(value),
                         byte_width: *byte_width,
                     });
                 }
@@ -1083,7 +1083,7 @@ impl PointerOffsetTerm {
                     unsigned,
                 }) => {
                     values.push(Self::Int64Scaled {
-                        value: value.with_mapped_index(map(value)),
+                        value: map(value),
                         byte_width: *byte_width,
                         unsigned: *unsigned,
                     });

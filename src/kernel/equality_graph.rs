@@ -274,15 +274,15 @@ impl AffineOffset {
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     let width = i128::from(*byte_width);
-                    if let Some(value) = value.as_const() {
+                    if let Some(value) = value.operand_view().word32_constant() {
                         result.constant = result
                             .constant
                             .checked_add(i128::from(value as i32).checked_mul(width)?)?;
                     } else {
                         result.add_atom(
-                            OffsetAtom::Int32(MachineAtom::new(
+                            OffsetAtom::Int32(MachineAtom::from_operand(
                                 crate::kernel::MachineIntegerType::Int32,
-                                value.as_ref().clone(),
+                                value.operand_view(),
                             )),
                             width,
                         )?;
@@ -295,22 +295,22 @@ impl AffineOffset {
                 } => {
                     let width = i128::from(*byte_width);
                     let constant = if *unsigned {
-                        value.uint64_as_const().map(i128::from)
+                        value.operand_view().uint64_constant().map(i128::from)
                     } else {
-                        value.int64_as_const().map(i128::from)
+                        value.operand_view().int64_constant().map(i128::from)
                     };
                     if let Some(value) = constant {
                         result.constant = result.constant.checked_add(value.checked_mul(width)?)?;
                     } else {
                         result.add_atom(
                             OffsetAtom::Int64 {
-                                value: MachineAtom::new(
+                                value: MachineAtom::from_operand(
                                     if *unsigned {
                                         crate::kernel::MachineIntegerType::UInt64
                                     } else {
                                         crate::kernel::MachineIntegerType::Int64
                                     },
-                                    value.as_ref().clone(),
+                                    value.operand_view(),
                                 ),
                                 unsigned: *unsigned,
                             },
@@ -1511,10 +1511,21 @@ impl EqualityGraph {
         if left == right {
             return true;
         }
-        // As for scalar equality, normalize selected load observations
-        // before locking. The term interner itself never walks history.
-        let left = left.map_scaled_values(exact_read_comparison_input);
-        let right = right.map_scaled_values(exact_read_comparison_input);
+        // As for shared scalar queries, retain shared syntax and snapshots.
+        // Canonicalize genuinely native inputs before locking; the interner
+        // itself never walks memory history.
+        let selected = |value: &crate::kernel::SharedMachineIntegerTerm| match value.operand_view()
+        {
+            crate::kernel::MachineOperandView::Shared(_) => value.clone(),
+            crate::kernel::MachineOperandView::Legacy(term) => {
+                crate::kernel::SharedMachineIntegerTerm::index(
+                    value.ty(),
+                    exact_read_comparison_input(term),
+                )
+            }
+        };
+        let left = left.map_scaled_operands(selected);
+        let right = right.map_scaled_operands(selected);
         let (left, right) = (&left, &right);
         // Offset addition is exact byte arithmetic. Its affine form catches
         // reordering and regrouping without a premise or term-class merge.

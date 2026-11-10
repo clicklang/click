@@ -236,7 +236,10 @@ fn is_read_offset(offset: &PointerOffsetTerm) -> bool {
             }
             PointerOffsetTerm::Int32Scaled { value, .. }
             | PointerOffsetTerm::Int64Scaled { value, .. }
-                if is_scalar_read(value) =>
+                if value.operand_view().read().is_some()
+                    || value.operand_view().variable().is_some_and(|v| {
+                        crate::kernel::registered_load_term_for_variable(v).is_some()
+                    }) =>
             {
                 return true;
             }

@@ -277,8 +277,14 @@ mod tests {
             )
         };
         let offset = PointerOffsetTerm::scaled_int32_node(read(first.clone()), 4);
-        assert_eq!(offset.map_scaled_values(Clone::clone), offset);
-        assert_ne!(offset.map_scaled_values(|_| read(second.clone())), offset);
+        assert_eq!(offset.map_scaled_operands(Clone::clone), offset);
+        assert_ne!(
+            offset.map_scaled_operands(|value| SharedMachineIntegerTerm::index(
+                value.ty(),
+                read(second.clone())
+            )),
+            offset
+        );
         let outer = second.clone();
         let import = |inner| {
             KernelTermImport::default().machine(
