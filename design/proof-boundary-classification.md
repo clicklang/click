@@ -1,8 +1,8 @@
 # Proof boundary classification
 
 Source reconciliation at `e9222a222` (2026-11-09), updated for resource-scope
-obligation extraction. This classifies all 19
-`mixed` and 12 `operation-to-driver` reference records in
+obligation and branch-interpreter extraction. This classifies all 19
+`mixed` and 9 `operation-to-driver` reference records in
 `build_support/proof_search_edges.tsv`, and groups the remaining operation
 references below. The extraction preserves proof behavior and removes the
 scope-to-driver reference from the machine inventory.
@@ -20,6 +20,13 @@ schedules their written or implicit proofs; nested resource scopes use
 `complete_nested_scope`. Creating an obligation is allowed fast work; choosing
 an omitted proof's ordinary solve is legitimate driver work. The remaining separation-observation setup cost is a
 separate question from who solves its obligations.
+
+The driver now interprets C-branch and proof-case arm scripts. The proof object
+retains split, arm focus, checked entry and join operations; it does not invoke
+arm-script callbacks. Resource scopes incorporate the driver's direct checked
+branch successor through `with_completed_execution_if`. This preserves their
+parent-identity checks and retained history. It does not establish a complexity
+bound for every existing split/join helper.
 
 ## Findings
 
@@ -65,15 +72,12 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 12 operation-to-driver reference records
+## The 9 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
 | Caller | Classification and action |
 | --- | --- |
-| `apply_execution_branch_within` | Nested-script interpretation: dispatches the written arm steps. Move orchestration off the primitive interface; splitting, focusing and joining remain operations. |
-| `apply_execution_if_within` | Nested-script interpretation: dispatches then/else scripts. Same separation. |
-| `apply_focused_expanded_execution_arm` | Expanded-script interpretation: dispatches the retained arm with `expanded=true`. That flag is not proof that every transitively called helper avoids search. |
 | `plan_invariant_bundle_closure` | Search/orchestration adapter on the wrong interface: forwards to the driver planner and records the missed member. Used by invariant-closing orchestration. |
 | `solve_open_for_missing_resource` | Search helper on the wrong interface: selects a resource to unfold, called from smart retry. |
 | `unsigned_strict_fact` | Search helper on the wrong interface: called from smart closures and may prove a reversed inequality using arithmetic. |
@@ -84,8 +88,7 @@ Methods below are on `Proof`.
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
 | `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
-Totals: 3 nested-script interpreters, 6
-search/support adapters, 2 specific-operation dispatch adapters, and 1 diagnostic
+Totals: 6 search/support adapters, 2 specific-operation dispatch adapters, and 1 diagnostic
 execution callback. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
@@ -144,7 +147,9 @@ No second checker or producer/rechecker layer is needed.
   search rather than work silently performed to report a fast failure.
 
 Have/claim opening and resource-scope completion no longer schedule proofs
-from the primitive interface. The other adapters above remain to extract. Definition-validation proof support and normal diagnostic search
+from the primitive interface. Branch script interpretation now also lives in the driver, including the
+proof-level `if` path that formerly ran script callbacks inside a primitive.
+The other adapters above remain to extract. Definition-validation proof support and normal diagnostic search
 need separate design review; this audit does not authorize behavior changes.
 
 ## Reconciled operation dependencies
@@ -188,7 +193,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 612 reference records, not 612 obligations to remove.
+The inventory contains 613 reference records, not 613 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

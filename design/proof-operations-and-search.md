@@ -109,9 +109,9 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory after resource-scope extraction contains 612 records: 7 legacy bridges, 22 kernel callers,
-14 Surface operation dependencies, 12 operation-to-driver dependencies,
-106 driver records, 1 other dispatch record, 6 presentation records,
+The current inventory after scope/branch extraction contains 613 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 9 operation-to-driver dependencies,
+110 driver records, 1 other dispatch record, 6 presentation records,
 423 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
@@ -191,10 +191,22 @@ use `complete_nested_scope` before incorporating the direct checked successor.
 Function-exit closes keep their existing deferred driver route. Superfluous,
 incorrect, and missing explicit closing proofs keep their existing refusals.
 
+## Branch interpretation boundary
+
+`ProofDriver::apply_execution_if_within`, `apply_execution_branch_within`, and
+`apply_focused_expanded_execution_arm` interpret arm scripts between the existing
+proof-object split, focus and join operations. `apply_expanded_execution_if` is
+also a driver entry point, including inside resource scopes. The former
+`Proof::apply_execution_if_with` callback API is removed: proof-level cases now
+use the same explicit split/focus/drive/join sequence in the driver. C-branch
+entry checks, infeasible-arm refusals, parent continuations and terminal joins
+retain their existing rules and exact checked histories. There is no second
+checker or rebuilt proof state.
+
 ## Detailed caller classification
 
 The [caller audit](proof-boundary-classification.md) classifies the current 19 mixed and
-12 operation-to-driver records by why they invoke search or interpretation.
+9 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation, diagnostic execution, and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or

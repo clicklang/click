@@ -810,31 +810,6 @@ impl<'a> Proof<'a> {
         Ok((successor, record))
     }
 
-    /// Applies one recursively driven proof-level execution `if` as an
-    /// audited sibling-goal operation. Each callback must retire exactly its
-    /// selected arm, either with terminal checked steps or another invocation
-    /// of this operation. The returned node retains the structured `If`
-    /// provenance directly on this Proof lineage.
-    pub(in crate::surface::proof) fn apply_execution_if_with<Then, Else>(
-        self,
-        condition: ClickProposition,
-        apply_then: Then,
-        apply_else: Else,
-    ) -> Result<Self, ClickError>
-    where
-        Then: FnOnce(Self) -> Result<Self, ClickError>,
-        Else: FnOnce(Self) -> Result<Self, ClickError>,
-    {
-        let (split, record) = self.split_focused_execution_if(condition.clone())?;
-        let then_done = apply_then(split.focus_execution_if_arm(&record, true)?)?;
-        let else_done = apply_else(then_done.focus_execution_if_arm(&record, false)?)?;
-        if then_done.is_at_function_exit() && else_done.is_at_function_exit() {
-            else_done.join_focused_execution_if_terminal(&record)
-        } else {
-            else_done.join_focused_if(&record.marker, record.split, record.arm_branches, condition)
-        }
-    }
-
     /// Joins a completed in-`Proof` `if` split with one structured `If`
     /// step, under the same rules as [`Self::join_focused_cases`].
     pub(in crate::surface::proof) fn join_focused_if(

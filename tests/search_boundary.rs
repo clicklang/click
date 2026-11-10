@@ -1222,3 +1222,35 @@ fn resource_scope_completion_cannot_schedule_proofs_or_search() {
         .is_ok()
     );
 }
+
+#[test]
+fn branch_primitives_cannot_interpret_scripts_or_schedule_search() {
+    for method in [
+        "apply_execution_if_within",
+        "apply_execution_branch_within",
+        "apply_focused_expanded_execution_arm",
+        "apply_expanded_execution_if",
+    ] {
+        let file = syn::parse_file(&format!("impl Proof {{ fn {method}(&self) {{}} }}")).unwrap();
+        assert!(proof_search_boundary::check("src/new_operation.rs", &file).is_err());
+    }
+    for (path, source) in [
+        (
+            "src/surface/proof/proof_object/execution_joins.rs",
+            "impl Proof { fn split_focused_execution_branch_with(&self) { self.driver().apply_step(step); } }",
+        ),
+        (
+            "src/surface/proof/proof_object/execution_joins.rs",
+            "impl Proof { fn focus_expanded_execution_arm_entry(&self) { invoke!(ProofSearch::proves(facts, goal)); } }",
+        ),
+        (
+            "src/surface/proof/proof_object/splits_and_scopes.rs",
+            "impl Proof { fn apply_execution_if_with<Then: FnOnce(Self)>(self, apply_then: Then) { apply_then(self); } }",
+        ),
+    ] {
+        assert!(
+            boundary::check_source(path, source).is_err(),
+            "accepted {source}"
+        );
+    }
+}

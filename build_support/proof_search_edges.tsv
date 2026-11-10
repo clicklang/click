@@ -96,11 +96,11 @@ src/surface/proof/driver/claims.rs	driver	::finish_ordered_proof	try_execution_f
 src/surface/proof/driver/claims.rs	driver	::focus_claim_goal	driver	1
 src/surface/proof/driver/claims.rs	driver	::fold_produced_resources	driver	1
 src/surface/proof/driver/claims.rs	driver	ClaimGoalCandidate::focus	driver	1
-src/surface/proof/driver/execution.rs	driver	::advance_focused_execution_region_with_branch_continuation	driver	3
+src/surface/proof/driver/execution.rs	driver	::advance_focused_execution_region_with_branch_continuation	driver	4
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	driver	6
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::advance_linear_open_scope	try_execute_until	1
-src/surface/proof/driver/execution.rs	driver	::advance_preservation_region	driver	3
+src/surface/proof/driver/execution.rs	driver	::advance_preservation_region	driver	4
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	driver	6
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_to_exit	1
 src/surface/proof/driver/execution.rs	driver	::apply_frontier_source_tactic	try_execute_until	1
@@ -111,8 +111,8 @@ src/surface/proof/driver/execution.rs	driver	::preservation_smart_step	driver	1
 src/surface/proof/driver/execution.rs	driver	::preservation_smart_step	try_smart_statement_step	1
 src/surface/proof/driver/execution.rs	driver	::solve_nested_have	driver	3
 src/surface/proof/driver/execution.rs	driver	::solve_nested_have	try_solve_closure	2
-src/surface/proof/driver/execution.rs	driver	::try_check_structural_function_proof_inner	driver	3
-src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	1
+src/surface/proof/driver/execution.rs	driver	::try_check_structural_function_proof_inner	driver	4
+src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_steps_within	driver	2
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_bare_statement_step	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_close_invariants_body	driver	1
 src/surface/proof/driver/obligations.rs	driver	ProofDriver::apply_execution_statement_step	driver	1
@@ -203,9 +203,6 @@ src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restrict
 src/surface/proof/guarded_consequents/search.rs	search	ProofSearch::try_restricted_guarded_consequent	try_solve_closure	1
 src/surface/proof/proof_object.rs	presentation	Proof::spelled_goal	available_surface_fact	2
 src/surface/proof/proof_object/execution_joins.rs	mixed	Proof::execute_enum_match_group	try_focused_execute_to_exit_within	1
-src/surface/proof/proof_object/execution_joins.rs	operation-to-driver	Proof::apply_execution_branch_within	driver	1
-src/surface/proof/proof_object/execution_joins.rs	operation-to-driver	Proof::apply_execution_if_within	driver	2
-src/surface/proof/proof_object/execution_joins.rs	operation-to-driver	Proof::apply_focused_expanded_execution_arm	driver	1
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	driver	2
 src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try_focused_execute_to_exit_within	try_smart_statement_step	1
 src/surface/proof/proof_object/execution_statements.rs	dispatch	Proof::close_bundle_member_by_solve	try_solve_closure	1
@@ -609,4 +606,8 @@ src/surface/proof/driver/execution.rs	driver	::defer_post_execution_match	driver
 src/surface/proof/driver/outcome_cases.rs	driver	ProofDriver::split_outcome_paths	driver	2
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::complete_scope	driver	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::complete_nested_scope	driver	1
-src/surface/proof/driver/execution.rs	driver	::advance_checked_open_scope	driver	1
+src/surface/proof/driver/execution.rs	driver	::advance_checked_open_scope	driver	2
+src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	driver	2
+src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_within	driver	2
+src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
+src/surface/proof/driver/scopes.rs	driver	ProofDriver::apply_expanded_execution_if	driver	1
