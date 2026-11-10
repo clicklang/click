@@ -78,6 +78,7 @@ import click::rust::u64;
 import click::rust::usize;
 import click::rust::vec;
 import click::rust::slice;
+import click::rust::chunks_exact;
 
 theorem use_uint32_less_equal_to_integer(left: uint32, right: uint32) {
     requires left <= right;
@@ -1884,6 +1885,31 @@ theorem restricted_view(A: Resource, B: Resource) {
             viewable(A);
             contains(A, B);
         };
+    }
+}
+
+theorem use_chunks_exact(s: Slice<uint8>, it: ChunksExact<uint8>, k: uint64) {
+    requires k < slice::len(s) / 4u64;
+    requires 0u64 < chunks_exact::len(it);
+    requires k < chunks_exact::len(it) - 1u64;
+    ensures chunks_exact::len(chunks_exact::chunks_exact(s, 4u64)) == slice::len(s) / 4u64 by {
+        apply(chunks_exact::len_chunks_exact(s, 4u64));
+    }
+    ensures slice::len(chunks_exact::nth(chunks_exact::chunks_exact(s, 4u64), k)) == 4u64 by {
+        apply(chunks_exact::nth_chunks_exact(s, 4u64, k));
+    }
+    ensures slice::len(chunks_exact::remainder(chunks_exact::chunks_exact(s, 4u64)))
+        == slice::len(s) % 4u64 by {
+        apply(chunks_exact::remainder_chunks_exact(s, 4u64));
+    }
+    ensures chunks_exact::len(chunks_exact::after_next(it)) == chunks_exact::len(it) - 1u64 by {
+        apply(chunks_exact::len_after_next(it));
+    }
+    ensures chunks_exact::nth(chunks_exact::after_next(it), k) == chunks_exact::nth(it, k + 1u64) by {
+        apply(chunks_exact::nth_after_next(it, k));
+    }
+    ensures chunks_exact::remainder(chunks_exact::after_next(it)) == chunks_exact::remainder(it) by {
+        apply(chunks_exact::remainder_after_next(it));
     }
 }
 

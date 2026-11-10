@@ -26,6 +26,7 @@ fn generic_result_type_fixture() -> (&'static str, &'static str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_00")]
 fn generic_function_keeps_the_declared_struct_pointer_result_type() {
     let (source, c_source) = generic_result_type_fixture();
     verify_c0_sources(source, &[("result.c", c_source)])
@@ -33,6 +34,7 @@ fn generic_function_keeps_the_declared_struct_pointer_result_type() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_00")]
 fn generic_result_type_does_not_unify_distinct_structs() {
     let (source, c_source) = generic_result_type_fixture();
     let error = verify_c0_sources(
@@ -44,6 +46,7 @@ fn generic_result_type_does_not_unify_distinct_structs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_00")]
 fn generic_result_type_cannot_prove_a_false_postcondition() {
     let (source, c_source) = generic_result_type_fixture();
     verify_c0_sources(
@@ -70,6 +73,7 @@ fn authority_stack_project(click_source: &str) -> ClickProject {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_00")]
 fn authority_establishes_and_retires_empty_stack_population() {
     let c_source = r#"
         int32 value(void) {
@@ -101,6 +105,7 @@ fn authority_establishes_and_retires_empty_stack_population() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_01")]
 fn authority_conserves_one_local_member() {
     let c_source = r#"
         int32 value(void) {
@@ -135,6 +140,7 @@ fn authority_conserves_one_local_member() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_01")]
 fn authority_cannot_reestablish_after_retirement() {
     let c_source = r#"
         int32 value(void) {
@@ -169,6 +175,7 @@ fn authority_cannot_reestablish_after_retirement() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_01")]
 fn authority_rejects_automatic_storage_end_with_live_authority() {
     let c_source = r#"
         int32 value(void) {
@@ -198,6 +205,7 @@ fn authority_rejects_automatic_storage_end_with_live_authority() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_01")]
 fn authority_imported_pointer_without_live_storage_cannot_establish_population() {
     let c_source = r#"
         int32 value(int32* p) {
@@ -229,6 +237,7 @@ fn authority_imported_pointer_without_live_storage_cannot_establish_population()
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_02")]
 fn authority_cannot_create_untracked_member_before_establishment() {
     let c_source = r#"
         int32 value(void) {
@@ -264,6 +273,7 @@ fn authority_cannot_create_untracked_member_before_establishment() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_02")]
 fn authority_rejects_double_member_consumption() {
     let c_source = "int32 value(void) { int32 x = 7; return x; }";
     let click_source = r#"
@@ -295,6 +305,7 @@ fn authority_rejects_double_member_consumption() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_02")]
 fn authority_cannot_retire_with_live_member() {
     let c_source = "int32 value(void) { int32 x = 7; return x; }";
     let click_source = r#"
@@ -326,6 +337,7 @@ fn authority_cannot_retire_with_live_member() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_02")]
 fn authority_count_requires_owned_authority() {
     let c_source = "int32 value(int32* p) { return 7; }";
     let click_source = r#"
@@ -350,6 +362,7 @@ fn authority_count_requires_owned_authority() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_03")]
 fn authority_count_of_a_population_without_authority_is_refused() {
     let c_source = "int32 value(int32* p) { return 7; }";
     let click_source = r#"
@@ -369,6 +382,7 @@ fn authority_count_of_a_population_without_authority_is_refused() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_03")]
 fn authority_plain_c_helper_call_follows_the_ordinary_call_rules() {
     let c_source = r#"
         int32 helper(void) { return 7; }
@@ -400,6 +414,7 @@ fn authority_plain_c_helper_call_follows_the_ordinary_call_rules() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_03")]
 fn authority_calls_a_verified_helper_without_population_effects() {
     let c_source = r#"
         int32 helper(void) { return 7; }
@@ -424,6 +439,7 @@ fn authority_calls_a_verified_helper_without_population_effects() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_03")]
 fn authority_helper_returns_the_same_authority_and_member() {
     let c_source = r#"
         int32 helper(int32* p) { return 7; }
@@ -466,6 +482,7 @@ fn authority_helper_returns_the_same_authority_and_member() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_04")]
 fn authority_helper_consumes_one_member_and_returns_authority() {
     let c_source = r#"
         int32 drop_reference(int32* p) { return 7; }
@@ -512,6 +529,7 @@ fn authority_helper_consumes_one_member_and_returns_authority() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_04")]
 fn authority_helper_produces_one_member_and_returns_authority() {
     let c_source = r#"
         int32 add_reference(int32* p) { return 7; }
@@ -558,6 +576,7 @@ fn authority_helper_produces_one_member_and_returns_authority() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_04")]
 fn authority_helper_cannot_claim_creation_without_folding_member() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
@@ -581,6 +600,7 @@ fn authority_helper_cannot_claim_creation_without_folding_member() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_04")]
 fn authority_helper_cannot_birth_imported_member_twice() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
@@ -606,6 +626,7 @@ fn authority_helper_cannot_birth_imported_member_twice() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_05")]
 fn authority_creating_helper_requires_caller_authority() {
     let c_source = r#"
         int32 add_reference(int32* p) { return 7; }
@@ -639,6 +660,7 @@ fn authority_creating_helper_requires_caller_authority() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_05")]
 fn authority_helper_cannot_create_private_memory_from_opaque_authority() {
     let c_source = r#"int32 add_reference(int32* p) { return 7; }"#;
     let click_source = r#"
@@ -666,6 +688,7 @@ fn authority_helper_cannot_create_private_memory_from_opaque_authority() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_05")]
 fn authority_helper_cannot_claim_consumption_without_spending_member() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"
@@ -686,6 +709,7 @@ fn authority_helper_cannot_claim_consumption_without_spending_member() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_05")]
 fn authority_helper_cannot_spend_imported_member_twice() {
     let c_source = r#"int32 drop_reference(int32* p) { return 7; }"#;
     let click_source = r#"
@@ -711,6 +735,7 @@ fn authority_helper_cannot_spend_imported_member_twice() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_06")]
 fn authority_consuming_helper_requires_caller_member() {
     let c_source = r#"
         int32 drop_reference(int32* p) { return 7; }
@@ -749,6 +774,7 @@ fn authority_consuming_helper_requires_caller_member() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_06")]
 fn verifies_loadable_segment_proposition_for_indexed_read() {
     let c_source = r#"
             int32 read_index(int32 p[], int32 index, int32 n) {
@@ -774,6 +800,7 @@ fn verifies_loadable_segment_proposition_for_indexed_read() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_06")]
 fn bounded_assignment_preserves_successor_definedness() {
     let c_source = r#"
             int32 add_twice(int32 x) {
@@ -797,6 +824,7 @@ fn bounded_assignment_preserves_successor_definedness() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_06")]
 fn uninitialized_scalar_read_fails_verification() {
     let c_source = r#"
             int32 read_uninitialized() {
@@ -822,6 +850,7 @@ fn uninitialized_scalar_read_fails_verification() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_07")]
 fn uninitialized_local_array_read_fails_verification() {
     let c_source = r#"
             int32 read_uninitialized_array() {
@@ -847,6 +876,7 @@ fn uninitialized_local_array_read_fails_verification() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_07")]
 fn pointer_argument_keeps_its_null_execution_path() {
     let c_source = r#"
             int32 pointer_is_null(int32* p) {
@@ -869,6 +899,7 @@ fn pointer_argument_keeps_its_null_execution_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_07")]
 fn step_and_execute_step_advance_one_concrete_loop_transition() {
     let c_source = r#"
             int32 count_two() {
@@ -912,6 +943,7 @@ fn step_and_execute_step_advance_one_concrete_loop_transition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_07")]
 fn early_return_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 clamp(int32 x) {
@@ -940,6 +972,7 @@ fn early_return_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_08")]
 fn symbolic_loop_bound_invariant_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
@@ -980,6 +1013,7 @@ fn symbolic_loop_bound_invariant_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_08")]
 fn malloc_null_check_completes_without_a_body_rerun() {
     let c_source = r#"
             struct item {
@@ -1015,6 +1049,7 @@ fn malloc_null_check_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_08")]
 fn post_execution_case_split_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 clamp_positive(int32 a) {
@@ -1051,6 +1086,7 @@ fn post_execution_case_split_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_08")]
 fn have_after_loop_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 count_then_add() {
@@ -1103,6 +1139,7 @@ fn have_after_loop_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_09")]
 fn applied_user_theorem_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 increment(int32 x) {
@@ -1141,6 +1178,7 @@ fn applied_user_theorem_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_09")]
 fn verified_loop_summary_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1184,6 +1222,7 @@ fn verified_loop_summary_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_09")]
 fn linear_execute_checks_the_branch_arm_refusal_program() {
     let markdown =
         include_str!("../../../mdtests/execute_branch_arm_stops_at_shared_continuation.md");
@@ -1207,6 +1246,7 @@ fn linear_execute_checks_the_branch_arm_refusal_program() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_09")]
 fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
     let c = "void countdown(int32 more) { while (more > 0) { more = more - 1; } }";
     let source = r#"
@@ -1237,6 +1277,7 @@ fn execute_in_loop_preservation_keeps_the_function_exit_miss() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_10")]
 fn bounded_execute_resumes_and_explores_symbolic_branches() {
     let c_source = r#"
             int32 choose_after_init(int32 x) {
@@ -1292,6 +1333,7 @@ fn bounded_execute_resumes_and_explores_symbolic_branches() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_10")]
 fn verifies_fill3_c0_source_with_sidecar_specification() {
     let verified = verify_c0_sources(FILL3_CLICK, &[("fill3.c", FILL3_C)])
         .expect("fill3 sidecar should verify");
@@ -1482,6 +1524,7 @@ fn verifies_fill3_c0_source_with_sidecar_specification() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_10")]
 fn bounded_solve_loop_expands_without_a_detached_summary() {
     let sources = [("fill3.c", FILL3_C)];
     let position = c0_tactic_source_position(FILL3_CLICK, &sources, "fill3.returns_second", 0)
@@ -1496,6 +1539,7 @@ fn bounded_solve_loop_expands_without_a_detached_summary() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_10")]
 fn signature_mismatch_reports_direct_error() {
     let source = FILL3_CLICK.replace("int32* p", "int32 q");
     let error = verify_c0_sources(&source, &[("fill3.c", FILL3_C)])
@@ -1509,6 +1553,7 @@ fn signature_mismatch_reports_direct_error() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_11")]
 fn pointer_constness_signature_mismatch_displays_both_qualifiers() {
     for (pointer_type, rendered_type) in [
         ("struct Value*", "struct Value*"),
@@ -1546,6 +1591,7 @@ fn pointer_constness_signature_mismatch_displays_both_qualifiers() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_11")]
 fn struct_name_signature_mismatch_reports_direct_error() {
     let c_source = r#"
         struct actual {
@@ -1906,6 +1952,7 @@ fn expanded_read_step_uses_contextual_range_separation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_11")]
 fn decrement_contract_checks_nonnegative_and_equality_certificates() {
     let c_source = r#"
         int32 decrement(int32 value, int32 count) {
@@ -1938,6 +1985,7 @@ fn decrement_contract_checks_nonnegative_and_equality_certificates() {
 /// function's shared verifier work, which made a smart `solve` look like
 /// kernel core cost.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_11")]
 fn branch_continuation_tactics_are_timed_as_source_operations() {
     let c_source = r#"
         int32 pick(int32 a) {
@@ -1992,6 +2040,7 @@ fn branch_continuation_tactics_are_timed_as_source_operations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_12")]
 fn implicit_contract_closer_is_not_a_profile_source_site() {
     let c_source = "int32 value(void) { return 7; }";
     let click_source = r#"
@@ -2026,6 +2075,7 @@ fn implicit_contract_closer_is_not_a_profile_source_site() {
 /// statement's arms are path cases, split on the condition that tells them
 /// apart.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_12")]
 fn execute_splits_a_symbolic_switch_on_the_proof() {
     let c_source = r#"
         int32 switch_break(int32 kind) {
@@ -2068,6 +2118,7 @@ fn execute_splits_a_symbolic_switch_on_the_proof() {
 /// `branch` cannot split it directly. The implicit tail first splits the checked
 /// `Proof` on the condition that tells those paths apart.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_12")]
 fn execute_splits_a_short_circuit_condition_on_the_proof() {
     let c_source = r#"
         int32 both_positive(int32 a, int32 b) {
@@ -2099,6 +2150,7 @@ fn execute_splits_a_short_circuit_condition_on_the_proof() {
 /// condition's two paths decide the pending allocation, one per arm, and
 /// the implicit tail splits it on the checked `Proof`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_12")]
 fn execute_branches_on_a_pending_allocation_on_the_proof() {
     let c_source = r#"
         void *malloc(unsigned long size);
@@ -2137,6 +2189,7 @@ fn execute_branches_on_a_pending_allocation_on_the_proof() {
 /// by a `requires`: the
 /// loop head reads the whole proof context, as every other step does.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_13")]
 fn execute_walks_a_decided_loop_on_the_proof() {
     let c_source = r#"
         int32 count_to(int32 n) {
@@ -2251,6 +2304,7 @@ fn execute_until_stops_a_loop_that_never_exits_at_its_step_budget() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_13")]
 fn execute_short_circuit_complements_expand_with_exact_operand_selectors() {
     for condition in ["!(a > 0 && b > 0)", "a > 0 || b > 0"] {
         let c_source = format!(
@@ -2296,6 +2350,7 @@ fn struct_pointer_field_constructor_fixture() -> (&'static str, &'static str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_13")]
 fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
     let (source, c_source) = struct_pointer_field_constructor_fixture();
     verify_c0_sources(source, &[("field.c", c_source)])
@@ -2303,6 +2358,7 @@ fn algebraic_constructor_keeps_struct_pointer_field_identity_across_old() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_13")]
 fn algebraic_constructor_rejects_wrong_struct_and_scalar_fields() {
     let (source, c_source) = struct_pointer_field_constructor_fixture();
     for wrong in ["p->wrong", "p->scalar"] {
@@ -2327,6 +2383,7 @@ fn algebraic_constructor_field_metadata_cannot_prove_a_false_postcondition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_14")]
 fn solve_keeps_valid_integer_offset_function_goals() {
     let source = r#"
         function plus(value: Integer) -> Integer { value + 1 }
@@ -2345,6 +2402,7 @@ fn solve_keeps_valid_integer_offset_function_goals() {
 /// field's read at the loop head. That read names it; it is not named again
 /// at the projected snapshot (`docs/internals/spellability.md`).
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by execution_batch_14")]
 fn a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name() {
     let mdtest = crate::cli::parse_mdtest(
         std::path::Path::new("a_retained_pointer_field_fact_transports_through_a_loop_alias.md"),
@@ -2435,4 +2493,98 @@ fn every_mdtest_names_each_read_once() {
             "`{name}` no longer names a read twice; remove it from the list"
         );
     }
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "execution_tests.rs",
+    marker: "execution_batch_",
+    execution_batch_00: [
+        generic_function_keeps_the_declared_struct_pointer_result_type,
+        generic_result_type_does_not_unify_distinct_structs,
+        generic_result_type_cannot_prove_a_false_postcondition,
+        authority_establishes_and_retires_empty_stack_population,
+    ],
+    execution_batch_01: [
+        authority_conserves_one_local_member,
+        authority_cannot_reestablish_after_retirement,
+        authority_rejects_automatic_storage_end_with_live_authority,
+        authority_imported_pointer_without_live_storage_cannot_establish_population,
+    ],
+    execution_batch_02: [
+        authority_cannot_create_untracked_member_before_establishment,
+        authority_rejects_double_member_consumption,
+        authority_cannot_retire_with_live_member,
+        authority_count_requires_owned_authority,
+    ],
+    execution_batch_03: [
+        authority_count_of_a_population_without_authority_is_refused,
+        authority_plain_c_helper_call_follows_the_ordinary_call_rules,
+        authority_calls_a_verified_helper_without_population_effects,
+        authority_helper_returns_the_same_authority_and_member,
+    ],
+    execution_batch_04: [
+        authority_helper_consumes_one_member_and_returns_authority,
+        authority_helper_produces_one_member_and_returns_authority,
+        authority_helper_cannot_claim_creation_without_folding_member,
+        authority_helper_cannot_birth_imported_member_twice,
+    ],
+    execution_batch_05: [
+        authority_creating_helper_requires_caller_authority,
+        authority_helper_cannot_create_private_memory_from_opaque_authority,
+        authority_helper_cannot_claim_consumption_without_spending_member,
+        authority_helper_cannot_spend_imported_member_twice,
+    ],
+    execution_batch_06: [
+        authority_consuming_helper_requires_caller_member,
+        verifies_loadable_segment_proposition_for_indexed_read,
+        bounded_assignment_preserves_successor_definedness,
+        uninitialized_scalar_read_fails_verification,
+    ],
+    execution_batch_07: [
+        uninitialized_local_array_read_fails_verification,
+        pointer_argument_keeps_its_null_execution_path,
+        step_and_execute_step_advance_one_concrete_loop_transition,
+        early_return_completes_without_a_body_rerun,
+    ],
+    execution_batch_08: [
+        symbolic_loop_bound_invariant_completes_without_a_body_rerun,
+        malloc_null_check_completes_without_a_body_rerun,
+        post_execution_case_split_completes_without_a_body_rerun,
+        have_after_loop_completes_without_a_body_rerun,
+    ],
+    execution_batch_09: [
+        applied_user_theorem_completes_without_a_body_rerun,
+        verified_loop_summary_completes_without_a_body_rerun,
+        linear_execute_checks_the_branch_arm_refusal_program,
+        execute_in_loop_preservation_keeps_the_function_exit_miss,
+    ],
+    execution_batch_10: [
+        bounded_execute_resumes_and_explores_symbolic_branches,
+        verifies_fill3_c0_source_with_sidecar_specification,
+        bounded_solve_loop_expands_without_a_detached_summary,
+        signature_mismatch_reports_direct_error,
+    ],
+    execution_batch_11: [
+        pointer_constness_signature_mismatch_displays_both_qualifiers,
+        struct_name_signature_mismatch_reports_direct_error,
+        decrement_contract_checks_nonnegative_and_equality_certificates,
+        branch_continuation_tactics_are_timed_as_source_operations,
+    ],
+    execution_batch_12: [
+        implicit_contract_closer_is_not_a_profile_source_site,
+        execute_splits_a_symbolic_switch_on_the_proof,
+        execute_splits_a_short_circuit_condition_on_the_proof,
+        execute_branches_on_a_pending_allocation_on_the_proof,
+    ],
+    execution_batch_13: [
+        execute_walks_a_decided_loop_on_the_proof,
+        execute_short_circuit_complements_expand_with_exact_operand_selectors,
+        algebraic_constructor_keeps_struct_pointer_field_identity_across_old,
+        algebraic_constructor_rejects_wrong_struct_and_scalar_fields,
+    ],
+    execution_batch_14: [
+        solve_keeps_valid_integer_offset_function_goals,
+        a_read_retained_across_a_call_through_a_loop_alias_keeps_its_name,
+    ],
 }

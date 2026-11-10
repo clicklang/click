@@ -3064,33 +3064,54 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> bool {
-        let mut current = left;
+        self.checks_exact_bitvector_equality_path_views(
+            path,
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(in crate::kernel) fn checks_exact_bitvector_equality_path_views(
+        &self,
+        path: &[BitvectorEqualityDerivationStep],
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        let left = left.retain(MachineIntegerType::Int32);
+        let right = right.retain(MachineIntegerType::Int32);
+        let mut current = &left;
         for step in path {
-            let Proposition::ConditionIs(
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-                    relation: CompareRelation::Equal,
-                    left: premise_left,
-                    right: premise_right,
-                },
-                true,
-            ) = &step.premise
+            let Proposition::ConditionIs(condition, true) = &step.premise else {
+                return false;
+            };
+            let Some(view) =
+                crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
             else {
                 return false;
             };
+            if view.negated
+                || view.relation != CompareRelation::Equal
+                || !matches!(
+                    view.format,
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32
+                )
+            {
+                return false;
+            }
+            let [a, b] = view
+                .operands
+                .each_ref()
+                .map(|operand| operand.operand_view().retain(MachineIntegerType::Int32));
             if current != &step.source
-                || self.exact_condition_value(&ConditionTerm::equal(
-                    premise_left.as_ref().clone(),
-                    premise_right.as_ref().clone(),
-                )) != Some(true)
-                || !((step.source == **premise_left && step.target == **premise_right)
-                    || (step.source == **premise_right && step.target == **premise_left))
+                || self.exact_condition_value(condition) != Some(true)
+                || !((step.source == a && step.target == b)
+                    || (step.source == b && step.target == a))
             {
                 return false;
             }
             current = &step.target;
         }
-        current == right
+        current == &right
     }
 
     fn checks_one_le_evidence(&self, source: &Int32OneLeEvidence, value: &MachineTerm) -> bool {

@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_00")]
 fn mirrored_implication_consequents_expand_to_checked_extraction() {
     for (ty, literal) in [
         ("uint32", "100u32"),
@@ -143,6 +144,7 @@ fn cases_after_execution_keep_match_bindings_in_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_00")]
 fn unsigned_array_read_cases_expand_without_implicit_search() {
     let (source, sources) = mdtest_sources("mdtests/unsigned_array_read_cases_are_spellable.md");
     let sources = sources
@@ -158,6 +160,7 @@ fn unsigned_array_read_cases_expand_without_implicit_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_00")]
 fn pointer_translation_with_integer_bound_expands_without_implicit_search() {
     let (source, sources) =
         mdtest_sources("mdtests/a_pointer_translation_bound_may_be_an_integer_observation.md");
@@ -172,6 +175,7 @@ fn pointer_translation_with_integer_bound_expands_without_implicit_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_00")]
 fn signed_division_ordinary_domains_expand_without_implicit_solving() {
     let c = "int f(int a, int b) { return a / b; }";
     let source = r#"verifying "division.c";
@@ -198,6 +202,7 @@ fn signed_division_ordinary_domains_expand_without_implicit_solving() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_01")]
 fn loop_guard_call_results_expand_with_source_region_names() {
     let c = "int poll(int x) { return x; } int spin(int x) { while (poll(x) == 0) { } return 1; }";
     let source = r#"verifying "poll.c";
@@ -217,6 +222,7 @@ fn loop_guard_call_results_expand_with_source_region_names() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_01")]
 fn common_terminal_proofs_do_not_require_internal_case_spellings() {
     let c = "int f(int i) { int a[2] = {3, 5}; return a[i]; }";
     let source = r#"verifying "f.c";
@@ -231,6 +237,7 @@ fn common_terminal_proofs_do_not_require_internal_case_spellings() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_01")]
 fn terminal_result_selector_precedes_internal_load_cases() {
     let c = "struct Q { unsigned int count; }; int f(const struct Q *q) { return q->count == 8u; }";
     let source = r#"verifying "f.c";
@@ -246,6 +253,7 @@ fn terminal_result_selector_precedes_internal_load_cases() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_01")]
 fn short_circuit_boolean_returns_expand_distinct_outcome_proofs() {
     for (expression, proposition) in [("a && b", "a and b"), ("a || b", "a or b")] {
         let c = format!("bool f(bool a, bool b) {{ return {expression}; }}");
@@ -296,6 +304,7 @@ fn lexicographic_integer_measure_links_expand_and_recheck() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn unsigned_widening_special_certificates_expand_and_recheck() {
     let (source, _) =
         mdtest_sources("mdtests/unsigned_widening_keeps_special_certificate_results.md");
@@ -337,6 +346,7 @@ fn borrowed_resource_receipts_survive_post_return_folds() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn borrowed_resource_receipts_do_not_hide_an_unspent_authority_member() {
     let (source, sources) =
         mdtest_sources("mdtests/authority_helper_raw_consume_without_spend_rejected.md");
@@ -380,6 +390,7 @@ fn outcome_arithmetic_is_independent_of_postcondition_count() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
     let (source, _) = mdtest_sources("mdtests/uint64_measure_induction_counts_a_range_fold.md");
     let expanded =
@@ -396,6 +407,7 @@ fn uint64_measure_induction_expands_and_rechecks_without_narrowing() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_02")]
 fn scalar_induction_keeps_integer_parameters_and_their_guards() {
     let (source, _) = mdtest_sources("mdtests/scalar_induction_keeps_fixed_integer_parameters.md");
     let expanded = expand_c0_claim_source_by_label(
@@ -426,6 +438,7 @@ fn scalar_induction_keeps_integer_parameters_and_their_guards() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/pure_arithmetic_retains_a_rewritten_fold_goal.md");
     let position = expansion::position_at_offset(&source, source.rfind("solve() using").unwrap());
@@ -443,6 +456,7 @@ fn arithmetic_after_fold_rewrites_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
     let (source, _) = mdtest_sources(
         "mdtests/address_arithmetic_keeps_its_c_meaning_under_integer_arithmetic.md",
@@ -465,6 +479,7 @@ fn pointer_word_certificates_keep_address_arithmetic_when_printed() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
     let source = r#"theorem numeric_cast(word: uint64) {
     ensures (word as uint64) + 1 > (word as uint64) by { solve() using {}; }
@@ -475,6 +490,7 @@ fn numeric_cast_certificates_keep_integer_default_arithmetic_when_printed() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_03")]
 fn bundle_and_project_expansion_check_the_selected_pure_theorem() {
     let source = r#"theorem selected(x: int32) {
     ensures x == x by { normalize(); }
@@ -517,26 +533,31 @@ fn check_machine_integer_equality_chain(ty: &str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_04")]
 fn unsigned_integer_equality_chains_expand_and_recheck() {
     check_machine_integer_equality_chain("uint64");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_04")]
 fn signed_integer_equality_chains_expand_and_recheck() {
     check_machine_integer_equality_chain("int64");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_04")]
 fn unsigned_int32_equality_chains_expand_and_recheck() {
     check_machine_integer_equality_chain("uint32");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_04")]
 fn signed_int32_equality_chains_expand_and_recheck() {
     check_machine_integer_equality_chain("int32");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
 fn special_integer_certificates_keep_native_premises_available() {
     let source = r#"import click::integer;
 theorem native_premise(a: uint64, b: uint64) {
@@ -556,6 +577,7 @@ theorem native_premise(a: uint64, b: uint64) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
 fn integer_equality_does_not_identify_signed_and_unsigned_observations() {
     // seed = -1, adler = value = UINT64_MAX, specification = -1 satisfies
     // every premise and refutes the conclusion.
@@ -587,11 +609,13 @@ fn check_member_pointer_address_expansion(fixture: &str, function: &str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
 fn member_pointer_addresses_retain_subobject_extents_through_expansion() {
     check_member_pointer_address_expansion("egraph_resource_pointer_load_alias", "check");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_05")]
 fn member_pointer_addresses_with_equal_numeric_addresses_expand() {
     check_member_pointer_address_expansion("egraph_resource_pointer_load_same_address", "check");
 }
@@ -603,6 +627,7 @@ fn nonzero_member_pointer_addresses_retain_subobject_extents_through_expansion()
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_06")]
 fn record_pointer_identity_preserves_local_storage_in_all_proof_modes() {
     let (source, sources) =
         mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");
@@ -630,6 +655,7 @@ fn record_pointer_identity_preserves_local_storage_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_06")]
 fn record_pointer_identity_local_storage_keeps_values_and_alias_requirements() {
     let (source, sources) =
         mdtest_sources("mdtests/c_record_pointer_identity_preserves_local_storage.md");
@@ -764,6 +790,7 @@ fn call_produced_instances_unfold_after_return_in_all_proof_modes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_06")]
 fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
     let helper = include_str!("../../../mdtests/execution_theorem_imported_tactic_helpers.click");
     let fixture = crate::cli::parse_mdtest(
@@ -817,6 +844,7 @@ fn execution_theorem_expansion_preserves_imported_tactic_interfaces() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_06")]
 fn long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth() {
     let sum = std::iter::repeat_n("a", 24).collect::<Vec<_>>().join(" + ");
     let source = format!(
@@ -873,6 +901,7 @@ fn vector_field_input_pointer_certificates_round_trip() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_07")]
 fn builtin_header_null_pointer_expansion_round_trips() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_builtin_string_and_stdlib_headers.md");
@@ -1011,6 +1040,7 @@ fn hidden_record_resource_expansion_round_trips() {
 // source syntax; expansion shows it as a trailing comment, and the output
 // still parses and verifies.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_07")]
 fn expansion_shows_a_folds_hidden_record_as_a_comment() {
     let c = "struct cell { int32 value; }; struct pair { struct cell* a; int32 n; }; \
              int32 get(struct pair* p) { return p->n; }";
@@ -1032,6 +1062,7 @@ fn expansion_shows_a_folds_hidden_record_as_a_comment() {
 // The reconstruction rule must survive checked tactic expansion and retained
 // verification, rather than working only during ordinary execution search.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_07")]
 fn byte_initialized_uint32_expands_and_retains() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/byte_representation_initializes_declared_uint32.md");
@@ -1058,6 +1089,7 @@ fn byte_initialized_uint32_expands_and_retains() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_07")]
 fn selected_tactic_batch_uses_the_project_entry_scope() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
     let source = "verifying \"identity.c\"; int32 identity(int32 x) { ensures result == x; } by { step_until(function.exit); have x == x by solve(); have x + 0 == x by solve(); solve(); }";
@@ -1079,6 +1111,7 @@ fn selected_tactic_batch_uses_the_project_entry_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
     let c = [(
         "flag.c",
@@ -1098,6 +1131,7 @@ fn selected_tactic_batch_removes_all_sites_in_a_dropped_arm() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn selected_tactic_batch_captures_multiple_sites_inside_one_have() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
     let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by { have x == x by { solve(); } solve(); }\nsolve();\n}\n";
@@ -1152,6 +1186,7 @@ fn selected_tactic_batch_preserves_checked_loop_and_branch_routing() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn selected_tactic_batch_retains_the_unselected_prefix_and_suffix() {
     let c = [("identity.c", "int32 identity(int32 x) { return x; }")];
     let source = "verifying \"identity.c\";\nint32 identity(int32 x) { ensures result == x; } by {\nstep_until(function.exit);\nhave x == x by solve();\nhave x + 0 == x by solve();\nhave x - 0 == x by solve();\nsolve();\n}\n";
@@ -1299,6 +1334,7 @@ fn assert_no_legacy_pure_arithmetic_leaves(verified: &[VerifiedPureTheorem]) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_08")]
 fn arithmetic_using_is_input_only_and_not_serializable_provenance() {
     let source = ProofCertificate::from_proof_tactics(&[ProofTactic::ArithmeticUsing(vec![])])
         .expect("the source smart request remains a valid input tactic");
@@ -1307,6 +1343,7 @@ fn arithmetic_using_is_input_only_and_not_serializable_provenance() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_09")]
 fn source_backed_call_requirement_expands_and_reverifies() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/call_precondition_disjunction_is_an_obligation.md");
@@ -1457,6 +1494,7 @@ fn assert_quantified_range_call_requirement_expands_and_deletion_rejects(fixture
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_09")]
 fn forall_loadable_range_call_requirement_expands_and_deletion_rejects() {
     assert_quantified_range_call_requirement_expands_and_deletion_rejects(
         "mdtests/forall_viewable_range.md",
@@ -1464,6 +1502,7 @@ fn forall_loadable_range_call_requirement_expands_and_deletion_rejects() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_09")]
 fn exists_loadable_range_call_requirement_expands_and_deletion_rejects() {
     assert_quantified_range_call_requirement_expands_and_deletion_rejects(
         "mdtests/exists_viewable_range.md",
@@ -1545,6 +1584,7 @@ pub(super) fn mdtest_sources(relative: &str) -> (String, Vec<(String, String)>) 
 /// the proof cases inside each C arm instead of refusing for want of a
 /// proof-level condition between those outcomes.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_09")]
 fn proof_cases_after_c_branch_expand_and_reverify() {
     let (click_source, c_sources) = mdtest_sources("mdtests/proof_cases_after_c_branch_expands.md");
     let c_sources = c_sources
@@ -1705,6 +1745,7 @@ fn scope_equality_chain_and_loaded_pointer_rewrite_expand_and_reverify() {
 /// The int64 postcondition retains a separate, guarded domain proof.
 /// Its expanded claim contains only simple proof steps.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
     let relative = "mdtests/guarded_postcondition_int64_bounds.md";
     let (click_source, c_sources) = mdtest_sources(relative);
@@ -1741,6 +1782,7 @@ fn int64_guarded_postcondition_expands_to_int64_defined_and_reverifies() {
 
 /// The int32 postcondition retains its domain proof outside the equality.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn int32_guarded_postcondition_expands_to_int32_defined_and_reverifies() {
     let relative = "mdtests/int32_defined_from_bounds.md";
     let (click_source, c_sources) = mdtest_sources(relative);
@@ -1874,6 +1916,7 @@ fn expand_mdtest_site_and_reverify(relative: &str, anchor: &str, skip: usize) ->
 /// also deferred to an outcome path the refuted arm does not have, so it was
 /// never checked at all.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
     for relative in [
         "mdtests/a_refuted_match_arm_bridge_is_checked_and_expands.md",
@@ -1893,6 +1936,7 @@ fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
 /// tactic in the rest of the proof used to miss it and decline the `branch`,
 /// so expansion refused a proof `click verify` accepts.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_10")]
 fn loop_initialize_after_proof_branch_expands_and_reverifies() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/loop_after_proof_branch_expands.md",
@@ -1907,6 +1951,7 @@ fn loop_initialize_after_proof_branch_expands_and_reverifies() {
 /// checked per outcome path. The expansion capture searched only `if` arms
 /// for the selected tactic, so it reported `has no source tactic` for it.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_11")]
 fn solve_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/a_match_in_a_post_execution_if_arm_takes_each_paths_arm.md",
@@ -1921,6 +1966,7 @@ fn solve_in_a_nested_post_execution_match_arm_expands_and_reverifies() {
 /// used to print that phase as `initialize by { }`, which is not Click; the
 /// phase keeps `assumption();` and the rewrite re-verifies.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_11")]
 fn ranked_loops_with_no_invariant_expand_and_reverify() {
     for fixture in [
         "mdtests/a_ranked_loop_with_no_invariant_closes_a_branching_body.md",
@@ -1967,6 +2013,7 @@ fn multidimensional_array_field_expands_with_every_subscript() {
 /// array there, and its layout carries the declared dimensions so the
 /// element reads `copy->values[1][2]`, not `copy->values[5]`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_11")]
 fn multidimensional_local_array_field_expands_with_every_subscript() {
     let expanded = expand_mdtest_site_and_reverify(
         "mdtests/struct_multidimensional_scalar_array.md",
@@ -1988,6 +2035,7 @@ fn multidimensional_local_array_field_expands_with_every_subscript() {
 /// past the last clause and `click audit` stopped with `could not locate
 /// source ensure 2`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_11")]
 fn flattened_aggregate_claims_resolve_to_their_written_clause() {
     let (click_source, c_sources) = mdtest_sources("mdtests/struct_aggregate_resources.md");
     // The aggregate clause's flattened claims share the written clause's
@@ -2043,6 +2091,7 @@ fn flattened_aggregate_claims_resolve_to_their_written_clause() {
 /// file by `--claim FILE:LINE` stopped with `could not locate source
 /// ensure 2`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
 fn a_conditional_produces_clause_is_located_in_its_place() {
     let (click, sources) = mdtest_sources("mdtests/population_initialized_cleanup.md");
     let sources = sources
@@ -2144,6 +2193,7 @@ fn initialize_closer_expansion_names_an_invariant_once_per_owed_goal() {
 /// spelled `entries[0].x` as `(entries + (0 * 4))->x`, which lowers to a
 /// different term than the fact it was meant to rewrite with.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
 fn struct_array_element_expands_with_its_subscript() {
     // The function's claims omit their proofs, so their grouped proof is
     // the one expanded.
@@ -2167,6 +2217,7 @@ fn struct_array_element_expands_with_its_subscript() {
 /// helper whose loop measure only the helper's own run verifies. Both used
 /// to be refused when verified alone, while the whole file verified.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
 fn targeted_termination_assumes_unselected_callees() {
     for (fixture, anchor) in [
         (
@@ -2206,6 +2257,7 @@ fn targeted_termination_assumes_unselected_callees() {
 /// assumption();`, and a deferred `normalize()` or `assumption()` ignored
 /// the opened proof, so neither form re-verified.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_12")]
 fn post_execution_closer_continues_the_proof_intros_opened() {
     let anchor = "intro();\n        solve();";
     let expanded = expand_mdtest_site_and_reverify(
@@ -2225,6 +2277,7 @@ fn post_execution_closer_continues_the_proof_intros_opened() {
 /// witness cannot be closed from the claims instead
 /// (`post_execution_choose_and_witness_share_the_retained_outcome_proof`).
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_13")]
 fn post_execution_closer_continues_the_proof_a_witness_opened() {
     let anchor = "witness { len: found_len };\n        solve();";
     let expanded = expand_mdtest_site_and_reverify(
@@ -2276,6 +2329,7 @@ fn expansion_reverifies_terminal_cases_past_the_old_nesting_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_13")]
 fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_named_function_contract_source_refusal_in_symbolic_branch.md");
@@ -2348,6 +2402,7 @@ fn integer_sum_range_fold_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_13")]
 fn integer_quantifier_smart_proofs_expand_and_recheck() {
     let source = r#"
 theorem integer_forall_solve() {
@@ -2409,6 +2464,7 @@ theorem integer_exists_choose() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_13")]
 fn integer_existential_keeps_definedness_under_one_witness() {
     let source = r#"
 theorem guarded_integer_exists(value: int32) {
@@ -2492,6 +2548,7 @@ theorem missing_integer_definedness(value: int32) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_14")]
 fn integer_range_fold_array_contract_verifies_expands_and_rechecks() {
     let c_source = r#"int32 array_fold_append_at_zero(int32 a[]) {
     return 0;
@@ -2529,6 +2586,7 @@ int32 array_fold_append_at_zero(int32 a[]) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_14")]
 fn integer_pure_function_array_argument_expands_and_rechecks() {
     let source = r#"
 function first_integer(values: int32[]) -> Integer {
@@ -2551,6 +2609,7 @@ theorem first_integer_unfolds(values: int32[]) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_14")]
 fn integer_existential_rewrites_array_index_through_to_int32() {
     let source = r#"
 theorem indexed_integer_exists(values: int32[]) {
@@ -2684,6 +2743,7 @@ theorem check_wrapped(lo: uint64, hi: uint64) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_14")]
 fn integer_range_fold_surface_typing_and_unfolding() {
     let source = r#"
 function sum_machine_range(n: int32) -> Integer {
@@ -2736,6 +2796,7 @@ theorem integer_range_captured_unfolds(lo: Integer, hi: Integer, z: Integer) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_15")]
 fn integer_range_fold_mixed_match_typing_expands_and_rechecks() {
     let source = r#"
 spec enum FoldInput { Empty, Wrapped(Integer), Machine(int32) }
@@ -2818,6 +2879,7 @@ theorem force_bad_fold_match() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_15")]
 fn integer_range_fold_surface_typing_rejects_mixed_bodies() {
     for (source, expected) in [
         (
@@ -2876,6 +2938,7 @@ theorem force_bad_c_body(x: int32, z: Integer) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_15")]
 fn integer_range_fold_law_application_positive() {
     let law_source = r#"
 theorem machine_fold_empty(start: int32, end: int32) {
@@ -2934,6 +2997,7 @@ theorem integer_fold_append(start: Integer, end: Integer) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_15")]
 fn integer_range_fold_law_application_rejects_missing_guards_or_shape() {
     for (source, expected) in [
         (
@@ -3012,6 +3076,7 @@ theorem machine_fold_law_non_fold() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_16")]
 fn integer_range_fold_law_applies_after_execution() {
     let c_source = r#"
             int32 fold_context(int32 end) {
@@ -3045,6 +3110,7 @@ fn integer_range_fold_law_applies_after_execution() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_16")]
 fn context_free_implication_solve_expands_intro_and_rechecks() {
     let source = r#"
 theorem reflexive_implication(x: int32) {
@@ -3070,6 +3136,7 @@ theorem reflexive_implication(x: int32) {
 /// leave it without a block to rewrite: the `have` gains one, and a smart
 /// tactic beside it still expands and rechecks.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_16")]
 fn expansion_rewrites_a_have_with_a_default_proof() {
     let source = r#"
 theorem default_have(x: int32) {
@@ -3097,6 +3164,7 @@ theorem default_have(x: int32) {
 /// one-tactic form as that block: every smart tactic in the proof below
 /// expands and rechecks, wherever the one-tactic proofs stand.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_16")]
 fn batch_expansion_wraps_one_tactic_arithmetic_proofs() {
     let c = "int nested(int x) { return x; }";
     let source = r#"
@@ -3135,6 +3203,7 @@ int32 nested(int32 x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_17")]
 fn expansion_reads_a_one_tactic_proof_as_its_block() {
     let source = r#"
 theorem helper(x: int32) {
@@ -3196,6 +3265,7 @@ theorem one_tactic_proofs(x: int32) {
 /// The inventory `click audit` walks is the same whether a one-tactic proof
 /// is written with its braces or without.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_17")]
 fn smart_site_inventory_is_the_same_for_a_one_tactic_proof_and_its_block() {
     let without = r#"
 theorem helper(x: int32) {
@@ -3231,6 +3301,7 @@ theorem one_tactic_proofs(x: int32) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_17")]
 fn smart_site_inventory_includes_nested_have_bodies_without_container_aliases() {
     let source = r#"
 theorem helper(x: int32) {
@@ -3296,6 +3367,7 @@ theorem nested_sites(x: int32) {
 /// expansion must leave it out; with it, the expanded proof is refused for
 /// using `step`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_17")]
 fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
     let (click, sources) = mdtest_sources("mdtests/user_tactic_reshapes_owned_resources.md");
     let sources = sources
@@ -3315,6 +3387,7 @@ fn whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending() {
 /// Refuted helper arms have no generated return/postcondition suffix. Both
 /// certification and whole-claim expansion must preserve their contradiction.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
 fn whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms() {
     let (click, sources) = mdtest_sources("mdtests/user_tactic_match_refutes_impossible_arm.md");
     let sources = sources
@@ -3385,6 +3458,7 @@ fn whole_claim_expansion_of_proof_matches_rechecks() {
 /// The tactics written after execution inside a match arm read the arm's
 /// bindings, so the expansion keeps them inside that arm.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
 fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
     let (click, sources) = mdtest_sources("mdtests/proof_match_after_c_step.md");
     let sources = sources
@@ -3408,6 +3482,7 @@ fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
 /// checked before it; otherwise the tactic that binds the nested scrutinee
 /// lands inside the nested match.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
 fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
     let (click, sources) = mdtest_sources("mdtests/loop_decreases_strict_descendant.md");
     let sources = sources
@@ -3432,6 +3507,7 @@ fn whole_claim_expansion_keeps_tactics_before_a_nested_match() {
 /// binder map, `step(inner, {})`. Expansion reprints the map: printed
 /// without it, the step reads as a named-contract step.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_18")]
 fn whole_claim_expansion_keeps_a_call_steps_empty_binder_map() {
     let (click, sources) = mdtest_sources("mdtests/mutex_live_contract.md");
     let sources = sources
@@ -3532,6 +3608,7 @@ fn a_tactic_in_a_generic_theorem_expands() {
 /// the whole-claim expansion: each arm closes the disjunction from its own
 /// case fact, and without the `if` neither side is a fact.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
 fn whole_claim_expansion_keeps_a_proof_if_after_execution() {
     let (click, sources) = mdtest_sources("mdtests/proof_if_cases.md");
     let sources = sources
@@ -3555,6 +3632,7 @@ fn whole_claim_expansion_keeps_a_proof_if_after_execution() {
 /// closing `solve` continues it. A grouped proof's expansion must include what
 /// that `solve` added, or it stops at the tactic that opened the claim.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
 fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
     for (mdtest, claim, opener) in [
         (
@@ -3595,6 +3673,7 @@ fn whole_claim_expansion_closes_a_claim_opened_after_execution() {
 /// must record its first statement's entry as a step onto it would, because
 /// the expanded branch that follows names that point in its condition.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
 fn whole_claim_expansion_continues_after_a_branch_with_one_reachable_arm() {
     let c_source = r#"
 int early(int x) {
@@ -3671,6 +3750,7 @@ fn whole_claim_expansion_retains_logical_steps_after_terminal_c_steps() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_19")]
 fn context_free_disjunction_solve_expands_choice_and_rechecks() {
     for (goal, choice) in [
         ("1 == 1 or 2 == 3", "assumption();"),
@@ -3744,6 +3824,7 @@ fn unsigned_difference_descent_expansion_preserves_wrapping_arithmetic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_20")]
 fn signed_unsigned_compound_arithmetic_expands_and_rechecks() {
     let source = r#"
 theorem unsigned_compound(n: int32) {
@@ -4088,6 +4169,7 @@ fn return_population_proofs_expand_without_effect_clauses() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_20")]
 fn return_population_count_is_not_an_assumed_invariant() {
     let c_source =
         "struct object { int32 refs; }; struct object* retain(struct object* obj) { return obj; }";
@@ -4121,6 +4203,7 @@ struct object* retain(struct object* obj) {{
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_20")]
 fn signed_antisymmetry_solve_expands_to_checked_arithmetic() {
     let source = "theorem bounded_equal(i: int32) { requires 0 <= i; requires i <= 0; ensures i == 0 by { solve(); } }";
     verify_c0_sources(source, &[]).unwrap();
@@ -4136,6 +4219,7 @@ fn signed_antisymmetry_solve_expands_to_checked_arithmetic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_20")]
 fn program_entry_signed_resource_shadowing_expands() {
     let sources = [(
         "main.c",
@@ -4205,6 +4289,7 @@ int main() {{ ensures result == 16; }} {main_proof}
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_21")]
 fn composite_uint64_range_expansion_preserves_type() {
     let c_source = "unsigned long read_pair(unsigned long *p) { return p[0] + p[1]; }";
     let click_source = r#"resource pair(p: uint64*) { owns p[0..2]; }
@@ -4226,6 +4311,7 @@ unsigned long read_pair(unsigned long *p) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_21")]
 fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
     for (c_type, suffix) in [("unsigned int", "u32"), ("unsigned long", "u64")] {
         let c_source = format!("{c_type} bump({c_type} *p) {{ *p += 1; return *p; }}");
@@ -4253,6 +4339,7 @@ fn program_entry_typed_dereference_snapshots_expand_and_reverify() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_21")]
 fn program_entry_expansion_reverifies() {
     let c_source = "int state = 7; int main(void) { state += 1; return state; }";
     let click_source = "verifying \"main.c\"; int main() { ensures result == 8; }";
@@ -4265,6 +4352,7 @@ fn program_entry_expansion_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_21")]
 fn program_entry_collects_data_only_private_and_uncalled_local_storage() {
     let sources = [
         ("data.c", "static int private_state = 11; int zero;"),
@@ -4286,6 +4374,7 @@ fn program_entry_collects_data_only_private_and_uncalled_local_storage() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_22")]
 fn const_char_return_expansion_preserves_target_and_qualification() {
     let c_source = "const char *version(void) { return \"0.17\"; }";
     let click_source = r#"verifying "version.c";
@@ -4307,6 +4396,7 @@ const char *version() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_22")]
 fn source_locator_ignores_line_comments_and_preserves_literals() {
     let source =
         "// Click's ü } verifying \"fake.c\"\r\nverifying \"real#file.c\"; // \"unterminated";
@@ -4317,6 +4407,7 @@ fn source_locator_ignores_line_comments_and_preserves_literals() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_22")]
 fn source_locator_line_comments_preserve_proof_expansion_offsets() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = r#"// Click's proof: ü } identity() { "
@@ -4341,6 +4432,7 @@ int32 identity(int32 x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_22")]
 fn contract_refinement_expands_ordinary_helper_proofs() {
     let source = r#"
         theorem nonnegative_equal(x: int32, y: int32) {
@@ -4381,6 +4473,7 @@ fn contract_refinement_expands_ordinary_helper_proofs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_23")]
 fn unsigned_narrowing_snapshot_expansion_reverifies() {
     let c_source = "struct state { unsigned long value; }; unsigned int take(struct state *p) { unsigned int result = p->value; p->value += 1; return result; }";
     let click_source = r#"
@@ -4404,6 +4497,7 @@ fn unsigned_narrowing_snapshot_expansion_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_23")]
 fn selected_post_execution_solve_waits_for_its_surface_closer() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -4448,6 +4542,7 @@ fn selected_post_execution_solve_waits_for_its_surface_closer() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_23")]
 fn selected_post_execution_solve_keeps_the_surviving_execution_branch() {
     let c_source = r#"
             struct node {
@@ -4514,6 +4609,7 @@ fn selected_post_execution_solve_keeps_the_surviving_execution_branch() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_23")]
 fn returning_malloc_result_expands_to_checkable_statement_steps() {
     let c_source = r#"
             int32* allocate_int32s(int32 count) {
@@ -4664,6 +4760,7 @@ fn opaque_reallocation_execute_does_not_invent_an_identity_if() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_24")]
 fn selected_post_execution_smart_have_uses_its_path_certificate() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -4712,6 +4809,7 @@ fn selected_post_execution_smart_have_uses_its_path_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_24")]
 fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -4770,6 +4868,7 @@ fn post_execution_smart_have_applies_a_theorem_to_result_through_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_24")]
 fn selected_post_execution_capture_ignores_nested_certificate_indices() {
     let c_source = r#"
             int32 set(int32* data, int32 value) {
@@ -4809,6 +4908,7 @@ fn selected_post_execution_capture_ignores_nested_certificate_indices() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_24")]
 fn post_execution_transport_observes_a_preceding_have() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -4837,6 +4937,7 @@ fn post_execution_transport_observes_a_preceding_have() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_25")]
 fn selected_post_execution_transport_emits_an_explicit_certificate() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -4884,6 +4985,7 @@ fn selected_post_execution_transport_emits_an_explicit_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_25")]
 fn grouped_post_execution_unfold_retains_its_checked_proof_step() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -4912,6 +5014,7 @@ fn grouped_post_execution_unfold_retains_its_checked_proof_step() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_25")]
 fn grouped_post_execution_closers_use_independent_checked_proofs() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -4937,6 +5040,7 @@ fn grouped_post_execution_closers_use_independent_checked_proofs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_25")]
 fn post_execution_rewrite_retains_its_checked_proof_step() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -4961,6 +5065,7 @@ fn post_execution_rewrite_retains_its_checked_proof_step() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_26")]
 fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -5003,6 +5108,7 @@ fn grouped_post_execution_solve_publishes_checked_obligations_through_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_26")]
 fn grouped_post_execution_arithmetic_rejects_unavailable_irrelevant_extra() {
     let c_source = r#"
         int32 bump(int32 n) { return n + 1; }
@@ -5030,6 +5136,7 @@ fn grouped_post_execution_arithmetic_rejects_unavailable_irrelevant_extra() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_26")]
 fn grouped_post_execution_solve_applies_planned_steps_once_through_proof() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -5068,6 +5175,7 @@ fn grouped_post_execution_solve_applies_planned_steps_once_through_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_26")]
 fn post_execution_solve_builds_disjunction_cases_on_proof() {
     let c_source = r#"
         int32 choose(int32 x) {
@@ -5113,6 +5221,7 @@ fn post_execution_solve_builds_disjunction_cases_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_27")]
 fn symbolic_max_outcomes_retain_selected_branch_order_paths() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests")
@@ -5143,6 +5252,7 @@ fn symbolic_max_outcomes_retain_selected_branch_order_paths() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_27")]
 fn outcome_arithmetic_normalization_retains_selected_equality_paths() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests")
@@ -5213,6 +5323,7 @@ fn outcome_quantified_cells_retain_selected_instantiations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_27")]
 fn post_execution_solve_builds_recursive_conjunction_on_proof() {
     let c_source = r#"
         int32 first(int32 x, int32 y) {
@@ -5258,6 +5369,7 @@ fn post_execution_solve_builds_recursive_conjunction_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_27")]
 fn post_execution_solve_uses_the_introduced_antecedent_for_contradiction() {
     let c_source = r#"
         int32 branch_value(int32 x) {
@@ -5289,6 +5401,7 @@ fn post_execution_solve_uses_the_introduced_antecedent_for_contradiction() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_28")]
 fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
     let c_source = r#"
         int32 first(int32 x, int32 y) {
@@ -5335,6 +5448,7 @@ fn post_execution_smart_have_builds_recursive_conjunction_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_28")]
 fn post_execution_existential_solve_retains_its_checked_scope() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -5377,6 +5491,7 @@ fn post_execution_existential_solve_retains_its_checked_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_28")]
 fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = r#"
@@ -5433,6 +5548,7 @@ fn post_execution_choose_and_witness_share_the_retained_outcome_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_28")]
 fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
     let c_source = r#"
         int32 witness_zero(int32 n) {
@@ -5469,6 +5585,7 @@ fn bounded_range_witness_closes_on_the_checked_outcome_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_29")]
 fn selected_post_execution_smart_apply_uses_exact_path_premises() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -5524,6 +5641,7 @@ fn selected_post_execution_smart_apply_uses_exact_path_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_29")]
 fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
     let peek_c_source = r#"
             int32 peek(int32* data) {
@@ -5579,6 +5697,7 @@ fn smart_apply_surfaces_a_framed_comparison_after_an_immutable_call() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_29")]
 fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
     let c_source = r#"
             int32 decrement(int32* p) {
@@ -5646,6 +5765,7 @@ fn smart_apply_preserves_statement_snapshots_in_explicit_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_29")]
 fn source_expansion_preserves_proof_marks() {
     let c_source = r#"
         int32 increment(int32 x) {
@@ -5810,6 +5930,7 @@ fn marked_constant_store_transport_retains_load_identity() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_30")]
 fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
     let c_source = r#"
         int32 store_both(int32 p[2]) {
@@ -5853,6 +5974,7 @@ fn post_execution_store_transport_expands_from_the_recorded_store_equation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_30")]
 fn statement_snapshots_support_complete_loadability_propositions() {
     let c_source = r#"
             int32 store_second_return_first(int32 p[2]) {
@@ -5887,6 +6009,7 @@ fn statement_snapshots_support_complete_loadability_propositions() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_30")]
 fn statement_snapshots_preserve_declared_resource_argument_types() {
     let c_source = r#"
             int32 preserve_owner(int32* owner) {
@@ -5922,6 +6045,7 @@ fn statement_snapshots_preserve_declared_resource_argument_types() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_30")]
 fn source_expander_locates_frontier_local_have_proofs() {
     let c_source = r#"
             int32 preserve_value(int32 x) {
@@ -5968,6 +6092,7 @@ fn source_expander_locates_frontier_local_have_proofs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_31")]
 fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
     let c_source = r#"
             struct pointer_pair {
@@ -6118,6 +6243,7 @@ fn selected_pure_case_split_solve_expands_by_removal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_31")]
 fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
     // The `then` arm's C path contradicts the contract, so checked execution
     // drops that arm without running its tactics. The `solve` written there
@@ -6175,6 +6301,7 @@ fn smart_tactic_in_an_infeasible_branch_arm_expands_by_removal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_31")]
 fn source_expander_lowers_smart_solve_inside_have() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -6225,6 +6352,7 @@ fn source_expander_lowers_smart_solve_inside_have() {
 /// The `solve` written in a smart `have` body selects the `have` site, as
 /// the `have` keyword does, for a bare `by solve()` and for a block body.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_31")]
 fn source_expander_selects_a_smart_have_by_the_solve_in_its_body() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = "verifying \"identity.c\";\n\
@@ -6254,6 +6382,7 @@ fn source_expander_selects_a_smart_have_by_the_solve_in_its_body() {
 /// site itself, but each smart tactic in its body is: expansion rewrites
 /// exactly that tactic's source and leaves its neighbors as written.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_32")]
 fn source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = "verifying \"identity.c\";\n\
@@ -6350,6 +6479,7 @@ fn assert_mixed_have_body_solve_expands(
 /// A mixed `have` in a proof `if` arm after execution is checked per
 /// outcome; its body `solve` expands on its own there too.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_32")]
 fn source_expander_rewrites_a_have_body_tactic_in_a_post_execution_if_arm() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = "verifying \"identity.c\";\n\
@@ -6373,6 +6503,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_post_execution_if_arm() {
 /// A mixed `have` in a C `branch` arm is checked on the execution frontier;
 /// its body `solve` expands on its own there.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_32")]
 fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
     let c_source = "int32 early_exit(int32 c) {\n\
         \x20   int32 x;\n\
@@ -6407,6 +6538,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_branch_arm() {
 /// A mixed `have` in a frontier-local loop's `preserve` phase is checked by
 /// the preservation proof; its body `solve` expands on its own there.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_32")]
 fn source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase() {
     let c_source = "int32 count_to_n(int32 n) {\n\
         \x20   int32 i;\n\
@@ -6482,6 +6614,7 @@ fn count_up_with_initialize(phase: &str) -> String {
 /// `have`'s body as other phases do, so the smart `solve` there expands on
 /// its own.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_33")]
 fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
     let click_source = count_up_with_initialize(
         "\x20           have 0 <= n by {\n\
@@ -6496,6 +6629,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper() {
 /// The same holds for the body of the `have` that is one invariant's own
 /// initialization proof.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_33")]
 fn source_expander_rewrites_a_have_body_tactic_in_an_initialize_invariant_body() {
     let click_source = count_up_with_initialize(
         "\x20           have i >= 0 by solve();\n\
@@ -6511,6 +6645,7 @@ fn source_expander_rewrites_a_have_body_tactic_in_an_initialize_invariant_body()
 /// `have` body expands on its own: the arm is part of its source path, so no
 /// other tactic's checked delta is recorded for it.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_33")]
 fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let sources = [("identity.c", c_source)];
@@ -6569,6 +6704,7 @@ fn source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body() {
 /// path, the second tactic of an arm reported the same path as the tactic
 /// after the `if`, so selecting that tactic recorded the arm tactic's delta.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_33")]
 fn source_expander_rewrites_the_continuation_after_an_if_in_a_have_body() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = "verifying \"identity.c\";\n\
@@ -6600,6 +6736,7 @@ fn source_expander_rewrites_the_continuation_after_an_if_in_a_have_body() {
 /// A line without a column selects the one smart tactic starting on it and
 /// lists the candidates when there are several.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_34")]
 fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = "verifying \"identity.c\";\n\
@@ -6646,6 +6783,7 @@ fn smart_tactic_selection_by_line_is_unique_or_lists_candidates() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_34")]
 fn pure_structural_solve_builds_recursive_conjunction_on_proof() {
     let click_source = r#"
         theorem nonnegative_pair_direct(x: int32, y: int32) {
@@ -6722,6 +6860,7 @@ fn pure_structural_solve_builds_recursive_conjunction_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_34")]
 fn post_execution_restricted_solve_retains_selected_premises_and_expansion() {
     let c_source = "int32 identity(int32 x) { return x; }";
     let click_source = r#"
@@ -6763,6 +6902,7 @@ fn post_execution_restricted_solve_retains_selected_premises_and_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_34")]
 fn post_execution_restricted_solve_checks_each_return_path() {
     let sources = [(
         "choose.c",
@@ -6794,6 +6934,7 @@ fn post_execution_restricted_solve_checks_each_return_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
 fn post_execution_restricted_solve_continues_an_introduced_claim() {
     let sources = [("forall_scope.c", "int32 forall_scope(void) { return 0; }")];
     let click_source = r#"
@@ -6825,6 +6966,7 @@ fn post_execution_restricted_solve_continues_an_introduced_claim() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
 fn post_execution_restricted_solve_checks_grouped_ownership_and_value_claims() {
     let sources = [("put.c", "void put(int32* p, int32 x) { *p = x; }")];
     let click_source = r#"
@@ -6859,6 +7001,7 @@ fn post_execution_restricted_solve_checks_grouped_ownership_and_value_claims() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
 fn restricted_solve_expands_to_graph_normalization() {
     let click_source = r#"
             theorem equality_transitive(x: int32, y: int32, z: int32) {
@@ -6905,6 +7048,7 @@ fn restricted_solve_expands_to_graph_normalization() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_35")]
 fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
     let click_source = r#"
         theorem set_low_bit_is_nonzero(word: uint64) {
@@ -6933,6 +7077,7 @@ fn uint64_bit_test_inequality_expands_to_rewrite_and_normalize() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_36")]
 fn uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence() {
     let insufficient = r#"
         theorem low_bits_match_is_not_enough(word: uint64, other: uint64) {
@@ -6972,6 +7117,7 @@ fn uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_36")]
 fn pure_rewrite_retains_a_structural_surface_successor_for_solve() {
     let click_source = r#"
         theorem rewrite_pair(x: int32, y: int32, z: int32) {
@@ -7002,6 +7148,7 @@ fn pure_rewrite_retains_a_structural_surface_successor_for_solve() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_36")]
 fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
     let click_source = r#"
             predicate equality_chain(x: int32, y: int32, z: int32) {
@@ -7052,6 +7199,7 @@ fn restricted_solve_after_unfold_expands_explicit_conjunction_extraction() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_36")]
 fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate() {
     let click_source = r#"
             theorem strict_order_implies_nonstrict(x: int32, y: int32) {
@@ -7086,6 +7234,7 @@ fn restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_37")]
 fn post_execution_solve_applies_strict_order_rule() {
     let c_source = r#"
         int32 identity(int32 x) {
@@ -7126,6 +7275,7 @@ fn post_execution_solve_applies_strict_order_rule() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_37")]
 fn restricted_solve_expands_negated_strict_order_to_greater_equal() {
     let click_source = r#"
         theorem not_negative_is_nonnegative(x: int32) {
@@ -7158,6 +7308,7 @@ fn restricted_solve_expands_negated_strict_order_to_greater_equal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_37")]
 fn post_execution_solve_expands_successor_strict_increase() {
     let c_source = r#"
         int32 increment(int32 x) {
@@ -7200,6 +7351,7 @@ fn post_execution_solve_expands_successor_strict_increase() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_37")]
 fn post_execution_solve_expands_increment_definedness() {
     let c_source = r#"
         int32 increment(int32 x) {
@@ -7236,6 +7388,7 @@ fn post_execution_solve_expands_increment_definedness() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_38")]
 fn post_execution_solve_expands_increment_lower_bound() {
     let c_source = r#"
         int32 increment_nonnegative(int32 x) {
@@ -7284,6 +7437,7 @@ fn post_execution_solve_expands_increment_lower_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_38")]
 fn post_execution_solve_expands_order_equality_closure() {
     let c_source = r#"
         int32 identity_at_bound(int32 x) {
@@ -7329,6 +7483,7 @@ fn post_execution_solve_expands_order_equality_closure() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_38")]
 fn restricted_solve_expands_nonstrict_unequal_order() {
     let click_source = r#"
         theorem nonstrict_unequal_is_strict(left: int32, right: int32) {
@@ -7362,6 +7517,7 @@ fn restricted_solve_expands_nonstrict_unequal_order() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_38")]
 fn post_execution_solve_expands_increment_upper_bound() {
     let c_source = r#"
         int32 increment_below(int32 x) {
@@ -7408,6 +7564,7 @@ fn post_execution_solve_expands_increment_upper_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_39")]
 fn post_execution_solve_expands_strict_transitivity() {
     let c_source = r#"
         int32 return_first(int32 first, int32 middle, int32 last) {
@@ -7449,6 +7606,7 @@ fn post_execution_solve_expands_strict_transitivity() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_39")]
 fn post_execution_solve_expands_greater_equal_transitivity() {
     let c_source = r#"
         int32 return_last(int32 first, int32 middle, int32 last) {
@@ -7490,6 +7648,7 @@ fn post_execution_solve_expands_greater_equal_transitivity() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_39")]
 fn post_execution_solve_expands_greater_equal_increment_bound() {
     let c_source = r#"
         int32 increment_ge(int32 value) {
@@ -7535,6 +7694,7 @@ fn post_execution_solve_expands_greater_equal_increment_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_39")]
 fn post_execution_solve_expands_strict_greater_increment_bound() {
     let c_source = r#"
         int32 increment_gt(int32 value) {
@@ -7580,6 +7740,7 @@ fn post_execution_solve_expands_strict_greater_increment_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_40")]
 fn post_execution_solve_expands_greater_order_equality() {
     let c_source = r#"
         int32 identity_zero(int32 value) {
@@ -7624,6 +7785,7 @@ fn post_execution_solve_expands_greater_order_equality() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_40")]
 fn post_execution_solve_composes_negated_successor_bound() {
     let c_source = r#"
         int32 identity_at_least_one(int32 value) {
@@ -7674,6 +7836,7 @@ fn post_execution_solve_composes_negated_successor_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_40")]
 fn restricted_solve_composes_negated_successor_bound() {
     let click_source = r#"
         theorem not_below_two_is_at_least_one(value: int32) {
@@ -7710,6 +7873,7 @@ fn restricted_solve_composes_negated_successor_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_40")]
 fn post_execution_solve_unfolds_predicate_goal_explicitly() {
     let c_source = r#"
         int32 compare_swap2(int32* p) {
@@ -7779,6 +7943,7 @@ fn post_execution_solve_unfolds_predicate_goal_explicitly() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
 fn pure_solve_retains_one_selected_equality_rewrite_before_normalize() {
     let click_source = r#"
         theorem predecessor_of_one_is_nonnegative(value: int32) {
@@ -7803,6 +7968,7 @@ fn pure_solve_retains_one_selected_equality_rewrite_before_normalize() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
 fn restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_stays_bounded(value: int32, upper: int32) {
@@ -7840,6 +8006,7 @@ fn restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
 fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
     let click_source = r#"
         theorem positive_is_nonnegative(value: int32) {
@@ -7877,6 +8044,7 @@ fn restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_41")]
 fn restricted_solve_expands_positive_predecessor_to_arithmetic_certificate() {
     let click_source = r#"
         theorem positive_predecessor_is_nonnegative(value: int32) {
@@ -7914,6 +8082,7 @@ fn restricted_solve_expands_positive_predecessor_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_42")]
 fn restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certificate() {
     let click_source = r#"
         theorem positive_predecessor_decreases(value: int32) {
@@ -7951,6 +8120,7 @@ fn restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certific
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_42")]
 fn restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem predecessor_keeps_upper_bound(value: int32, bound: int32) {
@@ -7980,6 +8150,7 @@ fn restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate() 
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_42")]
 fn restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof() {
     let click_source = r#"
         theorem one_le_predecessor_is_nonnegative(value: int32) {
@@ -8005,6 +8176,7 @@ fn restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_42")]
 fn restricted_solve_retains_nested_one_le_predecessor_decrease_proof() {
     let click_source = r#"
         theorem one_le_predecessor_decreases(value: int32) {
@@ -8031,6 +8203,7 @@ fn restricted_solve_retains_nested_one_le_predecessor_decrease_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_43")]
 fn restricted_solve_retains_equal_one_predecessor_path() {
     let click_source = r#"
         theorem equal_one_predecessor_is_nonnegative(value: int32) {
@@ -8057,6 +8230,7 @@ fn restricted_solve_retains_equal_one_predecessor_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_43")]
 fn restricted_solve_retains_equal_one_predecessor_zero_path() {
     let click_source = r#"
         theorem equal_one_predecessor_is_zero(value: int32) {
@@ -8084,6 +8258,7 @@ fn restricted_solve_retains_equal_one_predecessor_zero_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_43")]
 fn restricted_solve_expands_strict_increment_to_arithmetic_certificate() {
     let click_source = r#"
             theorem increment_is_greater(value: int32, upper: int32) {
@@ -8120,6 +8295,7 @@ fn restricted_solve_expands_strict_increment_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_43")]
 fn solve_expands_increment_definedness_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_is_defined(value: int32) {
@@ -8143,6 +8319,7 @@ fn solve_expands_increment_definedness_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
 fn restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_preserves_lower_bound(
@@ -8187,6 +8364,7 @@ fn restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
 fn restricted_solve_expands_increment_order_to_arithmetic_certificate() {
     let click_source = r#"
         theorem increment_preserves_order(
@@ -8231,6 +8409,7 @@ fn restricted_solve_expands_increment_order_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
 fn restricted_solve_rewrites_a_named_successor_before_increment_order() {
     let c_source = r#"
         int32 named_successor(int32 value) {
@@ -8360,6 +8539,7 @@ fn restricted_solve_certifies_unchanged_prefix_after_indexed_store() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_44")]
 fn restricted_solve_expands_adjacent_order_to_arithmetic_certificate() {
     let click_source = r#"
         theorem two_at_most_implies_one_below(value: int32) {
@@ -8397,6 +8577,7 @@ fn restricted_solve_expands_adjacent_order_to_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_45")]
 fn smart_solve_transcribes_a_three_edge_signed_order_path() {
     let click_source = r#"
         theorem three_edge_order_chain(
@@ -8437,6 +8618,7 @@ fn smart_solve_transcribes_a_three_edge_signed_order_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_45")]
 fn smart_solve_transcribes_a_three_edge_bitvector_equality_path() {
     let click_source = r#"
         theorem three_edge_equality_chain(
@@ -8476,6 +8658,7 @@ fn smart_solve_transcribes_a_three_edge_bitvector_equality_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_45")]
 fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
     let click_source = r#"
         theorem le_and_not_lt_are_equal(left: int32, right: int32) {
@@ -8534,6 +8717,7 @@ fn smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_45")]
 fn outcome_solve_consumes_its_recorded_bitvector_equality_path() {
     let c_source = r#"
         int32 choose_first(int32 first, int32 second, int32 third, int32 last) {
@@ -8572,6 +8756,7 @@ fn outcome_solve_consumes_its_recorded_bitvector_equality_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_46")]
 fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
     let c_source = r#"
         int32 validate_chain(int32 first, int32 second, int32 third, int32 last) {
@@ -8611,6 +8796,7 @@ fn outcome_solve_closes_its_recorded_order_path_by_arithmetic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_46")]
 fn restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate() {
     let click_source = r#"
         theorem three_at_least_implies_nonnegative(value: int32) {
@@ -8648,6 +8834,7 @@ fn restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate()
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_46")]
 fn restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificate() {
     let click_source = r#"
         theorem three_at_most_implies_below_five(value: int32) {
@@ -8673,6 +8860,7 @@ fn restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificat
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_46")]
 fn restricted_solve_retains_increment_under_a_larger_constant() {
     let click_source = r#"
         theorem increment_three_at_most_is_five_at_most(value: int32) {
@@ -8698,6 +8886,7 @@ fn restricted_solve_retains_increment_under_a_larger_constant() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_47")]
 fn restricted_solve_retains_symbolic_add_definedness_theorem() {
     let click_source = r#"
         theorem symbolic_add_is_defined(value: int32, amount: int32) {
@@ -8733,6 +8922,7 @@ fn restricted_solve_retains_symbolic_add_definedness_theorem() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_47")]
 fn restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds() {
     let click_source = r#"
         theorem symbolic_subtract_is_defined(value: int32, amount: int32) {
@@ -8761,6 +8951,7 @@ fn restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_47")]
 fn restricted_solve_retains_one_plus_operand_specific_certificates() {
     let cases = [
         (
@@ -8804,6 +8995,7 @@ fn restricted_solve_retains_one_plus_operand_specific_certificates() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_47")]
 fn restricted_solve_composes_equalities_with_adjacent_order() {
     let click_source = r#"
         theorem aliased_positive_bound(
@@ -8853,6 +9045,7 @@ fn restricted_solve_composes_equalities_with_adjacent_order() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
 fn restricted_solve_inside_have_expands_to_graph_normalization() {
     let c_source = r#"
             int32 identity(int32 x, int32 y, int32 z) {
@@ -8917,6 +9110,7 @@ fn restricted_solve_inside_have_expands_to_graph_normalization() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
 fn restricted_solve_expands_loadable_subrange_to_explicit_transport() {
     let c_source = r#"
         int32 read_at(int32 data[], int32 index, int32 length) {
@@ -9002,6 +9196,7 @@ fn restricted_solve_expands_loadable_subrange_to_explicit_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
 fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
     let c_source = r#"
         int32 alias_value(
@@ -9104,6 +9299,7 @@ fn restricted_solve_rewrites_pointer_aliases_inside_memory_loads() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_48")]
 fn post_execution_restricted_solve_expands_without_derive() {
     let c_source = r#"
         int32 identity(int32 x, int32 y, int32 z) {
@@ -9166,6 +9362,7 @@ fn post_execution_restricted_solve_expands_without_derive() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_49")]
 fn source_expander_lowers_smart_apply_inside_have() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -9221,6 +9418,7 @@ fn source_expander_lowers_smart_apply_inside_have() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_49")]
 fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
     let c_source = r#"
             int32 choose_second(int32 first, int32 second) {
@@ -9295,6 +9493,7 @@ fn fixed_state_have_bare_apply_retains_and_checks_its_exact_premise() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_49")]
 fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() {
     let c_source = r#"
             int32 choose_second(int32 first, int32 second) {
@@ -9365,6 +9564,7 @@ fn fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors() 
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_49")]
 fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
     let c_source = r#"
             uint32 keep(uint32 value, uint32 divisor) {
@@ -9416,6 +9616,7 @@ fn execution_bare_apply_selects_and_retains_its_step_through_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_50")]
 fn return_definedness_facts_expand_without_resource_rewrites() {
     let (source, sources) =
         mdtest_sources("mdtests/return_proofs_retain_definedness_without_resource_rewrites.md");
@@ -9429,6 +9630,7 @@ fn return_definedness_facts_expand_without_resource_rewrites() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_50")]
 fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
     let c_source = "int32 identity(int32 x) { return x; }";
     // A macro refold may change only the logical presentation. The second
@@ -9459,6 +9661,7 @@ fn post_return_resource_exchange_accepts_a_preceding_pure_have() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_50")]
 fn execution_resource_unfold_is_recorded_once_and_checks() {
     let c_source = r#"
         int32 discard(int32 x) {
@@ -9508,6 +9711,7 @@ fn execution_resource_unfold_is_recorded_once_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_50")]
 fn execution_resource_observe_is_recorded_once_and_checks() {
     let c_source = r#"
         int32 inspect(int32 x) {
@@ -9557,6 +9761,7 @@ fn execution_resource_observe_is_recorded_once_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_51")]
 fn execution_resource_fold_is_recorded_once_and_checks() {
     let c_source = r#"
         int32 preserve(int32 x) {
@@ -9613,6 +9818,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_51")]
 fn linear_execution_open_retains_one_checked_scope_and_checks() {
     let c_source = r#"
         int32 two_steps(int32 x) {
@@ -9670,6 +9876,7 @@ fn linear_execution_open_retains_one_checked_scope_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_51")]
 fn linear_execution_open_retains_checked_prefix_on_one_proof() {
     let c_source = r#"
         int32 add_once(int32 x, int32 y) {
@@ -9719,6 +9926,7 @@ fn linear_execution_open_retains_checked_prefix_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_51")]
 fn linear_execute_inside_open_retains_checked_statement_steps() {
     let c_source = r#"
         int32 two_steps(int32 x) {
@@ -9772,6 +9980,7 @@ fn linear_execute_inside_open_retains_checked_statement_steps() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_52")]
 fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
     let apply_c = r#"
         int32 apply_write(int32 p[], int32 x) {
@@ -9886,6 +10095,7 @@ fn grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_52")]
 fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
     let c_source = r#"
         int32 write_first(int32 p[]) {
@@ -9946,6 +10156,7 @@ fn grouped_post_execution_predicate_unfold_before_frame_stays_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_52")]
 fn quantified_contract_resource_open_stays_on_one_proof() {
     let c_source = "int32 preserve_markers(int32 x, int32 amount) { return x; }";
     let click_source = r#"
@@ -10008,6 +10219,7 @@ fn quantified_contract_resource_open_stays_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_52")]
 fn linear_execute_until_inside_open_stops_on_checked_frontier() {
     let c_source = r#"
         int32 three_steps(int32 x) {
@@ -10064,6 +10276,7 @@ fn linear_execute_until_inside_open_stops_on_checked_frontier() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_53")]
 fn linear_open_have_retains_the_selected_theorem_application() {
     let c_source = r#"
         int32 two_steps(int32 x) {
@@ -10136,6 +10349,7 @@ fn linear_open_have_retains_the_selected_theorem_application() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_53")]
 fn nested_composite_resource_scopes_stay_on_one_proof() {
     let c_source = "int32 read_cell(int32 p[]) { return p[0]; }";
     let click_source = r#"
@@ -10213,6 +10427,7 @@ fn nested_composite_resource_scopes_stay_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_53")]
 fn linear_open_retains_a_direct_bare_theorem_application() {
     let c_source = r#"
         int32 retain_lower(int32 lower, int32 upper) {
@@ -10335,6 +10550,7 @@ fn linear_open_retains_a_direct_bare_fact_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_53")]
 fn execution_branch_arm_resource_scope_stays_on_one_proof() {
     let c_source = r#"
         int32 read_if(int32 p[], int32 flag) {
@@ -10540,6 +10756,7 @@ fn scoped_execution_branch_arm_resource_scope_stays_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_54")]
 fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
     let c_source = r#"
         int32 choose_x_or_zero(int32 x, int32 flag) {
@@ -10648,6 +10865,7 @@ fn execution_branch_arm_terminal_proof_if_stays_on_one_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_54")]
 fn branch_interface_retains_its_checked_abstract_join() {
     let c_source = r#"
         int32 nonnegative(int32 x) {
@@ -10717,6 +10935,7 @@ fn branch_interface_retains_its_checked_abstract_join() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_54")]
 fn branch_interface_retains_exact_unchanged_ownership() {
     let c_source = r#"
         int32 preserve_marker(int32 x, int32 flag) {
@@ -10783,6 +11002,7 @@ fn branch_interface_retains_exact_unchanged_ownership() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_54")]
 fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
     let c_source = r#"
         int32 preserve_two_markers(int32 x, int32 flag) {
@@ -10860,6 +11080,7 @@ fn branch_interface_normalizes_an_entailed_owned_quantity_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_55")]
 fn branch_arms_retain_bare_theorem_applications_on_proof() {
     let c_source = r#"
         int32 retain_order(int32 lower, int32 upper, int32 flag) {
@@ -10932,6 +11153,7 @@ fn branch_arms_retain_bare_theorem_applications_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_55")]
 fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
     let c_source = r#"
         int32 choose_bound(int32 lower, int32 upper, int32 flag) {
@@ -11007,6 +11229,7 @@ fn branch_join_retains_a_bare_theorem_application_in_its_continuation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_55")]
 fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
     let c_source = r#"
         int32 choose_bound_transport(int32 lower, int32 upper, int32 flag) {
@@ -11075,6 +11298,7 @@ fn branch_join_retains_a_bare_fact_transport_in_its_continuation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_55")]
 fn branch_join_retains_a_nested_have_in_its_continuation() {
     let c_source = r#"
         int32 select_positive(int32 flag) {
@@ -11171,6 +11395,7 @@ fn branch_join_retains_a_nested_have_in_its_continuation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_56")]
 fn branch_join_retains_linear_execute_on_its_common_successor() {
     let c_source = r#"
         int32 select_and_increment(int32 flag) {
@@ -11244,6 +11469,7 @@ fn branch_join_retains_linear_execute_on_its_common_successor() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_56")]
 fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
     let c_source = r#"
         int32 select_and_increment_positive(int32 flag) {
@@ -11293,6 +11519,7 @@ fn incremented_strict_lower_bound_retains_its_arithmetic_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_56")]
 fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
     let c_source = r#"
         int32 select_and_increment_positive_have(int32 flag) {
@@ -11354,6 +11581,7 @@ fn post_execution_have_anchors_strict_increment_arithmetic_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_56")]
 fn branch_arms_retain_bare_fact_transports_on_proof() {
     let c_source = r#"
         int32 set_choice_return_first(int32 p[2], int32 flag) {
@@ -11426,6 +11654,7 @@ fn branch_arms_retain_bare_fact_transports_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_57")]
 fn branch_arms_retain_nested_have_proofs() {
     let c_source = r#"
         int32 select_nonnegative(int32 flag) {
@@ -11510,6 +11739,7 @@ fn branch_arms_retain_nested_have_proofs() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_57")]
 fn explicit_branch_arms_retain_terminal_execute_search() {
     let c_source = r#"
         int32 choose_one_or_two(int32 flag) {
@@ -11840,6 +12070,7 @@ fn const_callback_contract_expands_at_every_smart_site() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_57")]
 fn transformed_resource_branch_interface_retains_its_common_descendant() {
     let markdown = include_str!("../../../mdtests/proof_branch_composite_resource_transform.md");
     let mdtest = crate::cli::parse_mdtest(
@@ -11908,6 +12139,7 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_57")]
 fn decided_branch_interface_retains_the_surviving_checked_state() {
     let c_source = r#"
         int32 selected_nonnegative(int32 x) {
@@ -11961,6 +12193,7 @@ fn decided_branch_interface_retains_the_surviving_checked_state() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_58")]
 fn open_scope_retains_its_checked_branch_interface() {
     let c_source = r#"
         int32 scoped_nonnegative(int32 x) {
@@ -12030,6 +12263,7 @@ fn open_scope_retains_its_checked_branch_interface() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_58")]
 fn open_scope_retains_its_checked_execution_branch() {
     let c_source = r#"
         int32 empty_branch(int32 x) {
@@ -12094,6 +12328,7 @@ fn open_scope_retains_its_checked_execution_branch() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_58")]
 fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
     let c_source = r#"
         int32 selected_branch(int32 x) {
@@ -12198,6 +12433,7 @@ fn open_scope_retains_a_decided_execution_branch_and_its_continuation() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_58")]
 fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
     let c_source = r#"
             int32 choose(int32 value) {
@@ -12258,6 +12494,7 @@ fn automatic_terminal_branch_retains_its_checked_proof_outcomes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_59")]
 fn fixed_state_smart_have_retains_a_checked_simple_closer() {
     let c_source = r#"
             int32 identity(int32 value) {
@@ -12281,6 +12518,7 @@ fn fixed_state_smart_have_retains_a_checked_simple_closer() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_59")]
 fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
     let c_source = r#"
             int32 first(int32 x, int32 y, int32 z) {
@@ -12318,6 +12556,7 @@ fn fixed_state_smart_have_retains_a_checked_arithmetic_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_59")]
 fn explicit_linear_fixed_state_have_uses_the_checked_proof_path() {
     let c_source = r#"
             int32 identity(int32 value) {
@@ -12355,6 +12594,7 @@ fn explicit_linear_fixed_state_have_uses_the_checked_proof_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_59")]
 fn explicit_post_execution_have_uses_the_checked_outcome_proof_path() {
     let c_source = r#"
             int32 identity(int32 value) {
@@ -12393,6 +12633,7 @@ fn explicit_post_execution_have_uses_the_checked_outcome_proof_path() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_60")]
 fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
     let c_source = r#"
             int32 bounded(int32 value) {
@@ -12431,6 +12672,7 @@ fn quantified_outcome_solve_keeps_its_binder_on_the_checked_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_60")]
 fn outcome_solve_with_no_open_claims_is_an_empty_proof_transition() {
     let c_source = r#"
         struct object { int32 refs; };
@@ -12471,6 +12713,7 @@ fn outcome_solve_with_no_open_claims_is_an_empty_proof_transition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_60")]
 fn outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof() {
     let c_source = r#"
         struct pool { int32 checked_out; int32 capacity; };
@@ -12616,6 +12859,7 @@ fn outcome_predicate_unfold_provenance_survives_nested_have_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_60")]
 fn post_execution_if_expansion_retains_earlier_have_facts() {
     for filename in [
         "post_execution_if_uses_earlier_have.md",
@@ -12647,6 +12891,7 @@ fn post_execution_if_expansion_retains_earlier_have_facts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_61")]
 fn successive_post_execution_ifs_stay_on_one_proof() {
     let c_source = r#"
         int32 two_decisions(int32 x, int32 y) {
@@ -12908,6 +13153,7 @@ fn matched_resource_quantified_fact_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_61")]
 fn matched_resource_dependent_clauses_expand_and_reverify() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/resource_match_dependent_clauses.md");
@@ -13049,6 +13295,7 @@ fn snapshot_and_post_call_transport_fixtures_have_no_outcome_fallbacks() {
 /// separation from the owned global, and deleting it must still break the
 /// proof.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_61")]
 fn a_stated_separation_is_load_bearing() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests")
@@ -13153,6 +13400,7 @@ pub(super) fn only_function_proof_changed(before: &str, after: &str, function: &
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_61")]
 fn proof_change_scope_requires_explicit_proofs_and_preserves_surroundings() {
     let implicit = "int32 f() {\n    ensures result == 0;\n}\n";
     let explicit = "int32 f() {\n    ensures result == 0;\n} by {\n    solve();\n}\n";
@@ -13617,6 +13865,7 @@ fn arithmetic_certificate_have_blocks(source: &str) -> Vec<std::ops::Range<usize
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_62")]
 fn outcome_solve_transports_loadability_on_the_checked_proof() {
     let summarize_c = r#"
         int32 summarize(int32* p) {
@@ -13718,6 +13967,7 @@ fn outcome_solve_retains_checked_unchanged_old_equality_on_the_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_62")]
 fn outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof() {
     let c_source = r#"
         int32 byte_prefix(uint8 p[], int32 n) {
@@ -13885,6 +14135,7 @@ fn quantified_old_transport_substitutes_its_introduced_binder_on_the_checked_pro
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_62")]
 fn guarded_definedness_transport_expands_and_reverifies() {
     let (source, sources) =
         mdtest_sources("mdtests/guarded_definedness_survives_a_disjoint_store.md");
@@ -13956,6 +14207,7 @@ fn quantified_old_transport_expands_to_one_quantified_frame() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_62")]
 fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -14021,6 +14273,7 @@ fn source_expander_lowers_smart_solve_after_unfold_inside_have() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_63")]
 fn source_expander_extracts_unfolded_conjuncts_inside_have() {
     let c_source = r#"
             int32 identity(int32 x, int32 y, int32 z) {
@@ -14074,6 +14327,7 @@ fn source_expander_extracts_unfolded_conjuncts_inside_have() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_63")]
 fn source_expander_preserves_pointer_field_form_inside_smart_have() {
     let c_source = r#"
             struct holder {
@@ -14129,6 +14383,7 @@ fn source_expander_preserves_pointer_field_form_inside_smart_have() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_63")]
 fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
     let c_source = r#"
             struct holder {
@@ -14192,6 +14447,7 @@ fn source_expander_synthesizes_an_indexed_load_through_a_pointer_field() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_63")]
 fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
     let c_source = r#"
             int32 set_second_return_first(int32 p[2]) {
@@ -14249,6 +14505,7 @@ fn smart_have_uses_transport_planned_at_the_mutation_boundary() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_64")]
 fn source_expander_recalls_a_fact_at_a_recorded_statement_entry() {
     let preserve_c_source = r#"
             int32 preserve(int32 p[1]) {
@@ -14435,6 +14692,7 @@ fn source_expander_derives_separation_from_call_postconditions() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_64")]
 fn branched_smart_solve_expansion_checks_as_surface_click() {
     let c_source = r#"
             int32 choose(int32 flag) {
@@ -14465,6 +14723,7 @@ fn branched_smart_solve_expansion_checks_as_surface_click() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_64")]
 fn source_expander_replaces_only_the_selected_claim_proof() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -14505,6 +14764,7 @@ fn source_expander_replaces_only_the_selected_claim_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_64")]
 fn source_expander_replaces_and_checks_grouped_proof() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -14590,6 +14850,7 @@ fn qualified_function_statics_verify_and_expand() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_65")]
 fn qualified_function_statics_reject_invalid_declarations() {
     let c_source =
         "void f(int parameter) { static int stored; int automatic = 0; stored = automatic; }";
@@ -14648,6 +14909,7 @@ fn qualified_function_statics_do_not_grant_ownership() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_65")]
 fn qualified_static_ownership_rejects_missing_and_wrong_resources() {
     let sources = [
         (
@@ -14691,6 +14953,7 @@ int main() { ensures result == 0; }
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_65")]
 fn qualified_static_direct_assignment_requires_effect_or_ownership() {
     let sources = [(
         "left.c",
@@ -14710,6 +14973,7 @@ void clear() { ensures count == 0; }"#;
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_65")]
 fn qualified_static_helper_requires_transferred_ownership() {
     let sources = [(
         "counter.c",
@@ -14836,14 +15100,17 @@ fn private_state_wide_return_expands() {
     check_private_state_expansion("private_state_wide_return.md", "main");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_66")]
 fn private_state_narrowing_call_expands() {
     check_private_state_expansion("private_state_narrowing_call.md", "main");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_66")]
 fn wide_signed_low_word_narrowing_expands() {
     check_private_state_expansion("wide_values_narrow_to_their_low_word.md", "signed_value");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_66")]
 fn wide_unsigned_low_word_narrowing_expands() {
     check_private_state_expansion("wide_values_narrow_to_their_low_word.md", "unsigned_value");
 }
@@ -14891,6 +15158,7 @@ fn private_state_wrappers_reject_invalid_ownership_and_effects() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_66")]
 fn wide_values_narrow_to_their_low_word_without_bounds() {
     let fixture_name = "wide_values_narrow_to_their_low_word.md";
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -14956,6 +15224,7 @@ fn grouped_residual_normalization_expansion_checks_original_claims() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_67")]
 fn source_expander_replaces_and_checks_default_ensure_proof() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -14992,6 +15261,7 @@ fn source_expander_replaces_and_checks_default_ensure_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_67")]
 fn source_expander_reports_missing_grouped_proof_precisely() {
     let c_source = r#"
             int32 identity(int32 x) {
@@ -15022,6 +15292,7 @@ fn source_expander_reports_missing_grouped_proof_precisely() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_67")]
 fn pure_pointer_add_zero_solve_expands_to_a_checked_certificate() {
     let click_source = r#"
             theorem pointer_add_zero_equals(
@@ -15058,6 +15329,7 @@ fn pure_pointer_add_zero_solve_expands_to_a_checked_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_67")]
 fn pure_branching_disjunction_solve_expands_to_left_right() {
     let click_source = r#"
             theorem int32_sign_split(x: int32) {
@@ -15092,6 +15364,7 @@ fn pure_branching_disjunction_solve_expands_to_left_right() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
 fn pure_folded_constant_successor_solve_expands_to_successor_bound() {
     let click_source = r#"
             theorem successor_of_zero_below_bound(x: int32, bound: int32) {
@@ -15124,6 +15397,7 @@ fn pure_folded_constant_successor_solve_expands_to_successor_bound() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
 fn unfolded_conjunction_have_solve_expands_and_rechecks() {
     let c_source = r#"
             struct pair {
@@ -15184,6 +15458,7 @@ fn unfolded_conjunction_have_solve_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
 fn outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate() {
     let c_source = r#"
             struct pair {
@@ -15288,6 +15563,7 @@ fn expanded_step_uses_the_whole_context_for_frame_evidence() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_68")]
 fn loop_preservation_case_after_step_expands_in_place() {
     let c_source = r#"
         int32 count_once(int32 flag) {
@@ -15346,6 +15622,7 @@ fn loop_preservation_case_after_step_expands_in_place() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_69")]
 fn loop_preservation_case_before_step_expands_in_place() {
     let c_source = r#"
         int32 count_once(int32 flag) {
@@ -15503,6 +15780,7 @@ fn loop_entry_logical_read_expands_without_hidden_introductions() {
 /// cites. Dropping the citation must invalidate the proof, which is what
 /// makes the choice explicit rather than rediscovered.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_69")]
 fn specification_conditional_branch_is_an_expanded_proof_step() {
     let click_source = r#"verifying "select_when_positive.c";
 
@@ -15551,6 +15829,7 @@ int32 select_when_positive(int32 limit, int32 left, int32 right) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_69")]
 fn integer_quantifiers_substitute_checked_mixed_atoms_and_expand() {
     let source = r#"
 function combine(n: Nat, z: Integer) -> Integer { to_integer(n) + z }
@@ -15620,6 +15899,7 @@ int32 span_length(struct span* span) {
 "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_69")]
 fn smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies() {
     // Reduced from `arena_region_length` in `examples/arena`, which `click
     // verify` accepted while `click audit` reported `the kernel lowering
@@ -15780,6 +16060,7 @@ int read(int* p) {
 "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
 fn match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies() {
     // The arm's case fact is a statement about the scrutinee at unchanged
     // function entry, but its recorded spelling was the unanchored
@@ -16075,6 +16356,7 @@ int spin(int n) {
 "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
 fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
     // Reduced from the insert fixup loop in `examples/rbtree/rbtree-model`. The
     // per-invariant entry planner was handed the whole phase script as every
@@ -16108,6 +16390,7 @@ fn each_smart_have_in_a_loop_initialize_script_expands_on_its_own() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
 fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
     // `preserve by solve();` is one smart tactic standing for the whole phase,
     // like `initialize by solve();`. Every driver step under it is generated, so
@@ -16133,6 +16416,7 @@ fn a_smart_loop_preserve_phase_tactic_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_70")]
 fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
     // The entry planner nested every sibling step inside every invariant's
     // proof, so expanding the closing `solve()` printed the helper once per
@@ -16167,6 +16451,7 @@ fn a_helper_have_in_a_loop_initialize_script_is_expanded_once() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_71")]
 fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
     let click_source = LOOP_INITIALIZE_HELPER_HAVE_CLICK
         .replace("invariant i <= n;", "invariant i >= 0;")
@@ -16216,6 +16501,7 @@ fn loop_initialization_duplicate_clauses_keep_distinct_bodies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_71")]
 fn a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold() {
     // A proof `match` arm's constructor equation is recorded under its
     // written spelling, `t.model == Tree::Node(..)`. Once the arm has
@@ -16452,6 +16738,7 @@ fn conditional_call_witness_expansion_keeps_empty_binder_map() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_71")]
 fn conditional_algebraic_universal_expands_and_reverifies() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/conditional_algebraic_universal_contract.md");
@@ -16474,6 +16761,7 @@ fn conditional_algebraic_universal_expands_and_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_71")]
 fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_ambient_pointer_equality.md");
@@ -16499,6 +16787,7 @@ fn normalize_using_ambient_pointer_equality_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
 fn normalize_using_c_pointer_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_c_pointer_equality.md");
@@ -16529,6 +16818,7 @@ fn normalize_using_c_pointer_equality_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
 fn normalize_using_pointer_addition_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_pointer_addition.md");
@@ -16550,6 +16840,7 @@ fn normalize_using_pointer_addition_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
 fn normalize_using_graph_conditions_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_graph_conditions.md");
@@ -16596,6 +16887,7 @@ fn normalize_using_graph_conditions_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_72")]
 fn normalize_using_int32_equality_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_equality.md");
@@ -16648,6 +16940,7 @@ fn normalize_using_int32_equality_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
 fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
     let source = r#"
         theorem restricted(a: int32, b: int32, c: int32) {
@@ -16671,6 +16964,7 @@ fn restricted_solve_does_not_borrow_the_ambient_equality_graph() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
 fn normalize_using_scaled_int32_expands_and_rechecks() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_scaled_int32.md");
@@ -16702,6 +16996,7 @@ fn normalize_using_scaled_int32_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
 fn normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/normalize_using_int32_addition.md");
@@ -16859,6 +17154,7 @@ fn normalize_using_transported_int32_loads_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_73")]
 fn authority_callback_count_refinement_expands_every_smart_site() {
     let fixture = crate::cli::parse_mdtest(
         std::path::Path::new("authority_callback_count_refinement.md"),
@@ -16915,6 +17211,7 @@ fn authority_callback_count_refinement_expands_every_smart_site() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_74")]
 fn resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced() {
     let valid_source = "resource cell(p: int32*) { owns p[0..1]; }
         verifying \"keep.c\";
@@ -17058,6 +17355,7 @@ void caller(struct parent* p, struct child* kid) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_74")]
 fn composite_fold_argument_read_retains_checked_address_and_bounds() {
     let c_source = "int32 keep(int32* p, int32* q, int32 i, int32 n) { return 0; }";
     let click_source = r#"
@@ -17097,6 +17395,7 @@ int32 keep(int32* p, int32* q, int32 i, int32 n) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_74")]
 fn published_symbolic_owner_store_expands_and_rechecks() {
     let c = "void put(int32* p, int32 i, int32 n) { p[i] = 7; }";
     let source = r#"
@@ -17169,6 +17468,7 @@ void put(int32* p, int32* q, int32 i, int32 n) {
 /// block must hold a tactic, so the expansion keeps `assumption();` there
 /// rather than emptying the block, and the rewritten proof verifies.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_74")]
 fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
     let c_source =
         "int32 drain(uint32 x) {\n    while (x > 0u) {\n        x--;\n    }\n    return 0;\n}\n";
@@ -17221,6 +17521,7 @@ fn expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step() {
 /// `click expand` at the contract's closing brace writes out after it; a
 /// claim with its own proof keeps it unchanged.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
 fn the_implicit_grouped_proof_expands_after_the_contract_and_reverifies() {
     let c_source = r#"
         int32 inc(int32 x) {
@@ -17362,6 +17663,7 @@ fn selected_deferred_closer_freezes_computed_guards_before_parameter_mutation() 
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
 fn uint32_arithmetic_bound_weakening_expands_and_rechecks() {
     let (source, _) = mdtest_sources("mdtests/uint32_arithmetic_bound_weakening.md");
     verify_c0_sources(&source, &[]).expect("unsigned weakened bounds should verify");
@@ -17529,6 +17831,7 @@ uint32 identity(uint32 a, uint32 b) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
 fn integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims() {
     let (source, _) = mdtest_sources("mdtests/integer_equality_rewrite.md");
     verify_c0_sources(&source, &[]).expect("Integer compound rewrites should verify");
@@ -17579,6 +17882,7 @@ int64 identity(int64 x, int64 y) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_75")]
 fn symbolic_upper_arithmetic_premises_expand_and_cold_recheck() {
     for (name, premise, extra) in [
         ("difference", "to_integer(a) <= to_integer(1000 - b)", ""),
@@ -17756,6 +18060,7 @@ fn counted_pthread_whole_claim_expansion_symbolic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_76")]
 fn counted_pthread_whole_claim_expansion_retire() {
     check_counted_pthread_whole_claim_expansion(
         "modeled_pthread_retire_after_join",
@@ -17773,6 +18078,7 @@ fn counted_pthread_whole_claim_expansion_mutex() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_76")]
 fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
     let (original, sources) = mdtest_sources("mdtests/pruned_returning_branch_expansion.md");
     let c = sources
@@ -17836,6 +18142,7 @@ fn whole_claim_expansion_routes_return_closers_only_to_checked_branches() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_76")]
 fn nested_pruned_return_expansion_cold_reverifies() {
     let c = "int32 f(int32 n) { if (n > 0) { if (n > 1) { return 5; } return 6; } return 7; }";
     let source = r#"verifying "nested.c";
@@ -17913,11 +18220,13 @@ fn check_exceptional_claim_label_expansion(fixture: &str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_76")]
 fn exceptional_claim_label_expands_inside_c_if_fixture() {
     check_exceptional_claim_label_expansion("execute_splits_a_throwing_call_inside_a_c_if");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_label_expands_two_throwing_calls_fixture() {
     check_exceptional_claim_label_expansion(
         "grouped_proof_closes_claims_across_two_throwing_calls",
@@ -17925,16 +18234,19 @@ fn exceptional_claim_label_expands_two_throwing_calls_fixture() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_label_expands_grouped_outcomes_fixture() {
     check_exceptional_claim_label_expansion("grouped_proof_closes_normal_and_exceptional_claims");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_label_expands_routed_throw_fixture() {
     check_exceptional_claim_label_expansion("outcomes_routes_a_throw_that_leaves_the_function");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_77")]
 fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
     let c_sources = [("helper.c", "int32 helper(int32 x) { return x; }")];
     {
@@ -17963,6 +18275,7 @@ fn exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
 fn whole_function_expansion_validates_against_imported_pure_declarations() {
     let source = "import \"spec.click\"; verifying \"identity.c\"; int32 identity(int32 x) { ensures result == spec(x); } by { step_until(function.exit); unfold(spec(x)); solve(); }";
     let project = ClickProject::new(
@@ -18041,6 +18354,7 @@ fn padded_struct_field_loop_expansion_reverifies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
 fn c_style_click_comments_preserve_loading_and_expansion_offsets() {
     let c_source = "int32 identity(int32 x) { return x; }";
     for (leading, inner, trailing) in [
@@ -18099,6 +18413,7 @@ theorem empty_product(end: int32, x: int32, y: int32, z: int32) {
 
 // Peeling the last fold must leave a checked spelling for arithmetic expansion.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
 fn peeled_empty_fold_differences_keep_checked_integer_spelling() {
     let source = empty_fold_difference_source();
     verify_c0_sources(source, &[]).unwrap();
@@ -18143,6 +18458,7 @@ theorem empty_order(end: int32) {
 // A constant order after peeling must retain its relation at the conclusion,
 // rather than print the generic equality certificate for Boolean truth.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_78")]
 fn peeled_empty_fold_order_keeps_its_checked_conclusion() {
     let source = empty_fold_order_source();
     verify_c0_sources(source, &[]).unwrap();
@@ -18187,6 +18503,7 @@ fn peeled_empty_fold_order_rejects_false_comparisons() {
 // The arithmetic planner's affine sum is constant even though this goal
 // retains signed subexpressions. Its generated Add node must still recheck.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_79")]
 fn signed_bounded_subtraction_preserves_generated_child_sum() {
     let (source, sources) = mdtest_sources("mdtests/signed_arithmetic_bounded_subtraction.md");
     let borrowed = sources
@@ -18237,6 +18554,7 @@ fn signed_bounded_subtraction_refuses_false_or_undefined_sums() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_79")]
 fn algebraic_integer_match_bindings_expand_and_recheck() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/algebraic_integer_match_bindings.md");
@@ -18374,6 +18692,7 @@ int32 f(int32 a, int32 b) {
 /// Expanding one by its label writes it out as an explicit phase proof in
 /// the tactic's body, and changes nothing else.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_79")]
 fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
     let sources = [("omitted.c", OMITTED_PHASE_C)];
     verify_c0_sources(OMITTED_PHASE_CLICK, &sources).unwrap();
@@ -18419,6 +18738,7 @@ fn an_omitted_loop_phase_expands_to_an_explicit_phase_proof() {
 /// input-generic one `click expand --claim` uses, and the rewrite checks
 /// over the same prepared import.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_79")]
 fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -18516,6 +18836,7 @@ int32 f(struct cell* root) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_80")]
 fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
     for (path, label) in [
         (
@@ -18544,6 +18865,7 @@ fn unfolding_proof_bound_integer_arguments_expands_and_rechecks() {
 /// keeps its proposition and prints its body's checked steps, the expansion
 /// reverifies, and deleting an entry leaves its obligation unproved.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_80")]
 fn step_requires_entries_expand_in_place_and_are_needed() {
     let c_source = r#"
         int32 first(int32 x, int32 y) {
@@ -18627,6 +18949,7 @@ int32 caller(int32 a, int32 b) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_80")]
 fn a_bare_fold_expands_its_body_fact_proof_and_needs_it() {
     let c_source = "void make(int32 x, int32 y) { }\n";
     let click_source = r#"
@@ -18674,6 +18997,7 @@ void make(int32 x, int32 y) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_80")]
 fn a_bare_open_expands_its_close_proof_and_needs_it() {
     let c_source = "void set(int32* p, int32* q, int32 x) { p[0] = x; q[0] = 1; }\n";
     let click_source = r#"
@@ -18909,6 +19233,7 @@ fn returned_struct_pointer_lemmas_survive_expansion_and_retained_verification() 
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_81")]
 fn claim_expansion_that_cites_a_library_theorem_by_path_rechecks_in_its_session() {
     // The written-out certificate cites a `click::integer` theorem (the
     // wrapping uint32 predecessor step) that the file does not import, so
@@ -19160,6 +19485,7 @@ fn call_step_keeps_snapshot_bound_through_expansion_and_retained_check() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_81")]
 fn terminal_model_match_in_open_keeps_expanded_outcome_steps_in_its_arms() {
     let (click, sources) = mdtest_sources("mdtests/open_scope_model_match_terminal.md");
     let sources = sources
@@ -19189,6 +19515,7 @@ fn terminal_model_match_in_open_keeps_expanded_outcome_steps_in_its_arms() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_81")]
 fn rejoined_model_match_in_open_expands_without_moving_the_continuation_inside() {
     let (click, sources) = mdtest_sources("mdtests/open_scope_model_match_rejoins.md");
     let sources = sources
@@ -19211,6 +19538,7 @@ mod scaling_tests {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_81")]
 fn retained_project_recheck_ignores_shifted_import_positions_but_checks_paths() {
     let source = r#"import "helper.click";
 theorem selected(x: int32) { ensures x == x by { normalize(); } }
@@ -19381,6 +19709,7 @@ fn repeated_retains_expand_with_checked_count_bounds() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_82")]
 fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
     let c = [(
         "split.c",
@@ -19417,6 +19746,7 @@ fn branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_82")]
 fn address_only_model_constructor_cast_expands_and_checks() {
     let (source, c) = mdtest_sources("mdtests/model_pointer_address_constructor_preserves_cast.md");
     let c = c
@@ -19429,6 +19759,7 @@ fn address_only_model_constructor_cast_expands_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_82")]
 fn address_only_model_implicit_view_expands_and_checks() {
     let (source, c) =
         mdtest_sources("mdtests/model_pointer_address_constructor_preserves_implicit_view.md");
@@ -19442,6 +19773,7 @@ fn address_only_model_implicit_view_expands_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_82")]
 fn void_pointer_helper_selected_view_expands_and_checks() {
     let (source, c) =
         mdtest_sources("mdtests/model_pointer_void_helper_preserves_selected_view.md");
@@ -19455,6 +19787,7 @@ fn void_pointer_helper_selected_view_expands_and_checks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
 fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
     let original = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n}\n";
     let expanded = "int32 f() {\n    ensures result == 0;\n} by {\n    step();\n    have result == 0 by {\n        normalize();\n    }\n    have p == q by {\n        assumption();\n    }\n    have r == s by {\n        normalize();\n    }\n    assumption();\n    assumption();\n    assumption();\n    assumption();\n}\n";
@@ -19467,6 +19800,7 @@ fn tidied_expansion_closers_prove_normalized_claims_in_goal_order() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
 fn tidied_expansion_closers_leave_other_closers_alone() {
     let original = "f by {\n    step();\n}\n";
     // Fewer closers than claims.
@@ -19506,6 +19840,7 @@ fn integer_count_authority_retirement_expands_and_rechecks() {
 /// in its arms are selected at their own locations and expand the claim
 /// that owns them.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
 fn arithmetic_in_each_both_arm_is_selected_at_its_location() {
     let source = "theorem pair(a: Integer, b: Integer) {
  requires 0 <= a;
@@ -19563,6 +19898,7 @@ fn signed_loop_certificate_keeps_its_native_type_in_integer_default_source() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_83")]
 fn relinked_node_empty_check_requires_distinct_addresses() {
     let (source, sources) = mdtest_sources("mdtests/rb_parent_family.md");
     let sources = sources
@@ -19690,6 +20026,7 @@ fn grouped_rewritten_claims_close_ownership_in_contract_order() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_84")]
 fn post_return_function_unfold_retains_its_equation_through_expansion() {
     let (source, sources) =
         mdtest_sources("mdtests/return_fold_retains_post_return_function_unfold.md");
@@ -19710,6 +20047,7 @@ fn post_return_function_unfold_retains_its_equation_through_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_84")]
 fn opposite_path_assumptions_expand_without_search() {
     let (source, _) = mdtest_sources("mdtests/opposite_path_assumptions_close_the_branch.md");
     verify_click_theorems(&source).unwrap();
@@ -19726,6 +20064,7 @@ fn opposite_path_assumptions_expand_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_84")]
 fn disjunctive_loop_entry_keeps_one_preservation_certificate() {
     let (source, sources) = mdtest_sources("mdtests/loop_conjunctive_guard_exits.md");
     let sources = sources
@@ -19737,6 +20076,7 @@ fn disjunctive_loop_entry_keeps_one_preservation_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_84")]
 fn ambiguous_view_bucket_search_expands_to_selected_transport() {
     let source = r#"
         theorem choose_view(data: int32[]) {
@@ -19760,6 +20100,7 @@ fn ambiguous_view_bucket_search_expands_to_selected_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_85")]
 fn alias_view_selection_expands_to_explicit_equality_and_transport() {
     let source = r#"
         theorem alias_view(root: int32[], source: int32[], alias: int32[], other: int32[]) {
@@ -19789,6 +20130,7 @@ fn alias_view_selection_expands_to_explicit_equality_and_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_85")]
 fn selected_alias_condition_and_read_validity_expand_without_search() {
     for (name, source, premise) in [
         (
@@ -19827,6 +20169,7 @@ fn selected_alias_condition_and_read_validity_expand_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_85")]
 fn saved_iterated_pointer_base_expands_and_rechecks() {
     let (source, sources) = mdtest_sources("mdtests/iterated_saved_base_release.md");
     let sources = sources
@@ -19872,6 +20215,7 @@ fn original_arena_free_expands_and_rechecks_without_implicit_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_85")]
 fn scoped_conversion_requirements_expand_before_the_have() {
     let source = r#"
         theorem scoped_conversion(j: int32) {
@@ -19912,6 +20256,7 @@ fn signed_byte_swap_selected_frame_expands_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_86")]
 fn theorem_entry_type_bounds_discharge_without_search() {
     let source = r#"
         theorem entry_conversion() {
@@ -19937,6 +20282,7 @@ fn theorem_entry_type_bounds_discharge_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_86")]
 fn contract_claim_requirements_expand_as_ordinary_have_proofs() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "claim_domain.c";
@@ -20051,6 +20397,7 @@ fn explicit_store_byte_gap_expands_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_86")]
 fn loop_guard_paths_expand_distinct_nested_proofs() {
     let (source, sources) = mdtest_sources("mdtests/loop_guard_paths_keep_distinct_proofs.md");
     for three_paths in [false, true] {
@@ -20115,6 +20462,7 @@ fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_86")]
 fn single_store_definedness_transport_expands_and_replays() {
     let (source, c_sources) = mdtest_sources("mdtests/read_initialization_step_transport.md");
     let sources = c_sources
@@ -20210,6 +20558,7 @@ fn explicit_pointer_alias_repairs_expand_and_cold_replay() {
 
 // Explicit call containment and preservation must survive fresh expansion replay.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_87")]
 fn recursive_witness_pointer_preservation_expands_and_cold_replays() {
     let (source, inputs) = mdtest_sources("mdtests/c_decreases_resource_witness_child.md");
     let inputs = inputs
@@ -20223,6 +20572,7 @@ fn recursive_witness_pointer_preservation_expands_and_cold_replays() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_87")]
 fn saved_word_equality_expansion_cold_replay() {
     let source = r#"
 verifying "saved.c";
@@ -20293,6 +20643,7 @@ fn uint32_from_le_bytes_expands_and_retains() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_87")]
 fn loop_owned_view_call_expands_and_replays() {
     let (source, c_sources) =
         mdtest_sources("mdtests/loop_owned_view_survives_unrelated_read_call.md");
@@ -20308,6 +20659,7 @@ fn loop_owned_view_call_expands_and_replays() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_87")]
 fn structural_invariant_bundles_expand_as_ordered_member_haves() {
     let checked = verify_click_theorems(
         r#"
@@ -20441,6 +20793,7 @@ fn symbolic_ownership_window_endpoint_expands_and_replays() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_87")]
 fn explicit_and_implicit_existential_requirements_expand_without_search() {
     for mode in ["implicit", "explicit"] {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(format!(
@@ -20525,6 +20878,7 @@ void set(int32* p, int32* q, int32 x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
 fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
     for goal in ["x < 3", "x < 3 and -3 < x"] {
         let pure = format!(
@@ -20570,6 +20924,7 @@ fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
 fn known_step_and_fold_requirements_still_have_explicit_obligation_proofs() {
     let sources = [(
         "known.c",
@@ -20625,6 +20980,7 @@ void make(int32 x) { requires x > 0; produces positive(x); } by {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
 fn a_named_fold_generates_its_known_body_fact_obligation() {
     let sources = [("named.c", "void make(int32 x) {}")];
     let source = r#"
@@ -20646,4 +21002,544 @@ void make(int32 x) { requires x > 0; produces p: positive(x); } by {
         verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
     })
     .unwrap();
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "expansion_tests.rs",
+    marker: "expansion_batch_",
+    expansion_batch_00: [
+        mirrored_implication_consequents_expand_to_checked_extraction,
+        unsigned_array_read_cases_expand_without_implicit_search,
+        pointer_translation_with_integer_bound_expands_without_implicit_search,
+        signed_division_ordinary_domains_expand_without_implicit_solving,
+    ],
+    expansion_batch_01: [
+        loop_guard_call_results_expand_with_source_region_names,
+        common_terminal_proofs_do_not_require_internal_case_spellings,
+        terminal_result_selector_precedes_internal_load_cases,
+        short_circuit_boolean_returns_expand_distinct_outcome_proofs,
+    ],
+    expansion_batch_02: [
+        unsigned_widening_special_certificates_expand_and_recheck,
+        borrowed_resource_receipts_do_not_hide_an_unspent_authority_member,
+        uint64_measure_induction_expands_and_rechecks_without_narrowing,
+        scalar_induction_keeps_integer_parameters_and_their_guards,
+    ],
+    expansion_batch_03: [
+        arithmetic_after_fold_rewrites_expands_and_rechecks,
+        pointer_word_certificates_keep_address_arithmetic_when_printed,
+        numeric_cast_certificates_keep_integer_default_arithmetic_when_printed,
+        bundle_and_project_expansion_check_the_selected_pure_theorem,
+    ],
+    expansion_batch_04: [
+        unsigned_integer_equality_chains_expand_and_recheck,
+        signed_integer_equality_chains_expand_and_recheck,
+        unsigned_int32_equality_chains_expand_and_recheck,
+        signed_int32_equality_chains_expand_and_recheck,
+    ],
+    expansion_batch_05: [
+        special_integer_certificates_keep_native_premises_available,
+        integer_equality_does_not_identify_signed_and_unsigned_observations,
+        member_pointer_addresses_retain_subobject_extents_through_expansion,
+        member_pointer_addresses_with_equal_numeric_addresses_expand,
+    ],
+    expansion_batch_06: [
+        record_pointer_identity_preserves_local_storage_in_all_proof_modes,
+        record_pointer_identity_local_storage_keeps_values_and_alias_requirements,
+        execution_theorem_expansion_preserves_imported_tactic_interfaces,
+        long_flat_integer_sum_expands_and_rechecks_without_parenthesis_growth,
+    ],
+    expansion_batch_07: [
+        builtin_header_null_pointer_expansion_round_trips,
+        expansion_shows_a_folds_hidden_record_as_a_comment,
+        byte_initialized_uint32_expands_and_retains,
+        selected_tactic_batch_uses_the_project_entry_scope,
+    ],
+    expansion_batch_08: [
+        selected_tactic_batch_removes_all_sites_in_a_dropped_arm,
+        selected_tactic_batch_captures_multiple_sites_inside_one_have,
+        selected_tactic_batch_retains_the_unselected_prefix_and_suffix,
+        arithmetic_using_is_input_only_and_not_serializable_provenance,
+    ],
+    expansion_batch_09: [
+        source_backed_call_requirement_expands_and_reverifies,
+        forall_loadable_range_call_requirement_expands_and_deletion_rejects,
+        exists_loadable_range_call_requirement_expands_and_deletion_rejects,
+        proof_cases_after_c_branch_expand_and_reverify,
+    ],
+    expansion_batch_10: [
+        int64_guarded_postcondition_expands_to_int64_defined_and_reverifies,
+        int32_guarded_postcondition_expands_to_int32_defined_and_reverifies,
+        solve_in_a_refuted_match_arm_bridge_expands_and_reverifies,
+        loop_initialize_after_proof_branch_expands_and_reverifies,
+    ],
+    expansion_batch_11: [
+        solve_in_a_nested_post_execution_match_arm_expands_and_reverifies,
+        ranked_loops_with_no_invariant_expand_and_reverify,
+        multidimensional_local_array_field_expands_with_every_subscript,
+        flattened_aggregate_claims_resolve_to_their_written_clause,
+    ],
+    expansion_batch_12: [
+        a_conditional_produces_clause_is_located_in_its_place,
+        struct_array_element_expands_with_its_subscript,
+        targeted_termination_assumes_unselected_callees,
+        post_execution_closer_continues_the_proof_intros_opened,
+    ],
+    expansion_batch_13: [
+        post_execution_closer_continues_the_proof_a_witness_opened,
+        symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm,
+        integer_quantifier_smart_proofs_expand_and_recheck,
+        integer_existential_keeps_definedness_under_one_witness,
+    ],
+    expansion_batch_14: [
+        integer_range_fold_array_contract_verifies_expands_and_rechecks,
+        integer_pure_function_array_argument_expands_and_rechecks,
+        integer_existential_rewrites_array_index_through_to_int32,
+        integer_range_fold_surface_typing_and_unfolding,
+    ],
+    expansion_batch_15: [
+        integer_range_fold_mixed_match_typing_expands_and_rechecks,
+        integer_range_fold_surface_typing_rejects_mixed_bodies,
+        integer_range_fold_law_application_positive,
+        integer_range_fold_law_application_rejects_missing_guards_or_shape,
+    ],
+    expansion_batch_16: [
+        integer_range_fold_law_applies_after_execution,
+        context_free_implication_solve_expands_intro_and_rechecks,
+        expansion_rewrites_a_have_with_a_default_proof,
+        batch_expansion_wraps_one_tactic_arithmetic_proofs,
+    ],
+    expansion_batch_17: [
+        expansion_reads_a_one_tactic_proof_as_its_block,
+        smart_site_inventory_is_the_same_for_a_one_tactic_proof_and_its_block,
+        smart_site_inventory_includes_nested_have_bodies_without_container_aliases,
+        whole_claim_expansion_of_a_user_tactic_omits_the_supplied_ending,
+    ],
+    expansion_batch_18: [
+        whole_claim_expansion_of_a_user_tactic_preserves_refuted_arms,
+        whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm,
+        whole_claim_expansion_keeps_tactics_before_a_nested_match,
+        whole_claim_expansion_keeps_a_call_steps_empty_binder_map,
+    ],
+    expansion_batch_19: [
+        whole_claim_expansion_keeps_a_proof_if_after_execution,
+        whole_claim_expansion_closes_a_claim_opened_after_execution,
+        whole_claim_expansion_continues_after_a_branch_with_one_reachable_arm,
+        context_free_disjunction_solve_expands_choice_and_rechecks,
+    ],
+    expansion_batch_20: [
+        signed_unsigned_compound_arithmetic_expands_and_rechecks,
+        return_population_count_is_not_an_assumed_invariant,
+        signed_antisymmetry_solve_expands_to_checked_arithmetic,
+        program_entry_signed_resource_shadowing_expands,
+    ],
+    expansion_batch_21: [
+        composite_uint64_range_expansion_preserves_type,
+        program_entry_typed_dereference_snapshots_expand_and_reverify,
+        program_entry_expansion_reverifies,
+        program_entry_collects_data_only_private_and_uncalled_local_storage,
+    ],
+    expansion_batch_22: [
+        const_char_return_expansion_preserves_target_and_qualification,
+        source_locator_ignores_line_comments_and_preserves_literals,
+        source_locator_line_comments_preserve_proof_expansion_offsets,
+        contract_refinement_expands_ordinary_helper_proofs,
+    ],
+    expansion_batch_23: [
+        unsigned_narrowing_snapshot_expansion_reverifies,
+        selected_post_execution_solve_waits_for_its_surface_closer,
+        selected_post_execution_solve_keeps_the_surviving_execution_branch,
+        returning_malloc_result_expands_to_checkable_statement_steps,
+    ],
+    expansion_batch_24: [
+        selected_post_execution_smart_have_uses_its_path_certificate,
+        post_execution_smart_have_applies_a_theorem_to_result_through_proof,
+        selected_post_execution_capture_ignores_nested_certificate_indices,
+        post_execution_transport_observes_a_preceding_have,
+    ],
+    expansion_batch_25: [
+        selected_post_execution_transport_emits_an_explicit_certificate,
+        grouped_post_execution_unfold_retains_its_checked_proof_step,
+        grouped_post_execution_closers_use_independent_checked_proofs,
+        post_execution_rewrite_retains_its_checked_proof_step,
+    ],
+    expansion_batch_26: [
+        grouped_post_execution_solve_publishes_checked_obligations_through_proof,
+        grouped_post_execution_arithmetic_rejects_unavailable_irrelevant_extra,
+        grouped_post_execution_solve_applies_planned_steps_once_through_proof,
+        post_execution_solve_builds_disjunction_cases_on_proof,
+    ],
+    expansion_batch_27: [
+        symbolic_max_outcomes_retain_selected_branch_order_paths,
+        outcome_arithmetic_normalization_retains_selected_equality_paths,
+        post_execution_solve_builds_recursive_conjunction_on_proof,
+        post_execution_solve_uses_the_introduced_antecedent_for_contradiction,
+    ],
+    expansion_batch_28: [
+        post_execution_smart_have_builds_recursive_conjunction_on_proof,
+        post_execution_existential_solve_retains_its_checked_scope,
+        post_execution_choose_and_witness_share_the_retained_outcome_proof,
+        bounded_range_witness_closes_on_the_checked_outcome_scope,
+    ],
+    expansion_batch_29: [
+        selected_post_execution_smart_apply_uses_exact_path_premises,
+        smart_apply_surfaces_a_framed_comparison_after_an_immutable_call,
+        smart_apply_preserves_statement_snapshots_in_explicit_premises,
+        source_expansion_preserves_proof_marks,
+    ],
+    expansion_batch_30: [
+        post_execution_store_transport_expands_from_the_recorded_store_equation,
+        statement_snapshots_support_complete_loadability_propositions,
+        statement_snapshots_preserve_declared_resource_argument_types,
+        source_expander_locates_frontier_local_have_proofs,
+    ],
+    expansion_batch_31: [
+        smart_apply_uses_ambient_loadability_only_for_argument_lowering,
+        smart_tactic_in_an_infeasible_branch_arm_expands_by_removal,
+        source_expander_lowers_smart_solve_inside_have,
+        source_expander_selects_a_smart_have_by_the_solve_in_its_body,
+    ],
+    expansion_batch_32: [
+        source_expander_rewrites_one_smart_tactic_inside_a_mixed_have_body,
+        source_expander_rewrites_a_have_body_tactic_in_a_post_execution_if_arm,
+        source_expander_rewrites_a_have_body_tactic_in_a_branch_arm,
+        source_expander_rewrites_a_have_body_tactic_in_a_loop_preserve_phase,
+    ],
+    expansion_batch_33: [
+        source_expander_rewrites_a_have_body_tactic_in_a_loop_initialize_helper,
+        source_expander_rewrites_a_have_body_tactic_in_an_initialize_invariant_body,
+        source_expander_rewrites_a_tactic_in_an_arm_inside_a_have_body,
+        source_expander_rewrites_the_continuation_after_an_if_in_a_have_body,
+    ],
+    expansion_batch_34: [
+        smart_tactic_selection_by_line_is_unique_or_lists_candidates,
+        pure_structural_solve_builds_recursive_conjunction_on_proof,
+        post_execution_restricted_solve_retains_selected_premises_and_expansion,
+        post_execution_restricted_solve_checks_each_return_path,
+    ],
+    expansion_batch_35: [
+        post_execution_restricted_solve_continues_an_introduced_claim,
+        post_execution_restricted_solve_checks_grouped_ownership_and_value_claims,
+        restricted_solve_expands_to_graph_normalization,
+        uint64_bit_test_inequality_expands_to_rewrite_and_normalize,
+    ],
+    expansion_batch_36: [
+        uint64_bit_test_inequality_rejects_missing_false_and_malformed_evidence,
+        pure_rewrite_retains_a_structural_surface_successor_for_solve,
+        restricted_solve_after_unfold_expands_explicit_conjunction_extraction,
+        restricted_solve_expands_strict_order_to_nonstrict_arithmetic_certificate,
+    ],
+    expansion_batch_37: [
+        post_execution_solve_applies_strict_order_rule,
+        restricted_solve_expands_negated_strict_order_to_greater_equal,
+        post_execution_solve_expands_successor_strict_increase,
+        post_execution_solve_expands_increment_definedness,
+    ],
+    expansion_batch_38: [
+        post_execution_solve_expands_increment_lower_bound,
+        post_execution_solve_expands_order_equality_closure,
+        restricted_solve_expands_nonstrict_unequal_order,
+        post_execution_solve_expands_increment_upper_bound,
+    ],
+    expansion_batch_39: [
+        post_execution_solve_expands_strict_transitivity,
+        post_execution_solve_expands_greater_equal_transitivity,
+        post_execution_solve_expands_greater_equal_increment_bound,
+        post_execution_solve_expands_strict_greater_increment_bound,
+    ],
+    expansion_batch_40: [
+        post_execution_solve_expands_greater_order_equality,
+        post_execution_solve_composes_negated_successor_bound,
+        restricted_solve_composes_negated_successor_bound,
+        post_execution_solve_unfolds_predicate_goal_explicitly,
+    ],
+    expansion_batch_41: [
+        pure_solve_retains_one_selected_equality_rewrite_before_normalize,
+        restricted_solve_expands_increment_upper_bound_to_arithmetic_certificate,
+        restricted_solve_expands_positive_to_nonnegative_arithmetic_certificate,
+        restricted_solve_expands_positive_predecessor_to_arithmetic_certificate,
+    ],
+    expansion_batch_42: [
+        restricted_solve_expands_positive_predecessor_decrease_to_arithmetic_certificate,
+        restricted_solve_expands_predecessor_upper_bound_to_arithmetic_certificate,
+        restricted_solve_retains_nested_one_le_predecessor_nonnegative_proof,
+        restricted_solve_retains_nested_one_le_predecessor_decrease_proof,
+    ],
+    expansion_batch_43: [
+        restricted_solve_retains_equal_one_predecessor_path,
+        restricted_solve_retains_equal_one_predecessor_zero_path,
+        restricted_solve_expands_strict_increment_to_arithmetic_certificate,
+        solve_expands_increment_definedness_to_arithmetic_certificate,
+    ],
+    expansion_batch_44: [
+        restricted_solve_expands_increment_lower_bound_to_arithmetic_certificate,
+        restricted_solve_expands_increment_order_to_arithmetic_certificate,
+        restricted_solve_rewrites_a_named_successor_before_increment_order,
+        restricted_solve_expands_adjacent_order_to_arithmetic_certificate,
+    ],
+    expansion_batch_45: [
+        smart_solve_transcribes_a_three_edge_signed_order_path,
+        smart_solve_transcribes_a_three_edge_bitvector_equality_path,
+        smart_solve_retains_both_signed_equality_rules_as_arithmetic_certificates,
+        outcome_solve_consumes_its_recorded_bitvector_equality_path,
+    ],
+    expansion_batch_46: [
+        outcome_solve_closes_its_recorded_order_path_by_arithmetic,
+        restricted_solve_expands_constant_order_weakening_to_arithmetic_certificate,
+        restricted_solve_expands_constant_strict_upper_bound_to_arithmetic_certificate,
+        restricted_solve_retains_increment_under_a_larger_constant,
+    ],
+    expansion_batch_47: [
+        restricted_solve_retains_symbolic_add_definedness_theorem,
+        restricted_solve_retains_symbolic_subtract_definedness_by_integer_bounds,
+        restricted_solve_retains_one_plus_operand_specific_certificates,
+        restricted_solve_composes_equalities_with_adjacent_order,
+    ],
+    expansion_batch_48: [
+        restricted_solve_inside_have_expands_to_graph_normalization,
+        restricted_solve_expands_loadable_subrange_to_explicit_transport,
+        restricted_solve_rewrites_pointer_aliases_inside_memory_loads,
+        post_execution_restricted_solve_expands_without_derive,
+    ],
+    expansion_batch_49: [
+        source_expander_lowers_smart_apply_inside_have,
+        fixed_state_have_bare_apply_retains_and_checks_its_exact_premise,
+        fixed_state_have_mixed_linear_smart_script_continues_on_checked_successors,
+        execution_bare_apply_selects_and_retains_its_step_through_proof,
+    ],
+    expansion_batch_50: [
+        return_definedness_facts_expand_without_resource_rewrites,
+        post_return_resource_exchange_accepts_a_preceding_pure_have,
+        execution_resource_unfold_is_recorded_once_and_checks,
+        execution_resource_observe_is_recorded_once_and_checks,
+    ],
+    expansion_batch_51: [
+        execution_resource_fold_is_recorded_once_and_checks,
+        linear_execution_open_retains_one_checked_scope_and_checks,
+        linear_execution_open_retains_checked_prefix_on_one_proof,
+        linear_execute_inside_open_retains_checked_statement_steps,
+    ],
+    expansion_batch_52: [
+        grouped_post_execution_rewrite_and_apply_before_frame_stay_on_proof,
+        grouped_post_execution_predicate_unfold_before_frame_stays_on_proof,
+        quantified_contract_resource_open_stays_on_one_proof,
+        linear_execute_until_inside_open_stops_on_checked_frontier,
+    ],
+    expansion_batch_53: [
+        linear_open_have_retains_the_selected_theorem_application,
+        nested_composite_resource_scopes_stay_on_one_proof,
+        linear_open_retains_a_direct_bare_theorem_application,
+        execution_branch_arm_resource_scope_stays_on_one_proof,
+    ],
+    expansion_batch_54: [
+        execution_branch_arm_terminal_proof_if_stays_on_one_proof,
+        branch_interface_retains_its_checked_abstract_join,
+        branch_interface_retains_exact_unchanged_ownership,
+        branch_interface_normalizes_an_entailed_owned_quantity_on_proof,
+    ],
+    expansion_batch_55: [
+        branch_arms_retain_bare_theorem_applications_on_proof,
+        branch_join_retains_a_bare_theorem_application_in_its_continuation,
+        branch_join_retains_a_bare_fact_transport_in_its_continuation,
+        branch_join_retains_a_nested_have_in_its_continuation,
+    ],
+    expansion_batch_56: [
+        branch_join_retains_linear_execute_on_its_common_successor,
+        incremented_strict_lower_bound_retains_its_arithmetic_path,
+        post_execution_have_anchors_strict_increment_arithmetic_premises,
+        branch_arms_retain_bare_fact_transports_on_proof,
+    ],
+    expansion_batch_57: [
+        branch_arms_retain_nested_have_proofs,
+        explicit_branch_arms_retain_terminal_execute_search,
+        transformed_resource_branch_interface_retains_its_common_descendant,
+        decided_branch_interface_retains_the_surviving_checked_state,
+    ],
+    expansion_batch_58: [
+        open_scope_retains_its_checked_branch_interface,
+        open_scope_retains_its_checked_execution_branch,
+        open_scope_retains_a_decided_execution_branch_and_its_continuation,
+        automatic_terminal_branch_retains_its_checked_proof_outcomes,
+    ],
+    expansion_batch_59: [
+        fixed_state_smart_have_retains_a_checked_simple_closer,
+        fixed_state_smart_have_retains_a_checked_arithmetic_certificate,
+        explicit_linear_fixed_state_have_uses_the_checked_proof_path,
+        explicit_post_execution_have_uses_the_checked_outcome_proof_path,
+    ],
+    expansion_batch_60: [
+        quantified_outcome_solve_keeps_its_binder_on_the_checked_goal,
+        outcome_solve_with_no_open_claims_is_an_empty_proof_transition,
+        outcome_predicate_unfold_relowers_resource_counts_on_the_checked_proof,
+        post_execution_if_expansion_retains_earlier_have_facts,
+    ],
+    expansion_batch_61: [
+        successive_post_execution_ifs_stay_on_one_proof,
+        matched_resource_dependent_clauses_expand_and_reverify,
+        a_stated_separation_is_load_bearing,
+        proof_change_scope_requires_explicit_proofs_and_preserves_surroundings,
+    ],
+    expansion_batch_62: [
+        outcome_solve_transports_loadability_on_the_checked_proof,
+        outcome_solve_instantiates_an_unfolded_byte_predicate_on_the_checked_proof,
+        guarded_definedness_transport_expands_and_reverifies,
+        source_expander_lowers_smart_solve_after_unfold_inside_have,
+    ],
+    expansion_batch_63: [
+        source_expander_extracts_unfolded_conjuncts_inside_have,
+        source_expander_preserves_pointer_field_form_inside_smart_have,
+        source_expander_synthesizes_an_indexed_load_through_a_pointer_field,
+        smart_have_uses_transport_planned_at_the_mutation_boundary,
+    ],
+    expansion_batch_64: [
+        source_expander_recalls_a_fact_at_a_recorded_statement_entry,
+        branched_smart_solve_expansion_checks_as_surface_click,
+        source_expander_replaces_only_the_selected_claim_proof,
+        source_expander_replaces_and_checks_grouped_proof,
+    ],
+    expansion_batch_65: [
+        qualified_function_statics_reject_invalid_declarations,
+        qualified_static_ownership_rejects_missing_and_wrong_resources,
+        qualified_static_direct_assignment_requires_effect_or_ownership,
+        qualified_static_helper_requires_transferred_ownership,
+    ],
+    expansion_batch_66: [
+        private_state_narrowing_call_expands,
+        wide_signed_low_word_narrowing_expands,
+        wide_unsigned_low_word_narrowing_expands,
+        wide_values_narrow_to_their_low_word_without_bounds,
+    ],
+    expansion_batch_67: [
+        source_expander_replaces_and_checks_default_ensure_proof,
+        source_expander_reports_missing_grouped_proof_precisely,
+        pure_pointer_add_zero_solve_expands_to_a_checked_certificate,
+        pure_branching_disjunction_solve_expands_to_left_right,
+    ],
+    expansion_batch_68: [
+        pure_folded_constant_successor_solve_expands_to_successor_bound,
+        unfolded_conjunction_have_solve_expands_and_rechecks,
+        outcome_predecessor_bound_solve_expands_to_an_arithmetic_certificate,
+        loop_preservation_case_after_step_expands_in_place,
+    ],
+    expansion_batch_69: [
+        loop_preservation_case_before_step_expands_in_place,
+        specification_conditional_branch_is_an_expanded_proof_step,
+        integer_quantifiers_substitute_checked_mixed_atoms_and_expand,
+        smart_closer_after_a_return_inside_an_open_scope_expands_and_reverifies,
+    ],
+    expansion_batch_70: [
+        match_arm_closer_anchors_the_case_fact_at_entry_and_reverifies,
+        each_smart_have_in_a_loop_initialize_script_expands_on_its_own,
+        a_smart_loop_preserve_phase_tactic_expands_and_reverifies,
+        a_helper_have_in_a_loop_initialize_script_is_expanded_once,
+    ],
+    expansion_batch_71: [
+        loop_initialization_duplicate_clauses_keep_distinct_bodies,
+        a_consumed_arm_instance_equation_is_cited_at_entry_after_its_unfold,
+        conditional_algebraic_universal_expands_and_reverifies,
+        normalize_using_ambient_pointer_equality_expands_and_rechecks,
+    ],
+    expansion_batch_72: [
+        normalize_using_c_pointer_equality_expands_and_rechecks,
+        normalize_using_pointer_addition_expands_and_rechecks,
+        normalize_using_graph_conditions_expands_and_rechecks,
+        normalize_using_int32_equality_expands_and_rechecks,
+    ],
+    expansion_batch_73: [
+        restricted_solve_does_not_borrow_the_ambient_equality_graph,
+        normalize_using_scaled_int32_expands_and_rechecks,
+        normalize_using_int32_addition_expands_and_rechecks_without_proving_definedness,
+        authority_callback_count_refinement_expands_every_smart_site,
+    ],
+    expansion_batch_74: [
+        resource_closers_cannot_return_one_unit_as_both_borrowed_and_produced,
+        composite_fold_argument_read_retains_checked_address_and_bounds,
+        published_symbolic_owner_store_expands_and_rechecks,
+        expanding_the_only_tactic_of_an_empty_initialize_phase_keeps_a_step,
+    ],
+    expansion_batch_75: [
+        the_implicit_grouped_proof_expands_after_the_contract_and_reverifies,
+        uint32_arithmetic_bound_weakening_expands_and_rechecks,
+        integer_equality_rewrite_expands_rechecks_and_rejects_forged_claims,
+        symbolic_upper_arithmetic_premises_expand_and_cold_recheck,
+    ],
+    expansion_batch_76: [
+        counted_pthread_whole_claim_expansion_retire,
+        whole_claim_expansion_routes_return_closers_only_to_checked_branches,
+        nested_pruned_return_expansion_cold_reverifies,
+        exceptional_claim_label_expands_inside_c_if_fixture,
+    ],
+    expansion_batch_77: [
+        exceptional_claim_label_expands_two_throwing_calls_fixture,
+        exceptional_claim_label_expands_grouped_outcomes_fixture,
+        exceptional_claim_label_expands_routed_throw_fixture,
+        exceptional_claim_labels_preserve_names_and_covering_proofs_in_projects,
+    ],
+    expansion_batch_78: [
+        whole_function_expansion_validates_against_imported_pure_declarations,
+        c_style_click_comments_preserve_loading_and_expansion_offsets,
+        peeled_empty_fold_differences_keep_checked_integer_spelling,
+        peeled_empty_fold_order_keeps_its_checked_conclusion,
+    ],
+    expansion_batch_79: [
+        signed_bounded_subtraction_preserves_generated_child_sum,
+        algebraic_integer_match_bindings_expand_and_recheck,
+        an_omitted_loop_phase_expands_to_an_explicit_phase_proof,
+        a_loop_phase_expands_by_label_over_a_prepared_c_import,
+    ],
+    expansion_batch_80: [
+        unfolding_proof_bound_integer_arguments_expands_and_rechecks,
+        step_requires_entries_expand_in_place_and_are_needed,
+        a_bare_fold_expands_its_body_fact_proof_and_needs_it,
+        a_bare_open_expands_its_close_proof_and_needs_it,
+    ],
+    expansion_batch_81: [
+        claim_expansion_that_cites_a_library_theorem_by_path_rechecks_in_its_session,
+        terminal_model_match_in_open_keeps_expanded_outcome_steps_in_its_arms,
+        rejoined_model_match_in_open_expands_without_moving_the_continuation_inside,
+        retained_project_recheck_ignores_shifted_import_positions_but_checks_paths,
+    ],
+    expansion_batch_82: [
+        branch_arm_source_selection_and_batch_expansion_follow_the_interface_rule,
+        address_only_model_constructor_cast_expands_and_checks,
+        address_only_model_implicit_view_expands_and_checks,
+        void_pointer_helper_selected_view_expands_and_checks,
+    ],
+    expansion_batch_83: [
+        tidied_expansion_closers_prove_normalized_claims_in_goal_order,
+        tidied_expansion_closers_leave_other_closers_alone,
+        arithmetic_in_each_both_arm_is_selected_at_its_location,
+        relinked_node_empty_check_requires_distinct_addresses,
+    ],
+    expansion_batch_84: [
+        post_return_function_unfold_retains_its_equation_through_expansion,
+        opposite_path_assumptions_expand_without_search,
+        disjunctive_loop_entry_keeps_one_preservation_certificate,
+        ambiguous_view_bucket_search_expands_to_selected_transport,
+    ],
+    expansion_batch_85: [
+        alias_view_selection_expands_to_explicit_equality_and_transport,
+        selected_alias_condition_and_read_validity_expand_without_search,
+        saved_iterated_pointer_base_expands_and_rechecks,
+        scoped_conversion_requirements_expand_before_the_have,
+    ],
+    expansion_batch_86: [
+        theorem_entry_type_bounds_discharge_without_search,
+        contract_claim_requirements_expand_as_ordinary_have_proofs,
+        loop_guard_paths_expand_distinct_nested_proofs,
+        single_store_definedness_transport_expands_and_replays,
+    ],
+    expansion_batch_87: [
+        recursive_witness_pointer_preservation_expands_and_cold_replays,
+        saved_word_equality_expansion_cold_replay,
+        loop_owned_view_call_expands_and_replays,
+        structural_invariant_bundles_expand_as_ordered_member_haves,
+        explicit_and_implicit_existential_requirements_expand_without_search,
+    ],
+    expansion_batch_88: [
+        solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes,
+        known_step_and_fold_requirements_still_have_explicit_obligation_proofs,
+        a_named_fold_generates_its_known_body_fact_obligation,
+    ],
 }

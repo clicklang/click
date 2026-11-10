@@ -201,10 +201,13 @@ impl Contradictions {
             }
         }
         if insert
-            && !matches!(condition, ConditionTerm::Compare { .. })
+            && condition.true_pointer_offset_sides().is_some()
             && let Some((left, right)) = scalar_evidence_pair(condition, value)
         {
-            self.union(&Key::new(V::Legacy(&left)), &Key::new(V::Legacy(&right)));
+            self.union(
+                &Key::new(left.operand_view()),
+                &Key::new(right.operand_view()),
+            );
         }
         if let Some(view) = super::retained_order_bounds::order_view(condition, value)
             && view.format == MachineIntegerType::Int32

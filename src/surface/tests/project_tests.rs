@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType, OverflowOperation};
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_00")]
 fn c_constant_spellings_preserve_declared_identifiers_in_both_source_paths() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -27,6 +28,7 @@ fn c_constant_spellings_preserve_declared_identifiers_in_both_source_paths() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_00")]
 fn c_constant_spellings_preserve_enumerators_and_functions() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -42,6 +44,7 @@ fn c_constant_spellings_preserve_enumerators_and_functions() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_00")]
 fn c_constant_spellings_do_not_prove_a_false_parameter_contract() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -59,6 +62,7 @@ fn c_constant_spellings_do_not_prove_a_false_parameter_contract() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_00")]
 fn c_constant_spellings_keep_actual_macro_expansion_authoritative() {
     use crate::languages::c::compiler_import::PreparedCImport;
 
@@ -83,6 +87,7 @@ fn c_constant_spellings_keep_actual_macro_expansion_authoritative() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_01")]
 fn location_verification_skips_unrelated_function_proofs() {
     let good_c = r#"
 int32 good(int32 x) {
@@ -122,6 +127,7 @@ int32 bad(int32 x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_01")]
 fn location_verification_ignores_an_unselected_function_ranked_loop() {
     // A location-scoped run verifies one proof unit, so it builds a verified
     // loop rule only for the loops it checks. Planning termination for every
@@ -184,6 +190,7 @@ int32 count_to(int32 n) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_01")]
 fn location_verification_assumes_unselected_callee_contracts() {
     let callee_c = r#"
 int32 callee(int32 x) {
@@ -231,6 +238,7 @@ int32 caller(int32 x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_01")]
 fn external_dependency_report_is_transitive_and_per_function() {
     let helper_c = r#"
 int32 helper(int32 x) {
@@ -277,6 +285,7 @@ int32 caller(int32 x) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_02")]
 fn location_verification_does_not_inspect_an_unselected_abstract_callee_body() {
     let compare_c = r#"
 int32 compare(int32 left, int32 right) {
@@ -346,6 +355,7 @@ int32 caller() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_02")]
 fn tactic_expansion_selects_only_the_containing_function_before_later_calls() {
     let sources = [
         ("first.c", "int32 first(int32 x) { return x; }"),
@@ -942,6 +952,7 @@ int32 buffer_pipeline(
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_02")]
 fn tactic_expansion_includes_a_call_at_the_execute_until_endpoint() {
     let callee_c = r#"
 int32 callee(int32 x) {
@@ -987,6 +998,7 @@ int32 caller(int32 x) {
 /// grows without limit. The same check, repeated, must leave the same number
 /// of entries behind each time.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_02")]
 fn retained_session_checks_leave_no_kernel_state_behind() {
     let c_source = r#"
 int32 bump(int32 *p) {
@@ -1022,6 +1034,7 @@ int32 bump(int32* p) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_03")]
 fn verification_session_erases_exceptional_proofs_but_preserves_contracts() {
     let source = r#"
 verifying "identity.c";
@@ -1077,6 +1090,7 @@ int32 identity(int32 x) throws int32 {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_03")]
 fn verification_session_reuses_certified_dependencies_and_rechecks_target() {
     let callee_c = r#"
 int32 callee(int32 x) {
@@ -1174,6 +1188,7 @@ int32 caller(int32 x) {
 /// rewritten `arena_write` proof exhausted a simple tactic's work budget only
 /// in the session.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_03")]
 fn verification_session_refuses_kernel_tables_replaced_by_another_verification() {
     let c_source = r#"int32 same(int32 x) {
     return x;
@@ -1225,6 +1240,7 @@ int32 same(int32 x) {
 /// `diverges` function still proves its postcondition for the runs that
 /// return, and the session reports that it carries no termination evidence.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_03")]
 fn verification_session_keeps_partial_and_termination_rules_separate() {
     let good_c = r#"int32 countdown(int32 n) {
     int32 result;
@@ -1264,6 +1280,7 @@ int32 stuck(int32 n) diverges {
 /// Required termination refuses an unranked loop by name and rejects its
 /// caller for depending on that loop.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_04")]
 fn required_termination_refuses_an_unranked_loop_and_its_caller() {
     let c_source = r#"int32 wait_for_zero(int32 x) {
     while (x != 0) {
@@ -1317,6 +1334,7 @@ int32 caller(int32 x) {
 /// `diverges` is contagious: a caller of a marked function is refused by name
 /// until it carries the marker too, and then both verify.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_04")]
 fn required_termination_spreads_diverges_to_callers() {
     let c_source = r#"int32 wait_for_zero(int32 x) {
     while (x != 0) {
@@ -1378,6 +1396,7 @@ int32 caller(int32 x) {
 /// A straight-line function owes nothing but its callees' evidence, so it
 /// verifies with no clause of its own, and its evidence is recorded.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_04")]
 fn required_termination_certifies_loop_free_callers_unannotated() {
     let c_source = r#"int32 one() {
     return 1;
@@ -1407,6 +1426,7 @@ int32 two() {
 /// An `extern` contract is trusted to return exactly as its `ensures` is
 /// trusted, so a ranked function that calls one has termination evidence.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_04")]
 fn an_extern_callee_is_assumed_to_return() {
     let c_source = r#"int32 poll();
 
@@ -1458,6 +1478,7 @@ int32 drain(int32 n) {
 /// such premise counted as available once the context held any other
 /// non-comparison condition.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
     let overflow = Proposition::ConditionIs(
         ConditionTerm::Overflows {
@@ -1540,6 +1561,7 @@ fn unrelated_non_comparison_conditions_are_not_polarity_equivalent() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn unfolding_composite_rejects_concretely_overlapping_owned_children() {
     let c_source = r#"
         int32 preserve(int32* data) {
@@ -1577,6 +1599,7 @@ fn unfolding_composite_rejects_concretely_overlapping_owned_children() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn unfolding_composite_accepts_propositionally_equal_arguments() {
     let c_source = r#"
         int32 preserve(int32* left, int32* right) {
@@ -1607,6 +1630,7 @@ fn unfolding_composite_accepts_propositionally_equal_arguments() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_05")]
 fn incremental_selection_follows_reverse_call_dependencies_and_ignores_comments() {
     let sources = [
         ("leaf.c", "int32 leaf(int32 x) { return x; }"),
@@ -1657,6 +1681,7 @@ int32 unrelated(int32 x) { ensures result == x; }
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_06")]
 fn incremental_selection_rebuilds_all_functions_for_shared_logic_changes() {
     let sources = [
         ("first.c", "int32 first(int32 x) { return x; }"),
@@ -1677,6 +1702,7 @@ int32 second(int32 x) { ensures result == x; } by solve();
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_06")]
 fn incremental_selection_rebuilds_all_functions_for_named_contract_changes() {
     // A function block that names a shared `contract` is byte-identical when
     // only the contract's clauses change, so nothing pulls it back in through
@@ -1719,6 +1745,7 @@ int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_06")]
 fn incremental_selection_rebuilds_all_functions_for_algebraic_type_changes() {
     let sources = [("first.c", "int32 first(int32 x) { return x; }")];
     let baseline = r#"
@@ -1733,6 +1760,7 @@ int32 first(int32 x) { ensures result == x; } by solve();
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_06")]
 fn incremental_selection_rechecks_functions_when_an_imported_header_changes() {
     let baseline_sources = [
         ("m.c", "#include \"cap.h\"\nint32 read_cap() { return 0; }"),
@@ -2076,6 +2104,7 @@ pub(super) fn combine_names_and_work_in_order(
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_07")]
 fn execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers() {
     let source = "int32 f() {int32 x;int32 other;other=9;x=3;other=8;x=4;return x;}";
     let proof = r#"verifying "assignment.c";
@@ -2109,6 +2138,7 @@ int32 f() {ensures result==4;} by {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_07")]
 fn execute_until_assignment_stops_before_call_results_and_respects_paths() {
     let source = "int32 id(int32 n) {return n;} int32 f() {int32 x; int32 other; x=id(3); other=8; x=id(4); return x;}";
     let proof = r#"verifying "assignment.c";
@@ -2139,6 +2169,7 @@ int32 f(int32 n) {ensures result==1; } by {step_until(assignment(x, 0)); step();
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_07")]
 fn execute_until_read_checks_access_and_retains_real_loaded_bounds() {
     let source =
         "int32 f(const uint8* p) {int32 x;int32 other;other=1;x=(int32)*p;other=2;return x;}";
@@ -2164,6 +2195,7 @@ int32 f(const uint8* p) {views p[0..1]; ensures 0<=result and result<=255;} by {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by project_batch_07")]
 fn step_result_binding_names_checked_values_and_survives_overwrite() {
     let source = "int32 f(const uint8* p) {uint8 x; x=*p; x=(uint8)0; return (int32)x;}";
     let proof = r#"verifying "read.c";
@@ -2204,4 +2236,58 @@ int32 f(const uint8* p) {views p[0..1]; ensures result==0;} by {
 #[cfg(test)]
 mod scaling_tests {
     include!("../../scaling_tests/surface/tests/project_tests.rs");
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "project_tests.rs",
+    marker: "project_batch_",
+    project_batch_00: [
+        c_constant_spellings_preserve_declared_identifiers_in_both_source_paths,
+        c_constant_spellings_preserve_enumerators_and_functions,
+        c_constant_spellings_do_not_prove_a_false_parameter_contract,
+        c_constant_spellings_keep_actual_macro_expansion_authoritative,
+    ],
+    project_batch_01: [
+        location_verification_skips_unrelated_function_proofs,
+        location_verification_ignores_an_unselected_function_ranked_loop,
+        location_verification_assumes_unselected_callee_contracts,
+        external_dependency_report_is_transitive_and_per_function,
+    ],
+    project_batch_02: [
+        location_verification_does_not_inspect_an_unselected_abstract_callee_body,
+        tactic_expansion_selects_only_the_containing_function_before_later_calls,
+        tactic_expansion_includes_a_call_at_the_execute_until_endpoint,
+        retained_session_checks_leave_no_kernel_state_behind,
+    ],
+    project_batch_03: [
+        verification_session_erases_exceptional_proofs_but_preserves_contracts,
+        verification_session_reuses_certified_dependencies_and_rechecks_target,
+        verification_session_refuses_kernel_tables_replaced_by_another_verification,
+        verification_session_keeps_partial_and_termination_rules_separate,
+    ],
+    project_batch_04: [
+        required_termination_refuses_an_unranked_loop_and_its_caller,
+        required_termination_spreads_diverges_to_callers,
+        required_termination_certifies_loop_free_callers_unannotated,
+        an_extern_callee_is_assumed_to_return,
+    ],
+    project_batch_05: [
+        unrelated_non_comparison_conditions_are_not_polarity_equivalent,
+        unfolding_composite_rejects_concretely_overlapping_owned_children,
+        unfolding_composite_accepts_propositionally_equal_arguments,
+        incremental_selection_follows_reverse_call_dependencies_and_ignores_comments,
+    ],
+    project_batch_06: [
+        incremental_selection_rebuilds_all_functions_for_shared_logic_changes,
+        incremental_selection_rebuilds_all_functions_for_named_contract_changes,
+        incremental_selection_rebuilds_all_functions_for_algebraic_type_changes,
+        incremental_selection_rechecks_functions_when_an_imported_header_changes,
+    ],
+    project_batch_07: [
+        execute_until_assignment_checks_real_stores_and_rejects_bad_frontiers,
+        execute_until_assignment_stops_before_call_results_and_respects_paths,
+        execute_until_read_checks_access_and_retains_real_loaded_bounds,
+        step_result_binding_names_checked_values_and_survives_overwrite,
+    ],
 }

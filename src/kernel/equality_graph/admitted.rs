@@ -129,14 +129,16 @@ pub(in crate::kernel) struct InputData {
         crate::persistent::PersistentSet<(PointerOffsetTerm, PointerOffsetTerm)>,
     >,
     /// Admission-time keys, so later producer metadata cannot change withdrawal.
-    pub(in crate::kernel) scalar_evidence_keys:
-        crate::persistent::PersistentMap<ConditionTerm, (MachineTerm, MachineTerm)>,
+    pub(in crate::kernel) scalar_evidence_keys: crate::persistent::PersistentMap<
+        ConditionTerm,
+        (SharedMachineIntegerTerm, SharedMachineIntegerTerm),
+    >,
     /// Canonical source endpoints and their exact admitted premises. Used only
     /// for evidence enumeration and paths, never as a second equality decision.
     pub(in crate::kernel) scalar_evidence_inputs: crate::persistent::PersistentMap<
-        MachineTerm,
+        SharedMachineIntegerTerm,
         crate::persistent::PersistentMap<
-            MachineTerm,
+            SharedMachineIntegerTerm,
             crate::persistent::PersistentMap<ConditionTerm, Proposition>,
         >,
     >,

@@ -860,7 +860,11 @@ impl PointerOffsetCongruenceEvidence {
                 };
                 left_width == byte_width
                     && right_width == byte_width
-                    && assumptions.checks_exact_bitvector_equality_path(path, left, right)
+                    && assumptions.checks_exact_bitvector_equality_path_views(
+                        path,
+                        left.operand_view(),
+                        right.operand_view(),
+                    )
             }
             Self::Int32ScaledDerived {
                 byte_width,
@@ -881,7 +885,7 @@ impl PointerOffsetCongruenceEvidence {
                 };
                 left_width == byte_width
                     && right_width == byte_width
-                    && equality.checks(left, right, assumptions)
+                    && equality.checks_views(left.operand_view(), right.operand_view(), assumptions)
             }
             Self::Int64Scaled {
                 byte_width,
@@ -907,7 +911,11 @@ impl PointerOffsetCongruenceEvidence {
                     && right_width == byte_width
                     && left_unsigned == unsigned
                     && right_unsigned == unsigned
-                    && assumptions.checks_exact_bitvector_equality_path(path, left, right)
+                    && assumptions.checks_exact_bitvector_equality_path_views(
+                        path,
+                        left.operand_view(),
+                        right.operand_view(),
+                    )
             }
             Self::ElementIndex { byte_width, path } => {
                 if crate::kernel::reasoning::common_pointer_offset_element_width(left, right)
@@ -916,12 +924,16 @@ impl PointerOffsetCongruenceEvidence {
                     return false;
                 }
                 let (Some(left), Some(right)) = (
-                    crate::kernel::reasoning::element_index_from_offset(left, *byte_width),
-                    crate::kernel::reasoning::element_index_from_offset(right, *byte_width),
+                    crate::kernel::reasoning::shared_element_index_from_offset(left, *byte_width),
+                    crate::kernel::reasoning::shared_element_index_from_offset(right, *byte_width),
                 ) else {
                     return false;
                 };
-                assumptions.checks_exact_bitvector_equality_path(path, &left, &right)
+                assumptions.checks_exact_bitvector_equality_path_views(
+                    path,
+                    left.operand_view(),
+                    right.operand_view(),
+                )
             }
             Self::ElementIndexDerived {
                 byte_width,
@@ -933,25 +945,18 @@ impl PointerOffsetCongruenceEvidence {
                     return false;
                 }
                 let (Some(left), Some(right)) = (
-                    crate::kernel::reasoning::element_index_from_offset(left, *byte_width),
-                    crate::kernel::reasoning::element_index_from_offset(right, *byte_width),
+                    crate::kernel::reasoning::shared_element_index_from_offset(left, *byte_width),
+                    crate::kernel::reasoning::shared_element_index_from_offset(right, *byte_width),
                 ) else {
                     return false;
                 };
-                equality.checks(&left, &right, assumptions)
+                equality.checks_views(left.operand_view(), right.operand_view(), assumptions)
             }
         }
     }
 }
 
 impl SignedConstantEvidence {
-    pub(in crate::kernel) fn exact_equality_value(
-        term: &MachineTerm,
-        source: &Proposition,
-    ) -> Option<i64> {
-        Self::exact_equality_value_view(crate::kernel::MachineOperandView::Legacy(term), source)
-    }
-
     pub(in crate::kernel) fn exact_equality_value_view(
         term: crate::kernel::MachineOperandView<'_>,
         source: &Proposition,
@@ -992,102 +997,131 @@ impl DirectBitvectorEqualityEvidence {
         right: &MachineTerm,
         assumptions: &PureFactContext,
     ) -> bool {
+        self.checks_views(
+            crate::kernel::MachineOperandView::Legacy(left),
+            crate::kernel::MachineOperandView::Legacy(right),
+            assumptions,
+        )
+    }
+
+    pub(in crate::kernel) fn checks_views(
+        &self,
+        left: crate::kernel::MachineOperandView<'_>,
+        right: crate::kernel::MachineOperandView<'_>,
+        assumptions: &PureFactContext,
+    ) -> bool {
         match self {
             Self::AdditiveCancellation {
                 left: reduced_left,
                 right: reduced_right,
                 equality,
             } => {
-                crate::kernel::reasoning::bitvector_equality_after_additive_cancellation(
-                    left, right,
-                ) == Some((reduced_left.clone(), reduced_right.clone()))
-                    && equality.checks(reduced_left, reduced_right, assumptions)
+                crate::kernel::reasoning::shared_bitvector_equality_cancellation(left, right)
+                    == Some((reduced_left.clone(), reduced_right.clone()))
+                    && equality.checks_views(
+                        reduced_left.operand_view(),
+                        reduced_right.operand_view(),
+                        assumptions,
+                    )
             }
             Self::EqualSignedConstants {
                 value,
                 left: left_evidence,
                 right: right_evidence,
             } => {
-                let checks = |term: &MachineTerm, evidence: &SignedConstantEvidence| match evidence
-                {
-                    SignedConstantEvidence::Constant => {
-                        signed_bitvector_constant(term) == Some(*value)
-                    }
-                    SignedConstantEvidence::ExactEquality(source) => {
-                        assumptions.contains_assumed_exact(source)
-                            && SignedConstantEvidence::exact_equality_value(term, source)
-                                == Some(*value)
-                    }
-                    SignedConstantEvidence::SingletonBounds {
-                        variable,
-                        lower,
-                        upper,
-                    } => {
-                        let bound = |evidence: &IndexedSignedOrderBoundEvidence,
-                                     lower_bound: bool| {
-                            use crate::kernel::MachineOperandView as V;
-                            use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
-                            let Proposition::ConditionIs(condition, truth) =
-                                evidence.source.as_ref()
-                            else {
-                                return None;
-                            };
-                            let view = crate::kernel::assumptions::order_view_at_format(
-                                condition,
-                                *truth,
-                                MachineIntegerType::Int32,
-                            )?;
-                            let strict =
-                                view.relation == crate::kernel::machine_integer::Relation::Less;
-                            let [left, right] = view
-                                .operands
-                                .each_ref()
-                                .map(|operand| operand.operand_view());
-                            let (endpoint, other) = if evidence.forward {
-                                (left, right)
-                            } else {
-                                (right, left)
-                            };
-                            if !assumptions.contains_assumed_exact(&evidence.source)
-                                || Key::new(endpoint) != Key::new(V::Legacy(term))
-                                || lower_bound == evidence.forward
-                            {
-                                return None;
-                            }
-                            let bound = if let Some(source) = &evidence.other_equality {
-                                if !assumptions.contains_assumed_exact(source) {
-                                    return None;
-                                }
-                                SignedConstantEvidence::exact_equality_value_view(other, source)?
-                            } else {
-                                other.word32_constant().map(|bits| i64::from(bits as i32))?
-                            };
-                            if lower_bound {
-                                if strict {
-                                    bound.checked_add(1)
-                                } else {
-                                    Some(bound)
-                                }
-                            } else if strict {
-                                bound.checked_sub(1)
-                            } else {
-                                Some(bound)
-                            }
-                        };
-                        bitvector_variable(term) == Some(*variable)
-                            && bound(lower, true) == Some(*value)
-                            && bound(upper, false) == Some(*value)
+                let checks = |term: crate::kernel::MachineOperandView<'_>,
+                              evidence: &SignedConstantEvidence| {
+                    match evidence {
+                        SignedConstantEvidence::Constant => {
+                            term.word32_constant().map(|n| i64::from(n as i32)) == Some(*value)
+                        }
+                        SignedConstantEvidence::ExactEquality(source) => {
+                            assumptions.contains_assumed_exact(source)
+                                && SignedConstantEvidence::exact_equality_value_view(term, source)
+                                    == Some(*value)
+                        }
+                        SignedConstantEvidence::SingletonBounds {
+                            variable,
+                            lower,
+                            upper,
+                        } => {
+                            let bound =
+                                |evidence: &IndexedSignedOrderBoundEvidence, lower_bound: bool| {
+                                    use crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey as Key;
+                                    let Proposition::ConditionIs(condition, truth) =
+                                        evidence.source.as_ref()
+                                    else {
+                                        return None;
+                                    };
+                                    let view = crate::kernel::assumptions::order_view_at_format(
+                                        condition,
+                                        *truth,
+                                        MachineIntegerType::Int32,
+                                    )?;
+                                    let strict = view.relation
+                                        == crate::kernel::machine_integer::Relation::Less;
+                                    let [left, right] = view
+                                        .operands
+                                        .each_ref()
+                                        .map(|operand| operand.operand_view());
+                                    let (endpoint, other) = if evidence.forward {
+                                        (left, right)
+                                    } else {
+                                        (right, left)
+                                    };
+                                    if !assumptions.contains_assumed_exact(&evidence.source)
+                                        || Key::new(endpoint) != Key::new(term)
+                                        || lower_bound == evidence.forward
+                                    {
+                                        return None;
+                                    }
+                                    let bound = if let Some(source) = &evidence.other_equality {
+                                        if !assumptions.contains_assumed_exact(source) {
+                                            return None;
+                                        }
+                                        SignedConstantEvidence::exact_equality_value_view(
+                                            other, source,
+                                        )?
+                                    } else {
+                                        other
+                                            .word32_constant()
+                                            .map(|bits| i64::from(bits as i32))?
+                                    };
+                                    if lower_bound {
+                                        if strict {
+                                            bound.checked_add(1)
+                                        } else {
+                                            Some(bound)
+                                        }
+                                    } else if strict {
+                                        bound.checked_sub(1)
+                                    } else {
+                                        Some(bound)
+                                    }
+                                };
+                            term.variable() == Some(variable)
+                                && bound(lower, true) == Some(*value)
+                                && bound(upper, false) == Some(*value)
+                        }
                     }
                 };
                 checks(left, left_evidence) && checks(right, right_evidence)
             }
             Self::LeAndNotLt(evidence) => {
                 let less_equal = Proposition::ConditionIs(
-                    ConditionTerm::signed_less_equal(left.clone(), right.clone()),
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        CompareRelation::LessEqual,
+                        [left, right],
+                    ),
                     true,
                 );
                 let not_less_than = Proposition::ConditionIs(
-                    ConditionTerm::signed_less_than(left.clone(), right.clone()),
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        CompareRelation::LessThan,
+                        [left, right],
+                    ),
                     false,
                 );
                 evidence.less_equal == less_equal
@@ -1097,11 +1131,19 @@ impl DirectBitvectorEqualityEvidence {
             }
             Self::GeAndNotGt(evidence) => {
                 let greater_equal = Proposition::ConditionIs(
-                    ConditionTerm::signed_greater_equal(left.clone(), right.clone()),
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        CompareRelation::GreaterEqual,
+                        [left, right],
+                    ),
                     true,
                 );
                 let not_greater_than = Proposition::ConditionIs(
-                    ConditionTerm::signed_greater_than(left.clone(), right.clone()),
+                    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                        MachineIntegerType::Int32,
+                        CompareRelation::GreaterThan,
+                        [left, right],
+                    ),
                     false,
                 );
                 evidence.greater_equal == greater_equal
@@ -1291,12 +1333,20 @@ impl SignedOrderDerivationStep {
 }
 
 impl BitvectorEqualityDerivationStep {
+    pub(crate) fn source_view(&self) -> MachineOperandView<'_> {
+        self.source.operand_view()
+    }
+    pub(crate) fn target_view(&self) -> MachineOperandView<'_> {
+        self.target.operand_view()
+    }
+
+    /// Explicit compatibility output for surface certificate construction.
     pub fn source(&self) -> &MachineTerm {
-        &self.source
+        self.source.value()
     }
 
     pub fn target(&self) -> &MachineTerm {
-        &self.target
+        self.target.value()
     }
 
     pub fn premise(&self) -> &Proposition {

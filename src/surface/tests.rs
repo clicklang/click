@@ -2527,6 +2527,72 @@ fn ensure_comparison(
     })
 }
 
+// nextest starts a process per test, and each process that verifies anything
+// parses the Click library first. A batch runs a few tests in one process so
+// they share that immutable library syntax; each case runs on a fresh thread,
+// which keeps the individual tests' thread-local isolation. Non-fast builds
+// keep the original tests. A fast-gate individual case can still be selected
+// explicitly with --ignored. See `docs/internals/testing.md`, "Batching short
+// tests".
+#[cfg(feature = "fast-gate")]
+fn run_test_batch(cases: &[(&str, fn())]) {
+    for &(name, test) in cases {
+        eprintln!("batched case {name} started");
+        let started = std::time::Instant::now();
+        let result = std::thread::Builder::new()
+            .name(name.to_owned())
+            .stack_size(8 * 1024 * 1024)
+            .spawn(test)
+            .expect("start batched case")
+            .join();
+        if let Err(panic) = result {
+            eprintln!("batched case {name} FAILED");
+            std::panic::resume_unwind(panic);
+        }
+        eprintln!(
+            "batched case {name} passed in {:.3}s",
+            started.elapsed().as_secs_f64()
+        );
+    }
+}
+
+/// Declares the batches of one test file. `file` is that file's name and
+/// `marker` the text its batched tests carry in
+/// `#[cfg_attr(feature = "fast-gate", ignore = "covered by <marker>NN")]`.
+#[cfg(feature = "fast-gate")]
+macro_rules! test_batches {
+    (file: $file:literal, marker: $marker:literal, $($batch:ident: [$($case:ident),+ $(,)?]),+ $(,)?) => {
+        $(
+            #[test]
+            fn $batch() {
+                crate::surface::tests::run_test_batch(&[$((stringify!($case), $case)),+]);
+            }
+        )+
+
+        #[test]
+        fn batch_inventory_covers_each_ignored_case_once() {
+            let registered = [$($(stringify!($case)),+),+];
+            let actual = registered.into_iter().collect::<std::collections::BTreeSet<_>>();
+            assert_eq!(actual.len(), registered.len(), "duplicate batched case");
+            let annotation = concat!("ignore = \"covered by ", $marker);
+            let mut marked = false;
+            let mut expected = std::collections::BTreeSet::new();
+            for line in include_str!($file).lines() {
+                if line.contains(annotation) {
+                    assert!(!marked, "batched-case annotation without a function");
+                    marked = true;
+                }
+                if marked && let Some(name) = line.trim().strip_prefix("fn ") {
+                    expected.insert(name.split('(').next().unwrap());
+                    marked = false;
+                }
+            }
+            assert!(!marked, "batched-case annotation without a function");
+            assert_eq!(expected, actual, "batch coverage must match the skipped individual tests");
+        }
+    };
+}
+
 mod authority_private_body_tests;
 mod authority_transfer_wrapper_tests;
 mod back_edge_tests;

@@ -157,8 +157,13 @@ Click and is maintained by agents. The rendered reference also serves
 - [Upstream integrations](integrations/README.md): bounded, reproducible
   claims about unchanged projects, including Bitcoin Core's `MoneyRange`.
 
-Build and serve the site locally with `scripts/install-tools.sh` once, then
-`scripts/mdbook-serve.sh` (it serves `http://localhost:3000`).
+Build and serve the reference locally with `scripts/install-tools.sh` once,
+then `scripts/mdbook-serve.sh` (it serves `http://localhost:3000`).
+
+Preview the guide with `scripts/guide-serve.sh`, which needs Node.js and serves
+`http://localhost:5173`. The site's configuration is in [site/](site/); its
+pages are the Markdown files in `guide/`, with `guide/index.md` as the home
+page.
 
 ## Contributing
 

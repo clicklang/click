@@ -2,6 +2,7 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn proof_step_supports_explicit_fact_transport() {
     let c_source = r#"
             int32 set_second_return_first(int32 p[2]) {
@@ -66,6 +67,7 @@ fn proof_step_supports_explicit_fact_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn explicit_fact_transport_can_certify_a_derived_source() {
     let c_source = r#"
             int32 set_third_return_second(int32 p[3]) {
@@ -153,6 +155,7 @@ fn explicit_fact_transport_can_certify_a_derived_source() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn smart_step_starts_each_source_tactic_with_an_empty_step_delta() {
     // The broader smart-step selector treats the most recent checked
     // transition's added facts as premise candidates. That delta belongs to
@@ -258,6 +261,7 @@ fn clone_field_stores_with_observed_source_resource_verify() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_00")]
 fn simple_statement_transition_does_not_transport_facts_automatically() {
     let base_memory = CMemory::new();
     let first = Pointer {
@@ -352,6 +356,7 @@ fn simple_statement_transition_does_not_transport_facts_automatically() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_01")]
 fn failed_call_step_reports_its_unresolved_required_precondition() {
     let c_source = r#"
             int32 caller(int32 x, int32 y) {
@@ -411,6 +416,7 @@ fn failed_call_step_reports_its_unresolved_required_precondition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_01")]
 fn ordinary_requirement_errors_have_no_call_site_metadata() {
     let obligation = ProofObligation::verification_condition(Proposition::Predicate {
         name: "ordinary_requirement".to_string(),
@@ -433,6 +439,7 @@ fn ordinary_requirement_errors_have_no_call_site_metadata() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_01")]
 fn execute_step_records_a_state_checked_surface_expansion() {
     let c_source = r#"
             int32 increment(int32 x) {
@@ -497,6 +504,7 @@ fn execute_step_records_a_state_checked_surface_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_01")]
 fn no_premise_smart_step_searches_directly_on_proof() {
     let c_source = r#"
             int32 zero() {
@@ -540,6 +548,7 @@ fn no_premise_smart_step_searches_directly_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_02")]
 fn scalar_root_facts_do_not_force_smart_step_planning() {
     let c_source = r#"
             int32 zero(int32 x) {
@@ -584,6 +593,7 @@ fn scalar_root_facts_do_not_force_smart_step_planning() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_02")]
 fn fact_free_linear_smart_steps_search_directly_on_proof() {
     let c_source = r#"
             int32 set_one(int32 x) {
@@ -631,6 +641,7 @@ fn fact_free_linear_smart_steps_search_directly_on_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_02")]
 fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
     let c_source = r#"
             int32 set_one(int32 x) {
@@ -685,6 +696,7 @@ fn local_assignment_smart_step_selects_only_local_surface_dependencies() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_02")]
 fn execute_rest_return_certificate_omits_unused_ambient_facts() {
     let c_source = r#"
             int32 return_x(int32 x) {
@@ -729,6 +741,7 @@ fn execute_rest_return_certificate_omits_unused_ambient_facts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_03")]
 fn linear_execute_retains_its_checked_execution_proof() {
     let c_source = r#"
             int32 zero() {
@@ -762,6 +775,7 @@ fn linear_execute_retains_its_checked_execution_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_03")]
 fn linear_execute_until_retains_its_checked_execution_proof() {
     let c_source = r#"
             int32 zero() {
@@ -801,6 +815,7 @@ fn linear_execute_until_retains_its_checked_execution_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_03")]
 fn execute_step_omits_materialization_only_transport() {
     let c_source = r#"
             int32 set_second_return_first(int32 p[2]) {
@@ -878,6 +893,7 @@ fn execute_step_omits_materialization_only_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_03")]
 fn execute_step_omits_materialized_mixed_snapshot_transport() {
     let c_source = r#"
             int32 replace_first(int32 p[2]) {
@@ -942,6 +958,7 @@ fn execute_step_omits_materialized_mixed_snapshot_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn execute_step_omits_materialization_transport_across_statements() {
     let c_source = r#"
             int32 replace_first_then_touch_other(int32 p[2], int32 q[1]) {
@@ -1012,6 +1029,7 @@ fn execute_step_omits_materialization_transport_across_statements() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
     let increment_c_source = r#"
             int32 set_seven(int32 p[1]) {
@@ -1084,6 +1102,7 @@ fn execute_step_expands_call_assign_fact_from_internal_snapshot() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
     let owner = Pointer {
         block: "arg-memory".into(),
@@ -1134,6 +1153,7 @@ fn synthesizes_loaded_pointer_equality_as_pointer_comparison() {
 /// value it was passed is `old(p)`. Spelling the passed value as `p` wrote
 /// `p == p` for a fact relating the two, which lowers to `true`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_04")]
 fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
     let passed = Pointer {
         block: "arg-memory".into(),
@@ -1171,6 +1191,7 @@ fn synthesizes_a_reassigned_pointer_parameter_at_entry() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn synthesizes_dynamically_indexed_pointer_offset_equality() {
     let owner_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(41)), 4);
     let data_offset = PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(42)), 4);
@@ -1227,6 +1248,7 @@ fn synthesizes_dynamically_indexed_pointer_offset_equality() {
 /// (`memcmp`'s per-byte `defined` requirement, from the caller's viewed
 /// range) proves it by the implicit `solve` and records no hidden derivation.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn bare_step_proves_an_open_obligation_by_implicit_solve() {
     let c_source = r#"
             int32 compare_self(uint8 bytes[]) {
@@ -1357,6 +1379,7 @@ void change(struct node *g, struct node *source, struct node *t) {
 mod scaling_tests;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn prepared_call_cannot_use_its_postcondition_to_prove_its_precondition() {
     let c = "int32 caller(int32 a) { return callee(a); }";
     for step in [
@@ -1385,6 +1408,7 @@ int32 caller(int32 a) {{
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by statement_steps_batch_05")]
 fn prepared_call_refuses_an_unproved_omitted_requirement() {
     let source = r#"
 verifying "call.c";
@@ -1418,4 +1442,46 @@ int32 caller(int32 a, int32 b) {
         };
         result.expect_err("every omitted slot must be discharged before publication");
     }
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "statement_steps.rs",
+    marker: "statement_steps_batch_",
+    statement_steps_batch_00: [
+        proof_step_supports_explicit_fact_transport,
+        explicit_fact_transport_can_certify_a_derived_source,
+        smart_step_starts_each_source_tactic_with_an_empty_step_delta,
+        simple_statement_transition_does_not_transport_facts_automatically,
+    ],
+    statement_steps_batch_01: [
+        failed_call_step_reports_its_unresolved_required_precondition,
+        ordinary_requirement_errors_have_no_call_site_metadata,
+        execute_step_records_a_state_checked_surface_expansion,
+        no_premise_smart_step_searches_directly_on_proof,
+    ],
+    statement_steps_batch_02: [
+        scalar_root_facts_do_not_force_smart_step_planning,
+        fact_free_linear_smart_steps_search_directly_on_proof,
+        local_assignment_smart_step_selects_only_local_surface_dependencies,
+        execute_rest_return_certificate_omits_unused_ambient_facts,
+    ],
+    statement_steps_batch_03: [
+        linear_execute_retains_its_checked_execution_proof,
+        linear_execute_until_retains_its_checked_execution_proof,
+        execute_step_omits_materialization_only_transport,
+        execute_step_omits_materialized_mixed_snapshot_transport,
+    ],
+    statement_steps_batch_04: [
+        execute_step_omits_materialization_transport_across_statements,
+        execute_step_expands_call_assign_fact_from_internal_snapshot,
+        synthesizes_loaded_pointer_equality_as_pointer_comparison,
+        synthesizes_a_reassigned_pointer_parameter_at_entry,
+    ],
+    statement_steps_batch_05: [
+        synthesizes_dynamically_indexed_pointer_offset_equality,
+        bare_step_proves_an_open_obligation_by_implicit_solve,
+        prepared_call_cannot_use_its_postcondition_to_prove_its_precondition,
+        prepared_call_refuses_an_unproved_omitted_requirement,
+    ],
 }

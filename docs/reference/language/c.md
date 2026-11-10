@@ -2667,6 +2667,13 @@ contract facts to a value that fits that extent. An upper bound on a symbolic
 64-bit size is not enough: `malloc`, `calloc` and `realloc` refuse it with
 `heap allocation size must be a 32-bit value or a known constant`
 (`mdtests/a_symbolic_64_bit_malloc_size_names_the_32_bit_heap_extent.md`).
+That extent is signed: a `uint32` byte count must also be bounded by
+`INT32_MAX`, and a `uint32` element count by `INT32_MAX` divided by the
+element size. Otherwise `malloc`, `calloc` and `realloc` refuse it with
+`heap allocation size must be known to fit the signed 32-bit heap extent`
+(`mdtests/a_uint32_malloc_size_above_int32_max_is_refused_at_the_malloc.md`,
+`mdtests/a_uint32_malloc_size_bounded_by_int32_max_allocates.md`).
+The 64-bit extent design is `design/heap-extents.md`.
 
 ## Loops
 

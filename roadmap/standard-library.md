@@ -305,7 +305,10 @@ Each step is a separate PR that leaves every example verifying:
      extent (`allocation_size_value` in `src/kernel/eval/statements.rs`): a
      symbolic `size_t` `malloc(n)` is refused, and a 64-bit size is accepted
      only when its value is concrete. Stating `allocation`'s byte count as
-     `size_t` needs a 64-bit heap-block extent in the kernel first.
+     `size_t` needs a 64-bit heap-block extent in the kernel first. Design
+     and staged plan: [`design/heap-extents.md`](../design/heap-extents.md)
+     (a tagged 32/64-bit extent chosen by the size's C type; accepted
+     2026-11-10).
    - Done, by decision (maintainer, 2026-11-09): the width-lemma
      families are not restated over a format. The width-uniformity fixture
      checks each family at every format; its gaps stay open
@@ -505,7 +508,7 @@ Found while making lowering structural (every fact must be spellable:
 lowering a raised fact gives the fact back, so lowering never consults the
 facts to choose a term). These three sites are integer design questions,
 so they wait for this work rather than being fixed one by one. The first
-is decided.
+is decided, and the third is done.
 
 - **Specification `/` and `%`.** Decided and done (option B, maintainer
   2026-11-07): specification `/` and `%` are total. A zero divisor owes
@@ -529,13 +532,14 @@ is decided.
   when a `Multiply` term may be read as an exact product: always (sound
   only if every such term is a C signed multiply whose overflow is already
   undefined), never, or with an explicit no-overflow obligation.
-- **Unsigned index spelling** (`pointer_index_term`, same file). A `uint32`
-  index whose facts prove `0 <= x as int32` becomes the `int32` index
-  `sign_cast32(x)`; otherwise it becomes the 64-bit `uint64_from_32(x)`. The
-  offset term and its width both depend on the facts. Choosing one
-  spelling (for example, always zero-extending) needs a normalization step
-  proofs can invoke, and many unsigned loop specifications likely rely on
-  the signed form.
+- **Unsigned index spelling** (`pointer_index_term`, same file). Done in
+  5854abb33 (2026-10-30): `pointer_index_term` no longer takes facts, and a
+  `uint32` index is always the zero-extended 64-bit `uint64_from_32(x)`.
+  Before, a `uint32` index whose facts proved `0 <= x as int32` became the
+  `int32` index `sign_cast32(x)`. Range checking relates the word to its
+  widening through the maintained order graph, the speller writes `a[i]`
+  back, and the unsigned loop proofs passed unchanged
+  ([spellability](../docs/internals/spellability.md#lowering-is-fact-stable)).
 
 ### Naming decisions (maintainer, 2026-10-15)
 

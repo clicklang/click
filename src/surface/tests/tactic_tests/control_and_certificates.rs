@@ -20,18 +20,22 @@ theorem carried_nonzero(u: int64, v: {ty}, z: Integer) {{
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
 fn assumption_closes_rewritten_native_int32_nonzero() {
     check_nonzero_after_integer_rewrites("int32", "");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
 fn assumption_closes_rewritten_native_uint32_nonzero() {
     check_nonzero_after_integer_rewrites("uint32", "u32");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
 fn assumption_closes_rewritten_native_int64_nonzero() {
     check_nonzero_after_integer_rewrites("int64", "i64");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_00")]
 fn assumption_closes_rewritten_native_uint64_nonzero() {
     check_nonzero_after_integer_rewrites("uint64", "u64");
 }
@@ -58,18 +62,22 @@ fn check_integer_rewrite_of_nested_native_bounds(ty: &str, suffix: &str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_01")]
 fn integer_rewrite_reaches_nested_native_int32_bounds() {
     check_integer_rewrite_of_nested_native_bounds("int32", "");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_01")]
 fn integer_rewrite_reaches_nested_native_uint32_bounds() {
     check_integer_rewrite_of_nested_native_bounds("uint32", "u32");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_01")]
 fn integer_rewrite_reaches_nested_native_int64_bounds() {
     check_integer_rewrite_of_nested_native_bounds("int64", "i64");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_01")]
 fn integer_rewrite_reaches_nested_native_uint64_bounds() {
     check_integer_rewrite_of_nested_native_bounds("uint64", "u64");
 }
@@ -127,11 +135,13 @@ fn check_rewritten_integer_division_goal(quotient: bool) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
 fn rewritten_remainder_goals_synthesize_through_both() {
     check_rewritten_integer_division_goal(false);
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
 fn rewritten_quotient_goals_synthesize_through_both() {
     check_rewritten_integer_division_goal(true);
 }
@@ -146,6 +156,7 @@ int32 identity(int32 x, int32 d) {
 "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
 fn conditional_quotient_claim_reuses_its_checked_domain() {
     let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
     verify_c0_sources(CONDITIONAL_QUOTIENT_CLAIM, &sources)
@@ -158,6 +169,7 @@ fn conditional_quotient_claim_reuses_its_checked_domain() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_02")]
 fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
     let sources = [("identity.c", CONDITIONAL_QUOTIENT_C)];
     let position = expansion::position_at_offset(
@@ -178,6 +190,7 @@ fn conditional_quotient_claim_keeps_its_domain_in_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
 fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
     let source = r#"theorem zero_add_bound(q: int64) {
  requires -9223372036854775808 <= to_integer(q);
@@ -209,6 +222,7 @@ fn integer_certificate_keeps_negative_observation_bounds_when_adding() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
 fn relation_transport_certificate_matches_its_native_cast_conclusion() {
     let source = r#"import click::integer;
         theorem cast_bound(a: int128) {
@@ -237,6 +251,7 @@ fn relation_transport_certificate_matches_its_native_cast_conclusion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
 fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
     let source = r#"
         theorem pair(x: int32) {
@@ -267,6 +282,7 @@ fn both_and_proves_exact_conjuncts_and_rejects_incomplete_arms() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_03")]
 fn both_and_outcome_expands_and_rechecks() {
     let c = "int32 identity(int32 x) { return x; }";
     let source = r#"verifying "identity.c";
@@ -287,6 +303,7 @@ fn both_and_outcome_expands_and_rechecks() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_04")]
 fn parses_frontier_branch_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -310,6 +327,7 @@ fn parses_frontier_branch_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_04")]
 fn parses_frontier_branch_ensuring_interface() {
     let source = FILL3_CLICK.replace("== 2;", "== 2 by { branch ensuring { fact i >= 0; owns p[0..3]; } then { step(); } else { step_until(function.exit); } }",
     );
@@ -334,6 +352,7 @@ fn parses_frontier_branch_ensuring_interface() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_04")]
 fn linear_frontier_branch_uses_the_checked_structural_join() {
     let c_source = r#"
         int32 constant(int32 x) {
@@ -397,6 +416,7 @@ fn linear_frontier_branch_uses_the_checked_structural_join() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_04")]
 fn terminal_frontier_branch_seals_without_a_body_rerun() {
     let c_source = r#"
         int32 choose_sign(int32 x) {
@@ -433,6 +453,7 @@ fn terminal_frontier_branch_seals_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_05")]
 fn successive_shared_continuation_branches_seal_without_path_multiplication() {
     let c_source = r#"
         int32 two_branches(int32 x, int32 y) {
@@ -473,6 +494,7 @@ fn successive_shared_continuation_branches_seal_without_path_multiplication() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_05")]
 fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
     let c_source = r#"
         int32 constant_negative(int32 x) {
@@ -546,6 +568,7 @@ fn decided_frontier_branch_retains_the_only_feasible_checked_arm() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_05")]
 fn rejects_removed_reach_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -557,6 +580,7 @@ fn rejects_removed_reach_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_05")]
 fn empty_proof_if_branches_contribute_only_their_case_split() {
     // Owner decision 2026-07-31: an empty `if` branch is legal in a proof
     // script — it contributes its case split and every path goal stays owed
@@ -589,6 +613,7 @@ fn empty_proof_if_branches_contribute_only_their_case_split() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_06")]
 fn parses_execute_until_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -611,6 +636,7 @@ fn parses_execute_until_proof_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_06")]
 fn parses_unfold_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -633,6 +659,7 @@ fn parses_unfold_proof_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_06")]
 fn parses_apply_theorem_proof_tactic() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -658,6 +685,7 @@ fn parses_apply_theorem_proof_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_06")]
 fn parses_apply_theorem_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -679,6 +707,7 @@ fn parses_apply_theorem_with_explicit_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn parses_transport_with_explicit_premises() {
     let source = FILL3_CLICK.replace(
         "== 2;",
@@ -701,6 +730,7 @@ fn parses_transport_with_explicit_premises() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn parses_and_classifies_simple_and_smart_tactics() {
     let source = r#"
             theorem rewritten(x: int32, y: int32) {
@@ -830,6 +860,7 @@ fn parses_and_classifies_simple_and_smart_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
@@ -869,6 +900,7 @@ fn canonical_tactic_printer_round_trips_nested_surface_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_07")]
 fn canonical_tactic_printer_round_trips_cases_certificate() {
     let nonnegative = ClickProposition::Comparison {
         left: ContractExpression::CFragment(CExpression::Variable("x".to_string())),
@@ -912,6 +944,7 @@ fn canonical_tactic_printer_round_trips_cases_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn proof_certificate_round_trips_nested_surface_steps() {
     let reflexive = ClickProposition::Comparison {
         left: current_var("x"),
@@ -946,6 +979,7 @@ fn proof_certificate_round_trips_nested_surface_steps() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn proof_certificate_has_no_smart_step_variant() {
     let smart = ProofCertificate::from_proof_tactics(&[ProofTactic::Solve])
         .expect_err("smart tactics cannot appear in a proof certificate");
@@ -956,6 +990,7 @@ fn proof_certificate_has_no_smart_step_variant() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn tactic_certificate_accepts_only_simple_tactics() {
     let tactics = vec![
         ProofTactic::Rewrite(ClickProposition::Comparison {
@@ -973,6 +1008,7 @@ fn tactic_certificate_accepts_only_simple_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_08")]
 fn tactic_certificate_rejects_a_direct_smart_tactic() {
     let error = ProofCertificate::from_proof_tactics(&[ProofTactic::Solve])
         .expect_err("a smart tactic cannot be a certificate leaf");
@@ -985,6 +1021,7 @@ fn tactic_certificate_rejects_a_direct_smart_tactic() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
     let condition = ClickProposition::Comparison {
         left: current_var("x"),
@@ -1031,6 +1068,7 @@ fn tactic_certificate_rejects_smart_tactics_in_nested_control_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_checks_structural_induction_arms() {
     let tactics = [ProofTactic::StructuralInduct {
         parameter: "xs".to_string(),
@@ -1060,6 +1098,7 @@ fn tactic_certificate_checks_structural_induction_arms() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_treats_an_omitted_nested_proof_as_solve() {
     let tactics = [ProofTactic::Have(ProofHave {
         proposition: ClickProposition::Comparison {
@@ -1090,6 +1129,7 @@ fn tactic_certificate_treats_an_omitted_nested_proof_as_solve() {
 /// no certificate can hold it. The retained step is `close_invariants() by`,
 /// which carries that planned body explicitly.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_09")]
 fn tactic_certificate_rejects_a_bare_invariant_closure() {
     let error = ProofCertificate::from_proof_tactics(&[ProofTactic::CloseInvariants])
         .expect_err("a bare invariant closure cannot be a certificate leaf");
@@ -1106,6 +1146,7 @@ fn tactic_certificate_rejects_a_bare_invariant_closure() {
 /// `from_steps` refuses it exactly as `from_proof_tactics` refuses an omitted
 /// `preserve by`.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
 fn step_certificate_rejects_a_loop_step_with_an_unplanned_phase() {
     let complete = CertificateStructuralClause {
         region: CodeRegion::Loop(0),
@@ -1170,6 +1211,7 @@ const ORDERED_PAIR_CLICK: &str = r#"
 "#;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
 fn smart_have_splits_an_unfolded_predicate_conjunction_goal() {
     // The `have`'s smart `solve` closes a predicate body that unfolds to a
     // conjunction of scalar bounds. The constructed certificate must split
@@ -1186,6 +1228,7 @@ fn smart_have_splits_an_unfolded_predicate_conjunction_goal() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
 fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
     // After the call to `reset`, the fact `pair->low == 0` is recorded
     // against the call's post-state snapshot; the later store to
@@ -1250,6 +1293,7 @@ fn fixed_state_have_certifies_a_post_call_fact_across_a_later_store() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_10")]
 fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
     // The final `solve` certifies `ordered_pair(pair)` while `unfold` is
     // active, so the kernel goal is already the body conjunction while the
@@ -1294,6 +1338,7 @@ fn grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_11")]
 fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
     for (spelling, region) in [
         (
@@ -1326,6 +1371,7 @@ fn parses_execute_until_assignment_and_preserves_same_spelled_labels() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by control_batch_11")]
 fn parses_execute_until_read_and_preserves_read_labels() {
     for (spelling, region) in [
         ("read(2)", CodeRegionRef::Read(2)),
@@ -1344,4 +1390,80 @@ fn parses_execute_until_read_and_preserves_read_labels() {
             ProofTactic::ExecuteUntil(region)
         );
     }
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "control_and_certificates.rs",
+    marker: "control_batch_",
+    control_batch_00: [
+        assumption_closes_rewritten_native_int32_nonzero,
+        assumption_closes_rewritten_native_uint32_nonzero,
+        assumption_closes_rewritten_native_int64_nonzero,
+        assumption_closes_rewritten_native_uint64_nonzero,
+    ],
+    control_batch_01: [
+        integer_rewrite_reaches_nested_native_int32_bounds,
+        integer_rewrite_reaches_nested_native_uint32_bounds,
+        integer_rewrite_reaches_nested_native_int64_bounds,
+        integer_rewrite_reaches_nested_native_uint64_bounds,
+    ],
+    control_batch_02: [
+        rewritten_remainder_goals_synthesize_through_both,
+        rewritten_quotient_goals_synthesize_through_both,
+        conditional_quotient_claim_reuses_its_checked_domain,
+        conditional_quotient_claim_keeps_its_domain_in_expansion,
+    ],
+    control_batch_03: [
+        integer_certificate_keeps_negative_observation_bounds_when_adding,
+        relation_transport_certificate_matches_its_native_cast_conclusion,
+        both_and_proves_exact_conjuncts_and_rejects_incomplete_arms,
+        both_and_outcome_expands_and_rechecks,
+    ],
+    control_batch_04: [
+        parses_frontier_branch_tactic,
+        parses_frontier_branch_ensuring_interface,
+        linear_frontier_branch_uses_the_checked_structural_join,
+        terminal_frontier_branch_seals_without_a_body_rerun,
+    ],
+    control_batch_05: [
+        successive_shared_continuation_branches_seal_without_path_multiplication,
+        decided_frontier_branch_retains_the_only_feasible_checked_arm,
+        rejects_removed_reach_tactic,
+        empty_proof_if_branches_contribute_only_their_case_split,
+    ],
+    control_batch_06: [
+        parses_execute_until_proof_tactic,
+        parses_unfold_proof_tactic,
+        parses_apply_theorem_proof_tactic,
+        parses_apply_theorem_with_explicit_premises,
+    ],
+    control_batch_07: [
+        parses_transport_with_explicit_premises,
+        parses_and_classifies_simple_and_smart_tactics,
+        canonical_tactic_printer_round_trips_nested_surface_certificate,
+        canonical_tactic_printer_round_trips_cases_certificate,
+    ],
+    control_batch_08: [
+        proof_certificate_round_trips_nested_surface_steps,
+        proof_certificate_has_no_smart_step_variant,
+        tactic_certificate_accepts_only_simple_tactics,
+        tactic_certificate_rejects_a_direct_smart_tactic,
+    ],
+    control_batch_09: [
+        tactic_certificate_rejects_smart_tactics_in_nested_control_tactics,
+        tactic_certificate_checks_structural_induction_arms,
+        tactic_certificate_treats_an_omitted_nested_proof_as_solve,
+        tactic_certificate_rejects_a_bare_invariant_closure,
+    ],
+    control_batch_10: [
+        step_certificate_rejects_a_loop_step_with_an_unplanned_phase,
+        smart_have_splits_an_unfolded_predicate_conjunction_goal,
+        fixed_state_have_certifies_a_post_call_fact_across_a_later_store,
+        grouped_outcome_solve_splits_an_unfold_active_conjunction_ensure,
+    ],
+    control_batch_11: [
+        parses_execute_until_assignment_and_preserves_same_spelled_labels,
+        parses_execute_until_read_and_preserves_read_labels,
+    ],
 }

@@ -453,6 +453,68 @@ pub(in crate::kernel) fn element_index_from_offset(
     }
 }
 
+/// The same residue extraction retaining shared index operands. Native-output
+/// callers keep `element_index_from_offset`; evidence checking uses this view.
+pub(in crate::kernel) fn shared_element_index_from_offset(
+    offset: &PointerOffsetTerm,
+    element_width: u32,
+) -> Option<crate::kernel::SharedMachineIntegerTerm> {
+    use crate::kernel::{
+        KernelTerm, MachineBinaryOp as B, MachineIntegerType as T, SharedMachineIntegerTerm as S,
+    };
+    if element_width == 0 {
+        return None;
+    }
+    let constant = |n: u32| S::index(T::Int32, MachineTerm::constant(n));
+    let root = |v: &S| KernelTerm::retained_machine_operand(T::Int32, v.operand_view());
+    match offset {
+        PointerOffsetTerm::Add(a, b) => {
+            if a.as_ref() == &PointerOffsetTerm::Constant(0) {
+                return shared_element_index_from_offset(b, element_width);
+            }
+            if b.as_ref() == &PointerOffsetTerm::Constant(0) {
+                return shared_element_index_from_offset(a, element_width);
+            }
+            let a = shared_element_index_from_offset(a, element_width)?;
+            let b = shared_element_index_from_offset(b, element_width)?;
+            S::from_shared(
+                T::Int32,
+                crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+                    T::Int32,
+                    B::Add,
+                    root(&a),
+                    root(&b),
+                ),
+            )
+        }
+        PointerOffsetTerm::Int32Scaled { value, byte_width }
+            if *byte_width == i64::from(element_width) =>
+        {
+            Some(value.clone())
+        }
+        PointerOffsetTerm::Int32Scaled { value, byte_width } if element_width == 1 => {
+            let width = u32::try_from(*byte_width).ok()?;
+            match width {
+                0 => Some(constant(0)),
+                1 => Some(value.clone()),
+                _ => S::from_shared(
+                    T::Int32,
+                    KernelTerm::machine_binary_shared(
+                        T::Int32,
+                        B::Multiply,
+                        [root(value), root(&constant(width))],
+                    ),
+                ),
+            }
+        }
+        PointerOffsetTerm::Constant(bytes) if bytes % i64::from(element_width) == 0 => {
+            let n = bytes / i64::from(element_width);
+            i32::try_from(n).ok().map(|n| constant(n as u32))
+        }
+        _ => None,
+    }
+}
+
 pub(in crate::kernel) fn int32_element_index_from_offset(
     offset: &PointerOffsetTerm,
 ) -> Option<MachineTerm> {
@@ -1110,7 +1172,7 @@ pub(in crate::kernel) fn single_scaled_index_equal_to_constant<'term>(
     }
     i32::try_from(delta / stride)
         .ok()
-        .map(|element| (*index, element))
+        .map(|element| (index.structural_value(), element))
 }
 
 pub(in crate::kernel) fn add_proof_obligation(
