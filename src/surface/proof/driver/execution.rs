@@ -2143,8 +2143,11 @@ fn try_check_structural_function_proof_inner<'a>(
                     expanded_execution_if_steps(then_branch, else_branch)
                     && proof.frontier_is_execution_branch(condition)?
                 {
-                    proof =
-                        proof.apply_expanded_execution_if(condition, &then_steps, &else_steps)?;
+                    proof = proof.driver().apply_expanded_execution_if(
+                        condition,
+                        &then_steps,
+                        &else_steps,
+                    )?;
                     saw_structure = true;
                     current = continuation;
                     continue;
@@ -2962,8 +2965,11 @@ pub(in crate::surface::proof) fn advance_preservation_region<'a, 'node>(
                     expanded_execution_if_steps(then_branch, else_branch)
                     && proof.frontier_is_execution_branch(condition)?
                 {
-                    let advanced =
-                        proof.apply_expanded_execution_if(condition, &then_steps, &else_steps)?;
+                    let advanced = proof.driver().apply_expanded_execution_if(
+                        condition,
+                        &then_steps,
+                        &else_steps,
+                    )?;
                     proof = advanced;
                     node = continuation;
                     last_tactic = Some((*index, "if"));
@@ -4316,6 +4322,7 @@ fn advance_focused_execution_region_with_branch_continuation<'a>(
                     && proof_at_if.frontier_is_execution_branch(condition)?
                 {
                     proof = proof_at_if
+                        .driver()
                         .apply_expanded_execution_if(condition, &then_steps, &else_steps)?
                         .restore_execution_tactic_attribution(&owner)?;
                     region = continuation;
@@ -5158,7 +5165,10 @@ fn advance_checked_open_scope<'a>(
             expanded_execution_if_steps(then_branch, else_branch)
         && scope.frontier_is_execution_branch(condition)?
     {
-        let scope = scope.apply_expanded_execution_if(condition, &then_steps, &else_steps)?;
+        let scope =
+            scope
+                .driver()
+                .apply_expanded_execution_if(condition, &then_steps, &else_steps)?;
         return advance_checked_open_scope(
             scope,
             continuation,

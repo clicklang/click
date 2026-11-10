@@ -392,15 +392,11 @@ impl<'a> ProofScope<'a> {
         self.body.frontier_is_execution_branch(surface_condition)
     }
 
-    pub(in crate::surface::proof) fn apply_expanded_execution_if(
+    /// Incorporate the direct branch successor after the driver runs its arms.
+    pub(in crate::surface::proof) fn with_completed_execution_if(
         &self,
-        condition: &ClickProposition,
-        then_steps: &[ProofStep],
-        else_steps: &[ProofStep],
+        body: Proof<'a>,
     ) -> Result<Self, ClickError> {
-        let body = self
-            .body
-            .apply_expanded_execution_if(condition, then_steps, else_steps)?;
         let Some(parent) = body.node.parent.as_ref() else {
             return Err(self
                 .root

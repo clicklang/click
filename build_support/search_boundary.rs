@@ -76,7 +76,18 @@ impl Boundary<'_> {
                         | "close_open_scope_from"
                         | "join_nested"
                         | "join_nested_result"
-                )))
+                ))
+            || (self.path == "src/surface/proof/proof_object/execution_joins.rs"
+                && matches!(
+                    self.function.as_str(),
+                    "split_focused_execution_branch_with"
+                        | "focus_expanded_execution_arm_entry"
+                        | "join_focused_execution_split"
+                        | "execution_frontier_cases"
+                        | "execution_frontier_is_switch"
+                ))
+            || (self.path == "src/surface/proof/proof_object/splits_and_scopes.rs"
+                && self.function == "split_focused_execution_if"))
             && (matches!(name, "ProofDriver" | "ProofSearch" | "DriveProof")
                 || proof_search_boundary::TARGETS
                     .lines()
@@ -89,6 +100,13 @@ impl Boundary<'_> {
                 "{}: {} must report obligations, not schedule proofs or search ({name})",
                 self.path, self.function
             ));
+        }
+        if self.path == "src/surface/proof/proof_object/splits_and_scopes.rs"
+            && self.function == "apply_execution_if_with"
+            && matches!(name, "FnOnce" | "apply_then" | "apply_else")
+        {
+            self.errors
+                .push("execution branch primitives must not run proof-script callbacks".into());
         }
         if self.path == "src/surface/proof/driver/obligations.rs"
             && self.function == "prove_obligations_by_solve_or_name_the_first_missed"

@@ -3,6 +3,21 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Interpret an expanded branch, then retain its direct checked successor.
+    pub(in crate::surface::proof) fn apply_expanded_execution_if(
+        &self,
+        condition: &ClickProposition,
+        then_steps: &[ProofStep],
+        else_steps: &[ProofStep],
+    ) -> Result<ProofScope<'a>, ClickError> {
+        let body = self
+            .proof
+            .body
+            .driver()
+            .apply_expanded_execution_if(condition, then_steps, else_steps)?;
+        self.proof.with_completed_execution_if(body)
+    }
+
     /// Schedule a resource close's outstanding body fact, retaining its proof
     /// as the open scope's `by`. The primitive close only reports obligations.
     pub(in crate::surface::proof) fn complete_scope(&self) -> Result<Proof<'a>, ClickError> {

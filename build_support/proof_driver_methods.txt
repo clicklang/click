@@ -59,3 +59,7 @@ try_solve_closure_with_surfaces
 try_split_source_successor_if
 with_proved_lowering_requirements
 split_outcome_paths
+apply_execution_if_within
+apply_execution_branch_within
+apply_focused_expanded_execution_arm
+apply_expanded_execution_if
