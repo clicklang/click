@@ -1023,7 +1023,7 @@ mod forget_cached_values_tests {
         let mut memory = CMemory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
-            .insert(base.clone(), MachineTerm::constant(8));
+            .insert(base.clone(), HeapExtent::int32(8));
         heap.zeroed_allocations.insert(base.clone());
         let memory = memory.store(base.clone(), int32(9));
         (memory, base)
@@ -1099,7 +1099,7 @@ mod forget_cached_values_tests {
         let mut memory = CMemory::new().with_block(base.block.clone(), 16);
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.live_allocations
-            .insert(base.clone(), MachineTerm::constant(16));
+            .insert(base.clone(), HeapExtent::int32(16));
         heap.zeroed_allocations.insert(base.clone());
         let facts = PureFactContext::new();
         // A byte at offset 5 lies inside the four bytes at 4 and the eight
@@ -1136,7 +1136,7 @@ mod forget_cached_values_tests {
         let mut untouched = CMemory::new().with_block(base.block.clone(), 8);
         let heap = std::sync::Arc::make_mut(&mut untouched.heap);
         heap.live_allocations
-            .insert(base.clone(), MachineTerm::constant(8));
+            .insert(base.clone(), HeapExtent::int32(8));
         heap.zeroed_allocations.insert(base.clone());
         let arms = [&wrote, &untouched];
         let from_wrote = wrote
@@ -2118,7 +2118,7 @@ impl CLocalEnvironment {
 impl CBlock {
     pub fn new(size: u32) -> Self {
         Self {
-            size: MachineTerm::constant(size),
+            size: HeapExtent::int32(size),
             read_only: false,
             declared_scalar_type: None,
             declared_class: None,
@@ -2127,14 +2127,14 @@ impl CBlock {
 
     pub fn read_only(size: u32) -> Self {
         Self {
-            size: MachineTerm::constant(size),
+            size: HeapExtent::int32(size),
             read_only: true,
             declared_scalar_type: None,
             declared_class: None,
         }
     }
 
-    pub(in crate::kernel) fn with_symbolic_size(size: MachineTerm) -> Self {
+    pub(in crate::kernel) fn with_symbolic_size(size: HeapExtent) -> Self {
         Self {
             size,
             read_only: false,
@@ -2143,7 +2143,13 @@ impl CBlock {
         }
     }
 
+    /// The block's byte count. A comparison whose width matters reads it
+    /// through [`Self::extent`].
     pub fn size(&self) -> &MachineTerm {
+        self.size.bytes()
+    }
+
+    pub fn extent(&self) -> &HeapExtent {
         &self.size
     }
 
@@ -3572,17 +3578,17 @@ impl CMemory {
                 CMemoryDerivation::HeapFreed {
                     base,
                     allocation_base: pointer.clone(),
-                    bytes: bytes.clone(),
+                    bytes: bytes.bytes().clone(),
                 },
             );
         }
         Ok((self, pointer_frames))
     }
 
-    pub(in crate::kernel) fn live_heap_block_size(
+    pub(in crate::kernel) fn live_heap_block_extent(
         &self,
         pointer: &Pointer,
-    ) -> Option<&MachineTerm> {
+    ) -> Option<&HeapExtent> {
         self.heap.live_allocations.get(pointer)
     }
 
@@ -3826,10 +3832,11 @@ impl CMemory {
     pub(in crate::kernel) fn with_heap_allocation_claim(
         mut self,
         base: Pointer,
-        bytes: impl Into<MachineTerm>,
+        bytes: HeapExtent,
     ) -> Option<Self> {
-        let bytes = bytes.into();
-        if bytes.as_const() == Some(0) || self.heap.deallocated_allocations.contains_key(&base) {
+        if bytes.bytes().as_const() == Some(0)
+            || self.heap.deallocated_allocations.contains_key(&base)
+        {
             return None;
         }
         match self.heap.live_allocations.get(&base) {
@@ -3937,7 +3944,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_pending_heap_allocation(
         self,
         base: Pointer,
-        bytes: MachineTerm,
+        bytes: HeapExtent,
         zeroed: bool,
     ) -> Self {
         self.with_pending_typed_heap_allocation(base, bytes, zeroed, None)
@@ -3946,7 +3953,7 @@ impl CMemory {
     pub(in crate::kernel) fn with_pending_typed_heap_allocation(
         mut self,
         base: Pointer,
-        bytes: MachineTerm,
+        bytes: HeapExtent,
         zeroed: bool,
         object_class: Option<crate::kernel::effective_type::CAccessClass>,
     ) -> Self {
@@ -3970,7 +3977,7 @@ impl CMemory {
                 CMemoryDerivation::HeapAllocationPending {
                     base: prior,
                     allocation_base: base,
-                    bytes,
+                    bytes: bytes.bytes().clone(),
                 },
             );
         }
@@ -3981,7 +3988,7 @@ impl CMemory {
         mut self,
         base: Pointer,
         old_pointer: Pointer,
-        old_bytes: MachineTerm,
+        old_bytes: HeapExtent,
         zeroed_prefix: Option<MachineTerm>,
         copied_cells: Vec<(PointerOffsetTerm, CValue)>,
         initialized_prefix: Vec<(i64, u32)>,
@@ -4005,7 +4012,7 @@ impl CMemory {
             vec![
                 CValue::pointer(base.clone()),
                 CValue::pointer(old_pointer.clone()),
-                CValue::Int32(old_bytes.clone()),
+                old_bytes.token_value(),
             ],
         );
         self
@@ -4129,7 +4136,7 @@ impl CMemory {
         mut self,
         base: &Pointer,
         succeeds: bool,
-    ) -> Option<(Self, MachineTerm, Pointer)> {
+    ) -> Option<(Self, HeapExtent, Pointer)> {
         let prior = Some(intern_derivation_base(&mut self));
         let bytes = std::sync::Arc::make_mut(&mut self.heap)
             .pending_allocations
@@ -4173,7 +4180,7 @@ impl CMemory {
                     CMemoryDerivation::HeapAllocated {
                         base: prior,
                         block: resolved_base.block.clone(),
-                        bytes: bytes.clone(),
+                        bytes: bytes.bytes().clone(),
                     },
                 );
             }
@@ -4191,7 +4198,7 @@ impl CMemory {
         base: &Pointer,
         succeeds: bool,
         assumptions: &PureFactContext,
-    ) -> Option<(Self, MachineTerm, Pointer, CPendingReallocation)> {
+    ) -> Option<(Self, HeapExtent, Pointer, CPendingReallocation)> {
         let diagnostic_base = self.clone();
         let pending = std::sync::Arc::make_mut(&mut self.heap)
             .pending_reallocations
@@ -4216,7 +4223,7 @@ impl CMemory {
                     .remove(&resolved_base);
                 if zeroed_prefix
                     .as_const()
-                    .zip(bytes.as_const())
+                    .zip(bytes.bytes().as_const())
                     .is_some_and(|(prefix, bytes)| prefix == bytes)
                 {
                     std::sync::Arc::make_mut(&mut memory.heap)
@@ -4595,9 +4602,13 @@ impl CMemory {
                 .iter()
                 .map(|memory| {
                     if memory.heap.zeroed_allocations.contains(base) {
-                        memory.heap.live_allocations.get(base).cloned()
+                        memory
+                            .heap
+                            .live_allocations
+                            .get(base)
+                            .map(HeapExtent::bytes)
                     } else {
-                        memory.heap.zeroed_prefix_allocations.get(base).cloned()
+                        memory.heap.zeroed_prefix_allocations.get(base)
                     }
                 })
                 .collect::<Option<Vec<_>>>();
@@ -4605,7 +4616,7 @@ impl CMemory {
                 continue;
             };
             let Some(prefixes) = prefixes
-                .iter()
+                .into_iter()
                 .map(MachineTerm::as_const)
                 .collect::<Option<Vec<_>>>()
             else {
@@ -7155,7 +7166,7 @@ impl CMemory {
     pub(in crate::kernel) fn read_region_identity(&self, base: &Pointer) -> ReadRegionIdentity {
         crate::instrumentation::record_deterministic_work(1);
         ReadRegionIdentity {
-            block_size: self.block_size(&base.block).cloned(),
+            block_size: self.block_extent(&base.block).cloned(),
             local_lifetime_ended: self.forgotten.ended_local_blocks.contains(&base.block),
             heap: self.heap.clone(),
         }
@@ -7176,6 +7187,11 @@ impl CMemory {
 
     pub(in crate::kernel) fn block_size(&self, block: &PointerBlock) -> Option<&MachineTerm> {
         self.blocks.get(block).map(CBlock::size)
+    }
+
+    /// The block's byte count with its format; see [`CBlock::extent`].
+    pub(in crate::kernel) fn block_extent(&self, block: &PointerBlock) -> Option<&HeapExtent> {
+        self.blocks.get(block).map(CBlock::extent)
     }
 
     /// Whether some allocation this snapshot has already freed may contain
@@ -8515,7 +8531,7 @@ impl CState {
     pub(in crate::kernel) fn population_storage_created_here(&self, pointer: &Pointer) -> bool {
         pointer.offset == PointerOffsetTerm::Constant(0)
             && (matches!(&pointer.block, PointerBlock::Heap(_))
-                && self.memory.live_heap_block_size(pointer).is_some()
+                && self.memory.live_heap_block_extent(pointer).is_some()
                 || pointer.block.is_local_block() && self.memory.has_block(&pointer.block))
             && self
                 .population_effects
@@ -8572,7 +8588,7 @@ impl CState {
         if !imported_retirement
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                    && self.memory.live_heap_block_size(anchor).is_some()
+                    && self.memory.live_heap_block_extent(anchor).is_some()
                     || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for authority(R(p))".into());
@@ -8704,7 +8720,7 @@ impl CState {
         if !imported_member_exchange
             && (anchor.offset != PointerOffsetTerm::Constant(0)
                 || !(matches!(&anchor.block, PointerBlock::Heap(_))
-                    && self.memory.live_heap_block_size(anchor).is_some()
+                    && self.memory.live_heap_block_extent(anchor).is_some()
                     || anchor.block.is_local_block() && self.memory.has_block(&anchor.block)))
         {
             return Err("Requires live base storage for R(p)".into());
@@ -9748,7 +9764,7 @@ mod contract_retirement_tests {
             ))
         });
         let mut memory = CMemory::new()
-            .with_heap_allocation_claim(base.clone(), 4)
+            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
             .expect("fresh input allocation");
         let heap = std::sync::Arc::make_mut(&mut memory.heap);
         heap.zeroed_allocations.extend(aliases.iter().cloned());
@@ -9821,7 +9837,7 @@ mod interface_join_tombstone_tests {
         // Arm B kept it live.
         let alive = CMemory::new()
             .with_block(base.block.clone(), 8)
-            .with_heap_allocation_claim(base.clone(), 8)
+            .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
             .expect("fresh allocation on arm B");
         // Arm A freed it.
         let freed = alive
@@ -9869,11 +9885,11 @@ mod join_allocation_spelling_tests {
     fn joined(p: &Pointer, q: &Pointer) -> CMemory {
         let arm_a = CMemory::new()
             .with_block(p.block.clone(), 8)
-            .with_heap_allocation_claim(p.clone(), 8)
+            .with_heap_allocation_claim(p.clone(), HeapExtent::int32(8))
             .expect("arm A claim");
         let arm_b = CMemory::new()
             .with_block(q.block.clone(), 8)
-            .with_heap_allocation_claim(q.clone(), 8)
+            .with_heap_allocation_claim(q.clone(), HeapExtent::int32(8))
             .expect("arm B claim");
         let arms = [&arm_a, &arm_b];
         let joined = arm_a

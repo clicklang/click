@@ -54,6 +54,8 @@ impl Proposition {
 mod bool_sort;
 mod contracts;
 #[cfg(test)]
+mod heap_extent_tests;
+#[cfg(test)]
 mod memory_construction_tests;
 mod statement_clone;
 #[cfg(test)]
@@ -8311,7 +8313,7 @@ impl CMemory {
 /// snapshot where its block is still live.
 #[derive(Clone)]
 pub(in crate::kernel) struct ReadRegionIdentity {
-    block_size: Option<MachineTerm>,
+    block_size: Option<HeapExtent>,
     local_lifetime_ended: bool,
     heap: Arc<CHeapMemory>,
 }
@@ -8486,10 +8488,167 @@ impl PartialOrd for CMemory {
     }
 }
 
+/// The machine format of a memory block's byte count
+/// (`design/heap-extents.md`, decision D1).
+///
+/// `Int32` is a 32-bit byte count in `0..=INT32_MAX`, on which its signed
+/// and unsigned readings agree: every block but a heap block with a symbolic
+/// 64-bit (`size_t`) size. `UInt64` is an unsigned 64-bit byte count, at
+/// most `PTRDIFF_MAX` when admitted; its `allocation` token holds a `uint64`
+/// and its owned range is wide ([`RangeIndexKind::UInt64`]). No allocation
+/// creates a `UInt64` extent yet.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub enum HeapExtentKind {
+    Int32,
+    UInt64,
+}
+
+/// A memory block's byte count together with its format.
+///
+/// Equality and ordering compare the kind after the bytes. Hashing and
+/// `Debug` of an `Int32` extent are exactly those of its byte term, so
+/// snapshot hashes (which name symbolic loads and order forgotten snapshots)
+/// and traces of every 32-bit block are those of the untagged term; a
+/// `UInt64` extent hashes and prints its kind as well.
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+pub struct HeapExtent {
+    bytes: MachineTerm,
+    kind: HeapExtentKind,
+}
+
+impl std::hash::Hash for HeapExtent {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.bytes.hash(state);
+        if self.kind != HeapExtentKind::Int32 {
+            self.kind.hash(state);
+        }
+    }
+}
+
+impl std::fmt::Debug for HeapExtent {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            HeapExtentKind::Int32 => self.bytes.fmt(formatter),
+            HeapExtentKind::UInt64 => formatter.debug_tuple("UInt64").field(&self.bytes).finish(),
+        }
+    }
+}
+
+impl HeapExtent {
+    pub fn new(bytes: MachineTerm, kind: HeapExtentKind) -> Self {
+        Self { bytes, kind }
+    }
+
+    /// A 32-bit byte count in `0..=INT32_MAX`.
+    pub fn int32(bytes: impl Into<MachineTerm>) -> Self {
+        Self::new(bytes.into(), HeapExtentKind::Int32)
+    }
+
+    pub fn bytes(&self) -> &MachineTerm {
+        &self.bytes
+    }
+
+    pub fn kind(&self) -> HeapExtentKind {
+        self.kind
+    }
+
+    /// The same kind of extent over rewritten bytes.
+    pub(crate) fn map_bytes(&self, rewrite: impl FnOnce(&MachineTerm) -> MachineTerm) -> Self {
+        Self::new(rewrite(&self.bytes), self.kind)
+    }
+
+    /// The `allocation` token's byte-count argument: an `int32` or a `uint64`.
+    pub(crate) fn token_value(&self) -> CValue {
+        match self.kind {
+            HeapExtentKind::Int32 => CValue::Int32(self.bytes.clone()),
+            HeapExtentKind::UInt64 => CValue::UInt64(self.bytes.clone()),
+        }
+    }
+
+    /// The extent an `allocation` token's byte-count argument states.
+    pub(crate) fn from_token_value(value: &CValue) -> Option<Self> {
+        match value {
+            CValue::Int32(bytes) => Some(Self::int32(bytes.clone())),
+            CValue::UInt64(bytes) => Some(Self::new(bytes.clone(), HeapExtentKind::UInt64)),
+            _ => None,
+        }
+    }
+
+    /// The byte count as an unsigned 64-bit value: a 32-bit extent zero
+    /// extended (it is nonnegative), a 64-bit one as it is.
+    pub(crate) fn uint64_bytes(&self) -> MachineTerm {
+        match self.kind {
+            HeapExtentKind::Int32 => MachineTerm::uint64_from_32(self.bytes.clone()),
+            HeapExtentKind::UInt64 => self.bytes.clone(),
+        }
+    }
+
+    /// The byte count as a signed 64-bit value: a 32-bit extent zero
+    /// extended, a 64-bit one reinterpreted (it is at most `PTRDIFF_MAX`).
+    pub(crate) fn int64_bytes(&self) -> MachineTerm {
+        match self.kind {
+            HeapExtentKind::Int32 => MachineTerm::int64_from_uint32(self.bytes.clone()),
+            HeapExtentKind::UInt64 => MachineTerm::int64_from_uint64_bits(self.bytes.clone()),
+        }
+    }
+
+    /// The byte count as a 32-bit word, for a 32-bit extent only. A 32-bit
+    /// comparison against a 64-bit extent has no meaning.
+    pub(crate) fn int32_bytes(&self) -> Option<&MachineTerm> {
+        (self.kind == HeapExtentKind::Int32).then_some(&self.bytes)
+    }
+
+    /// A constant byte count in this extent's format.
+    pub(crate) fn constant(&self, bytes: u32) -> MachineTerm {
+        match self.kind {
+            HeapExtentKind::Int32 => MachineTerm::constant(bytes),
+            HeapExtentKind::UInt64 => MachineTerm::uint64_constant(u64::from(bytes)),
+        }
+    }
+
+    /// `left <= right` over unsigned values of this extent's format.
+    pub(crate) fn unsigned_less_equal(
+        &self,
+        left: MachineTerm,
+        right: MachineTerm,
+    ) -> ConditionTerm {
+        match self.kind {
+            HeapExtentKind::Int32 => ConditionTerm::unsigned_less_equal(left, right),
+            HeapExtentKind::UInt64 => ConditionTerm::uint64_less_equal(left, right),
+        }
+    }
+
+    /// The range `base[0..count]` of `element_width`-byte elements in this
+    /// extent's index kind; `count` is in the extent's format.
+    pub(crate) fn range(
+        &self,
+        base: Pointer,
+        count: MachineTerm,
+        element_width: u32,
+    ) -> CMemoryRange {
+        match self.kind {
+            HeapExtentKind::Int32 => CMemoryRange::new_with_element_width(
+                base,
+                MachineTerm::constant(0),
+                count,
+                element_width,
+            ),
+            HeapExtentKind::UInt64 => {
+                CMemoryRange::new_wide(base, MachineTerm::uint64_constant(0), count, element_width)
+            }
+        }
+    }
+
+    /// The block's complete byte range, `base[0..bytes]`.
+    pub(crate) fn byte_range(&self, base: Pointer) -> CMemoryRange {
+        self.range(base, self.bytes.clone(), 1)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub(super) struct CPendingReallocation {
     pub(super) old_pointer: Pointer,
-    pub(super) old_bytes: MachineTerm,
+    pub(super) old_bytes: HeapExtent,
     /// Bytes at the start of the new block that retain calloc's guaranteed
     /// zero value. A prefix equal to the new allocation size means the whole
     /// block is zeroed; a shorter prefix leaves the grown tail uninitialized.
@@ -8508,15 +8667,15 @@ pub(super) struct CPendingReallocation {
 pub(super) struct CHeapMemory {
     /// Live heap blocks are also present in `blocks`; this set distinguishes
     /// them from automatic storage and memory-havoc markers.
-    pub(super) live_allocations: SnapshotMap<Pointer, MachineTerm>,
+    pub(super) live_allocations: SnapshotMap<Pointer, HeapExtent>,
     /// Heap identities are never reused within a proof. These are semantic
     /// tombstones for double-free and stale-pointer diagnostics, not
     /// resources or surviving allocation authority.
-    pub(super) deallocated_allocations: SnapshotMap<Pointer, MachineTerm>,
+    pub(super) deallocated_allocations: SnapshotMap<Pointer, HeapExtent>,
     /// A malloc result whose null/success outcome has not yet been refined by
     /// control flow or direct return. Pending allocations carry no authority
     /// until resolved.
-    pub(super) pending_allocations: SnapshotMap<Pointer, MachineTerm>,
+    pub(super) pending_allocations: SnapshotMap<Pointer, HeapExtent>,
     /// Object classes established by a fresh allocation's checked typed binding.
     pub(super) pending_object_classes:
         SnapshotMap<Pointer, crate::kernel::effective_type::CAccessClass>,
@@ -8686,7 +8845,7 @@ impl CHeapMemory {
 
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct CBlock {
-    pub(super) size: MachineTerm,
+    pub(super) size: HeapExtent,
     pub(super) read_only: bool,
     /// A complete automatic scalar's declared type, independent of whether
     /// its representation has been initialized. Untyped blocks and arrays

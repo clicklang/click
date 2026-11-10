@@ -129,12 +129,13 @@ fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     let live = Pointer::symbolic(Variable(990_902));
     let size = MachineTerm::constant(8);
     let mut head = CHeapMemory::default();
-    head.live_allocations.insert(live.clone(), size.clone());
+    head.live_allocations
+        .insert(live.clone(), HeapExtent::int32(size.clone()));
 
     let mut ended_elsewhere = head.clone();
     ended_elsewhere
         .deallocated_allocations
-        .insert(freed.clone(), size.clone());
+        .insert(freed.clone(), HeapExtent::int32(size.clone()));
     assert!(head.has_same_allocation_lifetimes_up_to_ended(&ended_elsewhere));
     assert!(!head.have_same_allocation_lifetimes(&ended_elsewhere));
     // The relation is not symmetric: a back edge cannot drop a tombstone
@@ -145,17 +146,19 @@ fn allocation_lifetimes_up_to_ended_admit_only_new_tombstones() {
     ended_live.live_allocations.remove(&live);
     ended_live
         .deallocated_allocations
-        .insert(live.clone(), size.clone());
+        .insert(live.clone(), HeapExtent::int32(size.clone()));
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&ended_live));
 
     let mut tombstone_for_live = head.clone();
     tombstone_for_live
         .deallocated_allocations
-        .insert(live.clone(), size.clone());
+        .insert(live.clone(), HeapExtent::int32(size.clone()));
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&tombstone_for_live));
 
     let mut allocated = head.clone();
-    allocated.live_allocations.insert(freed, size);
+    allocated
+        .live_allocations
+        .insert(freed, HeapExtent::int32(size));
     assert!(!head.has_same_allocation_lifetimes_up_to_ended(&allocated));
 }
 

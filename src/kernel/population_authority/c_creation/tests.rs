@@ -72,7 +72,7 @@ fn only_successful_real_malloc_records_creation() {
         .with_population_creation_tracking()
         .with_memory(
             CMemory::new()
-                .with_heap_allocation_claim(created.pointer().clone(), 16)
+                .with_heap_allocation_claim(created.pointer().clone(), HeapExtent::int32(16))
                 .expect("assumed allocation claim"),
         );
     assert!(!imported.population_storage_created_here(created));

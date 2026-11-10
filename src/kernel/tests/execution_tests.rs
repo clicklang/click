@@ -447,7 +447,7 @@ fn loop_back_edge_rejects_heap_and_resource_state_changes() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new()
-        .with_heap_allocation_claim(allocation.clone(), 16)
+        .with_heap_allocation_claim(allocation.clone(), HeapExtent::int32(16))
         .expect("test allocation claim should be fresh");
     let top = CState::new().with_memory(memory).with_resource_context(
         ResourceContext::new()
