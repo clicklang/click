@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_00")]
 fn omitted_ensure_proof_uses_default_prover() {
     let source = FILL3_CLICK.replace(" by solve()", "");
     let file = parse(&source).expect("sidecar should parse omitted proof clause");
@@ -10,6 +11,7 @@ fn omitted_ensure_proof_uses_default_prover() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_00")]
 fn parses_grouped_function_proof() {
     let source = r#"
             verifying "set.c";
@@ -43,6 +45,7 @@ fn parses_grouped_function_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_00")]
 fn rejects_a_grouped_proof_that_proves_no_claim() {
     let source = r#"
             verifying "identity.c";
@@ -64,6 +67,7 @@ fn rejects_a_grouped_proof_that_proves_no_claim() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_00")]
 fn a_grouped_proof_covers_only_claims_without_their_own_proof() {
     let source = r#"
             verifying "identity.c";
@@ -87,6 +91,7 @@ fn a_grouped_proof_covers_only_claims_without_their_own_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_01")]
 fn grouped_function_proof_checks_every_claim() {
     let c_source = r#"
             int32 identity(int32 value) {
@@ -117,6 +122,7 @@ fn grouped_function_proof_checks_every_claim() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_01")]
 fn grouped_function_certificates_share_finalized_specification() {
     let c_source = r#"
             int32 set(int32 p[], int32 value) {
@@ -146,6 +152,7 @@ fn grouped_function_certificates_share_finalized_specification() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_01")]
 fn grouped_solve_completes_the_proof_execution_without_a_body_rerun() {
     let c_source = r#"
             int32 set(int32 p[], int32 value) {
@@ -181,6 +188,7 @@ fn grouped_solve_completes_the_proof_execution_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_01")]
 fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
     let c_source = r#"
             int32 return_zero(int32 p[]) {
@@ -218,6 +226,7 @@ fn grouped_resource_predicate_proof_completes_without_a_body_rerun() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_02")]
 fn parses_proof_tactic_script() {
     let source = FILL3_CLICK.replace("== 2;", "== 2 by { step_until(function.exit); solve(); }");
     let file = parse(&source).expect("explicit proof script should parse");
@@ -236,6 +245,7 @@ fn parses_proof_tactic_script() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_02")]
 fn parses_composite_resource_definition() {
     let source = r#"
             abstract resource socket_open(fd: int32);
@@ -296,6 +306,7 @@ fn parses_composite_resource_definition() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_02")]
 fn parses_resource_observe_unfold_and_fold_tactics() {
     let source = r#"
             resource uncalled(flag: int32*) {
@@ -361,6 +372,7 @@ fn parses_resource_observe_unfold_and_fold_tactics() {
 /// resource argument is the call's argument, which the step binds as
 /// `out.p` when it runs.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_02")]
 fn produced_call_output_is_a_resource_unfold_target() {
     let source = r#"
             resource parent(p: int32*) {
@@ -405,6 +417,7 @@ fn produced_call_output_is_a_resource_unfold_target() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_03")]
 fn parses_resource_verb_function_clauses() {
     let source = r#"
             abstract resource socket_open(fd: int32);
@@ -502,6 +515,7 @@ fn parses_resource_verb_function_clauses() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_03")]
 fn rejects_redundant_exact_premise_forms_with_migrations() {
     let old_derive = r#"
         theorem legacy(x: int32) {
@@ -535,6 +549,7 @@ fn rejects_redundant_exact_premise_forms_with_migrations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by basic_tactics_batch_03")]
 fn rejects_c_style_click_native_binders_with_migrations() {
     for source in [
         "predicate legacy(int32 x) { x == x }",
@@ -549,4 +564,33 @@ fn rejects_c_style_click_native_binders_with_migrations() {
             error.message()
         );
     }
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "basic_tactics.rs",
+    marker: "basic_tactics_batch_",
+    basic_tactics_batch_00: [
+        omitted_ensure_proof_uses_default_prover,
+        parses_grouped_function_proof,
+        rejects_a_grouped_proof_that_proves_no_claim,
+        a_grouped_proof_covers_only_claims_without_their_own_proof,
+    ],
+    basic_tactics_batch_01: [
+        grouped_function_proof_checks_every_claim,
+        grouped_function_certificates_share_finalized_specification,
+        grouped_solve_completes_the_proof_execution_without_a_body_rerun,
+        grouped_resource_predicate_proof_completes_without_a_body_rerun,
+    ],
+    basic_tactics_batch_02: [
+        parses_proof_tactic_script,
+        parses_composite_resource_definition,
+        parses_resource_observe_unfold_and_fold_tactics,
+        produced_call_output_is_a_resource_unfold_target,
+    ],
+    basic_tactics_batch_03: [
+        parses_resource_verb_function_clauses,
+        rejects_redundant_exact_premise_forms_with_migrations,
+        rejects_c_style_click_native_binders_with_migrations,
+    ],
 }

@@ -2,6 +2,7 @@ use super::expansion_tests::mdtest_sources;
 use super::*;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
 fn transport_certificate_preserves_byte_reads_without_search() {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate_byte_read.md");
     let sources = sources
@@ -20,6 +21,7 @@ fn transport_certificate_preserves_byte_reads_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
 fn transport_certificate_preserves_pointer_read() {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate.md");
     let sources = sources
@@ -53,6 +55,7 @@ fn transport_certificate_preserves_pointer_read() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
 fn transport_certificate_transitive_and_bad_indices() {
     let source = r#"
         theorem transitive_values(x: int32*, y: int32*, z: int32*) {
@@ -81,6 +84,7 @@ fn transport_certificate_transitive_and_bad_indices() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_00")]
 fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
     for (c_type, click_type) in [("long", "int64"), ("unsigned long", "uint64")] {
         let c = format!("void write(int *dest, {c_type} *kept) {{ *dest = 1; *dest = 2; }}");
@@ -129,6 +133,7 @@ fn transport_certificate_preserves_signed_and_unsigned_64_bit_reads() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn region_footprint_refuses_unrecorded_memory_changes() {
     let _session = crate::kernel::VerificationSession::enter();
     let before = CState::new();
@@ -155,6 +160,7 @@ fn region_footprint_refuses_unrecorded_memory_changes() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn region_footprint_identity_survives_unrelated_snapshots() {
     let _session = crate::kernel::VerificationSession::enter();
     let state = CState::new();
@@ -270,27 +276,33 @@ fn check_resource_field_certificate(ty: &str) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn transport_certificate_preserves_named_resource_field() {
     check_resource_field_certificate("int32");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_01")]
 fn transport_certificate_preserves_integer_resource_field() {
     check_resource_field_certificate("Integer");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
 fn transport_certificate_preserves_wide_resource_field() {
     check_resource_field_certificate("uint64");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
 fn transport_certificate_preserves_pointer_resource_field() {
     check_resource_field_certificate("int32*");
 }
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
 fn transport_certificate_preserves_algebraic_resource_field() {
     check_resource_field_certificate("ModelValue");
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_02")]
 fn transport_certificate_resource_descriptors_follow_call_bindings() {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
     let caller = format!(
@@ -309,6 +321,7 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
 fn transport_certificate_refuses_other_or_modified_resource() {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
     let sources = sources
@@ -338,6 +351,7 @@ fn transport_certificate_refuses_other_or_modified_resource() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
 fn transport_certificate_named_resource_is_a_theorem_argument() {
     let (source, sources) = mdtest_sources("mdtests/transport_certificate_resource_field.md");
     let source = format!(
@@ -431,6 +445,7 @@ fn pointer_rejection_prefixes_expand_and_replay() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
 fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
     let (source, sources) = mdtest_sources("mdtests/preserve_step_carries_a_fact.md");
     let sources = sources
@@ -451,6 +466,7 @@ fn preserve_step_carries_a_fact_with_ordinary_rewriting() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_03")]
 fn preserve_step_supports_memory_and_resource_observations() {
     for fixture in [
         "transport_certificate_byte_read.md",
@@ -488,6 +504,7 @@ fn preserve_step_supports_memory_and_resource_observations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
 fn resource_viewability_restriction_expands_without_transport() {
     for (fixture, claim) in [
         ("viewable_restrict_memory.md", "first"),
@@ -516,6 +533,7 @@ fn resource_viewability_restriction_expands_without_transport() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
 fn viewability_transport_expands_to_ordinary_restriction() {
     let (source, sources) = mdtest_sources("mdtests/viewable_restrict_transport_expansion.md");
     let sources = sources
@@ -535,6 +553,7 @@ fn viewability_transport_expands_to_ordinary_restriction() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
 fn generic_viewability_transport_expands_to_ordinary_restriction() {
     let (source, _) = mdtest_sources("mdtests/viewable_restrict_resources.md");
     let source = source.replace(
@@ -553,6 +572,7 @@ fn generic_viewability_transport_expands_to_ordinary_restriction() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_04")]
 fn single_write_transport_expands_to_preserve_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_transport_expansion.md");
     let sources = sources
@@ -571,6 +591,7 @@ fn single_write_transport_expands_to_preserve_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
 fn single_write_resource_transport_expands_to_preserve_without_search() {
     let (source, sources) = mdtest_sources("mdtests/single_write_resource_transport_expansion.md");
     let sources = sources
@@ -586,6 +607,7 @@ fn single_write_resource_transport_expands_to_preserve_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
 fn multiple_write_transport_expands_to_ordinary_equalities() {
     let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
     let sources = sources
@@ -606,6 +628,7 @@ fn multiple_write_transport_expands_to_ordinary_equalities() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
 fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
     let (source, sources) = mdtest_sources("mdtests/multi_write_resource_transport_expansion.md");
     let sources = sources
@@ -624,6 +647,7 @@ fn multiple_write_resource_transport_expands_to_ordinary_equalities() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_05")]
 fn multiple_write_transport_rejects_changed_reads_and_invalid_separation() {
     let (source, sources) = mdtest_sources("mdtests/multi_write_transport_expansion.md");
     let c = sources[0].1.replace("*p = 1;", "*p = 1; *q = 2;");
@@ -670,6 +694,7 @@ fn inequality_transport_expands_to_preserve_rewrite_and_assumption() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
 fn inequality_transport_handles_multiple_statements_and_resource_fields() {
     let (source, sources) = mdtest_sources("mdtests/inequality_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -707,6 +732,7 @@ fn inequality_transport_handles_multiple_statements_and_resource_fields() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
 fn known_value_transport_expands_to_ordinary_steps() {
     let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
     let sources = sources
@@ -734,6 +760,7 @@ fn known_value_transport_expands_to_ordinary_steps() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
 fn known_value_transport_preserves_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/known_value_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -790,6 +817,7 @@ fn snapshot_comparison_transport_expands_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_06")]
 fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
     let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
     let sources = sources
@@ -826,6 +854,7 @@ fn snapshot_comparison_transport_retains_the_other_operands_snapshot() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
 fn snapshot_comparison_transport_handles_resource_fields_across_statements() {
     let (source, sources) = mdtest_sources("mdtests/snapshot_comparison_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -887,6 +916,7 @@ fn two_read_transport_expands_both_operands_without_search() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
 fn two_read_transport_refuses_changed_reads_and_missing_source() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     for read in ["q", "r"] {
@@ -904,6 +934,7 @@ fn two_read_transport_refuses_changed_reads_and_missing_source() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
 fn two_read_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/two_read_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -972,6 +1003,7 @@ fn conjunction_transport_expands_with_ordinary_both() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_07")]
 fn conjunction_transport_requires_both_facts_and_preservations() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     for read in ["q", "r"] {
@@ -995,6 +1027,7 @@ fn conjunction_transport_requires_both_facts_and_preservations() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_08")]
 fn conjunction_transport_handles_resources_and_multiple_statements() {
     let (source, sources) = mdtest_sources("mdtests/conjunction_transport_expansion.md");
     let c = sources[0].1.replace("*p = 0;", "*p = 0; *p = 1;");
@@ -1073,6 +1106,7 @@ fn nested_conjunction_transport_expands_and_replays() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by transport_batch_08")]
 fn nested_conjunction_transport_checks_deep_leaves_and_all_evidence() {
     let (source, files) = mdtest_sources("mdtests/nested_conjunction_transport_expansion.md");
     for read in ["q", "r", "s"] {
@@ -1456,4 +1490,62 @@ fn compound_implication_transport_crosses_multiple_statements() {
     assert!(!expanded.contains("transport("));
     assert!(!expanded.contains("transport_certificate"));
     without_implicit_solve(|| verify_c0_sources(&expanded, &files)).unwrap();
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "transport_certificates.rs",
+    marker: "transport_batch_",
+    transport_batch_00: [
+        transport_certificate_preserves_byte_reads_without_search,
+        transport_certificate_preserves_pointer_read,
+        transport_certificate_transitive_and_bad_indices,
+        transport_certificate_preserves_signed_and_unsigned_64_bit_reads,
+    ],
+    transport_batch_01: [
+        region_footprint_refuses_unrecorded_memory_changes,
+        region_footprint_identity_survives_unrelated_snapshots,
+        transport_certificate_preserves_named_resource_field,
+        transport_certificate_preserves_integer_resource_field,
+    ],
+    transport_batch_02: [
+        transport_certificate_preserves_wide_resource_field,
+        transport_certificate_preserves_pointer_resource_field,
+        transport_certificate_preserves_algebraic_resource_field,
+        transport_certificate_resource_descriptors_follow_call_bindings,
+    ],
+    transport_batch_03: [
+        transport_certificate_refuses_other_or_modified_resource,
+        transport_certificate_named_resource_is_a_theorem_argument,
+        preserve_step_carries_a_fact_with_ordinary_rewriting,
+        preserve_step_supports_memory_and_resource_observations,
+    ],
+    transport_batch_04: [
+        resource_viewability_restriction_expands_without_transport,
+        viewability_transport_expands_to_ordinary_restriction,
+        generic_viewability_transport_expands_to_ordinary_restriction,
+        single_write_transport_expands_to_preserve_without_search,
+    ],
+    transport_batch_05: [
+        single_write_resource_transport_expands_to_preserve_without_search,
+        multiple_write_transport_expands_to_ordinary_equalities,
+        multiple_write_resource_transport_expands_to_ordinary_equalities,
+        multiple_write_transport_rejects_changed_reads_and_invalid_separation,
+    ],
+    transport_batch_06: [
+        inequality_transport_handles_multiple_statements_and_resource_fields,
+        known_value_transport_expands_to_ordinary_steps,
+        known_value_transport_preserves_resource_fields_across_statements,
+        snapshot_comparison_transport_retains_the_other_operands_snapshot,
+    ],
+    transport_batch_07: [
+        snapshot_comparison_transport_handles_resource_fields_across_statements,
+        two_read_transport_refuses_changed_reads_and_missing_source,
+        two_read_transport_handles_resources_and_multiple_statements,
+        conjunction_transport_requires_both_facts_and_preservations,
+    ],
+    transport_batch_08: [
+        conjunction_transport_handles_resources_and_multiple_statements,
+        nested_conjunction_transport_checks_deep_leaves_and_all_evidence,
+    ],
 }

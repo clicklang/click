@@ -666,8 +666,8 @@ sums nextest's per-test durations while the gate runs tests in parallel.
   ordinary verification does not read, was 44% of that load. A constructor
   lookahead that scanned to the end of the file after every `x < y` was
   another 24%; it now stops at the end of the comparison's proposition, and
-  a cold load takes 242-255ms instead of 317-364ms. Batching short tests
-  (as `diagnostic_tests` does) would share the remaining load.
+  a cold load takes 242-255ms instead of 317-364ms. Short surface tests now
+  share one load per batch ("Batching short tests").
 - **mdtests (1,142 test-seconds, 5,065 files).** The slowest files take 6-12s
   each: `consumed_population_predicate_rejects_missing_consumption.md`,
   `authority_pool_control_missing_consumption.md`,
@@ -688,25 +688,44 @@ that repeat it; per-test coverage to find tests whose covered behavior a
 cheaper test already checks; and a machine-independent cost measure (work
 counters or CPU time) for the half-second rule.
 
-### Batching short diagnostic tests
+### Batching short tests
 
-With `fast-gate`, the 97 eligible cases in
-`src/surface/tests/diagnostic_tests.rs` run in batches of at most four. Each
-case starts on a fresh 8 MiB-stack thread, retaining thread-local isolation
-while sharing the existing immutable library-syntax cache across cases.
+nextest starts a process per test, and each process that verifies anything
+first parses the Click library (about 250ms in the gate's build). With
+`fast-gate`, short tests in `src/surface/tests/` therefore run in batches of
+four (five where one case would be left alone), so a batch parses the library
+once. The batched files are `diagnostic_tests.rs`, `expansion_tests.rs`,
+`surface_syntax.rs`, `contract_tests.rs`, `execution_tests.rs`,
+`loop_tests.rs`, `project_tests.rs`, `transport_certificates.rs` and the
+files under `tactic_tests/`: 1,000 cases in 253 batches.
+
+Each case starts on a fresh 8 MiB-stack thread, retaining thread-local
+isolation while sharing the immutable library-syntax cache across cases.
 Lowered environments, proof state, and certificates remain session-local.
-The original test bodies and assertions are unchanged. Individual entries
-are ignored only in `fast-gate`; ordinary and nightly builds run them normally.
+The original test bodies and assertions are unchanged. A batched test carries
+`#[cfg_attr(feature = "fast-gate", ignore = "covered by <marker>NN")]`, so it
+is ignored only in `fast-gate`; ordinary and nightly builds run it normally.
 To run one individually in a fast-gate build, select its exact name and add
 `--ignored`. Batch output names each case, its elapsed time, and any failure.
-A test checks that the batch registry covers every such ignored entry exactly
-once. New unbatched tests continue to run individually.
+
+A file's batches are declared at its end with `test_batches!`
+(`src/surface/tests.rs`), which also defines
+`batch_inventory_covers_each_ignored_case_once`: the registry must cover
+every annotated test of the file exactly once. A new test without the
+annotation runs individually; add it to a batch only if it is short. Tests
+with other attributes, a return type, or a second or more of run time were
+left individual.
 
 The half-second eligibility policy applies to individual cases, not the sum
 of a batch. Batches keep nextest's existing 30-second process containment:
 serial execution makes this an upper bound on any constituent case too.
 No verifier work limits or nextest timeouts are increased. Keep batches small
 so they distribute across CI partitions and do not hide slow cases.
+
+Measured on Claude Code cloud (4 vCPUs) at `e01ca81`, one run each: batching
+the 903 cases outside `diagnostic_tests.rs` took the unit/API suite from
+1,265 to 1,091 test-seconds and from 317s to 267s of wall clock; the slowest
+batch took 2.7s.
 
 ### Profiling markdown fixture phases
 

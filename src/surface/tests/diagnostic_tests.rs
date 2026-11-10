@@ -4402,67 +4402,10 @@ void f(int32* p) { consumes c: cell(p, 0); ensures true; } by {
     });
 }
 
-// nextest starts a process per test. Small batches reuse only immutable library
-// syntax; fresh threads retain the individual tests' thread-local isolation.
-// Non-fast builds keep the original tests. A fast-gate individual case can
-// still be selected explicitly with --ignored.
 #[cfg(feature = "fast-gate")]
-fn run_diagnostic_batch(cases: &[(&str, fn())]) {
-    for &(name, test) in cases {
-        eprintln!("diagnostic case {name} started");
-        let started = std::time::Instant::now();
-        let result = std::thread::Builder::new()
-            .name(name.to_owned())
-            .stack_size(8 * 1024 * 1024)
-            .spawn(test)
-            .expect("start diagnostic case")
-            .join();
-        if let Err(panic) = result {
-            eprintln!("diagnostic case {name} FAILED");
-            std::panic::resume_unwind(panic);
-        }
-        eprintln!(
-            "diagnostic case {name} passed in {:.3}s",
-            started.elapsed().as_secs_f64()
-        );
-    }
-}
-
-#[cfg(feature = "fast-gate")]
-macro_rules! diagnostic_batches {
-    ($($batch:ident: [$($case:ident),+ $(,)?]),+ $(,)?) => {
-        $(
-            #[test]
-            fn $batch() {
-                run_diagnostic_batch(&[$((stringify!($case), $case)),+]);
-            }
-        )+
-
-        #[test]
-        fn diagnostic_batch_inventory_covers_each_ignored_case_once() {
-            let registered = [$($(stringify!($case)),+),+];
-            let actual = registered.into_iter().collect::<std::collections::BTreeSet<_>>();
-            assert_eq!(actual.len(), registered.len(), "duplicate batched case");
-            let mut marked = false;
-            let mut expected = std::collections::BTreeSet::new();
-            for line in include_str!("diagnostic_tests.rs").lines() {
-                if line.contains("ignore = \"covered by diagnostic_batch_") {
-                    assert!(!marked, "batched-case annotation without a function");
-                    marked = true;
-                }
-                if marked && let Some(name) = line.trim().strip_prefix("fn ") {
-                    expected.insert(name.split('(').next().unwrap());
-                    marked = false;
-                }
-            }
-            assert!(!marked, "batched-case annotation without a function");
-            assert_eq!(expected, actual, "batch coverage must match the skipped individual tests");
-        }
-    };
-}
-
-#[cfg(feature = "fast-gate")]
-diagnostic_batches! {
+test_batches! {
+    file: "diagnostic_tests.rs",
+    marker: "diagnostic_batch_",
     diagnostic_batch_00: [
         implicit_tail_handles_unsigned_statement_cases_with_tracing,
         unclosed_have_script_retains_its_remaining_goal_and_introduced_premise,

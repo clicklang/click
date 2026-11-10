@@ -1,6 +1,7 @@
 use super::*;
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn loop_metadata_sees_address_escape_after_the_loop() {
     let c_source = r#"void bounded(int32 n) {
         int32 i = 0;
@@ -134,6 +135,7 @@ fn expanded_loop_phase_proofs_are_certificates() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn nested_conjunction_extraction_precedes_explicit_arithmetic_certificate() {
     let (click, sources) = loop_fixture("arithmetic_conjunction_provenance");
     let sources = borrowed_sources(&sources);
@@ -252,6 +254,7 @@ fn natural_goto_mixed_return_retains_paths_and_expands() {
 /// edge, proving the arm that holds and closing the disjunction by
 /// `assumption()`, and reverifies through the ordinary entry point.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn lexicographic_ranking_bundle_prints_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_lexicographic_loop");
     let sources = borrowed_sources(&sources);
@@ -381,6 +384,7 @@ fn promoted_integer_ranking_expands_without_search() {
 /// smart closer's expansion prints the arm it chose, and that arm is checked
 /// like any other: replacing it with the other arm is rejected.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_00")]
 fn smart_ranking_closure_expands_its_pivot_arm() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
@@ -405,6 +409,7 @@ fn smart_ranking_closure_expands_its_pivot_arm() {
 /// back edge; dropping the outer `invariant j <= m` leaves that fact in scope
 /// from the inner loop's exit, so the ranking member still closes.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
 fn smart_ranking_closure_reads_an_inequality_in_scope() {
     let (click, sources) = loop_fixture("c_decreases_nested_loop");
     let sources = borrowed_sources(&sources);
@@ -424,6 +429,7 @@ fn smart_ranking_closure_reads_an_inequality_in_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
 fn migrated_negative_loop_fixtures_reach_the_decrease_check() {
     for filename in [
         "c_decreases_rejects_bad_loop_path",
@@ -497,6 +503,7 @@ fn remaining_loop_migration_fixtures_expand_and_recheck() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
 fn loop_preservation_have_resolves_entry_label_and_expands() {
     let path =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("mdtests/loop_entry_snapshot.md");
@@ -540,6 +547,7 @@ fn pointer_loop_increment_emits_checked_equality_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_01")]
 fn grouped_arithmetic_using_expands_to_checked_certificate() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/c_grouped_contract_arithmetic_closer.md");
@@ -566,6 +574,7 @@ fn grouped_arithmetic_using_expands_to_checked_certificate() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
 fn symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planning() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/aligned_symbolic_displacement.md");
@@ -628,6 +637,7 @@ fn completed_recursive_loop_bodies_skip_legacy_preplanning_and_recheck() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
 fn explicit_straight_line_swap_transports_an_entry_bound() {
     for index in ["0", "j"] {
         let c = format!(
@@ -828,6 +838,7 @@ fn explicit_invariant_body_copy3_checks_and_expands() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
 fn frontier_local_loop_verifies_and_advances_to_exit() {
     let c_source = r#"
             int32 count_to_three() {
@@ -870,6 +881,7 @@ fn frontier_local_loop_verifies_and_advances_to_exit() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_02")]
 fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
     let c_source = r#"
         int32 count_to_three() {
@@ -933,6 +945,7 @@ fn individual_loop_proof_has_no_whole_claim_acceptance_check() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_03")]
 fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
     let c_source = r#"
             int32 initialize_with_theorem(int32 x) {
@@ -1013,6 +1026,7 @@ fn loop_initialization_theorem_search_retains_checked_fixed_state_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_03")]
 fn loop_initialization_solve_retains_checked_fixed_state_proof() {
     let c_source = r#"
             int32 initialize_by_solve(int32 x) {
@@ -1073,6 +1087,7 @@ fn loop_initialization_solve_retains_checked_fixed_state_proof() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_03")]
 fn frontier_local_loop_rejects_a_non_loop_frontier() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1110,6 +1125,7 @@ fn frontier_local_loop_rejects_a_non_loop_frontier() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_03")]
 fn frontier_loop_initialization_rejects_execution_tactics() {
     let c_source = r#"
             int32 count_once() {
@@ -1150,6 +1166,7 @@ fn frontier_loop_initialization_rejects_execution_tactics() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_04")]
 fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
     // The script stops one statement short; the rest of the body runs
     // implicitly, except that `1 / (i - 1)` may divide by zero, so the path
@@ -1195,6 +1212,7 @@ fn frontier_loop_preservation_reports_a_rest_that_does_not_run() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_04")]
 fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1232,6 +1250,7 @@ fn frontier_local_loop_verifies_a_lowered_c_for_loop() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_04")]
 fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
     let c_source = r#"
             int32 branch_count(int32 flag) {
@@ -1283,6 +1302,7 @@ fn frontier_local_loop_verifies_at_a_branch_local_frontier() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_04")]
 fn frontier_loop_binding_replaces_scope_without_merging_declarations() {
     let parsed = parse(
         r#"
@@ -1401,6 +1421,7 @@ fn frontier_local_loop_verifies_nested_loops_at_their_respective_frontiers() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
 fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
     let c_source = r#"
             int32 fill_n(int32 p[], int32 n) {
@@ -1468,6 +1489,7 @@ fn frontier_loop_step_expansion_uses_the_current_invariant_lowering() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
 fn frontier_local_loop_checks_an_optional_decreases_measure() {
     let c_source = r#"
             int32 drain(int32 n) {
@@ -1507,6 +1529,7 @@ fn frontier_local_loop_checks_an_optional_decreases_measure() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
 fn frontier_local_loop_keyword_expands_omitted_phases() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
@@ -1566,6 +1589,7 @@ fn frontier_local_loop_keyword_expands_omitted_phases() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_05")]
 fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
     let c_source = r#"
             int32 count_to_n(int32 n) {
@@ -1634,6 +1658,7 @@ fn loop_exit_solve_expands_invariant_conjuncts_explicitly() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
 fn frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1694,6 +1719,7 @@ fn frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
 fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1773,6 +1799,7 @@ fn frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
 fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate() {
     let c_source = r#"
             int32 drain(int32 n) {
@@ -1827,6 +1854,7 @@ fn frontier_local_loop_at_function_entry_keeps_initialization_capture_separate()
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_06")]
 fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location() {
     let c_source = r#"
             int32 count_to_three() {
@@ -1896,6 +1924,7 @@ fn frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location(
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
 fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
     let c_source = r#"
             int32 overshoot() {
@@ -1940,6 +1969,7 @@ fn explicit_loop_closer_cannot_bypass_proof_owned_bundle_check() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
 fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
     // The loop body ends with a C `if` whose arms fall through directly to
     // the back-edge. The preservation frontier owns exactly the body's
@@ -2026,6 +2056,7 @@ fn body_final_branch_preservation_completes_at_typed_back_edge_boundary() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
 fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
     // The negated loop guard leaves `i >= 3` at the loop's exit. The checked
     // outcome `solve` must retain a checkable proof of the *looser* bounds
@@ -2071,6 +2102,7 @@ fn frontier_local_loop_exit_bound_weakens_to_a_looser_ensures() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_07")]
 fn whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match() {
     let c_source = r#"
         int32 selected_then_loop(int32 x) {
@@ -2190,6 +2222,7 @@ fn loop_exit_duplicate_invariants_verify_and_reject_false_claims() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
 fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
     let (source, sources) = loop_fixture("loop_body_break_exit_joined_state");
     let sources = borrowed_sources(&sources);
@@ -2219,6 +2252,7 @@ fn changed_break_exit_does_not_label_head_invariants_as_exit_facts() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
 fn conditional_loop_resources_parse_print_and_resolve_scope() {
     let source = r#"
         verifying "conditional.c";
@@ -2275,6 +2309,7 @@ fn conditional_loop_resources_parse_print_and_resolve_scope() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
 fn conditional_loop_resources_reject_unsupported_binding_and_body_items() {
     for (body, expected) in [
         (
@@ -2394,6 +2429,7 @@ int32 f(int32 n) {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_08")]
 fn loop_return_closers_do_not_require_distinct_result_values() {
     let (click, sources) = loop_fixture("loop_return_closes_in_preserve_arm");
     let click = click
@@ -2446,6 +2482,7 @@ int32 f(int32 n) {
 // The source declares byte and uint64 pointer locals. Invariants must retain
 // those types even though neither local exists at function entry.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
 fn loop_local_pointer_invariants_retain_declared_element_types() {
     let (click, sources) = loop_fixture("loop_local_pointer_element_types");
     verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
@@ -2491,12 +2528,14 @@ fn loop_local_pointer_invariants_refuse_short_wide_views_and_expand() {
 // Distinct-block view rewrites already work. Frontend byte pointers use a
 // shared external block, so this catches the offset-equality representation.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
 fn byte_pointer_view_aliases_rewrite_readable_addresses() {
     let (click, sources) = loop_fixture("byte_pointer_view_alias_rewrite");
     verify_c0_sources(&click, &borrowed_sources(&sources)).unwrap();
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
 fn native_read_aliases_do_not_supply_missing_authority_or_bounds() {
     let (click, sources) = loop_fixture("native_read_retains_wide_index_beside_narrow_alias");
     let sources = borrowed_sources(&sources);
@@ -2526,6 +2565,7 @@ fn native_read_aliases_expand_and_reverify() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_09")]
 fn theorem_application_expands_with_a_recorded_historical_byte_premise() {
     let (click, sources) = loop_fixture("theorem_application_reuses_recorded_historical_premise");
     let sources = borrowed_sources(&sources);
@@ -2584,6 +2624,7 @@ fn nested_loop_cursor_views_refuse_forged_ranges_and_expand() {
 }
 
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_10")]
 fn a_loop_snapshot_is_one_entry_under_every_spelling() {
     let exit = |region| ProgramPointRef {
         region,
@@ -2622,6 +2663,7 @@ fn a_loop_snapshot_is_one_entry_under_every_spelling() {
 /// recorded memory answers with its own point, a newer point recording the
 /// same bytes takes over, and a removed point no longer answers.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_10")]
 fn recorded_snapshots_find_the_point_reading_a_memory() {
     let mark = |name: &str| SnapshotSelector::Mark(name.to_string());
     let memory = |index: u32| {
@@ -2665,6 +2707,7 @@ fn recorded_snapshots_find_the_point_reading_a_memory() {
 /// replaced, over a long sequence of binds that rebind loops, move labels
 /// between loops and change scopes.
 #[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by loop_batch_10")]
 fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
     let parsed = parse(
         r#"
@@ -2759,4 +2802,75 @@ fn indexed_structural_clauses_agree_with_the_clause_list_walks() {
             expected
         );
     }
+}
+
+#[cfg(feature = "fast-gate")]
+test_batches! {
+    file: "loop_tests.rs",
+    marker: "loop_batch_",
+    loop_batch_00: [
+        loop_metadata_sees_address_escape_after_the_loop,
+        nested_conjunction_extraction_precedes_explicit_arithmetic_certificate,
+        lexicographic_ranking_bundle_prints_its_pivot_arm,
+        smart_ranking_closure_expands_its_pivot_arm,
+    ],
+    loop_batch_01: [
+        smart_ranking_closure_reads_an_inequality_in_scope,
+        migrated_negative_loop_fixtures_reach_the_decrease_check,
+        loop_preservation_have_resolves_entry_label_and_expands,
+        grouped_arithmetic_using_expands_to_checked_certificate,
+    ],
+    loop_batch_02: [
+        symbolic_alignment_expands_to_special_certificate_and_rechecks_without_planning,
+        explicit_straight_line_swap_transports_an_entry_bound,
+        frontier_local_loop_verifies_and_advances_to_exit,
+        individual_loop_proof_has_no_whole_claim_acceptance_check,
+    ],
+    loop_batch_03: [
+        loop_initialization_theorem_search_retains_checked_fixed_state_proof,
+        loop_initialization_solve_retains_checked_fixed_state_proof,
+        frontier_local_loop_rejects_a_non_loop_frontier,
+        frontier_loop_initialization_rejects_execution_tactics,
+    ],
+    loop_batch_04: [
+        frontier_loop_preservation_reports_a_rest_that_does_not_run,
+        frontier_local_loop_verifies_a_lowered_c_for_loop,
+        frontier_local_loop_verifies_at_a_branch_local_frontier,
+        frontier_loop_binding_replaces_scope_without_merging_declarations,
+    ],
+    loop_batch_05: [
+        frontier_loop_step_expansion_uses_the_current_invariant_lowering,
+        frontier_local_loop_checks_an_optional_decreases_measure,
+        frontier_local_loop_keyword_expands_omitted_phases,
+        loop_exit_solve_expands_invariant_conjuncts_explicitly,
+    ],
+    loop_batch_06: [
+        frontier_local_loop_does_not_leak_phase_tactics_into_a_later_expansion,
+        frontier_local_loop_expands_an_explicit_nested_tactic_at_its_own_location,
+        frontier_local_loop_at_function_entry_keeps_initialization_capture_separate,
+        frontier_local_loop_expands_a_tactic_inside_preservation_at_its_own_location,
+    ],
+    loop_batch_07: [
+        explicit_loop_closer_cannot_bypass_proof_owned_bundle_check,
+        body_final_branch_preservation_completes_at_typed_back_edge_boundary,
+        frontier_local_loop_exit_bound_weakens_to_a_looser_ensures,
+        whole_claim_expansion_reconstructs_nested_decided_branch_and_loop_match,
+    ],
+    loop_batch_08: [
+        changed_break_exit_does_not_label_head_invariants_as_exit_facts,
+        conditional_loop_resources_parse_print_and_resolve_scope,
+        conditional_loop_resources_reject_unsupported_binding_and_body_items,
+        loop_return_closers_do_not_require_distinct_result_values,
+    ],
+    loop_batch_09: [
+        loop_local_pointer_invariants_retain_declared_element_types,
+        byte_pointer_view_aliases_rewrite_readable_addresses,
+        native_read_aliases_do_not_supply_missing_authority_or_bounds,
+        theorem_application_expands_with_a_recorded_historical_byte_premise,
+    ],
+    loop_batch_10: [
+        a_loop_snapshot_is_one_entry_under_every_spelling,
+        recorded_snapshots_find_the_point_reading_a_memory,
+        indexed_structural_clauses_agree_with_the_clause_list_walks,
+    ],
 }
