@@ -8930,7 +8930,23 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<Option<u32>, String> {
-        if !matches!(expression, ContractExpression::Call { .. }) {
+        // Only a declared pure function with a pointer result: a built-in
+        // conversion such as `to_int32` is not one.
+        let ContractExpression::Call { name, .. } = expression else {
+            return Ok(None);
+        };
+        if !self
+            .spec_definitions
+            .functions
+            .get(name)
+            .is_some_and(|definition| match definition.return_type() {
+                ClickType::C(c_type) => {
+                    c_type.is_pointer() || matches!(c_type, C0Type::ParameterPointer(_))
+                }
+                ClickType::CObjectPointer { .. } => true,
+                _ => false,
+            })
+        {
             return Ok(None);
         }
         Ok(self
