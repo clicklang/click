@@ -25,7 +25,7 @@ int32 unit_of(char buf[], const char* name) {
     views click::cstr::cstr_at(name, n);
     requires n < 4u64;
     ensures result == n as int32;
-}
+} by { step(snprintf, { n0: n }); }
 ```
 
 ```expect

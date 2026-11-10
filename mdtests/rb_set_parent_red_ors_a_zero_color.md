@@ -4,8 +4,8 @@ The Linux `rb_set_parent_color(node, parent, RB_RED)` stores
 `(unsigned long)parent | 0`. The node arm of a one-node `rb_at` states that
 word as the parent's address plus its color bit, with the parent aligned to 8,
 and the refold after the store must re-establish both facts at the new parent.
-An `|` with a zero constant is its other operand, and the alignment the body
-states must be decided at the refold from the facts the store left. This is
+An `|` with a zero constant is its other operand. The proof explicitly derives
+the stored word and its zero low bit from the aligned parent before refolding. This is
 the red reparenting helper on a node without subtrees, and it catches a
 bitwise-or simplification that keeps the `| 0` and a refold that cannot
 justify the parent alignment the body states.
@@ -85,6 +85,15 @@ void set_parent_red(struct rb_node* node, struct rb_node* parent) {
                 normalize();
             }
             step_until(function.exit);
+            have node->__rb_parent_color == address(parent) by solve();
+            have (address(parent) & 1) == 0u64 by {
+                solve() using { aligned(parent, 8); };
+            }
+            have node->__rb_parent_color == address(parent) + (node->__rb_parent_color & 1) by {
+                rewrite(node->__rb_parent_color == address(parent));
+                rewrite((address(parent) & 1) == 0u64);
+                normalize();
+            }
             let u = fold(rb_at(node), {
                 model: RbTree::Node(identity, parent, Color::Red, left_model, right_model)
             });

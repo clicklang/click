@@ -25,6 +25,9 @@ int caller::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures result >= y;
 }
+theorem proposed_lambda_doubles() {
+    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
@@ -32,5 +35,5 @@ int caller(int x) {
 ```
 
 ```expect
-fail: does not satisfy named contract `Doubling`
+fail: contract-refinement proof does not establish `Doubling(&caller::(lambda#0))`
 ```

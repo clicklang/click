@@ -1,9 +1,8 @@
 # A refused fold reports its body fact as the goal
 
 A fold whose proposed field makes an arm's body fact false is refused. The
-refusal's summary quotes the declared fact (`*p == value`), after its ordinal,
-and the instantiated fact it could not establish is the report's `goal:`, as
-for every other proof error.
+refusal names the instantiated obligation `*p == (4 as int32)`, using the caller's source
+names rather than the resource definition's field placeholder.
 
 ```c filename=fold_goal.c
 void probe(int32 *p) {
@@ -34,5 +33,5 @@ void probe(int32* p) {
 ```
 
 ```expect
-fail: goal: old(p[0]) == 4
+fail: unproved obligation: `*p == (4 as int32)`
 ```

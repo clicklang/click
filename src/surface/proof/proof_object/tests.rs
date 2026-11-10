@@ -4624,12 +4624,14 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
             .is_at_function_entry()
     );
 
-    // A source-backed requirement whose authoritative source entry is
+    // A nonliteral source-backed requirement whose authoritative source entry is
     // unavailable must remain an error.  In particular, a smart execution
     // caller must not turn this structured refusal into a Planning scratch
     // descendant.  The test fixture intentionally has no source-registry
     // entry for `identity`, so the checked resolver fails closed.
-    let supported = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    // A completely evaluated Boolean has its own complete literal spelling;
+    // use a comparison here so this continues to exercise missing call metadata.
+    let supported = indexed_fact(8);
     let site = std::sync::Arc::new(crate::kernel::CallRequirementSite::for_requirement(
         "identity",
         "identity",

@@ -1,6 +1,22 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: constructor pointer prerequisite expansion and cold replay"]
+fn fold_constructor_pointer_obligations_expand_and_cold_replay() {
+    let (source, sources) =
+        mdtest_sources("mdtests/fresh_heap_parent_link_read_through_named_resource.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "parent_attach").unwrap();
+    without_implicit_solve_for_claim("parent_attach.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[ignore = "nightly: initialized callback field prerequisite expansion and cold replay"]
 fn initialized_callback_field_obligations_expand_and_cold_replay() {
     let (source, sources) = mdtest_sources("mdtests/const_callback_table_abstract.md");

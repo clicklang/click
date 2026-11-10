@@ -1,9 +1,9 @@
 # A refused fold shows the hidden record it proposed
 
 `clear` stores `-1` into `p->n`, so refolding `pair(p)` from the child `c`
-fails at the body fact `p->n == first.v`. That fact reads `pair`'s hidden
-record, so the refusal shows the record the fold proposed beside the failed
-fact: `first.v` is the value the fact calls `<unnamed A>`.
+fails at the body fact `p->n == first.v`. The generated obligation names the
+selected child directly as `p->n == c.v`, exposing the value the proposed
+hidden record would use.
 
 ```c filename=a_refused_fold_shows_the_hidden_record_it_proposed.c
 struct cell { int32 value; };
@@ -42,5 +42,5 @@ void clear(struct pair* p) {
 ```
 
 ```expect
-fail: proposed fold: pair(p) record { first.v: <unnamed A> }
+fail: unproved obligation: `p->n == c.v`
 ```

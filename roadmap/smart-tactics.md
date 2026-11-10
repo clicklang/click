@@ -105,41 +105,54 @@ work items; this reconciliation changes no behavior.
 
 ### Remaining obligation generation
 
-The step/fold migration on `codex/solve-exact-first` is a **local, unlanded
-checkpoint**, not ready to publish. The broad run passed 1,770 unit, expansion,
-boundary and scaling tests, but the normal mdtest corpus reported 104
-expected-pass failures and 161 expected-error mismatches. Final focused checks
-passed all four new related/unrelated scaling controls, the new expansion
-batch and 11 repaired expansion cases. Do not update negative expectations
-until the changed refusals have been reviewed.
+The step/fold migration on `codex/solve-exact-first` remains a **local,
+unlanded checkpoint**, not ready to push. It is reconciled with upstream
+`cd487e087`. The remaining work is not just diagnostic expectations:
 
-Before landing, separate and repair these prerequisite families:
+- **Preparation contexts:** ten C++ class fixtures require facts about abstract
+  resource instances created while preparing a call. The original caller
+  frontier cannot name those instances. `cpp_class_object_state.md` is the
+  small reproduction: `total` requires bounds on the temporary object's
+  `size`. Expose the preparation's introductions and their obligations at the
+  correct point, before call effects; never use successor facts to prove a
+  precondition. `modeled_pthread_local_job_external_output.md` similarly stops
+  before the driver can discharge the suspended worker's prerequisites.
+- **Argument/read spellings:** the two linked-private-pointer fixtures lower
+  the source argument as a pointer read, while call evaluation requires a
+  fact about the private address it read. Preserve a spellable identity and
+  explicit equality evidence at the producer. Do not make source matching
+  search memory history or silently accept a different proposition.
+  Automatic expansion of the call in `const_callback_table_abstract.md` also
+  prints a file-static kernel name containing `#`, which is not Click syntax.
+  Its explicit `requires` entries now replay; removing those entries is the
+  reproduction for retaining the original argument spelling at the producer.
+- **Resource evidence:** `c_contract_executes_acquire_nonnull.md` completes its
+  written proof but finalization rejects the produced `Cell` claim (Ensure 2).
+  Investigate retention of the checked resource transition. The separate
+  `symbolic_index_store_keeps_ordered_cell.md` failure requires a fact at a
+  projected read snapshot; explicitly proving the ordinary `data[len] == 0`
+  does not repair that fold. Preserve these as verifier regressions, not
+  weakened examples.
+- **Source preparation cost:** the checkpoint's named-fold source construction
+  reuses the compiler's normalized body, but currently recomputes match-arm
+  scopes during a fold. Retain that normalized source metadata during
+  declaration preparation and select the recorded arm directly. Measure this
+  complete operation with growing unrelated arms before claiming the fast
+  boundary is satisfied.
+- **Negative fixtures:** review the remaining refusals individually. Several
+  stop at an earlier, valid prerequisite instead of reaching their intended
+  bad refinement, ownership, or termination claim. Repair those preludes;
+  do not blanket-update expectations or accept a smart-work budget failure
+  as the intended refusal.
 
-- Nineteen of the expected-pass corpus failures now have explicit proof
-  repairs, each passing its focused mdtest. The callback, alias-fold, and
-  named-witness cases also pass expansion with implicit solving disabled
-  for the expanded claim. Concrete callbacks use existing refinement theorems (`unfold`
-  for pure interfaces, `executes` with explicit instance maps for modeled
-  interfaces), applied before the call. `fold_through_a_pointer_alias.md`
-  supplies its nonnull and equality body facts in written `requires` blocks;
-  `resource_witness_unfold_fold.md` names its witness at unfold. These cases
-  need no new axiom or inline solver bypass.
-- Call-source metadata still needs repair. In
-  `named_contract_value_parameter.md`, removing the explicit prerequisite
-  block from `apply` reproduces refusal of the already-known
-  `0 <= x and x <= 1000`: the source speller compares all interface parameters
-  (including contract value parameters) against only the C call arguments.
-  Retain the selected value-parameter source bindings with the call;
-  do not recover them by searching ambient facts. The written block proves
-  both existing requirements with `assumption`.
-- Known-target indirect calls also lose the source callee spelling:
-  `struct_function_pointer_field.md` records `compare` as the selected callee,
-  while source validation expects the C call expression's callback name.
-  Preserve the original invocation alongside the selected interface.
-- Other corpus failures include assert false-path spelling, call-load and
-  resource-body spellings, and implicit fold proofs. The initial full run is
-  recorded in `/tmp/step-fold-final-broad.log` in the current workspace;
-  its counts have not been recomputed after the explicit repairs.
+The integrated retest of the previous corpus failures leaves fifteen
+expected-pass fixtures in the families above. A fresh complete corpus run is
+still required after repairing them. Validation logs for this checkpoint are
+`/tmp/step-fold-integrated-checks-2.log`,
+`/tmp/step-fold-integrated-retests/`, and
+`/tmp/step-fold-final-focused.log`. Targeted fact-stability checks for constructor
+pointer fields, Integer resource fields, and named contract value parameters
+passed with zero differing lowerings; this is not a full-corpus audit.
 
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver

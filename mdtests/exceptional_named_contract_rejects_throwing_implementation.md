@@ -46,6 +46,10 @@ int32 steady(int32 x) {
     ensures result == x;
 }
 
+theorem proposed_helper_is_fallible() {
+    ensures Fallible(&helper) by { unfold(Fallible); solve(); }
+}
+
 int32 caller(int32 x) throws int32 {
     ensures result == x;
     exceptional ensures exception == 7;
@@ -58,5 +62,5 @@ int32 calm(int32 x) throws int32 {
 ```
 
 ```expect
-fail: function `helper` does not satisfy named contract `Fallible`
+fail: `helper` is not a verified or external function compatible with contract `Fallible`
 ```
