@@ -20487,3 +20487,40 @@ fn explicit_and_implicit_entry_witnesses_expand_without_search() {
         }
     }
 }
+
+#[test]
+fn nested_resource_scope_closing_obligations_expand_and_replay() {
+    let sources = [(
+        "set.c",
+        "void set(int32* p, int32* q, int32 x) { p[0] = x; q[0] = x; q[0] = 1; }",
+    )];
+    let source = r#"
+verifying "set.c";
+resource cell(p: int32*) { owns p[0..1]; fact p[0] > 0 or p[0] < -1; }
+void set(int32* p, int32* q, int32 x) {
+    requires x > 0;
+    owns cell(p);
+    owns cell(q);
+} by {
+    open(cell(p)) {
+        step();
+        open(cell(q)) { step(); }
+    }
+    open(cell(q)) { step(); }
+    step_until(function.exit);
+    solve();
+}
+"#;
+    let expanded = expand_function_proof_source(source, &sources, "set").unwrap();
+    assert!(expanded.matches("} by {").count() >= 2, "{expanded}");
+    crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        .expect("nested closing obligations retain explicit proofs");
+    let invalid = source.replace(
+        "open(cell(q)) { step(); }",
+        "open(cell(q)) { step(); } by { assumption(); }",
+    );
+    assert!(
+        verify_c0_sources(&invalid, &sources).is_err(),
+        "a written closing proof must establish the body fact"
+    );
+}

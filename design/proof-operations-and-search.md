@@ -109,9 +109,9 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory at `e9222a222` contains 610 records: 7 legacy bridges, 22 kernel callers,
-14 Surface operation dependencies, 13 operation-to-driver dependencies,
-103 driver records, 1 other dispatch record, 6 presentation records,
+The current inventory after resource-scope extraction contains 612 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 12 operation-to-driver dependencies,
+106 driver records, 1 other dispatch record, 6 presentation records,
 423 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
@@ -180,10 +180,21 @@ before the claim's own steps, preserving expansion and strict replay.
 The source guard prohibits direct driver/search references in the primitive.
 Claim lowering, goal transformations, and state preparation are unchanged.
 
+## Resource-scope completion boundary
+
+`ProofScope::join` closes directly or reports the missing resource-body fact
+through the ordinary obligation channel. It cannot call the driver or search.
+`ProofDriver::complete_scope` owns written closing proofs and omitted ordinary
+solve through the existing `close_scope_with_body_fact_proof` orchestration.
+It retains the resulting proof as the scope's `by` for expansion. Nested opens
+use `complete_nested_scope` before incorporating the direct checked successor.
+Function-exit closes keep their existing deferred driver route. Superfluous,
+incorrect, and missing explicit closing proofs keep their existing refusals.
+
 ## Detailed caller classification
 
 The [caller audit](proof-boundary-classification.md) classifies the current 19 mixed and
-13 operation-to-driver records by why they invoke search or interpretation.
+12 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
 validation, diagnostic execution, and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or

@@ -206,15 +206,16 @@ impl<'a> ProofScope<'a> {
         &self,
         nested: ProofScope<'a>,
     ) -> Result<Self, ClickError> {
-        if !Arc::ptr_eq(&nested.root.context, &self.body.context)
-            || !nested.root.state.shares_state_with(&self.body.state)
-            || !Arc::ptr_eq(&nested.root.node, &self.body.node)
-        {
-            return Err(self
-                .root
-                .step_error("nested proof scope is not rooted at the current scope body"));
-        }
+        self.require_nested_root(&nested)?;
         let body = nested.join()?;
+        self.join_nested_result(body)
+    }
+
+    /// Incorporate the direct successor produced by the nested scope's close.
+    pub(in crate::surface::proof) fn join_nested_result(
+        &self,
+        body: Proof<'a>,
+    ) -> Result<Self, ClickError> {
         let Some(parent) = body.node.parent.as_ref() else {
             return Err(self
                 .root
@@ -235,6 +236,21 @@ impl<'a> ProofScope<'a> {
         }
         next.body = body;
         Ok(next)
+    }
+
+    pub(in crate::surface::proof) fn require_nested_root(
+        &self,
+        nested: &ProofScope<'a>,
+    ) -> Result<(), ClickError> {
+        if !Arc::ptr_eq(&nested.root.context, &self.body.context)
+            || !nested.root.state.shares_state_with(&self.body.state)
+            || !Arc::ptr_eq(&nested.root.node, &self.body.node)
+        {
+            return Err(self
+                .root
+                .step_error("nested proof scope is not rooted at the current scope body"));
+        }
+        Ok(())
     }
 
     /// Retain only the checked body when a written operation is rejected.
@@ -460,6 +476,8 @@ impl<'a> ProofScope<'a> {
         Ok(Some(next))
     }
 
+    /// Closes without scheduling proofs. Missing resource-body facts are
+    /// reported through the ordinary obligation channel for the driver.
     /// Closes a completed nested proof and makes its checked proposition
     /// available in the enclosing proof while retaining the exact body.
     pub(in crate::surface::proof) fn join(self) -> Result<Proof<'a>, ClickError> {
@@ -694,51 +712,13 @@ impl<'a> ProofScope<'a> {
                 source_index,
                 preserve_exposed_body,
                 ref written_close_proof,
-            } => {
-                let deferred = self
-                    .body
-                    .branch_execution()
-                    .is_some_and(|execution| execution.core.frontier.is_at_function_exit());
-                if deferred {
-                    return self.close_open_scope_from(
-                        &self.body,
-                        resource,
-                        source_index,
-                        preserve_exposed_body,
-                        written_close_proof,
-                    );
-                }
-                let (closed, close_proof) = self.body.driver().close_scope_with_body_fact_proof(
-                    resource,
-                    written_close_proof.as_deref(),
-                    &|body| {
-                        self.close_open_scope_from(
-                            body,
-                            resource,
-                            source_index,
-                            preserve_exposed_body,
-                            written_close_proof,
-                        )
-                    },
-                )?;
-                let Some(close_proof) = close_proof else {
-                    return Ok(closed);
-                };
-                // The scope keeps its own body; the proof of the fact the
-                // closing fold left open is the scope's `by`.
-                Ok(Proof {
-                    node: ProofNode::step_child(
-                        &self.root.node,
-                        closed.focused_branch_id(),
-                        Arc::new(ProofStep::Open {
-                            resource: resource.clone(),
-                            proof: Box::new(self.body.certificate()),
-                            close_proof: Some(close_proof),
-                        }),
-                    ),
-                    ..closed
-                })
-            }
+            } => self.close_open_scope_from(
+                &self.body,
+                resource,
+                source_index,
+                preserve_exposed_body,
+                written_close_proof,
+            ),
         }
     }
 
@@ -747,7 +727,7 @@ impl<'a> ProofScope<'a> {
     /// recorded scope keeps this scope's own body. At function exit the
     /// close is deferred with the source's `written_close_proof`, and the
     /// deferred close checks it.
-    fn close_open_scope_from(
+    pub(in crate::surface::proof) fn close_open_scope_from(
         &self,
         body: &Proof<'a>,
         resource: &ResourceClause,

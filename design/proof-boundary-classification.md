@@ -1,9 +1,11 @@
 # Proof boundary classification
 
-Source reconciliation at `e9222a222` (2026-11-09). This classifies all 19
-`mixed` and 13 `operation-to-driver` reference records in
+Source reconciliation at `e9222a222` (2026-11-09), updated for resource-scope
+obligation extraction. This classifies all 19
+`mixed` and 12 `operation-to-driver` reference records in
 `build_support/proof_search_edges.tsv`, and groups the remaining operation
-references below. It changes no verifier behavior or machine inventory.
+references below. The extraction preserves proof behavior and removes the
+scope-to-driver reference from the machine inventory.
 A classified call is not a complexity proof for its callee. No new scaling
 measurements were made for this audit.
 
@@ -12,17 +14,19 @@ measurements were made for this audit.
 `Proof::begin_have` and `Proof::begin_contract_claim` return prerequisites;
 `ProofDriver::open_have` and `ProofDriver::open_contract_claim` schedule their
 proofs. These are no longer outstanding operation-to-driver records.
-Resource-scope completion still has its obligation callback. Creating an
-obligation is allowed fast work; choosing an omitted proof's ordinary solve is
-legitimate driver work. The remaining separation-observation setup cost is a
+`ProofScope::join` and its resource-close operation now report outstanding
+body facts through the same obligation channel. `ProofDriver::complete_scope`
+schedules their written or implicit proofs; nested resource scopes use
+`complete_nested_scope`. Creating an obligation is allowed fast work; choosing
+an omitted proof's ordinary solve is legitimate driver work. The remaining separation-observation setup cost is a
 separate question from who solves its obligations.
 
 ## Findings
 
 The old categories describe code placement, not the reason search runs. Most
 ambiguous references are expected orchestration or discovery helpers. Three
-other concerns need separate treatment: operations that implicitly solve before
-returning, declaration validation that searches outside proof scripts, and
+other concerns need separate treatment: remaining orchestration adapters on
+operations, declaration validation that searches outside proof scripts, and
 failure diagnostics that execute more operations.
 
 The known direct operation/search dependencies remain: this classification does
@@ -61,16 +65,15 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 13 operation-to-driver reference records
+## The 12 operation-to-driver reference records
 
-Methods below are on `Proof` except `ProofScope::join_inner`.
+Methods below are on `Proof`.
 
 | Caller | Classification and action |
 | --- | --- |
 | `apply_execution_branch_within` | Nested-script interpretation: dispatches the written arm steps. Move orchestration off the primitive interface; splitting, focusing and joining remain operations. |
 | `apply_execution_if_within` | Nested-script interpretation: dispatches then/else scripts. Same separation. |
 | `apply_focused_expanded_execution_arm` | Expanded-script interpretation: dispatches the retained arm with `expanded=true`. That flag is not proof that every transitively called helper avoids search. |
-| `ProofScope::join_inner` | Hidden obligation dispatch in the resource-open case: calls `close_scope_with_body_fact_proof`; this may execute the written closing proof or invoke ordinary solve. Split raw scope completion from scheduling its required proof. |
 | `plan_invariant_bundle_closure` | Search/orchestration adapter on the wrong interface: forwards to the driver planner and records the missed member. Used by invariant-closing orchestration. |
 | `solve_open_for_missing_resource` | Search helper on the wrong interface: selects a resource to unfold, called from smart retry. |
 | `unsigned_strict_fact` | Search helper on the wrong interface: called from smart closures and may prove a reversed inequality using arithmetic. |
@@ -81,7 +84,7 @@ Methods below are on `Proof` except `ProofScope::join_inner`.
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
 | `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
-Totals: 3 nested-script interpreters, 1 implicit-obligation callback, 6
+Totals: 3 nested-script interpreters, 6
 search/support adapters, 2 specific-operation dispatch adapters, and 1 diagnostic
 execution callback. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
@@ -93,7 +96,7 @@ once here according to why this particular driver call exists.
    moving a method here does not make it unavailable to operations.
 2. Every Surface `Proof` and `ProofScope` implements `DriveProof`; `.driver()`
    can be obtained inside operation implementations. This allows the indirect
-   route operation -> driver -> solve, including obligation callbacks above.
+   route operation -> driver -> solve, through the remaining adapters above.
 3. `without_implicit_solve` gates automatic solving at selected sites. It does
    not prohibit direct `ProofSearch` calls or legacy search wrappers. Passing
    cold replay under it is useful evidence, not the full no-search condition.
@@ -119,7 +122,7 @@ No second checker or producer/rechecker layer is needed.
 - Primitive operations return a successor or outstanding obligations. They
   cannot acquire a driver or invoke a proof script. The outer driver executes
   supplied proofs, invokes solve when omitted, and resumes the operation.
-  Have and claim opening already follow this rule. Extract resource-scope completion;
+  Have/claim opening and resource-scope completion now follow this rule;
   move the identified script/search adapters out of the primitive interface.
 - Make search access explicit at every discovery entry, including compatibility
   wrappers: a driver-owned access capability passed to search, never stored in
@@ -140,9 +143,8 @@ No second checker or producer/rechecker layer is needed.
   Treat further speculative execution as an explicitly requested diagnostic
   search rather than work silently performed to report a fast failure.
 
-The next boundary extraction is resource-scope completion, not have or claim
-opening. Separate the required closing fact from scheduling its written or
-omitted proof. Definition-validation proof support and normal diagnostic search
+Have/claim opening and resource-scope completion no longer schedule proofs
+from the primitive interface. The other adapters above remain to extract. Definition-validation proof support and normal diagnostic search
 need separate design review; this audit does not authorize behavior changes.
 
 ## Reconciled operation dependencies
@@ -168,7 +170,6 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
 ## Evidence and ownership
 
 - **Confirmed boundary problems:** legacy simple transport can access search;
-  resource-scope completion schedules an obligation proof inside `ProofScope`;
   normal failure diagnostics speculatively execute driver steps. These are
   source-established architectural findings, not newly measured scaling curves.
 - **Known cost violation:** T5 reconstructs transition assumptions using
@@ -187,7 +188,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 610 reference records, not 610 obligations to remove.
+The inventory contains 612 reference records, not 612 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this
