@@ -425,7 +425,7 @@ impl ObservationComparisons {
                     PointerOffsetTerm::Int32Scaled {
                         value,
                         byte_width: 4,
-                    } => Some(ComparisonOperand::Written(value)),
+                    } => Some(ComparisonOperand::Observation(value.clone())),
                     PointerOffsetTerm::Constant(bytes) if bytes % 4 == 0 => {
                         i32::try_from(bytes / 4).ok().map(|value| {
                             ComparisonOperand::Constant(MachineTerm::constant(value as u32))
@@ -607,6 +607,52 @@ impl ObservationComparisons {
 mod compound_observation_lookup_tests {
     use super::*;
     use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+
+    #[test]
+    fn scaled_word_sources_retain_shared_indices_and_exact_authority() {
+        let _session = crate::kernel::VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(991440));
+        let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
+        let zero = MachineTerm::constant(0);
+        for truth in [false, true] {
+            for width in [4, 8] {
+                let source = ConditionTerm::PointerOffsetEqual(
+                    PointerOffsetTerm::Int32Scaled {
+                        value: MachineOperandView::Shared(&root).retain(ty),
+                        byte_width: width,
+                    }
+                    .into(),
+                    PointerOffsetTerm::Constant(0).into(),
+                );
+                let mut index = ObservationComparisons::default();
+                let parent = index.clone();
+                let query = |index: &ObservationComparisons, truth| {
+                    index
+                        .scaled_source(
+                            ty,
+                            [
+                                MachineOperandView::Shared(&root),
+                                MachineOperandView::Legacy(&zero),
+                            ],
+                            truth,
+                        )
+                        .cloned()
+                };
+                let exports = KernelTermExport::machine_export_count();
+                index.adjust(&source, truth, true);
+                assert_eq!(
+                    query(&index, truth),
+                    (width == 4).then(|| Proposition::ConditionIs(source.clone(), truth))
+                );
+                assert!(query(&parent, truth).is_none());
+                assert!(query(&index, !truth).is_none());
+                index.adjust(&source, truth, false);
+                assert!(query(&index, truth).is_none());
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
 
     #[test]
     fn native_order_sources_retain_polarity_scope_and_withdrawal() {

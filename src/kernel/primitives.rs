@@ -1053,9 +1053,9 @@ impl PointerOffsetTerm {
     }
 
     /// Maps scaled index values without changing the offset expression.
-    pub(crate) fn map_scaled_values(
+    pub(crate) fn map_scaled_operands(
         &self,
-        mut map: impl FnMut(&MachineTerm) -> MachineTerm,
+        mut map: impl FnMut(&SharedMachineIntegerTerm) -> SharedMachineIntegerTerm,
     ) -> Self {
         enum Task<'a> {
             Visit(&'a PointerOffsetTerm),
@@ -1073,7 +1073,7 @@ impl PointerOffsetTerm {
                 }
                 Task::Visit(Self::Int32Scaled { value, byte_width }) => {
                     values.push(Self::Int32Scaled {
-                        value: value.with_mapped_index(map(value)),
+                        value: map(value),
                         byte_width: *byte_width,
                     });
                 }
@@ -1083,7 +1083,7 @@ impl PointerOffsetTerm {
                     unsigned,
                 }) => {
                     values.push(Self::Int64Scaled {
-                        value: value.with_mapped_index(map(value)),
+                        value: map(value),
                         byte_width: *byte_width,
                         unsigned: *unsigned,
                     });
@@ -7339,7 +7339,11 @@ pub enum CUndefinedBehavior {
     /// A read or write through a pointer outside the subobject it
     /// designates (C11 6.5.6p8, C++ [expr.add]): `*(&pair.first + 1)` is
     /// one past `first`, not `second`, though both name the same address.
-    SubobjectAccess,
+    SubobjectAccess {
+        /// The access requirement retained at the refusal site, for diagnostics
+        /// only. No successful execution constructs this payload.
+        required: Box<Proposition>,
+    },
     /// A read or write through an lvalue whose type may not access the
     /// object (C11 6.5p7): a `long` read through a `long long *`, or an
     /// `int **` cell read as `long *`. GCC at `-O2` assumes it never happens
@@ -7351,6 +7355,15 @@ pub enum CUndefinedBehavior {
 }
 
 impl CUndefinedBehavior {
+    /// The requirement lost by a refused access. This is diagnostic evidence,
+    /// not a new execution obligation or a license to continue the path.
+    pub(crate) fn required_goal(&self) -> Option<&Proposition> {
+        match self {
+            Self::SubobjectAccess { required } => Some(required),
+            _ => None,
+        }
+    }
+
     pub fn description(&self) -> String {
         match self {
             Self::SignedOverflow => "signed overflow".to_string(),
@@ -7359,7 +7372,7 @@ impl CUndefinedBehavior {
                     .to_string()
             }
             Self::PointerArithmetic => "pointer arithmetic left the pointed-to object".to_string(),
-            Self::SubobjectAccess => {
+            Self::SubobjectAccess { .. } => {
                 "access outside the subobject the pointer designates".to_string()
             }
             Self::DivisionByZero => "division by zero".to_string(),

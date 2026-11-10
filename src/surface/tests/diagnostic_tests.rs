@@ -2,6 +2,49 @@ use super::*;
 use crate::kernel::binary_node;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
+fn assert_subobject_access_reports(c: &str, source: &str, ordinary_goal: &str, trace_goal: &str) {
+    let ordinary = verify_c0_sources(source, &[("access.c", c)])
+        .unwrap_err()
+        .concise_report();
+    assert!(ordinary.contains("goal:"), "{ordinary}");
+    assert!(ordinary.contains(ordinary_goal), "{ordinary}");
+    if ordinary_goal == "subobject bounds of" {
+        assert!(ordinary.contains("C address equality alone"), "{ordinary}");
+        assert!(!ordinary.contains("have <goal>"), "{ordinary}");
+    }
+    with_proof_trace("f", || {
+        let error = verify_c0_sources(source, &[("access.c", c)]).unwrap_err();
+        let report = error.trace_context_report().unwrap();
+        assert!(!error.raw_summary().contains("resource facts:"), "{report}");
+        assert!(report.contains("resources at the failed check"), "{report}");
+        assert!(report.contains("access outside the subobject"), "{report}");
+        assert!(report.contains("goal:"), "{report}");
+        assert!(report.contains(trace_goal), "{report}");
+    });
+}
+
+#[test]
+fn subobject_access_concrete_bounds_are_reported() {
+    assert_subobject_access_reports(
+        "struct Pair { int first; int second; }; int f(struct Pair *p) { return *(&p->first + 1); }",
+        r#"verifying "access.c"; int32 f(struct Pair *p) {
+            views p->first; views p->second; ensures result == p->second;
+        }"#,
+        "contains(",
+        " contains ",
+    );
+}
+
+#[test]
+fn subobject_access_opaque_bounds_are_reported() {
+    assert_subobject_access_reports(
+        "struct node { int tag; struct node *left; }; void f(struct node *p, struct node *g) { struct node *parent = g->left; if (parent == p) { parent->tag = 0; } }",
+        r#"verifying "access.c"; void f(struct node *p, struct node *g) { owns *p; owns *g; }"#,
+        "subobject bounds of",
+        "subobject bounds of",
+    );
+}
+
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by diagnostic_batch_00")]
 fn implicit_tail_handles_unsigned_statement_cases_with_tracing() {

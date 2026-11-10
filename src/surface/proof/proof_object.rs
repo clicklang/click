@@ -1533,6 +1533,7 @@ pub(in crate::surface::proof) fn register_recorded_snapshot_names(
     labels: &mut crate::surface::proof_diagnostics::render::SnapshotLabels,
     snapshots: &crate::surface::RecordedSnapshots,
 ) {
+    labels.recorded_snapshots(snapshots);
     register_snapshot_names(labels, &citable_snapshots(snapshots));
     // Each exited loop's pass count, `loop(i).iterations`.
     for (name, iterations) in snapshots.loop_iteration_bindings() {
@@ -1820,6 +1821,7 @@ impl crate::surface::proof_diagnostics::ProofDiagnosticState for ProofDiagnostic
         if let Some(branch) = self.0.state().open_branches().get(self.0.focused_branch())
             && let Some(execution) = branch.state.execution.as_deref()
         {
+            labels.recorded_snapshots(&execution.presentation.recorded_snapshots);
             for (selector, state) in execution.presentation.recorded_snapshots.recent(32) {
                 labels.source_state(
                     state,

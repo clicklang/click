@@ -5384,8 +5384,28 @@ pub(in crate::kernel) fn subobject_access_refusal(
     assumptions: &PureFactContext,
 ) -> Option<CUndefinedBehavior> {
     let extent = extent?;
-    (!subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions))
-        .then_some(CUndefinedBehavior::SubobjectAccess)
+    if subobject_extent_proven(pointer, extent, bytes, facts, obligations, assumptions) {
+        return None;
+    }
+    // Retain the selected access and its actual designated extent. Construct
+    // this diagnostic only after checking has refused the access.
+    let required = Proposition::CResourceContains {
+        parent: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            extent.start.clone(),
+            0u32.into(),
+            extent.width.clone(),
+            1,
+        ))),
+        child: Box::new(CResource::Memory(CMemoryRange::new_with_element_width(
+            pointer.clone(),
+            0u32.into(),
+            bytes.into(),
+            1,
+        ))),
+    };
+    Some(CUndefinedBehavior::SubobjectAccess {
+        required: Box::new(required),
+    })
 }
 
 /// The strict-aliasing check of an access through `lvalue` at `pointer`
@@ -5524,7 +5544,18 @@ pub(in crate::kernel) fn subobject_paths(
             {
                 return vec![CExpressionPath {
                     outcome: CExpressionOutcome::UndefinedBehavior(
-                        CUndefinedBehavior::SubobjectAccess,
+                        CUndefinedBehavior::SubobjectAccess {
+                            required: Box::new(
+                                pointer
+                                    .opaque_coverage_fact(&CMemoryRange::new_with_element_width(
+                                        pointer.pointer().clone(),
+                                        0u32.into(),
+                                        width.into(),
+                                        1,
+                                    ))
+                                    .expect("the refused pointer has an opaque extent"),
+                            ),
+                        },
                     ),
                     facts,
                     obligations,

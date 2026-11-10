@@ -1611,14 +1611,31 @@ impl TermClasses {
                         pending.push(Work::Term(left));
                         continue;
                     }
-                    PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                        Node::Int32Scaled(self.intern_int32(value), *byte_width)
-                    }
+                    PointerOffsetTerm::Int32Scaled { value, byte_width } => Node::Int32Scaled(
+                        match value.operand_view() {
+                            crate::kernel::MachineOperandView::Legacy(term) => {
+                                self.intern_int32(term)
+                            }
+                            crate::kernel::MachineOperandView::Shared(root) => self
+                                .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits32),
+                        },
+                        *byte_width,
+                    ),
                     PointerOffsetTerm::Int64Scaled {
                         value,
                         byte_width,
                         unsigned,
-                    } => Node::Int64Scaled(self.intern_uint64(value), *byte_width, *unsigned),
+                    } => Node::Int64Scaled(
+                        match value.operand_view() {
+                            crate::kernel::MachineOperandView::Legacy(term) => {
+                                self.intern_uint64(term)
+                            }
+                            crate::kernel::MachineOperandView::Shared(root) => self
+                                .intern_shared_machine(root, crate::kernel::CarrierWidth::Bits64),
+                        },
+                        *byte_width,
+                        *unsigned,
+                    ),
                 },
             };
             let id = self.intern_node(node);
