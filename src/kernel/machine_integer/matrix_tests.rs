@@ -667,6 +667,14 @@ fn operation_bounds_hold_at_every_format() {
 
 #[test]
 fn modular_equality_reduces_at_every_width() {
+    // The projection is now shared. This matrix compares its explicit output
+    // spelling with the old native construction, not its storage variant.
+    let native_spelling = |condition: ConditionTerm| {
+        comparison::native_comparison_of_integer_observation(&condition, true)
+            .map(|value| value.0)
+            .unwrap_or(condition)
+    };
+
     for ty in FORMATS {
         let (a, b) = (value(ty, 172_051), value(ty, 172_052));
         let difference = IntegerTerm::subtract(observe(ty, a.clone()), observe(ty, b.clone()));
@@ -697,7 +705,7 @@ fn modular_equality_reduces_at_every_width() {
         )
         .unwrap()
         .0;
-        assert_eq!(wrapped, Some(expected), "{ty:?}");
+        assert_eq!(wrapped.map(native_spelling), Some(expected), "{ty:?}");
         // On constants, reduction modulo 2^w respects each operation.
         let modulo = BigInt::one() << ty.format().bits();
         let reduce = |value: &BigInt| ((value % &modulo) + &modulo) % &modulo;
@@ -744,7 +752,7 @@ fn modular_equality_reduces_at_every_width() {
         .unwrap()
         .0;
         assert_eq!(
-            modular::wrapped_equality_at(modulus, &wide_sum, true),
+            modular::wrapped_equality_at(modulus, &wide_sum, true).map(native_spelling),
             Some(expected),
             "{modulus:?}"
         );

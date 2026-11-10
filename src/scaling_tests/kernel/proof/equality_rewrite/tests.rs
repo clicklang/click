@@ -1154,3 +1154,51 @@ fn modular_integer_rewrite_work_tracks_the_cited_expression() {
         );
     }
 }
+
+#[test]
+fn shared_vacuous_sign_cast_equalities_only_inspect_roots() {
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let signed = MachineIntegerType::Int32;
+        let unsigned = MachineIntegerType::UInt32;
+        let mut root = KernelTerm::variable(KernelType::C(signed.c_type()), Variable(1007191));
+        for _ in 0..depth {
+            root = KernelTerm::machine_binary_shared(
+                signed,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+        }
+        let cast = KernelTerm::machine_cast_shared(
+            MachineCastSpelling::Generic,
+            signed,
+            unsigned,
+            root.clone(),
+        );
+        let observation = |ty, term: KernelTerm| {
+            IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(ty, term.with_machine_observation_type(ty))
+                    .unwrap(),
+            )
+        };
+        let cast = observation(unsigned, cast);
+        let word = observation(unsigned, root.clone());
+        let signed_value = observation(signed, root);
+        let forward = integer_equality(cast.clone(), word.clone());
+        let reverse = integer_equality(word, cast.clone());
+        let different_formats = integer_equality(cast, signed_value);
+        let before = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(equality_is_vacuous(&forward));
+            assert!(equality_is_vacuous(&reverse));
+            assert!(!equality_is_vacuous(&different_formats));
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}
