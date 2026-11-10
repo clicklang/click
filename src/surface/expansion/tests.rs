@@ -1020,7 +1020,7 @@ theorem reflexive(xs: TestList<int32>) {
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("a smart tactic in an induction arm should expand");
     assert!(expanded.contains("TestList::Nil => {\n                normalize();"));
-    assert!(expanded.contains("TestList::Cons(head, tail) => {\n                normalize();"));
+    assert!(expanded.contains("TestList::Cons(head, tail) => {\n                assumption();"));
     verify_c0_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
 }
 
