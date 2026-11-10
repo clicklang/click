@@ -2330,13 +2330,13 @@ fn allocation_separation_ignores_unrelated_facts() {
                 (
                     held.is_proven_separate_from_allocation_with_element_width(
                         &allocation_base,
-                        &bytes,
+                        &HeapExtent::int32(bytes.clone()),
                         4,
                         &assumptions,
                     ),
                     overlapping.is_proven_separate_from_allocation_with_element_width(
                         &allocation_base,
-                        &bytes,
+                        &HeapExtent::int32(bytes.clone()),
                         4,
                         &assumptions,
                     ),

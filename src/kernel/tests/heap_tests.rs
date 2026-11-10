@@ -13,7 +13,7 @@ fn free_retires_a_cached_interior_alias() {
         true,
     ));
     let memory = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), 12)
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(12))
         .unwrap()
         .with_block(base.block.clone(), 12)
         .store(alias.clone(), int32(7));
@@ -31,7 +31,7 @@ fn free_keeps_an_uncertain_block_only_with_ownership_of_the_whole_cell() {
     let base = Pointer::symbolic(Variable(945_010));
     let cell = Pointer::symbolic(Variable(945_011));
     let memory = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), 12)
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(12))
         .unwrap()
         .store(cell.clone(), CValue::Int64(MachineTerm::int64_constant(7)));
     let assumptions = PureFactContext::new();
@@ -75,7 +75,7 @@ fn a_free_publishes_its_owned_pointer_frame_as_an_equality() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let memory = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), 4)
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
         .unwrap()
         .store(cell.clone(), CValue::pointer(value));
     let resources = ResourceContext::new()
@@ -265,8 +265,8 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
         panic!("allocation should assign a pointer");
     };
     assert_eq!(
-        success.memory().live_heap_block_size(pointer),
-        Some(&MachineTerm::constant(16))
+        success.memory().live_heap_block_extent(pointer),
+        Some(&HeapExtent::int32(16))
     );
     let derivation = intern_c_memory_ref(success.memory())
         .derivation()
@@ -316,7 +316,7 @@ fn heap_allocate_has_null_or_fresh_uninitialized_outcomes() {
     assert!(null.resources().facts().is_empty());
     assert!(
         null.memory()
-            .live_heap_block_size(pointer.pointer())
+            .live_heap_block_extent(pointer.pointer())
             .is_none()
     );
 }
@@ -578,7 +578,12 @@ fn realloc_preserves_zeroed_prefix_and_leaves_growth_uninitialized() {
             .and_then(|pending| pending.zeroed_prefix.as_ref()),
         Some(&MachineTerm::constant(8))
     );
-    assert!(pending.memory().live_heap_block_size(old_pointer).is_some());
+    assert!(
+        pending
+            .memory()
+            .live_heap_block_extent(old_pointer)
+            .is_some()
+    );
 
     let success = resolve_pending_heap_allocations(
         pending,
@@ -703,7 +708,7 @@ fn pending_and_failed_heap_allocation_preserve_existing_memory() {
     assert!(
         failed
             .memory()
-            .live_heap_block_size(pending_pointer.pointer())
+            .live_heap_block_extent(pending_pointer.pointer())
             .is_none()
     );
     assert!(checked_memory_load_equality(
@@ -1168,7 +1173,7 @@ fn free_of_external_allocation_forgets_cells_without_separation() {
     };
     let memory = CMemory::new()
         .store(unrelated.clone(), int32(37))
-        .with_heap_allocation_claim(allocation_base.clone(), 16)
+        .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
         .expect("external allocation claim should be fresh");
     let resources = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_allocation(allocation_base.clone(), 16))
@@ -1228,7 +1233,7 @@ fn interface_heap_join_retains_potential_live_allocation() {
     };
     let retained = CState::new().with_memory(
         CMemory::new()
-            .with_heap_allocation_claim(allocation_base.clone(), 16)
+            .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
             .expect("the allocation claim should be fresh"),
     );
     let freed = retained.clone().with_memory(
@@ -1249,8 +1254,8 @@ fn interface_heap_join_retains_potential_live_allocation() {
     assert_eq!(freed_join, retained_join);
     let freed_join = freed_join.state;
     assert_eq!(
-        freed_join.memory().live_heap_block_size(&allocation_base),
-        Some(&MachineTerm::constant(16))
+        freed_join.memory().live_heap_block_extent(&allocation_base),
+        Some(&HeapExtent::int32(16))
     );
     assert!(
         freed_join
@@ -1418,7 +1423,12 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
             .pending_reallocations
             .contains_key(pending_pointer)
     );
-    assert!(pending.memory().live_heap_block_size(old_pointer).is_some());
+    assert!(
+        pending
+            .memory()
+            .live_heap_block_extent(old_pointer)
+            .is_some()
+    );
 
     let success_assumptions = PureFactContext::new().assume_proposition(Proposition::ConditionIs(
         pointer_is_null_condition(pending_pointer.pointer().clone()),
@@ -1429,8 +1439,8 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         panic!("successful realloc should assign a pointer");
     };
     assert_eq!(
-        success.memory().live_heap_block_size(resized.pointer()),
-        Some(&MachineTerm::constant(8))
+        success.memory().live_heap_block_extent(resized.pointer()),
+        Some(&HeapExtent::int32(8))
     );
     assert!(
         success
@@ -1461,7 +1471,12 @@ fn realloc_keeps_old_resources_until_result_and_transfers_them_on_success() {
         failure.locals().get("q"),
         Some(&CValue::pointer(Pointer::null()))
     );
-    assert!(failure.memory().live_heap_block_size(old_pointer).is_some());
+    assert!(
+        failure
+            .memory()
+            .live_heap_block_extent(old_pointer)
+            .is_some()
+    );
     assert!(
         failure
             .resources()
@@ -1514,7 +1529,7 @@ fn free_preserves_a_separate_recursive_tail_with_the_same_symbolic_block() {
         )))
         .unchecked_with_fact(tail_resource.clone());
     let memory = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), 16)
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(16))
         .expect("symbolic allocation claim should be fresh");
     let state = CState::new()
         .with_memory(memory)
@@ -1846,8 +1861,8 @@ fn returning_malloc_result_resolves_null_and_success_outcomes() {
             saw_success = true;
             assert!(matches!(pointer.block, PointerBlock::Heap(_)));
             assert_eq!(
-                state.memory().live_heap_block_size(&pointer),
-                Some(&MachineTerm::constant(16))
+                state.memory().live_heap_block_extent(&pointer),
+                Some(&HeapExtent::int32(16))
             );
             assert!(
                 state
@@ -1914,7 +1929,7 @@ fn freeing_through_one_spelling_retires_the_equal_spelling_too() {
         .store(alias.clone(), int32(7))
         .with_block(fresh.block.clone(), 8)
         .store(fresh.clone(), int32(11))
-        .with_heap_allocation_claim(base.clone(), 4)
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(4))
         .expect("the allocation claim should be fresh")
         .with_block(base.block.clone(), 4);
     let before = memory;
@@ -2202,7 +2217,7 @@ fn read_validity_transports_field_offsets_through_equal_base_pointers() {
     let field = base.offset_by_bytes(4);
     let alias_field = alias.offset_by_bytes(4);
     let memory = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), 8)
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
         .unwrap();
     let assumptions = PureFactContext::new()
         .assume_proposition(Proposition::CMemoryReadDefined {

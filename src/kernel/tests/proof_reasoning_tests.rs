@@ -7504,7 +7504,7 @@ fn native_loadability_transport_pins_extent_domain_and_lifetime() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let live = CMemory::new()
-        .with_heap_allocation_claim(external.clone(), MachineTerm::constant(16))
+        .with_heap_allocation_claim(external.clone(), HeapExtent::int32(16))
         .unwrap();
     let dead = live
         .clone()
@@ -7639,7 +7639,7 @@ fn native_loadability_prefix_coverage_preserves_lifetime_and_base() {
         offset: PointerOffsetTerm::Constant(0),
     };
     let allocated = CMemory::new()
-        .with_heap_allocation_claim(external.clone(), MachineTerm::constant(16))
+        .with_heap_allocation_claim(external.clone(), HeapExtent::int32(16))
         .unwrap();
     let retired = allocated
         .clone()
@@ -7722,7 +7722,7 @@ fn native_loadability_window_checks_offset_end_and_retirement() {
         .is_none()
     );
     let live = CMemory::new()
-        .with_heap_allocation_claim(root.clone(), MachineTerm::constant(16))
+        .with_heap_allocation_claim(root.clone(), HeapExtent::int32(16))
         .unwrap();
     let dead = live
         .clone()

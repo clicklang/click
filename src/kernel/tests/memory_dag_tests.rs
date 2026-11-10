@@ -2936,7 +2936,7 @@ fn a_retirement_inside_its_calls_havoc_names_cells_at_the_call() {
     // the snapshot and records the edge.
     let havoc = |variable| {
         CMemory::new()
-            .with_heap_allocation_claim(data.clone(), MachineTerm::constant(4))
+            .with_heap_allocation_claim(data.clone(), HeapExtent::int32(4))
             .expect("a fresh claim")
             .with_call_memory_havoc(Variable(variable), &ranges, &assumptions, None)
     };

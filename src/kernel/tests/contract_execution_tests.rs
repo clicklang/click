@@ -2965,7 +2965,7 @@ fn contract_effect_claim_rejects_interior_entry_live_heap_pointer_as_fresh() {
     let caller_state = CState::new()
         .with_memory(
             CMemory::new()
-                .with_heap_allocation_claim(allocation_base.clone(), MachineTerm::constant(16))
+                .with_heap_allocation_claim(allocation_base.clone(), HeapExtent::int32(16))
                 .expect("the entry allocation should be live"),
         )
         .with_resource_context(own_memory_context(interior, 0, 1));
@@ -3705,7 +3705,7 @@ fn effect_endpoint_allows_resource_allocation_bookkeeping() {
     let before = CMemory::new();
     let after = before
         .clone()
-        .with_heap_allocation_claim(allocation, MachineTerm::constant(16))
+        .with_heap_allocation_claim(allocation, HeapExtent::int32(16))
         .expect("a fresh symbolic allocation claim should be registerable");
 
     assert!(

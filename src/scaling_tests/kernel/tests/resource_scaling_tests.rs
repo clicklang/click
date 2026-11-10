@@ -928,7 +928,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
                 &ResourceContext::new(),
                 &kept,
                 &allocation,
-                &bytes,
+                &HeapExtent::int32(bytes.clone()),
                 &assumptions,
             )
             .cloned()
@@ -949,7 +949,7 @@ fn retirement_stale_check_ignores_unrelated_kept_resources() {
                 &ResourceContext::new(),
                 &overlapping,
                 &allocation,
-                &bytes,
+                &HeapExtent::int32(bytes.clone()),
                 &assumptions,
             ),
             Some(&owned_range(allocation.clone(), 2, 3)),
@@ -2289,7 +2289,11 @@ fn with_live_allocation(
 ) -> (CMemory, ResourceContext) {
     let pending = symbolic_base(identity);
     let (memory, _, base) = memory
-        .with_pending_heap_allocation(pending.clone(), MachineTerm::constant(bytes), false)
+        .with_pending_heap_allocation(
+            pending.clone(),
+            HeapExtent::int32(MachineTerm::constant(bytes)),
+            false,
+        )
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     assert_eq!(base, heap_base(identity));
@@ -2336,7 +2340,7 @@ fn caller_beside_unrelated_allocations(unrelated: usize) -> CState {
     );
     let pending = symbolic_base(WRITTEN_INT_HEAP);
     let (written_memory, _, _) = memory
-        .with_pending_heap_allocation(pending.clone(), MachineTerm::constant(4), false)
+        .with_pending_heap_allocation(pending.clone(), HeapExtent::int32(4), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     memory = written_memory.store(heap_base(WRITTEN_INT_HEAP), int32(7));

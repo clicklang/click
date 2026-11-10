@@ -1369,16 +1369,13 @@ pub(super) fn execute_c_heap_allocate_paths(
                 true,
                 &effective_assumptions,
             );
-            (
-                MachineTerm::multiply(size.term.clone(), MachineTerm::constant(element_width)),
-                refusal,
-            )
+            (size.scaled(element_width).into_extent(), refusal)
         } else {
             // Heap blocks are byte-addressed even when the receiving pointer
             // has a wider logical element type. Typed accesses still carry
             // their own width and must fit in the resulting byte extent.
             let refusal = allocation_size_validity_refusal(&size, 1, false, &effective_assumptions);
-            (size.term, refusal)
+            (size.into_extent(), refusal)
         };
         if let Some(refusal) = size_refusal {
             paths.push(CStatementExecutionPath::new(
@@ -1412,7 +1409,7 @@ pub(super) fn execute_c_heap_allocate_paths(
         }
         let object_class = object_type.and_then(|(class, size, alignment)| {
             let enough_space =
-                ConditionTerm::unsigned_less_equal(MachineTerm::constant(*size), bytes.clone());
+                bytes.unsigned_less_equal(bytes.constant(*size), bytes.bytes().clone());
             (*alignment as u64 <= crate::kernel::primitives::HEAP_ALLOCATION_ALIGNMENT
                 && effective_assumptions.decide(&enough_space) == Some(true))
             .then(|| class.clone())
@@ -1504,6 +1501,17 @@ fn heap_range_element_width(bytes: &MachineTerm, requested_width: u32) -> u32 {
         .unwrap_or(CType::UInt8.byte_width())
 }
 
+/// The owned range of a whole heap block, `base[0..count]` in the extent's
+/// index kind, and its element width ([`heap_range_element_count`]).
+fn heap_block_range(
+    base: Pointer,
+    extent: &HeapExtent,
+    requested_width: u32,
+) -> (CMemoryRange, u32) {
+    let (count, width) = heap_range_element_count(extent.bytes(), requested_width);
+    (extent.range(base, count, width), width)
+}
+
 fn heap_range_element_count(bytes: &MachineTerm, requested_width: u32) -> (MachineTerm, u32) {
     let element_width = heap_range_element_width(bytes, requested_width);
     let element_count = crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
@@ -1518,6 +1526,46 @@ struct AllocationSize {
     /// The size's type admits values above `INT32_MAX` (`uint32`), so the
     /// facts must bound it to the signed 32-bit heap extent.
     needs_extent_bound: bool,
+    /// The format of the block extent this size makes, by its C type
+    /// (`design/heap-extents.md`, D1). Every admitted size is `Int32` today.
+    kind: HeapExtentKind,
+}
+
+impl AllocationSize {
+    /// A 32-bit size of the given signedness.
+    fn int32(term: MachineTerm, unsigned: bool, needs_extent_bound: bool) -> Self {
+        Self {
+            term,
+            unsigned,
+            needs_extent_bound,
+            kind: HeapExtentKind::Int32,
+        }
+    }
+
+    /// The bytes of `self` elements of `element_width` bytes, in the size's
+    /// format. Formed only once [`allocation_size_validity_refusal`] has
+    /// decided the count fits, so the product does not wrap.
+    fn scaled(&self, element_width: u32) -> Self {
+        let term = match self.kind {
+            HeapExtentKind::Int32 => {
+                MachineTerm::multiply(self.term.clone(), MachineTerm::constant(element_width))
+            }
+            HeapExtentKind::UInt64 => MachineTerm::uint64_multiply(
+                self.term.clone(),
+                MachineTerm::uint64_constant(u64::from(element_width)),
+            ),
+        };
+        Self {
+            term,
+            unsigned: self.unsigned,
+            needs_extent_bound: false,
+            kind: self.kind,
+        }
+    }
+
+    fn into_extent(self) -> HeapExtent {
+        HeapExtent::new(self.term, self.kind)
+    }
 }
 
 /// The refusal for a size [`allocation_size_value`] does not accept: a
@@ -1538,44 +1586,22 @@ fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
 fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option<AllocationSize> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
-        CValue::Bool(term) => Some(AllocationSize {
-            term,
-            unsigned: true,
-            needs_extent_bound: false,
-        }),
-        CValue::Int8(term) => Some(AllocationSize {
-            term,
-            unsigned: false,
-            needs_extent_bound: false,
-        }),
-        CValue::Int16(term) | CValue::UInt8(term) | CValue::UInt16(term) => Some(AllocationSize {
-            term,
-            unsigned: false,
-            needs_extent_bound: false,
-        }),
-        CValue::Int32(term) => Some(AllocationSize {
-            term,
-            unsigned: false,
-            needs_extent_bound: false,
-        }),
-        CValue::UInt32(term) => Some(AllocationSize {
-            term,
-            unsigned: true,
-            needs_extent_bound: true,
-        }),
+        CValue::Bool(term) => Some(AllocationSize::int32(term, true, false)),
+        CValue::Int8(term) => Some(AllocationSize::int32(term, false, false)),
+        CValue::Int16(term) | CValue::UInt8(term) | CValue::UInt16(term) => {
+            Some(AllocationSize::int32(term, false, false))
+        }
+        CValue::Int32(term) => Some(AllocationSize::int32(term, false, false)),
+        CValue::UInt32(term) => Some(AllocationSize::int32(term, true, true)),
         CValue::Int64(term) => exact_signed_size_value(&term, assumptions).and_then(|value| {
-            u32::try_from(value).ok().map(|value| AllocationSize {
-                term: MachineTerm::constant(value),
-                unsigned: false,
-                needs_extent_bound: false,
-            })
+            u32::try_from(value)
+                .ok()
+                .map(|value| AllocationSize::int32(MachineTerm::constant(value), false, false))
         }),
         CValue::UInt64(term) => exact_unsigned_size_value(&term, assumptions).and_then(|value| {
-            u32::try_from(value).ok().map(|value| AllocationSize {
-                term: MachineTerm::constant(value),
-                unsigned: false,
-                needs_extent_bound: false,
-            })
+            u32::try_from(value)
+                .ok()
+                .map(|value| AllocationSize::int32(MachineTerm::constant(value), false, false))
         }),
         CValue::Int128(_)
         | CValue::UInt128(_)
@@ -1720,6 +1746,11 @@ fn allocation_size_validity_refusal(
     element_count: bool,
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
+    // The 64-bit extent's positivity and `PTRDIFF_MAX` guards are not
+    // decided here yet (`design/heap-extents.md`, stage 2).
+    if size.kind != HeapExtentKind::Int32 {
+        return Some(CRuntimeError::HeapAllocationSize);
+    }
     if !allocation_size_is_positive(size, assumptions) {
         return Some(CRuntimeError::TypeMismatch);
     }
@@ -1855,7 +1886,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
             continue;
         }
 
-        let Some(old_bytes) = state.memory.live_heap_block_size(&old_pointer).cloned() else {
+        let Some(old_bytes) = state.memory.live_heap_block_extent(&old_pointer).cloned() else {
             let error = if state
                 .memory
                 .is_deallocated_heap_address(&old_pointer, assumptions)
@@ -1873,13 +1904,9 @@ pub(crate) fn execute_c_realloc_assign_paths(
             ));
             continue;
         };
-        let (old_count, old_range_width) = heap_range_element_count(&old_bytes, element_width);
-        let old_allocation_range = CMemoryRange::new_with_element_width(
-            old_pointer.clone(),
-            MachineTerm::constant(0),
-            old_bytes.clone(),
-            1,
-        );
+        let (old_complete_range, old_range_width) =
+            heap_block_range(old_pointer.clone(), &old_bytes, element_width);
+        let old_allocation_range = old_bytes.byte_range(old_pointer.clone());
         for new_size_path in evaluate_c_expression_paths(
             state,
             element_count_expression.unwrap_or(size_expression),
@@ -1946,14 +1973,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                     ));
                     continue;
                 }
-                AllocationSize {
-                    term: MachineTerm::multiply(
-                        size.term.clone(),
-                        MachineTerm::constant(element_width),
-                    ),
-                    unsigned: size.unsigned,
-                    needs_extent_bound: false,
-                }
+                size.scaled(element_width)
             } else {
                 size
             };
@@ -1978,8 +1998,19 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 ));
                 continue;
             }
+            // The fit conditions below compare 32-bit extents only
+            // (`design/heap-extents.md`, stage 4).
+            if old_bytes.kind() != HeapExtentKind::Int32 || new_bytes.kind != HeapExtentKind::Int32
+            {
+                paths.push(CStatementExecutionPath::new(
+                    CStatementOutcome::RuntimeError(CRuntimeError::HeapAllocationSize),
+                    all_facts,
+                    all_obligations,
+                ));
+                continue;
+            }
             let zeroed_source = if state.memory.heap.zeroed_allocations.contains(&old_pointer) {
-                Some(old_bytes.clone())
+                Some(old_bytes.bytes().clone())
             } else {
                 state
                     .memory
@@ -2005,7 +2036,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 }
             };
 
-            let allocation = CResourceFact::own_allocation(old_pointer.clone(), old_bytes.clone());
+            let allocation = CResourceFact::own_heap_allocation(old_pointer.clone(), &old_bytes);
             let Some(resources) = state
                 .resources
                 .clone()
@@ -2020,12 +2051,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 ));
                 continue;
             };
-            let complete_access = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-                old_pointer.clone(),
-                MachineTerm::constant(0),
-                old_count.clone(),
-                old_range_width,
-            ));
+            let complete_access = CResourceFact::own_memory(old_complete_range.clone());
             let Some(resources) =
                 resources.without_fact_incrementally(&complete_access, &effective_assumptions)
             else {
@@ -2204,7 +2230,7 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 .clone()
                 .with_pending_heap_allocation(
                     pending_pointer.clone(),
-                    new_bytes.term.clone(),
+                    new_bytes.clone().into_extent(),
                     false,
                 )
                 .with_pending_heap_reallocation(
@@ -2305,12 +2331,14 @@ fn execute_c_heap_free_paths(
         // Resolve the allocation's owned base through the same argument
         // equality used to consume its token. A proven alias names that
         // allocation; it must not create a second lifetime under the alias.
-        let allocation_query = CResourceFact::own_designated_allocation(pointer.clone(), 0);
+        // The query's byte count is a placeholder: candidates match by base.
+        let allocation_query =
+            CResourceFact::own_designated_allocation(pointer.clone(), &HeapExtent::int32(0));
         let declared_allocation = state
             .resources
             .direct_match_candidates_for(&allocation_query, &effective_assumptions)
             .into_iter()
-            .filter_map(CResourceFact::allocation_value)
+            .filter_map(CResourceFact::allocation_extent)
             .find(|(base, _)| {
                 crate::kernel::resource_arguments_proven_equal(
                     &CValue::Pointer((*base).clone().with_type(CType::Int32Pointer)).into(),
@@ -2319,10 +2347,7 @@ fn execute_c_heap_free_paths(
                 )
             });
         let (pointer, declared_allocation) = match declared_allocation {
-            Some((base, bytes)) => (
-                base.clone().with_type(pointer.c_type()),
-                Some(bytes.clone()),
-            ),
+            Some((base, bytes)) => (base.clone().with_type(pointer.c_type()), Some(bytes)),
             None => (pointer, None),
         };
         if state
@@ -2347,7 +2372,7 @@ fn execute_c_heap_free_paths(
             .unwrap_or(CType::Int32.byte_width());
         let before_free = state.memory.clone();
         let mut working_memory = state.memory.clone();
-        let bytes = if let Some(bytes) = working_memory.live_heap_block_size(pointer.pointer()) {
+        let bytes = if let Some(bytes) = working_memory.live_heap_block_extent(pointer.pointer()) {
             bytes.clone()
         } else if working_memory
             .is_deallocated_heap_address(pointer.pointer(), &effective_assumptions)
@@ -2400,13 +2425,8 @@ fn execute_c_heap_free_paths(
             ));
             continue;
         }
-        let full_allocation_range = CMemoryRange::new_with_element_width(
-            pointer.pointer().clone(),
-            MachineTerm::constant(0),
-            bytes.clone(),
-            1,
-        );
-        let allocation = CResourceFact::own_designated_allocation(pointer.clone(), bytes.clone());
+        let full_allocation_range = bytes.byte_range(pointer.pointer().clone());
+        let allocation = CResourceFact::own_designated_allocation(pointer.clone(), &bytes);
         let Some(resources) = state
             .resources
             .clone()
@@ -2421,13 +2441,9 @@ fn execute_c_heap_free_paths(
             ));
             continue;
         };
-        let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
-        let complete_access = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-            pointer.pointer().clone(),
-            MachineTerm::constant(0),
-            element_count,
-            range_width,
-        ));
+        let (complete_range, range_width) =
+            heap_block_range(pointer.pointer().clone(), &bytes, element_width);
+        let complete_access = CResourceFact::own_memory(complete_range);
         // Single-supplier consumption keeps unrelated holdings untouched.
         // Split and supported owners still need their composition checked.
         let consumed = resources
@@ -2532,7 +2548,7 @@ fn execute_c_heap_free_paths(
                 before: before_free,
                 after: memory.clone(),
                 allocation_base: pointer.pointer().clone(),
-                bytes: bytes.clone(),
+                bytes: bytes.bytes().clone(),
             },
         ));
         let mut next = state
@@ -2611,21 +2627,18 @@ pub(crate) fn resolve_pending_heap_allocations(
                 state.locals.insert_binding(name, binding);
             }
             if !is_null {
-                let old_allocation = CResourceFact::own_allocation(
-                    pending_reallocation.old_pointer,
-                    pending_reallocation.old_bytes.clone(),
+                let old_memory = CResourceFact::own_memory(
+                    heap_block_range(
+                        pending_reallocation.old_pointer.clone(),
+                        &pending_reallocation.old_bytes,
+                        element_width,
+                    )
+                    .0,
                 );
-                let (old_count, old_range_width) =
-                    heap_range_element_count(&pending_reallocation.old_bytes, element_width);
-                let old_memory = CResourceFact::own_memory(CMemoryRange::new_with_element_width(
-                    match old_allocation.allocation() {
-                        Some((pointer, _)) => pointer.clone(),
-                        None => unreachable!("allocation resource was just constructed"),
-                    },
-                    MachineTerm::constant(0),
-                    old_count,
-                    old_range_width,
-                ));
+                let old_allocation = CResourceFact::own_heap_allocation(
+                    pending_reallocation.old_pointer,
+                    &pending_reallocation.old_bytes,
+                );
                 state.resources = state
                     .resources
                     .clone()
@@ -2633,20 +2646,13 @@ pub(crate) fn resolve_pending_heap_allocations(
                     .expect("validated realloc allocation resource should remain available")
                     .without_fact(&old_memory, assumptions)
                     .expect("validated realloc memory resource should remain available")
-                    .unchecked_with_fact(CResourceFact::own_allocation(
+                    .unchecked_with_fact(CResourceFact::own_heap_allocation(
                         resolved_base.clone(),
-                        bytes.clone(),
+                        &bytes,
                     ))
-                    .unchecked_with_fact(CResourceFact::own_memory({
-                        let (new_count, new_range_width) =
-                            heap_range_element_count(&bytes, element_width);
-                        CMemoryRange::new_with_element_width(
-                            resolved_base,
-                            MachineTerm::constant(0),
-                            new_count,
-                            new_range_width,
-                        )
-                    }));
+                    .unchecked_with_fact(CResourceFact::own_memory(
+                        heap_block_range(resolved_base, &bytes, element_width).0,
+                    ));
             }
             continue;
         }
@@ -2684,20 +2690,14 @@ pub(crate) fn resolve_pending_heap_allocations(
             state.locals.insert_binding(name, binding);
         }
         if !is_null {
-            let (element_count, range_width) = heap_range_element_count(&bytes, element_width);
             state.resources = state
                 .resources
-                .unchecked_with_fact(CResourceFact::own_allocation(
+                .unchecked_with_fact(CResourceFact::own_heap_allocation(
                     resolved_base.clone(),
-                    bytes.clone(),
+                    &bytes,
                 ))
                 .unchecked_with_fact(CResourceFact::own_memory(
-                    CMemoryRange::new_with_element_width(
-                        resolved_base,
-                        MachineTerm::constant(0),
-                        element_count,
-                        range_width,
-                    ),
+                    heap_block_range(resolved_base, &bytes, element_width).0,
                 ));
         }
     }

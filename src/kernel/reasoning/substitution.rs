@@ -5756,7 +5756,7 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
     let mut memory =
         CMemory::new().with_declared_scalar_block("local:word".into(), 4, CType::UInt32);
     let mut read_only = CBlock::read_only(4);
-    read_only.size = MachineTerm::Variable(from);
+    read_only.size = HeapExtent::int32(MachineTerm::Variable(from));
     std::sync::Arc::make_mut(&mut memory.blocks).insert("global:protected".into(), read_only);
     let rewritten =
         substitute_bitvector_variable_in_memory_contents(&memory, from, &MachineTerm::constant(16));
@@ -5769,7 +5769,7 @@ fn snapshot_size_substitution_preserves_declared_types_and_write_protection() {
         .get(&PointerBlock::from("global:protected"))
         .unwrap();
     assert!(protected.read_only);
-    assert_eq!(protected.size, MachineTerm::constant(16));
+    assert_eq!(protected.size, HeapExtent::int32(16));
 }
 
 fn substitute_bitvector_variable_in_memory_contents(
@@ -5800,7 +5800,9 @@ fn substitute_bitvector_variable_in_memory_contents(
                     // declaration or its write protection. Rebuilding a bare
                     // block erased these properties, even for a constant size.
                     let mut rewritten = contents.clone();
-                    rewritten.size = substitute_bitvector_variable(contents.size(), from, to);
+                    rewritten.size = contents
+                        .extent()
+                        .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to));
                     (block.clone(), rewritten)
                 })
                 .collect(),
@@ -5833,7 +5835,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        substitute_bitvector_variable(bytes, from, to),
+                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
                     )
                 })
                 .collect(),
@@ -5844,7 +5846,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        substitute_bitvector_variable(bytes, from, to),
+                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
                     )
                 })
                 .collect(),
@@ -5866,7 +5868,7 @@ fn substitute_bitvector_variable_in_memory_contents(
                 .map(|(base, bytes)| {
                     (
                         substitute_bitvector_variable_in_pointer(base, from, to),
-                        substitute_bitvector_variable(bytes, from, to),
+                        bytes.map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
                     )
                 })
                 .collect(),
@@ -5926,7 +5928,9 @@ fn substitute_bitvector_variable_in_memory_contents(
                                 from,
                                 to,
                             ),
-                            old_bytes: substitute_bitvector_variable(&pending.old_bytes, from, to),
+                            old_bytes: pending
+                                .old_bytes
+                                .map_bytes(|bytes| substitute_bitvector_variable(bytes, from, to)),
                             zeroed_prefix: pending
                                 .zeroed_prefix
                                 .as_ref()

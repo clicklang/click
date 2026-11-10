@@ -11,7 +11,7 @@ fn contract_retirement_invalidates_creation_provenance_even_with_replacement() {
     let input = ResourceContext::new()
         .unchecked_with_fact(CResourceFact::own_allocation(base.clone(), bytes.clone()));
     let memory = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), bytes.clone())
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(bytes.clone()))
         .expect("live input allocation");
     let mut state = CState::new()
         .with_population_creation_tracking()

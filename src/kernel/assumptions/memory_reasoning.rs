@@ -1500,14 +1500,19 @@ impl PureFactContext {
         pointer: &Pointer,
         byte_width: u32,
     ) -> bool {
-        let Some(block) = memory.blocks.get(&pointer.block) else {
+        // The region proof compares 32-bit extents.
+        let Some(bytes) = memory
+            .blocks
+            .get(&pointer.block)
+            .and_then(|block| block.extent().int32_bytes())
+        else {
             return false;
         };
         let base = Pointer {
             block: pointer.block.clone(),
             offset: PointerOffsetTerm::Constant(0),
         };
-        self.proves_loadable_cell_from_region(&base, block.size(), pointer, byte_width)
+        self.proves_loadable_cell_from_region(&base, bytes, pointer, byte_width)
     }
 
     /// Coverage through an element count whose byte extent has its validity

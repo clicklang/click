@@ -143,7 +143,7 @@ mod scaling_tests {
 fn allocation_bounds_require_positive_ownership_and_grant_no_read_permission() {
     let _session = crate::kernel::VerificationSession::enter();
     let p = pointer(930_400);
-    let allocation = CResourceFact::own_designated_allocation(p.clone(), 12u32);
+    let allocation = CResourceFact::own_designated_allocation(p.clone(), &HeapExtent::int32(12u32));
     let root = PureFactContext::new();
     let coverage = allocation.allocation_bounds_fact(&root).unwrap();
     let context = root.clone().assume_proposition(coverage);

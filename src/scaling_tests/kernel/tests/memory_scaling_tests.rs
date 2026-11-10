@@ -401,7 +401,7 @@ fn with_initialized_allocation(memory: CMemory, identity: u64, value: u32) -> CM
         offset: PointerOffsetTerm::Constant(0),
     };
     let (memory, _, base) = memory
-        .with_pending_heap_allocation(pending.clone(), MachineTerm::constant(16), false)
+        .with_pending_heap_allocation(pending.clone(), HeapExtent::int32(16), false)
         .resolve_pending_heap_allocation(&pending, true)
         .expect("the pending allocation resolves");
     assert_eq!(base, heap_cell(identity, 0));
@@ -648,7 +648,7 @@ fn one_heap_load_is_logarithmic_in_unrelated_allocations() {
                 .fold(CMemory::new(), |memory, index| {
                     with_initialized_allocation(memory, index as u64 + 1, index as u32)
                 })
-                .with_heap_allocation_claim(heap_cell(TARGET_HEAP, 0), 16)
+                .with_heap_allocation_claim(heap_cell(TARGET_HEAP, 0), HeapExtent::int32(16))
                 .expect("the claim registers")
                 .store(
                     heap_cell(TARGET_HEAP, 0),
@@ -885,7 +885,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                     &lent,
                     &kept,
                     &data(call),
-                    &bytes,
+                    &HeapExtent::int32(bytes.clone()),
                     &assumptions,
                 )
                 .cloned();
@@ -899,7 +899,7 @@ fn consecutive_reallocating_calls_cost_the_same_each() {
                         None,
                     )
                     .retire_contract_heap_allocation_claim(&data(call), &bytes, &assumptions)
-                    .with_heap_allocation_claim(data(call + 1), bytes.clone())
+                    .with_heap_allocation_claim(data(call + 1), HeapExtent::int32(bytes.clone()))
                     .expect("a fresh claim");
                 let point =
                     crate::kernel::resource_tracker::ProgramPoint::at(&intern_c_memory_ref(&next));
@@ -995,7 +995,7 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
             &lent,
             &owned_and_viewed,
             &data,
-            &bytes,
+            &HeapExtent::int32(bytes.clone()),
             &assumptions,
         )
         .cloned()
@@ -1012,7 +1012,7 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
             &lent,
             &viewed_only,
             &data,
-            &bytes,
+            &HeapExtent::int32(bytes.clone()),
             &assumptions,
         ),
         Some(&view),
@@ -1023,7 +1023,7 @@ fn retirement_admits_a_view_of_a_kept_owned_range() {
             &ResourceContext::new(),
             &owned_and_viewed,
             &data,
-            &bytes,
+            &HeapExtent::int32(bytes.clone()),
             &assumptions,
         )
         .is_some(),

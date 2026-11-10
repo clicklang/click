@@ -2176,7 +2176,10 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
     };
     let before = CState::new().with_memory(
         CMemory::new()
-            .with_heap_allocation_claim(allocation_base.clone(), 16)
+            .with_heap_allocation_claim(
+                allocation_base.clone(),
+                crate::kernel::HeapExtent::int32(16),
+            )
             .expect("the allocation claim should be fresh"),
     );
     let freed = before.clone().with_memory(

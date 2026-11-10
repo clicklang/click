@@ -5624,7 +5624,7 @@ fn freed_external_allocation_is_not_still_available() {
         offset: PointerOffsetTerm::scaled_int32_node(MachineTerm::Variable(Variable(93_503)), 4),
     };
     let live = CMemory::new()
-        .with_heap_allocation_claim(base.clone(), MachineTerm::constant(8))
+        .with_heap_allocation_claim(base.clone(), HeapExtent::int32(8))
         .expect("a fresh external allocation claim is accepted");
     let freed = live
         .clone()
