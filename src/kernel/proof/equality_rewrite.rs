@@ -321,9 +321,10 @@ fn rewrite_with_admitted_equality(
         for width in [MachineIntegerType::UInt32, MachineIntegerType::UInt64] {
             if let Some(wrapped) = crate::kernel::machine_integer::modular::wrapped_equality_at(
                 width, condition, *truth,
-            ) && let Ok(rewritten) = rewrite_with_admitted_equality_as_written(
+            ) && let Ok(rewritten) = rewrite_with_admitted_equality_reading(
                 goal,
                 &Proposition::ConditionIs(wrapped, true),
+                true,
             ) {
                 return Ok(rewritten);
             }
@@ -342,6 +343,16 @@ fn rewrite_with_admitted_equality(
 fn rewrite_with_admitted_equality_as_written(
     goal: &Proposition,
     equality: &Proposition,
+) -> Result<Proposition, String> {
+    rewrite_with_admitted_equality_reading(goal, equality, false)
+}
+
+// A projected residue equality substitutes words inside machine expressions,
+// even when its comparison is stored as exact Integer observations.
+fn rewrite_with_admitted_equality_reading(
+    goal: &Proposition,
+    equality: &Proposition,
+    machine_equality: bool,
 ) -> Result<Proposition, String> {
     if equality_is_vacuous(equality) {
         return Ok(goal.clone());
@@ -457,7 +468,7 @@ fn rewrite_with_admitted_equality_as_written(
                     // including when another leaf already rewrote directly.
                     // The source's complete interned observation identity
                     // selects its carrier and proves a root occurrence.
-                    let reading = integer_source.and_then(|source| {
+                    let reading = integer_source.filter(|_| !machine_equality).and_then(|source| {
                         crate::kernel::machine_integer::comparison::integer_observations_of_native_comparison(
                             atomic,
                         )
@@ -473,7 +484,12 @@ fn rewrite_with_admitted_equality_as_written(
                         })
                     });
                     let selected = reading.as_ref().unwrap_or(atomic);
-                    match rewrite_atomic_proposition_by_exact_equality(selected, equality) {
+                    let rewritten = if machine_equality {
+                        rewrite_atomic_by_word_equality(selected, equality)
+                    } else {
+                        rewrite_atomic_proposition_by_exact_equality(selected, equality)
+                    };
+                    match rewritten {
                         // A rewritten comparison is rebuilt by its smart
                         // constructor, so it has the canonical form lowering
                         // gives the same source: `0 == 0` is `true`.
@@ -630,7 +646,32 @@ fn equality_is_vacuous(equality: &Proposition) -> bool {
             },
             true,
         ) => left == right,
-        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => left == right,
+        Proposition::ConditionIs(ConditionTerm::IntegerEqual(left, right), true) => {
+            if left == right {
+                return true;
+            }
+            let (IntegerTerm::Machine(left), IntegerTerm::Machine(right)) =
+                (left.as_ref(), right.as_ref())
+            else {
+                return false;
+            };
+            // This is a word equality only when both exact observations use
+            // the same format. Signed and unsigned Integer values differ.
+            let format = left.ty();
+            if format != right.ty() || format.format().bits() != 32 {
+                return false;
+            }
+            let (left, right) = (left.operand_view(), right.operand_view());
+            let sign_cast_of = |left: MachineOperandView<'_>, right: MachineOperandView<'_>| {
+                left.cast()
+                    .is_some_and(|(encoding, source, destination, child)| {
+                        encoding == MachineCastSpelling::Generic
+                            && is_sign_cast32(source, destination)
+                            && child.retain(format) == right.retain(format)
+                    })
+            };
+            sign_cast_of(left, right) || sign_cast_of(right, left)
+        }
         Proposition::ConditionIs(ConditionTerm::PointerOffsetEqual(left, right), true) => {
             left == right
         }
@@ -1078,6 +1119,34 @@ fn rewrite_term(term: &MachineTerm, from: &MachineTerm, to: &MachineTerm) -> Mac
             _ => unreachable!("every other variant has its own arm"),
         },
     }
+}
+
+fn rewrite_atomic_by_word_equality(
+    goal: &Proposition,
+    equality: &Proposition,
+) -> Result<Proposition, AtomicRewriteRefusal> {
+    let Proposition::ConditionIs(condition, true) = equality else {
+        unreachable!("projected equality");
+    };
+    let view = crate::kernel::machine_integer::comparison::structural_comparison_view(condition)
+        .expect("projected word comparison");
+    let mut rewrite = super::term_rewrite::TermRewrite::for_machine_operands_checked(
+        view.operands[0].operand_view(),
+        view.operands[1].operand_view(),
+    );
+    rewrite.enable_registered_load_resolution();
+    let result = rewrite.proposition(goal);
+    if rewrite.refusal().is_some() {
+        return Err(AtomicRewriteRefusal::Refused(
+            "`rewrite` cannot substitute the projected word equality within its scope or work budget".into(),
+        ));
+    }
+    if !rewrite.changed {
+        return Err(AtomicRewriteRefusal::Absent(
+            "`rewrite` equality does not occur in the current goal".into(),
+        ));
+    }
+    Ok(result)
 }
 
 fn rewrite_atomic_proposition_by_exact_equality(
@@ -2789,6 +2858,58 @@ mod tests {
             )),
         };
         assert!(rewrite_with_admitted_equality(&goal, &cited).is_err());
+    }
+
+    #[test]
+    fn modular_rewrite_substitutes_inside_a_signed_observation() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let i = MachineTerm::Variable(Variable(1007180));
+        let count = MachineTerm::Variable(Variable(1007181));
+        let start = MachineTerm::Variable(Variable(1007182));
+        let observe = |value| IntegerTerm::from_machine(ty, value).unwrap();
+        let cited = integer_equality(
+            observe(i.clone()),
+            IntegerTerm::add(observe(start.clone()), observe(count.clone())),
+        );
+        let goal = integer_equality(
+            observe(MachineTerm::subtract(i, count)),
+            observe(start.clone()),
+        );
+        let before = KernelTermExport::machine_export_count();
+        let result = rewrite_with_admitted_equality(&goal, &cited).unwrap();
+        assert_ne!(result, goal);
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+    }
+
+    #[test]
+    fn modular_rewrite_retains_shared_residue_operands() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007190));
+        let root = KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [x.clone(), x]);
+        let observed = |format| {
+            IntegerTerm::Machine(
+                SharedMachineIntegerTerm::from_shared(
+                    format,
+                    root.with_machine_observation_type(format),
+                )
+                .unwrap(),
+            )
+        };
+        let cited = integer_equality(observed(ty), IntegerTerm::constant_i64(-1));
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::integer_equal(
+                observed(MachineIntegerType::UInt32),
+                IntegerTerm::constant_i64(4294967295),
+            ),
+            true,
+        );
+        let before = KernelTermExport::machine_export_count();
+        assert!(rewrite_with_admitted_equality_as_written(&goal, &cited).is_err());
+        let rewritten = rewrite_with_admitted_equality(&goal, &cited).unwrap();
+        assert_ne!(rewritten, goal);
+        assert_eq!(KernelTermExport::machine_export_count(), before);
     }
 
     fn equality(left: MachineTerm, right: MachineTerm) -> Proposition {

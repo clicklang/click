@@ -65,7 +65,7 @@ pub(crate) fn word_bits(ty: MachineIntegerType) -> Option<u32> {
 /// bits, and `None` at 128 bits, which has no operators. A `uint32`
 /// operator of a program is its own node, which [`word_operation`] reads
 /// as the same word operation.
-fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerType> {
+pub(super) fn operator_format(ty: MachineIntegerType) -> Option<MachineIntegerType> {
     match word(ty) {
         Word::Bits32 => Some(MachineIntegerType::Int32),
         Word::Narrow | Word::Signed64 | Word::Unsigned64 => Some(ty),
@@ -196,7 +196,7 @@ pub(crate) fn view_operation(
 }
 
 /// The format-carrying operator of a ring operation.
-fn machine_binary_op_of(operation: Operation) -> MachineBinaryOp {
+pub(super) fn machine_binary_op_of(operation: Operation) -> MachineBinaryOp {
     match operation {
         Operation::Add => MachineBinaryOp::Add,
         Operation::Subtract => MachineBinaryOp::Subtract,
