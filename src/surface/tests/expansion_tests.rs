@@ -6216,7 +6216,7 @@ fn source_expander_lowers_smart_solve_inside_have() {
         ..expanded
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
-    assert!(expanded_have.contains("normalize();"), "{expanded_have}");
+    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart have should check");
@@ -20523,4 +20523,49 @@ void set(int32* p, int32* q, int32 x) {
         verify_c0_sources(&invalid, &sources).is_err(),
         "a written closing proof must establish the body fact"
     );
+}
+
+#[test]
+fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
+    for goal in ["x < 3", "x < 3 and -3 < x"] {
+        let pure = format!(
+            "theorem known(x: int32) {{ requires x < 2; requires {goal}; ensures {goal} by {{ solve(); }} }}"
+        );
+        let expanded = expand_c0_claim_source_by_label(&pure, &[], "known.ensures_0").unwrap();
+        assert!(expanded.contains("assumption();"), "{expanded}");
+        assert!(
+            !expanded.contains("normalize()")
+                && !expanded.contains("have ")
+                && !expanded.contains("solve()"),
+            "{expanded}"
+        );
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+        let missing = expanded
+            .replace(&format!("requires {goal};"), "")
+            .replace("requires x < 2;", "");
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+
+        let source = format!(
+            "verifying \"known.c\"; void known(int32 x) {{ requires x < 2; requires {goal}; ensures {goal} by {{ step_until(function.exit); solve(); }} }}"
+        );
+        let sources = [("known.c", "void known(int32 x) {}")];
+        let expanded =
+            expand_c0_claim_source_by_label(&source, &sources, "known.ensures_0").unwrap();
+        assert!(expanded.contains("assumption();"), "{expanded}");
+        assert!(
+            !expanded.contains("normalize()")
+                && !expanded.contains("arithmetic_certificate")
+                && !expanded.contains("solve()"),
+            "{expanded}"
+        );
+        // Outcome expansion opens the contract claim with `have`; the
+        // selected proof inside that existing wrapper is one assumption.
+        let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            compact.contains(&format!("have {goal} by {{ assumption(); }}")),
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("have ").count(), 1, "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
 }

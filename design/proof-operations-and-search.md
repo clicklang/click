@@ -109,10 +109,10 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory after scope/branch extraction contains 613 records: 7 legacy bridges, 22 kernel callers,
+The current inventory after exact-goal solve selection contains 614 records: 7 legacy bridges, 22 kernel callers,
 14 Surface operation dependencies, 9 operation-to-driver dependencies,
 110 driver records, 1 other dispatch record, 6 presentation records,
-423 search-internal records, 19 mixed records and 2 imports. These are reference
+424 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several

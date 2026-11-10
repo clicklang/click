@@ -266,13 +266,10 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
         else {
             return Ok(None);
         };
-        // At an outcome or in a pure proof a bare assumption may cite an ambient
-        // fact the certificate cannot spell, so a derivation from spelled
-        // premises is preferred. Mid-execution and at loop entry, an available
-        // fact is its own spelling:
-        // `assumption();` checks by re-checking the judgment, and the
-        // frontier derivation exists for what the direct closer cannot
-        // prove, not to replace what it can.
+        // An exact indexed premise needs no alternative derivation: its
+        // assumption step replays directly. Retain the existing preference for
+        // spelled derivations only for broader assumption routes at outcomes
+        // and in pure proofs.
         let mid_execution = matches!(
             driver_proof.body.context.as_ref(),
             ProofContext::Execution(_)
@@ -281,6 +278,10 @@ impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
             && matches!(body.node.step.as_deref(), Some(ProofStep::Assumption))
             && !mid_execution
             && driver_proof.loop_entry_goal.is_none()
+            && !driver_proof
+                .body
+                .goal()
+                .is_some_and(|goal| driver_proof.body.facts().contains(goal))
             && let Some(checkable) =
                 crate::kernel::search::ProofSearch::try_solve_closure_after_direct(
                     &(driver_proof.body),
