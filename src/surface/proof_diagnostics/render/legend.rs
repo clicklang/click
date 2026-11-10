@@ -325,6 +325,10 @@ impl SnapshotLabels {
                 point != "current" && (known.same_storage_roots(memory) || known == memory)
             })
             .map(|(_, point, _)| format!("recorded at {}; ", short(point)))
+            .or_else(|| {
+                self.recorded_memory_point(memory)
+                    .map(|point| format!("program bytes recorded at {}; ", short(&point)))
+            })
             .unwrap_or_default();
         // Labels denote memory contents, so a reconstruction equal to its
         // input gets the input's explanation. Otherwise structural label

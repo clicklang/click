@@ -10363,8 +10363,19 @@ impl ClickError {
                     "goal: {}",
                     proof_diagnostics::render::render_proposition_labeled(goal, &mut labels)
                 ));
+                let legend = labels.trace_legend();
+                if !legend.is_empty() {
+                    context.push(legend.trim().to_owned());
+                }
                 // A C statement's requirement is a goal at its pre-state.
-                if report.contains("\n  C statement at ") {
+                if matches!(goal, Proposition::Predicate { name, .. }
+                    if name.starts_with(crate::kernel::SUBOBJECT_COVERS_PREDICATE_PREFIX))
+                {
+                    context.push(
+                        "help: establish bounds for this pointer value, for example by preserving the complete pointer across writes; C address equality alone does not establish bounds"
+                            .to_owned(),
+                    );
+                } else if report.contains("\n  C statement at ") {
                     context.push(
                         "help: to prove the goal explicitly, step to this statement and prove it there with `have <goal> by { ... }`"
                             .to_owned(),
