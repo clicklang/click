@@ -12,7 +12,7 @@ enum SurfaceSpellingPurpose {
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     /// A small shared search combinator for structural proposition closure.
     /// Every candidate is accepted only through `apply_step`; `intro` is the
-    /// sole nonterminal move and strictly removes one outer goal connective.
+    /// binder move; disjunctions open a `have` for a smaller disjunct.
     ///
     /// A miss is `Ok(None)` and leaves `self` the unchanged authority. An
     /// error is a tooling failure such as an exceeded deadline; it must abort
@@ -29,6 +29,36 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             {
                 scope.succeed();
                 return Ok(Some(closed));
+            }
+            // A disjunct that closes directly needs no search through the
+            // other side's connected facts. Retain its ordinary `have` proof
+            // and inject it with `assumption`, just as the general structural
+            // search does. Recursion only visits smaller goal disjuncts; a
+            // miss never invokes general solve.
+            if matches!(proof.goal(), Some(Proposition::Or(_, _)))
+                && let Some((left, right)) = proof
+                    .surface_goal()
+                    .and_then(|goal| surface_logical_children(goal, false))
+            {
+                for disjunct in [left, right] {
+                    let Some(disjunct_scope) =
+                        attempt::candidate_outcome(proof.driver().open_have(disjunct))?
+                    else {
+                        continue;
+                    };
+                    let Some(closed) = disjunct_scope.driver().try_direct_logical_closure()? else {
+                        continue;
+                    };
+                    let Some(joined) = attempt::candidate_outcome(closed.join())? else {
+                        continue;
+                    };
+                    if let Some(closed) = attempt::candidate_outcome(
+                        joined.driver().apply_step(ProofStep::Assumption),
+                    )? {
+                        scope.succeed();
+                        return Ok(Some(closed));
+                    }
+                }
             }
             // A literal false premise needs no source search or arithmetic
             // derivation. Fixed-state goals can use the same explicit
