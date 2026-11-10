@@ -19,6 +19,25 @@ fn visit_machine_operand_carrier_leaves(
         visit(operand);
         return;
     };
+    // A root atom needs no DAG summary. Keep the native collector's one-leaf
+    // cost, including its current registry and snapshot handling.
+    if let Some(variable) = operand.variable() {
+        visit(MachineOperandView::Legacy(&MachineTerm::Variable(
+            *variable,
+        )));
+        return;
+    }
+    if operand.read().is_some() {
+        visit(operand);
+        return;
+    }
+    if operand.literal().is_some() {
+        return;
+    }
+    if let Some(leaf) = root.machine_conversion_leaf() {
+        visit(MachineOperandView::Legacy(leaf));
+        return;
+    }
     if let Some(leaves) =
         shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
     {
@@ -2320,7 +2339,9 @@ fn collect_pointer_offset_integer_variables(
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_integer_variables_seen(value, variables, seen);
+            visit_machine_carrier_leaves(value, |leaf| {
+                collect_operand_integer_variables_seen(leaf, variables, seen)
+            });
         }
     }
 }
@@ -3320,7 +3341,13 @@ fn collect_pointer_offset_capture_variables(
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_capture_variables_seen(value, variables, integer_seen);
+            visit_machine_carrier_leaves(value, |leaf| {
+                if let Some((_, pointer, _)) = leaf.read() {
+                    collect_pointer_capture_variables(pointer, variables, integer_seen);
+                } else if let MachineOperandView::Legacy(term) = leaf {
+                    collect_bitvector_capture_variables_seen(term, variables, integer_seen);
+                }
+            });
         }
     }
 }
@@ -3781,6 +3808,19 @@ fn collect_machine_scope_summary(
     let Some(root) = machine.shared_operand() else {
         return collect_bitvector_scope_summary(machine.value(), summaries);
     };
+    let operand = machine.operand_view();
+    if let Some(variable) = operand.variable() {
+        return collect_bitvector_scope_summary(&MachineTerm::Variable(*variable), summaries);
+    }
+    if let Some((_, pointer, _)) = operand.read() {
+        return collect_pointer_scope_summary(pointer, summaries);
+    }
+    if operand.literal().is_some() {
+        return IntegerScopeSummary::default();
+    }
+    if let Some(leaf) = root.machine_conversion_leaf() {
+        return collect_bitvector_scope_summary(leaf, summaries);
+    }
     let mut summary = IntegerScopeSummary::default();
     if let Some(leaves) =
         shared_machine_conversion_leaves(root, || !checked_collection_checkpoint())
@@ -4100,7 +4140,7 @@ fn collect_pointer_offset_scope_summary(
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_scope_summary(value, summaries)
+            collect_machine_scope_summary(value, summaries)
         }
     }
 }
@@ -4935,12 +4975,14 @@ fn collect_pointer_offset_binder_variables(
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_binder_variables_seen(
-                value,
-                integer_variables,
-                bitvector_variables,
-                integer_seen,
-            );
+            visit_machine_carrier_leaves(value, |leaf| {
+                collect_operand_binder_variables_seen(
+                    leaf,
+                    integer_variables,
+                    bitvector_variables,
+                    integer_seen,
+                );
+            });
         }
     }
 }
@@ -5235,7 +5277,7 @@ pub(in crate::kernel) fn collect_pointer_offset_bitvector_variables(
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_variables(value, variables);
+            collect_machine_bitvector_variables(value, variables);
         }
     }
 }

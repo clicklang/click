@@ -159,7 +159,12 @@ fn offsets_equal_with_load_atoms(
             },
         ) => {
             left_width == right_width
-                && terms_equal_with_load_atoms(left_value, right_value, loads_match)
+                && operands_equal_with_load_atoms(
+                    MachineIntegerType::Int32,
+                    left_value.operand_view(),
+                    right_value.operand_view(),
+                    loads_match,
+                )
         }
         _ => left == right,
     }
@@ -269,6 +274,11 @@ fn operands_equal_with_load_atoms(
     use crate::kernel::MachineOperandView as V;
     if let (V::Legacy(left), V::Legacy(right)) = (left, right) {
         return terms_equal_with_load_atoms(left, right, loads_match);
+    }
+    // Comparing two selected atoms needs no DAG correspondence summary.
+    // Resolve registered load authority in this query, just as native atoms do.
+    if let (Some(a), Some(b)) = (operand_load_leaf(left), operand_load_leaf(right)) {
+        return terms_equal_with_load_atoms(&a, &b, loads_match);
     }
     if let (V::Shared(left), V::Shared(right)) = (left, right) {
         return crate::kernel::shared_operand_leaf_pairs(format, left, right).is_some_and(
@@ -1153,6 +1163,7 @@ thread_local! {
 /// Empties this module's memo tables at a verification boundary (ids keep
 /// counting, so a later entry cannot alias an old id).
 pub(crate) fn clear_assumption_memos() {
+    MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow_mut().clear());
     INTRINSIC_CONTEXT.with(|context| *context.borrow_mut() = None);
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
     ASSUMPTIONS_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
@@ -1755,10 +1766,91 @@ fn hash_memory_blind_pointer_offset<H: std::hash::Hasher>(
         | PointerOffsetTerm::Int64Scaled {
             value, byte_width, ..
         } => {
-            hash_memory_blind_bitvector(value, hasher);
+            std::hash::Hash::hash(
+                &memory_blind_operand_fingerprint(value.operand_view()),
+                hasher,
+            );
             std::hash::Hash::hash(byte_width, hasher);
         }
     }
+}
+
+thread_local! {
+    // Syntax only: no facts, registry identities, or snapshot contents.
+    static MEMORY_BLIND_INDEX_HASHES: RefCell<std::collections::HashMap<u64, u64>> =
+        RefCell::new(std::collections::HashMap::new());
+}
+
+// Child fingerprints keep repeated shared subexpressions compact. The same
+// operand-view encoding is used for native and shared index syntax; snapshots
+// remain absent from leaf hashes as in the native memory-blind fingerprint.
+fn memory_blind_operand_fingerprint(root: MachineOperandView<'_>) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let key = |value: MachineOperandView<'_>| match value {
+        MachineOperandView::Shared(term) => (true, term.id()),
+        MachineOperandView::Legacy(term) => (false, term as *const MachineTerm as usize as u64),
+    };
+    let mut values = std::collections::HashMap::new();
+    let mut pending = vec![(root, false)];
+    while let Some((value, finish)) = pending.pop() {
+        crate::instrumentation::record_deterministic_work(1);
+        if values.contains_key(&key(value)) {
+            continue;
+        }
+        if let MachineOperandView::Shared(term) = value
+            && let Some(hash) =
+                MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow().get(&term.id()).copied())
+        {
+            values.insert(key(value), hash);
+            continue;
+        }
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        let children = if let Some((format, op, args)) = value.binary() {
+            0u8.hash(&mut hash);
+            format.hash(&mut hash);
+            op.hash(&mut hash);
+            args.to_vec()
+        } else if let Some((format, op, arg)) = value.unary() {
+            1u8.hash(&mut hash);
+            format.hash(&mut hash);
+            op.hash(&mut hash);
+            vec![arg]
+        } else if let Some((encoding, source, destination, arg)) = value.cast() {
+            2u8.hash(&mut hash);
+            encoding.hash(&mut hash);
+            source.hash(&mut hash);
+            destination.hash(&mut hash);
+            vec![arg]
+        } else {
+            3u8.hash(&mut hash);
+            if let Some(literal) = value.literal() {
+                hash_memory_blind_bitvector(&literal, &mut hash);
+            } else {
+                let leaf = value.read_source().expect("retained machine leaf");
+                hash_memory_blind_bitvector(&leaf, &mut hash);
+            }
+            let hash = hash.finish();
+            values.insert(key(value), hash);
+            if let MachineOperandView::Shared(term) = value {
+                MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow_mut().insert(term.id(), hash));
+            }
+            continue;
+        };
+        if !finish {
+            pending.push((value, true));
+            pending.extend(children.into_iter().map(|child| (child, false)));
+        } else {
+            for child in children {
+                values[&key(child)].hash(&mut hash);
+            }
+            let hash = hash.finish();
+            values.insert(key(value), hash);
+            if let MachineOperandView::Shared(term) = value {
+                MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow_mut().insert(term.id(), hash));
+            }
+        }
+    }
+    values[&key(root)]
 }
 
 fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, hasher: &mut H) {
@@ -2281,12 +2373,20 @@ fn collect_pointer_offset_memory_loads(
             collect_pointer_offset_memory_loads(left, current_memory, loads, seen_integers)?;
             collect_pointer_offset_memory_loads(right, current_memory, loads, seen_integers)
         }
-        PointerOffsetTerm::Int32Scaled { value, .. } => {
-            collect_bitvector_memory_loads(value, current_memory, loads, Some(4), seen_integers)
-        }
-        PointerOffsetTerm::Int64Scaled { value, .. } => {
-            collect_bitvector_memory_loads(value, current_memory, loads, Some(8), seen_integers)
-        }
+        PointerOffsetTerm::Int32Scaled { value, .. } => collect_shared_machine_memory_loads(
+            value,
+            current_memory,
+            loads,
+            Some(4),
+            seen_integers,
+        ),
+        PointerOffsetTerm::Int64Scaled { value, .. } => collect_shared_machine_memory_loads(
+            value,
+            current_memory,
+            loads,
+            Some(8),
+            seen_integers,
+        ),
     }
 }
 
@@ -2723,6 +2823,20 @@ fn collect_shared_machine_memory_loads(
             seen_integers,
         );
     };
+    // A selected root leaf has no shared arithmetic to summarize. Resolve it
+    // directly using the existing width/snapshot/registry rules.
+    if let Some(leaf) = value.operand_view().read_source() {
+        return collect_bitvector_memory_loads_with_width(
+            &leaf,
+            current_memory,
+            loads,
+            width,
+            seen_integers,
+        );
+    }
+    if value.operand_view().literal().is_some() {
+        return Ok(());
+    }
     collect_shared_read_memory_loads(root, current_memory, loads, width, seen_integers)?;
     let interrupted = || "memory-load collection exceeded its checking budget".to_string();
     let leaves = crate::kernel::shared_machine_conversion_leaves(root, || {
@@ -13917,5 +14031,150 @@ mod shared_read_memory_collection_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pointer_index_walk_tests {
+    use super::*;
+    use crate::kernel::{KernelTermExport, KernelTermImport, VerificationSession};
+
+    fn offset(machine: SharedMachineIntegerTerm) -> PointerOffsetTerm {
+        if machine.ty().format().bits() == 32 {
+            PointerOffsetTerm::Int32Scaled {
+                value: machine,
+                byte_width: 4,
+            }
+        } else {
+            let unsigned = machine.ty() == MachineIntegerType::UInt64;
+            PointerOffsetTerm::Int64Scaled {
+                value: machine,
+                byte_width: 8,
+                unsigned,
+            }
+        }
+    }
+
+    #[test]
+    fn pointer_index_reads_and_fingerprints_preserve_native_rules() {
+        for ty in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let _session = VerificationSession::enter();
+            let memory = CMemory::new().with_block("r7-read", 8);
+            let address = Pointer {
+                block: PointerBlock::Concrete("r7-read".into()),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let old = intern_c_memory(memory.clone());
+            let changed = memory
+                .clone()
+                .store(address.clone(), CValue::Int32(MachineTerm::constant(7)));
+            let mut fingerprints = Vec::new();
+            let mut previous = None;
+            for snapshot in [old, intern_c_memory(changed.clone())] {
+                let native = MachineTerm::Binary {
+                    format: ty,
+                    op: MachineBinaryOp::Add,
+                    left: MachineTerm::Variable(Variable(1007210)).into(),
+                    right: MachineTerm::MemoryLoad(
+                        snapshot,
+                        address.clone().into(),
+                        LoadKind::Int32,
+                    )
+                    .into(),
+                };
+                let root = KernelTermImport::default()
+                    .machine_arithmetic(ty, &native)
+                    .unwrap();
+                let shared = offset(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
+                let legacy = offset(SharedMachineIntegerTerm::intern(ty, native.clone()));
+                let before = KernelTermExport::machine_export_count();
+                let shared_view = match &shared {
+                    PointerOffsetTerm::Int32Scaled { value, .. }
+                    | PointerOffsetTerm::Int64Scaled { value, .. } => value.operand_view(),
+                    _ => unreachable!(),
+                };
+                assert_eq!(
+                    memory_blind_operand_fingerprint(shared_view),
+                    memory_blind_operand_fingerprint(MachineOperandView::Legacy(&native)),
+                );
+                assert!(operands_equal_with_load_atoms(
+                    ty,
+                    shared_view,
+                    MachineOperandView::Legacy(&native),
+                    &|a, b| a == b,
+                ));
+                for current in [&memory, &changed] {
+                    let (mut actual, mut expected) = (Vec::new(), Vec::new());
+                    let a = collect_pointer_offset_memory_loads(
+                        &shared,
+                        current,
+                        &mut actual,
+                        &mut BTreeSet::new(),
+                    );
+                    let b = collect_bitvector_memory_loads(
+                        &native,
+                        current,
+                        &mut expected,
+                        Some(ty.format().bits() / 8),
+                        &mut BTreeSet::new(),
+                    );
+                    assert_eq!(a, b);
+                    assert_eq!(actual, expected);
+                }
+                let pointer = |offset| Pointer {
+                    block: PointerBlock::Concrete("r7-index".into()),
+                    offset,
+                };
+                let hash = memory_blind_pointer_fingerprint(&pointer(shared.clone()));
+                assert_eq!(
+                    hash,
+                    memory_blind_pointer_fingerprint(&pointer(legacy.clone()))
+                );
+                fingerprints.push(hash);
+                let loads_match = |a: &MachineTerm, b: &MachineTerm| a == b;
+                assert!(offsets_equal_with_load_atoms(
+                    &shared,
+                    &shared,
+                    &loads_match
+                ));
+                if ty == MachineIntegerType::Int32 {
+                    assert!(offsets_equal_with_load_atoms(
+                        &shared,
+                        &legacy,
+                        &loads_match
+                    ));
+                    assert!(offsets_equal_with_load_atoms(
+                        &legacy,
+                        &shared,
+                        &loads_match
+                    ));
+                    if let Some(previous) = &previous {
+                        assert!(!offsets_equal_with_load_atoms(
+                            &shared,
+                            previous,
+                            &|_, _| false
+                        ));
+                        assert!(offsets_equal_with_load_atoms(&shared, previous, &|_, _| {
+                            true
+                        }));
+                    }
+                    previous = Some(shared.clone());
+                }
+                assert_eq!(KernelTermExport::machine_export_count(), before);
+            }
+            assert_eq!(
+                fingerprints[0], fingerprints[1],
+                "snapshots do not affect the fingerprint"
+            );
+        }
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/assumptions/pointer_index_walks.rs");
     }
 }
