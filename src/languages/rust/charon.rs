@@ -3895,6 +3895,7 @@ pub(super) fn decode_crate(
         records,
         enums,
         functions,
+        library_iterators: false,
     })
 }
 

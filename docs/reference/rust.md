@@ -1434,6 +1434,61 @@ input, exact multiples, short tails, nested loops, full-width chunk sizes,
 zero-size rejection, false claims, missing bounds/views, and expanded proofs.
 Mutable chunk iterators and chunks of non-byte slices remain unsupported.
 
+## Library iterators
+
+A Rust unit with `"iterators": "library"` imports each `chunks_exact`
+iterator as one value of the library's `ChunksExact<uint8>`
+([`click::rust::chunks_exact`](library/index.md#clickrustchunks_exact)), not
+as the cursor and remaining-byte locals above:
+
+```json
+"chunks": {
+  "language": "rust",
+  "iterators": "library",
+  "sources": {"chunks.rs": {}}
+}
+```
+
+`library` is the only value, and only a Rust unit takes the field. It is
+temporary: it exists while fixtures move to the library model
+(`design/rust-iterators.md`), after which that model is the only one and the
+field is removed.
+
+Under it `bytes.chunks_exact(size)` is a call whose contract requires
+`size != 0` and gives `chunks_exact::chunks_exact(Slice<u8>::Slice(bytes,
+bytes.len()), size)`. A test for another chunk reads `it.len()`, and
+`next()` on an iterator that has one yields `it.nth(0u64)` and leaves
+`it.after_next()`. The proof cites the module's axioms: what `chunks_exact`
+builds (`len_chunks_exact`, `nth_chunks_exact`, `remainder_chunks_exact`,
+over the slice's pointer and length) and what one `next()` leaves
+(`len_after_next`, `nth_after_next`, `remainder_after_next`).
+
+In a loop's clauses and phases `iter` is the iterator value the loop
+advances, and `loop(i).iter` names it outside them, so `decreases
+iter.len()` ranks the loop and an invariant states what the proof needs of
+the chunks still to come. No cursor, remaining-byte count or generated local
+is named:
+
+```text
+loop {
+    decreases iter.len();
+    invariant n + iter.len() == bytes.len() / 4u64;
+    ...
+}
+```
+
+The loop is imported as a `while (1)` whose header reads `iter.len()` and
+leaves by `break` when it is zero, so a `preserve` script that needs
+`0u64 < iter.len()` splits on it with a proof `if` after the header's steps;
+the empty arm takes the `break` with one `step()`.
+
+One limit remains. The chunk a pass binds is `iter.nth(0u64)`, whose data
+pointer is the library function's result, equal to `bytes + k * size` only
+by `nth_chunks_exact`. A read through it, `chunk[0]`, is refused: the read
+has to be placed in the `bytes` view, and a stated equality does not place a
+pointer in a view of symbolic length. A loop that reads its chunks therefore
+still needs the hidden-state model.
+
 ## Moves and drops
 
 [`examples/rust-move-drop/guard.rs`](https://github.com/clicklang/click/blob/master/examples/rust-move-drop/guard.rs)

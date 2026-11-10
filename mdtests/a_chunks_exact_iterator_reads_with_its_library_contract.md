@@ -5,24 +5,26 @@ not by verifier code (`design/rust-iterators.md`): an iterator value is the
 chunks it will still yield, `it.len()` of them, the `k`-th `it.nth(k)`. The
 axioms say what `s.chunks_exact(n)` builds and what one `next()` leaves, and
 a proof cites them. Chunk `k` starts at element `k * 4`, at a symbolic `k`.
+The construction axioms speak of a slice built from its data pointer and
+length, the form a slice has in a proof about a program.
 
 ```click
 import click::rust::slice;
 import click::rust::chunks_exact;
 
-theorem chunk_count(s: Slice<uint8>) {
-    ensures s.chunks_exact(4u64).len() == s.len() / 4u64 by {
-        apply(chunks_exact::len_chunks_exact(s, 4u64));
+theorem chunk_count(p: uint8*, m: uint64) {
+    ensures Slice<uint8>::Slice(p, m).chunks_exact(4u64).len() == m / 4u64 by {
+        apply(chunks_exact::len_chunks_exact(p, m, 4u64));
     }
 }
 
-theorem chunk_at(s: Slice<uint8>, k: uint64) {
-    requires k < s.len() / 4u64;
-    ensures s.chunks_exact(4u64).nth(k).as_ptr() == s.as_ptr() + k * 4u64 by {
-        apply(chunks_exact::nth_chunks_exact(s, 4u64, k));
+theorem chunk_at(p: uint8*, m: uint64, k: uint64) {
+    requires k < m / 4u64;
+    ensures Slice<uint8>::Slice(p, m).chunks_exact(4u64).nth(k).as_ptr() == p + k * 4u64 by {
+        apply(chunks_exact::nth_chunks_exact(p, m, 4u64, k));
     }
-    ensures s.chunks_exact(4u64).nth(k).len() == 4u64 by {
-        apply(chunks_exact::nth_chunks_exact(s, 4u64, k));
+    ensures Slice<uint8>::Slice(p, m).chunks_exact(4u64).nth(k).len() == 4u64 by {
+        apply(chunks_exact::nth_chunks_exact(p, m, 4u64, k));
     }
 }
 

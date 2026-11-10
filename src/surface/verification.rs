@@ -9107,6 +9107,16 @@ fn rust_enum_type_name(enum_type: crate::kernel::TypeParameterName) -> String {
     {
         return crate::languages::rust::names::vec_type_name(&spelling(element));
     }
+    // The library's `ChunksExact<uint8>`, which a sidecar names
+    // `ChunksExact<u8>`.
+    if let Some((primitive, arguments)) = generics::primitive_instance_of(&algebraic_type.name)
+        && primitive == "ChunksExact"
+        && let [element] = arguments.as_slice()
+    {
+        let mut name = primitive;
+        crate::languages::rust::names::push_type_argument(&mut name, &spelling(element));
+        return name;
+    }
     match algebraic_type.arguments.as_slice() {
         [argument] if algebraic_type.name == "Option" => {
             crate::languages::rust::names::option_type_name(&spelling(argument))

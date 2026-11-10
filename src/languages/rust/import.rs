@@ -107,6 +107,9 @@ pub(super) fn prepared_for_test(export: RustExport) -> Result<PreparedRustImport
 struct Config {
     source: String,
     crate_config: Option<super::crate_inputs::CrateConfig>,
+    /// The unit's `"iterators": "library"`: see
+    /// [`RustExport::library_iterators`].
+    library_iterators: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -312,7 +315,7 @@ fn decode(
     c: &Config,
     files: &super::crate_inputs::SourceFiles,
 ) -> Result<RustExport, String> {
-    let export = if c.crate_config.is_some() {
+    let mut export = if c.crate_config.is_some() {
         super::charon::decode_crate(
             bytes,
             &c.source,
@@ -323,6 +326,9 @@ fn decode(
     } else {
         super::charon::decode(bytes, &c.source, &files[&c.source])?
     };
+    if c.library_iterators {
+        super::standard_library::use_library_iterators(&mut export);
+    }
     super::lowering::lower(&export)?;
     Ok(export)
 }
@@ -467,6 +473,9 @@ pub(crate) struct UnitConfig {
     /// The crate description; without one, `source` is a single-file
     /// program.
     pub crate_config: Option<super::crate_inputs::CrateConfig>,
+    /// The unit's `"iterators": "library"`, the migration switch of
+    /// `design/rust-iterators.md`.
+    pub library_iterators: bool,
     /// The artifact's absolute path.
     pub artifact: PathBuf,
     pub lock_path: PathBuf,
@@ -494,6 +503,7 @@ impl UnitConfig {
             let config = Config {
                 source: name,
                 crate_config: None,
+                library_iterators: self.library_iterators,
             };
             return Ok((config, root, source));
         };
@@ -505,6 +515,7 @@ impl UnitConfig {
         let config = Config {
             source: self.source.clone(),
             crate_config: Some(crate_config.clone()),
+            library_iterators: self.library_iterators,
         };
         Ok((config, unit_root, source))
     }

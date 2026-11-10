@@ -56,6 +56,17 @@ impl Project {
         .unwrap();
         p
     }
+    /// [`Project::new`] with the unit's iterators imported as values of
+    /// their library types (`design/rust-iterators.md`).
+    fn with_library_iterators(source: &str) -> Self {
+        let p = Self::isolated(source);
+        fs::write(
+            p.project_file(),
+            r#"{"units": {"borrow": {"language": "rust", "iterators": "library", "sources": {"borrow.rs": {}}}}}"#,
+        )
+        .unwrap();
+        p
+    }
     /// Where a test writes an import description in the per-sidecar config
     /// format of earlier releases, for [`Project::adopt_config`] to translate.
     fn config(&self) -> PathBuf {
@@ -5376,6 +5387,87 @@ fn rust_chunks_exact_remainder_metadata_and_bytes() {
     ] {
         assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
     }
+}
+
+/// Under `"iterators": "library"` a `ChunksExact` is one value of the
+/// library's type, and a proof reads it through that type's contract: the
+/// remainder from what `chunks_exact` builds, and a loop's count from what
+/// each `next()` leaves. No cursor or remaining-byte count is named.
+#[test]
+#[ignore = "nightly: 12s in the parallel gate"]
+fn library_iterators_prove_chunks_exact_by_its_contract() {
+    let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
+    pub fn count(bytes: &[u8]) -> usize { let mut n = 0; for _chunk in bytes.chunks_exact(4) { n += 1; } n }";
+    let p = Project::with_library_iterators(source);
+    p.refresh().unwrap();
+    let prepared = p.prepared().unwrap();
+    let sidecar = "import click::rust::slice;
+    import click::rust::chunks_exact;
+    verifying \"borrow.rs\";
+    fn tail_len(bytes: &[u8], size: usize) -> usize {
+        requires size != 0u64;
+        ensures result == bytes.len() % size;
+    } by {
+        step_until(function.exit);
+        apply(chunks_exact::remainder_chunks_exact(bytes, bytes.len(), size));
+        solve();
+    }
+    fn count(bytes: &[u8]) -> usize {
+        ensures result == bytes.len() / 4u64;
+    } by {
+        step_until(loop(0));
+        have loop(0).iter.len() == bytes.len() / 4u64 by {
+            apply(chunks_exact::len_chunks_exact(bytes, bytes.len(), 4u64));
+            solve();
+        }
+        loop {
+            decreases iter.len();
+            invariant n + iter.len() == bytes.len() / 4u64;
+            preserve by {
+                step(); step(); step(); step();
+                if 0u64 < iter.len() {
+                    have n < bytes.len() / 4u64;
+                    apply(chunks_exact::len_after_next(iter));
+                    mark taken;
+                    step_until(loop(0).back_edge());
+                    have iter.len() == at(taken, iter.len()) - 1u64;
+                    have n == at(taken, n) + 1u64;
+                    have n + iter.len() == bytes.len() / 4u64;
+                    have iter.len() < at(taken, iter.len());
+                } else {
+                    step();
+                }
+            }
+        }
+        have loop(0).iter.len() == 0u64;
+        step_until(function.exit);
+        solve();
+    }";
+    C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
+    for invalid in [
+        // Rust panics on a zero chunk size.
+        sidecar.replace("requires size != 0u64;", ""),
+        sidecar.replace(
+            "result == bytes.len() % size",
+            "result == bytes.len() / size",
+        ),
+        sidecar.replace(
+            "result == bytes.len() / 4u64",
+            "result == bytes.len() / 4u64 + 1u64",
+        ),
+        // `next()` yields a chunk only from an iterator that has one.
+        sidecar.replace("if 0u64 < iter.len() {", "if 0u64 <= iter.len() {"),
+    ] {
+        assert_ne!(invalid, sidecar);
+        assert!(C0VerificationSession::new_program_prepared(&invalid, &prepared).is_err());
+    }
+    // The option is the unit's: without it the same source keeps the
+    // hidden-state model, which has no iterator value to cite.
+    let hidden = Project::new(source);
+    hidden.refresh().unwrap();
+    assert!(
+        C0VerificationSession::new_program_prepared(sidecar, &hidden.prepared().unwrap()).is_err()
+    );
 }
 
 fn chunks_loop_project(by_reference: bool) -> (Project, String) {

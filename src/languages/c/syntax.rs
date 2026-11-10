@@ -246,6 +246,10 @@ pub enum RustIteratorKind {
     /// `ChunksExact<u8>`: `_cursor`, `_remaining` bytes, `_size`, `_tail`
     /// and `_tail_len`.
     Chunks,
+    /// A `ChunksExact<u8>` in the library-iterator model: one local holding
+    /// a value of the library's `ChunksExact<uint8>`, which a proof names
+    /// `iter` and reads with that type's methods.
+    ChunksLibrary,
     /// `Range`: `_start` and `_end`.
     Range,
     /// `RangeInclusive`: `_start`, `_end`, and `_done`, whether it has
