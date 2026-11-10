@@ -58,8 +58,9 @@ Already landed:
 - Volatile observation result names (#2492), with typed value retention and
   branch/indexing controls. Specification reads no longer emit C access events.
 
-**The split is not complete.** Source inspection still finds a live wide
-comparison export, a restricted signed producer and generic legacy payloads.
+**The split is not complete.** The compiler-assisted cleanup audit finds
+remaining scaled-index checker exports; a restricted signed producer and
+generic legacy payloads also remain.
 These are concrete migration boundaries,
 not a count of every remaining defect in the verifier.
 
@@ -73,10 +74,11 @@ be treated as a current to-do list. The detailed evidence is preserved in
 ### 1. Close the remaining checker boundaries — next
 
 Finish the checker consumers before enabling the remaining shared producers.
-The bounded caller audit below is complete as of 2026-11-09, at upstream
-`fe8c6d931` (PR #2500). R1–R7 are now closed. Before enabling more producers, finish the
-obsolete-adapter cleanup against the classified boundaries below; step 1 is
-not yet marked complete.
+The original bounded caller audit was recorded at `fe8c6d931` (PR #2500).
+Its specific R1–R7 reproductions are closed, but its coverage was incomplete:
+removing the implicit native conversions at `b247d7499` (PR #2517) exposes
+additional live checker callers. Step 1 remains open. Do not treat this as
+only dead-code deletion or enable producers on the strength of R1–R7 alone.
 A textual accessor occurrence alone is not evidence of a checker dependency.
 
 | Route/group | Evidence and required closure |
@@ -222,6 +224,44 @@ unchanged origins and intervening writes. Multi-size cold mismatch controls
 refuse without exporting or walking the shared arithmetic DAG. Existing
 read-evidence tests still recheck authority after syntax-cache reuse.
 
+#### Cleanup compiler audit — open
+
+Temporarily removing `SharedMachineIntegerTerm`'s `Deref<Target = MachineTerm>`
+and `AsRef<MachineTerm>` implementations exposes implicit conversions that
+text searches missed. The `fast-gate` test build reports both production and
+test consumers; a diagnostic is not automatically a distinct checker gap.
+The traits cannot yet be deleted. In particular:
+
+- `PureFactContext::pointer_offset_congruence_evidence` passes shared scaled
+  indices to native exact/direct bitvector evidence builders. Migrate the
+  evidence endpoints without dropping their existing source authority.
+- `api/contract_certification.rs` passes scaled indices into signed bound,
+  memory-cell and selected-condition checks; `contract_claims.rs` also
+  inspects them through a native read helper. These are live checkers.
+- `difference_graph.rs`, `assumptions::{memory_reasoning,proposition_reasoning,
+  variable_chains}` and `condition_reasoning::order_paths` contain additional
+  native index inspectors/adapters. Separate root-only tests from recursive
+  checking and preserve their existing rules.
+- `PointerOffsetTerm::{scaled_values,for_each_scaled_value,any_scaled_value}`
+  still expose native operands. Their callers include checker walks as well
+  as output/diagnostic code; audit callers before deleting these APIs.
+
+This cleanup increment removes `map_scaled_values`, replacing it with a
+shared-operand mapper. Equality-graph affine keys, offset interning, read-offset
+classification and four-byte scaled-word source indexing retain their inputs.
+Offset equality follows the existing shared-input policy: shared syntax and
+read snapshots retain their identity; genuine native inputs take the legacy
+comparison form before locking. No-export controls cover width/signedness,
+source polarity/withdrawal, sibling contexts, snapshot identity and cold DAGs.
+Validation: all 12 focused tests and the full gate passed (7,733 unit/API tests,
+58 examples, 5,123 mdtests). The gate took 11m06s and emitted its existing
+ten-minute budget warning; no limits changed.
+
+**Next cleanup:** migrate the offset-congruence evidence endpoints and their
+selected consumers above, then repeat the compiler-assisted trait-removal
+check. Keep legitimate native output boundaries explicit; do not replace a
+hidden export with an explicit export inside a checker just to compile.
+
 #### Classified boundaries and retained coverage
 
 - `variable_collection::visit_machine_carrier_leaves`, ordinary shared Integer
@@ -268,7 +308,8 @@ passed 1,404 scaling/focused tests and the full gate: 7,729 unit/API tests,
 58 example projects and 5,123 mdtests. The gate exited successfully in 10m48s
 with its existing ten-minute budget warning; no limits were changed.
 
-**Delivery order:** finish obsolete checker-adapter cleanup, then proceed to producers. Keep
+**Delivery order:** finish the live checker routes found by the cleanup audit,
+remove the implicit adapters, then proceed to producers. Keep
 one coherent PR open at a time. R1/R2 reuse the exact native-leaf boundary
 introduced for tagged addresses; no opaque term-family redesign was required.
 
@@ -375,9 +416,9 @@ Tag-form memoization is scoped to the fact/read generation, decision mode and
 nesting depth; cached answers retain their source evidence. Multi-size growing
 DAG tests cover repeated misses and reuse of checked prefixes.
 
-The completed checker audit above now supplies step 1's concrete R1–R7 closure
-list. R1–R7 are closed; finish the obsolete-adapter cleanup before proceeding
-through steps 2–4. Do not resume the
+The R1–R7 reproductions above are closed, but the compiler-assisted cleanup
+audit found additional live routes. Finish those checker migrations and remove
+the implicit adapters before proceeding through steps 2–4. Do not resume the
 census backlog as the default next task.
 
 ## Spellability follow-up — outside the split's finish line
