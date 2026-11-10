@@ -674,7 +674,7 @@ impl ProofFacts {
                             // the same word observation at another snapshot.
                             // Its numeric format and all other Integer structure
                             // remain exact; this is not arithmetic transport.
-                            let mut pairs = Vec::new();
+                            let pairs = Vec::new();
                             for (left, right) in [(a, c), (b, d)] {
                                 if left == right {
                                     continue;
@@ -692,10 +692,15 @@ impl ProofFacts {
                                 {
                                     return None;
                                 }
-                                if let (Some(a), Some(b)) =
-                                    (left.shared_operand(), right.shared_operand())
                                 {
-                                    let differences = rewritten_loads::differences(a, b)?;
+                                    let retain = |value: &SharedMachineIntegerTerm| {
+                                        KernelTerm::retained_machine_operand(
+                                            value.ty(),
+                                            value.operand_view(),
+                                        )
+                                    };
+                                    let (a, b) = (retain(left), retain(right));
+                                    let differences = rewritten_loads::differences(&a, &b)?;
                                     if !bound_variables.is_empty()
                                         && !differences.is_empty()
                                         && [left.operand_view(), right.operand_view()]
@@ -722,13 +727,17 @@ impl ProofFacts {
                                         }) {
                                             return None;
                                         }
-                                        retained_leaves.push((
+                                        match (
                                             rewritten_loads::evidence_operand(a),
                                             rewritten_loads::evidence_operand(b),
-                                        ));
+                                        ) {
+                                            (Some(a), Some(b)) => retained_leaves.push((a, b)),
+                                            _ => {
+                                                equalities
+                                                    .push(self.checked_shared_read_equality(a, b)?);
+                                            }
+                                        }
                                     }
-                                } else {
-                                    pairs.push((left.value(), right.value()));
                                 }
                             }
                             pairs
@@ -898,6 +907,57 @@ impl ProofFacts {
         }
         Some(facts)
     }
+    // Arithmetic remains shared until the authority check. Native evidence
+    // for a stored value comes from that selected store, never an export.
+    fn checked_shared_read_equality(&self, a: &KernelTerm, b: &KernelTerm) -> Option<Proposition> {
+        let (a, b) = (MachineOperandView::Shared(a), MachineOperandView::Shared(b));
+        let kind = |value: MachineOperandView<'_>| {
+            value.read().map(|(_, _, kind)| kind).or_else(|| {
+                value
+                    .variable()
+                    .and_then(crate::kernel::registered_load_kind_for_variable)
+            })
+        };
+        let (ak, bk) = (kind(a), kind(b));
+        let kind = ak.or(bk)?;
+        if matches!((ak, bk), (Some(a), Some(b)) if a != b) {
+            return None;
+        }
+        let format = match kind {
+            LoadKind::Int8 => MachineIntegerType::Int8,
+            LoadKind::UInt8 => MachineIntegerType::UInt8,
+            LoadKind::Int16 => MachineIntegerType::Int16,
+            LoadKind::UInt16 => MachineIntegerType::UInt16,
+            LoadKind::Int32 => MachineIntegerType::Int32,
+            LoadKind::Bits64 => MachineIntegerType::Int64,
+            _ => return None,
+        };
+        let selected = Proposition::ConditionIs(
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                CompareRelation::Equal,
+                [a, b],
+            ),
+            true,
+        );
+        if self.pure_assumption_available(&selected)
+            || shared_premise_bridged_by_load_chain(
+                &selected,
+                &self.load_equalities_mentioning(&selected),
+                self.assumptions(),
+            )
+            || crate::kernel::memory_provenance::checked_stored_origin_operand_equality(
+                a,
+                b,
+                self.assumptions(),
+            )
+        {
+            Some(selected)
+        } else {
+            None
+        }
+    }
+
     /// Exact premise-store identity, without comparing ambient propositions.
     pub(super) fn shares_premises_with(&self, other: &Self) -> bool {
         self.top_level_exact

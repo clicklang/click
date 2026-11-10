@@ -42,14 +42,14 @@ impl Hash for Key {
     }
 }
 
-pub(super) struct MachineSourceMatcher<'a> {
+pub(in crate::kernel) struct MachineSourceMatcher<'a> {
     source: MachineOperandView<'a>,
     sources: HashMap<MachineIntegerType, KernelTerm>,
     nodes: HashMap<u64, usize>,
     keys: HashMap<Key, usize>,
 }
 impl<'a> MachineSourceMatcher<'a> {
-    pub(super) fn new(source: MachineOperandView<'a>) -> Self {
+    pub(in crate::kernel) fn new(source: MachineOperandView<'a>) -> Self {
         Self {
             source,
             sources: HashMap::new(),
@@ -58,7 +58,7 @@ impl<'a> MachineSourceMatcher<'a> {
         }
     }
 
-    pub(super) fn matches(
+    pub(in crate::kernel) fn matches(
         &mut self,
         format: MachineIntegerType,
         term: &KernelTerm,

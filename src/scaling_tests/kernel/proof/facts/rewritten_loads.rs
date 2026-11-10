@@ -84,3 +84,42 @@ fn retained_rewritten_loads_share_syntax_but_recheck_authority() {
         }
     }
 }
+
+#[test]
+fn mixed_read_mismatch_keeps_large_shared_operands_unexported() {
+    let mut samples = Vec::new();
+    for depth in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1007350));
+        for _ in 0..depth {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let a = observed(SharedMachineIntegerTerm::from_shared(ty, root).unwrap());
+        let b = observed(SharedMachineIntegerTerm::intern(
+            ty,
+            MachineTerm::If {
+                condition: ConditionTerm::Variable(Variable(1007351)).into(),
+                then_term: MachineTerm::constant(1).into(),
+                else_term: MachineTerm::constant(2).into(),
+            },
+        ));
+        let before = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert!(
+                ProofFacts::default()
+                    .with_checked_rewritten_loads(&a, &b)
+                    .is_none()
+            );
+            assert!(
+                ProofFacts::default()
+                    .with_checked_rewritten_loads(&b, &a)
+                    .is_none()
+            );
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), before);
+        samples.push(work);
+    }
+    assert!(samples.iter().all(|w| *w == samples[0]), "{samples:?}");
+}

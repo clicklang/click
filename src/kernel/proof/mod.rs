@@ -30,7 +30,7 @@ mod integer_product_bounds;
 mod integer_quotient_bound;
 mod integer_quotient_shift;
 mod integer_relation_transport;
-mod machine_source_match;
+pub(in crate::kernel) mod machine_source_match;
 mod object;
 mod obligations;
 pub(crate) mod signed_arithmetic;
