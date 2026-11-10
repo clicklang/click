@@ -377,6 +377,7 @@ mod tests {
             result_type: CType::Int32,
             pointer_result: None,
             result_object_class: None,
+            projection: None,
             arguments: vec![SpecPureFunctionArgument::ObjectPointer {
                 argument: Box::new(SpecPureFunctionArgument::Value(value)),
                 object_class: class(),

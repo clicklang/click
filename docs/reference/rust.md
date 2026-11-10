@@ -450,7 +450,9 @@ body of `half` unfolded, prints as its constructor at its element type,
 written in Click syntax, the library's calls print as calls,
 `slice::len(Slice<uint8>::Slice(p, n))`. `.len()` and `.as_ptr()` of a
 constructed slice, such as a subslice, reduce as they are read, so
-`bytes[k..].len()` is its length with no `unfold`. A subslice,
+`bytes[k..].len()` is its length with no `unfold`; the same holds for a
+slice a theorem's parameter is bound to, so a library axiom over a slice
+applies to `Slice<u8>::Slice(bytes, bytes.len())`. A subslice,
 `bytes[a..b]`, `bytes[a..]` or `bytes[..b]` of a slice parameter or a slice
 value, is the slice value with data `bytes.as_ptr() + a` and length `b - a`
 (`b` defaults to the length). It has no memory effect: `bytes[1..3][0]` reads
@@ -1460,7 +1462,8 @@ bytes.len()), size)`. A test for another chunk reads `it.len()`, and
 `next()` on an iterator that has one yields `it.nth(0u64)` and leaves
 `it.after_next()`. The proof cites the module's axioms: what `chunks_exact`
 builds (`len_chunks_exact`, `nth_chunks_exact`, `remainder_chunks_exact`,
-over the slice's pointer and length) and what one `next()` leaves
+applied to the slice, `Slice<u8>::Slice(bytes, bytes.len())`) and what one
+`next()` leaves
 (`len_after_next`, `nth_after_next`, `remainder_after_next`).
 
 In a loop's clauses and phases `iter` is the iterator value the loop

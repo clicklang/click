@@ -94,7 +94,9 @@ non-algebraic type, such as a sequence, stays the index it was.
 
 The definitional reductions stay: `.len()` and `.as_ptr()` of a
 constructed slice reduce to its fields as they are lowered, so a subslice's
-length needs no `unfold` (#2497).
+length needs no `unfold` (#2497). The kernel makes the same reduction where
+a library field function is evaluated on a constructed value, so it also
+holds for a slice bound to a theorem's parameter.
 
 ### Slice parameters
 

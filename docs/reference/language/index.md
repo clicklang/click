@@ -1184,6 +1184,16 @@ Arithmetic may treat an opaque result as an unknown Integer without unfolding.
 A smart tactic may emit a checked unfold step; expansion makes that step visible.
 See [the function example](https://github.com/clicklang/click/blob/master/mdtests/integer_function_successor.md).
 
+One kind of call is not opaque. A library function whose body is exactly
+`match s { V(.., x, ..) => x }` is a field of its argument, and applied to a
+value built with that constructor it is the field:
+`slice::len(Slice<uint8>::Slice(p, n))` is `n`. This holds wherever the
+constructed value arrives, including a theorem parameter that `apply` binds
+to one, so a theorem stated over a slice applies to a slice built from its
+pointer and length. On any other argument the call stays opaque, and a
+program's own function always does
+([example](https://github.com/clicklang/click/blob/master/mdtests/a_library_field_function_of_a_constructed_value_is_the_field.md)).
+
 Machine-integer `forall` and `exists` binders retain their declared width and
 signedness, including `int64` and `uint8`. `intro`, `obtain`, and `witness`
 preserve that type; a witness must have the exact binder type. Narrow integer
