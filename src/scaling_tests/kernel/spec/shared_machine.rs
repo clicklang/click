@@ -99,21 +99,34 @@ fn signed_available_operand_production_is_linear_beside_unrelated_terms() {
 }
 
 #[test]
-fn nested_signed_preparation_rejects_before_importing_available_operands() {
-    for size in [16, 64, 256] {
-        let leaf = || SpecExpression::Value(CValue::Int64(MachineTerm::Variable(Variable(986000))));
-        let mut expression = leaf();
-        for _ in 0..size {
-            expression = SpecExpression::Add(Box::new(expression), Box::new(leaf()));
+fn nested_signed_preparation_retains_obligations_without_prefix_exports() {
+    for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+        let mut previous = None;
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let leaf =
+                || SpecExpression::Value(wrap(format, MachineTerm::Variable(Variable(986000))));
+            let mut expression = leaf();
+            for _ in 0..size {
+                expression = SpecExpression::Add(Box::new(expression), Box::new(leaf()));
+            }
+            let exports = KernelTermExport::machine_export_count();
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                let mut execution = ExecutionBudget::new();
+                prepare(&expression, &mut SpecEvaluation::logical(&mut execution))
+                    .unwrap()
+                    .unwrap()
+            });
+            assert_eq!(result.obligations.len(), size);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            if let Some(previous_work) = previous {
+                assert!(
+                    work <= 5 * previous_work,
+                    "fourfold input growth must remain near linear: format={format:?}, size={size}, previous={previous_work}, work={work}"
+                );
+            }
+            previous = Some(work);
         }
-        let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
-            let mut execution = ExecutionBudget::new();
-            prepare(&expression, &mut SpecEvaluation::logical(&mut execution)).unwrap()
-        });
-        assert!(result.is_none());
-        // The unsigned selection stops on its first signed value. No imports,
-        // domains or growing boxed-prefix exports have happened.
-        assert_eq!(work, 2 * (size + 1));
     }
 }
 
