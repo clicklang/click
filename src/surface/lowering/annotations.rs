@@ -9558,7 +9558,7 @@ fn instantiate_algebraic_kernel_field_type(
             .and_then(|index| arguments.get(index))
         {
             Some(AlgebraicValueType::C(element)) => {
-                crate::surface::generics::c0_type_from_kernel(element.clone())
+                crate::surface::generics::c0_type_from_kernel(*element)
                     .pointer_type()
                     .map(|pointer| AlgebraicValueType::C(pointer.to_kernel_type()))
                     .ok_or_else(|| format!("`{name}*` needs `{name}` to be a C scalar type"))
