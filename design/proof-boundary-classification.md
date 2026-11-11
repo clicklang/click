@@ -1,13 +1,13 @@
 # Proof boundary classification
 
-Source reconciliation at `e9222a222` (2026-11-09), updated for resource-scope
-obligation, branch-interpreter, and step/fold obligation extraction. This
-classifies all 19 `mixed` and 8 `operation-to-driver` reference records in
-`build_support/proof_search_edges.tsv`, and groups the remaining operation
-references below. The extraction preserves proof behavior and removes the
-scope-to-driver reference from the machine inventory.
-A classified call is not a complexity proof for its callee. No new scaling
-measurements were made for this audit.
+Source reconciliation at `c53645952` (2026-11-11), the completed head of
+PR #2520. Queue/merge status is separate from this source baseline. This
+classifies all 19 `mixed` and 8 `operation-to-driver` records in
+`build_support/proof_search_edges.tsv` and groups the operation references.
+A record is one caller/target pair, not one runtime call or one slow walk.
+A classified call is not a complexity proof for its callee. This documentation
+pass adds no measurements; preparation evidence below is from the completed
+implementation's tests.
 
 ## Current boundary
 
@@ -27,6 +27,32 @@ arm-script callbacks. Resource scopes incorporate the driver's direct checked
 branch successor through `with_completed_execution_if`. This preserves their
 parent-identity checks and retained history. It does not establish a complexity
 bound for every existing split/join helper.
+
+Step/fold preparation now retains a conditional successor and obligations.
+`ProofDriver::apply_bare_statement_step` and `apply_execution_statement_step`
+prove them at the original input; `Proof::finish_prepared_step` publishes the
+retained result without re-executing the primitive. Failed preparation is a
+final refusal. Named, population/authority, operational wrapper, completed-return
+and legacy definition-law folds use this boundary. Return folds retain path
+endpoints; legacy folds no longer test whole-path certification to select a
+fallback exchange. These are closed preparation tasks, not outstanding adapters.
+
+Scoped evidence: twelve named preparation controls passed on this baseline,
+including constructor counts at 1/8/32, missing-premise refusals, and expansion
+and cold replay. Snapshot-pointer and arithmetic-field regressions preserve the
+meaning of generated obligations. This establishes the selected routes, not a
+cost bound for every evaluator, observation, join or final certification.
+
+Two separate limits remain:
+
+- Arithmetic evaluation still decides some safety conditions before emitting
+  obligations. Driver-owned solving does not make that generation work fast.
+- `ProofDriver::with_proved_lowering_requirements` still probes and invokes its
+  operation again after proving lowering requirements. Its callers include
+  have/claim opening and explicit unfolds. This is not the removed step/fold retry
+  and not hidden solving inside `begin_have`/`begin_contract_claim`. Establish
+  a complete-operation cost violation before treating bounded repeated lowering
+  as a bad-scaling defect.
 
 ## Findings
 
@@ -123,8 +149,9 @@ No second checker or producer/rechecker layer is needed.
 
 - Primitive operations return a successor or outstanding obligations. They
   cannot acquire a driver or invoke a proof script. The outer driver executes
-  supplied proofs, invokes solve when omitted, and resumes the operation.
-  Have/claim opening and resource-scope completion now follow this rule;
+  supplied proofs, invokes solve when omitted, and publishes the retained result.
+  Have/claim opening and resource-scope completion delegate solving; step/fold
+  completion also retains its prepared result without re-execution;
   move the identified script/search adapters out of the primitive interface.
 - Make search access explicit at every discovery entry, including compatibility
   wrappers: a driver-owned access capability passed to search, never stored in
@@ -192,7 +219,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 613 reference records, not 613 obligations to remove.
+The inventory contains 614 reference records, not 614 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

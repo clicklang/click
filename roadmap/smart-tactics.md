@@ -16,7 +16,8 @@ Expensive discovery belongs in budgeted, expandable search, whose expanded
 steps satisfy the same checking rule. A fast special case does not establish
 this guarantee for an operation's other routes.
 
-This operation inventory was reconciled against `e9222a222` on 2026-11-09.
+This operation inventory is reconciled against `c53645952` on 2026-11-11
+(the completed head of PR #2520, independently of queue/merge status).
 It organizes the next measurements; it is not a claim that all checking paths
 have been audited, or that every candidate below is a reproduced defect.
 The interface refactor now exposes discovery through `kernel::search::ProofSearch`
@@ -63,9 +64,9 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **613 reference records**: 7 legacy bridges, 22 callers
+The frozen inventory has **614 reference records**: 7 legacy bridges, 22 callers
 of those bridges, 14 operation references, 8 operation-to-driver references,
-19 mixed references, 110 driver references, 424 search references, 6 presentation
+19 mixed references, 110 driver references, 425 search references, 6 presentation
 references, 1 dispatch and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 14
@@ -81,7 +82,8 @@ operation references.
   performance regressions.
 - **Legitimate search:** driver-owned implicit solve and explicit smart
   planning. Generating obligations is fast work; solving them may be slow and
-  expandable. Have/claim and resource-scope obligation scheduling are no longer open extractions.
+  expandable. Have/claim and resource-scope obligation scheduling, step/fold dispatch,
+  and retained step/fold completion are no longer open extractions.
 - **Transport coverage:** T1–T5 below describe remaining routes. Scalar
   conjunction selection/regrouping and matching compound/nested implications
   with scalar leaves have ordinary expansion coverage. They do not settle
@@ -98,7 +100,8 @@ Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
 do not run arm-script callbacks. Eight operation-to-driver records remain.
-Next scaling experiment: L1 through an actual write.
+For a new scaling experiment, L1 through an actual write remains a bounded
+candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a named T1–T5 route and its retirement criterion,
 not accumulate more examples of an already-covered shape. These are separate
 work items; this reconciliation changes no behavior.
@@ -110,33 +113,23 @@ and fold preparation retains its body facts, even when already known. The driver
 proves each obligation with a written block or ordinary `solve`. This does not
 finish evaluator migration: arithmetic operators still decide some safety
 conditions before emitting any obligation. Replacing those decisions needs
-round-trippable goals and flat generation/publication costs. The attempted
-arithmetic migration fails `struct_array_element_expands_with_its_subscript`
+round-trippable goals and flat generation/publication costs. The earlier, unlanded arithmetic-migration prototype failed `struct_array_element_expands_with_its_subscript`
 (the initialized-global sum has no round-tripping overflow-goal spelling) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
-2765 to 2885 across twelve assignments). Retain those controls for that slice.
-Named-resource folds, including population members and authority controls,
-retain the selected exchange while the driver proves body obligations, then
-append it with the proved context. Operational composite wrapper folds retain
-their checked exchanges too. Both execution-frontier and completed-return
-paths use this completion boundary. Return paths retain their state endpoints
-as evidence is appended, so folds no longer recover them by walking history.
-Preparation must either retain a conditional successor and its obligations or
-return a final refusal. Completion must never rerun the operation. Legacy
-outcome folds retain their definition-law presentation and attach the proved
-facts to the selected return path; they do not probe whole-path certification
-to choose a fallback exchange. Keep the constructor-count and history controls
-in `prepared_legacy_outcome_fold_applies_once`,
-`prepared_view_call_does_not_retry_loan_recovery`,
-`prepared_guarded_statement_does_not_retry_execution`,
-`prepared_fold_snapshot_pointer_reads_current_memory`,
-`prepared_fold_arithmetic_field_replays`,
-`prepared_named_fold_constructs_once`,
-`prepared_named_fold_completion_does_not_walk_history`,
-`prepared_return_fold_constructs_once_without_recovering_history`, and
-`prepared_population_fold_constructs_once`. The population control covers named
-and legacy authority wrappers, before and after return, with expansion/replay
-and missing-premise/authority refusals.
+2765 to 2885 across twelve assignments). These are prototype findings, not
+current failing tests; reproduce them when revisiting that migration. Retain
+those controls for that slice.
+The step/fold preparation migration is complete for the covered named,
+population/authority, operational-wrapper and legacy-outcome routes. Keep its
+no-reexecution, input-obligation and retained-endpoint invariants in
+[the architecture](../docs/internals/architecture.md) and the scoped preparation
+controls in `src/scaling_tests/surface/tests/tactic_tests/statement_steps.rs`.
+Do not reopen those tasks under the broader lifecycle row E1.
+
+Have/claim opening still uses the driver's `with_proved_lowering_requirements`
+probe/reinvoke adapter. Solving belongs to the driver there; any repeated-lowering
+cost needs its own fixed-input/ambient-growth measurement. This is not evidence
+that the removed step/fold retry survives.
 
 
 ## Operation map
@@ -310,9 +303,13 @@ exclude unavoidable explicit path enumeration from the ambient test.
 
 [Scaling](scaling.md), cause 4, records repeated execution, result revalidation
 and completion work. That description includes historical fixes and requires
-caller-by-caller reconciliation before it is a current defect list. For example,
-`prepared_call_obligations_execute_once_as_contract_and_context_grow` now exists
-as an ignored nightly test; its existence is not a fresh passing result here.
+caller-by-caller reconciliation before it is a current defect list. The completed preparation controls include
+`prepared_call_obligations_execute_once_as_contract_and_context_grow`, named,
+population/authority and return-fold construction, and the former failed/legacy
+retry routes. All twelve selected controls passed at the reconciliation baseline.
+Do not count these as still-unfixed repeated execution; they do not settle
+condition/function theorem contexts, observation producers, or all joins and
+final publication.
 Count executor invocations and producer/result comparisons through complete
 explicit steps, rewrites, joins and final publication, including uncharged
 work. Reuse checked producer results rather than introducing another checker.
@@ -345,22 +342,35 @@ Use its frozen dependency inventory to remove operation-to-search calls one
 route at a time. Mixed callers now have semantic classifications; no strict search-free
 execution guarantee is claimed. The measurements below feed that migration.
 
-1. Review this inventory, then measure L1 through an actual write: it has a
-   concrete checking caller and isolates aliases from symbolic-loan growth.
-   Discuss the representation or explicit-proof fix after obtaining red curves.
-2. Measure F2 and C1 next; both can repeat ambient work on common operations.
-   Then cover R2, establish R1 reachability, and fill J1/M1 and lifecycle gaps.
-   This ordering is a proposal, not authorization to implement new primitives.
-3. For each operation, retain source caller, input/delta definition, independent
+Choose one of these slices for the next design/build cycle; this audit does not
+authorize a new primitive or a verifier behavior change.
+
+| Candidate | First concrete step | What completing it would establish |
+| --- | --- | --- |
+| Normal failure diagnostics (recommended bounded behavior slice) | Reduce an unfinished callback proof that reaches `unfinished_callback_diagnostic`; count driver/solver invocations caused solely by reporting failure. Design a refusal using the retained frontier/error evidence. | Normal failure reporting does not silently execute six more steps or invoke solve. Any deeper diagnostic search must be explicit. |
+| Boundary enforcement / interface cleanup | Move the specific contradiction dispatch in `exclude_execution_match_arm_after_bridge` out of the primitive interface, retaining its certificate/source site; require the inventory to lose that one edge. Separately design an operation-scoped discovery guard, with named existing exceptions. | One smaller, exact boundary migration; eventual guards must distinguish allowed driver solve from search inside primitives, even when invoked by solve. No claim to detect arbitrary loops. |
+| Arithmetic obligation generation | Reduce one operator's inline safety decision; reproduce the spelling and position-drift controls above before designing a retained result plus obligation. | That operator generates and publishes bounded work while the driver alone solves its safety goal; no promise to migrate all arithmetic in one patch. |
+| L1 active-loan write | Fix one write and owner, grow aliases with one active loan, then symbolic loans with fixed aliases. Write the complete-operation red scaling test first. | Evidence of a concrete remaining scan, or a closed coverage gap if flat. Choose an index or explicit-proof repair only after the result. |
+
+F2 and C1 remain subsequent measurement candidates, followed by R2, R1
+reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
+legacy transport T1–T5 remain separate design tracks; preparation completion did
+not remove either. In particular, count the six search adapters, one explicit
+dispatch adapter and one diagnostic callback separately rather than calling all
+eight operation/driver records hidden solver bugs.
+
+For whichever slice is selected:
+
+1. For each operation, retain source caller, input/delta definition, independent
    ambient axes, multi-size deterministic results, cold/repeated failures,
    semantic controls, and the checking/search boundary. Fix a complete route;
    do not mark the operation done because a common special case is flat.
-4. Add source-level integration controls as well as helper tests. An expanded
+2. Add source-level integration controls as well as helper tests. An expanded
    proof must replay without search. Attribute excessive checking to checking,
    even inside `solve`; `CheckingWorkScope` currently covers selected helpers,
    not every operation. Audit uncharged loops and deep comparisons as well as
    charged counters. No budget increase or warm cache substitutes for a bound.
-5. Reconcile the adjacent roadmap items and fill the operation coverage gaps
+3. Reconcile the adjacent roadmap items and fill the operation coverage gaps
    before claiming the general principle. Removing the named loops alone is
    insufficient. Keep this document an inventory of remaining evidence/work,
    not a history of completed PRs; move durable guarantees to the efficiency

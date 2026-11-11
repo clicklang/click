@@ -112,17 +112,21 @@ instead of from what the step changed.
    Together, on `heap_objects`: 6.28 to 3.75 billion instructions at
    N = 64, and a mean step of 18.7 to 6.4 ms at N = 256. Still open, under
    the rule in `AGENTS.md` (construct valid proofs; never produce-then-check):
-   a step still runs its executor up to three times (a probe before
-   obligations, and a call before its `return`), instance, observation and
-   population rewrites still re-check their producer's result, and condition
-   and function-level theorems still list their contexts. A walk that meets
+   condition/function theorem contexts and observation/rewrite producers need
+   caller-specific reconciliation. The old repeated-step and instance/population
+   fold claims are superseded by the retained-result preparation work at
+   `c53645952`: step/fold completion no longer reruns a primitive, and selected
+   constructor-count/history controls pass. See the
+   [current lifecycle audit](smart-tactics.md#e1-and-q1-logical-steps-and-evidence-lifecycle-deferred-evidencegaps)
+   for the remaining scope; those controls do not certify every evidence path.
+   A walk that meets
    an already checked branch or proof-case join no longer walks its arms
    again, so a statement inside nested joins is walked once per join that
    directly holds it rather than once per enclosing join. That walk, which
    collects the arms' memory steps, reads each recorded event's result and
-   re-checks no premise or rewrite; it takes no facts. The function's
-   completion walk still re-checks population-authority rewrites and
-   lifetime ends. A plain composite `fold` or `unfold` is recorded from its
+   re-checks no premise or rewrite; it takes no facts. Population-authority and lifetime-end checks during function completion
+   require a separate current-caller audit; prepared fold completion does not
+   establish their cost. A plain composite `fold` or `unfold` is recorded from its
    producer's result without re-expanding or comparing (2.84 billion
    instructions at N = 64; fold work at N = 256 137,981 to 22,782). A
    path's execution-fact stream answered membership by scanning: a stream
