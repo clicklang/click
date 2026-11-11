@@ -1504,33 +1504,14 @@ impl DifferenceGraph {
                 return Some(true);
             }
         }
-        // `(a - a % k) <= u` from `a <= u`, for a nonzero `k`: rounding down
-        // does not wrap. Only the dividend's chain is followed, so the work
-        // is linear in the nested roundings of `a`.
-        if let (
-            Domain::UInt64,
-            MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Subtract,
-                left: a,
-                right: b,
-            },
-        ) = (domain, lower)
-            && a.as_ref() != upper
-            && let MachineTerm::Binary {
-                format: MachineIntegerType::UInt64,
-                op: MachineBinaryOp::Remainder,
-                left: dividend,
-                right: divisor,
-            } = b.as_ref()
-            && dividend == a
-            && self.nonzero_divisor(domain, divisor)
-            && self.decide(&ConditionTerm::uint64_less_equal(
-                a.as_ref().clone(),
-                upper.clone(),
-            )) == Some(true)
+        if domain == Domain::UInt64
+            && let Some(value) = self.decide_rounded_upper_bound(
+                crate::kernel::MachineOperandView::Legacy(lower),
+                crate::kernel::MachineOperandView::Legacy(upper),
+                strict,
+            )
         {
-            return Some(true);
+            return Some(value);
         }
         // An unsigned remainder by a nonzero divisor is at most its
         // dividend. `a % 0` is an opaque value and bounds nothing.

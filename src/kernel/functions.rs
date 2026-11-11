@@ -7203,18 +7203,20 @@ fn storage_write_within_owned_elements(
         if let (Some(start), Some(end)) =
             (range.signed_constant_start(), range.signed_constant_end())
             && let (Ok(start), Ok(end)) = (u64::try_from(start), u64::try_from(end))
-            && let Some(index) = pointer.wide_element_index_from_base(range.base(), width)
-            && index.uint64_as_const().is_none()
+            && let Some(index) = pointer.shared_wide_element_index_from_base(range.base(), width)
+            && index.operand_view().uint64_constant().is_none()
         {
             let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
             if (start == 0
-                || holds(ConditionTerm::uint64_less_equal(
-                    MachineTerm::uint64_constant(start),
-                    index.clone(),
+                || holds(crate::kernel::assumptions::wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(start)),
+                    index.operand_view(),
                 )))
-                && holds(ConditionTerm::uint64_less_than(
-                    index,
-                    MachineTerm::uint64_constant(end),
+                && holds(crate::kernel::assumptions::wide_index_comparison(
+                    CompareRelation::LessThan,
+                    index.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(end)),
                 ))
             {
                 return true;

@@ -380,3 +380,50 @@ fn an_order_against_a_uint32_constant_costs_what_its_word_costs() {
         "work should not grow with unrelated values: {samples:?}"
     );
 }
+
+#[test]
+fn retained_rounding_bounds_follow_the_dividend_chain_linearly() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelTermImport, MachineOperandView as V};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let format = MachineIntegerType::UInt64;
+        let length = variable(1018411);
+        let divisor = variable(1018412);
+        let mut import = KernelTermImport::default();
+        let base = import.machine_arithmetic(format, &length).unwrap();
+        let by = import.machine_arithmetic(format, &divisor).unwrap();
+        let mut rounded = base.clone();
+        for _ in 0..size {
+            let remainder = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Remainder,
+                [rounded.clone(), by.clone()],
+            );
+            rounded = KernelTerm::machine_binary_shared(
+                format,
+                MachineBinaryOp::Subtract,
+                [rounded, remainder],
+            );
+        }
+        let facts = graph(&[(
+            ConditionTerm::uint64_less_than(MachineTerm::uint64_constant(0), divisor),
+            true,
+        )]);
+        let condition = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            format,
+            CompareRelation::LessEqual,
+            [V::Shared(&rounded), V::Shared(&base)],
+        );
+        let exports = KernelTermExport::machine_export_count();
+        let (answer, work) =
+            crate::instrumentation::measure_deterministic_work(|| facts.decide(&condition));
+        assert_eq!(answer, Some(true));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] * 5),
+        "{samples:?}"
+    );
+}

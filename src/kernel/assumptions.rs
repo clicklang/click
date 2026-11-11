@@ -5361,9 +5361,23 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> bool {
-        let same_load = |a: &MachineTerm, b: &MachineTerm| {
+        self.uint64_values_equal_for_range_resolution_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(in crate::kernel) fn uint64_values_equal_for_range_resolution_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        let same_load = |a: MachineOperandView<'_>, b: MachineOperandView<'_>| {
+            let (Some(a), Some(b)) = (a.read_source(), b.read_source()) else {
+                return false;
+            };
             let (Some((am, ap, ak)), Some((bm, bp, bk))) =
-                (load_snapshot_and_pointer(a), load_snapshot_and_pointer(b))
+                (load_snapshot_and_pointer(&a), load_snapshot_and_pointer(&b))
             else {
                 return false;
             };
@@ -5372,16 +5386,22 @@ impl PureFactContext {
                 && ap == bp
                 && memories_match_for_pointer_load(&am, &bm, &ap)
         };
-        left == right
-            || self.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone())) == Some(true)
+        let equal = |a: MachineOperandView<'_>, b: MachineOperandView<'_>| {
+            a.retain(MachineIntegerType::UInt64) == b.retain(MachineIntegerType::UInt64)
+        };
+        equal(left, right)
+            || self.decide(&wide_index_comparison(CompareRelation::Equal, left, right))
+                == Some(true)
             || same_load(left, right)
-            || self.exact_uint64_equalities(left).any(|(other, _)| {
+            || self.exact_uint64_equalities_view(left).any(|(other, _)| {
                 crate::instrumentation::record_deterministic_work(1);
-                other == right || same_load(other, right)
+                let other = MachineOperandView::Legacy(other);
+                equal(other, right) || same_load(other, right)
             })
-            || self.exact_uint64_equalities(right).any(|(other, _)| {
+            || self.exact_uint64_equalities_view(right).any(|(other, _)| {
                 crate::instrumentation::record_deterministic_work(1);
-                other == left || same_load(other, left)
+                let other = MachineOperandView::Legacy(other);
+                equal(other, left) || same_load(other, left)
             })
     }
 
@@ -14184,6 +14204,45 @@ pub(in crate::kernel) fn index_comparison(
         relation,
         [left, right],
     )
+}
+
+pub(in crate::kernel) fn wide_index_comparison(
+    relation: CompareRelation,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> ConditionTerm {
+    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        MachineIntegerType::UInt64,
+        relation,
+        [left, right],
+    )
+}
+
+pub(in crate::kernel) fn wide_index_binary(
+    op: MachineBinaryOp,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> SharedMachineIntegerTerm {
+    // Fixed-size literals need neither prefix import nor the arithmetic memo.
+    // Construct their retained result directly so cold and warm queries pay
+    // the same work, just as the native literal operation does.
+    if let (Some(left), Some(right)) = (left.uint64_constant(), right.uint64_constant()) {
+        let value = MachineTerm::machine_binary(
+            MachineIntegerType::UInt64,
+            op,
+            MachineTerm::uint64_constant(left),
+            MachineTerm::uint64_constant(right),
+        );
+        let root = KernelTerm::retained_native_machine_operand(MachineIntegerType::UInt64, &value);
+        return MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64);
+    }
+    let root = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+        MachineIntegerType::UInt64,
+        op,
+        KernelTerm::retained_machine_operand(MachineIntegerType::UInt64, left),
+        KernelTerm::retained_machine_operand(MachineIntegerType::UInt64, right),
+    );
+    MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64)
 }
 
 pub(in crate::kernel) fn index_binary(

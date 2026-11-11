@@ -3332,7 +3332,8 @@ fn held_range_membership(
                 continue;
             }
             if let Some((start, end)) = range.wide_bounds() {
-                let Some(index) = pointer.wide_element_index_from_base(range.base(), byte_width)
+                let Some(index) =
+                    pointer.shared_wide_element_index_from_base(range.base(), byte_width)
                 else {
                     continue;
                 };
@@ -3340,7 +3341,7 @@ fn held_range_membership(
                     assumptions,
                     facts,
                     MachineOperandView::Legacy(start),
-                    MachineOperandView::Legacy(&index),
+                    index.operand_view(),
                     MachineOperandView::Legacy(end),
                     range.base().object_base() == object,
                     range.base() == operand,

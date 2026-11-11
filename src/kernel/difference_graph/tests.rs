@@ -2477,3 +2477,78 @@ fn offset_sources_retain_shared_indices_and_full_width() {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[test]
+fn nested_rounding_bounds_do_not_imply_a_strict_bound() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let length = variable(1018401);
+    let round = |value: MachineTerm| {
+        MachineTerm::uint64_subtract(
+            value.clone(),
+            MachineTerm::uint64_remainder(value, MachineTerm::uint64_constant(4)),
+        )
+    };
+    let nested = round(round(length.clone()));
+    let facts = graph(&[(
+        ConditionTerm::uint64_equal(length.clone(), MachineTerm::uint64_constant(8)),
+        true,
+    )]);
+    // Both roundings of eight by four are eight, not strictly below eight.
+    assert_ne!(
+        facts.decide(&ConditionTerm::uint64_less_than(
+            nested.clone(),
+            length.clone()
+        )),
+        Some(true)
+    );
+    let root = crate::kernel::KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::UInt64, &nested)
+        .unwrap();
+    let shared = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        MachineIntegerType::UInt64,
+        CompareRelation::LessThan,
+        [
+            crate::kernel::MachineOperandView::Shared(&root),
+            crate::kernel::MachineOperandView::Legacy(&length),
+        ],
+    );
+    assert_ne!(facts.decide(&shared), Some(true));
+}
+
+#[test]
+fn shared_nested_rounding_preserves_unsigned_bounds() {
+    use crate::kernel::{KernelTermExport, KernelTermImport, MachineOperandView as V};
+    let _session = crate::kernel::VerificationSession::enter();
+    let length = variable(1018402);
+    let divisor = variable(1018403);
+    let round = |value: MachineTerm, divisor: MachineTerm| {
+        MachineTerm::uint64_subtract(value.clone(), MachineTerm::uint64_remainder(value, divisor))
+    };
+    let nested = round(
+        round(length.clone(), MachineTerm::uint64_constant(4)),
+        divisor.clone(),
+    );
+    let positive = graph(&[(
+        ConditionTerm::uint64_less_than(MachineTerm::uint64_constant(0), divisor.clone()),
+        true,
+    )]);
+    let native = ConditionTerm::uint64_less_equal(nested.clone(), length.clone());
+    assert_eq!(positive.decide(&native), Some(true));
+    let root = KernelTermImport::default()
+        .machine_arithmetic(MachineIntegerType::UInt64, &nested)
+        .unwrap();
+    let shared = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        MachineIntegerType::UInt64,
+        CompareRelation::LessEqual,
+        [V::Shared(&root), V::Legacy(&length)],
+    );
+    let exports = KernelTermExport::machine_export_count();
+    assert_eq!(positive.decide(&shared), Some(true));
+    assert_eq!(graph(&[]).decide(&shared), None);
+    let zero = graph(&[(
+        ConditionTerm::uint64_equal(divisor, MachineTerm::uint64_constant(0)),
+        true,
+    )]);
+    assert_ne!(zero.decide(&shared), Some(true));
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}
