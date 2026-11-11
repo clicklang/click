@@ -740,6 +740,15 @@ fn advance_execution_proof_statement(
                 if let Some(result) = &transition.call_result {
                     recorded_snapshots.record_call_result(statement_index, Some(result.clone()));
                 }
+                if let Some(parameters) = &transition.call_parameters {
+                    record_code_region_program_snapshot_state(
+                        &mut recorded_snapshots,
+                        environment.function_block,
+                        CodeRegion::Statement(statement_index),
+                        ProgramPointKind::Parameters,
+                        parameters.state().clone(),
+                    );
+                }
             }
             if matches!(statement, CStatement::While { .. }) {
                 let loop_index = loop_index.expect("a while statement has a checked loop index");

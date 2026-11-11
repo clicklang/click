@@ -3419,6 +3419,7 @@ fn body_safety_claim_rejects_an_unproved_execution_condition() {
         },
     };
     let path = SymbolicCExecutionPath {
+        call_parameters: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -3505,6 +3506,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         true,
     ));
     let failing = SymbolicCExecutionPath {
+        call_parameters: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -3522,6 +3524,7 @@ fn contract_claims_are_judged_over_each_path_set_of_a_case() {
         loan_evidence: crate::kernel::loans::empty_checked_loan_evidence_sequence(),
     };
     let clean = SymbolicCExecutionPath {
+        call_parameters: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),
@@ -3619,6 +3622,7 @@ fn body_safety_claim_uses_path_facts_for_verification_conditions() {
         },
     };
     let path = SymbolicCExecutionPath {
+        call_parameters: None,
         completion_origin: None,
         call_result: None,
         assumptions: PureFactContext::new(),

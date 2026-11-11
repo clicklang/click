@@ -226,6 +226,7 @@ fn collect_signed_surface_terms<'a>(
             | ContractExpression::CBinding(_)
             | ContractExpression::RegionResult(_)
             | ContractExpression::RegionAllocation(_)
+            | ContractExpression::RegionParameter { .. }
             | ContractExpression::ResourceCount(_)
             | ContractExpression::ResourceWildcard
             | ContractExpression::IntegerLiteral(_) => {}
@@ -4266,6 +4267,10 @@ fn source_backed_call_requirement_surface(
     // their interface name. Both paths index directly by the checked source
     // ordinal; resources, generated clauses, and out-of-range entries fail
     // closed without consulting ambient/project facts.
+    // The by-value aggregate parameters of an ordinary callee: the call
+    // copies each argument into its parameter object, and its contract reads
+    // that copy, which this call's parameter point names.
+    let mut aggregate_parameters = BTreeSet::new();
     let (source_parameter_names, source_parameter_types, source_proposition) =
         if use_named_interface {
             let definition = context
@@ -4297,6 +4302,13 @@ fn source_backed_call_requirement_surface(
             let function = context
                 .function_environment
                 .get_function(site.callee.as_ref())?;
+            aggregate_parameters.extend(
+                function
+                    .parameters()
+                    .iter()
+                    .filter(|parameter| parameter.aggregate_layout().is_some())
+                    .map(|parameter| parameter.name().to_string()),
+            );
             (
                 function
                     .parameters()
@@ -4344,6 +4356,26 @@ fn source_backed_call_requirement_surface(
             (parameter.clone(), argument)
         })
         .collect::<BTreeMap<_, _>>();
+    if !aggregate_parameters.is_empty() {
+        // This call's parameter point, which the step that prepared it
+        // recorded; it must bind each by-value aggregate parameter.
+        let point = execution
+            .presentation
+            .surface_record
+            .last_call_parameters
+            .as_ref()?;
+        let bound = execution.presentation.recorded_snapshots.get(point)?;
+        for parameter in &aggregate_parameters {
+            bound.locals().aggregate_layout(parameter)?;
+            substitutions.insert(
+                parameter.clone(),
+                ContractExpression::RegionParameter {
+                    region: point.region.clone(),
+                    name: parameter.clone(),
+                },
+            );
+        }
+    }
     let written_values = match step {
         ProofStep::StepCall(transport) => transport
             .value_arguments()

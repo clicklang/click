@@ -330,6 +330,7 @@ pub(super) fn execute_c_call_assign_paths(
                         if state.locals.aggregate_object_pointer(target) == Some(pointer.pointer()));
                     state.aggregate_destination = original_destination.clone();
                     return CStatementExecutionPath {
+                        call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
                         call_result: call_result.clone(),
                         outcome: if exact { CStatementOutcome::Normal(state) } else {
@@ -344,6 +345,7 @@ pub(super) fn execute_c_call_assign_paths(
 
                 if value == CValue::Void {
                     return CStatementExecutionPath {
+                        call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
                         call_result: call_result.clone(),
                         outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -359,6 +361,7 @@ pub(super) fn execute_c_call_assign_paths(
                         Some(CLocalBinding::AggregateObject { constant: true, .. })
                     ) {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -370,6 +373,7 @@ pub(super) fn execute_c_call_assign_paths(
                     }
                     let Some(target_layout) = state.locals.aggregate_layout(target) else {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -381,6 +385,7 @@ pub(super) fn execute_c_call_assign_paths(
                     };
                     if target_layout != layout {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -392,6 +397,7 @@ pub(super) fn execute_c_call_assign_paths(
                     }
                     let CValue::Pointer(pointer) = &value else {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -403,6 +409,7 @@ pub(super) fn execute_c_call_assign_paths(
                     };
                     if pointer.is_null() {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -414,6 +421,7 @@ pub(super) fn execute_c_call_assign_paths(
                     }
                     let Some(slot) = state.locals.slot(target).cloned() else {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -434,6 +442,7 @@ pub(super) fn execute_c_call_assign_paths(
                         ),
                     ) {
                         return CStatementExecutionPath {
+                            call_parameters: path.call_parameters.clone(),
                             loop_invariant_correspondence: Default::default(),
                             call_result: call_result.clone(),
                             outcome,
@@ -452,6 +461,7 @@ pub(super) fn execute_c_call_assign_paths(
                         Ok(memory) => memory,
                         Err(undefined_behavior) => {
                             return CStatementExecutionPath {
+                                call_parameters: path.call_parameters.clone(),
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: call_result.clone(),
                                 outcome: CStatementOutcome::UndefinedBehavior(undefined_behavior),
@@ -464,6 +474,7 @@ pub(super) fn execute_c_call_assign_paths(
                     };
                     state.set_memory(next_memory);
                     return CStatementExecutionPath {
+                        call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
                         call_result: call_result.clone(),
                         outcome: CStatementOutcome::Normal(state),
@@ -475,6 +486,7 @@ pub(super) fn execute_c_call_assign_paths(
                 }
                 if state.locals.is_array_object(target) {
                     return CStatementExecutionPath {
+                        call_parameters: path.call_parameters.clone(),
                         loop_invariant_correspondence: Default::default(),
                         call_result: call_result.clone(),
                         outcome: CStatementOutcome::RuntimeError(CRuntimeError::TypeMismatch),
@@ -504,6 +516,7 @@ pub(super) fn execute_c_call_assign_paths(
         };
 
         CStatementExecutionPath {
+            call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result,
             outcome,
@@ -636,6 +649,7 @@ pub(super) fn execute_c_call_paths(
         )?
         .into_iter()
         .map(|path| CStatementExecutionPath {
+            call_parameters: path.call_parameters.clone(),
             loop_invariant_correspondence: Default::default(),
             call_result: match &path.outcome {
                 CFunctionOutcome::Return { value, .. } if *value != CValue::Void => {
@@ -683,6 +697,7 @@ pub(super) fn execute_c_call_paths(
     )?
     .into_iter()
     .map(|path| CStatementExecutionPath {
+        call_parameters: path.call_parameters.clone(),
         loop_invariant_correspondence: Default::default(),
         call_result: match &path.outcome {
             CFunctionOutcome::Return { value, .. } if *value != CValue::Void => Some(value.clone()),
@@ -1175,6 +1190,7 @@ fn execute_modeled_pthread_mutex_paths(
             }
         };
         paths.push(CStatementExecutionPath {
+            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: matches!(outcome, CStatementOutcome::Normal(_))
                 .then(|| CValue::Int32(MachineTerm::constant(0))),
@@ -1640,6 +1656,7 @@ fn execute_c_indirect_call_assign_paths(
             };
             let mut result = CStatementExecutionPath::new(outcome, path.facts, path.obligations);
             result.call_result = call_result;
+            result.call_parameters = path.call_parameters;
             result
         })
         .collect())
@@ -1824,6 +1841,7 @@ fn execute_c_indirect_call_paths(
                 call_path.facts = merged_facts;
                 call_path.obligations = merged_obligations;
                 paths.push(CFunctionPath {
+                    call_parameters: None,
                     outcome: call_path.outcome,
                     facts: call_path.facts,
                     obligations: call_path.obligations,
@@ -2784,6 +2802,7 @@ fn join_loop_exits(
         Default::default()
     };
     Some(CStatementExecutionPath {
+        call_parameters: None,
         loop_invariant_correspondence,
         call_result: None,
         outcome: CStatementOutcome::Normal(Box::new(exit_state)),
@@ -4559,6 +4578,7 @@ fn execute_c_while_exit_paths(
     // `return` reach contract certification at all.
     for exit in return_exits {
         paths.push(CStatementExecutionPath {
+            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: None,
             outcome: CStatementOutcome::Return {
@@ -5630,6 +5650,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 &final_path_obligations,
                             );
                             final_exit_paths.push(CStatementExecutionPath {
+                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: CStatementOutcome::Normal(Box::new(
@@ -5706,6 +5727,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_obligations,
                             );
                             final_exit_paths.push(CStatementExecutionPath {
+                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: CStatementOutcome::Return {
@@ -5740,6 +5762,7 @@ pub(super) fn collect_loop_preservation_summary(
                                 &exit_obligations,
                             );
                             final_exit_paths.push(CStatementExecutionPath {
+                                call_parameters: None,
                                 loop_invariant_correspondence: Default::default(),
                                 call_result: None,
                                 outcome: CStatementOutcome::Jump {

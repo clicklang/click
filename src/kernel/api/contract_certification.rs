@@ -2157,6 +2157,7 @@ pub(super) fn prove_symbolic_c_function_verification_paths(
                         &path.obligations,
                     ));
                     SymbolicCExecutionPath {
+                        call_parameters: None,
                         completion_origin: None,
                         call_result: None,
                         assumptions: assumptions.clone(),

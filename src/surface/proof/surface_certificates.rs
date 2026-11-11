@@ -4366,7 +4366,9 @@ pub(super) fn contract_expression_mentions_c_local(
                 .iter()
                 .any(|name| !parameter_names.contains(name.as_str()))
         }
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => false,
         ContractExpression::IntegerLiteral(_) => false,
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             contract_expression_mentions_c_local(inner, parameter_names)

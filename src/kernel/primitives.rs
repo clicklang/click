@@ -14896,6 +14896,7 @@ pub struct SymbolicCExecutionPath {
     /// have no separate proof-completion origin.
     pub(super) completion_origin: Option<CFunctionOutcome>,
     pub(super) call_result: Option<CValue>,
+    pub(super) call_parameters: Option<CallParameters>,
     pub(super) assumptions: PureFactContext,
     /// The checked body context, retained by the Proof completion producer.
     /// It is available only after certification has checked the entry under
@@ -15029,6 +15030,9 @@ pub(super) struct CStatementExecutionPath {
     pub(super) loop_invariant_correspondence: LoopInvariantCorrespondence,
     /// Exact non-void result retained by the call producer, even when discarded.
     pub(super) call_result: Option<CValue>,
+    /// The callee's by-value aggregate parameters as the call bound them
+    /// ([`CallParameters`]), retained by the call producer.
+    pub(super) call_parameters: Option<CallParameters>,
     pub(super) outcome: CStatementOutcome,
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
@@ -15053,6 +15057,7 @@ impl CStatementExecutionPath {
         Self {
             loop_invariant_correspondence: Default::default(),
             call_result: None,
+            call_parameters: None,
             outcome,
             facts,
             obligations,
@@ -15067,6 +15072,45 @@ pub(super) struct CFunctionPath {
     pub(super) facts: ExecutionFacts,
     pub(super) obligations: Vec<ProofObligation>,
     pub(super) loan_evidence: super::loans::CheckedLoanCallEvidenceSequence,
+    /// The callee's by-value aggregate parameters as a contract call bound
+    /// them; `None` for every other path.
+    pub(super) call_parameters: Option<CallParameters>,
+}
+
+/// The by-value aggregate parameters of one contract call as the call bound
+/// them: the memory just after each argument was copied into its parameter
+/// object, with only those parameters bound, each to its copy. The call
+/// introduces these values, and its contract reads them; a proof spells a
+/// read of one as `R.parameter(name)...` at the call's region `R`.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CallParameters(pub(crate) std::sync::Arc<CState>);
+
+impl CallParameters {
+    /// The parameter binding of `interface`'s by-value aggregate parameters
+    /// in `entry`, the state the call evaluates its contract in; `None` when
+    /// it has none. The state keeps `entry`'s memory and binds exactly
+    /// those parameters, so nothing else is named through it.
+    pub(super) fn of(entry: &CState, interface: &CFunctionContractInterface) -> Option<Self> {
+        let mut bound = CState::new().with_memory(entry.memory().clone());
+        let mut any = false;
+        for parameter in interface.parameters() {
+            let Some(layout) = parameter.aggregate_layout() else {
+                continue;
+            };
+            let slot = entry.locals.aggregate_object_pointer(parameter.name())?;
+            bound.locals.set_aggregate_object_at(
+                parameter.name().to_string(),
+                layout.clone(),
+                slot.clone(),
+            );
+            any = true;
+        }
+        any.then(|| Self(std::sync::Arc::new(bound)))
+    }
+
+    pub(crate) fn state(&self) -> &CState {
+        &self.0
+    }
 }
 
 impl CFunctionPath {
@@ -15082,6 +15126,7 @@ impl CFunctionPath {
             facts,
             obligations,
             loan_evidence: super::loans::empty_checked_loan_evidence_sequence(),
+            call_parameters: None,
         }
     }
 }

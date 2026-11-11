@@ -845,7 +845,9 @@ fn collect_contract_expression_binding_names(
         ContractExpression::Resource(subject) => {
             collect_resource_subject_binding_names(subject, names)
         }
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => {}
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -1534,9 +1536,9 @@ fn rewrite_contract_expression_exact(
     };
     match expression {
         ContractExpression::Resource(_) => (expression.clone(), false),
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {
-            (expression.clone(), false)
-        }
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => (expression.clone(), false),
         ContractExpression::ResourceField(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)
@@ -2720,7 +2722,9 @@ fn collect_contract_expression_referenced_names_one(
         ContractExpression::Resource(subject) => {
             collect_resource_subject_referenced_names(subject, names)
         }
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::Negate(inner) => {
             collect_contract_expression_referenced_names(inner, names);
@@ -3627,9 +3631,9 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         ContractExpression::Resource(subject) => Ok(ContractExpression::Resource(Box::new(
             substitute_resource_subject(subject, substitutions)?,
         ))),
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {
-            Ok(expression.clone())
-        }
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => Ok(expression.clone()),
         ContractExpression::Old(_) | ContractExpression::At { .. }
             if substitutions.current_c_values =>
         {
@@ -3825,10 +3829,15 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             // Snapshot field lowering uses the Surface base and only the
             // operation/type shape of `lowered`. An `old(...)` base cannot
             // be embedded in the cached C fragment.
+            // A call's parameter object is read at that call's parameter
+            // point, from its own layout, when the read is lowered.
             let snapshot_base = matches!(
                 &substituted_base,
-                ContractExpression::Old(_) | ContractExpression::At { .. }
-            );
+                ContractExpression::Old(_)
+                    | ContractExpression::At { .. }
+                    | ContractExpression::RegionParameter { .. }
+            ) || super::annotations::region_parameter_read(&substituted_base)
+                .is_some();
             Ok(ContractExpression::Field {
                 pointee_struct: pointee_struct.clone(),
                 base: Box::new(substituted_base),
@@ -4495,7 +4504,9 @@ pub(in crate::surface) fn contract_expression_as_c_fragment_resolving_fields(
     };
     match expression {
         ContractExpression::Resource(_) => None,
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => None,
         ContractExpression::ResourceField(access) => field(access),
         ContractExpression::IntegerLiteral(value) => {
             let value = value.parse::<u64>().ok()?;
@@ -4644,7 +4655,9 @@ pub(in crate::surface) fn contract_expression_to_c_fragment(
 ) -> Option<CExpression> {
     match expression {
         ContractExpression::Resource(_) => None,
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => None,
         ContractExpression::ResourceField(_) => None,
         ContractExpression::IntegerLiteral(_) | ContractExpression::Negate(_) => {
             resource_argument_to_c_expression(expression).ok()

@@ -362,6 +362,7 @@ pub const SURFACE_CLICK_FORMS: &[&str] = &[
     "at-expression",
     "region-allocation",
     "region-footprint",
+    "region-parameter",
     "read-event-result",
     "auto",
     "bool",
@@ -2963,7 +2964,9 @@ pub(crate) fn collect_current_contract_expression_variables(
         ContractExpression::Resource(subject) => {
             collect_current_resource_subject_variables(subject, names)
         }
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => {}
         ContractExpression::ResourceField(_) | ContractExpression::IntegerLiteral(_) => {}
         ContractExpression::AlgebraicVariable { name, .. } => {
             names.insert(name.clone());
@@ -3252,6 +3255,14 @@ pub enum SurfaceTerm {
     RegionResult(CodeRegionRef),
     /// The fresh heap identity of an allocation region, distinct from its nullable result.
     RegionAllocation(CodeRegionRef),
+    /// A by-value aggregate parameter of a call's region as the call bound
+    /// it, written `<region>.parameter(name)`: the callee's copy of the
+    /// argument, read at the memory just after the copy. It is an object;
+    /// a field or element of it is read through it, `R.parameter(v).f[0]`.
+    RegionParameter {
+        region: CodeRegionRef,
+        name: String,
+    },
     Old(Box<ContractExpression>),
     At {
         selector: SnapshotSelector,
@@ -5394,6 +5405,9 @@ pub enum SourceProof {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CertifiedStatementTransition {
     pub(crate) call_result: Option<CValue>,
+    /// The call's by-value aggregate parameters as it bound them, recorded
+    /// as the call region's parameter point (`R.parameter(name)`).
+    pub(crate) call_parameters: Option<crate::kernel::CallParameters>,
     pub(crate) theorem: Theorem,
     /// The kernel fact context the theorem was proved under; retained with
     /// the theorem so the proof object checks its premises against exactly that.
@@ -7124,6 +7138,10 @@ pub struct ProgramPointRef {
 pub enum ProgramPointKind {
     Entry,
     Exit,
+    /// A call region's by-value aggregate parameters as the call bound them:
+    /// the memory just after each argument was copied into its parameter
+    /// object. Only `R.parameter(name)` reads at it.
+    Parameters,
 }
 
 /// `witness { k: value, ... }`: a value for each named binder of the
@@ -7653,7 +7671,9 @@ fn contract_expression_reads_memory(
 ) -> bool {
     match expression {
         ContractExpression::Resource(_) => false,
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => false,
         ContractExpression::IntegerLiteral(_)
         | ContractExpression::AlgebraicVariable { .. }
         | ContractExpression::Binding(_)

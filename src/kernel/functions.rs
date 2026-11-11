@@ -110,6 +110,7 @@ fn execute_function_body_paths(
 
 fn invalid_goto_path(path: CStatementExecutionPath, message: &str) -> CStatementExecutionPath {
     CStatementExecutionPath {
+        call_parameters: None,
         loop_invariant_correspondence: Default::default(),
         call_result: None,
         outcome: CStatementOutcome::RuntimeError(CRuntimeError::FunctionContract(
@@ -1888,6 +1889,7 @@ fn execute_function_paths(
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
 
             paths.push(CFunctionPath {
+                call_parameters: None,
                 outcome,
                 facts,
                 obligations,
@@ -2226,6 +2228,7 @@ pub(super) fn execute_c_function_call_paths(
                     &return_assumptions,
                 );
                 paths.push(CFunctionPath {
+                    call_parameters: None,
                     outcome,
                     facts,
                     obligations,
@@ -2289,6 +2292,7 @@ pub(super) fn execute_c_function_call_paths(
             let mut outcome = outcome;
             refresh_returned_local_bindings_from_stores(&mut outcome, &facts, &return_assumptions);
             paths.push(CFunctionPath {
+                call_parameters: None,
                 outcome,
                 facts,
                 obligations,
@@ -4861,6 +4865,7 @@ fn execute_verified_function_applications_with_suspension(
         if let Some(function) = evidence {
             append_string_literal_loadable_facts(function, &outcome, &mut facts);
         }
+        let call_parameters = CallParameters::of(&entry_contract_state, interface);
         paths.push(CFunctionPath {
             outcome,
             facts,
@@ -4876,8 +4881,10 @@ fn execute_verified_function_applications_with_suspension(
                     .unwrap_or_else(empty_checked_loan_evidence_sequence),
                 &helper_evidence,
             ),
+            call_parameters: call_parameters.clone(),
         });
-        if let Some(exceptional_path) = exceptional_path {
+        if let Some(mut exceptional_path) = exceptional_path {
+            exceptional_path.call_parameters = call_parameters;
             paths.push(exceptional_path);
         }
     }

@@ -3,10 +3,8 @@
 > **Status (library iterator port in progress).** The three Rust units import
 > `chunks_exact` through the library contracts (`"iterators": "library"`,
 > [`design/rust-iterators.md`](../../../rust-iterators.md)). `helpers.click`
-> and the empty, one-, two- and three-byte `compute` proofs are ported and
-> verify. `four-byte-compute.click` and `small-batch-compute.click` are ported
-> but stop at the `add_assign` call: the prerequisite of a by-value struct
-> argument has no spelling yet. `general-compute.click` still has its
+> and the empty, one-, two-, three- and four-byte and small-batch `compute`
+> proofs are ported and verify. `general-compute.click` still has its
 > hidden-state proof text and does not verify. Sections below that describe
 > iterator cursors and stored remaining counts describe the old model.
 

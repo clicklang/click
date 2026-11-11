@@ -3105,7 +3105,9 @@ pub(super) fn click_function_applications(
     ) {
         match term {
             ContractExpression::Resource(_) => {}
-            ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => {}
+            ContractExpression::RegionResult(_)
+            | ContractExpression::RegionAllocation(_)
+            | ContractExpression::RegionParameter { .. } => {}
             ContractExpression::IntegerLiteral(_) => {}
             ContractExpression::CUnary { operand: inner, .. }
             | ContractExpression::Negate(inner) => expression(inner, known_facts, applications),

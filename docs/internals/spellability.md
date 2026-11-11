@@ -49,6 +49,15 @@ checked. Each one costs completeness, expansion, or a readable report.
   the recorded exit replaces or removes its result name too. Source-layout
   result locals preserve allocation naming, and frontend result temporaries
   map back to their calls (`SourceExecutionLayout::temporary_call_region`).
+  A call that copies a by-value aggregate argument into its parameter object
+  names that copy `<region>.parameter(name)`: the call producer hands back
+  the memory just after the copies, with only those parameters bound
+  (`kernel::CallParameters`), and the step records it as the region's
+  parameter point (`ProgramPointKind::Parameters`). The callee's contract
+  reads the copy there, so a step that prepares the call exposes that point at
+  its pre-state while it proves the call's requirements, and the source-backed
+  requirement spelling substitutes `R.parameter(name)` for the parameter.
+  Reads through it are resolved from the recorded layout when lowered.
   A heap allocation keeps its nullable return value as `<region>.result` and
   names its success identity as `<region>.allocation`. The producer reserves
   both identities before the null check. The allocation exit indexes the heap

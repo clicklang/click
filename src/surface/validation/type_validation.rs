@@ -748,7 +748,9 @@ fn contains_scoped_expression_shape(
     }
     match expression {
         ContractExpression::Resource(_) => false,
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => false,
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => false,
         ContractExpression::AlgebraicMatch { scrutinee, arms } => {
             shape == ScopedExpressionShape::AlgebraicMatch
                 || contains_scoped_expression_shape(scrutinee, shape)
@@ -3136,7 +3138,9 @@ pub(super) fn infer_contract_expression_type(
         ContractExpression::Resource(_) => {
             Err(ClickError::new("a Resource descriptor is not a C value"))
         }
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(None),
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => Ok(None),
         ContractExpression::ResourceField(access) => match &access.click_type {
             Some(ClickType::C(ty)) => Ok(Some(*ty)),
             Some(ClickType::Integer) => Ok(None),
@@ -4419,7 +4423,9 @@ fn validate_contract_expression_calls(
         ContractExpression::Resource(subject) => {
             validate_resource_subject_calls(subject, click_functions, context)
         }
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(()),
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             validate_contract_expression_calls(inner, click_functions, context)
