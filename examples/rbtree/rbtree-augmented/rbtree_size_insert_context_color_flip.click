@@ -140,7 +140,19 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
                 rewrite(color_bit(Color::Red) == 0); normalize();
             }
-            step(); step(); step(); step();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m0; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m1; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m2; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m3; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
             let focus = fold(sized_at(node), { model: old(state.model) }, { metadata: n_size, left: n_left, right: n_right });
             let state = fold(sized_context_flip_at(node,root), { phase: SizedContextFlipPhase::Before(g, p, u), model: old(state.model), context: old(state.context), outer: old(state.outer), seed: old(state.seed), parent_value: old(state.parent_value), grand_value: old(state.grand_value), other: old(state.other), uncle: old(state.uncle) }, { focus: focus, path: path });
             loop {
@@ -306,8 +318,31 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 rewrite((y->__rb_parent_color & 1) == color_bit(Color::Red));
                                 rewrite(color_bit(Color::Red) == 0); normalize();
                             }
-                            step(); step(); step(); step(); step(); step(); step();
-                            step();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c0; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c0, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c1; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c1, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c2; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c2, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c3; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c3, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c4; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c4, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c5; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c5, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c6; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c6, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
+                            mark c7; step();
+                            have *((&x->__rb_parent_color) as (int32 **)) == at(c7, *((&x->__rb_parent_color) as (int32 **))) by solve();
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { assumption(); }
                             have tmp == z by { assumption(); }
                             have gparent == x by { assumption(); }
                             have parent == y by { assumption(); }
@@ -328,6 +363,8 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                                 word: parent->__rb_parent_color
                             });
                             unfold(parent_word);
+                            have x->__rb_parent_color == at(iteration, x->__rb_parent_color) by { assumption(); }
+                            have ((x->__rb_parent_color & ~3) as (struct rb_node *)) == sized_context_parent(at(iteration,state.outer),0) by { rewrite(x->__rb_parent_color == at(iteration, x->__rb_parent_color)); assumption(); }
                             step(); step(); step();
                             unfold(uncle_word);
                             unfold(black_parent_word);
