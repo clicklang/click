@@ -11656,9 +11656,7 @@ impl CResourceFact {
         element_width: u32,
         assumptions: &PureFactContext,
     ) -> bool {
-        let Some(element_count) =
-            crate::kernel::reasoning::element_count_from_bytes(bytes.bytes(), element_width)
-        else {
+        let Some(element_count) = bytes.element_count(element_width) else {
             return false;
         };
         let allocation_memory =

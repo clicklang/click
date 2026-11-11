@@ -373,6 +373,40 @@ fn normalizing_allocation_tokens_in_distinct_heap_blocks_is_linear() {
     }
 }
 
+/// [`normalizing_allocation_tokens_in_distinct_heap_blocks_is_linear`] with
+/// 64-bit tokens: a `uint64` byte count does not pair tokens either.
+#[test]
+fn normalizing_64_bit_allocation_tokens_in_distinct_heap_blocks_is_linear() {
+    let mut samples = Vec::new();
+    for size in SIZES {
+        let _session = crate::kernel::VerificationSession::enter();
+        let resources = (0..size as u64).fold(ResourceContext::new(), |resources, identity| {
+            let count = MachineTerm::Variable(Variable((1 << 40) + identity));
+            resources.unchecked_with_fact(CResourceFact::own_heap_allocation(
+                heap_cell(identity, 0),
+                &wide_heap_extent(&count),
+            ))
+        });
+        let assumptions = PureFactContext::new();
+        let (normalized, work) = crate::instrumentation::measure_deterministic_work(|| {
+            resources.normalized(&assumptions)
+        });
+        assert_eq!(normalized.facts().len(), size);
+        samples.push((size, work));
+    }
+    eprintln!("normalizing N 64-bit allocation tokens (N, units): {samples:?}");
+    for pair in samples.windows(2) {
+        let [(small, small_work), (large, large_work)] = pair else {
+            unreachable!()
+        };
+        assert!(
+            *large_work <= small_work * (large / small) + 16,
+            "normalization work grew from {small_work} to {large_work} units between \
+             {small} and {large} 64-bit tokens, faster than linear: {samples:?}"
+        );
+    }
+}
+
 // Operations on one heap allocation beside `N` unrelated live allocations.
 //
 // Every `Heap` identity is proven distinct from every other block identity
@@ -478,6 +512,115 @@ fn one_heap_store_is_logarithmic_in_unrelated_allocations() {
         samples.push((size, work));
     }
     assert_constant_plus_log_growth("one C store into a heap block", &samples, 16.0);
+}
+
+/// `n * 4` bytes for a symbolic `size_t` count `n`: a 64-bit extent
+/// (`design/heap-extents.md`, stage 2).
+fn wide_heap_extent(count: &MachineTerm) -> HeapExtent {
+    HeapExtent::new(
+        MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(4)),
+        HeapExtentKind::UInt64,
+    )
+}
+
+/// The wide owned range `base[0..count]` of `uint32` elements.
+fn wide_heap_range(identity: u64, count: &MachineTerm) -> CMemoryRange {
+    CMemoryRange::new_wide(
+        heap_cell(identity, 0),
+        MachineTerm::uint64_constant(0),
+        count.clone(),
+        4,
+    )
+}
+
+/// [`one_heap_store_is_logarithmic_in_unrelated_allocations`] over 64-bit
+/// blocks: every block, the target included, has a symbolic `size_t`
+/// element count and is owned by a wide range, which the interval index
+/// does not hold, and the store's index is a `size_t` the facts bound by
+/// the target's count. Finding the target's range and forming the pointer
+/// against its 64-bit extent must not visit the unrelated ones.
+#[test]
+fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocations() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let count = |identity: u64| MachineTerm::Variable(Variable((1 << 40) + identity));
+        let index = MachineTerm::Variable(Variable(1 << 41));
+        // The allocation's admission bound and the store's index bound.
+        let assumptions = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    count(TARGET_HEAP),
+                    MachineTerm::uint64_constant(i64::MAX as u64 / 4),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
+                true,
+            );
+        let allocate = |(memory, resources): (CMemory, ResourceContext), identity: u64| {
+            let pending = Pointer {
+                block: PointerBlock::Symbolic(Variable(identity)),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let (memory, _, base) = memory
+                .with_pending_heap_allocation(
+                    pending.clone(),
+                    wide_heap_extent(&count(identity)),
+                    false,
+                )
+                .resolve_pending_heap_allocation(&pending, true)
+                .expect("the pending allocation resolves");
+            assert_eq!(base, heap_cell(identity, 0));
+            let resources = resources.unchecked_with_fact(CResourceFact::own_memory(
+                wide_heap_range(identity, &count(identity)),
+            ));
+            (memory, resources)
+        };
+        let (memory, resources) = (1..=size as u64).chain([TARGET_HEAP]).fold(
+            (
+                CMemory::new(),
+                ResourceContext::new_with_equalities(&assumptions),
+            ),
+            allocate,
+        );
+        resources.synchronize_memory_equalities(&assumptions);
+        let state = CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let statement = CStatement::TypedStore {
+            access_class: None,
+            pointer: CExpression::Add(
+                Box::new(CExpression::Value(CValue::typed_pointer(
+                    heap_cell(TARGET_HEAP, 0),
+                    CType::UInt32Pointer,
+                ))),
+                Box::new(CExpression::Value(CValue::UInt64(index.clone()))),
+            ),
+            value: CExpression::Value(CValue::UInt32(MachineTerm::constant(9))),
+            value_type: CType::UInt32,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        };
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &statement,
+                &assumptions,
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        let CStatementOutcome::Normal(_) = &paths[0].outcome else {
+            panic!("the wide heap store executes: {:?}", paths[0].outcome);
+        };
+        samples.push((size, work));
+    }
+    assert_constant_plus_log_growth("one C store into a 64-bit heap block", &samples, 16.0);
 }
 
 #[test]

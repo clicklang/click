@@ -1362,14 +1362,35 @@ pub(super) fn execute_c_heap_allocate_paths(
             ));
             continue;
         };
-        let (bytes, size_refusal) = if element_count_expression.is_some() {
+        // calloc's `n * w` is not a `size_t` product (it returns null when
+        // the product is not representable), so it is never evaluated as
+        // one; a 64-bit calloc size waits for stage 4.
+        let (bytes, size_refusal) = if zeroed && size.kind == HeapExtentKind::UInt64 {
+            (size.into_extent(), Some(CRuntimeError::HeapAllocationSize))
+        } else if element_count_expression.is_some() {
             let refusal = allocation_size_validity_refusal(
                 &size,
                 element_width,
                 true,
                 &effective_assumptions,
             );
-            (size.scaled(element_width).into_extent(), refusal)
+            match (
+                refusal,
+                size.wrapped_product(element_width, &effective_assumptions),
+            ) {
+                // An inexact `size_t` product is the block C allocates:
+                // its wrapped value, admitted as a raw byte count.
+                (Some(_), Some(product)) => {
+                    let refusal = allocation_size_validity_refusal(
+                        &product,
+                        1,
+                        false,
+                        &effective_assumptions,
+                    );
+                    (product.into_extent(), refusal)
+                }
+                (refusal, _) => (size.scaled(element_width).into_extent(), refusal),
+            }
         } else {
             // Heap blocks are byte-addressed even when the receiving pointer
             // has a wider logical element type. Typed accesses still carry
@@ -1495,8 +1516,9 @@ fn heap_allocation_element_width(state: &CState, base: &Pointer) -> u32 {
 /// describes the block. Preserve typed ranges for established allocation
 /// forms, but use bytes for a raw extent that is not divisible by the pointer's
 /// logical element width.
-fn heap_range_element_width(bytes: &MachineTerm, requested_width: u32) -> u32 {
-    crate::kernel::reasoning::element_count_from_bytes(bytes, requested_width)
+fn heap_range_element_width(extent: &HeapExtent, requested_width: u32) -> u32 {
+    extent
+        .element_count(requested_width)
         .map(|_| requested_width)
         .unwrap_or(CType::UInt8.byte_width())
 }
@@ -1508,13 +1530,16 @@ fn heap_block_range(
     extent: &HeapExtent,
     requested_width: u32,
 ) -> (CMemoryRange, u32) {
-    let (count, width) = heap_range_element_count(extent.bytes(), requested_width);
+    let (count, width) = heap_range_element_count(extent, requested_width);
     (extent.range(base, count, width), width)
 }
 
-fn heap_range_element_count(bytes: &MachineTerm, requested_width: u32) -> (MachineTerm, u32) {
-    let element_width = heap_range_element_width(bytes, requested_width);
-    let element_count = crate::kernel::reasoning::element_count_from_bytes(bytes, element_width)
+/// The element count and width of a whole heap block's owned range, in the
+/// extent's format ([`HeapExtent::element_count`]).
+fn heap_range_element_count(extent: &HeapExtent, requested_width: u32) -> (MachineTerm, u32) {
+    let element_width = heap_range_element_width(extent, requested_width);
+    let element_count = extent
+        .element_count(element_width)
         .expect("byte width must describe every positive heap extent");
     (element_count, element_width)
 }
@@ -1527,8 +1552,13 @@ struct AllocationSize {
     /// facts must bound it to the signed 32-bit heap extent.
     needs_extent_bound: bool,
     /// The format of the block extent this size makes, by its C type
-    /// (`design/heap-extents.md`, D1). Every admitted size is `Int32` today.
+    /// (`design/heap-extents.md`, D1): `UInt64` for a symbolic 64-bit size,
+    /// `Int32` for every other.
     kind: HeapExtentKind,
+    /// The size is a `size_t` in C, so `size * w` for a `size_t` or `int`
+    /// constant `w` is C's wrapping `size_t` product. A `long` times an
+    /// `int` constant may instead overflow, which is undefined.
+    wraps: bool,
 }
 
 impl AllocationSize {
@@ -1539,7 +1569,34 @@ impl AllocationSize {
             unsigned,
             needs_extent_bound,
             kind: HeapExtentKind::Int32,
+            wraps: false,
         }
+    }
+
+    /// A symbolic 64-bit size as C's `size_t` argument: a `long` is read as
+    /// its conversion, so a negative one is above `PTRDIFF_MAX`.
+    fn uint64(term: MachineTerm, wraps: bool) -> Self {
+        Self {
+            term,
+            unsigned: true,
+            needs_extent_bound: false,
+            kind: HeapExtentKind::UInt64,
+            wraps,
+        }
+    }
+
+    /// The value C computes for `self * element_width` when the facts do not
+    /// prove the product exact: the wrapped `size_t` product of a `size_t`
+    /// count (`design/heap-extents.md`, stage 2), a real block of that many
+    /// bytes. `None` for a `long` count, whose product may be undefined.
+    fn wrapped_product(&self, element_width: u32, assumptions: &PureFactContext) -> Option<Self> {
+        (self.kind == HeapExtentKind::UInt64 && self.wraps).then(|| {
+            let product = MachineTerm::uint64_multiply(
+                self.term.clone(),
+                MachineTerm::uint64_constant(u64::from(element_width)),
+            );
+            uint64_size_value(product, true, assumptions)
+        })
     }
 
     /// The bytes of `self` elements of `element_width` bytes, in the size's
@@ -1560,6 +1617,7 @@ impl AllocationSize {
             unsigned: self.unsigned,
             needs_extent_bound: false,
             kind: self.kind,
+            wraps: self.wraps,
         }
     }
 
@@ -1568,8 +1626,9 @@ impl AllocationSize {
     }
 }
 
-/// The refusal for a size [`allocation_size_value`] does not accept: a
-/// 64-bit size it could not narrow is named as such, not as a type error.
+/// The refusal for a size [`allocation_size_value`] does not accept, or
+/// `realloc` does not resize to: a 64-bit size is named as such, not as a
+/// type error.
 fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
     match value.numeric_value() {
         CValue::Int64(_) | CValue::UInt64(_) => CRuntimeError::HeapAllocationSize,
@@ -1577,12 +1636,13 @@ fn allocation_size_refusal(value: &CValue) -> CRuntimeError {
     }
 }
 
-/// C heap blocks currently use the target's checked 32-bit address extent.
-/// Preserve symbolic 32-bit sizes, and accept a 64-bit `size_t`/`long` size
-/// when its concrete value fits that representation. A symbolic 64-bit size
-/// cannot be safely narrowed into a memory block extent yet
-/// (`design/heap-extents.md`). A `uint32` size is admitted here and must
-/// still be bounded by `INT32_MAX` ([`allocation_size_validity_refusal`]).
+/// The heap extent a C allocation size makes (`design/heap-extents.md`,
+/// D1 and D2). A 32-bit or narrower size is a checked 32-bit extent, and so
+/// is a 64-bit `size_t`/`long` size the facts fix to a constant that fits
+/// `uint32`. Any other 64-bit size is a `uint64` extent, its value as C's
+/// `size_t` argument (a `long` converted). A `uint32` size is admitted here
+/// and must still be bounded by `INT32_MAX`, and a 64-bit one by
+/// `PTRDIFF_MAX` ([`allocation_size_validity_refusal`]).
 fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option<AllocationSize> {
     match value.numeric_value().clone() {
         CValue::PointerInteger(_) => unreachable!("numeric projection"),
@@ -1593,16 +1653,14 @@ fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option
         }
         CValue::Int32(term) => Some(AllocationSize::int32(term, false, false)),
         CValue::UInt32(term) => Some(AllocationSize::int32(term, true, true)),
-        CValue::Int64(term) => exact_signed_size_value(&term, assumptions).and_then(|value| {
-            u32::try_from(value)
-                .ok()
-                .map(|value| AllocationSize::int32(MachineTerm::constant(value), false, false))
+        CValue::Int64(term) => Some(match exact_signed_size_value(&term, assumptions) {
+            Some(value) => match u32::try_from(value) {
+                Ok(value) => AllocationSize::int32(MachineTerm::constant(value), false, false),
+                Err(_) => AllocationSize::uint64(MachineTerm::uint64_constant(value as u64), false),
+            },
+            None => AllocationSize::uint64(MachineTerm::uint64_from_int64(term), false),
         }),
-        CValue::UInt64(term) => exact_unsigned_size_value(&term, assumptions).and_then(|value| {
-            u32::try_from(value)
-                .ok()
-                .map(|value| AllocationSize::int32(MachineTerm::constant(value), false, false))
-        }),
+        CValue::UInt64(term) => Some(uint64_size_value(term, true, assumptions)),
         CValue::Int128(_)
         | CValue::UInt128(_)
         | CValue::Void
@@ -1610,6 +1668,22 @@ fn allocation_size_value(value: CValue, assumptions: &PureFactContext) -> Option
         | CValue::Parameter(_)
         | CValue::Float32(_)
         | CValue::Float64(_) => None,
+    }
+}
+
+/// A `uint64` size: a 32-bit constant extent where the facts fix it to a
+/// value that fits `uint32` (D2), else a `uint64` extent.
+fn uint64_size_value(
+    term: MachineTerm,
+    wraps: bool,
+    assumptions: &PureFactContext,
+) -> AllocationSize {
+    match exact_unsigned_size_value(&term, assumptions) {
+        Some(value) => match u32::try_from(value) {
+            Ok(value) => AllocationSize::int32(MachineTerm::constant(value), false, false),
+            Err(_) => AllocationSize::uint64(MachineTerm::uint64_constant(value), wraps),
+        },
+        None => AllocationSize::uint64(term, wraps),
     }
 }
 
@@ -1737,19 +1811,67 @@ fn allocation_size_fits_element_width(
     assumptions.decide(&condition) == Some(true)
 }
 
+/// Whether the facts decide that a 64-bit extent is exact: an element count
+/// `1 <= n <= PTRDIFF_MAX / element_width` (so `n * element_width` does not
+/// wrap), or a byte count `1 <= bytes <= PTRDIFF_MAX` whose top-level
+/// product, if it is one, is by a constant `k` with the other factor at most
+/// `PTRDIFF_MAX / k` (`design/heap-extents.md`, D3).
+///
+/// The product condition is what lets a reader take `n * k` bytes as `n`
+/// elements ([`crate::kernel::reasoning::uint64_element_count_from_bytes`]):
+/// a `size_t` product may wrap without undefined behavior, and its wrapped
+/// value bounded by `PTRDIFF_MAX` says nothing about `n`. A product of two
+/// symbolic factors is not admitted.
+fn uint64_allocation_size_is_exact(
+    size: &AllocationSize,
+    element_width: u32,
+    element_count: bool,
+    assumptions: &PureFactContext,
+) -> bool {
+    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let at_most = |term: &MachineTerm, width: u64| {
+        holds(ConditionTerm::uint64_less_equal(
+            term.clone(),
+            MachineTerm::uint64_constant(i64::MAX as u64 / width),
+        ))
+    };
+    let positive = |term: &MachineTerm| {
+        holds(ConditionTerm::uint64_greater_than(
+            term.clone(),
+            MachineTerm::uint64_constant(0),
+        ))
+    };
+    if element_count {
+        return positive(&size.term) && at_most(&size.term, u64::from(element_width.max(1)));
+    }
+    match &size.term {
+        // `1 <= n <= PTRDIFF_MAX / k` makes `n * k` exact, so it is also
+        // positive and at most `PTRDIFF_MAX`.
+        binary_term!(UInt64, Multiply, left, right) => {
+            match (left.uint64_as_const(), right.uint64_as_const()) {
+                (_, Some(width)) if width > 0 => positive(left) && at_most(left, width),
+                (Some(width), _) if width > 0 => positive(right) && at_most(right, width),
+                _ => false,
+            }
+        }
+        bytes => positive(bytes) && at_most(bytes, 1),
+    }
+}
+
 /// Why an admitted allocation size cannot be a heap extent, if it cannot. An
 /// element count must be positive and fit with `element_width`; a raw byte
-/// count must be positive and, for a `uint32`, at most `INT32_MAX`.
+/// count must be positive and, for a `uint32`, at most `INT32_MAX`; a 64-bit
+/// size must be exact and at most `PTRDIFF_MAX` bytes
+/// ([`uint64_allocation_size_is_exact`]).
 fn allocation_size_validity_refusal(
     size: &AllocationSize,
     element_width: u32,
     element_count: bool,
     assumptions: &PureFactContext,
 ) -> Option<CRuntimeError> {
-    // The 64-bit extent's positivity and `PTRDIFF_MAX` guards are not
-    // decided here yet (`design/heap-extents.md`, stage 2).
-    if size.kind != HeapExtentKind::Int32 {
-        return Some(CRuntimeError::HeapAllocationSize);
+    if size.kind == HeapExtentKind::UInt64 {
+        return (!uint64_allocation_size_is_exact(size, element_width, element_count, assumptions))
+            .then_some(CRuntimeError::HeapAllocationSize);
     }
     if !allocation_size_is_positive(size, assumptions) {
         return Some(CRuntimeError::TypeMismatch);
@@ -1954,7 +2076,11 @@ pub(crate) fn execute_c_realloc_assign_paths(
                 &size_obligations,
             );
             let refusal = allocation_size_refusal(&new_size_value);
-            let Some(size) = allocation_size_value(new_size_value, &size_assumptions) else {
+            let Some(size) = allocation_size_value(new_size_value, &size_assumptions)
+                // Resizing to a 64-bit extent waits for stage 4
+                // (`design/heap-extents.md`).
+                .filter(|size| size.kind == HeapExtentKind::Int32)
+            else {
                 paths.push(CStatementExecutionPath::new(
                     CStatementOutcome::RuntimeError(refusal),
                     size_facts,

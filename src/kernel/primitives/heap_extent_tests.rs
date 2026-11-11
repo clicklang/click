@@ -54,3 +54,35 @@ fn allocation_tokens_and_ranges_carry_the_extent_kind() {
         assert_eq!(extent.byte_range(base.clone()).kind(), range_kind);
     }
 }
+
+/// A 64-bit extent spells its element count at `uint64`: `n` of `n * w`
+/// and a divisible constant; a 32-bit extent keeps the 32-bit reading, and
+/// neither reads the other's format.
+#[test]
+fn a_64_bit_extent_counts_its_elements_at_uint64() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let n = MachineTerm::Variable(Variable(7));
+    let wide = |bytes| HeapExtent::new(bytes, HeapExtentKind::UInt64);
+    let product = wide(MachineTerm::uint64_multiply(
+        n.clone(),
+        MachineTerm::uint64_constant(4),
+    ));
+    assert_eq!(product.element_count(4), Some(n.clone()));
+    assert_eq!(product.element_count(8), None);
+    assert_eq!(product.element_count(1), Some(product.bytes().clone()));
+    let constant = wide(MachineTerm::uint64_constant(1 << 35));
+    assert_eq!(
+        constant.element_count(8),
+        Some(MachineTerm::uint64_constant(1 << 32))
+    );
+    assert_eq!(
+        wide(MachineTerm::uint64_constant((1 << 35) + 2)).element_count(4),
+        None
+    );
+    let narrow = HeapExtent::int32(MachineTerm::multiply(n.clone(), MachineTerm::constant(4)));
+    assert_eq!(narrow.element_count(4), Some(n.clone()));
+    assert_eq!(
+        HeapExtent::int32(product.bytes().clone()).element_count(4),
+        None
+    );
+}

@@ -36,8 +36,8 @@ pub(super) use path_facts::{
     merge_prepared_execution_path, pointer_byte_offset_from_base, public_execution_pure_facts,
     required_obligation_is_exactly_discharged, shared_byte_offset_from_pointer_offset,
     shared_element_index_from_offset, shared_element_index_from_offset_with_facts,
-    single_scaled_index_equal_to_constant, solve_builtin_prop, wrap_path_context,
-    wrap_path_context_with_introductions, wrap_proof_facts,
+    single_scaled_index_equal_to_constant, solve_builtin_prop, uint64_element_count_from_bytes,
+    wrap_path_context, wrap_path_context_with_introductions, wrap_proof_facts,
 };
 pub(crate) use substitution::*;
 pub(crate) use variable_collection::resource_context_has_read;

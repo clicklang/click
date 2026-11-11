@@ -2888,8 +2888,8 @@ fn pointer_block_bounds(
 ) -> Option<Vec<PointerFormationGuard>> {
     // The block's byte count is read through its extent kind: a 32-bit
     // extent (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
-    // and is an `int32` in the 32-bit ones; the 32-bit comparisons have no
-    // reading of a 64-bit extent.
+    // and is an `int32` in the 32-bit ones. A 64-bit extent (at most
+    // `PTRDIFF_MAX`) is compared with a sign-extended 32-bit offset instead.
     let Some(extent) = state.memory().block_extent(&pointer.block).cloned() else {
         return Some(Vec::new());
     };
@@ -2923,7 +2923,18 @@ fn pointer_block_bounds(
         // Compare the original 64-bit element count to the number of elements
         // the block can hold. Rebuilding it as a 32-bit residue can certify an
         // index several GiB past the block as a small in-bounds number.
-        let limit = if *unsigned {
+        // A 64-bit extent states its element count where its byte count
+        // spells one (it was admitted exact, so `n * w` holds `n`).
+        let wide_count = (extent.kind() == HeapExtentKind::UInt64)
+            .then(|| extent.element_count(u32::try_from(*scale).ok()?))
+            .flatten();
+        let limit = if let Some(count) = wide_count {
+            if *unsigned {
+                count
+            } else {
+                MachineTerm::int64_from_uint64_bits(count)
+            }
+        } else if *unsigned {
             let bytes = extent.uint64_bytes();
             if *scale == 1 {
                 bytes
@@ -2983,6 +2994,9 @@ fn pointer_block_bounds(
         return Some(guards);
     }
 
+    if extent.kind() == HeapExtentKind::UInt64 {
+        return wide_block_bounds_of_32_bit_offset(&pointer.offset, &extent);
+    }
     let block_size = extent.int32_bytes().cloned()?;
     if byte_width == 1
         && let Some(guards) = strided_block_bounds(&pointer.offset, &block_size)
@@ -3018,6 +3032,63 @@ fn pointer_block_bounds(
             value: true,
         },
     ])
+}
+
+/// The formation bound of a pointer with a 32-bit offset into a block with a
+/// 64-bit extent, at 64 bits: `0 <= i <= count` for one scaled `int32` index
+/// `i` (with the block's element count where its extent spells one), else
+/// `0 <= offset <= bytes` over the exact 64-bit byte offset. An offset with
+/// no exact reading has no checked normal path.
+fn wide_block_bounds_of_32_bit_offset(
+    offset: &PointerOffsetTerm,
+    extent: &HeapExtent,
+) -> Option<Vec<PointerFormationGuard>> {
+    if let PointerOffsetTerm::Int32Scaled {
+        value,
+        byte_width: scale,
+    } = offset
+        && *scale > 0
+    {
+        let limit = match extent.element_count(u32::try_from(*scale).ok()?) {
+            Some(count) => MachineTerm::int64_from_uint64_bits(count),
+            None if *scale == 1 => extent.int64_bytes(),
+            None => {
+                MachineTerm::int64_divide(extent.int64_bytes(), MachineTerm::int64_constant(*scale))
+            }
+        };
+        return Some(vec![
+            PointerFormationGuard {
+                condition: ConditionTerm::signed_greater_equal(
+                    value.as_ref().clone(),
+                    MachineTerm::constant(0),
+                ),
+                value: true,
+            },
+            PointerFormationGuard {
+                condition: ConditionTerm::int64_signed_less_equal(
+                    MachineTerm::int64_from_32(value.as_ref().clone()),
+                    limit,
+                ),
+                value: true,
+            },
+        ]);
+    }
+    let mut guards = Vec::new();
+    let offset = exact_pointer_offset_i64_with_guards(offset, &mut guards)?;
+    guards.extend([
+        PointerFormationGuard {
+            condition: ConditionTerm::int64_signed_greater_equal(
+                offset.clone(),
+                MachineTerm::int64_constant(0),
+            ),
+            value: true,
+        },
+        PointerFormationGuard {
+            condition: ConditionTerm::int64_signed_less_equal(offset, extent.int64_bytes()),
+            value: true,
+        },
+    ]);
+    Some(guards)
 }
 
 /// The formation bound of a byte pointer into a struct array, stated over its
