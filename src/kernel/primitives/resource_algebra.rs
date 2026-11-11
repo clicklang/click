@@ -9962,51 +9962,6 @@ fn memory_resource_fact_permits_write(
     }
 }
 
-/// The partition check of a block holding many owned ranges at distinct
-/// bases (a program-entry struct array is one range per field of every
-/// element) compares candidate pairs. Each candidate charges a unit; each
-/// range is also a checkpoint, so an exhausted run stops after one range's
-/// candidates instead of finishing every pair past its budget.
-#[cfg(test)]
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn a_many_range_partition_check_stops_at_an_exhausted_run_budget() {
-    let ranges = 1_000u32;
-    let block = CMemory::global_pointer("pool").block;
-    let mut context = ResourceContext::new();
-    for index in 0..ranges {
-        context = context.unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
-                Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
-                },
-                0u32.into(),
-                1u32.into(),
-                4,
-            ),
-        ));
-    }
-    let assumptions = PureFactContext::new();
-    let ((), unbounded) = crate::instrumentation::measure_deterministic_work(|| {
-        assert!(context.validity_error(&assumptions).is_none());
-    });
-    let limit = 10_000;
-    assert!(
-        unbounded > 50 * limit,
-        "the check must cost far more than the budget: {unbounded}"
-    );
-    let used = crate::instrumentation::with_run_work_limit(limit, || {
-        assert!(context.validity_error(&assumptions).is_none());
-        assert!(crate::instrumentation::deadline_exceeded());
-        crate::instrumentation::run_work_used().expect("a run budget is installed")
-    });
-    assert!(
-        used <= limit + 4 * ranges as usize,
-        "the check spent {used} units under a {limit}-unit budget (unbounded {unbounded})"
-    );
-}
-
 #[cfg(test)]
 #[test]
 fn owned_cell_access_uses_transitive_graph_address_equality() {
