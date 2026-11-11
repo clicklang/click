@@ -320,8 +320,9 @@ impl<'a> Proof<'a> {
 
     /// The back-edge bundle's members as the loop head writes them, split
     /// at conjunctions as the bundle's leaves are: each declared invariant
-    /// guarded by the invariants declared before it, and bare, as the member
-    /// reads once the closer has introduced those guards; one `0 <= m` per
+    /// whole and by conjunct, without the guards of the invariants declared
+    /// before it, which a member's guards are matched to one by one, so the
+    /// forms stay linear in the declarations; one `0 <= m` per
     /// `decreases` component, then the descent member
     /// ([`ranking_descent_surface`]), when `ranking` asks for them. None
     /// outside a loop preservation proof.
@@ -360,27 +361,24 @@ impl<'a> Proof<'a> {
             .iter()
             .chain(std::iter::once(&bundle.declared_invariant_surfaces))
         {
-            for (index, invariant) in declared.iter().enumerate() {
-                let guarded =
-                    declared[..index]
-                        .iter()
-                        .rev()
-                        .fold(invariant.clone(), |body, guard| {
-                            ClickProposition::Implies(Box::new(guard.clone()), Box::new(body))
-                        });
-                // A member whose guards the closer has already introduced is the
-                // invariant itself.
-                let mut pending = if index == 0 {
-                    vec![guarded]
-                } else {
-                    vec![invariant.clone(), guarded]
-                };
+            for invariant in declared {
+                // The whole invariant, as a later member's guard reads it,
+                // and then its conjuncts, which are the bundle's leaves.
+                let mut pending = vec![invariant.clone()];
+                let mut whole = true;
                 while let Some(member) = pending.pop() {
-                    if let ClickProposition::And(left, right) = member {
-                        pending.push(*right);
-                        pending.push(*left);
-                    } else {
-                        members.push(member);
+                    match member {
+                        ClickProposition::And(left, right) => {
+                            if std::mem::take(&mut whole) {
+                                members.push(ClickProposition::And(left.clone(), right.clone()));
+                            }
+                            pending.push(*right);
+                            pending.push(*left);
+                        }
+                        member => {
+                            whole = false;
+                            members.push(member);
+                        }
                     }
                 }
             }

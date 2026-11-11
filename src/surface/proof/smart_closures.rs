@@ -2655,42 +2655,101 @@ impl<'a> Proof<'a> {
         let written = self
             .written_bundle_member_surfaces(goal_surfaces.is_none())
             .unwrap_or_default();
-        // Each written form is lowered at most once, on first use.
-        let mut lowered: Vec<Option<Option<Proposition>>> = vec![None; written.len()];
-        let mut surfaces = vec![None; leaves.len()];
-        // A written form for `goal`: one that lowers to it, or, for a member
-        // behind guards, the implication of its guard's and its body's
-        // written forms. The closer drops a guard it has already decided, so
-        // a guarded member is matched part by part, not as one whole.
-        fn written_form(
-            proof: &Proof<'_>,
-            goal: &Proposition,
-            written: &[ClickProposition],
-            lowered: &mut [Option<Option<Proposition>>],
-        ) -> Option<ClickProposition> {
-            for (index, surface) in written.iter().enumerate() {
-                let candidate = lowered[index].get_or_insert_with(|| {
-                    proof
-                        .lower_surface_goal(surface, "loop invariant bundle member")
-                        .ok()
-                });
-                if candidate.as_ref().is_some_and(|candidate| {
-                    crate::kernel::proof::propositions_are_alpha_equal(candidate, goal)
-                }) {
-                    return Some(surface.clone());
-                }
-            }
-            let Proposition::Implies(guard, body) = goal else {
-                return None;
-            };
-            Some(ClickProposition::Implies(
-                Box::new(written_form(proof, guard, written, lowered)?),
-                Box::new(written_form(proof, body, written, lowered)?),
-            ))
+        // Each written form is lowered once, and it and each distinct part of
+        // a member are keyed once: every later member repeats the guards of
+        // the earlier ones, so matching is one key lookup per part.
+        struct Written<'w> {
+            surfaces: &'w [ClickProposition],
+            lowered: Option<Vec<WrittenForm>>,
         }
+        struct WrittenForm {
+            index: usize,
+            lowered: Proposition,
+            guards: usize,
+            key: Option<crate::kernel::proof::PropositionIdentityKey>,
+        }
+        fn guards(proposition: &Proposition) -> usize {
+            let mut depth = 0;
+            let mut current = proposition;
+            while let Proposition::Implies(_, body) = current {
+                depth += 1;
+                current = body;
+            }
+            depth
+        }
+        fn written_form<'g>(
+            proof: &Proof<'_>,
+            goal: &'g Proposition,
+            written: &mut Written<'_>,
+            matched: &mut BTreeMap<&'g Proposition, Option<ClickProposition>>,
+        ) -> Option<ClickProposition> {
+            if let Some(known) = matched.get(goal) {
+                return known.clone();
+            }
+            let surfaces = written.surfaces;
+            let forms = written.lowered.get_or_insert_with(|| {
+                surfaces
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(index, surface)| {
+                        let lowered = proof
+                            .lower_surface_goal(surface, "loop invariant bundle member")
+                            .ok()?;
+                        Some(WrittenForm {
+                            index,
+                            guards: guards(&lowered),
+                            key: crate::kernel::proof::proposition_identity_key(&lowered),
+                            lowered,
+                        })
+                    })
+                    .collect()
+            });
+            // A form can only be a goal with as many guards as it has, so a
+            // member's chain of guards is not keyed at every suffix.
+            let depth = guards(goal);
+            let mut goal_key = None;
+            let direct = forms
+                .iter()
+                .filter(|form| form.guards == depth)
+                .find(|form| {
+                    let goal_key = goal_key.get_or_insert_with(|| {
+                        crate::kernel::proof::proposition_identity_key(goal)
+                    });
+                    match (&form.key, &*goal_key) {
+                        (Some(form_key), Some(goal_key)) if form_key != goal_key => false,
+                        _ => {
+                            crate::kernel::proof::propositions_are_alpha_equal(&form.lowered, goal)
+                        }
+                    }
+                })
+                .map(|form| surfaces[form.index].clone());
+            let form = match (direct, goal) {
+                (Some(surface), _) => Some(surface),
+                (None, Proposition::Implies(guard, body)) => {
+                    match (
+                        written_form(proof, guard, written, matched),
+                        written_form(proof, body, written, matched),
+                    ) {
+                        (Some(guard), Some(body)) => {
+                            Some(ClickProposition::Implies(Box::new(guard), Box::new(body)))
+                        }
+                        _ => None,
+                    }
+                }
+                (None, _) => None,
+            };
+            matched.insert(goal, form.clone());
+            form
+        }
+        let mut written = Written {
+            surfaces: &written,
+            lowered: None,
+        };
+        let mut matched = BTreeMap::new();
+        let mut surfaces = vec![None; leaves.len()];
         for (position, goal) in leaves.iter().enumerate().rev() {
-            let matched = written_form(self, goal, &written, &mut lowered);
-            surfaces[position] = Some(match (matched, &goal_surfaces) {
+            let member = written_form(self, goal, &mut written, &mut matched);
+            surfaces[position] = Some(match (member, &goal_surfaces) {
                 (Some(surface), _) => surface,
                 (None, Some(goal_surfaces)) => {
                     let surface = &goal_surfaces[position];
