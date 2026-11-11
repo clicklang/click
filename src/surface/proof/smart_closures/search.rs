@@ -9053,7 +9053,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             let Some(missing) = refusal.missing_resource() else {
                 break;
             };
-            let Some(opened) = proof.solve_open_for_missing_resource(missing)? else {
+            let Some(opened) = Self::try_open_for_missing_resource(&proof, missing)? else {
                 break;
             };
             proof = opened;

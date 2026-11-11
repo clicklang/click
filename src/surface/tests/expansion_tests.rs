@@ -21667,3 +21667,17 @@ fn repaired_step_fold_obligations_expand_and_cold_replay() {
         .unwrap_or_else(|error| panic!("{fixture}: {error}"));
     }
 }
+
+#[test]
+fn implicit_resource_opening_expands_to_an_explicit_unfold() {
+    let (source, c_sources) =
+        mdtest_sources("mdtests/implicit_tail_opens_a_folded_resource_to_store_through_it.md");
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "bump").unwrap();
+    assert!(expanded.contains("unfold(flat(p))"), "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        .unwrap_or_else(|error| panic!("{}\n{expanded}", error.report()));
+}
