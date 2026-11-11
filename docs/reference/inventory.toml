@@ -4128,6 +4128,10 @@ id = "library.function.chunks_exact::after_next"
 path = "reference/library/index.md#chunks_exactafter_next"
 
 [[item]]
+id = "library.function.chunks_exact::after"
+path = "reference/library/index.md#chunks_exactafter"
+
+[[item]]
 id = "library.theorem.chunks_exact::len_chunks_exact"
 path = "reference/library/index.md#chunks_exactlen_chunks_exact"
 
@@ -4150,6 +4154,26 @@ path = "reference/library/index.md#chunks_exactnth_after_next"
 [[item]]
 id = "library.theorem.chunks_exact::remainder_after_next"
 path = "reference/library/index.md#chunks_exactremainder_after_next"
+
+[[item]]
+id = "library.theorem.chunks_exact::after_zero"
+path = "reference/library/index.md#chunks_exactafter_zero"
+
+[[item]]
+id = "library.theorem.chunks_exact::after_next_after"
+path = "reference/library/index.md#chunks_exactafter_next_after"
+
+[[item]]
+id = "library.theorem.chunks_exact::len_after"
+path = "reference/library/index.md#chunks_exactlen_after"
+
+[[item]]
+id = "library.theorem.chunks_exact::nth_after"
+path = "reference/library/index.md#chunks_exactnth_after"
+
+[[item]]
+id = "library.theorem.chunks_exact::remainder_after"
+path = "reference/library/index.md#chunks_exactremainder_after"
 
 [[item]]
 id = "library.type.Vec"

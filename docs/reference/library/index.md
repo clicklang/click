@@ -6299,6 +6299,14 @@ function after_next<T>(it: ChunksExact<T>) -> ChunksExact<T>;
 
 `it` after one `next()` that returned a chunk, for an `it` with `0 < len(it)`.
 
+### `chunks_exact::after`
+
+```click
+function after<T>(it: ChunksExact<T>, k: Integer) -> ChunksExact<T>;
+```
+
+`it` after `k` calls of `next()` that each returned a chunk, for a `k` from zero to `len(it)`. The count is a mathematical integer, so a loop states where its iterator stands by its pass count: `iter == start.after(iterations)`.
+
 ### `chunks_exact::len_chunks_exact`
 
 ```click
@@ -6372,6 +6380,66 @@ axiom remainder_after_next<T>(it: ChunksExact<T>) {
 ```
 
 `next()` leaves the remainder as it was. **Axiom:** trusted, not proved.
+
+### `chunks_exact::after_zero`
+
+```click
+axiom after_zero<T>(it: ChunksExact<T>) {
+    ensures chunks_exact::after(it, 0) == it;
+}
+```
+
+No call leaves the iterator as it was. **Axiom:** trusted, not proved.
+
+### `chunks_exact::after_next_after`
+
+```click
+axiom after_next_after<T>(it: ChunksExact<T>, k: Integer) {
+    requires 0 <= k;
+    requires k < to_integer(chunks_exact::len(it));
+    ensures chunks_exact::after_next(chunks_exact::after(it, k)) == chunks_exact::after(it, k + 1);
+}
+```
+
+One more `next()` is one more call. **Axiom:** trusted, not proved.
+
+### `chunks_exact::len_after`
+
+```click
+axiom len_after<T>(it: ChunksExact<T>, k: Integer) {
+    requires 0 <= k;
+    requires k <= to_integer(chunks_exact::len(it));
+    ensures to_integer(chunks_exact::len(chunks_exact::after(it, k)))
+        == to_integer(chunks_exact::len(it)) - k;
+}
+```
+
+**Axiom:** trusted, not proved.
+
+### `chunks_exact::nth_after`
+
+```click
+axiom nth_after<T>(it: ChunksExact<T>, k: Integer, j: uint64, m: uint64) {
+    requires 0 <= k;
+    requires to_integer(m) == k + to_integer(j);
+    requires m < chunks_exact::len(it);
+    ensures chunks_exact::nth(chunks_exact::after(it, k), j) == chunks_exact::nth(it, m);
+}
+```
+
+The chunks still to come are the ones `it` would have yielded from `k` on: chunk `j` of them is chunk `m` of `it`, where `m` is `k + j`. **Axiom:** trusted, not proved.
+
+### `chunks_exact::remainder_after`
+
+```click
+axiom remainder_after<T>(it: ChunksExact<T>, k: Integer) {
+    requires 0 <= k;
+    requires k <= to_integer(chunks_exact::len(it));
+    ensures chunks_exact::remainder(chunks_exact::after(it, k)) == chunks_exact::remainder(it);
+}
+```
+
+**Axiom:** trusted, not proved.
 
 ## `click::separation`
 

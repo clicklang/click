@@ -6,7 +6,9 @@ axioms relating them, and a proof reads a value with those methods. A Rust
 unit with `"iterators": "library"` imports its `chunks_exact` iterators as
 values of that type, and construction, `remainder()` and loops, including
 one that reads through each chunk, are proved from the contract
-(`tests/rust_import/library_chunks_loop.click`). The unit option is
+(`tests/rust_import/library_chunks_loop.click`). The loop fact is a library
+function, `after(it, k)`, the iterator after `k` calls of `next()`: a loop
+carries `iter == start.after(iterations)`. The unit option is
 temporary and is removed with the old model (migration step 4). The loop's starting iterator is spelled with the
 existing snapshot form, `at(loop(i).entry, iter)` (open question 2).
 
@@ -64,6 +66,15 @@ against them. That is not part of this proposal.
 
   These facts follow from the `next` law by induction. No iterator type
   appears in them.
+
+  As built, the loop fact is not a verifier rule. Each type's library file
+  declares `after(it, k)`, `it` after `k` calls of `next()`, with the
+  axioms `after(it, 0) == it`, `after_next(after(it, k)) == after(it, k +
+  1)`, `len(after(it, k)) == len(it) - k` and `nth(after(it, k), j) ==
+  nth(it, k + j)`. A loop states `iter == start.after(iterations)` as an
+  ordinary invariant; the second axiom preserves it across a pass and the
+  last gives the loop variable. The cost is one function and four axioms a
+  type; the gain is that nothing in Click knows about iterator loops.
 
 Nothing in this model knows what any particular iterator yields. That is
 what the library contracts are for.
