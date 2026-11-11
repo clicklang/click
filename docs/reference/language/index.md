@@ -3401,9 +3401,9 @@ writes `produces allocation(result, bytes);`
 ([C allocation](c.md#heap-allocation)).
 
 The declared byte count is an `int32`, and argument 1 also accepts a
-`uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`
-of a symbolic `size_t` size proved to fit `PTRDIFF_MAX` makes a block with a
-64-bit extent, whose token holds a `uint64` byte count: a sidecar states it
+`uint64` (`size_t`) count, as argument 0 accepts any data pointer. `malloc`,
+`calloc` or `realloc` of a symbolic `size_t` size proved to fit `PTRDIFF_MAX`
+makes a block with a 64-bit extent, whose token holds a `uint64` byte count: a sidecar states it
 as `allocation(p, n * 4u64)` or `allocation(p, bytes)`, and returns it, passes
 it to a callee, or frees it like any other. A `uint64` count is admitted
 under `malloc`'s no-wrap decision (`1 <= bytes <= PTRDIFF_MAX`, or

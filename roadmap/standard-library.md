@@ -302,13 +302,14 @@ Each step is a separate PR that leaves every example verifying:
    - Done: `size_t` sizes for `allocation`. Design:
      [`design/heap-extents.md`](../design/heap-extents.md) (a tagged
      32/64-bit extent chosen by the size's C type; accepted 2026-11-10),
-     stages 1 to 3. `malloc` of a symbolic `size_t` size proved to fit
-     `PTRDIFF_MAX` makes a 64-bit block with a `uint64` token and a wide
-     range, and a sidecar states that token with a `uint64` byte count, so
-     the block crosses calls
+     stages 1 to 4. `malloc`, `calloc` and `realloc` of a symbolic
+     `size_t` size proved to fit `PTRDIFF_MAX` make a 64-bit block with a
+     `uint64` token and a wide range, and a sidecar states that token with a
+     `uint64` byte count, so the block crosses calls
      (`mdtests/an_extern_allocator_states_a_size_t_extent.md`,
-     `mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`). `calloc` and
-     `realloc` of a 64-bit size are the design's stage 4, outside this item.
+     `mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`,
+     `mdtests/a_bounded_size_t_calloc_count_allocates_a_zeroed_64_bit_block.md`,
+     `mdtests/a_realloc_grows_a_64_bit_block_and_keeps_its_prefix.md`).
    - Done, by decision (maintainer, 2026-11-09): the width-lemma
      families are not restated over a format. The width-uniformity fixture
      checks each family at every format; its gaps stay open

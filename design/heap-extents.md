@@ -1,10 +1,10 @@
 # Heap-block extents: 64-bit (`size_t`) sizes
 
 Status: option (a) accepted by the maintainer, 2026-11-10 (decisions D1-D6
-below). PR 0 (this note and a bug fix) has landed; PR 1 (the tagged extent,
-stage 1), PR 2 (kernel 64-bit `malloc` and `free`, stage 2) and PR 3 (the
-sidecar and contract `uint64` byte count, stage 3) are done; stage 4
-(`calloc` and `realloc`) is open. Line numbers in section 1 are at `origin/master` e01ca8136
+below). The plan is complete: PR 0 (this note and a bug fix), PR 1 (the
+tagged extent, stage 1), PR 2 (kernel 64-bit `malloc` and `free`, stage 2),
+PR 3 (the sidecar and contract `uint64` byte count, stage 3) and PR 4
+(`calloc` and `realloc`, stage 4) are done. Line numbers in section 1 are at `origin/master` e01ca8136
 plus PR 0's changes (`statements.rs`, `primitives.rs`); stage 1 names its
 sites by function.
 
@@ -330,8 +330,9 @@ the `UInt64` kind.
    `a_64_bit_block_freed_twice_is_refused`,
    `an_interior_free_of_a_64_bit_block_is_refused`,
    `a_store_into_a_freed_64_bit_block_is_refused`,
-   `a_symbolic_size_t_calloc_count_is_refused`,
-   `a_realloc_of_a_64_bit_block_is_refused`. Kernel unit tests
+   `a_symbolic_size_t_calloc_count_is_refused` and
+   `a_realloc_of_a_64_bit_block_is_refused` (both replaced in stage 4).
+   Kernel unit tests
    (`heap_tests.rs`: the token, extent and wide range after resolution; the
    refusals; the wrapped block; `heap_extent_tests.rs`: the element count).
    Scaling (`memory_scaling_tests.rs`):
@@ -414,12 +415,76 @@ the `UInt64` kind.
    facts fix to a constant still makes a 32-bit block (D2), so a contract
    states its token with the constant (`allocation(p, 8)`), not with
    `n * 4u64`, which is of the other format and refused (D5).
-4. **calloc and realloc.** calloc decides the guard and never evaluates its
-   product; an undecided guard is refused. realloc: kind-aware fit conditions
-   (`uint64_less_equal`) and a wide old range for removal; a constant zeroed
-   prefix stays the supported case. Regressions: bounded `size_t` calloc and
-   realloc pass; a calloc with an undecided guard is refused; shrink and grow
-   of a wide block preserve the prefix; a wide realloc from a zeroed source.
+4. **Done: calloc and realloc.** calloc never evaluates its product:
+   `execute_c_heap_allocate_paths` splits the lowered `n * w` into its count
+   and constant element size (`calloc_operands`; `w` may be a struct size
+   other than the target's element width) and evaluates only `n`. The count
+   takes the element path with width `w`: a 64-bit count must be decided
+   `1 <= n <= PTRDIFF_MAX / w` (`uint64_allocation_size_is_exact`), then the
+   extent is the exact `uint64 n * w`; an undecided guard is refused with
+   `HeapAllocationSize`, with no wrapped-product fallback (that is
+   `malloc`'s), so a count the facts fix where the product wraps is refused
+   rather than modeled as the wrapped block, as the base did for a struct
+   `calloc`. A 64-bit `calloc` size not of that shape (no front end makes
+   one) is refused. The zeroed reading needs no change: it is per block.
+   Because only the count is evaluated, a struct `calloc` with an `int`
+   count is now a 32-bit block (`n * w` at `int32`, `n <= INT32_MAX / w`
+   decided), where the evaluated `size_t` product made it a refused 64-bit
+   size before; the C reference already documented that form
+   (`a_struct_calloc_with_an_int_count_allocates_a_32_bit_block`).
+   realloc: the `Int32`-only filters are gone. The new size is admitted as
+   `malloc`'s (element path `1 <= n <= PTRDIFF_MAX / w`, raw path
+   `uint64_heap_extent_bytes_are_exact`), without the wrapped-product
+   fallback. The old block's token, complete range, byte range and the
+   separation of its dependents were already kind-aware (stages 1-3), as are
+   pending resolution and free. The fit conditions for copied cells and
+   initialized runs are `AllocationSize::at_least` / `less_than`: the old
+   32-bit compares for an `Int32` size, and for a `UInt64` one
+   `uint64_extent_in_elements`, which compares `ceil(end / k) <= n` for an
+   extent `n * k` with a constant `k`. That is exact because such an extent
+   was admitted with `n <= PTRDIFF_MAX / k` decided, and it is what the facts
+   about `n` decide where the wrapping product would not. A constant zeroed
+   prefix stays the supported case, now computed by
+   `realloc_zeroed_prefix`: the minimum of two constants, or the one constant
+   (old prefix or new size) the facts decide is the smaller, compared in its
+   own format. A prefix that would not be a constant (a 64-bit `calloc`
+   block grown to another symbolic size) is refused as before. The same rule
+   admits a 32-bit symbolic size from a constant zeroed source where the
+   facts decide the order, refused before
+   (`a_zeroed_block_reallocated_to_an_int_size_keeps_its_zeroed_prefix`). The diagnostic names `calloc(n, w)` and
+   `realloc(p, n * w)`. Regressions (mdtests):
+   `a_bounded_size_t_calloc_count_allocates_a_zeroed_64_bit_block`,
+   `a_size_t_calloc_count_with_no_upper_bound_is_refused` (replaces
+   `a_symbolic_size_t_calloc_count_is_refused`),
+   `a_calloc_count_whose_product_would_wrap_is_refused`,
+   `a_realloc_grows_a_64_bit_block_and_keeps_its_prefix` (replaces
+   `a_realloc_of_a_64_bit_block_is_refused`),
+   `a_realloc_shrinks_a_64_bit_block_and_keeps_its_prefix`,
+   `a_realloc_of_a_32_bit_block_to_a_size_t_size_keeps_its_prefix`,
+   `a_zeroed_block_reallocated_to_a_size_t_size_keeps_its_zeroed_prefix`,
+   `a_zeroed_64_bit_block_reallocated_to_a_constant_size_stays_zeroed`,
+   `a_size_t_realloc_size_with_no_upper_bound_is_refused`,
+   `a_store_past_a_reallocated_64_bit_block_is_refused`,
+   `a_store_through_the_old_pointer_after_a_64_bit_realloc_is_refused`,
+   `a_64_bit_block_freed_after_its_realloc_is_refused`. Kernel unit tests
+   (`heap_tests.rs`): a zeroed 64-bit calloc block, the calloc refusals
+   (fixed wrapping count, unbounded count), and a 64-bit realloc's consumed
+   and produced tokens and ranges. No new scaling test: no hot path changed
+   (each realloc fit condition is one decision per cached cell or
+   initialized run, as before, and the element reading is a constant-size
+   term match).
+
+   Still conservative after stage 4, each giving up rather than misreading:
+   a nested product such as `realloc(p, n * 2 * w)` (its count `n * 2` is a
+   wrapping product whose bound the facts do not decide; `malloc` refuses it
+   too), field access into a 64-bit struct-array block (`malloc` or `calloc`
+   of `n * sizeof(struct T)` with a `size_t` `n`: the field's byte offset is
+   compared with the wrapping product `n * k` both for the pointer's
+   formation, refused as leaving the object, and for its membership in the
+   wide byte range; a struct `calloc` with an `int` count, a 32-bit block,
+   works), and the `CMemoryDerivation` byte terms,
+   `pointer_at_block_end_condition` and `proves_access_from_memory_block`
+   listed under stages 2 and 3.
 
 Soundness of (a): a `UInt64` extent `E` is admitted only with `0 < E <= i64::MAX`
 decided (raw) or `1 <= n <= i64::MAX / w` and `E = n*w` (element, no wrap, so
