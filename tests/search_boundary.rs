@@ -1275,3 +1275,25 @@ fn callback_error_reporting_cannot_reenter_the_driver() {
     );
     assert!(proof_search_boundary::check(path, &file).is_err());
 }
+
+#[test]
+fn match_arm_exclusion_primitives_cannot_dispatch_steps() {
+    let path = "src/surface/proof/proof_object/match_cases.rs";
+    for name in [
+        "prepare_execution_match_arm_exclusion",
+        "finish_execution_match_arm_exclusion",
+    ] {
+        let source = format!(
+            "impl Proof {{ fn {name}(&self) {{ self.driver().apply_step_at(step, source_index); }} }}"
+        );
+        let file = syn::parse_file(&source).unwrap();
+        let errors = proof_search_boundary::check(path, &file).unwrap_err();
+        assert!(
+            errors.iter().any(
+                |error| error.starts_with("unreviewed proof-search dependency:")
+                    && error.contains(name)
+            ),
+            "{errors:?}"
+        );
+    }
+}

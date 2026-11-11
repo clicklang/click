@@ -2007,6 +2007,22 @@ fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
             "Tag::A => { have x == x by ".len(),
         );
         assert!(!expanded.contains("have x == x by solve();"), "{expanded}");
+        let (source, sources) = mdtest_sources(relative);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, "id").unwrap();
+        assert!(
+            expanded.contains("contradiction(r.model == Tag::A())"),
+            "{expanded}"
+        );
+        with_proof_trace("id", || {
+            without_implicit_solve_for_claim("id.contract", || {
+                verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{relative}: {error}"));
+        });
     }
 }
 

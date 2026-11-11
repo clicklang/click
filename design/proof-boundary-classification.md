@@ -2,14 +2,18 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` and 7 `operation-to-driver` records in
+classifies all 19 `mixed` and 6 `operation-to-driver` records in
 `build_support/proof_search_edges.tsv` and groups the operation references.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
 pass adds no measurements; preparation evidence below is from the completed
 implementation's tests. The subsequent diagnostic cleanup removes one
 operation-to-driver record: an exhausted callback script now reports its actual
-frontier without speculative execution or solving.
+frontier without speculative execution or solving. Match-arm contradiction
+dispatch now lives in the match driver: preparation returns the excluded
+partition, the driver applies the written contradiction with its source site,
+and completion publishes the retained partition and closed-arm certificate.
+The relocated reference is driver-owned, so the total record count is unchanged.
 
 ## Current boundary
 
@@ -99,7 +103,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 7 operation-to-driver reference records
+## The 6 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
@@ -111,9 +115,8 @@ Methods below are on `Proof`.
 | `apply_signed_definedness_certificate` | Search-support adapter: called by signed-definedness search; constructs an explicit arithmetic certificate and dispatches it. Separate the generator from direct certificate application; do not count this edge alone as a hidden ambient scan. |
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
-| `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
 
-Totals: 6 search/support adapters and 1 specific-operation dispatch adapter. Some categories overlap semantically; each record is counted
+Totals: 6 search/support adapters. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible

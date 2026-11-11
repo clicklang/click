@@ -212,7 +212,6 @@ src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::plan_invariant_bundle_closure	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
-src/surface/proof/proof_object/match_cases.rs	operation-to-driver	Proof::exclude_execution_match_arm_after_bridge	driver	1
 src/surface/proof/proof_object/resource_steps.rs	operation-to-driver	Proof::solve_open_for_missing_resource	driver	1
 src/surface/proof/proof_object/step_application.rs	presentation	Proof::record_spellability_census	resolve_solve_premises	1
 src/surface/proof/proof_object/trace_surface.rs	presentation	Proof::trace_pointer_pair	available_surface_fact	3
@@ -611,3 +610,4 @@ src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::apply_expanded_execution_if	driver	1
+src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	driver	1
