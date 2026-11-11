@@ -1430,10 +1430,13 @@ creates write authority. Reads through chunks, aliases, calls, and tails
 retain the original input's view requirements.
 
 The [exact-chunk fixture](https://github.com/clicklang/click/tree/master/examples/rust-chunks-exact)
-uses a cursor invariant and a divisibility invariant to describe the input
-partition without a generated processed count. Regressions cover empty
-input, exact multiples, short tails, nested loops, full-width chunk sizes,
-zero-size rejection, false claims, missing bounds/views, and expanded proofs.
+no longer uses this model: its unit sets `"iterators": "library"` and its
+proof cites the library contract ([library iterators](#library-iterators)).
+The fixtures under `design/charon-trial` that still name the state above
+move the same way, after which this model is removed. Regressions cover
+empty input, exact multiples, short tails, nested loops, full-width chunk
+sizes, zero-size rejection, false claims, missing bounds/views, and expanded
+proofs.
 Mutable chunk iterators and chunks of non-byte slices remain unsupported.
 
 ## Library iterators
@@ -1497,7 +1500,7 @@ The chunk a pass binds is `iter.nth(0u64)`: its data pointer is
 value the program computes: `to_integer(k * 4u64) < to_integer(bytes.len())`,
 not `k * 4u64 < bytes.len()`, which states the exact product. The same form
 is owed for `p[k * 4]` in C
-([proof](https://github.com/clicklang/click/blob/master/tests/rust_import/library_chunks_loop.click)).
+([proof](https://github.com/clicklang/click/blob/master/examples/rust-chunks-exact/chunks.click)).
 
 ## Moves and drops
 

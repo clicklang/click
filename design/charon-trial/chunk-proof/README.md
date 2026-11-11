@@ -4,21 +4,15 @@
 `examples/rust-chunks-exact` source, and `frozen.click` archives its original
 sidecar, respelled once in today's syntax with its contract and proof
 unchanged (`../README.md`, Complete canonical proof-port adoption). `chunks.click` preserves its full contract
-and adapts only the proof to the actual iterator storage and checked frontiers.
+and is the example's current proof: the unit sets `"iterators": "library"`,
+so the iterator is a value of the library's `ChunksExact` and the proof
+cites its contract (`examples/rust-chunks-exact/README.md`).
 The native Charon artifact and import lock are committed for offline checks.
 
 The loop covers every full four-byte chunk; the returned remainder length is
 `bytes_len % 4`, and every input byte is preserved. Empty inputs, exact
 multiples, and short tails are included. Existing importer tests retain zero
-chunk-size rejection. This port adds no generated processed count.
-
-`execute_until(loop(0))`, `execute_until(read(1))`, and
-`execute_until(back_edge())` replace compiler statement counts. The last
-selector finishes only the current preservation region via checked steps.
-It grants no invariant or termination authority; `close_invariants()` remained
-required (that tactic has since been retired: the back edge now closes each
-invariant and ranking member with `solve()`). Explicit branches must be proved
-separately.
+chunk-size rejection.
 
 Run `click verify design/charon-trial/chunk-proof/chunks.click`. Locked tests
 check verify/profile/audit and expansion rechecking. The live parity sweep

@@ -1,12 +1,12 @@
 # Rust iterators: one generic model, per-type library contracts
 
-Status: step 1 in progress. `library/rust/chunks_exact.click` declares
+Status: step 1 done, step 2 next. `library/rust/chunks_exact.click` declares
 `ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and the
 axioms relating them, and a proof reads a value with those methods. A Rust
 unit with `"iterators": "library"` imports its `chunks_exact` iterators as
 values of that type, and construction, `remainder()` and loops, including
 one that reads through each chunk, are proved from the contract
-(`tests/rust_import/library_chunks_loop.click`). The loop fact is a library
+(`examples/rust-chunks-exact/chunks.click`). The loop fact is a library
 function, `after(it, k)`, the iterator after `k` calls of `next()`: a loop
 carries `iter == start.after(iterations)`. The unit option is
 temporary and is removed with the old model (migration step 4). The loop's starting iterator is spelled with the
@@ -166,8 +166,8 @@ The per-kind accessor table, `RustIteratorKind` and the old spellings
 
 ## Migration
 
-1. Generic model plus the `ChunksExact` contract on
-   `examples/rust-chunks-exact`. This settles open questions 1 and 2.
+1. Done: the generic model plus the `ChunksExact` contract on
+   `examples/rust-chunks-exact`, which settled open questions 1 and 2.
 2. The other `chunks_exact` fixtures, then adler2.
 3. Slice iterators, `enumerate` and ranges onto their library contracts.
    This includes inclusive ranges, currently blocked by
