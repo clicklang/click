@@ -87,6 +87,7 @@ void sized_propagate(struct rb_node* rb, struct rb_node* stop) {
             }
             unfold(left);
             unfold(right);
+            have ((old(rb)->__rb_parent_color & ~3) as (struct rb_node *)) == stop by solve();
             fold(links);
             if status != 0 {
                 step();

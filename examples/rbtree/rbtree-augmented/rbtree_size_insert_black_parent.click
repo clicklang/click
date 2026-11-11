@@ -49,6 +49,7 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1) == 0); normalize();
             }
             step(); step(); step(); step();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by solve();
             let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
             let state = fold(sized_black_parent_at(node), { model: old(state.model), parent_tag: old(state.parent_tag) }, { tree: tree });
             loop {
