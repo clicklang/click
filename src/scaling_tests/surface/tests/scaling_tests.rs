@@ -10834,3 +10834,67 @@ fn entry_separation_samples() {
         &samples,
     );
 }
+
+#[test]
+fn separation_of_an_owned_instance_scales_with_owned_clauses_and_steps() {
+    // Run on the CLI's eight-megabyte stack, as `click verify` does.
+    std::thread::Builder::new()
+        .name("instance-separation-scaling".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(instance_separation_samples)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn instance_separation_samples() {
+    // One selected separation of a field-bearing instance from an owned
+    // cell. `clauses` grows the other instances owned beside it; `steps`
+    // grows the local statements executed while it is held, each of which
+    // may state the held resources again.
+    let fixture = |clauses: usize, steps: usize| {
+        let parameters = (0..clauses)
+            .map(|i| format!("struct node *p{i}, "))
+            .collect::<String>();
+        let locals = (0..steps)
+            .map(|i| format!("int x{i} = 0; "))
+            .collect::<String>();
+        let c = format!(
+            "struct node {{ struct node *next; }};\n\
+             void caller({parameters}int *slot) {{ {locals}}}\n"
+        );
+        let click_parameters = (0..clauses)
+            .map(|i| format!("struct node* p{i}, "))
+            .collect::<String>();
+        let owned = (0..clauses)
+            .map(|i| format!("    owns b{i}: box(p{i});\n"))
+            .collect::<String>();
+        let stepped = "step(); ".repeat(steps);
+        let source = format!(
+            "verifying \"owned.c\";\n\
+             resource box(p: struct node*) {{ field tag: int32; if p != 0 {{ owns p->next; }} }}\n\
+             void caller({click_parameters}int32* slot) {{\n{owned}    owns *slot;\n}} by {{\n\
+             {stepped}\n\
+             have separate(b0, memory(*slot)) by {{ assumption(); }}\n}}\n"
+        );
+        (c, source)
+    };
+    for (label, sizes) in [
+        ("owned clauses", [(4, 0), (8, 0), (16, 0)]),
+        ("steps while held", [(2, 4), (2, 8), (2, 16)]),
+    ] {
+        let mut samples = Vec::new();
+        for (clauses, steps) in sizes {
+            let (c, source) = fixture(clauses, steps);
+            let sources = [("owned.c", c.as_str())];
+            let (result, sample) =
+                scaling_sample(clauses.max(steps), || verify_c0_sources(&source, &sources));
+            result.expect("an owned instance is separate from another owned cell");
+            samples.push(sample);
+        }
+        assert_near_linear_scaling_at_sampled_sizes(
+            &format!("separation of an owned instance: {label}"),
+            &samples,
+        );
+    }
+}

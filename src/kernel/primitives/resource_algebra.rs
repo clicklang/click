@@ -4372,8 +4372,15 @@ impl ResourceContext {
         ) else {
             return false;
         };
-        let left_view = CResourceFact::View(left.clone());
-        let right_view = CResourceFact::View(right.clone());
+        // What an owner must entail to be the member a side names. A
+        // field-bearing instance is only ever owned whole, so its family
+        // has no view form and the question is ownership of that instance.
+        let named_member = |side: &CResource| match side {
+            CResource::Instance(_) => CResourceFact::own(side.clone()),
+            _ => CResourceFact::View(side.clone()),
+        };
+        let left_view = named_member(left);
+        let right_view = named_member(right);
         if let (CResource::Memory(left), CResource::Memory(right)) = (left, right) {
             let left_positions = self.owned_memory_candidates_for_range(left, assumptions);
             let right_positions = self.owned_memory_candidates_for_range(right, assumptions);
