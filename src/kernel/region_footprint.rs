@@ -137,9 +137,14 @@ impl RegionFootprint {
         if let Some(changed) = changed {
             for fact in changed {
                 crate::instrumentation::record_deterministic_work(1);
-                if let CResourceFact::Own(resource, _) = fact
+                if let CResourceFact::Own(resource, _) = &fact
                     && !matches!(resource, CResource::Memory(_) | CResource::Iterated(_))
                 {
+                    // A bounded call's produced output is new ownership made
+                    // from its consumed inputs, not memory outside the bound.
+                    let produced_output = resource_bound.is_some()
+                        && after.resources().contains_exact_representation(&fact)
+                        && !before.resources().contains_exact_representation(&fact);
                     // Spatial ownership may split or coalesce while a call
                     // lends and returns a cell; iterated ownership also updates
                     // its taken-out markers when a guard changes. Those map
@@ -147,8 +152,8 @@ impl RegionFootprint {
                     // above; retain changes to named resource observations.
                     // Lending and returning a recorded input is already
                     // included in the call's resource bound.
-                    extra_effect |= !bound_members.contains(&resource);
-                    members.push_back(resource);
+                    extra_effect |= !produced_output && !bound_members.contains(resource);
+                    members.push_back(resource.clone());
                 }
             }
         }
