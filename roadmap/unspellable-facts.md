@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `2b1200ebc`, including merged PR #2571.
+Baseline for this revision: `52a744a4f`, including merged PR #2572.
 
 Already landed:
 
@@ -652,6 +652,41 @@ authority and deterministic 16/64/256-prefix growth with zero exports.
 projects and 5,180 mdtests. Its precompiled-binary run took 10m04s and emitted
 the ten-minute budget warning, versus 9m49s for the preceding checkpoint;
 no limits were changed and no nightly suite was run.
+
+#### Remaining index-query adapters
+
+Wide unsigned-index distinctness compares retained full-width operands,
+including a constant byte displacement beside a scaled index. Mismatched or
+nonpositive strides retain their previous refusal, and neither operand is
+truncated to a low word. Exact scalar-constant substitution uses the existing
+operand-view equality index and still requires the byte product to fit.
+Shallow index equality calls the maintained graph through operand views.
+Plain-origin classification reads only the root variable or literal and keeps
+its existing accepted literal formats; computed constants remain nonplain.
+
+The new controls exposed two shared-route gaps. Exact-constant source admission
+now files written 32/64-bit machine observations as well as native comparisons,
+retaining the original source condition and endpoint syntax. The contextual
+wide-constant evaluator now memoizes completed shared misses by fact identity,
+logical-read generation, node identity and evidence-capture mode. Positive
+answers retain their existing source-evidence path; cycle/depth cuts mark the
+incomplete-reasoning epoch and do not become completed negative entries.
+The growing-prefix probe fell from 40,938 / 227,706 / 1,504,680 work units to
+35,820 / 151,932 / 616,380 at 16 / 64 / 256 prefixes. Temporary call-site
+profiling was removed from the source.
+
+The compiler-assisted audit at `bef90e92c` temporarily disabled the implicit
+`Deref`/`AsRef` tree conversions and found 120 primary locations, compared with
+157 in the earlier endpoint audit. These include diagnostics, synthesis and
+native output construction, not just checker dependencies. The traits were
+restored after the audit; this count is a boundary inventory, not a claim that
+all those sites are defects or that step 1 is closed.
+
+Validation: all 11 focused tests pass, including deterministic growing-prefix
+checks with and without evidence capture and zero tree exports.
+`scripts/check.sh --no-fail-fast` passed with 7,158 unit/API tests, 58 example
+projects and 5,180 mdtests in 9m41s with the binary precompiled. No limits
+were changed and no nightly suite was run.
 
 #### Classified boundaries and retained coverage
 

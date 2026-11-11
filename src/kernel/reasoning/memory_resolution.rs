@@ -1073,7 +1073,7 @@ fn wide_element_offsets_proven_distinct(
 ) -> Option<bool> {
     // A constant offset of whole elements beside a scaled index is the
     // constant index: `base[0]` against `base[k]`.
-    let (left, right, width) = match (left, right) {
+    let (left, right) = match (left, right) {
         (
             PointerOffsetTerm::Int64Scaled {
                 value: left,
@@ -1089,7 +1089,7 @@ fn wide_element_offsets_proven_distinct(
             if left_width != right_width || *left_width < 1 {
                 return Some(false);
             }
-            (left.as_ref().clone(), right.as_ref().clone(), *left_width)
+            (left.clone(), right.clone())
         }
         (
             PointerOffsetTerm::Int64Scaled {
@@ -1107,24 +1107,31 @@ fn wide_element_offsets_proven_distinct(
                 unsigned: true,
             },
         ) if *byte_width >= 1 && *bytes >= 0 && bytes % byte_width == 0 => (
-            value.as_ref().clone(),
-            MachineTerm::uint64_constant((bytes / byte_width) as u64),
-            *byte_width,
+            value.clone(),
+            crate::kernel::SharedMachineIntegerTerm::intern(
+                MachineIntegerType::UInt64,
+                MachineTerm::uint64_constant((bytes / byte_width) as u64),
+            ),
         ),
         _ => return None,
     };
-    let (left, right, _) = (&left, &right, width);
-    let decided = |condition: ConditionTerm| assumptions.decide(&condition);
-    let below = |smaller: &MachineTerm, larger: &MachineTerm| {
-        decided(ConditionTerm::uint64_less_than(
-            smaller.clone(),
-            larger.clone(),
-        )) == Some(true)
+    let decided = |relation,
+                   first: &crate::kernel::SharedMachineIntegerTerm,
+                   second: &crate::kernel::SharedMachineIntegerTerm| {
+        assumptions.decide(
+            &crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                MachineIntegerType::UInt64,
+                relation,
+                [first.operand_view(), second.operand_view()],
+            ),
+        )
     };
-    let unequal = |first: &MachineTerm, second: &MachineTerm| {
-        decided(ConditionTerm::uint64_equal(first.clone(), second.clone())) == Some(false)
-    };
-    Some(below(left, right) || below(right, left) || unequal(left, right) || unequal(right, left))
+    Some(
+        decided(CompareRelation::LessThan, &left, &right) == Some(true)
+            || decided(CompareRelation::LessThan, &right, &left) == Some(true)
+            || decided(CompareRelation::Equal, &left, &right) == Some(false)
+            || decided(CompareRelation::Equal, &right, &left) == Some(false),
+    )
 }
 
 pub(in crate::kernel) fn pointers_proven_equal_for_memory_resolution(
@@ -1864,11 +1871,14 @@ fn pointer_with_exact_index_constants(pointer: &Pointer, assumptions: &PureFactC
             }
             Task::Visit(offset @ PointerOffsetTerm::Int32Scaled { value, byte_width }) => {
                 values.push(
-                    crate::kernel::assumptions::exact_signed_constant(value, assumptions)
-                        .and_then(|index| i32::try_from(index).ok())
-                        .and_then(|index| i64::from(index).checked_mul(*byte_width))
-                        .map(PointerOffsetTerm::Constant)
-                        .unwrap_or_else(|| offset.clone()),
+                    crate::kernel::assumptions::exact_signed_constant_view(
+                        value.operand_view(),
+                        assumptions,
+                    )
+                    .and_then(|index| i32::try_from(index).ok())
+                    .and_then(|index| i64::from(index).checked_mul(*byte_width))
+                    .map(PointerOffsetTerm::Constant)
+                    .unwrap_or_else(|| offset.clone()),
                 );
             }
             Task::Visit(offset @ PointerOffsetTerm::Int64Scaled { .. }) => {
@@ -5543,3 +5553,7 @@ mod retained_wide_offset_tests {
         assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
+
+#[cfg(test)]
+#[path = "memory_resolution/retained_index_checks.rs"]
+mod retained_index_checks;

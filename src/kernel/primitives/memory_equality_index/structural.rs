@@ -94,10 +94,11 @@ fn plain_origin(mut offset: &PointerOffsetTerm) -> bool {
             PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => return true,
             PointerOffsetTerm::Int32Scaled { value, .. }
             | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                return matches!(
-                    value.as_ref(),
-                    MachineTerm::Variable(_) | bits32_constant!(_) | int64_constant!(_)
-                );
+                let value = value.operand_view();
+                return value.variable().is_some()
+                    || value.literal().is_some_and(|literal| {
+                        matches!(literal, bits32_constant!(_) | int64_constant!(_))
+                    });
             }
             PointerOffsetTerm::Add(left, right) => {
                 offset = if matches!(left.as_ref(), PointerOffsetTerm::Constant(_)) {
@@ -188,5 +189,41 @@ mod tests {
                 CMemoryRange::new(alias, 0u32.into(), 1u32.into()),
             ))
         );
+    }
+}
+
+#[cfg(test)]
+#[test]
+fn retained_plain_origin_requires_an_exact_allowed_atom() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, MachineBinaryOp, MachineIntegerType as T,
+        MachineOperandView as V,
+    };
+    let _session = crate::kernel::VerificationSession::enter();
+    for (ty, term, expected) in [
+        (T::Int32, MachineTerm::Variable(Variable(994530)), true),
+        (T::Int32, MachineTerm::constant(3), true),
+        (T::UInt32, MachineTerm::uint32_constant(3), true),
+        (T::Int64, MachineTerm::int64_constant(3), true),
+        (T::UInt64, MachineTerm::uint64_constant(3), false),
+        (
+            T::Int32,
+            MachineTerm::Binary {
+                format: T::Int32,
+                op: MachineBinaryOp::Add,
+                left: Box::new(MachineTerm::constant(1)),
+                right: Box::new(MachineTerm::constant(2)),
+            },
+            false,
+        ),
+    ] {
+        let root = KernelTerm::retained_machine_operand(ty, V::Legacy(&term));
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: V::Shared(&root).retain(T::Int32),
+            byte_width: 4,
+        };
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(plain_origin(&offset), expected, "{ty:?} {term:?}");
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }
