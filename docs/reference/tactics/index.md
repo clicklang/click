@@ -4039,6 +4039,12 @@ under the names of a `let { binder: name }` pattern, and add its `ensures`.
 
 No C runs and memory is unchanged, so every fact about a cell survives.
 
+Evaluation prerequisites of argument expressions are ordinary obligations. Supply
+`by { ... }` for one or `{ requires P by ...; }` for several; omitted proofs use
+implicit `solve()`. Expansion retains these proofs (see
+[`tactic_argument_obligation.md`](https://github.com/clicklang/click/blob/master/mdtests/tactic_argument_obligation.md)). This does not change the
+exact-fact requirements of the tactic contract itself.
+
 **Accepts**, at the execution frontier of a C function or `tactic` proof
 before exit, an application of a `tactic` declared earlier in the module (or
 the tactic itself, for recursion), when:

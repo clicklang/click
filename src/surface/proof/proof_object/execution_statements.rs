@@ -963,7 +963,7 @@ impl<'a> Proof<'a> {
                 ));
                 continue;
             }
-            let value = capture_resource_field_initializer(
+            let (value, obligations) = capture_resource_field_initializer(
                 &argument,
                 &crate::kernel::ResourceFieldType::C(parameter.c_type()),
                 self.facts().assumptions(),
@@ -979,6 +979,12 @@ impl<'a> Proof<'a> {
                     parameter.name()
                 ))
             })?;
+            for obligation in obligations {
+                crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                    self.step_error("initializer has an unproved evaluation obligation")
+                        .with_unresolved_requirement(&obligation),
+                )?;
+            }
             let crate::kernel::AlgebraicValue::C(value) = value else {
                 unreachable!("a C parameter captures a C value")
             };
@@ -1359,6 +1365,7 @@ impl<'a> Proof<'a> {
     fn apply_primitive_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
         match step {
             ProofStep::FoldResource(resource) => self.apply_primitive_fold(resource),
+            ProofStep::UserTactic(_) => self.apply_execution_user_tactic(step.clone()),
             _ => self.apply_execution_statement_step_with_policy(
                 step.clone(),
                 StatementPrerequisitePolicy::Fast,
