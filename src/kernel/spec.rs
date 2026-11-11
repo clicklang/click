@@ -4042,7 +4042,16 @@ fn evaluate_spec_algebraic_at_state_with_bindings_in(
                             continue;
                         };
                         let mut next_values = values.clone();
-                        next_values.push(field_path.value);
+                        // A field's type is a pointer type with no qualifier,
+                        // so the stored pointer carries none: a `const`
+                        // parameter and a plain one build the same value,
+                        // whichever route evaluated the field.
+                        next_values.push(match field_path.value {
+                            AlgebraicValue::C(value) => {
+                                AlgebraicValue::C(value.with_pointer_pointee_constant(false))
+                            }
+                            value => value,
+                        });
                         next.push((next_values, merged_facts, merged_obligations));
                     }
                 }

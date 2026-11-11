@@ -2631,6 +2631,7 @@ pub(in crate::surface) fn function_contract_summary(
         )
     };
     let mut opaque_contract_supported = true;
+    clear_opaque_contract_refusal(function_block.signature().name());
     let mut predicate_unfoldings = Vec::new();
     let mut requires = Vec::new();
     let mut contract_requirement_sources = Vec::new();
@@ -2640,7 +2641,10 @@ pub(in crate::surface) fn function_contract_summary(
                 requires.push(proposition);
                 contract_requirement_sources.push(None);
             }
-            Err(_) => opaque_contract_supported = false,
+            Err(error) => {
+                opaque_contract_supported = false;
+                note_opaque_contract_refusal(function_block.signature().name(), &error);
+            }
         }
     }
     for (source_index, requirement) in function_block.requires().iter().enumerate() {
@@ -2675,7 +2679,10 @@ pub(in crate::surface) fn function_contract_summary(
                 requires.push(proposition);
                 contract_requirement_sources.push(Some(source_index));
             }
-            Err(_) => opaque_contract_supported = false,
+            Err(error) => {
+                opaque_contract_supported = false;
+                note_opaque_contract_refusal(function_block.signature().name(), &error);
+            }
         }
     }
     // Entry reads use the live argument image. Exit clauses project logical
@@ -2722,7 +2729,10 @@ pub(in crate::surface) fn function_contract_summary(
                 }
                 ensures.push(proposition)
             }
-            Err(_) => opaque_contract_supported = false,
+            Err(error) => {
+                opaque_contract_supported = false;
+                note_opaque_contract_refusal(function_block.signature().name(), &error);
+            }
         }
     }
 
@@ -2748,7 +2758,10 @@ pub(in crate::surface) fn function_contract_summary(
         }
         match lowerer.click_proposition_to_spec_proposition(proposition, &exceptional_context) {
             Ok(proposition) => exceptional_ensures.push(proposition),
-            Err(_) => opaque_contract_supported = false,
+            Err(error) => {
+                opaque_contract_supported = false;
+                note_opaque_contract_refusal(function_block.signature().name(), &error);
+            }
         }
     }
 
@@ -9703,3 +9716,38 @@ mod local_pointer_type_index_tests {
 
 #[cfg(test)]
 mod old_aggregate_tests;
+
+thread_local! {
+    /// Why a function's contract could not be lowered for opaque use: the
+    /// first clause's lowering error, by function name. A diagnostic only;
+    /// the verdict is the contract's own.
+    static OPAQUE_CONTRACT_REFUSALS: std::cell::RefCell<BTreeMap<String, String>> =
+        const { std::cell::RefCell::new(BTreeMap::new()) };
+}
+
+fn clear_opaque_contract_refusal(function: &str) {
+    OPAQUE_CONTRACT_REFUSALS.with(|refusals| {
+        refusals.borrow_mut().remove(function);
+    });
+}
+
+fn note_opaque_contract_refusal(function: &str, error: &impl std::fmt::Display) {
+    OPAQUE_CONTRACT_REFUSALS.with(|refusals| {
+        refusals
+            .borrow_mut()
+            .entry(function.to_string())
+            .or_insert_with(|| error.to_string());
+    });
+}
+
+/// `": <reason>"` when lowering `function`'s contract refused a clause, so a
+/// refusal to apply the contract opaquely names the clause's own error.
+pub(in crate::surface) fn opaque_contract_refusal_suffix(function: &str) -> String {
+    OPAQUE_CONTRACT_REFUSALS.with(|refusals| {
+        refusals
+            .borrow()
+            .get(function)
+            .map(|reason| format!(": {reason}"))
+            .unwrap_or_default()
+    })
+}

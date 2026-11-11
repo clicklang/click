@@ -3741,7 +3741,13 @@ impl ConditionTerm {
             }
             Self::pointer_equal(left.pointer().clone(), right.pointer().clone())
         } else {
-            Self::PointerValueEqual(Box::new(left), Box::new(right))
+            // Whether two pointers are equal does not depend on the `const`
+            // of the expressions that named them, and one proposition must
+            // be one term however its operands were read.
+            Self::PointerValueEqual(
+                Box::new(left.with_pointee_constant(false)),
+                Box::new(right.with_pointee_constant(false)),
+            )
         }
     }
 
