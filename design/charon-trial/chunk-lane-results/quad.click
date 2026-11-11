@@ -1,3 +1,5 @@
+import click::rust::slice;
+import click::rust::chunks_exact;
 import click::integer;
 
 verifying "quad.rs";
@@ -48,71 +50,92 @@ fn quad::walk(bytes: &[u8]) -> u32 {
     ensures result == 0u32;
 } by {
     step_until(loop(0));
-    have viewable(bytes[0..16]) by {
-        transport(at(function.entry, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(function.entry, viewable(bytes[0..16])); };
+    have loop(0).iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
+    have loop(0).iter.len() == bytes.len() / 4u64 by {
+        apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+        solve();
     }
-    have __rust_mir_6_remaining == 16u64;
-    have 16u64 - __rust_mir_6_remaining == 0u64 by { rewrite(__rust_mir_6_remaining == 16u64); solve(); }
-    have __rust_mir_6_cursor == bytes + (16u64 - __rust_mir_6_remaining) by { rewrite(16u64 - __rust_mir_6_remaining == 0u64); solve(); }
     loop {
-        decreases __rust_mir_6_remaining;
+        decreases iter.len();
         views bytes[0..16];
         invariant bytes.len() == 16u64;
-        invariant viewable(bytes[0..16]);
-        invariant __rust_mir_6_size == 4u64;
-        invariant __rust_mir_6_remaining <= 16u64;
-        invariant __rust_mir_6_remaining % 4u64 == 0u64;
-        invariant __rust_mir_6_cursor == bytes + (16u64 - __rust_mir_6_remaining);
+        invariant iter == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations);
+        invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+        initialize by {
+            have bytes.len() == 16u64;
+            have iter == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations) by {
+                apply(chunks_exact::after_zero(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64)));
+                have iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
+                solve();
+            }
+            have to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+        }
         preserve by {
-            have 4u64 <= __rust_mir_6_remaining;
-            have (16u64 - __rust_mir_6_remaining) + 4u64 <= 16u64 by { solve() using { __rust_mir_6_remaining <= 16u64; 4u64 <= __rust_mir_6_remaining; }; }
-            have 16u64 - __rust_mir_6_remaining <= 12u64 by { solve() using { 4u64 <= __rust_mir_6_remaining; __rust_mir_6_remaining <= 16u64; }; }
-            mark iteration;
-            step_until(assignment(chunk, 0)); step();
-            step_until(assignment(_byte, 0));
-            have lanes.lanes[0] == chunk[0];
-            have lanes.lanes[1] == chunk[1];
-            have lanes.lanes[2] == chunk[2];
-            have lanes.lanes[3] == chunk[3];
+            step(); step(); step(); step();
+            if 0u64 < iter.len() {
+                have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
+                    apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+                }
+                have iter.len() <= bytes.len() / 4u64;
+                have to_integer((bytes.len() / 4u64 - iter.len())) == iterations;
+                have (bytes.len() / 4u64 - iter.len()) < chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len();
+                have iter.nth(0u64) == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).nth((bytes.len() / 4u64 - iter.len())) by {
+                    apply(chunks_exact::nth_after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations, 0u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.nth(0u64).len() == 4u64 by {
+                    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.nth(0u64).as_ptr() == bytes + (bytes.len() / 4u64 - iter.len()) * 4u64 by {
+                    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.after_next() == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations + 1) by {
+                    apply(chunks_exact::after_next_after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations));
+                    solve();
+                }
+                have iter.after_next().len() == iter.len() - 1u64 by {
+                    apply(chunks_exact::len_after_next(iter));
+                }
+                have (bytes.len() / 4u64 - iter.len()) <= 3u64;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) == to_integer((bytes.len() / 4u64 - iter.len())) * 4;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) <= 12;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 4u64) <= 16;
+                mark taken;
+                step_until(assignment(chunk, 0)); step(); step();
+                have chunk == bytes + (bytes.len() / 4u64 - at(taken, iter.len())) * 4u64;
+                have chunk_len == 4u64;
+                mark before;
+                step_until(assignment(_byte, 0));
+                have lanes.lanes[0] == at(before, chunk[0]);
+                have lanes.lanes[0] == chunk[0];
+                have lanes.lanes[1] == at(before, chunk[1]);
+                have lanes.lanes[1] == chunk[1];
+                have lanes.lanes[2] == at(before, chunk[2]);
+                have lanes.lanes[2] == chunk[2];
+                have lanes.lanes[3] == at(before, chunk[3]);
+                have lanes.lanes[3] == chunk[3];
 
-            have lanes.lanes[0] == chunk[0] as uint32;
-            have to_integer(lanes.lanes[0]) == to_integer(chunk[0] as int32) by { rewrite(lanes.lanes[0] == chunk[0] as uint32); apply(quad_byte_observation(chunk[0])); assumption(); }
-            have lanes.lanes[1] == chunk[1] as uint32;
-            have to_integer(lanes.lanes[1]) == to_integer(chunk[1] as int32) by { rewrite(lanes.lanes[1] == chunk[1] as uint32); apply(quad_byte_observation(chunk[1])); assumption(); }
-            have lanes.lanes[2] == chunk[2] as uint32;
-            have to_integer(lanes.lanes[2]) == to_integer(chunk[2] as int32) by { rewrite(lanes.lanes[2] == chunk[2] as uint32); apply(quad_byte_observation(chunk[2])); assumption(); }
-            have lanes.lanes[3] == chunk[3] as uint32;
-            have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) by { rewrite(lanes.lanes[3] == chunk[3] as uint32); apply(quad_byte_observation(chunk[3])); assumption(); }
-            step_until(back_edge());
-            have viewable(bytes[0..16]) by {
-                transport(at(iteration, viewable(bytes[0..16])), viewable(bytes[0..16])) using { at(iteration, viewable(bytes[0..16])); };
-            }
-            have __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4u64;
-            have (at(iteration, __rust_mir_6_remaining) - 4u64) % 4u64 == at(iteration, __rust_mir_6_remaining % 4u64) by {
-                normalize() using { 4u64 <= at(iteration, __rust_mir_6_remaining); };
-            }
-            have __rust_mir_6_remaining % 4u64 == 0u64 by {
-                rewrite(__rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4u64);
-                rewrite((at(iteration, __rust_mir_6_remaining) - 4u64) % 4u64 == at(iteration, __rust_mir_6_remaining % 4u64)); solve();
-            }
-            have __rust_mir_6_remaining <= 16u64 by {
-                solve() using { __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4u64; 4u64 <= at(iteration, __rust_mir_6_remaining); at(iteration, __rust_mir_6_remaining) <= 16u64; };
-            }
-            have at(iteration, __rust_mir_6_cursor) + 4 == bytes + ((16u64 - at(iteration, __rust_mir_6_remaining)) + 4u64) by {
-                solve() using {
-                    at(iteration, __rust_mir_6_cursor) == bytes + (16u64 - at(iteration, __rust_mir_6_remaining));
-                    16u64 - at(iteration, __rust_mir_6_remaining) <= 12u64;
-                };
-            }
-            have 16u64 - __rust_mir_6_remaining == (16u64 - at(iteration, __rust_mir_6_remaining)) + 4u64 by {
-                solve() using { __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4u64; 4u64 <= at(iteration, __rust_mir_6_remaining); at(iteration, __rust_mir_6_remaining) <= 16u64; };
-            }
-            have __rust_mir_6_cursor == bytes + (16u64 - __rust_mir_6_remaining) by {
-                rewrite(16u64 - __rust_mir_6_remaining == (16u64 - at(iteration, __rust_mir_6_remaining)) + 4u64); solve();
-            }
-            have __rust_mir_6_remaining < at(iteration, __rust_mir_6_remaining) by {
-                solve() using { __rust_mir_6_remaining == at(iteration, __rust_mir_6_remaining) - 4u64; 4u64 <= at(iteration, __rust_mir_6_remaining); };
+                have lanes.lanes[0] == chunk[0] as uint32;
+                have to_integer(lanes.lanes[0]) == to_integer(chunk[0] as int32) by { rewrite(lanes.lanes[0] == chunk[0] as uint32); apply(quad_byte_observation(chunk[0])); assumption(); }
+                have lanes.lanes[1] == chunk[1] as uint32;
+                have to_integer(lanes.lanes[1]) == to_integer(chunk[1] as int32) by { rewrite(lanes.lanes[1] == chunk[1] as uint32); apply(quad_byte_observation(chunk[1])); assumption(); }
+                have lanes.lanes[2] == chunk[2] as uint32;
+                have to_integer(lanes.lanes[2]) == to_integer(chunk[2] as int32) by { rewrite(lanes.lanes[2] == chunk[2] as uint32); apply(quad_byte_observation(chunk[2])); assumption(); }
+                have lanes.lanes[3] == chunk[3] as uint32;
+                have to_integer(lanes.lanes[3]) == to_integer(chunk[3] as int32) by { rewrite(lanes.lanes[3] == chunk[3] as uint32); apply(quad_byte_observation(chunk[3])); assumption(); }
+                step_until(loop(0).back_edge());
+                have iter == at(taken, iter.after_next());
+                have iter.len() == at(taken, iter.len()) - 1u64;
+                have 0u64 < at(taken, iter.len());
+                have iter.len() < at(taken, iter.len());
+            } else {
+                step();
             }
         }
     }
+    have loop(0).iter.len() == 0u64;
+    step_until(function.exit);
+    solve();
 }
