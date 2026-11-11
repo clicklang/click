@@ -20578,7 +20578,7 @@ fn store_index_separation_variants_expand_and_replay() {
             "required_integer.ensures_0",
         ),
         (
-            "a_store_index_fact_may_be_the_integer_or_the_word",
+            "a_store_index_fact_may_be_stated_as_the_integer_or_the_word",
             "stated_integer",
             "stated_integer.contract",
         ),

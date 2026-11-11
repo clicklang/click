@@ -264,6 +264,7 @@ const NIGHTLY: &[&str] = &[
     "rotation_model_preserved.md",                                             // 1.0s
     "rotation_model_rejects_swapped_order.md",                                 // 0.7s
     "search_terminates_by_unmarked_count.md",                                  // 1.2s
+    "separation_elements_index_word_from_an_integer_fact.md",                  // 0.6s
     "shared_child_three_parent_links_and_spare_reference.md",                  // 0.7s
     "shared_heap_detach_leak_diagnostic.md",                                   // 0.5s
     "shared_heap_detach_old_resource_handoff.md",                              // 0.8s

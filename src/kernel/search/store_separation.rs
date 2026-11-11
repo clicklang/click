@@ -7,7 +7,7 @@
 //! kept the forgotten cells, proves the ones it can before the statement, and
 //! runs the statement again. Checking never calls this.
 use crate::kernel::primitives::SnapshotMapChange;
-use crate::kernel::{CMemory, CompareRelation, Pointer, Proposition};
+use crate::kernel::{CMemory, CompareRelation, Proposition};
 
 /// One cached cell a statement forgot beside a store into the same array.
 pub(crate) struct ForgottenStoreCell {
