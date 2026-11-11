@@ -188,7 +188,7 @@ impl Hash for NodeKey {
 }
 impl NodeKey {
     fn new(ty: KernelType, node: KernelTermNode) -> Self {
-        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        let mut hash = crate::id_hash::FingerprintHasher::default();
         ty.hash(&mut hash);
         if let KernelTermNode::MemoryLoad { memory, .. } = &node {
             memory.arena_id().hash(&mut hash);
@@ -326,7 +326,8 @@ impl Hash for KernelTerm {
 
 #[derive(Default)]
 struct Interner {
-    terms: HashMap<NodeKey, Weak<TermData>>,
+    // A `NodeKey` hashes as its precomputed fingerprint.
+    terms: HashMap<NodeKey, Weak<TermData>, crate::id_hash::U64BuildHasher>,
     cleanup: VecDeque<NodeKey>,
     next_id: u64,
 }
