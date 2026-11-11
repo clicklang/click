@@ -2953,7 +2953,7 @@ impl<'a> Proof<'a> {
         let _qualified = (self)
             .premise_surface_facts()
             .map(synthesis::QualifiedSynthesisScope::enter);
-        let candidate = synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {
+        synthesis::with_structural_goal_synthesis(|| match self.context.as_ref() {
             ProofContext::Pure(context) => synthesis::synthesize_surface_proposition_with_names(
                 goal,
                 ParameterBinding::new(&[], &[]),
@@ -2983,8 +2983,7 @@ impl<'a> Proof<'a> {
                     view.fixed_state.state,
                 )
             }
-        });
-        candidate
+        })
     }
 
     fn structural_goal_spelling(&self, goal: &Proposition) -> Option<ClickProposition> {

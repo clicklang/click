@@ -3114,7 +3114,7 @@ impl<'a> Proof<'a> {
         &self,
     ) -> Result<Option<Self>, ClickError> {
         crate::kernel::search::ProofSearch::try_focused_execute_to_exit_within(
-            &(self),
+            self,
             Vec::new(),
             &mut BTreeSet::new(),
             &mut 0,

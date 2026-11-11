@@ -162,9 +162,7 @@ impl Analysis<'_> {
             return result;
         }
         // A library primitive operation has no body to derive an origin from.
-        let Some(body) = definition.body() else {
-            return None;
-        };
+        let body = definition.body()?;
         if !(matches!(definition.return_type(), ClickType::C(ty) | ClickType::CObjectPointer { c_type: ty, .. } if ty.is_object_pointer())
             || matches!(definition.return_type(), ClickType::Parameter(_)))
             || !self.active.insert(name.to_string())

@@ -5079,20 +5079,24 @@ impl Pointer {
     /// elements of `byte_width` bytes: the index of a wide offset `i *
     /// byte_width`, or a nonnegative constant offset divided out. No
     /// 32-bit reading of an index takes part.
-    pub(crate) fn wide_element_index_from_base(
+    pub(crate) fn shared_wide_element_index_from_base(
         &self,
         base: &Self,
         byte_width: u32,
-    ) -> Option<MachineTerm> {
+    ) -> Option<SharedMachineIntegerTerm> {
         let width = i64::from(byte_width);
         match self.offset_from_base(base)? {
             PointerOffsetTerm::Int64Scaled {
                 value,
                 byte_width,
                 unsigned: true,
-            } if byte_width == width => Some(value.as_ref().clone()),
+            } if byte_width == width => Some(value),
             PointerOffsetTerm::Constant(bytes) if bytes >= 0 && bytes % width == 0 => {
-                Some(MachineTerm::uint64_constant((bytes / width) as u64))
+                let root = KernelTerm::retained_native_machine_operand(
+                    MachineIntegerType::UInt64,
+                    &MachineTerm::uint64_constant((bytes / width) as u64),
+                );
+                Some(MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64))
             }
             _ => None,
         }

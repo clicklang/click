@@ -584,9 +584,9 @@ fn recorded_point_of_load(read: &MachineTerm) -> Option<(SnapshotSelector, CStat
         let slot = slot.borrow();
         let points = slot.as_ref()?;
         points
-            .point_reading_memory(&memory)
+            .point_reading_memory(memory)
             .into_iter()
-            .chain(points.points_near_memory(&memory))
+            .chain(points.points_near_memory(memory))
             .find_map(|(selector, state)| {
                 let load = scalar_read_in_state(read, state)?;
                 Some((selector.clone(), state.clone(), load))

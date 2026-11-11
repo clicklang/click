@@ -1345,21 +1345,32 @@ fn charon_slice_failure_has_a_focused_trace() {
     // Frozen Rust inputs must use the same checked trace and proof selection
     // as C. Tracing one proof must not execute a failing sibling contract.
     let p = charon_slice_project();
-    fs::write(
-        p.root.join("borrow.click"),
-        "verifying \"slices.rs\";\nfn length(bytes: &[u8]) -> usize { ensures result == 0u64; }\ntheorem good(x: int32) { ensures x == x by { normalize(); } }\n",
-    ).unwrap();
+    let source = concat!(
+        "verifying \"slices.rs\";\n",
+        "fn length(bytes: &[u8]) -> usize { ensures result == 0u64; } by {\n",
+        "    step_until(function.exit);\n",
+        "    solve();\n",
+        "}\n",
+        "theorem good(x: int32) { ensures x == x by { normalize(); } }\n",
+    );
+    fs::write(p.root.join("borrow.click"), source).unwrap();
+    let (line, column) = source
+        .lines()
+        .enumerate()
+        .find_map(|(line, text)| text.find("solve();").map(|column| (line + 1, column + 1)))
+        .expect("the failing proof must contain a written closer");
+    let trace_to = format!("{line}:{column}");
     let output = p.cli(&["verify"]);
     assert!(!output.status.success());
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("proof error:"), "{error}");
     assert!(error.contains("--trace-proof length"), "{error}");
-    let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", "2:78"]);
+    let output = p.cli(&["verify", "--trace-proof", "length", "--trace-to", &trace_to]);
     assert!(!output.status.success());
     let trace = String::from_utf8(output.stderr).unwrap();
     assert!(!trace.contains("typed compiler inputs"), "{trace}");
     assert!(trace.contains("proof trace"), "{trace}");
-    assert!(trace.contains("tactic@2"), "{trace}");
+    assert!(trace.contains(&format!("tactic@{line}")), "{trace}");
     let output = p.cli(&["verify", "--trace-proof", "good"]);
     assert!(
         output.status.success(),
@@ -5473,9 +5484,10 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
 /// The example's loop, which reads the first and last byte of each chunk,
 /// proved under `"iterators": "library"`: the chunk a pass binds is
 /// `iter.nth(0)`, placed in `bytes` by `nth_chunks_exact`, and each read
-/// owes its offset's bound as a machine value.
+/// owes its offset's bound as a machine value. The loop carries where its
+/// iterator stands as one invariant, `iter == start.after(iterations)`.
 #[test]
-#[ignore = "nightly: 75 s, over the gate's per-test budget (2026-11-11)"]
+#[ignore = "nightly: 25 s, over the gate's per-test budget (2026-11-11)"]
 fn library_iterators_prove_a_loop_that_reads_its_chunks() {
     let p =
         Project::with_library_iterators(include_str!("../examples/rust-chunks-exact/chunks.rs"));
@@ -5490,7 +5502,7 @@ fn library_iterators_prove_a_loop_that_reads_its_chunks() {
         ),
         // The second read is of the chunk's last byte: its bound is owed.
         sidecar.replace(
-            "                have to_integer((bytes.len() / 4u64 - at(taken, iter.len())) * 4u64 + 3u64) < to_integer(bytes.len());\n",
+            "                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());\n",
             "",
         ),
     ] {

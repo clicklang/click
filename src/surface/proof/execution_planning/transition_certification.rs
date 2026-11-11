@@ -835,7 +835,7 @@ fn certified_transitions_from_execution(
                         let resolved =
                             crate::kernel::resolve_prerequisite_loads_along_memory_derivations(
                                 proposition,
-                                &prerequisite_assumptions,
+                                prerequisite_assumptions,
                             );
                         let proposition = resolved.as_ref().unwrap_or(proposition);
                         if matches!(
@@ -874,7 +874,7 @@ fn certified_transitions_from_execution(
                             || crate::kernel::proof::fact_reasoning::condition_bridged_fact_is_available_among(
                                 proposition,
                                 pure_facts,
-                                &prerequisite_assumptions,
+                                prerequisite_assumptions,
                             )
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()

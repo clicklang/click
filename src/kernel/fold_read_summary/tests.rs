@@ -1109,3 +1109,39 @@ fn fold_transport_crosses_unconditional_cache_forgetting_but_not_an_overlapping_
         &[]
     )));
 }
+
+#[test]
+fn shared_fold_indices_require_exact_bounds_without_export() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+    let _session = VerificationSession::enter();
+    let native = MachineTerm::add(MachineTerm::Variable(ITEM), MachineTerm::Variable(ITEM));
+    let x = KernelTerm::variable(KernelType::C(CType::Int32), ITEM);
+    let root = KernelTerm::machine_binary_shared(
+        MachineIntegerType::Int32,
+        MachineBinaryOp::Add,
+        [x.clone(), x],
+    );
+    let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
+    let base = Pointer {
+        block: "retained_fold_indices".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let pointer = base.offset_by_shared_elements(index, 4);
+    let interval = FoldReadInterval {
+        memory: CMemory::new(),
+        base,
+        start: MachineTerm::constant(0),
+        end: MachineTerm::constant(4),
+        element_width: 4,
+    };
+    let bound = Proposition::ConditionIs(
+        ConditionTerm::signed_less_equal(MachineTerm::constant(4), native),
+        true,
+    );
+    let empty = PureFactContext::new();
+    let facts = empty.clone().assume_proposition(bound);
+    let exports = KernelTermExport::machine_export_count();
+    assert!(access_misses_interval(&pointer, 4, &interval, &facts));
+    assert!(!access_misses_interval(&pointer, 4, &interval, &empty));
+    assert_eq!(KernelTermExport::machine_export_count(), exports);
+}

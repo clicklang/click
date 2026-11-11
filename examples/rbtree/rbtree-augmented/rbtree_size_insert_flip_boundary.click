@@ -37,7 +37,19 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite((node->__rb_parent_color & 1) == color_bit(shade));
                 rewrite(color_bit(shade) == 0); normalize();
             }
-            step(); step(); step(); step();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            mark m0; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            mark m1; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            mark m2; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
+            mark m3; step();
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == ancestor by { assumption(); }
             let focus = fold(sized_at(node), { model: SizedTree::Node(identity, ancestor, shade, value, left, right) }, { metadata: metadata, left: l, right: r });
             let state = fold(sized_flip_state(root), { chain: old(state.chain), model: old(state.model), context: old(state.context) }, { focus: focus, path: path });
             loop {

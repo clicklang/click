@@ -1468,14 +1468,19 @@ applied to the slice, `Slice<u8>::Slice(bytes, bytes.len())`) and what one
 
 In a loop's clauses and phases `iter` is the iterator value the loop
 advances, and `loop(i).iter` names it outside them, so `decreases
-iter.len()` ranks the loop and an invariant states what the proof needs of
-the chunks still to come. No cursor, remaining-byte count or generated local
-is named:
+iter.len()` ranks the loop. Where the iterator stands is one invariant over
+the pass count: `iter == chunks_exact::after(start, iterations)`, the
+starting iterator after that many `next()` calls. From it `nth_after` gives
+the chunk a pass binds as a chunk of `start`, and `after_next_after` carries
+the invariant across the `next()`. No cursor, remaining-byte count or
+generated local is named:
 
 ```text
 loop {
     decreases iter.len();
-    invariant n + iter.len() == bytes.len() / 4u64;
+    invariant iter == chunks_exact::after(
+        chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations);
+    invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
     ...
 }
 ```
@@ -1486,8 +1491,8 @@ leaves by `break` when it is zero, so a `preserve` script that needs
 the empty arm takes the `break` with one `step()`.
 
 The chunk a pass binds is `iter.nth(0u64)`: its data pointer is
-`bytes + k * size` by `nth_chunks_exact`, carried from pass to pass by an
-invariant over `iter.nth(j)`, and its length is `size`. A read through it,
+`bytes + k * size` by `nth_after` and `nth_chunks_exact`, and its length is
+`size`. A read through it,
 `chunk[0]`, is a read of `bytes`, and owes its offset's bound as the machine
 value the program computes: `to_integer(k * 4u64) < to_integer(bytes.len())`,
 not `k * 4u64 < bytes.len()`, which states the exact product. The same form

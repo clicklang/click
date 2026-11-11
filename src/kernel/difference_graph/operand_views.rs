@@ -242,6 +242,44 @@ impl DifferenceGraph {
         }
     }
 
+    /// Rounding down by a nonzero divisor preserves a non-strict upper bound.
+    /// Follow only the supplied dividend chain. The operands remain borrowed
+    /// views, and divisor queries use the graph's existing selected indexes.
+    pub(super) fn decide_rounded_upper_bound(
+        &self,
+        lower: V<'_>,
+        upper: V<'_>,
+        strict: bool,
+    ) -> Option<bool> {
+        if strict {
+            return None;
+        }
+        let (MachineIntegerType::UInt64, MachineBinaryOp::Subtract, [dividend, removed]) =
+            lower.binary()?
+        else {
+            return None;
+        };
+        let key = |value| Key::for_format(MachineIntegerType::UInt64, value);
+        if key(dividend) == key(upper) {
+            return None; // The direct dividend bound is handled by the caller.
+        }
+        let (MachineIntegerType::UInt64, MachineBinaryOp::Remainder, [same_dividend, divisor]) =
+            removed.binary()?
+        else {
+            return None;
+        };
+        if key(same_dividend) != key(dividend) || !Query::new(self).nonzero(Domain::UInt64, divisor)
+        {
+            return None;
+        }
+        let premise = crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::UInt64,
+            crate::kernel::CompareRelation::LessEqual,
+            [dividend, upper],
+        );
+        (self.decide(&premise) == Some(true)).then_some(true)
+    }
+
     pub(crate) fn decide_shared_order(
         &self,
         view: &crate::kernel::machine_integer::comparison::NativeComparisonView<'_>,
@@ -292,6 +330,11 @@ impl DifferenceGraph {
             if op == MachineBinaryOp::Remainder && !strict && query.nonzero(domain, b) {
                 return Some(true);
             }
+        }
+        if domain == Domain::UInt64
+            && let Some(value) = self.decide_rounded_upper_bound(lower, upper, strict)
+        {
+            return Some(value);
         }
         let (holds, fails) = match (query.resolve(domain, lower), query.resolve(domain, upper)) {
             (Some(lower), Some(upper)) => {

@@ -397,7 +397,7 @@ The remaining locations divide into these concrete groups:
 | Group | Remaining routes | Disposition |
 | --- | --- | --- |
 | Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` offset evidence and framed transport | Live checker migration; shared outer arithmetic does not eliminate native address children |
-| Wide indices and shallow pointer checks | `wide_element_index_of_access`, strided-region membership, offset transport/snapshot equivalence, `pointer_block_bounds`, fold-read summaries | Live checker/producer migration; retain width, signedness and exactness rules |
+| Wide indices and shallow pointer checks | Wide access reconstruction, strided-region membership, offset transport and fold-read summaries are closed below; snapshot equivalence and `pointer_block_bounds` remain | Retain width, signedness and exactness rules while closing the remaining callers |
 | Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_keys`, `fact_reasoning`, pointer-offset substitution and execution facts | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
 | Resource and snapshot construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
 | Native outputs and Surface tools | final `CValue`/`CMemoryRange` bounds, Surface synthesis/certificates, diagnostic renderers, planner segment indices | Explicit output or frontend/tool boundaries; remove only with their corresponding payload migration |
@@ -417,6 +417,102 @@ is independently guarded by zero-export and growth tests: its arithmetic and
 obligations retain shared roots, with one final native value output at the
 existing evaluator boundary. This does not declare step 1 or the complete
 KernelTerm/SurfaceTerm split finished.
+
+#### Retained pointer-index checks
+
+Strided-region field checks pass operand views to their existing bound checker,
+including the range-evidence caller; they no longer construct a native index
+between selecting a stride and checking its bounds. Parameter partition roots,
+open-side classification, and pointer-offset Integer carrier scope checks inspect
+only the retained root. Pointer-offset transport uses the existing shared
+transport checker. Mixed signed-word/unsigned-wide offset equality observes its
+retained operands directly, and unsigned-wide index equality constructs a shared
+comparison.
+
+Fold-read offset summaries retain shared int32/int64 atoms and return a shared
+scaled index. Their membership/exclusion checks use the existing selected exact
+comparison source index, preserving strictness and missing-bound refusals. This
+removes the native index storage from the summary itself; native interval bounds
+remain input/output boundaries. Cold index DAGs at 16, 64 and 256 nodes have
+constant summary-query work and zero exports. Focused controls cover stated and
+missing bounds, both bounds of a strided field, and existing frame/refusal rules.
+
+This increment closes those named consumers, not wide access reconstruction,
+read-address payload normalization, snapshot-equivalence recursion, or the
+remaining native pointer rewrite/fact-key families. The implicit native traits
+remain until those callers migrate.
+
+Validation: all 39 focused tests passed, then `scripts/check.sh --no-fail-fast`
+exited 0 with 7,115 unit/API tests, 58 example projects and 5,149 mdtests. The
+gate took 9m29s, within budget. Existing fold-read transport fixtures passed
+before and after with zero fact-stability entries. No limits changed and no
+nightly suite ran.
+
+#### Shared wide access coordinates
+
+Wide element-index reconstruction returns a retained operand. Its consumers in
+range membership/separation, selected-source loadability, scalar writes and
+translated range coverage check that operand directly. Full-width observer
+equality inspects selected read leaves and existing exact equality neighbors;
+it does not export an arithmetic prefix to find a load.
+
+The former native wide-index helpers are removed. Existing signed extension,
+nonnegative coordinate reconstruction, no-wrap guards, missing-bound refusals
+and alias candidate order are preserved. Range rebasing retains the access
+coordinate through its endpoint construction. `CMemoryRange` still stores native
+endpoints. The `checked_native_range_endpoint` and `wide_range_bound_pair`
+adapters also retain native checking callers (same-base coverage, alias-overlap
+and pointer-formation checks, and split/merge decisions); those callers must migrate before these
+adapters can be classified as output-only or removed.
+
+Controls distinguish a full-width bound from a bound on the truncated low word.
+Cold doubled index DAGs at 16, 64 and 256 levels reconstruct with constant query
+work and zero exports. This closes the wide access reconstruction group above,
+not read-address normalization, snapshot recursion, pointer rewrite/fact keys,
+or generic native expression bridges.
+
+The nested-rounding bound rule is shared by native and retained comparisons:
+`(a - a % k) <= upper` needs a nonzero `k` and `a <= upper`. It follows
+the dividend chain without exporting shared prefixes. Its old native form
+incorrectly used a non-strict premise for a strict conclusion; the shared rule
+refuses that inference. Controls cover the counterexample where rounding eight
+twice by four still gives eight, missing/zero divisors, and growing shared
+rounding chains. Literal coordinate construction and arithmetic use direct
+paths so native-loadability queries have the same cost in cold and warm runs.
+
+Validation: 88 focused tests passed. `scripts/check.sh --no-fail-fast` exited 0
+in 9m17s: 7,125 unit/API tests, 58 example projects and 5,160 mdtests passed.
+The two wide-range transport fixtures and the nested chunk-tail fixture passed
+with zero fact-stability entries. The strictness counterexample and the missing
+shared bound both failed before the common-rule fix and pass afterward.
+No nightly suite ran.
+
+#### Retained wide endpoint checks
+
+The native endpoint/rebasing adapters listed above are removed.
+`shared_wide_range_bounds` and `shared_rebased_wide_bounds` retain their
+coordinates through same-base coverage, alias-overlap checks, pointer formation,
+and split/merge decisions. Translated-window checking receives the selected base,
+width and retained bounds directly; it does not need a temporary resource
+containing exported endpoints.
+
+Split and merge convert endpoints only when constructing their final
+`CMemoryRange` outputs, preserving the original range carrier metadata. Native
+endpoint storage and native normalization/fact keys remain separate boundaries;
+this does not classify those consumers as migrated. Controls cover complete
+versus truncated bounds, 64-bit split/merge outputs, and cold rebasing DAGs.
+
+Validation: all 46 focused tests passed. `scripts/check.sh --no-fail-fast`
+exited 0 in 9m14s: 7,128 unit/API tests, 58 example projects and 5,160 mdtests
+passed. No nightly suite ran.
+
+The production compiler audit after this increment reports 157 primary error
+locations with the two implicit conversion traits disabled, versus 178 at the
+previous checkpoint. These are caller locations, not distinct checker defects;
+output, diagnostics and native payload construction also depend on the traits.
+The traits were restored after the audit. Remaining checker examples include
+cell-run access indices, stepped wide offset equality, read-address/snapshot
+reasoning, pointer fact keys and native range normalization.
 
 #### Classified boundaries and retained coverage
 

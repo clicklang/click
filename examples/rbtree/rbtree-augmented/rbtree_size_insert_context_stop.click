@@ -75,7 +75,19 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
                         rewrite(color_bit(Color::Red) == 0); normalize();
                     }
-                    step(); step(); step(); step();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m0; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m1; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m2; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m3; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
                     let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
                     let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
                     loop {
@@ -139,7 +151,19 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((node->__rb_parent_color & 1) == color_bit(Color::Red));
                         rewrite(color_bit(Color::Red) == 0); normalize();
                     }
-                    step(); step(); step(); step();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m0; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m1; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m2; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
+                    mark m3; step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == a by { assumption(); }
                     let tree = fold(sized_at(node), { model: old(state.model) }, { metadata: metadata, left: left, right: right });
                     let state = fold(sized_stop_at(node, root), { model: old(state.model), context: old(state.context) }, { tree: tree, path: path });
                     loop {

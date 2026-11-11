@@ -2365,7 +2365,7 @@ fn proof_fact_forks_share_context_and_local_insertions_are_logarithmic() {
         assert!(!facts.contains(&added));
         assert!(successor.contains(&added));
         assert!(crate::kernel::search::ProofSearch::proves(
-            &(successor.assumptions()),
+            successor.assumptions(),
             &added
         ));
     }

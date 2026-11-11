@@ -2723,7 +2723,12 @@ fn integer_carrier_in_pointer_offset(offset: &PointerOffsetTerm, variable: Varia
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            integer_carrier_in_bitvector(value, variable)
+            if let Some(load) = value.operand_view().variable() {
+                integer_carrier_in_bitvector(&MachineTerm::Variable(*load), variable)
+            } else {
+                // The existing rule conservatively retains every composite.
+                value.operand_view().literal().is_none()
+            }
         }
     }
 }
