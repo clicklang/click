@@ -477,14 +477,62 @@ the `UInt64` kind.
    Still conservative after stage 4, each giving up rather than misreading:
    a nested product such as `realloc(p, n * 2 * w)` (its count `n * 2` is a
    wrapping product whose bound the facts do not decide; `malloc` refuses it
-   too), field access into a 64-bit struct-array block (`malloc` or `calloc`
-   of `n * sizeof(struct T)` with a `size_t` `n`: the field's byte offset is
-   compared with the wrapping product `n * k` both for the pointer's
-   formation, refused as leaving the object, and for its membership in the
-   wide byte range; a struct `calloc` with an `int` count, a 32-bit block,
-   works), and the `CMemoryDerivation` byte terms,
+   too), and the `CMemoryDerivation` byte terms,
    `pointer_at_block_end_condition` and `proves_access_from_memory_block`
    listed under stages 2 and 3.
+
+   **Done after stage 4: fields of a 64-bit struct-array block.** `malloc`
+   or `calloc` of `n * sizeof(struct T)` with a `size_t` or `int` `n` (an
+   `int` count times `sizeof` is a `size_t` product) makes a block of
+   `n * k` bytes owned as the wide byte range `p[0u64..n * k]`, and
+   `p[i].field` is the byte address `p + (int64)i * k + c`. Both readers
+   compared that byte offset with the wrapping product `n * k`, which the
+   facts about `n` do not decide, so a field access was refused as leaving
+   the object. They now compare in elements, the reading
+   `uint64_extent_in_elements` and `HeapExtent::element_count` already make
+   (`scaled_element_offset` and `wide_index_bound_conditions`,
+   `reasoning/path_facts.rs`): a constant offset `c` is
+   `ceil(c / k) <= n`, and `i * k + c` with `0 <= c < k` is `0 <= i <= n`
+   for the address when `c == 0`, else `0 <= i < n`, and `0 <= i < n` for
+   an access of at most `k - c` bytes. A signed index whose `uint64`
+   reading the facts decide is compared unsigned: for `n <= PTRDIFF_MAX`,
+   `0 <= i <= n` signed iff `i <= n` unsigned, and a `size_t` index
+   converted to `ptrdiff_t` keeps only `uint64` facts. Formation
+   (`wide_element_block_bounds`, `eval/operators.rs`) relies on the
+   admission decision `n <= PTRDIFF_MAX / k` of the block's extent, as
+   `element_count` does; membership in a wide byte range whose end is a
+   product `m * k` (`field_access_in_wide_struct_array`,
+   `assumptions/memory_reasoning.rs`) decides `m <= PTRDIFF_MAX / k` itself,
+   since a range need not end at an admitted extent. Under those bounds
+   `n * k` and `i * k` are the mathematical values, so each element
+   comparison is equivalent to the byte one; the rule only adds accepted
+   accesses, and the whole-element rule stays the fallback. Regressions
+   (mdtests): `a_size_t_struct_array_malloc_block_writes_and_reads_its_fields`,
+   `an_int_count_struct_array_malloc_block_writes_and_reads_its_fields`,
+   `a_size_t_struct_array_calloc_block_writes_and_reads_its_fields`,
+   `a_size_t_struct_array_calloc_block_reads_zero_fields`,
+   `a_size_t_struct_array_block_is_accessed_after_a_call_taking_its_allocation`,
+   `a_field_past_a_size_t_struct_array_block_is_refused`,
+   `a_first_field_one_past_a_size_t_struct_array_block_is_refused`,
+   `a_field_at_an_unbounded_index_of_a_size_t_struct_array_block_is_refused`.
+   Kernel unit test
+   `a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements`
+   (`tests/resource_tests.rs`); scaling
+   `one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_blocks`
+   (`memory_scaling_tests.rs`).
+
+   Still refused: a struct block's memory cannot cross a call or a loop
+   clause that names it as structs. A contract's `owns p[0..n]` on a struct
+   pointer with a `size_t` `n` is the wide range `p[0u64..n]` of `k`-byte
+   elements, the block is a byte range, and wide ranges of different
+   element widths are never respelled into each other
+   (`memory_range_covers_with_separation`: a wide range has no 32-bit byte
+   count to renormalize to), so such a requirement or loop `owns` clause is
+   missing. A loop with no `owns` clause, and a call taking only the
+   `allocation` token, work. Field access through such a contract range
+   (`p[i].field` in a callee holding `p[0u64..n]`) is also refused: the
+   whole-element rule places only `k`-byte accesses, and the formation
+   bound for a held range compares bytes with `n * k`.
 
 Soundness of (a): a `UInt64` extent `E` is admitted only with `0 < E <= i64::MAX`
 decided (raw) or `1 <= n <= i64::MAX / w` and `E = n*w` (element, no wrap, so

@@ -1005,6 +1005,132 @@ pub(in crate::kernel) fn uint64_element_count_from_bytes(
     }
 }
 
+/// An admitted 64-bit heap extent and a byte count `bytes` in the extent's
+/// elements: `(n, ceil(bytes / k))` for `n * k` with a constant `k`, else
+/// `(extent, bytes)`. Then `bytes <= extent` iff `ceil(bytes / k) <= n`, and
+/// `extent < bytes` iff `n < ceil(bytes / k)`.
+///
+/// Like [`uint64_element_count_from_bytes`], this is exact only for a heap
+/// extent admitted with `n <= PTRDIFF_MAX / k` decided
+/// (`uint64_heap_extent_bytes_are_exact` in `eval/statements.rs`), so that
+/// `n * k` did not wrap; never for an arbitrary `uint64` term.
+pub(in crate::kernel) fn uint64_extent_in_elements(
+    extent: &MachineTerm,
+    bytes: u64,
+) -> (&MachineTerm, MachineTerm) {
+    if let binary_term!(UInt64, Multiply, left, right) = extent {
+        match (left.uint64_as_const(), right.uint64_as_const()) {
+            (_, Some(width)) if width > 0 => {
+                return (left, MachineTerm::uint64_constant(bytes.div_ceil(width)));
+            }
+            (Some(width), _) if width > 0 => {
+                return (right, MachineTerm::uint64_constant(bytes.div_ceil(width)));
+            }
+            _ => {}
+        }
+    }
+    (extent, MachineTerm::uint64_constant(bytes))
+}
+
+/// A byte offset `index * stride + field` into an array of `stride`-byte
+/// elements, as a struct array element's field address is formed: a scaled
+/// index, plus a constant. A signed 64-bit `index` (`signed`) is C's
+/// `ptrdiff_t` reading of the index, an unsigned one its `size_t` value.
+#[derive(Clone, Debug)]
+pub(in crate::kernel) struct ScaledElementOffset {
+    pub(in crate::kernel) index: MachineTerm,
+    pub(in crate::kernel) signed: bool,
+    pub(in crate::kernel) stride: i64,
+    pub(in crate::kernel) field: i64,
+}
+
+/// The [`ScaledElementOffset`] an offset spells: `i` scaled by `w`
+/// (`Int32Scaled`, sign extended, or `Int64Scaled`), or a byte displacement
+/// `(int64)i * w` (an `Int64Scaled` of width one whose value is the `int64`
+/// product with a positive constant, the front end's spelling of `&p[i]` for
+/// a struct `p`), plus at most one constant. The product is read as `i`
+/// elements: a caller's bound `0 <= i <= n` with `n <= PTRDIFF_MAX / w`
+/// rules out its overflow.
+pub(in crate::kernel) fn scaled_element_offset(
+    offset: &PointerOffsetTerm,
+) -> Option<ScaledElementOffset> {
+    let (scaled, field) = match offset {
+        PointerOffsetTerm::Add(left, right) => match (left.as_ref(), right.as_ref()) {
+            (scaled, PointerOffsetTerm::Constant(field))
+            | (PointerOffsetTerm::Constant(field), scaled) => (scaled, *field),
+            _ => return None,
+        },
+        scaled => (scaled, 0),
+    };
+    let (index, signed, stride) = match scaled {
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => (
+            MachineTerm::int64_from_32(value.as_ref().clone()),
+            true,
+            *byte_width,
+        ),
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width: 1,
+            unsigned: false,
+        } => match value.as_ref() {
+            binary_term!(Int64, Multiply, left, right) => {
+                match (left.int64_as_const(), right.int64_as_const()) {
+                    (None, Some(stride)) => (left.as_ref().clone(), true, stride),
+                    (Some(stride), None) => (right.as_ref().clone(), true, stride),
+                    _ => (value.as_ref().clone(), true, 1),
+                }
+            }
+            value => (value.clone(), true, 1),
+        },
+        PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width,
+            unsigned,
+        } => (value.as_ref().clone(), !unsigned, *byte_width),
+        _ => return None,
+    };
+    (stride > 0).then_some(ScaledElementOffset {
+        index,
+        signed,
+        stride,
+        field,
+    })
+}
+
+/// The conditions that place an element index at most `count`, or below it
+/// when `strict`, for a `count` at most `PTRDIFF_MAX`: `index <= count` at
+/// `uint64` for an unsigned index; for a signed one, the same unsigned
+/// comparison of its bits when the facts decide it, since for such a
+/// `count`, `0 <= index <= count` signed iff `index <= count` unsigned, and
+/// otherwise `0 <= index` and `index <= count` at `int64`. A `size_t` index
+/// converted to `ptrdiff_t` keeps its `uint64` facts; a `long` one has
+/// signed facts.
+pub(in crate::kernel) fn wide_index_bound_conditions(
+    index: &MachineTerm,
+    signed: bool,
+    count: &MachineTerm,
+    strict: bool,
+    assumptions: &PureFactContext,
+) -> Vec<ConditionTerm> {
+    let unsigned = if strict {
+        ConditionTerm::uint64_less_than(index.clone(), count.clone())
+    } else {
+        ConditionTerm::uint64_less_equal(index.clone(), count.clone())
+    };
+    if !signed || assumptions.decide(&unsigned) == Some(true) {
+        return vec![unsigned];
+    }
+    let count = MachineTerm::int64_from_uint64_bits(count.clone());
+    vec![
+        ConditionTerm::int64_signed_greater_equal(index.clone(), MachineTerm::int64_constant(0)),
+        if strict {
+            ConditionTerm::int64_signed_less_than(index.clone(), count)
+        } else {
+            ConditionTerm::int64_signed_less_equal(index.clone(), count)
+        },
+    ]
+}
+
 pub(in crate::kernel) fn int32_element_count_from_bytes(
     bytes: &MachineTerm,
 ) -> Option<MachineTerm> {
