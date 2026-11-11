@@ -102,6 +102,23 @@ pub(super) fn top_level_declarations(tokens: &[Token]) -> Vec<TopLevelDeclaratio
     declarations
 }
 
+/// Each Click library module's tokens, read once per process for the tables
+/// below. Each table once tokenized the whole library itself, so every
+/// process tokenized it four times, the parse included.
+fn library_tokens() -> &'static [(&'static str, Vec<Token>)] {
+    static TOKENS: std::sync::OnceLock<Vec<(&'static str, Vec<Token>)>> =
+        std::sync::OnceLock::new();
+    TOKENS.get_or_init(|| {
+        super::CLICK_LIBRARY_MODULES
+            .iter()
+            .filter_map(|(identity, source)| {
+                let (tokens, _) = tokenizer::tokenize(source, None).ok()?;
+                Some((*identity, tokens))
+            })
+            .collect()
+    })
+}
+
 /// The top-level declarations of each Click library module, read from its
 /// tokens once per process. The library's parsed declarations are not used:
 /// library modules are themselves parsed through this resolution.
@@ -109,12 +126,9 @@ pub(super) fn library_declarations() -> &'static BTreeMap<&'static str, Vec<TopL
     static DECLARATIONS: std::sync::OnceLock<BTreeMap<&'static str, Vec<TopLevelDeclaration>>> =
         std::sync::OnceLock::new();
     DECLARATIONS.get_or_init(|| {
-        super::CLICK_LIBRARY_MODULES
+        library_tokens()
             .iter()
-            .filter_map(|(identity, source)| {
-                let (tokens, _) = tokenizer::tokenize(source, None).ok()?;
-                Some((*identity, top_level_declarations(&tokens)))
-            })
+            .map(|(identity, tokens)| (*identity, top_level_declarations(tokens)))
             .collect()
     })
 }
@@ -127,11 +141,8 @@ pub(super) fn library_integer_parameters() -> &'static BTreeMap<String, Vec<usiz
         std::sync::OnceLock::new();
     POSITIONS.get_or_init(|| {
         let mut positions = BTreeMap::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
-                continue;
-            };
-            for declaration in top_level_declarations(&tokens) {
+        for (identity, tokens) in library_tokens() {
+            for declaration in top_level_declarations(tokens) {
                 if !matches!(
                     declaration.kind,
                     DeclarationKind::Function | DeclarationKind::Theorem
@@ -139,7 +150,7 @@ pub(super) fn library_integer_parameters() -> &'static BTreeMap<String, Vec<usiz
                     continue;
                 }
                 if let Some(integers) =
-                    super::parser::written_integer_parameters(&tokens, declaration.at + 1)
+                    super::parser::written_integer_parameters(tokens, declaration.at + 1)
                 {
                     positions.insert(resolved_name(identity, &declaration.name), integers);
                 }
@@ -156,13 +167,10 @@ pub(super) fn library_pointer_result_functions() -> &'static BTreeSet<String> {
     static FUNCTIONS: std::sync::OnceLock<BTreeSet<String>> = std::sync::OnceLock::new();
     FUNCTIONS.get_or_init(|| {
         let mut functions = BTreeSet::new();
-        for (identity, source) in super::CLICK_LIBRARY_MODULES {
-            let Ok((tokens, _)) = tokenizer::tokenize(source, None) else {
-                continue;
-            };
-            for declaration in top_level_declarations(&tokens) {
+        for (identity, tokens) in library_tokens() {
+            for declaration in top_level_declarations(tokens) {
                 if declaration.kind == DeclarationKind::Function
-                    && declares_pointer_result(&tokens, declaration.at + 1)
+                    && declares_pointer_result(tokens, declaration.at + 1)
                 {
                     functions.insert(resolved_name(identity, &declaration.name));
                 }

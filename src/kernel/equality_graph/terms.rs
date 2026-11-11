@@ -511,7 +511,7 @@ struct MergeHistory {
 // This is disposable derived state, not proof-context storage. Forking starts
 // an empty local cache in constant work instead of copying a growing table.
 #[derive(Default)]
-struct RootLookupCache(std::cell::RefCell<std::collections::HashMap<u64, (usize, u64)>>);
+struct RootLookupCache(std::cell::RefCell<crate::id_hash::U64Map<(usize, u64)>>);
 
 impl Clone for RootLookupCache {
     fn clone(&self) -> Self {
