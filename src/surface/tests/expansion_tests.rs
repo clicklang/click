@@ -6170,53 +6170,32 @@ fn smart_apply_uses_ambient_loadability_only_for_argument_lowering() {
 }
 
 #[test]
-#[ignore = "nightly: 1.4s in the parallel gate"]
+#[ignore = "nightly: 0.6s with parallel expansion tests"]
 fn selected_pure_case_split_solve_expands_by_removal() {
-    // A smart exit `solve` whose claims all close by exact checks contributes
-    // no surface tactics of its own. Its expansion must remove the tactic —
-    // NOT graft the enclosing branch skeleton as an `if` tree with empty
-    // leaves: that tree would re-split every already-merged execution path at
-    // path end and lose the execution-path/branch-trace pairing certificate
-    // check keeps (git history (case-split expansion merge, 2026-07-31)).
+    // Both live C paths are explicitly closed before the selected solve. Its
+    // expansion must remove it, without grafting a second branch skeleton
+    // onto the already-checked paths. The old sort3 fixture failed earlier at
+    // step_until's undecided branch; full sorting expansion remains covered
+    // by sequential_sort_branches_keep_their_expanded_continuations_in_scope.
     let c_source = r#"
-            int32 sort3(int32 p[3]) {
-                int32 tmp;
-                if (p[1] < p[0]) {
-                    tmp = p[0];
-                    p[0] = p[1];
-                    p[1] = tmp;
-                }
-                if (p[2] < p[1]) {
-                    tmp = p[1];
-                    p[1] = p[2];
-                    p[2] = tmp;
-                }
-                if (p[1] < p[0]) {
-                    tmp = p[0];
-                    p[0] = p[1];
-                    p[1] = tmp;
-                }
-                return 0;
+            int32 choose(int32 x) {
+                if (x > 0) { return 1; } else { return 0; }
             }
         "#;
     let click_source = r#"
-            verifying "sort3.c";
+            verifying "branch.c";
 
-            predicate sorted_range(p: int32[], lo: int32, hi: int32) {
-                forall (i: int32) {
-                    forall (j: int32) {
-                        0 <= i and 0 <= j and lo <= i and i < j and j < hi implies p[i] <= p[j]
-                    }
-                }
-            }
-
-            int32 sort3(int32 p[3]) {
-                consumes p[0..3];
-                ensures sorted: sorted_range(p, 0, 3) by {
+            int32 choose(int32 x) {
+                ensures result >= 0;
+            } by {
+                branch {
                     step_until(function.exit);
-                    unfold(sorted_range);
-                    solve();
+                    normalize();
+                } else {
+                    step_until(function.exit);
+                    normalize();
                 }
+                solve();
             }
         "#;
     let solve_offset = click_source
@@ -6234,12 +6213,14 @@ fn selected_pure_case_split_solve_expands_by_removal() {
             .unwrap_or(0)
         + 1;
 
-    let expanded = expand_c0_tactic_source_at(click_source, &[("sort3.c", c_source)], line, column)
-        .expect("a pure case-split solve should expand");
+    let expanded =
+        expand_c0_tactic_source_at(click_source, &[("branch.c", c_source)], line, column)
+            .expect("a pure case-split solve should expand");
     assert!(!expanded.contains("solve()"), "{expanded}");
-    assert!(!expanded.contains("if p[1] < p[0] {"), "{expanded}");
-    verify_c0_sources(&expanded, &[("sort3.c", c_source)])
-        .expect("the removed closer's paths should close via the ordinary path-end check");
+    assert_eq!(expanded.matches("branch {").count(), 1, "{expanded}");
+    assert_eq!(expanded.matches("normalize();").count(), 2, "{expanded}");
+    without_implicit_solve(|| verify_c0_sources(&expanded, &[("branch.c", c_source)]))
+        .expect("both explicitly closed paths should replay without implicit solving");
 }
 
 #[test]

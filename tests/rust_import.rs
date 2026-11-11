@@ -5409,7 +5409,7 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
         ensures result == bytes.len() % size;
     } by {
         step_until(function.exit);
-        apply(chunks_exact::remainder_chunks_exact(bytes, bytes.len(), size));
+        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size));
         solve();
     }
     fn count(bytes: &[u8]) -> usize {
@@ -5417,7 +5417,7 @@ fn library_iterators_prove_chunks_exact_by_its_contract() {
     } by {
         step_until(loop(0));
         have loop(0).iter.len() == bytes.len() / 4u64 by {
-            apply(chunks_exact::len_chunks_exact(bytes, bytes.len(), 4u64));
+            apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
             solve();
         }
         loop {

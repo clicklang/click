@@ -5252,11 +5252,15 @@ impl PureFactContext {
             (left.as_ref(), right.as_ref()),
             (right.as_ref(), left.as_ref()),
         ] {
+            let key = checked_scalar_facts::ScalarOperandKey::for_format(
+                MachineIntegerType::UInt64,
+                MachineOperandView::Legacy(endpoint),
+            );
             let neighbors = self
                 .equality_graph
                 .admitted
                 .bitvector64_equality_facts
-                .get(endpoint)
+                .get(&key)
                 .cloned()
                 .unwrap_or_default();
             let neighbors = if insert {
@@ -5306,12 +5310,12 @@ impl PureFactContext {
                 self.equality_graph
                     .admitted
                     .bitvector64_equality_facts
-                    .without_key(endpoint)
+                    .without_key(&key)
             } else {
                 self.equality_graph
                     .admitted
                     .bitvector64_equality_facts
-                    .with_inserted(endpoint.clone(), neighbors)
+                    .with_inserted(key, neighbors)
             };
         }
     }
@@ -5323,6 +5327,13 @@ impl PureFactContext {
         term: &MachineTerm,
     ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
         self.equality_graph.exact_uint64_equalities(term)
+    }
+
+    pub(in crate::kernel) fn exact_uint64_equalities_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
+        self.equality_graph.exact_uint64_equalities_view(term)
     }
 
     /// A full-width observer result can name the same unchanged cell at a
@@ -9833,22 +9844,24 @@ pub(in crate::kernel) fn exact_sixty_four_bit_constant(
     unsigned: bool,
     assumptions: &PureFactContext,
 ) -> Option<i64> {
-    let constant = |candidate: &MachineTerm| {
-        if unsigned {
-            candidate
-                .uint64_as_const()
-                .and_then(|value| i64::try_from(value).ok())
-        } else {
-            candidate.int64_as_const()
-        }
+    exact_sixty_four_bit_constant_view(MachineOperandView::Legacy(term), unsigned, assumptions)
+}
+
+pub(in crate::kernel) fn exact_sixty_four_bit_constant_view(
+    term: MachineOperandView<'_>,
+    unsigned: bool,
+    assumptions: &PureFactContext,
+) -> Option<i64> {
+    let literal = if unsigned {
+        term.uint64_constant()
+            .and_then(|value| i64::try_from(value).ok())
+    } else {
+        term.int64_constant()
     };
-    if let Some(value) = constant(term) {
+    if let Some(value) = literal {
         return Some(value);
     }
-    // Follow the selected term's indexed 64-bit equality component and
-    // evaluate only its bounded arithmetic. A low-word equality is not
-    // evidence about the full address displacement.
-    let bits = assumptions.wide_constant_from_equalities(term)?;
+    let bits = assumptions.wide_constant_from_equalities_view(term)?;
     if unsigned {
         i64::try_from(bits).ok()
     } else {

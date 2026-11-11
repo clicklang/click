@@ -7252,6 +7252,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             result_type,
             pointer_result,
             result_object_class,
+            projection,
         } => evaluate_spec_pure_function_application_paths_in(
             SpecScope::new(state, loop_entry_state, algebraic_bindings),
             name,
@@ -7259,6 +7260,7 @@ fn evaluate_spec_expression_paths_with_algebraic_bindings_one_in(
             *result_type,
             pointer_result.as_deref(),
             result_object_class.as_ref(),
+            projection.as_ref(),
             assumptions,
             budget,
         )?,
@@ -7395,6 +7397,7 @@ fn evaluate_spec_pure_function_application_paths_in(
     result_type: CType,
     pointer_result: Option<&PurePointerResult>,
     result_object_class: Option<&crate::kernel::effective_type::CAccessClass>,
+    projection: Option<&PureProjection>,
     assumptions: &PureFactContext,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Vec<SpecExpressionPath>> {
@@ -7429,6 +7432,19 @@ fn evaluate_spec_pure_function_application_paths_in(
     }
     let mut results = Vec::new();
     for (arguments, facts, obligations) in paths {
+        // A field projection of a constructed value is that field, by the
+        // function's definition: the term depends on the argument's own
+        // shape and on no fact.
+        if let Some(value) =
+            projection.and_then(|projection| projected_field(projection, &arguments, result_type))
+        {
+            results.push(SpecExpressionPath {
+                value,
+                facts,
+                obligations,
+            });
+            continue;
+        }
         let value = if result_type.is_pointer() {
             let (all_null, object_class) = pure_pointer_result_class(pointer_result, &arguments);
             CValue::Pointer(
@@ -7482,6 +7498,31 @@ fn evaluate_spec_pure_function_application_paths_in(
         });
     }
     Ok(results)
+}
+
+/// The field `projection` selects, when its argument is a value built with
+/// the projection's constructor and the field is a C value of the result's
+/// type.
+fn projected_field(
+    projection: &PureProjection,
+    arguments: &[PureFunctionArgument],
+    result_type: CType,
+) -> Option<CValue> {
+    let term = match arguments.get(projection.argument)? {
+        PureFunctionArgument::Algebraic(term) => term,
+        PureFunctionArgument::Value(CValue::Parameter(term)) => term.as_ref(),
+        _ => return None,
+    };
+    let AlgebraicTermNode::Constructor { variant, fields } = &term.node else {
+        return None;
+    };
+    if variant != &projection.variant {
+        return None;
+    }
+    match fields.get(projection.field)? {
+        AlgebraicValue::C(value) if value.c_type() == result_type => Some(value.clone()),
+        _ => None,
+    }
 }
 
 /// Instantiate the body's pointer origins with this call's actual values.

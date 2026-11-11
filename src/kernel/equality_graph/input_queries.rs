@@ -85,9 +85,21 @@ impl EqualityGraph {
         &self,
         term: &MachineTerm,
     ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
+        self.exact_uint64_equalities_view(crate::kernel::MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn exact_uint64_equalities_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> impl Iterator<Item = (&MachineTerm, &ConditionTerm)> {
         self.admitted
             .bitvector64_equality_facts
-            .get(term)
+            .get(
+                &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
+                    MachineIntegerType::UInt64,
+                    term,
+                ),
+            )
             .into_iter()
             .flat_map(|neighbors| neighbors.iter())
     }
@@ -173,7 +185,12 @@ impl EqualityGraph {
         let exact = self
             .admitted
             .bitvector64_equality_facts
-            .get(term)
+            .get(
+                &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
+                    MachineIntegerType::UInt64,
+                    crate::kernel::MachineOperandView::Legacy(term),
+                ),
+            )
             .map(|neighbors| {
                 neighbors
                     .iter()
@@ -246,11 +263,14 @@ impl EqualityGraph {
             }
             crate::instrumentation::record_deterministic_work(1);
             if let Some(variable) = parameter_partition_variable(&pointer) {
-                if self
-                    .admitted
-                    .bitvector64_equality_facts
-                    .contains_key(&MachineTerm::Variable(*variable))
-                {
+                if self.admitted.bitvector64_equality_facts.contains_key(
+                    &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
+                        MachineIntegerType::UInt64,
+                        crate::kernel::MachineOperandView::Legacy(&MachineTerm::Variable(
+                            *variable,
+                        )),
+                    ),
+                ) {
                     return None;
                 }
                 bases.insert(pointer.clone());
@@ -270,7 +290,12 @@ impl EqualityGraph {
                 if let Some(address) = term.address_pointer() {
                     pending.push(address.clone());
                 }
-                if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(&term) {
+                if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(
+                    &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
+                        MachineIntegerType::UInt64,
+                        crate::kernel::MachineOperandView::Legacy(&term),
+                    ),
+                ) {
                     terms.extend(neighbors.keys().cloned());
                 }
             }
@@ -327,7 +352,12 @@ impl EqualityGraph {
                     reached_objects.insert(reached.clone());
                     pending.push(reached);
                 }
-                if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(&term) {
+                if let Some(neighbors) = self.admitted.bitvector64_equality_facts.get(
+                    &crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::for_format(
+                        MachineIntegerType::UInt64,
+                        crate::kernel::MachineOperandView::Legacy(&term),
+                    ),
+                ) {
                     terms.extend(neighbors.keys().cloned());
                 }
             }

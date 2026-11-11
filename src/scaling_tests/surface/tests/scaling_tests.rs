@@ -2,6 +2,47 @@ use super::*;
 use crate::kernel::{CompareRelation, MachineIntegerType};
 
 #[test]
+fn trivial_disjuncts_do_not_spell_unrelated_premises() {
+    let mut samples = Vec::new();
+    for size in [1, 2, 8] {
+        let parameters = (0..size)
+            .map(|i| format!(", unused{i}: uint64"))
+            .collect::<String>();
+        let premises = (0..size)
+            .map(|i| format!("requires unused{i} > n;\n"))
+            .collect::<String>();
+        let source = format!(
+            "theorem trivial(n: uint64{parameters}) {{ {premises} ensures true or n == 1u64 by solve(); }}"
+        );
+        let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &[]));
+        result.expect("the true disjunct closes without exploring the other side");
+        assert_eq!(
+            sample
+                .named_work
+                .get("operation `solve closure: premise spelling`")
+                .copied()
+                .unwrap_or(0),
+            0,
+            "{sample:?}"
+        );
+        assert_eq!(
+            sample
+                .named_work
+                .get("operation `atomic dependency selection`")
+                .copied()
+                .unwrap_or(0),
+            0,
+            "a direct disjunct must not select connected facts: {sample:?}"
+        );
+        samples.push(sample);
+    }
+    assert_near_linear_scaling_at_sampled_sizes(
+        "trivial disjunct with unrelated premises",
+        &samples,
+    );
+}
+
+#[test]
 #[ignore = "nightly: constructor closure at three heap-history sizes and cold replay"]
 fn refuted_constructor_guards_do_not_spell_connected_heap_history() {
     // The complete pop/deallocate/refold path remains in

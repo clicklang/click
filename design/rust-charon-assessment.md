@@ -4,7 +4,10 @@
 
 The Rust P1 frontend milestone is complete. By maintainer decision on 2026-10-15,
 its launch host scope is Linux x86-64 GNU (`x86_64-unknown-linux-gnu`). A second
-host platform is optional and is not a launch requirement. Rust continues to
+host platform is optional and is not a launch requirement. That scope was
+superseded on 2026-11-10: further hosts and crates with third-party
+dependencies are launch work in
+[the Rust support roadmap item](../roadmap/rust-support.md). Rust continues to
 cover the experimental subset in the [reference](../docs/reference/rust.md)
 and [coverage matrix](../docs/reference/coverage.md).
 

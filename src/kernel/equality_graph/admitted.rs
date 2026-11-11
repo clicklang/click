@@ -42,7 +42,7 @@ pub(in crate::kernel) struct InputData {
     /// incrementally from `condition_facts`. Unchanged branches share it;
     /// inserting an equality updates only its two endpoints.
     pub(in crate::kernel) bitvector64_equality_facts: crate::persistent::PersistentMap<
-        MachineTerm,
+        crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
         crate::persistent::PersistentMap<MachineTerm, ConditionTerm>,
     >,
     /// Exact literal-pinning source premises, in deterministic source order.
