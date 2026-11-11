@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `93c5fe74c`, including merged PR #2492.
+Baseline for this revision: `bc10774c8`, including merged PR #2557.
 
 Already landed:
 
@@ -59,8 +59,9 @@ Already landed:
   branch/indexing controls. Specification reads no longer emit C access events.
 
 **The split is not complete.** The compiler-assisted cleanup audit finds
-remaining scaled-index checker exports; a restricted signed producer and
-generic legacy payloads also remain.
+remaining scaled-index checker exports; the remaining execution-producer
+inventory and generic legacy payloads also remain. Nested signed arithmetic
+construction is enabled, as recorded in step 2.
 These are concrete migration boundaries,
 not a count of every remaining defect in the verifier.
 
@@ -510,9 +511,29 @@ The production compiler audit after this increment reports 157 primary error
 locations with the two implicit conversion traits disabled, versus 178 at the
 previous checkpoint. These are caller locations, not distinct checker defects;
 output, diagnostics and native payload construction also depend on the traits.
-The traits were restored after the audit. Remaining checker examples include
-cell-run access indices, stepped wide offset equality, read-address/snapshot
-reasoning, pointer fact keys and native range normalization.
+The traits were restored after the audit. After the cell-run closure below, remaining checker examples include stepped
+wide offset equality, read-address/snapshot reasoning, pointer fact keys and
+native range normalization.
+
+#### Retained cell-run access indices
+
+`RunAccess::Scaled` and `ScaledWide` retain the pointer's shared index instead
+of materializing a native index in an intermediate access record. Exact-slot
+lookup, store-window intervals and symbolic run loads use existing shared
+constant/interval/comparison queries. They preserve exact 64-bit evidence,
+missing-evidence refusal, slot holes, access widths and path exclusions.
+The structural constant readers in offset atom collection, stride differences
+and exact byte shifts also inspect retained operands.
+
+Controls cover pinned and unknown slots, holes, signed 32-bit constant
+interpretation, and cold repeated-child DAGs at 16, 64 and 256 levels without
+machine exports. This does not close stepped wide-offset equality or native
+read-address normalization.
+
+Validation: six focused tests passed. `scripts/check.sh --no-fail-fast` exited
+0 in 9m24s: 7,132 unit/API tests, 58 examples and 5,160 mdtests passed. Both
+wide-range transport fixtures passed with zero fact-stability entries. No
+nightly suite ran.
 
 #### Classified boundaries and retained coverage
 

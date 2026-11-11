@@ -1840,7 +1840,7 @@ fn symbolic_index_run_load(
     // indexes those cells held, leaving the index on the run's live slots.
     // Its context is built only when the facts alone do not place the index.
     let path_context = std::cell::OnceCell::new();
-    let path_interval = |index: &MachineTerm| {
+    let path_interval = |index: crate::kernel::MachineOperandView<'_>| {
         (!facts.is_empty())
             .then(|| {
                 path_context
@@ -1851,7 +1851,7 @@ fn symbolic_index_run_load(
                             &[],
                         )
                     })
-                    .signed_interval_past_exclusions(index)
+                    .signed_interval_past_exclusions_view(index)
             })
             .flatten()
     };
@@ -1897,10 +1897,17 @@ fn symbolic_index_run_load(
                         *live_low <= first
                             && first < *live_high
                             && *live_high <= run.count()
-                            && assumptions.decide(&ConditionTerm::uint64_less_than(
-                                index.clone(),
-                                MachineTerm::uint64_constant(u64::from(*live_high - first)),
-                            )) == Some(true)
+                            && assumptions.decide(
+                                &crate::kernel::assumptions::wide_index_comparison(
+                                    CompareRelation::LessThan,
+                                    index.operand_view(),
+                                    crate::kernel::MachineOperandView::Legacy(
+                                        &MachineTerm::uint64_constant(u64::from(
+                                            *live_high - first,
+                                        )),
+                                    ),
+                                ),
+                            ) == Some(true)
                     });
             }
             let on_live_slots = |(low, high): (i64, i64)| {
@@ -1921,9 +1928,9 @@ fn symbolic_index_run_load(
                         .any(|(live_low, live_high)| *live_low <= first && last < *live_high)
             };
             assumptions
-                .signed_interval_past_exclusions(&index)
+                .signed_interval_past_exclusions_view(index.operand_view())
                 .is_some_and(on_live_slots)
-                || path_interval(&index).is_some_and(on_live_slots)
+                || path_interval(index.operand_view()).is_some_and(on_live_slots)
         })?
         .clone();
     // A constant run's slots are not loads of its source, which is empty:
