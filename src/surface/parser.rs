@@ -12461,9 +12461,13 @@ impl Parser {
                 .parse_resource_subject()
                 .map(|r| ContractExpression::Resource(Box::new(r)));
         }
+        // `at(point, name)` naming an instance, possibly parenthesized and
+        // combined with `*`, is a resource descriptor too.
         let saved = self.position;
-        if self.try_parse_instance_at().is_some() {
-            self.position = saved;
+        self.position = atom;
+        let instance_at = self.try_parse_instance_at().is_some();
+        self.position = saved;
+        if instance_at {
             return self
                 .parse_resource_subject()
                 .map(|r| ContractExpression::Resource(Box::new(r)));

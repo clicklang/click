@@ -6446,12 +6446,13 @@ fn prepare_verified_function_call<'a>(
     // no later call path reconstructs the footprint from source clauses.
     let mut transfer = transfer;
     transfer.memory_effects = mutable_ranges.clone();
-    // The preserving resource-derived call is authorized by exactly these
-    // checked inputs. Keep them opaque; do not enumerate a recursive body.
+    // A resource-derived call is authorized by exactly these checked inputs,
+    // borrowed and consumed alike: its write set is projected from them
+    // above and from nothing else, so they bound its footprint. A produced
+    // output is not an input and does not widen it. Keep them opaque; do not
+    // enumerate a recursive body.
     if contract_interface.resource_derived_mutable_frame()
         && !contract_interface.resource_derived_frame_mixed()
-        && contract_interface.resource_requires() == contract_interface.resource_ensures()
-        && transfer.consumed_inputs.is_empty()
     {
         // The transfer already selected the caller's equivalent owner. Use
         // that recorded spelling, rather than retaining a callee parameter or
