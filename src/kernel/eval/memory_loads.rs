@@ -3580,7 +3580,11 @@ pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffset
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     results.push(PointerOffsetTerm::scale_int32(
-                        canonical_term(value),
+                        canonical_term(
+                            value
+                                .retained_written_operand()
+                                .expect("shared indices handled above"),
+                        ),
                         *byte_width,
                     ));
                 }
@@ -3589,7 +3593,11 @@ pub(crate) fn canonical_offset_term(offset: &PointerOffsetTerm) -> PointerOffset
                     byte_width,
                     unsigned,
                 } => results.push(PointerOffsetTerm::scale_int64(
-                    canonical_term(value),
+                    canonical_term(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ),
                     *byte_width,
                     *unsigned,
                 )),
@@ -4032,7 +4040,11 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     tasks.push(Task::RebuildInt32Scaled(*byte_width));
-                    tasks.push(Task::VisitTerm(value));
+                    tasks.push(Task::VisitTerm(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ));
                 }
                 PointerOffsetTerm::Int64Scaled {
                     value,
@@ -4043,7 +4055,11 @@ fn select_scalar_reads(term: &MachineTerm) -> MachineTerm {
                         byte_width: *byte_width,
                         unsigned: *unsigned,
                     });
-                    tasks.push(Task::VisitTerm(value));
+                    tasks.push(Task::VisitTerm(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ));
                 }
             },
             // Integer operators and conversions are rebuilt as bare nodes;

@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `472fdd1fe`, including merged PR #2562.
+Baseline for this revision: `d5150195b`, including merged PR #2565.
 
 Already landed:
 
@@ -569,14 +569,28 @@ width and exact-snapshot requirements; this does not broaden its rule family.
 Controls compare native/shared value answers, preserve changed-cell and width
 refusals, and reject cold arithmetic DAGs at 16, 64 and 256 levels with constant
 root-inspection work and zero exports. Framed pointer-offset transport and
-exact-load normalization remain open; canonicalization's already-guarded native
-input branches still need explicit conversion classification before removing
-the implicit traits.
+exact-load normalization remain open, as do the remaining implicit traits and
+live checker migrations listed above.
 
 Validation: five focused tests passed. The full `scripts/check.sh --no-fail-fast`
 gate exited 0 in 9m17s: 7,138 unit/API tests, 58 examples and 5,160 mdtests
 passed. The subsequent rebase adds only an unrelated CLI change; no tested
 kernel source changed. No nightly suite ran.
+
+#### Explicit native address-walker boundaries
+
+The four canonicalization/read-selection walkers explicitly borrow retained
+native inputs after their shared-index guard. These eight call sites no longer
+depend on implicit `Deref`. Shared indices retain their exact structure and
+snapshots without entering the native walkers. This classifies existing native
+input paths; it does not close the live framed-transport or normalization exports.
+
+Validation: `scripts/check.sh --no-fail-fast` exited 0 with 7,142 unit/API tests
+and the complete regular examples/mdtests. The cold run took 14m07s, including
+3m48s compilation, and exceeded the ten-minute budget. A redundant standalone
+documentation build was stopped after it competed with the fixture phase;
+rendering and lint had completed. The unit phase took 276s versus 273s in the
+previous gate. No limits changed and no nightly suite ran.
 
 #### Classified boundaries and retained coverage
 

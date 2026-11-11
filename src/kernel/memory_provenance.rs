@@ -5667,7 +5667,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     tasks.push(AtomicCanonicalizationTask::RebuildInt32Scaled(*byte_width));
-                    tasks.push(AtomicCanonicalizationTask::Visit(value));
+                    tasks.push(AtomicCanonicalizationTask::Visit(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ));
                 }
                 PointerOffsetTerm::Int64Scaled {
                     value,
@@ -5678,7 +5682,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                         byte_width: *byte_width,
                         unsigned: *unsigned,
                     });
-                    tasks.push(AtomicCanonicalizationTask::Visit(value));
+                    tasks.push(AtomicCanonicalizationTask::Visit(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ));
                 }
             },
             // Integer operators and conversions are rebuilt as bare nodes;
@@ -5843,7 +5851,11 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Pointer) -> Pointer {
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     results.push(PointerOffsetTerm::scale_int32(
-                        canonicalize_atomic_loads_deep(value),
+                        canonicalize_atomic_loads_deep(
+                            value
+                                .retained_written_operand()
+                                .expect("shared indices handled above"),
+                        ),
                         *byte_width,
                     ));
                 }
@@ -5852,7 +5864,11 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Pointer) -> Pointer {
                     byte_width,
                     unsigned,
                 } => results.push(PointerOffsetTerm::scale_int64(
-                    canonicalize_atomic_loads_deep(value),
+                    canonicalize_atomic_loads_deep(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ),
                     *byte_width,
                     *unsigned,
                 )),
