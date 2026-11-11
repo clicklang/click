@@ -88,10 +88,7 @@ int32 caller() {
     have Propagate(suite.propagate) by solve();
     have Copy(suite.copy) by solve();
     fold(callbacks_storage(&suite));
-    step() {
-        requires Propagate(suite.propagate) by assumption();
-        requires Copy(suite.copy) by assumption();
-    }
+    step();
 }
 ```
 

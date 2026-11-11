@@ -48,5 +48,5 @@ void direct_predicate_caller(int32* cell) {
 ```
 
 ```expect
-fail: unproved obligation: `SetsZero(&clear_cell)`
+fail: function `clear_cell` does not satisfy named contract `SetsZero` automatically
 ```

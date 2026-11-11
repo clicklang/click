@@ -2172,3 +2172,107 @@ fn structural_index_read_chains_have_near_linear_producer_work() {
         }
     }
 }
+
+#[test]
+fn immediate_pointer_store_readability_does_not_walk_history() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let cell = Pointer {
+        block: "pointer-slot".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let target = Pointer {
+        block: "local:pointee".into(),
+        offset: PointerOffsetTerm::Constant(0),
+    };
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let mut memory = CMemory::new()
+            .with_block(cell.block.clone(), 8)
+            .with_block(target.block.clone(), 4);
+        for i in 0..size {
+            memory = memory.store(
+                Pointer {
+                    block: format!("unrelated-{i}").into(),
+                    offset: PointerOffsetTerm::Constant(0),
+                },
+                int32(i),
+            );
+        }
+        let written = crate::kernel::intern_c_memory(memory.store(
+            cell.clone(),
+            CValue::typed_pointer(target.clone(), CType::Int32Pointer),
+        ));
+        let read = Pointer::loaded_value(&written, &cell);
+        let later = crate::kernel::intern_c_memory(written.memory().clone().store(
+            Pointer {
+                block: "other".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            },
+            int32(0),
+        ));
+        let cached_read = Pointer::loaded_value(&later, &cell);
+        let partial =
+            crate::kernel::intern_c_memory(written.memory().clone().store(cell.clone(), int32(0)));
+        let partial_read = Pointer::loaded_value(&partial, &cell);
+        let ended = later.memory().without_local_block(&target.block);
+        let goal = |base: Pointer, bytes| Proposition::CMemoryLoadable {
+            memory: later.memory().clone(),
+            base,
+            bytes: MachineTerm::constant(bytes),
+            wide: false,
+        };
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            assert_eq!(
+                pointer_read_over_immediate_store(&read),
+                Some(target.clone())
+            );
+            assert!(
+                crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal(
+                    read.clone(),
+                    4
+                ))
+            );
+            assert!(
+                !crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal(
+                    read.clone(),
+                    8
+                ))
+            );
+            assert!(pointer_read_over_immediate_store(&cached_read).is_none());
+            assert!(pointer_read_over_immediate_store(&partial_read).is_none());
+            assert!(
+                later.memory().read_region_identity(&read) != ended.read_region_identity(&read)
+            );
+            assert!(
+                !crate::kernel::reasoning::path_facts::memory_range_still_available(
+                    later.memory(),
+                    &ended,
+                    &read,
+                    &PureFactContext::new(),
+                )
+            );
+            assert!(
+                !crate::kernel::proof::fact_reasoning::normalizes_context_free(
+                    &Proposition::CMemoryLoadable {
+                        memory: ended.clone(),
+                        base: read.clone(),
+                        bytes: MachineTerm::constant(4),
+                        wide: false,
+                    },
+                )
+            );
+            assert!(
+                !crate::kernel::proof::fact_reasoning::normalizes_context_free(&goal(
+                    cached_read.clone(),
+                    4
+                ))
+            );
+        });
+        samples.push(work);
+    }
+    assert!(samples[0] > 0);
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

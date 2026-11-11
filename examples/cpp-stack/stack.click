@@ -222,10 +222,20 @@ Stack<int>::~Stack() {
 int round_trip(int x) {
     ensures result == x;
 } by {
-    step_until(region(2));
+    step_until(region(3));
     let empty = fold(nodes(stack.head), { items: List<int32>::Nil });
     unfold(length(List<int32>::Nil));
     have length(List<int32>::Nil) < 1000000 by solve() using { length(List<int32>::Nil) == 0; };
+    let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
+        requires length(empty.items) < 1000000 by solve();
+        requires to_integer(stack.count) == length(empty.items) by solve();
+        requires aligned(&stack, 8) by solve();
+    }
+    step();
+    let { after: remaining } = step(__cpp_q_X10_537461636b3c696e743e_I3_pop, { before: pushed }) {
+        requires to_integer(stack.count) == length(pushed.items) by solve();
+        requires aligned(&stack, 8) by solve();
+    }
     step_until(function.exit);
     unfold(length(List<int32>::Cons(x, List<int32>::Nil)));
     unfold(first_or(List<int32>::Cons(x, List<int32>::Nil), 0));
@@ -245,8 +255,16 @@ unsigned long pushed_size(int x) {
         length(List<int32>::Cons(x, List<int32>::Nil)) == length(List<int32>::Nil) + 1;
         length(List<int32>::Nil) == 0;
     };
-    let { after: one } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty });
-    let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: one });
+    let { after: one } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: empty }) {
+        requires length(empty.items) < 1000000 by solve();
+        requires to_integer(stack.count) == length(empty.items) by solve();
+        requires aligned(&stack, 8) by solve();
+    }
+    let { after: pushed } = step(__cpp_q_X10_537461636b3c696e743e_I4_push, { before: one }) {
+        requires length(one.items) < 1000000 by solve();
+        requires to_integer(stack.count) == length(one.items) by solve();
+        requires aligned(&stack, 8) by solve();
+    }
     step();
     have separate(region(13).footprint, memory(stack.head)) by { normalize() using {}; }
     have stack.head == at(region(13).entry, stack.head) by {

@@ -17,6 +17,10 @@ pub(in crate::kernel) fn memory_range_still_available(
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A pointer read's synthetic block is not the storage it designates.
+    // Use its one defining store, when present, for the lifetime comparison.
+    let stored = crate::kernel::eval::pointer_read_over_immediate_store(base);
+    let base = stored.as_ref().unwrap_or(base);
     range_memory == current_memory
         || range_memory.has_block(&base.block) == current_memory.has_block(&base.block)
             && range_memory.is_ended_local_address(base)
@@ -232,9 +236,10 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             base,
             bytes,
             wide: false,
-        } => bytes
-            .as_const()
-            .is_some_and(|bytes| memory.access_in_bounds(base, bytes)),
+        } => bytes.as_const().is_some_and(|bytes| {
+            let written = crate::kernel::eval::pointer_read_over_immediate_store(base);
+            memory.access_in_bounds(written.as_ref().unwrap_or(base), bytes)
+        }),
         Proposition::CResourceSeparate { .. } | Proposition::CResourceContains { .. } => false,
         Proposition::CMemoryCanStore {
             memory,

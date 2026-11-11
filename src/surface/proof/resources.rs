@@ -78,6 +78,7 @@ trait ResourcePureFacts {
 struct ProofResourcePureFacts {
     facts: ProofFacts,
     added: Vec<Proposition>,
+    published: Vec<Proposition>,
 }
 
 impl ProofResourcePureFacts {
@@ -85,6 +86,7 @@ impl ProofResourcePureFacts {
         Self {
             facts,
             added: Vec::new(),
+            published: Vec::new(),
         }
     }
 }
@@ -103,6 +105,7 @@ impl ResourcePureFacts for ProofResourcePureFacts {
     }
 
     fn insert(&mut self, fact: Proposition) -> bool {
+        self.published.push(fact.clone());
         if self.facts.contains_top_level(&fact) {
             return false;
         }
@@ -3063,6 +3066,8 @@ fn resource_value_substitutions_with_witnesses(
 }
 
 pub(super) struct CheckedResourceUnfold {
+    /// Facts this unfold publishes, including facts already known locally.
+    pub(super) published_facts: Vec<Proposition>,
     pub(super) state: CState,
     pub(super) facts: ProofFacts,
     pub(super) added_facts: Vec<Proposition>,
@@ -3159,6 +3164,7 @@ fn unfold_composite_resource_for_proof_with_access(
         materialize_memory,
     )?;
     Ok(CheckedResourceUnfold {
+        published_facts: facts.published,
         state: unfolded.state,
         facts: facts.facts,
         added_facts: facts.added,
@@ -4344,6 +4350,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             pure_facts.assumptions(),
         )
         .with_opened_owner(opened_owner);
+        let collecting = crate::surface::proof::execution_planning::collecting_step_requirements();
         for fact in body_facts {
             let source_fact = fact;
             let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
@@ -4376,7 +4383,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     ))
                 })?;
-                unfold_predicates_in_proposition(
+                if collecting {
+                    lowered
+                } else {
+                    unfold_predicates_in_proposition(
                     spec_definitions,
                     unfolded_predicates,
                     &lowered,
@@ -4388,6 +4398,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     ))
                 })?
+                }
             };
             if let Some(binding) = dynamic_body_fact_dependency(
                 &required,
@@ -4426,8 +4437,6 @@ fn fold_composite_resources_on_outcome_with_facts(
             // The kernel's condition decision settles a condition body fact
             // as it settles a step's: the difference graph, then the
             // decision's checked rules (a tagged pointer word's low bits, say).
-            let collecting =
-                crate::surface::proof::execution_planning::collecting_step_requirements();
             let exactly_available = !collecting
                 && (pure_facts.exact_available_across_effects(&required, execution_pure_facts)
                     || decided_by_kernel_condition_decision(&body_assumptions, &required));

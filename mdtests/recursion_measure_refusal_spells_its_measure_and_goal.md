@@ -32,5 +32,5 @@ int32 count(int32 n) {
 ```
 
 ```expect
-fail: `step()` is missing prerequisite (count recursion measure: `(n ^ -1)` is nonnegative at the recursive call): condition-certificate premise search did not derive `0 <= (-1 ^ n - 1)`
+fail: count recursion measure: `(n ^ -1)` is nonnegative at the recursive call
 ```

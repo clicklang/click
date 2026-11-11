@@ -1096,6 +1096,7 @@ fn return_composite_presentations_reject_other_execution_paths() {
     .unwrap();
     let mut rewrite = checked.clone();
     rewrite.return_presentation = Some(Arc::new(CheckedReturnPresentation {
+        published_facts: Vec::new(),
         context: returned_proposition_context(&before),
         selected,
         rewrite: checked,

@@ -799,8 +799,12 @@ fn certified_transitions_from_execution(
                 };
                 let proposition = obligation.proposition();
                 if collecting_step_requirements() && !obligation.is_assumable() {
+                    let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation)
+                        .map(|description| format!(" ({description})"))
+                        .unwrap_or_default();
                     refuse_or_probe(prerequisite_policy, ClickError::new(format!(
-                        "{context_label} requires an explicit prerequisite proof"
+                        "{context_label} requires an explicit prerequisite proof{description}{}",
+                        crate::surface::diagnostics::describe_c_statement_site()
                     )).with_unresolved_requirement(obligation)
                         .with_assertion_condition(
                             crate::surface::proof::fact_reasoning::asserted_condition(proposition, statement),

@@ -780,7 +780,7 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
             owns c: cell(p);
             requires c.model == Boxed<int32*>::Box(p);
             ensures c.model == old(c.model);
-        } by { unfold(c); step_until(function.exit); fold(c); solve(); }
+        } by { unfold(c); step_until(function.exit); let c = fold(cell(p), { model: Boxed<int32*>::Box(p), nested: old(c.nested) }); solve(); }
     "#;
     let c = [(
         "read.c",
@@ -799,16 +799,14 @@ fn resource_match_binds_pointer_and_nested_algebraic_payloads() {
         .replace(
             "requires c.model == Boxed<int32*>::Box(p);",
             "requires c.model == Boxed<Boxed<int32>>::Box(c.nested);",
+        )
+        .replace(
+            "model: Boxed<int32*>::Box(p)",
+            "model: Boxed<Boxed<int32>>::Box(old(c.nested))",
         );
-    let verified = verify_c0_sources(&nested, &c).unwrap();
-    verify_c0_sources(
-        &nested.replace(
-            "by { unfold(c); step_until(function.exit); fold(c); solve(); }",
-            &verified[0].expanded_proof_source().unwrap(),
-        ),
-        &c,
-    )
-    .unwrap();
+    verify_c0_sources(&nested, &c).unwrap();
+    let expanded = expand_function_proof_source(&nested, &c, "read").unwrap();
+    verify_c0_sources(&expanded, &c).unwrap();
 }
 
 #[test]
@@ -2789,7 +2787,7 @@ fn integer_resource_field_observes_unchanged_c_memory_read() {
         } by {
             unfold(model);
             step_until(function.exit);
-            fold(model);
+            let model = fold(cell(p), { value: old(model.value) });
             solve();
         }
     "#;

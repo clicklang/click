@@ -9111,6 +9111,9 @@ pub(crate) struct CallRequirementSite {
     pub(crate) interface: std::sync::Arc<str>,
     pub(crate) candidate_ordinal: usize,
     pub(crate) source_arguments: std::sync::Arc<Vec<CExpression>>,
+    /// Enclosing runtime invocation when this requirement belongs to its
+    /// worker. `source_arguments` still names the worker's actual arguments.
+    pub(crate) source_invocation_arguments: Option<std::sync::Arc<Vec<CExpression>>>,
     pub(crate) source_snapshot: CMemorySnapshotIdentity,
 }
 
@@ -9134,6 +9137,7 @@ impl CallRequirementSite {
             interface: std::sync::Arc::from(interface),
             candidate_ordinal,
             source_arguments: std::sync::Arc::new(source_arguments.to_vec()),
+            source_invocation_arguments: None,
             source_snapshot: CMemorySnapshotIdentity::of(source_memory),
         }
     }

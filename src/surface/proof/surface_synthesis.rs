@@ -106,6 +106,8 @@ pub(in crate::surface) struct SynthesisStructOwners {
     /// declared shape an element read is spelled with.
     storage_arrays: BTreeMap<String, (String, Vec<u32>)>,
     storage_scalars: BTreeMap<Pointer, (String, CType)>,
+    /// Declaration spellings for kernel identifiers in retained C arguments.
+    storage_source_names: BTreeMap<String, ContractExpression>,
 }
 
 /// Installs the function's struct owners for synthesis while the guard
@@ -171,7 +173,55 @@ impl LocalStructLayoutScope {
                 )
             }))
             .collect();
+        let storage_source_names = function
+            .globals()
+            .values()
+            .map(|object| (object.kernel_name(), object.name()))
+            .chain(
+                function
+                    .global_arrays()
+                    .values()
+                    .map(|object| (object.kernel_name(), object.name())),
+            )
+            .chain(
+                function
+                    .global_aggregates()
+                    .values()
+                    .map(|object| (object.kernel_name(), object.name())),
+            )
+            .chain(
+                function
+                    .global_aggregate_arrays()
+                    .values()
+                    .map(|object| (object.kernel_name(), object.name())),
+            )
+            .chain(
+                function
+                    .static_locals()
+                    .values()
+                    .map(|object| (object.kernel_name(), object.name())),
+            )
+            .chain(
+                function
+                    .static_arrays()
+                    .values()
+                    .map(|object| (object.kernel_name(), object.name())),
+            )
+            .chain(
+                function
+                    .static_aggregates()
+                    .values()
+                    .map(|object| (object.kernel_name(), object.name())),
+            )
+            .map(|(kernel, source)| {
+                (
+                    kernel.to_owned(),
+                    ContractExpression::CFragment(CExpression::Variable(source.to_owned())),
+                )
+            })
+            .collect();
         let owners = SynthesisStructOwners {
+            storage_source_names,
             storage_scalars,
             locals,
             cast_parameters,
@@ -180,6 +230,20 @@ impl LocalStructLayoutScope {
         };
         Self(SYNTHESIS_STRUCT_OWNERS.with(|slot| slot.replace(Some(std::sync::Arc::new(owners)))))
     }
+}
+
+/// Restore declaration names in one retained call argument. This traverses
+/// only that argument and performs indexed name lookups; it never synthesizes
+/// an alias from facts or memory history.
+pub(in crate::surface) fn source_c_argument(argument: &CExpression) -> CExpression {
+    SYNTHESIS_STRUCT_OWNERS.with(|slot| {
+        let owners = slot.borrow();
+        let owners = owners
+            .as_ref()
+            .expect("call argument has a function source scope");
+        crate::surface::lowering::substitute_c_fragment(argument, &owners.storage_source_names)
+            .expect("declaration names are C fragments")
+    })
 }
 
 pub(in crate::surface) fn callback_source_name(name: &str) -> Option<String> {

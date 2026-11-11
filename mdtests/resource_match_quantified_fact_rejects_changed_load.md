@@ -70,5 +70,5 @@ int32 write_one(struct buffer* buffer) {
 ```
 
 ```expect
-fail: unproved obligation: `forall (k: int32) { 0 <= k and k < end implies buffer->data[k] == 0 }`
+fail: unproved obligation: `forall (k: int32) { 0 <= k and k < (end as int32) implies buffer->data[k] == 0 }`
 ```

@@ -62,7 +62,7 @@ void overwrite(struct node* p, struct node* q) {
     ensures h.tag == old(h.tag);
 } by {
     let { tag: t, side: s } = unfold(h);
-    unfold(hop(p));
+    let { next: saved_next } = unfold(hop(p));
     mark before_word_0;
     step();
     have separate(statement(0).region(0).footprint, memory(p->word)) by {
@@ -128,6 +128,15 @@ void overwrite(struct node* p, struct node* q) {
         }
     }
 
+    have aligned(saved_next, 8) by assumption();
+    have p->word == address(saved_next) + (p->word & 1) by {
+        rewrite(p->word == at(before_word_0, p->word));
+        assumption();
+    }
+    have ((p->word & ~1) as (struct node *)) == saved_next by {
+        rewrite(p->word == at(before_word_0, p->word));
+        assumption();
+    }
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t }, { side: s });
 }
@@ -138,7 +147,7 @@ int32 caller(struct node* p, struct node* q) {
     ensures result == 0;
 } by {
     let { tag: t, side: s } = unfold(h);
-    unfold(hop(p));
+    let { next: saved_next } = unfold(hop(p));
     mark before_word_0;
     step();
     have separate(statement(0).region(0).footprint, memory(p->word)) by {
@@ -205,6 +214,15 @@ int32 caller(struct node* p, struct node* q) {
     }
 
     have next->value == 0 by solve();
+    have aligned(saved_next, 8) by assumption();
+    have p->word == address(saved_next) + (p->word & 1) by {
+        rewrite(p->word == at(before_word_0, p->word));
+        assumption();
+    }
+    have ((p->word & ~1) as (struct node *)) == saved_next by {
+        rewrite(p->word == at(before_word_0, p->word));
+        assumption();
+    }
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t }, { side: s });
     mark before;
@@ -217,9 +235,18 @@ int32 caller(struct node* p, struct node* q) {
         ) using { };
     }
     have next->value == 0 by solve();
-    unfold(hop(p));
+    let { next: saved_next } = unfold(hop(p));
     step();
     step();
+    have aligned(saved_next, 8) by assumption();
+    have p->word == address(saved_next) + (p->word & 1) by {
+        rewrite(p->word == at(before_word_0, p->word));
+        assumption();
+    }
+    have ((p->word & ~1) as (struct node *)) == saved_next by {
+        rewrite(p->word == at(before_word_0, p->word));
+        assumption();
+    }
     fold(hop(p));
     let h = fold(holder(p, q), { tag: t2 }, { side: s2 });
 }

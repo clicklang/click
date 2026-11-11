@@ -3984,6 +3984,30 @@ fn propositions_match_after_canonical_loads(left: &Proposition, right: &Proposit
                     return false;
                 }
             }
+            (
+                Proposition::CMemoryLoadable {
+                    memory: lm,
+                    base: lb,
+                    bytes: ln,
+                    wide: lw,
+                },
+                Proposition::CMemoryLoadable {
+                    memory: rm,
+                    base: rb,
+                    bytes: rn,
+                    wide: rw,
+                },
+            ) => {
+                let left = crate::kernel::pointer_read_over_immediate_store(lb);
+                let right = crate::kernel::pointer_read_over_immediate_store(rb);
+                if lm != rm
+                    || ln != rn
+                    || lw != rw
+                    || left.as_ref().unwrap_or(lb) != right.as_ref().unwrap_or(rb)
+                {
+                    return false;
+                }
+            }
             _ => {
                 if !propositions_are_alpha_equal(left, right) {
                     return false;
@@ -4127,9 +4151,16 @@ fn source_backed_call_requirement_surface(
         }
         _ => return None,
     }
-    if arguments.as_slice() != site.source_arguments.as_slice() {
+    if arguments.as_slice()
+        != site
+            .source_invocation_arguments
+            .as_ref()
+            .unwrap_or(&site.source_arguments)
+            .as_slice()
+    {
         return None;
     }
+    let arguments = site.source_arguments.as_ref().clone();
     let expected_interface = match step {
         ProofStep::StepContract(application) => application.name.as_str(),
         ProofStep::StepCall(transport) if transport.is_named_contract() => transport.callee(),
@@ -4221,7 +4252,9 @@ fn source_backed_call_requirement_surface(
                     &context.parsed_function.parameters()[slot],
                     *parameter_type,
                 ),
-                None => ContractExpression::CFragment(argument.clone()),
+                None => ContractExpression::CFragment(super::surface_synthesis::source_c_argument(
+                    argument,
+                )),
             };
             (parameter.clone(), argument)
         })
@@ -4397,8 +4430,9 @@ pub(in crate::surface::proof) fn source_backed_direct_caller_requirement(
     let predicate_parameter_type = context
         .spec_definitions
         .predicates
-        .get(&predicate_name)
-        .and_then(|definition| definition.parameters().get(*predicate_argument_slot))
+        .get(&predicate_name)?
+        .parameters()
+        .get(*predicate_argument_slot)
         .and_then(|parameter| parameter.click_type().c_type())
         .map(C0Type::to_kernel_type);
     *substituted_arguments.get_mut(*predicate_argument_slot)? =

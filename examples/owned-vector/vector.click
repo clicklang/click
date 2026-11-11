@@ -597,6 +597,14 @@ int32 vector_grow(struct vector* owner) {
         assumption();
         assumption();
     } else {
+        have 1 <= new_capacity by { solve() using { 1 <= old_capacity; old_capacity <= 536870911; }; }
+        have new_capacity <= 536870912 by { solve() using { 1 <= old_capacity; old_capacity <= 536870911; }; }
+        have (new_capacity as uint32) <= 1073741823u32 by {
+            solve() using { 1 <= new_capacity; new_capacity <= 536870912; };
+        }
+        have (owner->len as uint32) <= 1073741823u32 by {
+            solve() using { 0 <= owner->len; owner->len <= owner->cap; owner->cap <= 536870910; };
+        }
         step();
         step();
         step();

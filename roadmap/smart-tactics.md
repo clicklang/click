@@ -105,64 +105,6 @@ work items; this reconciliation changes no behavior.
 
 ### Remaining obligation generation
 
-The step/fold migration on `codex/solve-exact-first` remains a **local,
-unlanded checkpoint**, not ready to push. It is reconciled with upstream
-`cd487e087`. The remaining work is not just diagnostic expectations:
-
-- **Generic C++ object proof:** `cpp_generic_class_state_in_a_resource.md`
-  still needs explicit produced-instance bindings. Binding the pack in
-  `caller` gets that proof past its original refusal; `local_round_trip`
-  still needs the pack selected at the correct frontier. Repair the written
-  proofs with existing syntax; automatic binding generation is outside this
-  refactor's scope. Pack, call, and unpack already execute separately, so this
-  is not evidence that a new preparation context is needed. Do not expose
-  successor facts to discharge preconditions.
-- **Suspended worker prerequisites:**
-  `modeled_pthread_local_job_external_output.md` stops before the driver can
-  discharge the suspended worker's prerequisites. Investigate separately;
-  the C++ naming reproduction is not evidence of the same cause here.
-- **Argument/read spellings:** the two linked-private-pointer fixtures lower
-  the source argument as a pointer read, while call evaluation requires a
-  fact about the private address it read. Preserve a spellable identity and
-  explicit equality evidence at the producer. Do not make source matching
-  search memory history or silently accept a different proposition.
-  Automatic expansion of the call in `const_callback_table_abstract.md` also
-  prints a file-static kernel name containing `#`, which is not Click syntax.
-  Its explicit `requires` entries now replay; removing those entries is the
-  reproduction for retaining the original argument spelling at the producer.
-- **Resource evidence:** `c_contract_executes_acquire_nonnull.md` completes its
-  written proof but finalization rejects the produced `Cell` claim (Ensure 2).
-  Investigate retention of the checked resource transition. The separate
-  `symbolic_index_store_keeps_ordered_cell.md` failure requires a fact at a
-  projected read snapshot; explicitly proving the ordinary `data[len] == 0`
-  does not repair that fold. Preserve these as verifier regressions, not
-  weakened examples.
-- **Source preparation cost:** the checkpoint's named-fold source construction
-  reuses the compiler's normalized body, but currently recomputes match-arm
-  scopes during a fold. Retain that normalized source metadata during
-  declaration preparation and select the recorded arm directly. Measure this
-  complete operation with growing unrelated arms before claiming the fast
-  boundary is satisfied.
-- **Negative fixtures:** review the remaining refusals individually. Several
-  stop at an earlier, valid prerequisite instead of reaching their intended
-  bad refinement, ownership, or termination claim. Repair those preludes;
-  do not blanket-update expectations or accept a smart-work budget failure
-  as the intended refusal.
-
-The integrated retest of the previous corpus failures left fifteen
-expected-pass fixtures in the families above; explicit output bindings now
-repair nine of them, leaving six known expected-pass failures. The focused
-`bound_class_object_call_obligations_expand_and_cold_replay` regression passes
-expansion, retained verification, and cold replay for all nine repaired C++
-fixtures. The construction overclaim fixture again reaches and rejects its
-intended false postcondition. A fresh complete corpus run is
-still required after repairing them. Validation logs for this checkpoint are
-`/tmp/step-fold-integrated-checks-2.log`,
-`/tmp/step-fold-integrated-retests/`, and
-`/tmp/step-fold-final-focused.log`. Targeted fact-stability checks for constructor
-pointer fields, Integer resource fields, and named contract value parameters
-passed with zero differing lowerings; this is not a full-corpus audit.
-
 Step preparation retains emitted verification conditions and call preconditions,
 and fold preparation retains its body facts, even when already known. The driver
 proves each obligation with a written block or ordinary `solve`. This does not

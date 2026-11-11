@@ -21605,3 +21605,36 @@ test_batches! {
         a_named_fold_generates_its_known_body_fact_obligation,
     ],
 }
+
+#[test]
+#[ignore = "nightly: repaired call and fold obligations expand and cold replay"]
+fn repaired_step_fold_obligations_expand_and_cold_replay() {
+    for (fixture, function) in [
+        (
+            "symbolic_index_store_keeps_ordered_cell",
+            "set_then_read_end",
+        ),
+        ("modeled_pthread_local_job_external_output", "run"),
+        (
+            "a_linked_pointer_initializer_names_a_private_object_of_its_defining_file",
+            "main",
+        ),
+        (
+            "same_named_private_objects_behind_linked_pointers_stay_distinct",
+            "main",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function)
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        let claim = format!("{function}.contract");
+        without_implicit_solve_for_claim(&claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
+}

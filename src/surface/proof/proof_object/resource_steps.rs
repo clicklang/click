@@ -801,40 +801,18 @@ impl<'a> Proof<'a> {
                     }
                 }
                 match &body.matched {
-                    None => {
-                        let normalized = crate::surface::validation::resource_unmatched_body_scope(
-                            source_definition,
-                            |name| context.resource_environment.get(name),
-                        )?;
-                        Some(
-                            normalized
-                                .as_ref()
-                                .unwrap_or(source_definition)
-                                .composite_body()
-                                .expect("selected resource has a body")
-                                .clone(),
-                        )
-                    }
+                    None => Some(context.resource_environment.fold_source(name)?.body.clone()),
                     Some(matched) => match written.get(&matched.field) {
                         Some(ContractExpression::AlgebraicConstructor {
                             variant,
                             arguments,
                             ..
                         }) => {
-                            let scopes = crate::surface::validation::resource_match_arm_scopes(
-                                source_definition,
-                                |name| {
-                                    context
-                                        .spec_definitions
-                                        .functions
-                                        .algebraic_type_definitions
-                                        .get(name)
-                                },
-                                |name| context.resource_environment.get(name),
-                            )?;
-                            let (_, bindings, arm) = scopes
-                                .into_iter()
-                                .find(|(name, _, _)| name == variant)
+                            let (bindings, arm) = context
+                                .resource_environment
+                                .fold_source(name)?
+                                .arms
+                                .get(variant)
                                 .ok_or_else(|| {
                                     self.step_error("fold constructor has no source arm")
                                 })?;
@@ -844,7 +822,7 @@ impl<'a> Proof<'a> {
                             // of a void* field. Preserve that conversion in
                             // the source obligation just as constructor
                             // lowering does in the kernel term.
-                            written.extend(bindings.into_iter().zip(arguments).map(
+                            written.extend(bindings.iter().cloned().zip(arguments).map(
                                 |((name, click_type), argument)| {
                                     let value = if click_type == ClickType::Integer {
                                         ContractExpression::Let {
@@ -872,11 +850,7 @@ impl<'a> Proof<'a> {
                                     (name, value)
                                 },
                             ));
-                            Some(
-                                arm.composite_body()
-                                    .expect("selected arm has a body")
-                                    .clone(),
-                            )
+                            Some(arm.clone())
                         }
                         _ => None,
                     },
@@ -921,8 +895,40 @@ impl<'a> Proof<'a> {
                 }
             }
             for clause in &rewrite.body_clauses {
-                let mut refusal = ClickError::new("`fold` requires its body fact")
-                    .with_unresolved_requirement(&clause.obligation());
+                let declared = context.resource_environment.fold_source(instance.name())?;
+                let body = match &clause.arm {
+                    None => &declared.body,
+                    Some(arm) => {
+                        &declared
+                            .arms
+                            .get(arm)
+                            .ok_or_else(|| self.step_error("fold body clause lost its source arm"))?
+                            .1
+                    }
+                };
+                let ordinal = if clause.arm.is_none() {
+                    definition
+                        .fact_source_index(clause.ordinal)
+                        .ok_or_else(|| self.step_error("fold body clause lost its source index"))?
+                } else {
+                    clause.ordinal
+                };
+                let declared_fact = body
+                    .facts()
+                    .get(ordinal)
+                    .ok_or_else(|| self.step_error("fold body clause lost its source ordinal"))?;
+                let summary = crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    arm: clause.arm.clone(),
+                    index: ordinal,
+                    count: body.facts().len(),
+                    spelling: Some(crate::surface::printing::authored_click_proposition(
+                        declared_fact,
+                    )),
+                    proposition: Box::new(clause.proposition.clone()),
+                }
+                .describe();
+                let mut refusal =
+                    ClickError::new(summary).with_unresolved_requirement(&clause.obligation());
                 if let Some(body) = source_body.as_ref() {
                     let source_ordinal = if clause.arm.is_none() {
                         definition
@@ -2947,6 +2953,7 @@ impl<'a> Proof<'a> {
                     &goal.data.core,
                     &checked.state,
                     &checked.facts,
+                    &checked.published_facts,
                 )
                 .map_err(|message| self.step_error(message))?;
         }
@@ -3150,6 +3157,7 @@ impl<'a> Proof<'a> {
                     &goal.data.core,
                     &state,
                     &checked.facts,
+                    &[],
                 )
                 .map_err(|message| self.step_error(message))?;
         } else if retain_return_exchange && fact_bearing_exchange && *state != *goal.data.core.state
@@ -3165,6 +3173,7 @@ impl<'a> Proof<'a> {
                     &goal.data.core,
                     &state,
                     &checked.facts,
+                    &[],
                 )
                 .is_ok()
                 && offered

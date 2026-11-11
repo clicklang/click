@@ -1005,10 +1005,23 @@ fn unproved_step_requirement(
     requirement: &UnresolvedRequirement,
     error: ClickError,
 ) -> Result<ClickError, ClickError> {
+    // Keep the existing concrete-refinement diagnostic when the ordinary
+    // obligation solver cannot establish a named callback contract.
+    if crate::surface::diagnostics::concrete_named_contract_fact(&requirement.proposition).is_some()
+        && let ProofContext::Execution(context) = proof.context.as_ref()
+    {
+        let description = crate::surface::diagnostics::describe_pure_fact_with_environment(
+            &requirement.proposition,
+            context.parameter_binding(),
+            context.function_environment,
+            Some(context.spec_definitions.predicates),
+        );
+        return Ok(error.with_rewritten_place(|reason| Some(format!("{reason}; {description}"))));
+    }
     let Some(spelling) = proof.requirement_surface(requirement, step)? else {
         return Ok(error);
     };
     let goal = crate::surface::printing::source_click_proposition(&spelling.surface);
     Ok(error
-        .with_rewritten_place(|reason| Some(format!("{reason}; unproved obligation: `{goal}`"))))
+        .with_rewritten_place(|reason| Some(format!("{reason}\n  unproved obligation: `{goal}`"))))
 }

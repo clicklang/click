@@ -2481,7 +2481,7 @@ pub(super) fn suspend_verified_worker(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<super::threads::WorkerCompletion, String>> {
+) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String>> {
     if !rule
         .function
         .contract_interface()
@@ -2525,8 +2525,8 @@ pub(super) fn suspend_verified_worker(
 
 pub(super) fn unique_worker_completion(
     no_failure_paths: bool,
-    mut completions: Vec<super::threads::WorkerCompletion>,
-) -> Result<super::threads::WorkerCompletion, String> {
+    mut completions: Vec<(super::threads::WorkerCompletion, Vec<ProofObligation>)>,
+) -> Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String> {
     if !no_failure_paths || completions.len() != 1 {
         return Err("worker application must produce exactly one checked completion".to_string());
     }
@@ -2969,7 +2969,7 @@ fn execute_verified_function_applications_with_suspension(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
-    mut suspended: Option<&mut Vec<super::threads::WorkerCompletion>>,
+    mut suspended: Option<&mut Vec<(super::threads::WorkerCompletion, Vec<ProofObligation>)>>,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     if applications.is_empty() {
         return Ok(vec![CFunctionPath::new(
@@ -4511,7 +4511,10 @@ fn execute_verified_function_applications_with_suspension(
             // checked partition and loan plan still conserve the authority
             // that a worker receives, and the storage checks below keep the
             // parent's implicit stack/global accesses out of that transfer.
-            let supported = obligations.is_empty()
+            // In preparation, the parent statement retains these prerequisites
+            // and the driver proves them before publishing either create outcome.
+            let supported = (obligations.is_empty()
+                || effective_assumptions.retains_required_obligations())
                 && transfer
                     .stable_view_plan
                     .as_ref()
@@ -4569,14 +4572,17 @@ fn execute_verified_function_applications_with_suspension(
                     deferred: deferred_exchange.clone(),
                 })
             };
-            completions.push(super::threads::WorkerCompletion::checked(
-                plan,
-                output_resources,
-                post_state.memory.clone(),
-                worker_effects,
-                facts,
-                post_state.mutex_ledger.clone(),
-                creation,
+            completions.push((
+                super::threads::WorkerCompletion::checked(
+                    plan,
+                    output_resources,
+                    post_state.memory.clone(),
+                    worker_effects,
+                    facts,
+                    post_state.mutex_ledger.clone(),
+                    creation,
+                ),
+                obligations,
             ));
             // The internal caller checks there is exactly one completion.
             // No worker guarantee or ownership is published as a call return.

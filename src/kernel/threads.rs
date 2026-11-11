@@ -722,15 +722,24 @@ impl Ord for ThreadLedger {
 pub(super) struct PreparedThreadCreate<'a> {
     parent: &'a ThreadContext,
     completion: WorkerCompletion,
+    obligations: Vec<super::ProofObligation>,
     retained_names: Option<Arc<super::named_authority::NamedMutexAuthorities>>,
 }
 
 impl PreparedThreadCreate<'_> {
+    pub(super) fn take_obligations(&mut self) -> Vec<super::ProofObligation> {
+        std::mem::take(&mut self.obligations)
+    }
+
     pub(super) fn failure(&self) -> ThreadContext {
         self.parent.clone()
     }
 
     pub(super) fn success(self) -> (ThreadContext, ThreadHandle, ExecutionPureFact) {
+        assert!(
+            self.obligations.is_empty(),
+            "thread create obligations must be returned to its caller"
+        );
         static NEXT_HANDLE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let handle = ThreadHandle(NEXT_HANDLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
         let effect = ExecutionPureFact::internal(Proposition::CMemoryEffectSummary {
@@ -836,7 +845,7 @@ impl ThreadContext {
                 "spawn requires termination evidence for the exact worker".to_string(),
             ));
         }
-        let completion = match suspend_verified_worker(
+        let (completion, obligations) = match suspend_verified_worker(
             &self.parent,
             worker,
             argument,
@@ -886,6 +895,7 @@ impl ThreadContext {
         Ok(Ok(PreparedThreadCreate {
             parent: self,
             completion,
+            obligations,
             retained_names,
         }))
     }

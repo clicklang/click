@@ -455,7 +455,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             branch { step(); solve(); } else {}
             branch {
                 step();
-                let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+                let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
                 have address(node) == address(target);
                 solve();
             } else {}
@@ -475,7 +475,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
                     rewrite(left_model == l.model);
                     assumption();
                 }
-                let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+                let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
                 solve();
             } else {}
             have not heap_member(left_model, target) by {
@@ -486,7 +486,7 @@ int tree_contains(struct tree_node* root, struct tree_node* target) {
             }
             let { result: found_right } = step(tree_contains, { t: r });
             step();
-            let t = fold(tree_at(root), { model: old(t.model) }, { left: l, right: r });
+            let t = fold(tree_at(root), { model: HeapTree::Node(node, value, left_model, right_model) }, { left: l, right: r });
             have result == heap_member(old(t.model), target) as int32 by {
                 rewrite(old(t.model)
                     == HeapTree::Node(node, value, left_model, right_model));

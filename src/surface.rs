@@ -7818,14 +7818,28 @@ fn click_proposition_reads_memory(
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub(super) struct ResourceEnvironment {
     definitions: BTreeMap<String, ResourceDefinition>,
+    fold_sources: std::sync::Arc<std::sync::OnceLock<BTreeMap<String, ResourceFoldSource>>>,
     /// C layouts are file-local, but resource bodies are shared by every
     /// function in that file. Retain them so struct-pointer arithmetic in a
     /// composite body keeps its physical element width.
     struct_layouts: BTreeMap<String, syntax::C0StructLayout>,
 }
+
+#[derive(Debug)]
+struct ResourceFoldSource {
+    body: CompositeResourceBody,
+    arms: BTreeMap<String, (Vec<(String, ClickType)>, CompositeResourceBody)>,
+}
+
+impl PartialEq for ResourceEnvironment {
+    fn eq(&self, other: &Self) -> bool {
+        self.definitions == other.definitions && self.struct_layouts == other.struct_layouts
+    }
+}
+impl Eq for ResourceEnvironment {}
 
 impl ResourceEnvironment {
     fn new(definitions: &[ResourceDefinition]) -> Self {
@@ -7837,6 +7851,7 @@ impl ResourceEnvironment {
         struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
     ) -> Self {
         Self {
+            fold_sources: Default::default(),
             definitions: definitions
                 .iter()
                 .map(|definition| (definition.name().to_string(), definition.clone()))
@@ -7847,6 +7862,13 @@ impl ResourceEnvironment {
 
     fn get(&self, name: &str) -> Option<&ResourceDefinition> {
         self.definitions.get(name)
+    }
+
+    fn fold_source(&self, name: &str) -> Result<&ResourceFoldSource, ClickError> {
+        self.fold_sources
+            .get()
+            .and_then(|sources| sources.get(name))
+            .ok_or_else(|| ClickError::new("resource fold source metadata was not prepared"))
     }
 
     fn struct_layouts(&self) -> &BTreeMap<String, syntax::C0StructLayout> {

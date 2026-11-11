@@ -636,6 +636,8 @@ pub(crate) struct CheckedResourceRewrite {
 /// Its facts retain that snapshot rather than pretending to be C-body reads.
 #[derive(Clone)]
 struct CheckedReturnPresentation {
+    /// The selected unfold's outputs are evidence even if already in its input context.
+    published_facts: Vec<Proposition>,
     context: Arc<CheckedReturnContext>,
     selected: CResourceFact,
     rewrite: CheckedResourceRewrite,
@@ -7407,6 +7409,10 @@ fn trace_completion_from_entry<E: std::borrow::Borrow<CheckedExecutionEvent>>(
                             None,
                         )
                         .map_err(|_| "return composite presentation has an unchecked exchange")?;
+                        for fact in &presentation.published_facts {
+                            *executed_under =
+                                std::mem::take(executed_under).assume_proposition(fact.clone());
+                        }
                         for fact in observed
                             .after_facts
                             .introduced_since(&observed.before_facts)
@@ -10716,6 +10722,7 @@ impl ExecutionProofCore {
         outcome: &super::OutcomeProofCore,
         after_state: &CState,
         after_facts: &ProofFacts,
+        published_facts: &[Proposition],
     ) -> Result<(), String> {
         // The checked outcome operation owns this goal's current logical
         // presentation, including expansions cached since the C return.
@@ -10879,6 +10886,7 @@ impl ExecutionProofCore {
         }
         rewrite.after_facts = after_facts.clone();
         rewrite.return_presentation = Some(Arc::new(CheckedReturnPresentation {
+            published_facts: published_facts.to_vec(),
             context,
             selected: selected.clone(),
             rewrite: presented,

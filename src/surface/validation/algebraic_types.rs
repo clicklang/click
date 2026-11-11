@@ -202,6 +202,7 @@ pub(in crate::surface) fn resource_match_arm_scopes<'a, 'b>(
         .map(|variant| (variant.name(), variant))
         .collect::<BTreeMap<_, _>>();
     for arm in &matched.arms {
+        crate::instrumentation::record_deterministic_work(1);
         if arm.type_name != datatype.name() {
             return Err(ClickError::new(
                 "resource match pattern names the wrong datatype",

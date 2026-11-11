@@ -223,3 +223,49 @@ void check(int32 x, int32 y) {{ requires x > 0; {ambient} {produces} ensures 1 =
         "{tactic}, related={related}: {samples:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: named fold source selection through 512 resource arms"]
+fn named_fold_obligation_source_selects_only_its_arm() {
+    let mut samples = Vec::new();
+    for size in [8, 32, 128, 512] {
+        let variants = (0..size)
+            .map(|i| format!("V{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arms = (0..size)
+            .map(|i| format!("Choice::V{i} => {{ owns p[0..1]; fact p[0] == 0; }},"))
+            .collect::<String>();
+        let source = format!(
+            r#"
+verifying "fold.c";
+spec enum Choice {{ {variants} }}
+resource cell(p: int32*) {{ field tag: Choice; match tag {{ {arms} }} }}
+void pack(int32* p) {{
+    consumes p[0..1];
+    requires p[0] == 0;
+    produces owner: cell(p);
+}} by {{
+    let owner = fold(cell(p), {{ tag: Choice::V0 }});
+}}
+"#
+        );
+        let (result, work) = crate::instrumentation::collect_tactic_work(|| {
+            verify_c0_sources(&source, &[("fold.c", "void pack(int32* p) {}")])
+        });
+        result.unwrap_or_else(|error| panic!("{size}: {error}"));
+        let selected = work
+            .iter()
+            .filter(|sample| {
+                sample.tactic.claim == "pack.contract" && sample.tactic.tactic_index == 0
+            })
+            .map(|sample| sample.work)
+            .max()
+            .expect("fold work");
+        samples.push(selected);
+    }
+    assert!(
+        samples.windows(2).all(|pair| pair[1] <= pair[0] + 64),
+        "{samples:?}"
+    );
+}

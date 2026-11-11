@@ -35,5 +35,5 @@ int32 make(int32* p, int32 i) {
 ```
 
 ```expect
-fail: requires an exact body fact
+fail: unproved obligation: `forall (__click_binder_0: int32) { 0 <= c(__click_binder_0) and c(__click_binder_0) < 3 implies i >= c(__click_binder_0) }`
 ```

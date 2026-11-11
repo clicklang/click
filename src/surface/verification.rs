@@ -6637,6 +6637,11 @@ pub(in crate::surface) fn composite_resource_definitions(
     spec_definitions: SpecDefinitions<'_>,
 ) -> Result<Vec<CCompositeResourceDefinition>, ClickError> {
     let mut definitions = Vec::new();
+    let mut fold_sources = resource_environment
+        .fold_sources
+        .get()
+        .is_none()
+        .then(BTreeMap::new);
     // Resource-match Integer binders are logical atoms in the lowered arm
     // facts. Allocate them once for the complete function environment so
     // unrelated resources cannot accidentally share a carrier identity.
@@ -6653,6 +6658,10 @@ pub(in crate::surface) fn composite_resource_definitions(
         let Some(body) = definition.composite_body() else {
             continue;
         };
+        let mut fold_source = fold_sources.as_ref().map(|_| ResourceFoldSource {
+            body: body.clone(),
+            arms: BTreeMap::new(),
+        });
         // The body's memory clauses take their element widths from the
         // definition's own parameters and field types, as contract clauses
         // do, so a `uint64` field is one 8-byte element on both sides of
@@ -6761,6 +6770,17 @@ pub(in crate::surface) fn composite_resource_definitions(
             )?;
             let mut arms = Vec::new();
             for (variant, bindings, arm) in scopes {
+                if let Some(source) = &mut fold_source {
+                    source.arms.insert(
+                        variant.clone(),
+                        (
+                            bindings.clone(),
+                            arm.composite_body()
+                                .expect("normalized resource arm has a body")
+                                .clone(),
+                        ),
+                    );
+                }
                 let mut integer_binding_variables = BTreeMap::new();
                 let mut binding_variables = Vec::with_capacity(bindings.len());
                 for (name, ty) in &bindings {
@@ -6891,8 +6911,14 @@ pub(in crate::surface) fn composite_resource_definitions(
             .with_matched_recursion(matched_recursive)
             .with_instance_schema(definition.field_schema().cloned()),
         );
+        if let (Some(sources), Some(source)) = (&mut fold_sources, fold_source) {
+            sources.insert(definition.name().to_owned(), source);
+        }
     }
     crate::kernel::propagate_population_reach(&mut definitions);
+    if let Some(sources) = fold_sources {
+        let _ = resource_environment.fold_sources.set(sources);
+    }
     Ok(definitions)
 }
 

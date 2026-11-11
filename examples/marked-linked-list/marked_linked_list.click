@@ -39,6 +39,21 @@ struct node* list_prepend(int32 value, struct node* tail) {
         step_until(function.exit);
     } else {
         step_until(function.exit);
+        have aligned(tail, 8) by assumption();
+        have result->word == address(tail) by normalize();
+        have (result->word & 1) == 0u64 by {
+            rewrite(result->word == address(tail));
+            solve() using { aligned(tail, 8); };
+        }
+        have result->word == address(tail) + (result->word & 1) by {
+            rewrite((result->word & 1) == 0u64);
+            rewrite(result->word == address(tail));
+            normalize();
+        }
+        have ((result->word & ~1) as (struct node *)) == tail by {
+            rewrite(result->word == address(tail));
+            normalize() using { aligned(tail, 8); };
+        }
         fold(marked_list(result));
     }
 }

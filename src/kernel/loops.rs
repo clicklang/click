@@ -1367,7 +1367,19 @@ fn execute_modeled_pthread_create_paths(
                         environment,
                         budget,
                     )? {
-                        Ok(prepared) => {
+                        Ok(mut prepared) => {
+                            let invocation = std::sync::Arc::new(arguments.to_vec());
+                            let worker_arguments = std::sync::Arc::new(vec![arguments[3].clone()]);
+                            for mut obligation in prepared.take_obligations() {
+                                if let Some(source) = &mut obligation.call_requirement_site {
+                                    let source = std::sync::Arc::make_mut(source);
+                                    let site = std::sync::Arc::make_mut(&mut source.site);
+                                    site.source_callee = Some("pthread_create".into());
+                                    site.source_invocation_arguments = Some(invocation.clone());
+                                    site.source_arguments = worker_arguments.clone();
+                                }
+                                path.obligations.push(obligation);
+                            }
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
