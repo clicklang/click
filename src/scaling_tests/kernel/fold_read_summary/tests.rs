@@ -162,3 +162,47 @@ fn repeated_framing_along_a_store_sequence_is_linear() {
     assert_linear("fold framing across each store of a sequence", &stepwise);
     assert_linear("fold framing across a whole store sequence", &whole);
 }
+
+#[test]
+fn retained_offset_summary_does_not_expand_index_dags() {
+    use crate::kernel::{KernelTerm, KernelTermExport, KernelType, MachineBinaryOp};
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let mut root = KernelTerm::variable(KernelType::C(CType::Int32), ITEM);
+        for _ in 0..size {
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Subtract,
+                [root.clone(), root],
+            );
+        }
+        let index = MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32);
+        let offset = PointerOffsetTerm::Int32Scaled {
+            value: index.clone(),
+            byte_width: 4,
+        };
+        let exports = KernelTermExport::machine_export_count();
+        let (_, work) = crate::instrumentation::measure_deterministic_work(|| {
+            let linear = LinearOffset::of(&offset);
+            assert_eq!(linear.as_scaled_index(4), Some((index, 0)));
+            assert_eq!(
+                linear
+                    .clone()
+                    .minus(&linear)
+                    .as_scaled_index(4)
+                    .unwrap()
+                    .0
+                    .operand_view()
+                    .word32_constant(),
+                Some(0)
+            );
+        });
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        samples.push(work);
+    }
+    assert!(
+        samples.iter().all(|work| *work == samples[0]),
+        "{samples:?}"
+    );
+}

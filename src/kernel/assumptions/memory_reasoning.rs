@@ -1616,11 +1616,26 @@ impl PureFactContext {
             }
         }
 
-        self.proves_cell_within_strided_region(base, bytes, pointer, byte_width, &|condition| {
-            self.selected_comparison_value(condition)
-                .or_else(|| self.decide(condition))
-                == Some(true)
-        })
+        self.proves_cell_within_strided_region(
+            base,
+            bytes,
+            pointer,
+            byte_width,
+            &|left, right, strict| {
+                let condition = index_comparison(
+                    if strict {
+                        CompareRelation::LessThan
+                    } else {
+                        CompareRelation::LessEqual
+                    },
+                    left,
+                    right,
+                );
+                self.selected_comparison_value(&condition)
+                    .or_else(|| self.decide(&condition))
+                    == Some(true)
+            },
+        )
     }
 
     /// The element rule above for an access narrower than the element it
@@ -1645,7 +1660,7 @@ impl PureFactContext {
         bytes: &MachineTerm,
         pointer: &Pointer,
         byte_width: u32,
-        holds: &dyn Fn(&ConditionTerm) -> bool,
+        holds: &dyn Fn(MachineOperandView<'_>, MachineOperandView<'_>, bool) -> bool,
     ) -> bool {
         let Some(delta) = pointer.offset_from_base(base) else {
             return false;
@@ -1664,7 +1679,7 @@ impl PureFactContext {
         let scaled = |term: &PointerOffsetTerm| match term {
             PointerOffsetTerm::Int32Scaled { value, byte_width } => u32::try_from(*byte_width)
                 .ok()
-                .map(|stride| (value.as_ref().clone(), stride)),
+                .map(|stride| (value.clone(), stride)),
             _ => None,
         };
         let Some(stride) = summands
@@ -1692,10 +1707,15 @@ impl PureFactContext {
         if !self.assumed_extent_covers_its_element_count(&element_count, stride) {
             return false;
         }
-        let lower_condition =
-            ConditionTerm::signed_less_equal(MachineTerm::constant(0), index.clone());
-        let upper_condition = ConditionTerm::signed_less_than(index, element_count);
-        if !holds(&lower_condition) || !holds(&upper_condition) {
+        if !holds(
+            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            index.operand_view(),
+            false,
+        ) || !holds(
+            index.operand_view(),
+            MachineOperandView::Legacy(&element_count),
+            true,
+        ) {
             return false;
         }
         let rest = summands
@@ -2197,7 +2217,17 @@ impl PureFactContext {
                 &MachineTerm::multiply(range.end().clone(), MachineTerm::constant(width)),
                 pointer,
                 bytes,
-                &|condition| self.proves_range_bound(condition.clone()),
+                &|left, right, strict| {
+                    self.proves_range_bound(index_comparison(
+                        if strict {
+                            CompareRelation::LessThan
+                        } else {
+                            CompareRelation::LessEqual
+                        },
+                        left,
+                        right,
+                    ))
+                },
             )
     }
 
@@ -4688,30 +4718,7 @@ impl PureFactContext {
             &range_bytes,
             pointer,
             byte_width,
-            &|condition| match condition {
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessEqual,
-                    left,
-                    right,
-                } => proves_order(
-                    MachineOperandView::Legacy(left),
-                    MachineOperandView::Legacy(right),
-                    false,
-                ),
-                ConditionTerm::Compare {
-                    format: MachineIntegerType::Int32,
-                    relation: CompareRelation::LessThan,
-                    left,
-                    right,
-                } => proves_order(
-                    MachineOperandView::Legacy(left),
-                    MachineOperandView::Legacy(right),
-                    true,
-                ),
-                ConditionTerm::Constant(value) => *value,
-                _ => false,
-            },
+            &proves_order,
         ) {
             return true;
         }
@@ -4952,7 +4959,12 @@ impl PureFactContext {
                     value: right,
                     byte_width: right_width,
                 },
-            ) => left_width == right_width && self.int32_values_known_equal(left, right),
+            ) => {
+                left_width == right_width
+                    && self
+                        .equality_graph
+                        .are_int32_equal_views(left.operand_view(), right.operand_view())
+            }
             _ => false,
         }
     }
@@ -5415,10 +5427,7 @@ pub(in crate::kernel) fn parameter_partition_variable(base: &Pointer) -> Option<
     let variable = match &base.offset {
         PointerOffsetTerm::Variable(variable) => variable,
         PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width > 0 => {
-            let MachineTerm::Variable(variable) = value.as_ref() else {
-                return None;
-            };
-            variable
+            value.operand_view().variable()?
         }
         _ => return None,
     };
@@ -6071,6 +6080,56 @@ mod shared_range_index_tests {
             ],
         ))
         .retain(MachineIntegerType::Int32)
+    }
+
+    #[test]
+    fn retained_strided_fields_need_both_index_bounds_without_export() {
+        let _session = VerificationSession::enter();
+        let index = retained_index();
+        let base = Pointer {
+            block: "retained_strided_fields".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let pointer = base
+            .offset_by_shared_elements(index.clone(), 16)
+            .offset_by_bytes(4);
+        let low = index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            index.operand_view(),
+        );
+        let high = index_comparison(
+            CompareRelation::LessThan,
+            index.operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::constant(8)),
+        );
+        let empty = PureFactContext::new();
+        let lower = empty.clone().assume_condition(low, true);
+        let both = lower.clone().assume_condition(high, true);
+        let exports = KernelTermExport::machine_export_count();
+        for (facts, expected) in [(&empty, false), (&lower, false), (&both, true)] {
+            assert_eq!(
+                facts.proves_cell_within_strided_region(
+                    &base,
+                    &MachineTerm::constant(128),
+                    &pointer,
+                    4,
+                    &|a, b, strict| {
+                        facts.selected_comparison_value(&index_comparison(
+                            if strict {
+                                CompareRelation::LessThan
+                            } else {
+                                CompareRelation::LessEqual
+                            },
+                            a,
+                            b,
+                        )) == Some(true)
+                    }
+                ),
+                expected
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 
     #[test]

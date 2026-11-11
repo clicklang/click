@@ -666,16 +666,18 @@ impl ResourceContainsKey {
 /// Whether a side of this condition is not an atom: see
 /// `PureFactContext::open_condition_facts`.
 fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
-    let open = |term: &MachineTerm| match term {
-        bits32_constant!(_) => false,
-        MachineTerm::Variable(variable) => {
+    let open = |term: MachineOperandView<'_>| {
+        if term.word32_constant().is_some() {
+            false
+        } else if let Some(variable) = term.variable() {
             crate::kernel::eval::registered_load_for_variable(variable).is_some()
+        } else {
+            true
         }
-        _ => true,
     };
     let open_offset = |offset: &PointerOffsetTerm| match offset {
         PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => false,
-        PointerOffsetTerm::Int32Scaled { value, .. } => open(value),
+        PointerOffsetTerm::Int32Scaled { value, .. } => open(value.operand_view()),
         _ => true,
     };
     match condition {
@@ -690,7 +692,7 @@ fn condition_has_an_open_side(condition: &ConditionTerm) -> bool {
             op: OverflowOperation::Add,
             left,
             right,
-        } => open(left) || open(right),
+        } => open(MachineOperandView::Legacy(left)) || open(MachineOperandView::Legacy(right)),
         ConditionTerm::PointerOffsetEqual(left, right) => open_offset(left) || open_offset(right),
         _ => false,
     }

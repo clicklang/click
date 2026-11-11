@@ -418,6 +418,36 @@ obligations retain shared roots, with one final native value output at the
 existing evaluator boundary. This does not declare step 1 or the complete
 KernelTerm/SurfaceTerm split finished.
 
+#### Retained pointer-index checks
+
+Strided-region field checks pass operand views to their existing bound checker,
+including the range-evidence caller; they no longer construct a native index
+between selecting a stride and checking its bounds. Parameter partition roots,
+open-side classification, and pointer-offset Integer carrier scope checks inspect
+only the retained root. Pointer-offset transport uses the existing shared
+transport checker. Mixed signed-word/unsigned-wide offset equality observes its
+retained operands directly, and unsigned-wide index equality constructs a shared
+comparison.
+
+Fold-read offset summaries retain shared int32/int64 atoms and return a shared
+scaled index. Their membership/exclusion checks use the existing selected exact
+comparison source index, preserving strictness and missing-bound refusals. This
+removes the native index storage from the summary itself; native interval bounds
+remain input/output boundaries. Cold index DAGs at 16, 64 and 256 nodes have
+constant summary-query work and zero exports. Focused controls cover stated and
+missing bounds, both bounds of a strided field, and existing frame/refusal rules.
+
+This increment closes those named consumers, not wide access reconstruction,
+read-address payload normalization, snapshot-equivalence recursion, or the
+remaining native pointer rewrite/fact-key families. The implicit native traits
+remain until those callers migrate.
+
+Validation: all 39 focused tests passed, then `scripts/check.sh --no-fail-fast`
+exited 0 with 7,115 unit/API tests, 58 example projects and 5,149 mdtests. The
+gate took 9m29s, within budget. Existing fold-read transport fixtures passed
+before and after with zero fact-stability entries. No limits changed and no
+nightly suite ran.
+
 #### Classified boundaries and retained coverage
 
 - `variable_collection::visit_machine_carrier_leaves`, ordinary shared Integer
