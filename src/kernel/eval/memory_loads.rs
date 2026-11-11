@@ -1962,12 +1962,14 @@ fn complete_loaded_word(value: CValue, memory: &CMemory, address: &Pointer) -> C
         _ => None,
     };
     let pointer = match named {
-        Some(MachineTerm::MemoryLoad(snapshot, cell, LoadKind::Bits64)) => CPointerValue::from_read(
-            Pointer::integer_address(bits),
-            CType::VoidPointer,
-            &snapshot,
-            &cell,
-        ),
+        Some(MachineTerm::MemoryLoad(snapshot, cell, LoadKind::Bits64)) => {
+            CPointerValue::from_read(
+                Pointer::integer_address(bits),
+                CType::VoidPointer,
+                &snapshot,
+                &cell,
+            )
+        }
         _ => CPointerValue::from_read(
             Pointer::integer_address(bits),
             CType::VoidPointer,
