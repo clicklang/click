@@ -1485,12 +1485,14 @@ leaves by `break` when it is zero, so a `preserve` script that needs
 `0u64 < iter.len()` splits on it with a proof `if` after the header's steps;
 the empty arm takes the `break` with one `step()`.
 
-One limit remains. The chunk a pass binds is `iter.nth(0u64)`, whose data
-pointer is the library function's result, equal to `bytes + k * size` only
-by `nth_chunks_exact`. A read through it, `chunk[0]`, is refused: the read
-has to be placed in the `bytes` view, and a stated equality does not place a
-pointer in a view of symbolic length. A loop that reads its chunks therefore
-still needs the hidden-state model.
+The chunk a pass binds is `iter.nth(0u64)`: its data pointer is
+`bytes + k * size` by `nth_chunks_exact`, carried from pass to pass by an
+invariant over `iter.nth(j)`, and its length is `size`. A read through it,
+`chunk[0]`, is a read of `bytes`, and owes its offset's bound as the machine
+value the program computes: `to_integer(k * 4u64) < to_integer(bytes.len())`,
+not `k * 4u64 < bytes.len()`, which states the exact product. The same form
+is owed for `p[k * 4]` in C
+([proof](https://github.com/clicklang/click/blob/master/tests/rust_import/library_chunks_loop.click)).
 
 ## Moves and drops
 
