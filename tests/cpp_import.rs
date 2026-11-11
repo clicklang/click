@@ -19063,6 +19063,53 @@ int total(const Shape& shape, int scale) {
     );
 }
 
+#[test]
+#[ignore = "nightly: C++ object-state obligation expansion and cold replay"]
+fn bound_class_object_call_obligations_expand_and_cold_replay() {
+    let fixture = parse_mdtest(
+        Path::new("cpp_class_object_state.md"),
+        include_str!("../mdtests/cpp_class_object_state.md"),
+    )
+    .unwrap();
+    let cpp = fixture.cpp_source.unwrap();
+    let source = fixture.click_source.unwrap();
+    let project = Project::with_fixture(&cpp.filename, &cpp.functions[0], &cpp.source);
+    refresh_import(&project.config()).unwrap();
+    let import = load_import(&project.config()).unwrap();
+    fs::remove_file(&project.exporter).unwrap();
+    // Naming the pack's output is sufficient: the ordinary call-obligation
+    // solver proves its model-field bounds, without an extra written have.
+    assert!(source.contains("__object_object: packed"));
+    assert!(!source.contains("have "));
+    let sidecar = project.directory.join("object.click");
+    fs::write(&sidecar, &source).unwrap();
+    let parsed = read_click_project(&sidecar, &source).unwrap();
+    let (session, verified) =
+        C0VerificationSession::new_program_prepared_project(&parsed, &import).unwrap();
+    let expanded = click::surface::expand_verified_function_claim_source_by_label(
+        &source,
+        &verified,
+        "caller.contract",
+    )
+    .unwrap()
+    .expect("the caller's written proof has a certificate");
+    assert!(expanded.contains("__object_object: packed"), "{expanded}");
+    let rewritten = parsed.with_entry_source(expanded.clone());
+    let position = project_tactic_source_position(
+        &rewritten,
+        &ProgramInputs::program(&import),
+        "caller.contract",
+        0,
+    )
+    .unwrap();
+    session
+        .verify_at_project(&expanded, position.line, position.column)
+        .expect("the bound object certificate must verify retained");
+    drop(session);
+    verify_program_prepared_project(&rewritten, &import)
+        .expect("the bound object certificate must verify cold");
+}
+
 // An override of a method of a class whose object carries state, or of a
 // defining class's method, is stated on its own class's memory, so its class
 // defines that state; and a class deriving from a defining class overrides

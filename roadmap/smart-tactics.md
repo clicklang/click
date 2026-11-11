@@ -109,14 +109,22 @@ The step/fold migration on `codex/solve-exact-first` remains a **local,
 unlanded checkpoint**, not ready to push. It is reconciled with upstream
 `cd487e087`. The remaining work is not just diagnostic expectations:
 
-- **Preparation contexts:** ten C++ class fixtures require facts about abstract
-  resource instances created while preparing a call. The original caller
-  frontier cannot name those instances. `cpp_class_object_state.md` is the
-  small reproduction: `total` requires bounds on the temporary object's
-  `size`. Expose the preparation's introductions and their obligations at the
-  correct point, before call effects; never use successor facts to prove a
-  precondition. `modeled_pthread_local_job_external_output.md` similarly stops
-  before the driver can discharge the suspended worker's prerequisites.
+- **Produced-instance naming:** the C++ object-state reproduction does not
+  require a new preparation context. Pack, call, and unpack already execute
+  as separate statements. In `cpp_class_object_state.md`, binding the pack's
+  output with `let { __object_object: packed } =
+  step(Square__click_pack_const__Shape, {});` suffices: ordinary implicit
+  `solve` proves the next call's model-field bounds without an extra `have`.
+  Removing that binding reproduces the unnamed-instance failure. The focused
+  `bound_class_object_call_obligations_expand_and_cold_replay` regression
+  passes expansion, retained verification, and cold replay of the explicit
+  binding. Automatically generate these bindings before generalizing to the
+  other nine C++ class failures. Do not
+  expose successor facts to discharge preconditions.
+- **Suspended worker prerequisites:**
+  `modeled_pthread_local_job_external_output.md` stops before the driver can
+  discharge the suspended worker's prerequisites. Investigate separately;
+  the C++ naming reproduction is not evidence of the same cause here.
 - **Argument/read spellings:** the two linked-private-pointer fixtures lower
   the source argument as a pointer read, while call evaluation requires a
   fact about the private address it read. Preserve a spellable identity and
@@ -145,8 +153,9 @@ unlanded checkpoint**, not ready to push. It is reconciled with upstream
   do not blanket-update expectations or accept a smart-work budget failure
   as the intended refusal.
 
-The integrated retest of the previous corpus failures leaves fifteen
-expected-pass fixtures in the families above. A fresh complete corpus run is
+The integrated retest of the previous corpus failures left fifteen
+expected-pass fixtures in the families above; the explicit output binding
+repairs one of them. A fresh complete corpus run is
 still required after repairing them. Validation logs for this checkpoint are
 `/tmp/step-fold-integrated-checks-2.log`,
 `/tmp/step-fold-integrated-retests/`, and
