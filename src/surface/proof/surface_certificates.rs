@@ -1361,7 +1361,7 @@ fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubj
         return field
             .children
             .is_empty()
-            .then(|| TransportReadSubject::Resource(field.identity.clone()));
+            .then_some(TransportReadSubject::Resource(field.identity));
     }
     match contract_expression_as_c_fragment(read)? {
         CExpression::Load(pointer) | CExpression::TypedLoad { pointer, .. } => {
@@ -1374,7 +1374,7 @@ fn transport_read_subject(read: &ContractExpression) -> Option<TransportReadSubj
 fn transport_separation_subject(subject: &ResourceSubject) -> Option<TransportReadSubject> {
     match subject {
         ResourceSubject::Instance { identity, .. } => {
-            Some(TransportReadSubject::Resource(identity.clone()))
+            Some(TransportReadSubject::Resource(*identity))
         }
         ResourceSubject::Memory(segment)
             if segment.state == ContractSegmentState::Current

@@ -793,10 +793,16 @@ pub(in crate::surface::proof) fn instantiate_generic_theorem_application_definit
     if application.arguments.len() != definition.parameters().len() {
         return Ok(definition.clone());
     }
+    // An `Integer` parameter decides no type argument, and its argument,
+    // a loop's `iterations` for one, is no C expression to read a type from.
     let argument_types = application
         .arguments
         .iter()
-        .map(|argument| {
+        .zip(definition.parameters())
+        .map(|(argument, parameter)| {
+            if parameter.click_type() == &ClickType::Integer {
+                return Ok(None);
+            }
             theorem_application_argument_type(argument, assumptions, context, spec_definitions)
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -834,7 +840,11 @@ fn theorem_application_argument_type(
         } else {
             let actual_types = arguments
                 .iter()
-                .map(|argument| {
+                .zip(function.parameters())
+                .map(|(argument, parameter)| {
+                    if parameter.click_type() == &ClickType::Integer {
+                        return Ok(None);
+                    }
                     theorem_application_argument_type(
                         argument,
                         assumptions,

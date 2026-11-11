@@ -473,7 +473,10 @@ fn cell_effect(
                 hop(MemoryDagHopJustification::RetirementInsideItsCallHavoc)
             } else if heap_allocation_proven_separate_from_pointer(
                 allocation_base,
-                bytes,
+                // A derivation's byte term carries no format; read as 32-bit,
+                // a 64-bit block's term spells no element count, and the
+                // separation is not proved (`design/heap-extents.md`).
+                &HeapExtent::int32(bytes.clone()),
                 pointer,
                 assumptions,
             ) {

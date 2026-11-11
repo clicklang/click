@@ -52,16 +52,24 @@ impl<K: Ord, V> PersistentMap<K, V> {
     where
         K: Borrow<Q>,
     {
+        // The visited nodes are counted here and recorded once: the counter is
+        // a thread-local the test build cannot inline, and a lookup is the
+        // most frequent operation.
+        let mut visited = 0;
         let mut node = self.root.as_ref();
-        while let Some(current) = node {
-            record_persistent_work(1);
+        let found = loop {
+            let Some(current) = node else {
+                break None;
+            };
+            visited += 1;
             match key.cmp(current.key.as_ref().borrow()) {
                 Ordering::Less => node = current.left.as_ref(),
-                Ordering::Equal => return Some(current.value.as_ref()),
+                Ordering::Equal => break Some(current.value.as_ref()),
                 Ordering::Greater => node = current.right.as_ref(),
             }
-        }
-        None
+        };
+        record_persistent_work(visited);
+        found
     }
 
     pub(crate) fn get_key_value<Q: Ord + ?Sized>(&self, key: &Q) -> Option<(&K, &V)>

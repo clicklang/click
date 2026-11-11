@@ -21,7 +21,6 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
 pub(crate) use operand_correspondence::shared_operand_leaf_pairs;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -134,7 +133,7 @@ impl PureApplicationInterner {
         arguments: Vec<PureFunctionArgument>,
     ) -> SharedPureApplication {
         crate::instrumentation::record_deterministic_work(arguments.len().saturating_add(1));
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         name.hash(&mut hasher);
         arguments.hash(&mut hasher);
         let key = hasher.finish();
@@ -564,7 +563,7 @@ impl std::hash::Hash for SharedMachineIntegerTerm {
 thread_local! {
     // Reuse explicit boxed imports within one verification, but never make a
     // later verification's work depend on an earlier session's warm interner.
-    static MACHINE_OBSERVATION_IMPORTS: std::cell::RefCell<std::collections::HashMap<u64, SharedMachineIntegerTerm>> = Default::default();
+    static MACHINE_OBSERVATION_IMPORTS: std::cell::RefCell<crate::id_hash::U64Map<SharedMachineIntegerTerm>> = Default::default();
 }
 
 pub(super) fn clear_machine_observation_memo() {
@@ -898,7 +897,7 @@ impl MachineIntegerKey {
 #[derive(Default)]
 struct MachineIntegerInterner {
     next_id: u64,
-    values: HashMap<u64, Vec<(MachineIntegerKey, Weak<SharedMachineIntegerNode>)>>,
+    values: crate::id_hash::U64Map<Vec<(MachineIntegerKey, Weak<SharedMachineIntegerNode>)>>,
     cleanup_queue: VecDeque<(u64, usize)>,
 }
 
@@ -906,7 +905,7 @@ static MACHINE_INTEGER_INTERNER: OnceLock<Mutex<MachineIntegerInterner>> = OnceL
 
 impl MachineIntegerInterner {
     fn find(&self, key: &MachineIntegerKey) -> Option<SharedMachineIntegerTerm> {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         key.hash(&mut hasher);
         self.values
             .get(&hasher.finish())?
@@ -922,7 +921,7 @@ impl MachineIntegerInterner {
         if self.find(&key).is_some() {
             return;
         }
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         key.hash(&mut hasher);
         let fingerprint = hasher.finish();
         self.values
@@ -953,7 +952,7 @@ impl MachineIntegerInterner {
                 }
             }
         }
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         key.hash(&mut hasher);
         let fingerprint = hasher.finish();
         if let Some(bucket) = self.values.get(&fingerprint) {
@@ -1611,7 +1610,7 @@ pub(crate) fn machine_value_reading(
 
 struct IntegerInterner {
     next_id: u64,
-    nodes: HashMap<u64, Vec<(IntegerShallowKey, Weak<SharedIntegerNode>)>>,
+    nodes: crate::id_hash::U64Map<Vec<(IntegerShallowKey, Weak<SharedIntegerNode>)>>,
     cleanup_queue: VecDeque<(u64, usize)>,
 }
 
@@ -1621,7 +1620,7 @@ fn integer_interner() -> &'static Mutex<IntegerInterner> {
     INTEGER_INTERNER.get_or_init(|| {
         Mutex::new(IntegerInterner {
             next_id: 0,
-            nodes: HashMap::new(),
+            nodes: Default::default(),
             cleanup_queue: VecDeque::new(),
         })
     })
@@ -1694,7 +1693,7 @@ impl IntegerInterner {
 }
 
 fn integer_key_fingerprint(key: &IntegerShallowKey) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = crate::id_hash::FingerprintHasher::default();
     key.hash(&mut hasher);
     hasher.finish()
 }

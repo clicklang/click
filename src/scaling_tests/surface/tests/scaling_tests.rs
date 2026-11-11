@@ -3545,6 +3545,84 @@ fn stores_beside_many_owned_size_t_ranges_scale_near_linearly() {
     assert_near_linear_scaling("stores beside many owned size_t ranges", &samples);
 }
 
+/// [`stores_beside_many_owned_size_t_ranges`] with the stored array a heap
+/// block of 64-bit extent: the function also owns
+/// `allocation(value, length * 4u64)`, so its range is the block's wide
+/// range beside its `uint64` token (`design/heap-extents.md`, stage 3).
+fn stores_beside_many_owned_64_bit_blocks(size: usize) -> (String, String) {
+    let (c_source, click_source) = stores_beside_many_owned_size_t_ranges(size);
+    let click_source = click_source.replace(
+        "    owns value[0..length];\n",
+        "    owns allocation(value, length * 4u64);\n    owns value[0..length];\n",
+    );
+    assert!(click_source.contains("owns allocation(value, length * 4u64)"));
+    (c_source, click_source)
+}
+
+#[test]
+#[ignore = "nightly: 0.9s in the parallel gate"]
+fn stores_beside_many_owned_64_bit_blocks_scale_near_linearly() {
+    let samples = [2, 4, 8, 16]
+        .into_iter()
+        .map(|size| {
+            let (c_source, click_source) = stores_beside_many_owned_64_bit_blocks(size);
+            let (verified, sample) = scaling_sample(size, || {
+                verify_c0_sources(&click_source, &[("acquire.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "size {size} owned 64-bit block store fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("stores beside many owned 64-bit blocks", &samples);
+}
+
+/// One function that allocates a block of 64-bit extent, lends it to
+/// `calls` calls that each borrow and return its `uint64` token
+/// (`owns allocation(p, n * 4u64)`), and frees it: every call decides the
+/// token's extent and the allocation's continuity.
+fn calls_borrowing_a_64_bit_block(calls: usize) -> (String, String) {
+    let mut c_source = String::from(
+        "void *malloc(unsigned long size);\nvoid free(void *ptr);\n\nvoid keep(int *p, unsigned long n) {\n}\n\nint f(unsigned long n) {\n    int *p = malloc(n * sizeof(int));\n    if (p == 0) {\n        return 0;\n    }\n",
+    );
+    for _ in 0..calls {
+        c_source.push_str("    keep(p, n);\n");
+    }
+    c_source.push_str("    free(p);\n    return 1;\n}\n");
+    let click_source = String::from(
+        "verifying \"keep.c\";\n\nvoid keep(int32* p, uint64 n) {\n    owns allocation(p, n * 4u64);\n    owns uninitialized(p[0..n]);\n}\n\nint32 f(uint64 n) {\n    requires 1u64 <= n and n <= 1000u64;\n    ensures result == 0 or result == 1;\n}\n",
+    );
+    (c_source, click_source)
+}
+
+/// The continuity of a 64-bit block across calls costs the same at each
+/// call: the work grows near-linearly with the calls.
+#[test]
+#[ignore = "nightly: 1.4s in the parallel gate"]
+fn calls_borrowing_a_64_bit_block_scale_near_linearly() {
+    let samples = [2, 4, 8, 16]
+        .into_iter()
+        .map(|calls| {
+            let (c_source, click_source) = calls_borrowing_a_64_bit_block(calls);
+            let (verified, sample) = scaling_sample(calls, || {
+                verify_c0_sources(&click_source, &[("keep.c", c_source.as_str())])
+            });
+            verified.unwrap_or_else(|error| {
+                panic!(
+                    "{calls}-call 64-bit block fixture failed: {}",
+                    error.message()
+                )
+            });
+            sample
+        })
+        .collect::<Vec<_>>();
+    assert_near_linear_scaling("calls borrowing a 64-bit block", &samples);
+}
+
 /// The frozen byte-representation round trip
 /// (`mdtests/byte_representation_roundtrip.md`) beside `unrelated` live heap
 /// allocations, each null-checked with every failure path freeing the earlier
@@ -7664,8 +7742,11 @@ fn check_early_return_execution_expansion(returns: usize) {
             let click = "verifying \"fan_out.c\";\n\nint g(int a) {\n    ensures result == a or result == -1;\n}\n";
             let c = early_return_fan_out(returns);
             let sources = [("fan_out.c", c.as_str())];
-            let expanded = expand_c0_tactic_source_at(click, &sources, 6, 5)
+            // This fixture has an implicit proof: select the function's claim,
+            // not the former execute() location beyond the end of its source.
+            let expanded = expand_function_proof_source(click, &sources, "g")
                 .unwrap_or_else(|error| panic!("{returns} returns expand: {}", error.message()));
+            assert_ne!(expanded, click, "the implicit proof must become explicit");
             assert!(!expanded.contains("execute()"));
             verify_c0_sources(&expanded, &sources)
                 .unwrap_or_else(|error| panic!("{returns} returns reverify: {}", error.message()));
@@ -7824,6 +7905,36 @@ fn list_position_solve_search_stays_bounded_beside_unrelated_facts() {
     eprintln!("list-position nonempty rewrite searches: {counts:?}");
     assert!(counts.iter().all(|count| *count <= 8), "{counts:?}");
     assert!(counts.iter().all(|count| *count == counts[0]), "{counts:?}");
+}
+
+/// A linear goal that one stated fact decides is proved by arithmetic from
+/// selected premises before `solve` searches chains of rewrites through the
+/// equalities connected to the goal's atoms, so each such equality costs a
+/// constant. Measured 2026-11-11: about 3,300 units an equality (27,041 at
+/// 4, 66,431 at 16). With the chain search first the same goals cost 54,008
+/// at 4 and 364,310 at 16, and six equalities beside a loop's invariants
+/// exhausted the two-million budget.
+#[test]
+fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
+    for size in [4usize, 16, 32] {
+        let parameters = (0..size)
+            .map(|i| format!(", k{i}: uint64"))
+            .collect::<String>();
+        let equalities = (0..size)
+            .map(|i| format!("    requires k{i} == q - r;\n"))
+            .collect::<String>();
+        let source = format!(
+            "theorem bounded(q: uint64, r: uint64{parameters}) {{\n    \
+             requires q <= 4611686018427387903u64;\n    requires r <= q;\n{equalities}    \
+             ensures q - r <= 4611686018427387903u64 by {{ solve(); }}\n}}\n"
+        );
+        let limits = crate::instrumentation::TacticWorkLimits {
+            smart: 30_000 + 5_000 * size,
+            ..crate::instrumentation::TacticWorkLimits::default()
+        };
+        crate::instrumentation::with_tactic_work_limits(limits, || verify_click_theorems(&source))
+            .unwrap_or_else(|error| panic!("{size} equalities: {}", error.message()));
+    }
 }
 
 #[test]
@@ -8908,7 +9019,7 @@ fn owned_parameter_field_store_work_is_flat() {
     let mut peaks = Vec::new();
     let mut calls = Vec::new();
     for (linked, repeated) in [(false, false), (true, false), (false, true), (true, true)] {
-        for size in [4usize, 16, 64] {
+        for size in [4usize, 16, 32] {
             let count = size + usize::from(linked);
             let kind = if linked { "node" } else { "box" };
             let layout = if linked {

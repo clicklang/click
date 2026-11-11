@@ -28,6 +28,7 @@ static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 pub mod cli;
 pub mod docs;
+mod id_hash;
 pub mod instrumentation;
 pub mod kernel;
 pub mod languages;

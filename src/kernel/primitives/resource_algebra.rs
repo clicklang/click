@@ -4119,11 +4119,17 @@ impl ResourceContext {
                                 || (pointer.block == guard.base.block
                                     && value.byte_width() == guard.cell_width
                                     && pointer
-                                        .element_index_from_base_with_width(
+                                        .shared_element_index_from_base_with_width(
                                             &guard.base,
                                             guard.cell_width,
                                         )
-                                        .is_some_and(|index| iterated.holes().contains(&index)));
+                                        .is_some_and(|index| {
+                                            iterated.holes().iter().any(|hole| {
+                                                MachineOperandView::Legacy(hole)
+                                                    .retain(MachineIntegerType::Int32)
+                                                    == index
+                                            })
+                                        }));
                             if !keeps {
                                 dropped.push(fact);
                             }
@@ -7997,8 +8003,8 @@ enum ResourceNormalizationKey {
     /// Every rooted token or composite of one shape, for the facts whose
     /// first argument is not such a pointer.
     ExactShapeRootedAll(ResourceFamily, String, usize),
-    MemoryStart(MemoryBaseRoot, bool, MachineTerm),
-    MemoryEnd(MemoryBaseRoot, bool, MachineTerm),
+    MemoryStart(MemoryBaseRoot, bool, SharedMachineIntegerTerm),
+    MemoryEnd(MemoryBaseRoot, bool, SharedMachineIntegerTerm),
     // Native adjacency retains the exact base, width and full endpoint.
     MemoryNativeStart(Pointer, u32, bool, MachineTerm),
     MemoryNativeEnd(Pointer, u32, bool, MachineTerm),
@@ -8023,14 +8029,20 @@ enum ResourceNormalizationKey {
 /// without its displacement), so a piece a call returns over `x + i` or
 /// `x + 1` meets the pieces of `x` it abuts. The key only proposes a pair;
 /// [`merge_memory_ranges`] decides it exactly.
-fn memory_normalization_position(range: &CMemoryRange, bound: &MachineTerm) -> MachineTerm {
-    let byte_position = || -> Option<MachineTerm> {
+fn memory_normalization_position(
+    range: &CMemoryRange,
+    bound: &MachineTerm,
+) -> SharedMachineIntegerTerm {
+    let byte_position = || -> Option<SharedMachineIntegerTerm> {
         let base = range.base().offset.as_const()?;
         let elements = signed_bitvector_constant(bound)?;
         let byte = base.checked_add(elements.checked_mul(i64::from(range.element_width()))?)?;
-        Some(MachineTerm::constant(i32::try_from(byte).ok()? as u32))
+        Some(
+            MachineOperandView::Legacy(&MachineTerm::constant(i32::try_from(byte).ok()? as u32))
+                .retain(MachineIntegerType::Int32),
+        )
     };
-    let root_position = || -> Option<MachineTerm> {
+    let root_position = || -> Option<SharedMachineIntegerTerm> {
         let (block, atom) = memory_base_root(range.base());
         let root = Pointer {
             block,
@@ -8044,14 +8056,20 @@ fn memory_normalization_position(range: &CMemoryRange, bound: &MachineTerm) -> M
                 .base()
                 .exact_element_delta_from_base(&root, range.element_width(), None)?;
         let constant = i32::try_from(delta.constant).ok()? as u32;
-        Some(MachineTerm::add(
-            MachineTerm::add(delta.index, bound.clone()),
-            MachineTerm::constant(constant),
+        Some(crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Add,
+            crate::kernel::assumptions::index_binary(
+                MachineBinaryOp::Add,
+                delta.index.operand_view(),
+                MachineOperandView::Legacy(bound),
+            )
+            .operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::constant(constant)),
         ))
     };
     byte_position()
         .or_else(root_position)
-        .unwrap_or_else(|| bound.clone())
+        .unwrap_or_else(|| MachineOperandView::Legacy(bound).retain(MachineIntegerType::Int32))
 }
 
 /// Constant endpoints also meet in bytes relative to a symbolic object root.
@@ -8071,7 +8089,9 @@ fn memory_normalization_relative_byte_position(
             let delta = range.base().exact_element_delta_from_base(&root, 1, None)?;
             delta
                 .constant
-                .checked_add(signed_bitvector_constant(&delta.index)?)?
+                .checked_add(crate::kernel::assumptions::signed_index_constant(
+                    delta.index.operand_view(),
+                )?)?
         }
         None => range.base().offset.as_const()?,
     };
@@ -9942,51 +9962,6 @@ fn memory_resource_fact_permits_write(
     }
 }
 
-/// The partition check of a block holding many owned ranges at distinct
-/// bases (a program-entry struct array is one range per field of every
-/// element) compares candidate pairs. Each candidate charges a unit; each
-/// range is also a checkpoint, so an exhausted run stops after one range's
-/// candidates instead of finishing every pair past its budget.
-#[cfg(test)]
-#[test]
-#[ignore = "nightly: 4s in the parallel gate"]
-fn a_many_range_partition_check_stops_at_an_exhausted_run_budget() {
-    let ranges = 1_000u32;
-    let block = CMemory::global_pointer("pool").block;
-    let mut context = ResourceContext::new();
-    for index in 0..ranges {
-        context = context.unchecked_with_fact(CResourceFact::own_memory(
-            CMemoryRange::new_with_element_width(
-                Pointer {
-                    block: block.clone(),
-                    offset: PointerOffsetTerm::Constant(i64::from(index) * 4),
-                },
-                0u32.into(),
-                1u32.into(),
-                4,
-            ),
-        ));
-    }
-    let assumptions = PureFactContext::new();
-    let ((), unbounded) = crate::instrumentation::measure_deterministic_work(|| {
-        assert!(context.validity_error(&assumptions).is_none());
-    });
-    let limit = 10_000;
-    assert!(
-        unbounded > 50 * limit,
-        "the check must cost far more than the budget: {unbounded}"
-    );
-    let used = crate::instrumentation::with_run_work_limit(limit, || {
-        assert!(context.validity_error(&assumptions).is_none());
-        assert!(crate::instrumentation::deadline_exceeded());
-        crate::instrumentation::run_work_used().expect("a run budget is installed")
-    });
-    assert!(
-        used <= limit + 4 * ranges as usize,
-        "the check spent {used} units under a {limit}-unit budget (unbounded {unbounded})"
-    );
-}
-
 #[cfg(test)]
 #[test]
 fn owned_cell_access_uses_transitive_graph_address_equality() {
@@ -10023,51 +9998,69 @@ fn range_endpoint_terms_equal(
     right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    if left == right {
-        return true;
-    }
-    fn loads_bridged(
-        left: &MachineTerm,
-        right: &MachineTerm,
+    range_endpoint_views_equal(
+        MachineOperandView::Legacy(left),
+        MachineOperandView::Legacy(right),
+        assumptions,
+    )
+}
+
+fn range_endpoint_views_equal(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    fn walk(
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
         assumptions: &PureFactContext,
+        memo: &mut BTreeMap<(SharedMachineIntegerTerm, SharedMachineIntegerTerm), bool>,
     ) -> bool {
-        if let (
-            MachineTerm::MemoryLoad(_, left_pointer, left_kind),
-            MachineTerm::MemoryLoad(_, right_pointer, right_kind),
-        ) = (left, right)
-            && left_pointer == right_pointer
-            && left_kind == right_kind
-        {
-            return crate::kernel::explicit_atomic_equality_from_memory_derivations(
+        let key = (
+            left.retain(MachineIntegerType::Int32),
+            right.retain(MachineIntegerType::Int32),
+        );
+        if key.0 == key.1 {
+            return true;
+        }
+        if let Some(answer) = memo.get(&key) {
+            return *answer;
+        }
+        let bridged = match (left.read(), right.read()) {
+            (Some((_, lp, lk)), Some((_, rp, rk))) if lp == rp && lk == rk => {
+                let a = left.read_source().expect("selected read");
+                let b = right.read_source().expect("selected read");
+                crate::kernel::explicit_atomic_equality_from_memory_derivations(&a, &b, assumptions)
+            }
+            _ => false,
+        };
+        let structural = bridged
+            || match (left.binary(), right.binary()) {
+                (
+                    Some((MachineIntegerType::Int32, lo, [la, lb])),
+                    Some((MachineIntegerType::Int32, ro, [ra, rb])),
+                ) if lo == ro
+                    && matches!(
+                        lo,
+                        MachineBinaryOp::Add
+                            | MachineBinaryOp::Subtract
+                            | MachineBinaryOp::Multiply
+                    ) =>
+                {
+                    walk(la, ra, assumptions, memo) && walk(lb, rb, assumptions, memo)
+                }
+                _ => false,
+            };
+        let answer = structural
+            || crate::kernel::reasoning::int32_operand_values_equal_for_memory_resolution(
                 left,
                 right,
                 assumptions,
             );
-        }
-        false
+        memo.insert(key, answer);
+        answer
     }
-    if loads_bridged(left, right, assumptions) {
-        return true;
-    }
-    // Structural descent covers the common affine endpoint forms
-    // (base + load, load - base, load * scale).
-    let structurally_bridged = match (left, right) {
-        (binary_term!(Int32, Add, left_a, left_b), binary_term!(Int32, Add, right_a, right_b))
-        | (
-            binary_term!(Int32, Subtract, left_a, left_b),
-            binary_term!(Int32, Subtract, right_a, right_b),
-        )
-        | (
-            binary_term!(Int32, Multiply, left_a, left_b),
-            binary_term!(Int32, Multiply, right_a, right_b),
-        ) => {
-            range_endpoint_terms_equal(left_a, right_a, assumptions)
-                && range_endpoint_terms_equal(left_b, right_b, assumptions)
-        }
-        _ => false,
-    };
-    structurally_bridged
-        || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
+    walk(left, right, assumptions, &mut BTreeMap::new())
 }
 
 /// Pointer bases compare with the same load bridging as range endpoints:
@@ -10106,7 +10099,11 @@ fn pointer_offsets_equal_with_load_bridging(
             },
         ) => {
             left_width == right_width
-                && range_endpoint_terms_equal(left_value, right_value, assumptions)
+                && range_endpoint_views_equal(
+                    left_value.operand_view(),
+                    right_value.operand_view(),
+                    assumptions,
+                )
         }
         _ => false,
     }
@@ -10318,7 +10315,10 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     let Some(index) = delta.as_index_term() else {
         return false;
     };
-    if let Some(index) = index.as_const().map(|index| index as i32)
+    if let Some(index) = index
+        .operand_view()
+        .word32_constant()
+        .map(|index| index as i32)
         && index >= 0
         && let Some(next) = index.checked_add(1)
         && assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
@@ -10328,10 +10328,10 @@ pub(in crate::kernel) fn memory_range_covers_interior_element(
     {
         return true;
     }
-    crate::kernel::assumptions::bitvector_index_in_range_shallow(
-        &index,
-        available.start(),
-        available.end(),
+    crate::kernel::assumptions::bitvector_index_in_range_shallow_views(
+        index.operand_view(),
+        MachineOperandView::Legacy(available.start()),
+        MachineOperandView::Legacy(available.end()),
         assumptions,
     )
 }
@@ -10870,8 +10870,11 @@ fn exact_constant_base_delta(
     if delta.is_constant() {
         return Some(delta.constant);
     }
-    crate::kernel::assumptions::exact_signed_constant(&delta.index, assumptions?)?
-        .checked_add(delta.constant)
+    crate::kernel::assumptions::exact_signed_constant_view(
+        delta.index.operand_view(),
+        assumptions?,
+    )?
+    .checked_add(delta.constant)
 }
 
 /// Containment decided by arithmetic alone, for two ranges whose endpoints are
@@ -10922,19 +10925,29 @@ fn memory_ranges_structurally_disjoint(left: &CMemoryRange, right: &CMemoryRange
     }
     let Some(base_delta) = right
         .base()
-        .element_index_from_base_with_width(left.base(), left.element_width())
+        .shared_element_index_from_base_with_width(left.base(), left.element_width())
     else {
         return false;
     };
     let (Some(left_start), Some(left_end), Some(right_start), Some(right_end)) = (
         left.constant_start().map(|value| value as i32),
         left.constant_end().map(|value| value as i32),
-        MachineTerm::add(base_delta.clone(), right.start().clone())
-            .as_const()
-            .map(|value| value as i32),
-        MachineTerm::add(base_delta, right.end().clone())
-            .as_const()
-            .map(|value| value as i32),
+        crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Add,
+            base_delta.operand_view(),
+            MachineOperandView::Legacy(right.start()),
+        )
+        .operand_view()
+        .word32_constant()
+        .map(|value| value as i32),
+        crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Add,
+            base_delta.operand_view(),
+            MachineOperandView::Legacy(right.end()),
+        )
+        .operand_view()
+        .word32_constant()
+        .map(|value| value as i32),
     ) else {
         return false;
     };
@@ -10962,8 +10975,8 @@ fn memory_ranges_structurally_disjoint(left: &CMemoryRange, right: &CMemoryRange
 /// already reads them; anything else has to be decided from the context, as
 /// `p[0..n]` is under `0 <= n`.
 fn consumed_range_is_well_formed(
-    start: &MachineTerm,
-    end: &MachineTerm,
+    start: MachineOperandView<'_>,
+    end: MachineOperandView<'_>,
     assumptions: &PureFactContext,
 ) -> bool {
     // An affine constant difference is the true one only modulo 2^32, so
@@ -10973,14 +10986,15 @@ fn consumed_range_is_well_formed(
     // may occupy; anything else falls through to the decision procedure rather
     // than answering from arithmetic that wrapped.
     if let Some(difference) =
-        crate::kernel::assumptions::affine_bitvector_difference_constant(end, start)
+        crate::kernel::assumptions::affine_bitvector_difference_constant_views(end, start)
         && (0..=i64::from(i32::MAX)).contains(&difference)
     {
         return true;
     }
-    assumptions.decide(&ConditionTerm::signed_less_equal(
-        start.clone(),
-        end.clone(),
+    assumptions.decide(&crate::kernel::assumptions::index_comparison(
+        CompareRelation::LessEqual,
+        start,
+        end,
     )) == Some(true)
 }
 
@@ -10999,27 +11013,23 @@ fn consumed_range_is_well_formed(
 /// else is a modular add of a symbolic index, and the one thing that makes it
 /// the sum is that it does not carry — which is what it asks.
 fn exact_shifted_endpoint(
-    delta: &MachineTerm,
-    endpoint: &MachineTerm,
+    delta: MachineOperandView<'_>,
+    endpoint: MachineOperandView<'_>,
     assumptions: &PureFactContext,
-) -> Option<MachineTerm> {
-    if delta == &MachineTerm::constant(0) {
-        return Some(endpoint.clone());
+) -> bool {
+    if delta.word32_constant() == Some(0) || endpoint.word32_constant() == Some(0) {
+        return true;
     }
-    if endpoint == &MachineTerm::constant(0) {
-        return Some(delta.clone());
+    if let (Some(a), Some(b)) = (delta.word32_constant(), endpoint.word32_constant()) {
+        return i32::try_from(i64::from(a as i32) + i64::from(b as i32)).is_ok();
     }
-    if let (Some(delta), Some(endpoint)) = (delta.as_const(), endpoint.as_const()) {
-        let sum = i64::from(delta as i32) + i64::from(endpoint as i32);
-        return i32::try_from(sum)
-            .ok()
-            .map(|sum| MachineTerm::constant(sum as u32));
-    }
-    (assumptions.decide(&ConditionTerm::signed_add_overflows(
-        delta.clone(),
-        endpoint.clone(),
-    )) == Some(false))
-    .then(|| MachineTerm::add(delta.clone(), endpoint.clone()))
+    let query = crate::kernel::machine_integer::definedness::OverflowQueryView::from_operands(
+        MachineIntegerType::Int32,
+        crate::kernel::machine_integer::Operation::Add,
+        [delta, endpoint],
+    )
+    .expect("int32 addition");
+    assumptions.decide_overflow_query(&query) == Some(false)
 }
 
 /// The wide lookup key of an `Int32` range: its [`wide_normalization_form`],
@@ -11248,41 +11258,82 @@ pub(in crate::kernel) fn split_memory_range(
         &available_start_pointer,
         assumptions,
     ) {
-        Some(available.start().clone())
+        Some(MachineOperandView::Legacy(available.start()).retain(MachineIntegerType::Int32))
     } else {
         required
             .base()
-            .element_index_from_base_with_width(available.base(), available.element_width())
+            .shared_element_index_from_base_with_width(available.base(), available.element_width())
             .or_else(|| {
                 pointer_bases_equal_with_load_bridging(
                     required.base(),
                     available.base(),
                     assumptions,
                 )
-                .then_some(MachineTerm::constant(0))
+                .then(|| {
+                    MachineOperandView::Legacy(&MachineTerm::constant(0))
+                        .retain(MachineIntegerType::Int32)
+                })
             })
     }?;
-    let required_start = MachineTerm::add(base_delta.clone(), required.start().clone());
-    let required_end = MachineTerm::add(base_delta.clone(), required.end().clone());
-    let keeps_prefix =
-        !bitvector_terms_proven_equal(available.start(), &required_start, assumptions)
-            && !range_endpoint_terms_equal(available.start(), &required_start, assumptions);
-    let keeps_suffix = !bitvector_terms_proven_equal(&required_end, available.end(), assumptions)
-        && !range_endpoint_terms_equal(&required_end, available.end(), assumptions);
+    let required_start = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        base_delta.operand_view(),
+        MachineOperandView::Legacy(required.start()),
+    );
+    let required_end = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        base_delta.operand_view(),
+        MachineOperandView::Legacy(required.end()),
+    );
+    let keeps_prefix = assumptions.decide(&crate::kernel::assumptions::index_comparison(
+        CompareRelation::Equal,
+        MachineOperandView::Legacy(available.start()),
+        required_start.operand_view(),
+    )) != Some(true)
+        && !range_endpoint_views_equal(
+            MachineOperandView::Legacy(available.start()),
+            required_start.operand_view(),
+            assumptions,
+        );
+    let keeps_suffix = assumptions.decide(&crate::kernel::assumptions::index_comparison(
+        CompareRelation::Equal,
+        required_end.operand_view(),
+        MachineOperandView::Legacy(available.end()),
+    )) != Some(true)
+        && !range_endpoint_views_equal(
+            required_end.operand_view(),
+            MachineOperandView::Legacy(available.end()),
+            assumptions,
+        );
     // A join that becomes a residue's own bound has to be the sum and not its
     // residue; see `exact_shifted_endpoint`. A join that bounds no residue is
     // never read as a position — it has just been shown equal to an endpoint
     // the owner already carried — so it owes nothing.
-    if keeps_prefix && exact_shifted_endpoint(&base_delta, required.start(), assumptions).is_none()
+    if keeps_prefix
+        && !exact_shifted_endpoint(
+            base_delta.operand_view(),
+            MachineOperandView::Legacy(required.start()),
+            assumptions,
+        )
     {
         return None;
     }
-    if keeps_suffix && exact_shifted_endpoint(&base_delta, required.end(), assumptions).is_none() {
+    if keeps_suffix
+        && !exact_shifted_endpoint(
+            base_delta.operand_view(),
+            MachineOperandView::Legacy(required.end()),
+            assumptions,
+        )
+    {
         return None;
     }
     if keeps_prefix
         && keeps_suffix
-        && !consumed_range_is_well_formed(&required_start, &required_end, assumptions)
+        && !consumed_range_is_well_formed(
+            required_start.operand_view(),
+            required_end.operand_view(),
+            assumptions,
+        )
     {
         return None;
     }
@@ -11291,13 +11342,13 @@ pub(in crate::kernel) fn split_memory_range(
         residues.push(available.with_bounds(
             available.base().clone(),
             available.start().clone(),
-            required_start.clone(),
+            required_start.structural_value().clone(),
         ));
     }
     if keeps_suffix {
         residues.push(available.with_bounds(
             available.base().clone(),
-            required_end,
+            required_end.structural_value().clone(),
             available.end().clone(),
         ));
     }
@@ -11396,23 +11447,33 @@ fn memory_ranges_proven_overlapping_without_aliases(
     }
     let Some(base_delta) = right
         .base()
-        .element_index_from_base_with_width(left.base(), left.element_width())
+        .shared_element_index_from_base_with_width(left.base(), left.element_width())
     else {
         return false;
     };
-    let right_start = MachineTerm::add(base_delta.clone(), right.start().clone());
-    let right_end = MachineTerm::add(base_delta, right.end().clone());
+    let right_start = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        base_delta.operand_view(),
+        MachineOperandView::Legacy(right.start()),
+    );
+    let right_end = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        base_delta.operand_view(),
+        MachineOperandView::Legacy(right.end()),
+    );
 
     // An explicit separation only vetoes an overlap the endpoints prove, and
     // a valid composition proves none: ask it last, so the ordinary answer
     // (no proven overlap) never pays for the separation search.
-    assumptions.decide(&ConditionTerm::signed_less_than(
-        left.start().clone(),
-        right_end,
+    assumptions.decide(&crate::kernel::assumptions::index_comparison(
+        CompareRelation::LessThan,
+        MachineOperandView::Legacy(left.start()),
+        right_end.operand_view(),
     )) == Some(true)
-        && assumptions.decide(&ConditionTerm::signed_less_than(
-            right_start,
-            left.end().clone(),
+        && assumptions.decide(&crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            right_start.operand_view(),
+            MachineOperandView::Legacy(left.end()),
         )) == Some(true)
         && (!use_separation
             || !assumptions
@@ -12044,7 +12105,7 @@ fn memory_range_rebased(
     let start = if delta.is_constant() {
         MachineTerm::constant(i32::try_from(offset).ok()? as u32)
     } else if offset == 0 {
-        delta.index
+        delta.index.structural_value().clone()
     } else {
         return None;
     };

@@ -169,8 +169,22 @@ impl Proposition {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> Self {
-        let a = IntegerTerm::from_machine(format, left.clone()).expect("arithmetic operand");
-        let b = IntegerTerm::from_machine(format, right.clone()).expect("arithmetic operand");
+        Self::signed_arithmetic_domain_views(
+            format,
+            op,
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(crate) fn signed_arithmetic_domain_views(
+        format: MachineIntegerType,
+        op: MachineBinaryOp,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Self {
+        let a = left.observe(format).expect("arithmetic operand");
+        let b = right.observe(format).expect("arithmetic operand");
         let exact = match op {
             MachineBinaryOp::Add => IntegerTerm::add(a, b),
             MachineBinaryOp::Subtract => IntegerTerm::subtract(a, b),

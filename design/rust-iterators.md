@@ -4,12 +4,12 @@ Status: step 1 in progress. `library/rust/chunks_exact.click` declares
 `ChunksExact<T>` with `len`, `nth`, `remainder` and `after_next` and the
 axioms relating them, and a proof reads a value with those methods. A Rust
 unit with `"iterators": "library"` imports its `chunks_exact` iterators as
-values of that type: construction, `remainder()`, and loops that count or
-rank by `iter.len()` are proved from the contract. A loop that reads through
-its chunk is not yet: the chunk's data pointer is a library function's
-result, and a read through it cannot be placed in the slice's view (open
-question 1). The unit option is temporary and is removed with the old model
-(migration step 4). The loop's starting iterator is spelled with the
+values of that type, and construction, `remainder()` and loops, including
+one that reads through each chunk, are proved from the contract
+(`tests/rust_import/library_chunks_loop.click`). The loop fact is a library
+function, `after(it, k)`, the iterator after `k` calls of `next()`: a loop
+carries `iter == start.after(iterations)`. The unit option is
+temporary and is removed with the old model (migration step 4). The loop's starting iterator is spelled with the
 existing snapshot form, `at(loop(i).entry, iter)` (open question 2).
 
 ## Problem
@@ -66,6 +66,15 @@ against them. That is not part of this proposal.
 
   These facts follow from the `next` law by induction. No iterator type
   appears in them.
+
+  As built, the loop fact is not a verifier rule. Each type's library file
+  declares `after(it, k)`, `it` after `k` calls of `next()`, with the
+  axioms `after(it, 0) == it`, `after_next(after(it, k)) == after(it, k +
+  1)`, `len(after(it, k)) == len(it) - k` and `nth(after(it, k), j) ==
+  nth(it, k + j)`. A loop states `iter == start.after(iterations)` as an
+  ordinary invariant; the second axiom preserves it across a pass and the
+  last gives the loop variable. The cost is one function and four axioms a
+  type; the gain is that nothing in Click knows about iterator loops.
 
 Nothing in this model knows what any particular iterator yields. That is
 what the library contracts are for.
@@ -128,13 +137,12 @@ The per-kind accessor table, `RustIteratorKind` and the old spellings
    length, inside an `Option`. Library spec functions that return pointers
    already exist (`examples/rbtree` returns `struct rb_node*`). Carrying
    `Option<&[u8]>` through the importer as a library value is unproven, and
-   may need kernel support. Found so far: the importer keeps the `Option`
-   as its tag, pointer and length, read from `it.nth(0)`, which needs no
-   kernel support. Reading through that pointer does. It is the function
-   result `slice::as_ptr(it.nth(0))`, equal to `bytes + k * n` by a cited
-   axiom, and the kernel places a read in a view by the pointer's own
-   block; an equality places it only in a view of constant length. The same
-   holds in C for any pointer a contract returns as a function's result.
+   may need kernel support. Settled: none is needed. The importer keeps the
+   `Option` as its tag, pointer and length, read from `it.nth(0)`. The
+   pointer is the function result `slice::as_ptr(it.nth(0))`, equal to
+   `bytes + k * n` by a cited axiom, and a read through it is placed in the
+   slice's view from that equality and the offset's bound as a machine
+   value.
 2. **Naming `start`.** The loop fact needs the iterator's value at loop
    entry. Candidates:
    - `loop(i).start`, a new built-in like `iterations`;

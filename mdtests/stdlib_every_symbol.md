@@ -1913,6 +1913,31 @@ theorem use_chunks_exact(s: Slice<uint8>, it: ChunksExact<uint8>, k: uint64) {
     }
 }
 
+theorem use_chunks_exact_after(it: ChunksExact<uint8>, k: Integer, j: uint64, m: uint64) {
+    requires 0 <= k;
+    requires k < to_integer(chunks_exact::len(it));
+    requires to_integer(m) == k + to_integer(j);
+    requires m < chunks_exact::len(it);
+    ensures chunks_exact::after(it, 0) == it by {
+        apply(chunks_exact::after_zero(it));
+    }
+    ensures chunks_exact::after_next(chunks_exact::after(it, k)) == chunks_exact::after(it, k + 1) by {
+        apply(chunks_exact::after_next_after(it, k));
+    }
+    ensures to_integer(chunks_exact::len(chunks_exact::after(it, k)))
+        == to_integer(chunks_exact::len(it)) - k by {
+        have k <= to_integer(chunks_exact::len(it));
+        apply(chunks_exact::len_after(it, k));
+    }
+    ensures chunks_exact::nth(chunks_exact::after(it, k), j) == chunks_exact::nth(it, m) by {
+        apply(chunks_exact::nth_after(it, k, j, m));
+    }
+    ensures chunks_exact::remainder(chunks_exact::after(it, k)) == chunks_exact::remainder(it) by {
+        have k <= to_integer(chunks_exact::len(it));
+        apply(chunks_exact::remainder_after(it, k));
+    }
+}
+
 theorem use_subslice_len(a: uint64, b: uint64, n: uint64) {
     requires a <= b;
     requires b <= n;

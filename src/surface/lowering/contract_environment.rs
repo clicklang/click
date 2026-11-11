@@ -227,6 +227,12 @@ pub(in crate::surface) fn c_value_matches_allocation_pointer(value: &CValue) -> 
     )
 }
 
+/// An `allocation` byte count: an `int32` or a `uint64` heap extent
+/// (`design/heap-extents.md`, D4).
+pub(in crate::surface) fn c_value_matches_allocation_extent(value: &CValue) -> bool {
+    matches!(value.numeric_value(), CValue::Int32(_) | CValue::UInt64(_))
+}
+
 #[cfg(test)]
 pub(in crate::surface) fn offset_pointer_by_int32_elements(
     pointer: Pointer,

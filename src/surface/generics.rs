@@ -82,6 +82,12 @@ pub(super) fn infer_type_substitution(
     let allowed = type_parameters.iter().map(String::as_str).collect();
     let mut substitution = BTreeMap::new();
     for (parameter, argument) in parameter_types.into_iter().zip(argument_types) {
+        // An `Integer` parameter names no type parameter, so it decides
+        // none, and its argument is checked as an `Integer` where the call
+        // is: an unsuffixed literal there is read as one, not as `int32`.
+        if parameter == ClickType::Integer {
+            continue;
+        }
         if let Some(argument) = argument {
             unify_click_type(&parameter, &argument, &allowed, &mut substitution).map_err(
                 |message| format!("cannot infer type arguments for {kind} `{name}`: {message}"),

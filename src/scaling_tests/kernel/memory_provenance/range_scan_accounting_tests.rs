@@ -43,6 +43,7 @@ fn disjoint_write_range_visits_are_charged_even_for_distinct_blocks() {
     let overlapping =
         CMemoryRange::new_with_element_width(pointer.clone(), 0u32.into(), 4u32.into(), 1);
     let refusal_work = |size| {
+        let _session = crate::kernel::VerificationSession::enter();
         crate::instrumentation::measure_deterministic_work(|| {
             assert!(
                 typed_ranges_disjoint_from_pointer_evidence(

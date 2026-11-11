@@ -1529,7 +1529,7 @@ impl Renderer<'_> {
                 self.push(", base=");
                 self.pointer(allocation_base);
                 self.push(", bytes=");
-                self.bitvector(bytes);
+                self.bitvector(bytes.bytes());
                 self.push(")");
             }
             Proposition::CExpressionEvaluates {

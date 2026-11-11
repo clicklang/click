@@ -51,7 +51,7 @@
 //! supplies no evidence for a subsequent write.
 
 use crate::kernel::{CompareRelation, MachineIntegerType};
-use crate::kernel::{bits32_constant, constant_u32, int32_constant};
+use crate::kernel::{bits32_constant, constant_u32};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -1047,8 +1047,11 @@ struct LinearOffset {
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 enum OffsetAtom {
     Variable(Variable),
-    Int32(MachineTerm),
-    Int64 { value: MachineTerm, unsigned: bool },
+    Int32(SharedMachineIntegerTerm),
+    Int64 {
+        value: SharedMachineIntegerTerm,
+        unsigned: bool,
+    },
 }
 
 impl LinearOffset {
@@ -1066,22 +1069,25 @@ impl LinearOffset {
                     pending.push((left, sign));
                     pending.push((right, sign));
                 }
-                PointerOffsetTerm::Int32Scaled { value, byte_width } => match value.as_const() {
-                    Some(value) => {
-                        linear.constant += sign * i128::from(value as i32) * i128::from(*byte_width)
+                PointerOffsetTerm::Int32Scaled { value, byte_width } => {
+                    match value.operand_view().word32_constant() {
+                        Some(value) => {
+                            linear.constant +=
+                                sign * i128::from(value as i32) * i128::from(*byte_width)
+                        }
+                        None => linear.add_atom(
+                            OffsetAtom::Int32(value.clone()),
+                            sign * i128::from(*byte_width),
+                        ),
                     }
-                    None => linear.add_atom(
-                        OffsetAtom::Int32(value.as_ref().clone()),
-                        sign * i128::from(*byte_width),
-                    ),
-                },
+                }
                 PointerOffsetTerm::Int64Scaled {
                     value,
                     byte_width,
                     unsigned,
                 } => linear.add_atom(
                     OffsetAtom::Int64 {
-                        value: value.as_ref().clone(),
+                        value: value.clone(),
                         unsigned: *unsigned,
                     },
                     sign * i128::from(*byte_width),
@@ -1109,7 +1115,7 @@ impl LinearOffset {
     /// The form `element_width * sext(index) + constant`, when this is one:
     /// no atom at all (index `0`), or exactly one `int32` atom whose
     /// coefficient is the element width.
-    fn as_scaled_index(&self, element_width: u32) -> Option<(MachineTerm, i128)> {
+    fn as_scaled_index(&self, element_width: u32) -> Option<(SharedMachineIntegerTerm, i128)> {
         match self.atoms.len() {
             // A constant delta names a constant index: the whole elements it
             // spans, when that is an `int32`, and the bytes left over.
@@ -1118,7 +1124,10 @@ impl LinearOffset {
                 let index = self.constant.div_euclid(width);
                 let index = i32::try_from(index).ok()?;
                 Some((
-                    MachineTerm::constant(index as u32),
+                    SharedMachineIntegerTerm::intern(
+                        MachineIntegerType::Int32,
+                        MachineTerm::constant(index as u32),
+                    ),
                     self.constant - i128::from(index) * width,
                 ))
             }
@@ -1142,7 +1151,7 @@ fn scaled_index_from(
     pointer: &Pointer,
     base: &Pointer,
     element_width: u32,
-) -> Option<(MachineTerm, i128)> {
+) -> Option<(SharedMachineIntegerTerm, i128)> {
     if pointer.block != base.block {
         return None;
     }
@@ -1158,52 +1167,57 @@ fn proven_signed_le(
     right: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    crate::instrumentation::record_deterministic_work(1);
-    if SharedMachineIntegerTerm::index(MachineIntegerType::Int32, left.clone())
-        == SharedMachineIntegerTerm::index(MachineIntegerType::Int32, right.clone())
-    {
-        return true;
-    }
-    if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
-        return (left as i32) <= (right as i32);
-    }
-    assumptions.exact_condition_value(&ConditionTerm::Compare {
-        format: MachineIntegerType::Int32,
-        relation: CompareRelation::LessEqual,
-        left: Box::new(left.clone()),
-        right: Box::new(right.clone()),
-    }) == Some(true)
-        || assumptions.exact_condition_value(&ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
-        }) == Some(true)
+    proven_signed_le_views(
+        MachineOperandView::Legacy(left),
+        MachineOperandView::Legacy(right),
+        assumptions,
+    )
 }
 
-/// `left < right` as signed `int32`, from constants or one exact fact.
-fn proven_signed_lt(
-    left: &MachineTerm,
-    right: &MachineTerm,
+fn proven_signed_le_views(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
     assumptions: &PureFactContext,
 ) -> bool {
     crate::instrumentation::record_deterministic_work(1);
-    if let (Some(left), Some(right)) = (left.as_const(), right.as_const()) {
+    if left.retain(MachineIntegerType::Int32) == right.retain(MachineIntegerType::Int32) {
+        return true;
+    }
+    if let (Some(left), Some(right)) = (left.word32_constant(), right.word32_constant()) {
+        return (left as i32) <= (right as i32);
+    }
+    [CompareRelation::LessEqual, CompareRelation::LessThan]
+        .into_iter()
+        .any(|relation| {
+            assumptions.selected_comparison_value(&crate::kernel::assumptions::index_comparison(
+                relation, left, right,
+            )) == Some(true)
+        })
+}
+
+/// `left < right` from constants or one exact selected fact.
+fn proven_signed_lt_views(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    crate::instrumentation::record_deterministic_work(1);
+    if let (Some(left), Some(right)) = (left.word32_constant(), right.word32_constant()) {
         return (left as i32) < (right as i32);
     }
-    left != right
-        && (assumptions.exact_condition_value(&ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
-            relation: CompareRelation::LessThan,
-            left: Box::new(left.clone()),
-            right: Box::new(right.clone()),
-        }) == Some(true)
-            || assumptions.exact_condition_value(&ConditionTerm::Compare {
-                format: MachineIntegerType::Int32,
-                relation: CompareRelation::LessEqual,
-                left: Box::new(right.clone()),
-                right: Box::new(left.clone()),
-            }) == Some(false))
+    left.retain(MachineIntegerType::Int32) != right.retain(MachineIntegerType::Int32)
+        && (assumptions.selected_comparison_value(&crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            left,
+            right,
+        )) == Some(true)
+            || assumptions.selected_comparison_value(
+                &crate::kernel::assumptions::index_comparison(
+                    CompareRelation::LessEqual,
+                    right,
+                    left,
+                ),
+            ) == Some(false))
 }
 
 /// The interval reads no cell because its end is proven at or below its
@@ -1230,9 +1244,18 @@ fn access_misses_interval(
         // cell's first byte when `index >= end` and `constant >= 0`; ending at
         // or below the start cell's first byte when `index < start` and the
         // write fits in the cell it starts in (`constant + bytes <= width`).
-        let above = constant >= 0 && proven_signed_le(&interval.end, &index, assumptions);
+        let above = constant >= 0
+            && proven_signed_le_views(
+                MachineOperandView::Legacy(&interval.end),
+                index.operand_view(),
+                assumptions,
+            );
         let below = constant + i128::from(bytes) <= width
-            && proven_signed_lt(&index, &interval.start, assumptions);
+            && proven_signed_lt_views(
+                index.operand_view(),
+                MachineOperandView::Legacy(&interval.start),
+                assumptions,
+            );
         if above || below {
             return true;
         }
@@ -1261,8 +1284,9 @@ fn range_misses_interval(
         return false;
     }
     if written.element_width() == interval.element_width
-        && let Some((int32_constant!(0), 0)) =
-            scaled_index_from(written.base(), &interval.base, interval.element_width)
+        && scaled_index_from(written.base(), &interval.base, interval.element_width).is_some_and(
+            |(index, rest)| rest == 0 && index.operand_view().word32_constant() == Some(0),
+        )
     {
         // Same base and element width: the written cells are
         // `[written.start, written.end)` of the same array. The range must be
@@ -1320,9 +1344,8 @@ fn range_contains_interval(
         return false;
     }
     range.element_width() == interval.element_width
-        && matches!(
-            scaled_index_from(&interval.base, range.base(), interval.element_width),
-            Some((int32_constant!(0), 0))
+        && scaled_index_from(&interval.base, range.base(), interval.element_width).is_some_and(
+            |(index, rest)| rest == 0 && index.operand_view().word32_constant() == Some(0),
         )
         && proven_signed_le(range.start(), &interval.start, assumptions)
         && proven_signed_le(&interval.end, range.end(), assumptions)
@@ -1345,8 +1368,16 @@ fn range_contains_access(
     };
     constant >= 0
         && constant + i128::from(bytes) <= i128::from(width)
-        && proven_signed_le(range.start(), &index, assumptions)
-        && proven_signed_lt(&index, range.end(), assumptions)
+        && proven_signed_le_views(
+            MachineOperandView::Legacy(range.start()),
+            index.operand_view(),
+            assumptions,
+        )
+        && proven_signed_lt_views(
+            index.operand_view(),
+            MachineOperandView::Legacy(range.end()),
+            assumptions,
+        )
 }
 
 /// `inner` lies inside `outer`: the same base and element width and nested
@@ -1361,9 +1392,8 @@ fn range_contains_range(
         return false;
     }
     outer.element_width() == inner.element_width()
-        && matches!(
-            scaled_index_from(inner.base(), outer.base(), inner.element_width()),
-            Some((int32_constant!(0), 0))
+        && scaled_index_from(inner.base(), outer.base(), inner.element_width()).is_some_and(
+            |(index, rest)| rest == 0 && index.operand_view().word32_constant() == Some(0),
         )
         && proven_signed_le(inner.start(), inner.end(), assumptions)
         && proven_signed_le(outer.start(), inner.start(), assumptions)
