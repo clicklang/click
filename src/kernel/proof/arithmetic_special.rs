@@ -386,7 +386,6 @@ mod operand_identity;
 /// Compare only the bounded structural fragment accepted by `bitvector_payload`.
 /// This avoids recursive equality on attacker-controlled expression depth after
 /// the payload has already been charged.
-
 fn bitvector_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     operand_identity::equal(
         crate::kernel::MachineOperandView::Legacy(left),
