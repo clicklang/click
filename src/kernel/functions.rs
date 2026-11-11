@@ -14300,6 +14300,13 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     unfold: bool,
     selected_children: Option<&[(String, Variable)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    let _timing = (!unfold).then(|| {
+        crate::instrumentation::OperationTiming::new(
+            instance.name(),
+            "resource fold",
+            "resource instance: construct fold",
+        )
+    });
     rewrite_resource_instance_selecting_children_unspelled(
         state,
         instance,

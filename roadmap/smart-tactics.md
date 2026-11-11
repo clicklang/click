@@ -115,15 +115,22 @@ arithmetic migration fails `struct_array_element_expands_with_its_subscript`
 (the initialized-global sum has no round-tripping overflow-goal spelling) and
 `straight_line_assignments_cost_the_same_at_every_position` (work grows from
 2765 to 2885 across twelve assignments). Retain those controls for that slice.
-Ordinary named-resource folds at an execution frontier or a completed return
+Named-resource folds, including population members and authority controls,
 retain the selected exchange while the driver proves body obligations, then
-append that exchange with the proved context. Return paths retain their state endpoints as evidence
-is appended, so folds no longer recover them by walking history.
-Population/authority folds and failed preparations still retry after
-prerequisite proofs; remove that remaining recomputation separately. Keep the
-constructor-count and history-size completion controls in `prepared_named_fold_constructs_once` and
-`prepared_named_fold_completion_does_not_walk_history`, plus the return-path
-control `prepared_return_fold_constructs_once_without_recovering_history`.
+append it with the proved context. Operational composite wrapper folds retain
+their checked exchanges too. Both execution-frontier and completed-return
+paths use this completion boundary. Return paths retain their state endpoints
+as evidence is appended, so folds no longer recover them by walking history.
+Failed preparations still retry after prerequisite proofs. Legacy outcome folds
+that use only the contract-definition law (rather than an operational exchange)
+also retain their retry; inspect that route separately. Keep the constructor-count
+and history controls in `prepared_named_fold_constructs_once`,
+`prepared_named_fold_completion_does_not_walk_history`,
+`prepared_return_fold_constructs_once_without_recovering_history`, and
+`prepared_population_fold_constructs_once`. The population control covers named
+and legacy authority wrappers, before and after return, with expansion/replay
+and missing-premise/authority refusals.
+
 
 ## Operation map
 

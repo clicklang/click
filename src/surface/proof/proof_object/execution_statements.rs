@@ -1221,8 +1221,8 @@ impl<'a> Proof<'a> {
             Ok(candidate) => candidate,
             Err(_) => return proved.apply_primitive_step(step),
         };
-        // Named folds retain their selected exchange on live and returned paths.
-        // Population folds still use their existing preparation retry.
+        // Named folds and operational composite folds retain their selected exchange.
+        // Folds using only a contract-definition law still need their legacy retry.
         let prepared_fold = candidate
             .execution()
             .is_some_and(|execution| execution.core.has_prepared_fold());

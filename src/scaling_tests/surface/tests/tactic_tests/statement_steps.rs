@@ -400,3 +400,132 @@ void make(int32 x) {{ requires x > 0; produces p: positive(x); }} by {{
         "{samples:?}"
     );
 }
+
+#[test]
+#[ignore = "nightly: population fold construction and history controls"]
+fn prepared_population_fold_constructs_once() {
+    let mut samples = Vec::new();
+    for named in [true, false] {
+        for returned in [false, true] {
+            for count in [1, 8, 32] {
+                let history = "have x == x by { normalize(); }\n".repeat(count);
+                let before = if returned {
+                    "step_until(function.exit);"
+                } else {
+                    ""
+                };
+                let after = if returned {
+                    ""
+                } else {
+                    "step_until(function.exit);"
+                };
+                let source = format!(
+                    r#"
+verifying "fold.c";
+authorized resource ticket(p: int32*) {{ field serial: int32; }}
+resource control(p: int32*, x: int32) {{
+    field value: int32;
+    owns authority(ticket(p));
+    fact value > 0;
+}}
+void make(int32* p, int32 x) {{
+    owns authority(ticket(p));
+    owns witness: ticket(p);
+    requires x > 0;
+}} by {{
+    {before}
+    {history}
+    let c = fold(control(p, x), {{ value: x }}) by {{ assumption(); }}
+    unfold(c);
+    {after}
+    solve();
+}}
+"#
+                );
+                let source = if named {
+                    source
+                } else {
+                    let history = history.replace("x == x", "pool == pool");
+                    format!(
+                        r#"
+verifying "fold.c";
+authorized resource slot(pool: struct pool*) {{}}
+resource control(pool: struct pool*) {{
+    owns *pool;
+    owns authority(slot(pool));
+    fact pool->capacity == count(slot(pool));
+}}
+void make(struct pool* pool) {{
+    owns control(pool);
+    owns pool->capacity of slot(pool);
+}} by {{
+    unfold(control(pool));
+    {before}
+    {history}
+    fold(control(pool)) by {{ solve(); }}
+    {after}
+    solve();
+}}
+"#
+                    )
+                };
+                let c = if named {
+                    "void make(int32* p, int32 x) {}"
+                } else {
+                    "struct pool { int32 capacity; }; void make(struct pool* pool) {}"
+                };
+                let sources = [("fold.c", c)];
+                let (result, events) =
+                    crate::instrumentation::collect(|| verify_c0_sources(&source, &sources));
+                result.unwrap_or_else(|e| {
+                    panic!("named={named}, returned={returned}, count={count}: {e}")
+                });
+                let constructions = events
+                .iter()
+                .filter(|event| {
+                    matches!(event,
+                crate::instrumentation::VerificationEvent::OperationFinished { name, .. }
+                if name == if named { "resource instance: construct fold" } else { "resource fold: apply selected fold" })
+                })
+                .count();
+                samples.push((named, returned, count, constructions));
+                if count == 1 {
+                    for source in [
+                        source.clone(),
+                        source
+                            .replace(" by { assumption(); }", ";")
+                            .replace(" by { solve(); }", ";"),
+                    ] {
+                        let expanded =
+                            expand_function_proof_source(&source, &sources, "make").unwrap();
+                        without_implicit_solve_for_claim("make.contract", || {
+                            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+                        })
+                        .unwrap();
+                        if named {
+                            assert!(
+                                verify_c0_sources(&source.replace("requires x > 0;", ""), &sources)
+                                    .is_err(),
+                                "a proposed population fold cannot supply its own body premise"
+                            );
+                            assert!(
+                                verify_c0_sources(
+                                    &source.replacen(
+                                        "    owns authority(ticket(p));\n    owns witness",
+                                        "    owns witness",
+                                        1
+                                    ),
+                                    &sources
+                                )
+                                .is_err(),
+                                "a population fold needs its authority"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    eprintln!("population fold constructions: {samples:?}");
+    assert!(samples.iter().all(|(_, _, _, n)| *n == 1), "{samples:?}");
+}

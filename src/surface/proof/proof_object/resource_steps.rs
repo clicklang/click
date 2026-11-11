@@ -613,7 +613,7 @@ impl<'a> Proof<'a> {
         } else {
             self.facts().assumptions().clone()
         };
-        let construct_fold = !unfold && outcome.is_none() && !definition.reaches_population();
+        let construct_fold = !unfold && outcome.is_none();
         let (rewrite, produced_facts) = if let Some(goal) = outcome {
             execution
                 .core
@@ -2751,6 +2751,11 @@ impl<'a> Proof<'a> {
         &self,
         resource: &ResourceClause,
     ) -> Result<Self, ClickError> {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            self.claim_label(),
+            "resource fold",
+            "resource fold: apply selected fold",
+        );
         let step = ProofStep::FoldResource(resource.clone());
         let mut transition = {
             // Resolve proof bindings before either the execution or
@@ -2860,6 +2865,7 @@ impl<'a> Proof<'a> {
                 &checked.facts,
                 None,
                 &checked.loan_holds,
+                crate::surface::proof::execution_planning::collecting_step_requirements(),
             )
             .map_err(|error| {
                 self.step_error(format!(
@@ -2953,6 +2959,7 @@ impl<'a> Proof<'a> {
                     &checked.state,
                     &checked.facts,
                     &checked.published_facts,
+                    false,
                 )
                 .map_err(|message| self.step_error(message))?;
         }
@@ -3157,6 +3164,7 @@ impl<'a> Proof<'a> {
                     &state,
                     &checked.facts,
                     &[],
+                    crate::surface::proof::execution_planning::collecting_step_requirements(),
                 )
                 .map_err(|message| self.step_error(message))?;
         } else if retain_return_exchange && fact_bearing_exchange && *state != *goal.data.core.state
@@ -3173,6 +3181,7 @@ impl<'a> Proof<'a> {
                     &state,
                     &checked.facts,
                     &[],
+                    false,
                 )
                 .is_ok()
                 && offered
