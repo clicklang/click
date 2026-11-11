@@ -4065,6 +4065,7 @@ mod tests {
                 _ => unreachable!(),
             }
             assert!(changed);
+            super::super::standard_library::use_library_iterators(&mut altered);
             let rejected = match super::super::import::prepared_for_test(altered) {
                 Err(_) => true,
                 Ok(prepared) => {
@@ -4260,6 +4261,8 @@ mod tests {
             include_bytes!("../../../design/charon-trial/chunks/chunks.rs"),
         )
         .unwrap();
+        let mut export = export;
+        super::super::standard_library::use_library_iterators(&mut export);
         let prepared = super::super::import::prepared_for_test(export).unwrap();
         C0VerificationSession::new_program_prepared(
             include_str!("../../../design/charon-trial/chunks/chunks.click"),
@@ -5053,7 +5056,13 @@ mod tests {
     }
 
     #[test]
-    fn charon_chunk_missing_initialization_and_duplicate_moves_fail() {
+    #[ignore = "nightly: 5 s, it verifies the whole sidecar (2026-11-11)"]
+    fn charon_chunk_missing_initialization_fails_and_a_duplicate_move_copies_a_value() {
+        // Under the library model an iterator is a value. One never
+        // initialized is refused where it is read. A repeated move, which
+        // the compiler never emits, copies the same value and is accepted:
+        // the hidden-state model's liveness flag refused it, and that flag
+        // went with the hidden state (`design/rust-iterators.md`).
         for duplicate in [false, true] {
             let mut export = decode(CHUNK_ARTIFACT, "chunks.rs", CHUNK_SOURCE).unwrap();
             let name = if duplicate { "walk" } else { "tail" };
@@ -5090,13 +5099,16 @@ mod tests {
                         .retain(|s| !matches!(s, S::ChunkInitialize { .. }));
                 }
             }
+            super::super::standard_library::use_library_iterators(&mut export);
             let prepared = super::super::import::prepared_for_test(export).unwrap();
-            assert!(
+            assert_eq!(
                 C0VerificationSession::new_program_prepared(
                     include_str!("../../../design/charon-trial/chunks/chunks.click"),
                     &prepared
                 )
-                .is_err()
+                .is_err(),
+                !duplicate,
+                "duplicate={duplicate}"
             );
         }
     }

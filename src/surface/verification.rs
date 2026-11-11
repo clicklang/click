@@ -3299,6 +3299,7 @@ fn verify_c0_sources_in_context(
             }
         }
         if contract_function.opaque_contract_supported() {
+            crate::surface::clear_ambient_source_tactic();
             let contract_execution_mode = if function_verified
                 .iter()
                 .any(|verified| verified.concrete_loop_execution)

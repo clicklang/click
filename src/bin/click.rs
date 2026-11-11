@@ -477,20 +477,31 @@ mod tests {
         );
 
         let frame = "int32 area(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures to_integer(result) == to_integer(w * h);\n}\nint32 frame(int32 w, int32 h) {\n    requires w >= 0 and w <= 1000;\n    requires h >= 0 and h <= 1000;\n    ensures to_integer(result) == to_integer(w * h + 1);\n}\n";
+        // Definedness now states both signed bounds over Integer arithmetic.
+        let overflow_goal = |name: &str| {
+            format!(
+                "to_integer({name}) + 1 <= 2147483647 and to_integer({name}) + 1 >= -2147483648"
+            )
+        };
         let overflow = run(frame, &[]);
         assert!(
             overflow.contains("`step()` produced undefined behavior\n  signed overflow"),
             "{overflow}"
         );
         assert!(
-            overflow.contains(&format!("\ngoal: inner <= 2147483646\n{help}")),
+            overflow.contains(&format!("\ngoal: {}\n{help}", overflow_goal("inner"))),
             "{overflow}"
         );
         assert!(!overflow.contains("<unnamed"), "{overflow}");
         let traced = run(frame, &["--trace-proof", "frame"]);
+        // Traces preserve the checked width and Integer condition notation.
+        let typed_goal = concat!(
+            "(integer-condition((machine-integer<Int32>(inner)+1) <= 2147483647) is true",
+            " ∧ integer-condition((machine-integer<Int32>(inner)+1) >= -2147483648) is true)",
+        );
         assert!(
             traced.contains("\nfailed check:\n")
-                && traced.contains("\ngoal: inner <= 2147483646\n"),
+                && traced.contains(&format!("\ngoal: {typed_goal}\n")),
             "{traced}"
         );
 
@@ -502,7 +513,14 @@ mod tests {
             bookkeeping.contains("\n  … <1 internal bookkeeping fact not shown>"),
             "{bookkeeping}"
         );
-        assert!(!bookkeeping.contains("__click_"), "{bookkeeping}");
+        // little_endian() is a citable fact, even under its typed trace name.
+        // Other reserved predicates in this fixture are kernel bookkeeping.
+        assert!(
+            !bookkeeping
+                .replace("__click_little_endian", "little_endian")
+                .contains("__click_"),
+            "{bookkeeping}"
+        );
 
         // Definedness is one of a statement's requirements: under a written
         // `step()` the implicit `solve` proves it, so an unprovable one is
@@ -512,7 +530,7 @@ mod tests {
             &[],
         );
         assert!(
-            overflow.contains("\ngoal: x <= 2147483646\n")
+            overflow.contains(&format!("\ngoal: {}\n", overflow_goal("x")))
                 && overflow.contains(
                     "\nrefused by: the implicit closer that proves this statement's requirements (smart: "
                 ),
@@ -2158,7 +2176,7 @@ int32 f() { ensures result == 2; } by { step(); solve(); }
         let error = entry(["verify".to_string(), sidecar.display().to_string()]).unwrap_err();
         fs::remove_dir_all(&directory).unwrap();
         assert!(
-            error.starts_with("proof error:\n  `release.body_safety` setup failed\n"),
+            error.starts_with("proof error in `release` during contract certification:"),
             "{error}"
         );
         assert!(

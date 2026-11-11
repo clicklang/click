@@ -1812,6 +1812,39 @@ fn held_integer_term(binding: &CLocalBinding) -> Option<&MachineTerm> {
     }
 }
 
+/// The specification value a local of an abstract type holds, when it is a
+/// named value: a Rust local holding an enum, a `Vec` or a library iterator.
+fn held_algebraic_value(binding: &CLocalBinding) -> Option<&AlgebraicTerm> {
+    let CLocalBinding::Object { value, .. } = binding else {
+        return None;
+    };
+    match value.numeric_value() {
+        CValue::Parameter(term) if matches!(term.node, AlgebraicTermNode::Variable(_)) => {
+            Some(term)
+        }
+        _ => None,
+    }
+}
+
+/// The fingerprint of a named specification value: its variable's.
+fn held_algebraic_fingerprint(term: &AlgebraicTerm) -> Option<u64> {
+    use std::hash::{Hash, Hasher};
+    let AlgebraicTermNode::Variable(variable) = &term.node else {
+        return None;
+    };
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    ("algebraic", variable).hash(&mut hasher);
+    Some(hasher.finish())
+}
+
+/// The index key of what a binding holds: an integer term's fingerprint or
+/// a named specification value's. A lookup compares what it finds.
+fn held_fingerprint(binding: &CLocalBinding) -> Option<u64> {
+    held_integer_term(binding)
+        .map(held_term_fingerprint)
+        .or_else(|| held_algebraic_value(binding).and_then(held_algebraic_fingerprint))
+}
+
 /// A constant-time fingerprint of a term: its root's variant and, for a
 /// variable or constant, its payload, and for a format-carrying operator its
 /// format and operator, and the same of a binary node's two
@@ -1857,8 +1890,7 @@ impl CLocalEnvironment {
         let held_terms = bindings
             .iter()
             .filter_map(|(name, binding)| {
-                held_integer_term(binding)
-                    .map(|term| ((held_term_fingerprint(term), name.clone()), ()))
+                held_fingerprint(binding).map(|fingerprint| ((fingerprint, name.clone()), ()))
             })
             .collect();
         let mut pointer_objects_by_block = crate::persistent::PersistentMap::<
@@ -1887,8 +1919,8 @@ impl CLocalEnvironment {
         let slot = binding.slot().clone();
         let old = self.bindings.get(&name);
         let old_slot = old.map(CLocalBinding::slot).cloned();
-        let old_held = old.and_then(held_integer_term).map(held_term_fingerprint);
-        let new_held = held_integer_term(&binding).map(held_term_fingerprint);
+        let old_held = old.and_then(held_fingerprint);
+        let new_held = held_fingerprint(&binding);
         let old_block = old.and_then(held_pointer_block).cloned();
         let new_block = held_pointer_block(&binding);
         if old_block.as_ref() != new_block {
@@ -1990,6 +2022,40 @@ impl CLocalEnvironment {
                 }
             }
         })
+    }
+
+    /// The names, in name order, of the objects holding exactly the named
+    /// specification value `term`, by the same index.
+    pub(crate) fn names_holding_algebraic<'a>(&'a self, term: &AlgebraicTerm) -> Vec<&'a str> {
+        let Some(fingerprint) = held_algebraic_fingerprint(term) else {
+            return Vec::new();
+        };
+        let mut names = Vec::new();
+        let mut at = (fingerprint, String::new());
+        let mut entry = self
+            .held_terms
+            .get_key_value(&at)
+            .map(|(found, _)| found)
+            .or_else(|| {
+                self.held_terms
+                    .get_greater_than(&at)
+                    .map(|(found, _)| found)
+            });
+        while let Some((found, name)) = entry {
+            if *found != fingerprint {
+                break;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+            if self.bindings.get(name).and_then(held_algebraic_value) == Some(term) {
+                names.push(name.as_str());
+            }
+            at = (fingerprint, name.clone());
+            entry = self
+                .held_terms
+                .get_greater_than(&at)
+                .map(|(found, _)| found);
+        }
+        names
     }
 
     /// The scalar objects whose held integer term differs from `earlier`'s,
@@ -2103,9 +2169,8 @@ impl CLocalEnvironment {
         let Some(binding) = self.bindings.get(name).cloned() else {
             return;
         };
-        if let Some(term) = held_integer_term(&binding) {
-            self.held_terms
-                .remove(&(held_term_fingerprint(term), name.to_string()));
+        if let Some(fingerprint) = held_fingerprint(&binding) {
+            self.held_terms.remove(&(fingerprint, name.to_string()));
         }
         if let Some(block) = held_pointer_block(&binding) {
             self.remove_pointer_object(block, name);

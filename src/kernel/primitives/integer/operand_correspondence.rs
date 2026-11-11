@@ -4,7 +4,14 @@
 use super::*;
 use crate::persistent::PersistentMap;
 
-type Key = (MachineIntegerType, u64, u64);
+#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+enum CorrespondencePolicy {
+    LoadAtoms,
+    // Only a 32-bit ring-operator path may frame changed read snapshots.
+    Snapshot(bool),
+}
+
+type Key = (MachineIntegerType, CorrespondencePolicy, u64, u64);
 type Pairs = PersistentMap<(u64, u64), (KernelTerm, KernelTerm)>;
 thread_local! {
     static PAIRS: std::cell::RefCell<HashMap<Key, Option<Pairs>>> = Default::default();
@@ -19,14 +26,33 @@ pub(crate) fn shared_operand_leaf_pairs(
     left: &KernelTerm,
     right: &KernelTerm,
 ) -> Option<Pairs> {
+    shared_operand_leaf_pairs_with_policy(format, left, right, CorrespondencePolicy::LoadAtoms)
+}
+
+pub(crate) fn shared_snapshot_read_pairs(left: &KernelTerm, right: &KernelTerm) -> Option<Pairs> {
+    shared_operand_leaf_pairs_with_policy(
+        MachineIntegerType::Int32,
+        left,
+        right,
+        CorrespondencePolicy::Snapshot(true),
+    )
+}
+
+fn shared_operand_leaf_pairs_with_policy(
+    format: MachineIntegerType,
+    left: &KernelTerm,
+    right: &KernelTerm,
+    policy: CorrespondencePolicy,
+) -> Option<Pairs> {
+    use CorrespondencePolicy as P;
     use MachineOperandView::Shared as V;
     // End the borrow before a caller checks the returned load pairs: that
     // check can itself ask a structural comparison question.
     PAIRS.with(|pairs| {
         let mut pairs = pairs.borrow_mut();
-        let mut pending = vec![(format, left, right, false)];
-        while let Some((format, left, right, finish)) = pending.pop() {
-            let key = (format, left.id(), right.id());
+        let mut pending = vec![(format, policy, left, right, false)];
+        while let Some((format, policy, left, right, finish)) = pending.pop() {
+            let key = (format, policy, left.id(), right.id());
             if pairs.contains_key(&key) {
                 continue;
             }
@@ -49,16 +75,35 @@ pub(crate) fn shared_operand_leaf_pairs(
             if (a.variable().is_some() || a.read().is_some())
                 && (b.variable().is_some() || b.read().is_some())
             {
-                pairs.insert(
-                    key,
+                let result = if let P::Snapshot(frame) = policy {
+                    let a_source = a.read_source().expect("selected atom");
+                    let b_source = b.read_source().expect("selected atom");
+                    if a_source == b_source {
+                        Some(Pairs::default())
+                    } else if frame && a.read().is_some() && b.read().is_some() {
+                        Some(
+                            Pairs::default().with_inserted(
+                                (left.id(), right.id()),
+                                (left.clone(), right.clone()),
+                            ),
+                        )
+                    } else {
+                        None
+                    }
+                } else {
                     Some(
                         Pairs::default()
                             .with_inserted((left.id(), right.id()), (left.clone(), right.clone())),
-                    ),
-                );
+                    )
+                };
+                pairs.insert(key, result);
                 continue;
             }
             if let (Some(a), Some(b)) = (a.literal(), b.literal()) {
+                if matches!(policy, P::Snapshot(_)) {
+                    pairs.insert(key, (a == b).then(Pairs::default));
+                    continue;
+                }
                 let a = format.constant_from_term(&a);
                 let b = format.constant_from_term(&b);
                 pairs.insert(
@@ -72,11 +117,41 @@ pub(crate) fn shared_operand_leaf_pairs(
             let children = if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
                 (a.binary(), b.binary())
             {
-                (af == bf && ao == bo).then_some(vec![(af, al, bl), (af, ar, br)])
+                let child_policy = match policy {
+                    P::Snapshot(frame) => P::Snapshot(
+                        frame
+                            && af.format().bits() == 32
+                            && matches!(
+                                ao,
+                                crate::kernel::MachineBinaryOp::Add
+                                    | crate::kernel::MachineBinaryOp::Subtract
+                                    | crate::kernel::MachineBinaryOp::Multiply
+                            ),
+                    ),
+                    P::LoadAtoms => P::LoadAtoms,
+                };
+                (af == bf && ao == bo)
+                    .then_some(vec![(af, child_policy, al, bl), (af, child_policy, ar, br)])
             } else if let (Some((af, ao, av)), Some((bf, bo, bv))) = (a.unary(), b.unary()) {
-                (af == bf && ao == bo).then_some(vec![(af, av, bv)])
+                (af == bf && ao == bo).then_some(vec![(
+                    af,
+                    match policy {
+                        P::Snapshot(_) => P::Snapshot(false),
+                        P::LoadAtoms => P::LoadAtoms,
+                    },
+                    av,
+                    bv,
+                )])
             } else if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) = (a.cast(), b.cast()) {
-                (ae == be && af == bf && at == bt).then_some(vec![(af, av, bv)])
+                (ae == be && af == bf && at == bt).then_some(vec![(
+                    af,
+                    match policy {
+                        P::Snapshot(_) => P::Snapshot(false),
+                        P::LoadAtoms => P::LoadAtoms,
+                    },
+                    av,
+                    bv,
+                )])
             } else {
                 None
             };
@@ -86,21 +161,21 @@ pub(crate) fn shared_operand_leaf_pairs(
             };
             let children: Vec<_> = children
                 .into_iter()
-                .map(|(format, a, b)| {
+                .map(|(format, policy, a, b)| {
                     let (V(a), V(b)) = (a, b) else {
                         unreachable!("shared children");
                     };
-                    (format, a, b)
+                    (format, policy, a, b)
                 })
                 .collect();
             if !finish {
-                pending.push((format, left, right, true));
-                pending.extend(children.into_iter().map(|(f, a, b)| (f, a, b, false)));
+                pending.push((format, policy, left, right, true));
+                pending.extend(children.into_iter().map(|(f, p, a, b)| (f, p, a, b, false)));
                 continue;
             }
             let mut result = Some(Pairs::default());
-            for (format, a, b) in children {
-                let Some(child) = &pairs[&(format, a.id(), b.id())] else {
+            for (format, child_policy, a, b) in children {
+                let Some(child) = &pairs[&(format, child_policy, a.id(), b.id())] else {
                     result = None;
                     break;
                 };
@@ -122,6 +197,6 @@ pub(crate) fn shared_operand_leaf_pairs(
             }
             pairs.insert(key, result);
         }
-        pairs[&(format, left.id(), right.id())].clone()
+        pairs[&(format, policy, left.id(), right.id())].clone()
     })
 }

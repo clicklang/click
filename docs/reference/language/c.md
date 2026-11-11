@@ -2713,11 +2713,65 @@ taken as a wrapped product. These refusals say
 (`mdtests/an_unbounded_size_t_malloc_size_is_refused.md`). `free` of a 64-bit
 block consumes its `uint64` token and its complete wide range; a double free,
 an interior free, and a use after free are refused as for any block.
-`calloc` of a symbolic 64-bit size, `realloc` to one, and `realloc` of a
-64-bit block are not supported yet and are refused with the same message
-(`mdtests/a_symbolic_size_t_calloc_count_is_refused.md`,
-`mdtests/a_realloc_of_a_64_bit_block_is_refused.md`); `realloc(NULL, n)` is
-`malloc(n)`.
+`calloc(n, sizeof(T))` with a 64-bit `n` makes a zeroed 64-bit block of
+`n * w` bytes. `calloc` returns null when `n * w` is not representable, so
+its product is never C's wrapping one: verification must prove
+`1 <= n <= PTRDIFF_MAX / w`, and otherwise refuses the `calloc` with the same
+message, even for a count the facts fix where the product would wrap
+(`mdtests/a_bounded_size_t_calloc_count_allocates_a_zeroed_64_bit_block.md`,
+`mdtests/a_size_t_calloc_count_with_no_upper_bound_is_refused.md`,
+`mdtests/a_calloc_count_whose_product_would_wrap_is_refused.md`). Only the
+count is evaluated, so `calloc(count, sizeof(struct T))` has a 32-bit extent
+for an `int` count
+(`mdtests/a_struct_calloc_with_an_int_count_allocates_a_32_bit_block.md`) and
+a 64-bit one for a `size_t` count.
+
+A 64-bit struct-array block, from `malloc(n * sizeof(struct T))` with a
+`size_t` or `int` `n` (the product is a `size_t`) or from
+`calloc(n, sizeof(struct T))` with a `size_t` `n`, is owned as bytes, and
+`p[i].field` is checked over the element count: the address of a field of
+`p[i]` needs `i < n` (`i <= n` for `&p[i]` itself), so `p[i].field` and
+`p[n - 1].field` are read and written where the facts decide that, and a
+field of `p[n]` is refused
+(`mdtests/a_size_t_struct_array_malloc_block_writes_and_reads_its_fields.md`,
+`mdtests/an_int_count_struct_array_malloc_block_writes_and_reads_its_fields.md`,
+`mdtests/a_size_t_struct_array_calloc_block_writes_and_reads_its_fields.md`,
+`mdtests/a_size_t_struct_array_calloc_block_reads_zero_fields.md`,
+`mdtests/a_field_past_a_size_t_struct_array_block_is_refused.md`,
+`mdtests/a_field_at_an_unbounded_index_of_a_size_t_struct_array_block_is_refused.md`).
+Its `allocation(p, n * 8u64)` token crosses a call as any 64-bit token does
+(`mdtests/a_size_t_struct_array_block_is_accessed_after_a_call_taking_its_allocation.md`),
+but its memory does not yet cross a clause that counts structs: `owns p[0..n]`
+for a struct pointer with a `size_t` `n` names `n` struct elements, which the
+block's byte range does not supply, so such a call requirement or loop
+`owns` clause is refused as missing (a loop without an `owns` clause keeps
+the block), and a callee holding `p[0..n]` cannot access its fields.
+
+`realloc` resizes a 64-bit block, and resizes any block to a 64-bit size,
+under the same proof as `malloc`: `realloc(data, n * w)` with a 64-bit `n`
+needs `1 <= n <= PTRDIFF_MAX / w` (there is no wrapped-product fallback), and
+a 64-bit byte count `1 <= bytes <= PTRDIFF_MAX`
+(`mdtests/a_size_t_realloc_size_with_no_upper_bound_is_refused.md`). The old
+block's token and complete range are consumed in their own format, and an
+initialized cell at a constant offset is kept where the facts place its end
+inside the new size; against an extent `n * w` that comparison is made over
+the element count, so `n >= 1` keeps the first element
+(`mdtests/a_realloc_grows_a_64_bit_block_and_keeps_its_prefix.md`,
+`mdtests/a_realloc_shrinks_a_64_bit_block_and_keeps_its_prefix.md`,
+`mdtests/a_realloc_of_a_32_bit_block_to_a_size_t_size_keeps_its_prefix.md`).
+The zeroed prefix of a `calloc` source must be a constant: the smaller of the
+old zeroed bytes and the new size where one of them is constant and the facts
+decide it is the smaller
+(`mdtests/a_zeroed_block_reallocated_to_a_size_t_size_keeps_its_zeroed_prefix.md`,
+`mdtests/a_zeroed_block_reallocated_to_an_int_size_keeps_its_zeroed_prefix.md`,
+`mdtests/a_zeroed_64_bit_block_reallocated_to_a_constant_size_stays_zeroed.md`);
+growing a 64-bit `calloc` block to another symbolic size is not modeled. A
+store past the new block, a use of the old pointer after a successful
+`realloc`, and a free of it are refused
+(`mdtests/a_store_past_a_reallocated_64_bit_block_is_refused.md`,
+`mdtests/a_store_through_the_old_pointer_after_a_64_bit_realloc_is_refused.md`,
+`mdtests/a_64_bit_block_freed_after_its_realloc_is_refused.md`).
+`realloc(NULL, n)` is `malloc(n)`.
 
 A sidecar states a 64-bit block's token with a `uint64` byte count:
 `allocation(p, n * 4u64)` for `malloc(n * sizeof(uint32_t))` with a `size_t`

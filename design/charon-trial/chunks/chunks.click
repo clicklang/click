@@ -1,7 +1,14 @@
+import click::rust::slice;
+import click::rust::chunks_exact;
+import click::integer;
 verifying "chunks.rs";
 fn tail(bytes: &[u8], size: usize) -> usize {
     requires size != 0u64;
     ensures result == bytes.len() % size;
+} by {
+    step_until(function.exit);
+    apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size));
+    solve();
 }
 
 fn walk(bytes: &[u8]) -> usize {
@@ -11,115 +18,78 @@ fn walk(bytes: &[u8]) -> usize {
         k < bytes.len() implies bytes[k] == old(bytes[k])
     };
 } by {
-    have bytes.len() % 4u64 <= bytes.len() by normalize();
     step_until(loop(0));
-    have iter_remaining == bytes.len() - bytes.len() % 4u64;
-    have (bytes.len() - bytes.len() % 4u64) % 4u64 == 0u64;
-    have iter_remaining % 4u64 == 0u64 by {
-        rewrite(iter_remaining == bytes.len() - bytes.len() % 4u64); solve();
+    have loop(0).iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
+    have tail_len == bytes.len() % 4u64 by {
+        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+        solve();
     }
-    have (bytes.len() - bytes.len() % 4u64) - iter_remaining == 0u64 by {
-        solve() using {
-            iter_remaining == bytes.len() - bytes.len() % 4u64;
-            bytes.len() % 4u64 <= bytes.len();
-        };
-    }
-    have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
-        rewrite((bytes.len() - bytes.len() % 4u64) - iter_remaining == 0u64); solve();
+    have loop(0).iter.len() == bytes.len() / 4u64 by {
+        apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+        solve();
     }
     loop {
-        decreases iter_remaining;
+        decreases iter.len();
         views bytes[0..bytes.len()];
-        invariant iter_size == 4u64;
-        invariant iter_tail_len == bytes.len() % 4u64;
-        invariant tail_len == iter_tail_len;
-        invariant iter_tail == bytes + (bytes.len() - bytes.len() % 4u64);
-        invariant tail == iter_tail;
-        invariant iter_remaining <= bytes.len() - bytes.len() % 4u64;
-        invariant iter_remaining % 4u64 == 0u64;
-        invariant iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining);
+        invariant tail_len == bytes.len() % 4u64;
+        invariant iter == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations);
+        invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+        initialize by {
+            have tail_len == bytes.len() % 4u64;
+            have iter == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations) by {
+                apply(chunks_exact::after_zero(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64)));
+                have iter == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64);
+                solve();
+            }
+            have to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);
+        }
         preserve by {
-            have 4u64 <= iter_remaining;
-            mark iteration;
-            have (bytes.len() - bytes.len() % 4u64) - iter_remaining < bytes.len() by {
-                solve() using {
-                    4u64 <= iter_remaining;
-                    iter_remaining <= (bytes.len() - bytes.len() % 4u64);
-                    bytes.len() % 4u64 <= bytes.len();
-                };
+            step(); step(); step(); step();
+            if 0u64 < iter.len() {
+                have chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len() == bytes.len() / 4u64 by {
+                    apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+                }
+                have iter.len() <= bytes.len() / 4u64;
+                have to_integer((bytes.len() / 4u64 - iter.len())) == iterations;
+                have (bytes.len() / 4u64 - iter.len()) < chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).len();
+                have iter.nth(0u64) == chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64).nth((bytes.len() / 4u64 - iter.len())) by {
+                    apply(chunks_exact::nth_after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations, 0u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.nth(0u64).len() == 4u64 by {
+                    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.nth(0u64).as_ptr() == bytes + (bytes.len() / 4u64 - iter.len()) * 4u64 by {
+                    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, (bytes.len() / 4u64 - iter.len())));
+                    solve();
+                }
+                have iter.after_next() == chunks_exact::after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations + 1) by {
+                    apply(chunks_exact::after_next_after(chunks_exact::chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64), iterations));
+                    solve();
+                }
+                have iter.after_next().len() == iter.len() - 1u64 by {
+                    apply(chunks_exact::len_after_next(iter));
+                }
+                have (bytes.len() / 4u64 - iter.len()) <= 4611686018427387903u64;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) == to_integer((bytes.len() / 4u64 - iter.len())) * 4;
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64) < to_integer(bytes.len());
+                have to_integer((bytes.len() / 4u64 - iter.len()) * 4u64 + 3u64) < to_integer(bytes.len());
+                mark taken;
+                step_until(read(0));
+                have chunk == bytes + (bytes.len() / 4u64 - at(taken, iter.len())) * 4u64;
+                have chunk_len == 4u64;
+                step_until(loop(0).back_edge());
+                have iter == at(taken, iter.after_next());
+                have iter.len() == at(taken, iter.len()) - 1u64;
+                have 0u64 < at(taken, iter.len());
+                have iter.len() < at(taken, iter.len());
+            } else {
+                step();
             }
-            have ((bytes.len() - bytes.len() % 4u64) - iter_remaining) + 3u64 < bytes.len() by {
-                solve() using {
-                    4u64 <= iter_remaining;
-                    iter_remaining <= (bytes.len() - bytes.len() % 4u64);
-                    bytes.len() % 4u64 <= bytes.len();
-                };
-            }
-            step_until(read(1)); step();
-            have iter_remaining == at(iteration, iter_remaining) - 4u64;
-            have (at(iteration, iter_remaining) - 4u64) % 4u64 == at(iteration, iter_remaining % 4u64) by {
-                normalize() using { 4u64 <= at(iteration, iter_remaining); };
-            }
-            have iter_remaining % 4u64 == 0u64 by {
-                rewrite(iter_remaining == at(iteration, iter_remaining) - 4u64);
-                rewrite((at(iteration, iter_remaining) - 4u64) % 4u64 == at(iteration, iter_remaining % 4u64));
-                solve();
-            }
-            have iter_remaining <= (bytes.len() - bytes.len() % 4u64) by {
-                solve() using {
-                    iter_remaining == at(iteration, iter_remaining) - 4u64;
-                    4u64 <= at(iteration, iter_remaining);
-                    at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
-                    bytes.len() % 4u64 <= bytes.len();
-                };
-            }
-            have (bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining) <= 18446744073709551611u64 by {
-                solve() using {
-                    4u64 <= at(iteration, iter_remaining);
-                    at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
-                    bytes.len() % 4u64 <= bytes.len();
-                };
-            }
-            have at(iteration, iter_cursor) + 4 == bytes + (((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64) by {
-                solve() using {
-                    at(iteration, iter_cursor) == bytes + ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining));
-                    (bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining) <= 18446744073709551611u64;
-                };
-            }
-            have (bytes.len() - bytes.len() % 4u64) - iter_remaining == ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64 by {
-                solve() using {
-                    iter_remaining == at(iteration, iter_remaining) - 4u64;
-                    4u64 <= at(iteration, iter_remaining);
-                    at(iteration, iter_remaining) <= (bytes.len() - bytes.len() % 4u64);
-                    bytes.len() % 4u64 <= bytes.len();
-                };
-            }
-            have iter_cursor == bytes + ((bytes.len() - bytes.len() % 4u64) - iter_remaining) by {
-                rewrite((bytes.len() - bytes.len() % 4u64) - iter_remaining == ((bytes.len() - bytes.len() % 4u64) - at(iteration, iter_remaining)) + 4u64);
-                solve();
-            }
-            have iter_remaining < at(iteration, iter_remaining) by {
-                solve() using {
-                    iter_remaining == at(iteration, iter_remaining) - 4u64;
-                    4u64 <= at(iteration, iter_remaining);
-                };
-            }
-            step_until(back_edge());
         }
     }
-    have iter_remaining < 4u64 by {
-        cases {
-            not (0u64 < iter_remaining) => {
-                solve() using { not 0u64 < iter_remaining; };
-            }
-            not (4u64 <= iter_remaining) => { assumption(); }
-        }
-    }
-    have iter_remaining % 4u64 == iter_remaining by {
-        normalize() using { iter_remaining < 4u64; };
-    }
-    have iter_remaining == 0u64;
-    have iter_cursor == iter_tail;
+    have loop(0).iter.len() == 0u64;
     step_until(function.exit);
     have forall (k: uint64) {
         k < bytes.len() implies bytes[k] == old(bytes[k])
@@ -130,6 +100,12 @@ fn walk(bytes: &[u8]) -> usize {
 fn next_len(bytes: &[u8]) -> usize {
     requires bytes.len() == 8u64;
     ensures result == 4u64;
+} by {
+    have 0u64 < bytes.len() / 4u64;
+    apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+    apply(chunks_exact::nth_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64, 0u64));
+    step_until(function.exit);
+    solve();
 }
 
 fn tail_byte(bytes: &[u8]) -> u8 {
@@ -137,5 +113,13 @@ fn tail_byte(bytes: &[u8]) -> u8 {
     views bytes[0..7];
     ensures result == old(bytes[4]);
 } by {
-    have bytes.len() - bytes.len() % 4u64 == 4u64 by { rewrite(bytes.len() == 7u64); solve(); }
+    have bytes.len() % 4u64 == 3u64;
+    have bytes.len() - bytes.len() % 4u64 == 4u64;
+    apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 4u64));
+    step_until(assignment(tail_len, 0));
+    step();
+    have tail_len == 3u64;
+    have tail == bytes + 4u64;
+    step_until(function.exit);
+    solve();
 }

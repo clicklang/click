@@ -323,40 +323,69 @@ impl<'a> Proof<'a> {
     /// guarded by the invariants declared before it, and bare, as the member
     /// reads once the closer has introduced those guards; one `0 <= m` per
     /// `decreases` component, then the descent member
-    /// ([`ranking_descent_surface`]). None outside a loop preservation proof.
+    /// ([`ranking_descent_surface`]), when `ranking` asks for them. None
+    /// outside a loop preservation proof.
     pub(in crate::surface::proof) fn written_bundle_member_surfaces(
         &self,
+        ranking: bool,
     ) -> Option<Vec<ClickProposition>> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
             return None;
         };
         let bundle = context.constants.invariant_body_context.as_deref()?;
         let mut members = Vec::new();
-        let declared = &bundle.declared_invariant_surfaces;
-        for (index, invariant) in declared.iter().enumerate() {
-            let guarded = declared[..index]
-                .iter()
-                .rev()
-                .fold(invariant.clone(), |body, guard| {
-                    ClickProposition::Implies(Box::new(guard.clone()), Box::new(body))
-                });
-            // A member whose guards the closer has already introduced is the
-            // invariant itself.
-            let mut pending = if index == 0 {
-                vec![guarded]
-            } else {
-                vec![invariant.clone(), guarded]
-            };
-            while let Some(member) = pending.pop() {
-                if let ClickProposition::And(left, right) = member {
-                    pending.push(*right);
-                    pending.push(*left);
+        // The back edge owes each invariant one pass on: where the head
+        // writes `iterations`, the member reads `iterations + 1`. That form
+        // is offered first, and like every written form is kept only when
+        // it lowers back to its leaf.
+        let next_pass = BTreeMap::from([(
+            crate::surface::LOOP_ITERATIONS_NAME.to_string(),
+            ContractExpression::Add(
+                Box::new(ContractExpression::Binding(
+                    crate::surface::LOOP_ITERATIONS_NAME.to_string(),
+                )),
+                Box::new(ContractExpression::IntegerLiteral("1".to_string())),
+            ),
+        )]);
+        let one_pass_on = bundle
+            .declared_invariant_surfaces
+            .iter()
+            .map(|invariant| {
+                crate::surface::lowering::substitute_click_proposition(invariant, &next_pass)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .ok()
+            .filter(|shifted| shifted != &bundle.declared_invariant_surfaces);
+        for declared in one_pass_on
+            .iter()
+            .chain(std::iter::once(&bundle.declared_invariant_surfaces))
+        {
+            for (index, invariant) in declared.iter().enumerate() {
+                let guarded =
+                    declared[..index]
+                        .iter()
+                        .rev()
+                        .fold(invariant.clone(), |body, guard| {
+                            ClickProposition::Implies(Box::new(guard.clone()), Box::new(body))
+                        });
+                // A member whose guards the closer has already introduced is the
+                // invariant itself.
+                let mut pending = if index == 0 {
+                    vec![guarded]
                 } else {
-                    members.push(member);
+                    vec![invariant.clone(), guarded]
+                };
+                while let Some(member) = pending.pop() {
+                    if let ClickProposition::And(left, right) = member {
+                        pending.push(*right);
+                        pending.push(*left);
+                    } else {
+                        members.push(member);
+                    }
                 }
             }
         }
-        if bundle.ranking_surfaces.len() == bundle.ranking_measures.len() {
+        if ranking && bundle.ranking_surfaces.len() == bundle.ranking_measures.len() {
             for component in &bundle.ranking_surfaces {
                 members.push(ClickProposition::Comparison {
                     left: ContractExpression::IntegerLiteral("0".to_string()),

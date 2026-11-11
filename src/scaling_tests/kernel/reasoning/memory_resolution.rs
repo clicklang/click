@@ -292,3 +292,149 @@ fn retained_endpoint_queries_reuse_shared_dag_pairs() {
         assert!(lw * small <= sw * large * 2, "{samples:?}");
     }
 }
+
+#[test]
+fn run_access_retains_cold_shared_index_dags() {
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView,
+    };
+    for ty in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+        let mut samples = Vec::new();
+        for size in [16, 64, 256] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut term = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018601));
+            for _ in 0..size {
+                term = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [term.clone(), term],
+                );
+            }
+            let retained = MachineOperandView::Shared(&term).retain(ty);
+            let base = Pointer {
+                block: "retained_run".into(),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let run = CellRun::new(
+                base.clone(),
+                4,
+                CType::Int32,
+                16,
+                crate::kernel::intern_c_memory(CMemory::new()),
+                Default::default(),
+            );
+            let offset = if ty == MachineIntegerType::Int32 {
+                PointerOffsetTerm::Int32Scaled {
+                    value: retained.clone(),
+                    byte_width: 4,
+                }
+            } else {
+                PointerOffsetTerm::Int64Scaled {
+                    value: retained.clone(),
+                    byte_width: 4,
+                    unsigned: true,
+                }
+            };
+            let pointer = Pointer {
+                block: base.block,
+                offset,
+            };
+            let exports = KernelTermExport::machine_export_count();
+            let (access, work) =
+                crate::instrumentation::measure_deterministic_work(|| run_access(&run, &pointer));
+            match access {
+                RunAccess::Scaled {
+                    index,
+                    scale,
+                    shift,
+                }
+                | RunAccess::ScaledWide {
+                    index,
+                    scale,
+                    shift,
+                } => {
+                    assert_eq!(index, retained);
+                    assert_eq!((scale, shift), (4, 0));
+                }
+                other => panic!("unexpected access: {other:?}"),
+            }
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            samples.push((size, work));
+        }
+        for (size, work) in &samples {
+            assert!(*work <= 32 * size + 32, "{ty:?}: {samples:?}");
+        }
+    }
+}
+
+#[test]
+fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
+    use crate::kernel::assumptions::{wide_index_binary, wide_index_comparison};
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView,
+    };
+    let ty = MachineIntegerType::UInt64;
+    for size in [16, 64, 256] {
+        let mut samples = Vec::new();
+        for unrelated in [0, size] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018703));
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root],
+                );
+            }
+            let index = MachineOperandView::Shared(&root).retain(ty);
+            let advanced = wide_index_binary(
+                MachineBinaryOp::Add,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+            );
+            let scaled = |value| PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width: 8,
+                unsigned: true,
+            };
+            let stepped = PointerOffsetTerm::Add(
+                Box::new(scaled(index.clone())),
+                Box::new(PointerOffsetTerm::Constant(8)),
+            );
+            let whole = scaled(advanced);
+            let mut facts = PureFactContext::new().assume_condition(
+                wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    index.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - 1)),
+                ),
+                true,
+            );
+            for extra in 0..unrelated {
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(1019000 + extra as u64)),
+                        MachineTerm::constant(3),
+                    ),
+                    true,
+                );
+            }
+            let _scope = facts.enter_id_scope();
+            let exports = KernelTermExport::machine_export_count();
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                pointer_offsets_equal_for_memory_resolution(&stepped, &whole, &facts)
+            });
+            assert_eq!(answer, Some(true));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                work <= 128 * size + 256,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples[1] <= 2 * samples[0] + 32,
+            "size={size}: {samples:?}"
+        );
+    }
+}

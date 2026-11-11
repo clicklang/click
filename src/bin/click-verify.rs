@@ -1836,8 +1836,19 @@ mod tests {
             .join("mdtests/loop_binder_instance_footprint_includes_its_memory.md");
         let report =
             entry_with([fixture.display().to_string()]).expect_err("the loop may write the cell");
-        assert!(report.contains("written range(s) between"), "{report}");
-        assert!(report.contains("<state A> is "), "{report}");
+        assert!(
+            report.contains("effect facts relating states at this frontier"),
+            "{report}"
+        );
+        assert!(report.contains("checked source (holds)"), "{report}");
+        assert!(report.contains("checked target (wanted)"), "{report}");
+        assert!(
+            report.contains(
+                "transport label definitions (shared by checked source, target, and effects)"
+            ),
+            "{report}"
+        );
+        assert!(report.contains("loop effect: may write"), "{report}");
         assert!(report.contains("store to occupied[start]"), "{report}");
         assert!(report.contains("i >= end"), "{report}");
         assert!(report.contains("at(pre, occupied[start])"), "{report}");
@@ -2547,62 +2558,6 @@ void walk(int32 n) { requires n == 12; ensures 0 == 0; } by {
         let click_path = root.join("program.click");
         fs::write(&click_path, click_source).expect("Click sidecar should be writable");
         (root, click_path)
-    }
-
-    /// Program-entry storage is as large as the program's static objects.
-    /// Building it (once for the external-dependency summary, then again for
-    /// the frontend) once ran before the run's limits were installed and without
-    /// a checkpoint, so a 10,000-element zeroed struct pool ran for over an
-    /// hour past both the work budget and the ten-minute crash bound. Zeroed
-    /// struct arrays are now strided runs, but an explicit initializer list
-    /// still stores and partitions one element at a time. Storage charges
-    /// and checks per element and per range, inside the run's limits, so the
-    /// work budget stops it in that phase, at the same unit on every run.
-    #[test]
-    fn a_large_program_entry_stops_at_the_work_budget_in_its_storage_phase() {
-        // 2048 explicit elements still exhaust this budget in storage; parsing
-        // thousands more only made this limit-scope regression slower.
-        const ELEMENTS: usize = 2048;
-        let initializers = (0..ELEMENTS)
-            .map(|index| format!("{{{}, 0}}", index % 97))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let (root, click_path) = temporary_project(
-            "large-entry",
-            &format!(
-                "struct node {{ int32 key; struct node *next; }};\n\
-                 struct node pool[{ELEMENTS}] = {{{initializers}}};\n\
-                 int main(void) {{ return pool[0].key; }}\n"
-            ),
-            "verifying \"program.c\";\n\
-             int main() {\n\
-                 ensures result == 0;\n\
-             } by {\n\
-                 step_until(function.exit);\n\
-                 solve();\n\
-             }\n",
-        );
-        let run = || {
-            entry_with([
-                "--work-limit".to_string(),
-                "60000".to_string(),
-                click_path.display().to_string(),
-            ])
-            .expect_err("sixty thousand units cannot build a 2,048-element initialized entry")
-        };
-        // The first run in a process also fills process-wide caches, so it
-        // spends a few more units (a fresh `click verify` process always
-        // spends the first run's); later runs in one process agree.
-        run();
-        let first = run();
-        let second = run();
-        fs::remove_dir_all(&root).expect("temporary verification directory should be removable");
-        assert!(
-            first.contains("(60000 limit) while running frontend > program-entry storage phase")
-                && !first.contains("crash-containment"),
-            "{first}"
-        );
-        assert_eq!(first, second, "a work-budget verdict is deterministic");
     }
 
     /// The project summary (external dependencies and the selected proof

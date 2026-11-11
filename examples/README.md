@@ -64,8 +64,9 @@ Current projects:
   copies, assignment through references, and constructor evaluation order.
 - `rust-array-slices/` checks fixed byte arrays coercing to shared/mutable slices,
   length metadata, slice reassignment, helper calls, and parent reuse.
-- `rust-chunks-exact/` checks stored shared chunk iterators, cursor coverage,
-  byte reads, and their fixed remainder without a generated progress count.
+- `rust-chunks-exact/` checks stored shared chunk iterators, byte reads
+  through each chunk, and their fixed remainder, from the library's
+  `ChunksExact` contract.
 - `rust-field-borrow/` verifies nested Rust guards borrowing an owned field,
   with the inner destructor's write observed by the outer destructor.
 - `cpp-stack/` verifies the generic C++ `Stack<T>` at

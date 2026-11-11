@@ -438,9 +438,15 @@ pub(in crate::kernel) fn pointer_offsets_match_from_memory_derivations(
             },
         ) => {
             left_width == right_width
-                && (assumptions.int32_values_known_equal(left, right)
-                    || bitvector_terms_proven_equal_for_memory_resolution(left, right, assumptions)
-                    || explicit_atomic_equality_from_memory_derivations(left, right, assumptions))
+                && (int32_operand_values_equal_for_memory_resolution(
+                    left.operand_view(),
+                    right.operand_view(),
+                    assumptions,
+                ) || explicit_atomic_equality_from_memory_derivations_views(
+                    left.operand_view(),
+                    right.operand_view(),
+                    assumptions,
+                ))
         }
         _ => false,
     }
@@ -1974,7 +1980,9 @@ pub(super) fn pointer_offset_equality_evidence(
                 byte_width: right_width,
             },
         ) if left_width == right_width => {
-            let values = atomic_memory_load_equality_evidence(left, right, assumptions)?;
+            let left = left.operand_view().read_source()?;
+            let right = right.operand_view().read_source()?;
+            let values = atomic_memory_load_equality_evidence(&left, &right, assumptions)?;
             values
                 .is_fully_typed()
                 .then_some(PointerOffsetEqualityEvidence::Int32Scaled {
@@ -2029,15 +2037,22 @@ impl PointerOffsetEqualityEvidence {
                 else {
                     return false;
                 };
-                left_width == byte_width
-                    && right_width == byte_width
-                    && values.checks(
-                        &Proposition::ConditionIs(
-                            ConditionTerm::equal(left.as_ref().clone(), right.as_ref().clone()),
-                            true,
-                        ),
-                        assumptions,
-                    )
+                if left_width != byte_width || right_width != byte_width {
+                    return false;
+                }
+                let (Some(left), Some(right)) = (
+                    left.operand_view().read_source(),
+                    right.operand_view().read_source(),
+                ) else {
+                    return false;
+                };
+                values.checks(
+                    &Proposition::ConditionIs(
+                        ConditionTerm::equal(left.into_owned(), right.into_owned()),
+                        true,
+                    ),
+                    assumptions,
+                )
             }
         }
     }
@@ -5652,7 +5667,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     tasks.push(AtomicCanonicalizationTask::RebuildInt32Scaled(*byte_width));
-                    tasks.push(AtomicCanonicalizationTask::Visit(value));
+                    tasks.push(AtomicCanonicalizationTask::Visit(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ));
                 }
                 PointerOffsetTerm::Int64Scaled {
                     value,
@@ -5663,7 +5682,11 @@ pub(super) fn canonicalize_atomic_loads_deep(term: &MachineTerm) -> MachineTerm 
                         byte_width: *byte_width,
                         unsigned: *unsigned,
                     });
-                    tasks.push(AtomicCanonicalizationTask::Visit(value));
+                    tasks.push(AtomicCanonicalizationTask::Visit(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ));
                 }
             },
             // Integer operators and conversions are rebuilt as bare nodes;
@@ -5828,7 +5851,11 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Pointer) -> Pointer {
                 }
                 PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                     results.push(PointerOffsetTerm::scale_int32(
-                        canonicalize_atomic_loads_deep(value),
+                        canonicalize_atomic_loads_deep(
+                            value
+                                .retained_written_operand()
+                                .expect("shared indices handled above"),
+                        ),
                         *byte_width,
                     ));
                 }
@@ -5837,7 +5864,11 @@ pub(super) fn canonicalize_pointer_loads(pointer: &Pointer) -> Pointer {
                     byte_width,
                     unsigned,
                 } => results.push(PointerOffsetTerm::scale_int64(
-                    canonicalize_atomic_loads_deep(value),
+                    canonicalize_atomic_loads_deep(
+                        value
+                            .retained_written_operand()
+                            .expect("shared indices handled above"),
+                    ),
                     *byte_width,
                     *unsigned,
                 )),
@@ -8619,4 +8650,125 @@ fn certified_scalar_store_equations_name_the_read_at_its_actual_width() {
 mod range_scan_accounting_tests {
     use super::*;
     include!("../scaling_tests/kernel/memory_provenance/range_scan_accounting_tests.rs");
+}
+
+#[cfg(test)]
+mod retained_offset_evidence_tests {
+    use super::*;
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelTermImport, KernelType, MachineBinaryOp,
+        MachineOperandView, VerificationSession,
+    };
+
+    fn offset(value: &MachineTerm, width: i64) -> PointerOffsetTerm {
+        let root = KernelTermImport::default()
+            .machine_arithmetic(MachineIntegerType::Int32, value)
+            .unwrap();
+        PointerOffsetTerm::Int32Scaled {
+            value: MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32),
+            byte_width: width,
+        }
+    }
+
+    #[test]
+    fn retained_offset_matching_keeps_native_value_rules() {
+        let _session = VerificationSession::enter();
+        let x = MachineTerm::Variable(Variable(1018801));
+        let y = MachineTerm::Variable(Variable(1018802));
+        let pairs = [
+            (x.clone(), y.clone()),
+            (
+                MachineTerm::add(x.clone(), x.clone()),
+                MachineTerm::add(y.clone(), y.clone()),
+            ),
+            (
+                MachineTerm::add(x.clone(), 1u32.into()),
+                MachineTerm::add(y.clone(), 1u32.into()),
+            ),
+            (MachineTerm::constant(1), MachineTerm::constant(2)),
+        ];
+        let contexts = [
+            PureFactContext::new(),
+            PureFactContext::new().assume_condition(ConditionTerm::equal(x, y), true),
+        ];
+        for context in contexts {
+            let _scope = context.enter_id_scope();
+            for (left, right) in &pairs {
+                let expected =
+                    int32_values_proven_equal_for_memory_resolution(left, right, &context)
+                        || explicit_atomic_equality_from_memory_derivations(left, right, &context);
+                let (a, b) = (offset(left, 4), offset(right, 4));
+                let exports = KernelTermExport::machine_export_count();
+                assert_eq!(
+                    pointer_offsets_match_from_memory_derivations(&a, &b, &context),
+                    expected
+                );
+                assert!(!pointer_offsets_match_from_memory_derivations(
+                    &a,
+                    &offset(right, 8),
+                    &context
+                ));
+                assert_eq!(KernelTermExport::machine_export_count(), exports);
+            }
+        }
+    }
+
+    #[test]
+    fn retained_offset_read_evidence_keeps_exact_snapshots_and_widths() {
+        let _session = VerificationSession::enter();
+        let read = Pointer {
+            block: "retained-offset-source".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        crate::kernel::eval::declare_load_access_width(&read, 4);
+        let base = CMemory::new().with_block("retained-offset-source", 16);
+        let facts = PureFactContext::new();
+        let havoc = |id| {
+            base.clone().with_call_memory_havoc(
+                Variable(id),
+                &[CMemoryRange::new(
+                    read.offset_by_bytes(8),
+                    0u32.into(),
+                    8u32.into(),
+                )],
+                &facts,
+                None,
+            )
+        };
+        let left = havoc(1018811);
+        let right = havoc(1018812);
+        let load = |memory: &CMemory| {
+            MachineTerm::MemoryLoad(
+                crate::kernel::intern_c_memory_ref(memory),
+                Box::new(read.clone()),
+                LoadKind::Int32,
+            )
+        };
+        let (a, b) = (offset(&load(&left), 4), offset(&load(&right), 4));
+        let exports = KernelTermExport::machine_export_count();
+        let evidence =
+            with_extended_dag_bridging(|| pointer_offset_equality_evidence(&a, &b, &facts))
+                .expect("same source cell");
+        assert!(evidence.checks(&a, &b, &facts));
+        assert!(!evidence.checks(&a, &offset(&load(&right), 8), &facts));
+        let changed = right.store(read.clone(), CValue::Int32(7u32.into()));
+        let changed = offset(&load(&changed), 4);
+        assert!(!evidence.checks(&a, &changed, &facts));
+        assert!(
+            with_extended_dag_bridging(|| pointer_offset_equality_evidence(&a, &changed, &facts))
+                .is_none()
+        );
+        let arithmetic = offset(
+            &MachineTerm::add(MachineTerm::Variable(Variable(1018813)), 1u32.into()),
+            4,
+        );
+        assert!(!evidence.checks(&a, &arithmetic, &facts));
+        assert!(pointer_offset_equality_evidence(&a, &arithmetic, &facts).is_none());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../scaling_tests/kernel/memory_provenance/retained_offset_evidence_tests.rs");
+    }
 }

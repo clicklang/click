@@ -623,6 +623,112 @@ fn one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocat
     assert_constant_plus_log_growth("one C store into a 64-bit heap block", &samples, 16.0);
 }
 
+/// [`one_store_into_a_64_bit_heap_block_is_logarithmic_in_unrelated_64_bit_allocations`]
+/// for a field of a struct-array block: every block holds `m * 8u64` bytes
+/// of eight-byte structs, owned as a wide byte range, and the store writes
+/// the second field of element `i`, `*byte_offset(p + (int64)i * 8, 4)`.
+/// Placing the field over the element count (formation against the extent,
+/// membership in the byte range) must not visit the unrelated blocks.
+#[test]
+fn one_field_store_into_a_64_bit_struct_array_block_is_logarithmic_in_unrelated_blocks() {
+    let mut samples = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = crate::kernel::VerificationSession::enter();
+        let count = |identity: u64| MachineTerm::Variable(Variable((1 << 40) + identity));
+        let bytes = |identity: u64| {
+            MachineTerm::uint64_multiply(count(identity), MachineTerm::uint64_constant(8))
+        };
+        let index = MachineTerm::Variable(Variable(1 << 41));
+        let assumptions = PureFactContext::new()
+            .assume_condition(
+                ConditionTerm::uint64_less_equal(
+                    count(TARGET_HEAP),
+                    MachineTerm::uint64_constant(i64::MAX as u64 / 8),
+                ),
+                true,
+            )
+            .assume_condition(
+                ConditionTerm::uint64_less_than(index.clone(), count(TARGET_HEAP)),
+                true,
+            );
+        let allocate = |(memory, resources): (CMemory, ResourceContext), identity: u64| {
+            let pending = Pointer {
+                block: PointerBlock::Symbolic(Variable(identity)),
+                offset: PointerOffsetTerm::Constant(0),
+            };
+            let (memory, _, base) = memory
+                .with_pending_heap_allocation(
+                    pending.clone(),
+                    HeapExtent::new(bytes(identity), HeapExtentKind::UInt64),
+                    false,
+                )
+                .resolve_pending_heap_allocation(&pending, true)
+                .expect("the pending allocation resolves");
+            assert_eq!(base, heap_cell(identity, 0));
+            let resources =
+                resources.unchecked_with_fact(CResourceFact::own_memory(CMemoryRange::new_wide(
+                    heap_cell(identity, 0),
+                    MachineTerm::uint64_constant(0),
+                    bytes(identity),
+                    1,
+                )));
+            (memory, resources)
+        };
+        let (memory, resources) = (1..=size as u64).chain([TARGET_HEAP]).fold(
+            (
+                CMemory::new(),
+                ResourceContext::new_with_equalities(&assumptions),
+            ),
+            allocate,
+        );
+        resources.synchronize_memory_equalities(&assumptions);
+        let state = CState::new()
+            .with_memory(memory)
+            .with_resource_context(resources);
+        let element = CExpression::Add(
+            Box::new(CExpression::Value(CValue::typed_pointer(
+                heap_cell(TARGET_HEAP, 0),
+                CType::UInt8Pointer,
+            ))),
+            Box::new(CExpression::Value(CValue::Int64(
+                MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
+            ))),
+        );
+        let statement = CStatement::TypedStore {
+            access_class: None,
+            pointer: CExpression::PointerOffsetBytes {
+                pointer: Box::new(element),
+                bytes: 4,
+            },
+            value: CExpression::Value(CValue::UInt32(MachineTerm::constant(9))),
+            value_type: CType::UInt32,
+            volatile: false,
+            pointee_constant: false,
+            source: Default::default(),
+        };
+        let (paths, work) = crate::instrumentation::measure_deterministic_work(|| {
+            execute_c_statement_paths(
+                &state,
+                &statement,
+                &assumptions,
+                CExecutionContext::execute_bodies(&CExecutionEnvironment::new()),
+                &mut ExecutionBudget::new(),
+            )
+            .unwrap()
+        });
+        assert_eq!(paths.len(), 1);
+        let CStatementOutcome::Normal(_) = &paths[0].outcome else {
+            panic!("the struct field store executes: {:?}", paths[0].outcome);
+        };
+        samples.push((size, work));
+    }
+    assert_constant_plus_log_growth(
+        "one field store into a 64-bit struct-array block",
+        &samples,
+        16.0,
+    );
+}
+
 #[test]
 fn one_classed_heap_store_and_read_are_logarithmic_in_recorded_effective_types() {
     // Every unrelated allocation's first word, and every other word of the

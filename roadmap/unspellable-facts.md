@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `93c5fe74c`, including merged PR #2492.
+Baseline for this revision: `2b1200ebc`, including merged PR #2571.
 
 Already landed:
 
@@ -59,8 +59,9 @@ Already landed:
   branch/indexing controls. Specification reads no longer emit C access events.
 
 **The split is not complete.** The compiler-assisted cleanup audit finds
-remaining scaled-index checker exports; a restricted signed producer and
-generic legacy payloads also remain.
+remaining scaled-index checker exports; the remaining execution-producer
+inventory and generic legacy payloads also remain. Nested signed arithmetic
+construction is enabled, as recorded in step 2.
 These are concrete migration boundaries,
 not a count of every remaining defect in the verifier.
 
@@ -486,6 +487,171 @@ The two wide-range transport fixtures and the nested chunk-tail fixture passed
 with zero fact-stability entries. The strictness counterexample and the missing
 shared bound both failed before the common-rule fix and pass afterward.
 No nightly suite ran.
+
+#### Retained wide endpoint checks
+
+The native endpoint/rebasing adapters listed above are removed.
+`shared_wide_range_bounds` and `shared_rebased_wide_bounds` retain their
+coordinates through same-base coverage, alias-overlap checks, pointer formation,
+and split/merge decisions. Translated-window checking receives the selected base,
+width and retained bounds directly; it does not need a temporary resource
+containing exported endpoints.
+
+Split and merge convert endpoints only when constructing their final
+`CMemoryRange` outputs, preserving the original range carrier metadata. Native
+endpoint storage and native normalization/fact keys remain separate boundaries;
+this does not classify those consumers as migrated. Controls cover complete
+versus truncated bounds, 64-bit split/merge outputs, and cold rebasing DAGs.
+
+Validation: all 46 focused tests passed. `scripts/check.sh --no-fail-fast`
+exited 0 in 9m14s: 7,128 unit/API tests, 58 example projects and 5,160 mdtests
+passed. No nightly suite ran.
+
+The production compiler audit after this increment reports 157 primary error
+locations with the two implicit conversion traits disabled, versus 178 at the
+previous checkpoint. These are caller locations, not distinct checker defects;
+output, diagnostics and native payload construction also depend on the traits.
+The traits were restored after the audit. After the cell-run and wide-offset closures below, remaining checker examples
+include read-address/snapshot reasoning, pointer fact keys and native range
+normalization.
+
+#### Retained cell-run access indices
+
+`RunAccess::Scaled` and `ScaledWide` retain the pointer's shared index instead
+of materializing a native index in an intermediate access record. Exact-slot
+lookup, store-window intervals and symbolic run loads use existing shared
+constant/interval/comparison queries. They preserve exact 64-bit evidence,
+missing-evidence refusal, slot holes, access widths and path exclusions.
+The structural constant readers in offset atom collection, stride differences
+and exact byte shifts also inspect retained operands.
+
+Controls cover pinned and unknown slots, holes, signed 32-bit constant
+interpretation, and cold repeated-child DAGs at 16, 64 and 256 levels without
+machine exports. Native read-address normalization remains separate; the
+stepped wide-offset equality route is closed below.
+
+Validation: six focused tests passed. `scripts/check.sh --no-fail-fast` exited
+0 in 9m24s: 7,132 unit/API tests, 58 examples and 5,160 mdtests passed. Both
+wide-range transport fixtures passed with zero fact-stability entries. No
+nightly suite ran.
+
+#### Retained wide offset equality
+
+The unsigned-64-bit constant and stepped-index routes in
+`pointer_offsets_equal_for_memory_resolution` now retain their index operands.
+The stepped route constructs its addition with `wide_index_binary` and uses
+shared comparisons, preserving its complete-width no-wrap guard. Exact
+constant evidence is read through `wide_constant_from_equalities_view`, with
+the same equality directions and query order. A matching low word alone cannot
+pin the full index.
+
+Controls preserve the full high word, signed byte-offset refusals, misalignment,
+missing no-wrap premises and wrapping increments. Cold shared DAGs and unrelated
+fact populations exercise the same selected equality route without exporting
+index trees. Read-address/snapshot reasoning, pointer fact keys and native range
+normalization remain separate checker boundaries.
+
+Validation: the full `scripts/check.sh --no-fail-fast` gate exited 0 in 9m01s:
+7,135 unit/API tests, 58 examples and 5,160 mdtests passed. After rebasing onto
+current master and reducing only the unrelated-fact test multiplier, all six
+focused tests passed. The final growth test took 0.184s, retaining its three
+DAG sizes and work/export assertions. No nightly suite ran.
+
+#### Retained pointer-index memory evidence
+
+`pointer_offsets_match_from_memory_derivations` uses the existing shared int32
+value-equality and explicit memory-derivation queries for scaled indices.
+`pointer_offset_equality_evidence` and its typed checker select read sources
+through operand views instead of exporting shared arithmetic merely to inspect
+its root. The native atomic evidence checker still enforces its read-root,
+width and exact-snapshot requirements; this does not broaden its rule family.
+
+Controls compare native/shared value answers, preserve changed-cell and width
+refusals, and reject cold arithmetic DAGs at 16, 64 and 256 levels with constant
+root-inspection work and zero exports. Framed pointer-offset transport and
+exact-load normalization remain open, as do the remaining implicit traits and
+live checker migrations listed above.
+
+Validation: five focused tests passed. The full `scripts/check.sh --no-fail-fast`
+gate exited 0 in 9m17s: 7,138 unit/API tests, 58 examples and 5,160 mdtests
+passed. The subsequent rebase adds only an unrelated CLI change; no tested
+kernel source changed. No nightly suite ran.
+
+#### Explicit native address-walker boundaries
+
+The four canonicalization/read-selection walkers explicitly borrow retained
+native inputs after their shared-index guard. These eight call sites no longer
+depend on implicit `Deref`. Shared indices retain their exact structure and
+snapshots without entering the native walkers. This classifies existing native
+input paths; it does not close the live framed-transport or normalization exports.
+
+Validation: `scripts/check.sh --no-fail-fast` exited 0 with 7,142 unit/API tests
+and the complete regular examples/mdtests. The cold run took 14m07s, including
+3m48s compilation, and exceeded the ten-minute budget. A redundant standalone
+documentation build was stopped after it competed with the fixture phase;
+rendering and lint had completed. The unit phase took 276s versus 273s in the
+previous gate. No limits changed and no nightly suite ran.
+
+#### Retained pointer-formation bounds
+
+Recorded-block formation checks retain scaled indices through signed/unsigned
+wide comparisons and the signed extension of a 32-bit coordinate. Exact byte
+coordinate reconstruction retains intermediate sums and products. Its signed
+range requirements are ordinary Integer upper/lower bounds; unsigned indices
+still need the full-width maximum-index guard before signed interpretation.
+Opaque byte-offset variables and negative unsigned strides keep their refusals.
+The coordinate constructors preserve native constant-reading and product
+zero/one rules; they do not apply comparison-only simplifications to values.
+
+A native/shared parity test exposed extension constant metadata that folded a
+computed narrow operand where the native reader accepts only a literal of that
+width. Shared metadata now preserves those literal requirements, including the
+signed-to-unsigned wide extension. Retained native leaves supply their existing
+constant reading once on introduction, including literal-conditioned native
+conditionals; shared parents reuse the result. This is checking metadata, not a
+change to structural lowering. Controls cover exact constructor shapes,
+overflowing and full-width coordinates, missing bounds, read snapshots and
+growing DAG prefixes.
+
+The full gate exposed a common comparison-reader gap: removing an exact
+extension could leave different observation formats and lose the original
+common-format comparison. The reader now retains that written view when the
+value reading cannot form a machine comparison. The existing mixed `int` /
+`size_t` allocation-index fixture verifies unchanged, with zero fact-stability
+differences; a unit regression covers separate bounds and missing premises.
+Validation: `scripts/check.sh --no-fail-fast` passed in 9m49s with the
+precompiled test binary: 7,150 unit/API tests, 58 example projects and 5,180
+mdtests. The focused eight-test run includes deterministic 16/64/256-prefix
+scaling and zero-export checks. No nightly run.
+
+The distinct cumulative pointer-index producer, framed transport, exact-load
+normalization and the remaining compiler-audit groups are still open.
+
+#### Retained snapshot-equivalent pointer indices
+
+The snapshot-equivalence route for 32-bit scaled indices now retains operand
+views. Its shared syntax correspondence is cached separately from proof
+authority: every selected read pair is checked under the current context.
+The existing native rule remains the reference: exact syntax matches, and
+changed read snapshots may be framed only through same-format 32-bit sums,
+differences and products. Casts, other operations and wide arithmetic retain
+exact-syntax matching but do not gain framing of changed reads. Variables do
+not acquire registered-load semantics in this route.
+
+The snapshot source index shares the native/shared operand fingerprint walker.
+Its policy omits read addresses and snapshots only along those same permitted
+paths, while the existing memory-blind fingerprint retains its own policy.
+This also aligns the source-index shape with the existing unsigned 32-bit ring
+comparison rule; previously the shape recognized only signed ring operations.
+These fingerprints select candidates, never prove equality.
+
+Validation: four focused tests pass, including native/shared and mixed parity,
+source lookup in both orientations, withdrawn/missing premises, branch-context
+authority and deterministic 16/64/256-prefix growth with zero exports.
+`scripts/check.sh --no-fail-fast` passed with 7,154 unit/API tests, 58 example
+projects and 5,180 mdtests. Its precompiled-binary run took 10m04s and emitted
+the ten-minute budget warning, versus 9m49s for the preceding checkpoint;
+no limits were changed and no nightly suite was run.
 
 #### Classified boundaries and retained coverage
 

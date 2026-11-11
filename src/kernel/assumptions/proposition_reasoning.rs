@@ -4517,7 +4517,10 @@ impl PureFactContext {
                     value: right,
                     byte_width: right_width,
                 },
-            ) => left_width == right_width && self.bitvector_terms_snapshot_equivalent(left, right),
+            ) => {
+                left_width == right_width
+                    && self.operands_snapshot_equivalent(left.operand_view(), right.operand_view())
+            }
             (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
                 self.pointer_offset_terms_snapshot_equivalent(left_a, right_a)
                     && self.pointer_offset_terms_snapshot_equivalent(left_b, right_b)
@@ -4572,6 +4575,37 @@ impl PureFactContext {
             );
         });
         indexed
+    }
+
+    /// Retain the selected index DAG. Syntax summaries do not carry frame
+    /// authority: each selected read pair is checked in this context.
+    fn operands_snapshot_equivalent(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        use MachineOperandView as V;
+        if let (V::Legacy(left), V::Legacy(right)) = (left, right) {
+            return self.bitvector_terms_snapshot_equivalent(left, right);
+        }
+        let root = |value| {
+            crate::kernel::KernelTerm::retained_machine_operand(MachineIntegerType::Int32, value)
+        };
+        let (left, right) = (root(left), root(right));
+        crate::kernel::shared_snapshot_read_pairs(&left, &right).is_some_and(|pairs| {
+            pairs.values().all(|(left, right)| {
+                crate::instrumentation::record_deterministic_work(1);
+                memory_load_terms_equal_for_fact_transport(
+                    &V::Shared(left)
+                        .read_source()
+                        .expect("selected snapshot read"),
+                    &V::Shared(right)
+                        .read_source()
+                        .expect("selected snapshot read"),
+                    self,
+                )
+            })
+        })
     }
 
     pub(super) fn bitvector_terms_snapshot_equivalent(
@@ -5999,3 +6033,7 @@ mod retained_individual_order_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "proposition_reasoning/retained_snapshot_indices.rs"]
+mod retained_snapshot_indices;

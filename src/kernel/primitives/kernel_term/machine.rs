@@ -7,28 +7,39 @@ use crate::kernel::{
     uint32_constant, uint64_constant,
 };
 
+impl KernelLegacyTerm {
+    fn machine_operand(&self) -> Option<&MachineTerm> {
+        if !matches!(self.identity, LegacyIdentity::Machine(_)) {
+            return None;
+        }
+        let PureFunctionArgument::Value(value) = self.value() else {
+            return None;
+        };
+        match value {
+            CValue::Int8(v)
+            | CValue::UInt8(v)
+            | CValue::Int16(v)
+            | CValue::UInt16(v)
+            | CValue::Int32(v)
+            | CValue::UInt32(v)
+            | CValue::Int64(v)
+            | CValue::UInt64(v)
+            | CValue::Int128(v)
+            | CValue::UInt128(v) => Some(v),
+            _ => None,
+        }
+    }
+}
+
 impl KernelTerm {
     /// An explicitly retained native leaf or the compatibility reading of a
     /// mathematical integer conversion. The surrounding machine DAG is never
     /// exported; conversion Integer payloads stay shared.
     pub(crate) fn machine_conversion_leaf(&self) -> Option<&MachineTerm> {
         if let KernelTermNode::Legacy(value) = self.node()
-            && matches!(value.identity, LegacyIdentity::Machine(_))
-            && let PureFunctionArgument::Value(value) = value.value()
+            && let Some(operand) = value.machine_operand()
         {
-            return match value {
-                CValue::Int8(v)
-                | CValue::UInt8(v)
-                | CValue::Int16(v)
-                | CValue::UInt16(v)
-                | CValue::Int32(v)
-                | CValue::UInt32(v)
-                | CValue::Int64(v)
-                | CValue::UInt64(v)
-                | CValue::Int128(v)
-                | CValue::UInt128(v) => Some(v),
-                _ => None,
-            };
+            return Some(operand);
         }
         let KernelTermNode::IntegerToMachine {
             destination,
@@ -179,6 +190,17 @@ impl KernelMachineLiteral {
 pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLiteral> {
     let (format, root) = match node {
         KernelTermNode::MachineLiteral(value) => return Some(value.clone()),
+        KernelTermNode::Legacy(value) => {
+            // Read the selected native leaf once, on introduction. Shared
+            // parents reuse this metadata, including a literal-conditioned
+            // native `If`, instead of exporting the enclosing DAG to read it.
+            let operand = value.machine_operand()?;
+            return operand
+                .uint64_as_const()
+                .map(KernelMachineLiteral::UInt64)
+                .or_else(|| operand.int64_as_const().map(KernelMachineLiteral::Int64))
+                .or_else(|| operand.as_const().map(KernelMachineLiteral::Word32));
+        }
         KernelTermNode::MachineBinary {
             format,
             operator,
@@ -223,12 +245,36 @@ pub(super) fn constant_reading(node: &KernelTermNode) -> Option<KernelMachineLit
             source,
             destination,
             operand,
-        } => (
-            *destination,
-            encoding
-                .unary(*source, *destination)
-                .build_raw(operand.machine_constant_reading()?.legacy_term()),
-        ),
+        } => {
+            let reading = operand.machine_constant_reading()?;
+            // Native extension readers accept a literal of the source width,
+            // then recurse only through their wide constant family. Replacing
+            // a computed narrow child with its cached literal would broaden
+            // that rule and change checking-constructor output shapes.
+            if !matches!(operand.node(), KernelTermNode::MachineLiteral(_))
+                && matches!(
+                    (encoding, reading),
+                    (
+                        MachineCastSpelling::Int64From32
+                            | MachineCastSpelling::Int64FromUInt32
+                            | MachineCastSpelling::UInt64From32
+                            | MachineCastSpelling::UInt64FromInt32,
+                        KernelMachineLiteral::Word32(_) | KernelMachineLiteral::UInt32(_),
+                    ) | (
+                        MachineCastSpelling::UInt64FromInt64,
+                        KernelMachineLiteral::Int64(_),
+                    )
+                )
+            {
+                return None;
+            }
+            (
+                *destination,
+                encoding
+                    .unary(*source, *destination)
+                    .build_raw(reading.legacy_term()),
+            )
+        }
         _ => return None,
     };
     match format {

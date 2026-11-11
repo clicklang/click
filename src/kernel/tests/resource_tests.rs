@@ -6559,6 +6559,70 @@ fn wide_ranges_are_compared_and_refused_without_a_32_bit_reading() {
 }
 
 #[test]
+fn a_field_access_in_a_wide_struct_array_byte_range_is_placed_over_elements() {
+    let _session = crate::kernel::VerificationSession::enter();
+    let base = Pointer::symbolic(Variable(983_410));
+    let count = MachineTerm::Variable(Variable(983_411));
+    let index = MachineTerm::Variable(Variable(983_412));
+    // `m * 8u64` bytes of eight-byte structs, as a 64-bit heap block holds them.
+    let bytes = MachineTerm::uint64_multiply(count.clone(), MachineTerm::uint64_constant(8));
+    let range = CMemoryRange::new_wide(base.clone(), MachineTerm::uint64_constant(0), bytes, 1);
+    let at = |offset: PointerOffsetTerm| Pointer {
+        block: base.block.clone(),
+        offset,
+    };
+    let field = |scaled: PointerOffsetTerm, bytes: i64| {
+        at(PointerOffsetTerm::Add(
+            Box::new(scaled),
+            Box::new(PointerOffsetTerm::Constant(bytes)),
+        ))
+    };
+    let unsigned = PointerOffsetTerm::scaled_int64_node(index.clone(), 8, true);
+    // The front end's `(int64)i * 8` byte displacement of `&p[i]`.
+    let signed = PointerOffsetTerm::scaled_int64_node(
+        MachineTerm::int64_multiply(index.clone(), MachineTerm::int64_constant(8)),
+        1,
+        false,
+    );
+    let assume = |facts: PureFactContext, condition| facts.assume_condition(condition, true);
+    let bounded = assume(
+        PureFactContext::new(),
+        ConditionTerm::uint64_less_equal(count.clone(), MachineTerm::uint64_constant(100)),
+    );
+    let below = assume(
+        bounded.clone(),
+        ConditionTerm::uint64_less_than(index.clone(), count.clone()),
+    );
+    for scaled in [&unsigned, &signed] {
+        assert!(below.pointer_access_in_wide_range(&field(scaled.clone(), 4), 4, &range));
+        assert!(below.pointer_access_in_wide_range(&field(scaled.clone(), 0), 4, &range));
+        // An access crossing into the next element is not one field.
+        assert!(!below.pointer_access_in_wide_range(&field(scaled.clone(), 4), 8, &range));
+    }
+    // `i <= m` admits `&p[m]`, whose fields lie past the block.
+    let at_most = assume(
+        bounded.clone(),
+        ConditionTerm::uint64_less_equal(index.clone(), count.clone()),
+    );
+    assert!(!at_most.pointer_access_in_wide_range(&field(unsigned.clone(), 4), 4, &range));
+    // Without `m <= PTRDIFF_MAX / 8` the product may wrap: `i < m` places
+    // nothing in `m * 8u64` bytes.
+    let unbounded = assume(
+        PureFactContext::new(),
+        ConditionTerm::uint64_less_than(index.clone(), count.clone()),
+    );
+    assert!(!unbounded.pointer_access_in_wide_range(&field(unsigned.clone(), 4), 4, &range));
+    // A constant field of the first element needs one element.
+    let first = at(PointerOffsetTerm::Constant(4));
+    assert!(!bounded.pointer_access_in_wide_range(&first, 4, &range));
+    let nonempty = assume(
+        bounded,
+        ConditionTerm::uint64_less_equal(MachineTerm::uint64_constant(1), count.clone()),
+    );
+    assert!(nonempty.pointer_access_in_wide_range(&first, 4, &range));
+}
+
+#[test]
 fn native_range_coverage_checks_complete_signed_observations() {
     let _session = crate::kernel::VerificationSession::enter();
     let base = Pointer::symbolic(Variable(983_400));
