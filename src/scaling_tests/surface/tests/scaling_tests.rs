@@ -10787,3 +10787,39 @@ fn volatile_read_results_use_selected_event_indexes() {
         );
     }
 }
+
+#[test]
+fn entry_separation_of_an_unconditional_resource_scales_with_the_owned_clauses() {
+    // The contract entry states the held resources as owned members beside
+    // the members their unconditional bodies expand to. One selected
+    // separation must not pay for the other owned clauses pairwise.
+    let mut samples = Vec::new();
+    for size in [4, 8, 16] {
+        let parameters = (0..size)
+            .map(|i| format!("struct node *p{i}, "))
+            .collect::<String>();
+        let c = format!(
+            "struct node {{ struct node *next; }};\nvoid caller({parameters}int *slot) {{ }}\n"
+        );
+        let click_parameters = (0..size)
+            .map(|i| format!("struct node* p{i}, "))
+            .collect::<String>();
+        let owned = (0..size)
+            .map(|i| format!("    owns plain(p{i});\n"))
+            .collect::<String>();
+        let source = format!(
+            "verifying \"owned.c\";\n\
+             resource plain(p: struct node*) {{ owns p->next; }}\n\
+             void caller({click_parameters}int32* slot) {{\n{owned}    owns *slot;\n}} by {{\n\
+             have separate(plain(p0), memory(*slot)) by {{ assumption(); }}\n}}\n"
+        );
+        let sources = [("owned.c", c.as_str())];
+        let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &sources));
+        result.expect("an owned unconditional resource is separate from another owned cell");
+        samples.push(sample);
+    }
+    assert_near_linear_scaling_at_sampled_sizes(
+        "entry separation of an unconditional resource",
+        &samples,
+    );
+}
