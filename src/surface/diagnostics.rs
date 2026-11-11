@@ -6233,6 +6233,14 @@ fn describe_snapshot_expression(
     selector: Option<&SnapshotSelector>,
     expression: &ContractExpression,
 ) -> String {
+    // A read at a call's parameter point is a read through the call's copy
+    // of its argument: `R.parameter(v).f[i]`.
+    if let Some(SnapshotSelector::ProgramPoint(point)) = selector
+        && point.kind == ProgramPointKind::Parameters
+        && let Some(read) = parameter_point_read(&point.region, expression)
+    {
+        return describe_contract_expression(&read);
+    }
     let wrap = |text: String| match selector {
         None => format!("old({text})"),
         Some(selector) => format!("at({}, {text})", describe_snapshot_selector(selector)),
@@ -6644,6 +6652,9 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
         ContractExpression::RegionResult(region) => {
             format!("{}.result", describe_code_region_ref(region))
         }
+        ContractExpression::RegionParameter { region, name } => {
+            format!("{}.parameter({name})", describe_code_region_ref(region))
+        }
         ContractExpression::IntegerLiteral(value) => value.clone(),
         ContractExpression::ResourceField(access) => {
             // A body names its own fields bare; `__body` is the parser's
@@ -6793,6 +6804,23 @@ pub(super) fn describe_contract_expression(expression: &ContractExpression) -> S
             if let Some(accessor) = describe_model_accessor(expression) =>
         {
             accessor
+        }
+        // A call's copy of an aggregate argument is an object: its fields
+        // are read with `.`, as Rust and a C struct value both write them.
+        ContractExpression::Field { base, field, .. }
+            if matches!(base.as_ref(), ContractExpression::RegionParameter { .. })
+                || matches!(base.as_ref(), ContractExpression::At {
+                    selector: SnapshotSelector::ProgramPoint(point),
+                    ..
+                } if point.kind == ProgramPointKind::Parameters) =>
+        {
+            let field = field
+                .strip_prefix('_')
+                .filter(|position| {
+                    !position.is_empty() && position.bytes().all(|byte| byte.is_ascii_digit())
+                })
+                .unwrap_or(field);
+            format!("{}.{field}", describe_contract_expression(base))
         }
         ContractExpression::Field { base, field, .. } => match base.as_ref() {
             // A member of an embedded struct member is reached with `.`:
@@ -7246,6 +7274,12 @@ pub(super) fn describe_program_point_ref_as_recorded(point: &ProgramPointRef) ->
     let kind = match point.kind {
         ProgramPointKind::Entry => "entry",
         ProgramPointKind::Exit => "exit",
+        ProgramPointKind::Parameters => {
+            return format!(
+                "the parameters `{}` bound",
+                describe_code_region_ref(&point.region)
+            );
+        }
     };
     format!("{}.{}", describe_code_region_ref(&point.region), kind)
 }
@@ -8054,5 +8088,63 @@ mod assembly_fact_tests {
         let fallback =
             describe_unestablished_assembly_fact(&error, &[], &[], binding, &[]).unwrap();
         assert!(fallback.contains("missing pure fact: false"), "{fallback}");
+    }
+}
+
+/// `expression`, a read of a field or element of a call's parameter object
+/// at that call's parameter point, rooted at `R.parameter(v)` instead of `v`.
+fn parameter_point_read(
+    region: &CodeRegionRef,
+    expression: &ContractExpression,
+) -> Option<ContractExpression> {
+    Some(match expression {
+        ContractExpression::Binding(_)
+        | ContractExpression::CFragment(CExpression::Variable(_)) => {
+            parameter_point_root(region, expression)?
+        }
+        ContractExpression::Field {
+            pointee_struct,
+            base,
+            field,
+            lowered,
+            offset_bytes,
+        } => ContractExpression::Field {
+            pointee_struct: pointee_struct.clone(),
+            base: Box::new(parameter_point_root(region, base)?),
+            field: field.clone(),
+            lowered: lowered.clone(),
+            offset_bytes: *offset_bytes,
+        },
+        ContractExpression::Index(base, index) => {
+            ContractExpression::Index(Box::new(parameter_point_read(region, base)?), index.clone())
+        }
+        ContractExpression::ArrayIndex {
+            base,
+            indexes,
+            dimensions,
+            lowered,
+        } => ContractExpression::ArrayIndex {
+            base: Box::new(parameter_point_read(region, base)?),
+            indexes: indexes.clone(),
+            dimensions: dimensions.clone(),
+            lowered: lowered.clone(),
+        },
+        _ => return None,
+    })
+}
+
+fn parameter_point_root(
+    region: &CodeRegionRef,
+    base: &ContractExpression,
+) -> Option<ContractExpression> {
+    match base {
+        ContractExpression::Binding(name)
+        | ContractExpression::CFragment(CExpression::Variable(name)) => {
+            Some(ContractExpression::RegionParameter {
+                region: region.clone(),
+                name: crate::kernel::c_local_source_name(name).to_string(),
+            })
+        }
+        _ => parameter_point_read(region, base),
     }
 }

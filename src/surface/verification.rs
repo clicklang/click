@@ -5767,6 +5767,16 @@ fn validate_modeled_pthread_calls(
 pub(in crate::surface) fn external_c0_function(
     function_block: &FunctionBlock,
 ) -> syntax::C0Function {
+    external_c0_function_with_layouts(function_block, &BTreeMap::new())
+}
+
+/// The C interface of a bodiless function block. A struct passed by value
+/// carries its layout, as a parsed C declaration's parameter does: the
+/// call copies the argument into an object of that layout.
+pub(in crate::surface) fn external_c0_function_with_layouts(
+    function_block: &FunctionBlock,
+    struct_layouts: &BTreeMap<String, syntax::C0StructLayout>,
+) -> syntax::C0Function {
     syntax::C0Function::external(
         function_block.signature().return_type(),
         function_block.signature().name().to_string(),
@@ -5775,14 +5785,25 @@ pub(in crate::surface) fn external_c0_function(
             .parameters()
             .iter()
             .map(|parameter| {
-                syntax::C0Parameter::new(
+                let c_parameter = syntax::C0Parameter::new(
                     parameter.c_type(),
                     parameter.name().to_string(),
                     parameter.struct_name().map(str::to_string),
-                )
-                .with_constant(parameter.is_constant())
-                .with_pointee_constant(parameter.pointee_is_constant())
-                .with_reference(parameter.is_reference())
+                );
+                let c_parameter = match parameter
+                    .struct_name()
+                    .filter(|_| c_parameter.is_struct_value())
+                    .and_then(|name| Some((name, struct_layouts.get(name)?)))
+                {
+                    Some((name, layout)) => {
+                        c_parameter.with_struct_value(name.to_string(), layout.clone())
+                    }
+                    None => c_parameter,
+                };
+                c_parameter
+                    .with_constant(parameter.is_constant())
+                    .with_pointee_constant(parameter.pointee_is_constant())
+                    .with_reference(parameter.is_reference())
             })
             .collect(),
     )
@@ -5817,7 +5838,10 @@ pub(in crate::surface) fn build_function_environment(
     let mut environment = CExecutionEnvironment::new();
     for definition in contract_definitions {
         let function_block = definition.function_block();
-        let parsed_function = external_c0_function(function_block);
+        let parsed_function = external_c0_function_with_layouts(
+            function_block,
+            resource_environment.struct_layouts(),
+        );
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -5887,7 +5911,10 @@ pub(in crate::surface) fn build_function_environment(
         .filter(|block| block.is_external() && block.signature().has_abstract_types())
     {
         let name = function_block.signature().name();
-        let parsed_function = external_c0_function(function_block);
+        let parsed_function = external_c0_function_with_layouts(
+            function_block,
+            resource_environment.struct_layouts(),
+        );
         let InitialClaimContext {
             state, arguments, ..
         } = initial_claim_context_with_caller_owner(
@@ -6117,7 +6144,10 @@ pub(in crate::surface) fn build_function_environment(
         }
         let parsed_function = match prepared_interfaces.get(name) {
             Some(prepared) => (*prepared).clone(),
-            None => external_c0_function(function_block),
+            None => external_c0_function_with_layouts(
+                function_block,
+                resource_environment.struct_layouts(),
+            ),
         };
         let InitialClaimContext {
             state, arguments, ..

@@ -3951,6 +3951,25 @@ that do not produce a result are refused
 temporary for a call held this way
 (`mdtests/an_unbound_call_result_is_reported_by_its_call.md`).
 
+A call's region also names the callee's copy of each by-value aggregate
+argument: `R.parameter(name)` is the object the call copied the argument into,
+read at the memory just after the copy, which is what the callee's contract
+reads. It is an object, read one field (or one element of an array field, by a
+literal index) at a time, as `statement(3).call(first, 0).parameter(p).a`. The
+step that runs the call has it while it proves the call's requirements at its
+pre-state, so a `requires` entry of that step can state one, and it names the
+same copy after the call. A name the callee does not take as a by-value
+aggregate, and a region whose call has not been prepared, are refused
+(`mdtests/a_call_parameter_names_only_a_by_value_struct_parameter.md`).
+
+<!-- verified-example: mdtests/a_by_value_struct_argument_is_spelled_by_its_call_parameter.md -->
+```click
+step() {
+    requires statement(3).call(first, 0).parameter(p).a <= 1000u32 by solve();
+}
+have statement(3).call(first, 0).parameter(p).a == x;
+```
+
 A completed volatile read exposes its observed value as
 `R.read_event(i).result`, where `i` counts volatile reads in execution order
 within the atomic region `R`; volatile writes do not count. For example,

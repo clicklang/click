@@ -82,8 +82,11 @@ theorem adler_lane_b_reduction(b: Integer, a1: Integer, a2: Integer, a3: Integer
   apply(integer::truncation_identity(b3, 65521));
   apply(integer::nonnegative_dividend_remainder(b3, 65521));
   apply(integer::positive_divisor_remainder_upper(a1, 65521));
+  have truncating_remainder(a1, 65521) <= 65520 by { solve() using { truncating_remainder(a1, 65521) <= 65521 - 1; }; }
   apply(integer::positive_divisor_remainder_upper(a2, 65521));
+  have truncating_remainder(a2, 65521) <= 65520 by { solve() using { truncating_remainder(a2, 65521) <= 65521 - 1; }; }
   apply(integer::positive_divisor_remainder_upper(a3, 65521));
+  have truncating_remainder(a3, 65521) <= 65520 by { solve() using { truncating_remainder(a3, 65521) <= 65521 - 1; }; }
   have 0 <= truncating_remainder(b, 65521) + 4 * (truncating_remainder(b0, 65521) + truncating_remainder(b1, 65521) + truncating_remainder(b2, 65521) + truncating_remainder(b3, 65521)) by { arithmetic_certificate {
    premise 0: 0 <= truncating_remainder(b, 65521) => 0 <= truncating_remainder(b, 65521);
    premise 1: 0 <= truncating_remainder(b0, 65521) => 0 <= truncating_remainder(b0, 65521);
@@ -129,6 +132,9 @@ theorem adler_prefix_a_step_four(bytes: uint8[], n: int32, seed: Integer, repres
   have n <= 2147483644 by solve() using { n <= 2147483643; };
   apply(adler_sum_nonnegative(bytes, n));
   have 0 <= (seed + adler_byte_sum(bytes, n)) by solve() using { 0 <= seed; 0 <= adler_byte_sum(bytes, n); };
+  have defined(n + 1) by solve() using { 0 <= n; n <= 2147483643; };
+  have defined(n + 2) by solve() using { 0 <= n; n <= 2147483643; };
+  have defined(n + 3) by solve() using { 0 <= n; n <= 2147483643; };
   apply(adler_byte_bounds(bytes[n]));
   apply(adler_byte_bounds(bytes[n + 1]));
   apply(adler_byte_bounds(bytes[n + 2]));
@@ -169,6 +175,7 @@ theorem adler_prefix_a_step_one(bytes: uint8[], n: int32, seed: Integer, represe
   have 0 <= seed + adler_byte_sum(bytes, n) by solve() using { 0 <= seed; 0 <= adler_byte_sum(bytes, n); };
   apply(adler_residue_add(representative, to_integer(bytes[n] as int32)));
   apply(adler_residue_add(seed + adler_byte_sum(bytes, n), to_integer(bytes[n] as int32)));
+  have defined(n + 1) by solve() using { 0 <= n; n <= 2147483646; };
   have 0 < to_integer(n + 1) by solve() using { 0 <= n; n <= 2147483646; };
   apply(adler_sum_append(bytes, n + 1));
   have adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) by { rewrite(adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, n + 1 - 1) + to_integer(bytes[n + 1 - 1] as int32)); normalize(); }
@@ -213,6 +220,9 @@ theorem adler_prefix_b_step_four(bytes: uint8[], n: int32, a_seed: Integer, b_se
   have 0 <= (a_seed + adler_byte_sum(bytes, n)) by solve() using { 0 <= a_seed; 0 <= adler_byte_sum(bytes, n); };
   have 0 <= b_seed + to_integer(n) * a_seed by solve() using { 0 <= b_seed; 0 <= to_integer(n) * a_seed; };
   have 0 <= (b_seed + to_integer(n) * a_seed + adler_weighted_sum(bytes, n, n)) by solve() using { 0 <= b_seed + to_integer(n) * a_seed; 0 <= adler_weighted_sum(bytes, n, n); };
+  have defined(n + 1) by solve() using { 0 <= n; n <= 2147483643; };
+  have defined(n + 2) by solve() using { 0 <= n; n <= 2147483643; };
+  have defined(n + 3) by solve() using { 0 <= n; n <= 2147483643; };
   apply(adler_byte_bounds(bytes[n]));
   apply(adler_byte_bounds(bytes[n + 1]));
   apply(adler_byte_bounds(bytes[n + 2]));
@@ -247,8 +257,9 @@ theorem adler_weighted_append_one(bytes: uint8[], n: int32) {
  ensures adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, n, n) + adler_byte_sum(bytes, n) + to_integer(bytes[n] as int32) by {
   have 0 < to_integer(n + 1) by solve() using { 0 <= n; n <= 2147483646; };
   have to_integer((n + 1) - 1) == to_integer(n) by solve() using { 0 <= n; n <= 2147483646; };
-  apply(adler_weighted_prefix_step(bytes, n + 1)) using { 0 < to_integer(n + 1); };
-  apply(adler_sum_append(bytes, n + 1)) using { 0 < to_integer(n + 1); };
+  have defined(n + 1) by solve() using { 0 <= n; n <= 2147483646; };
+  apply(adler_weighted_prefix_step(bytes, n + 1)) using { defined(n + 1); 0 < to_integer(n + 1); };
+  apply(adler_sum_append(bytes, n + 1)) using { defined(n + 1); 0 < to_integer(n + 1); };
   rewrite(adler_weighted_sum(bytes, n + 1, n + 1) == adler_weighted_sum(bytes, (n + 1) - 1, (n + 1) - 1) + adler_byte_sum(bytes, n + 1));
   rewrite(adler_byte_sum(bytes, n + 1) == adler_byte_sum(bytes, (n + 1) - 1) + to_integer(bytes[(n + 1) - 1] as int32));
   rewrite(to_integer((n + 1) - 1) == to_integer(n));

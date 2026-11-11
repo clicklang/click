@@ -86,6 +86,10 @@ pub(super) struct SurfaceRecord {
     /// The statement entry the most recent step recorded, which later
     /// snapshot-qualified facts resolve against.
     pub(super) last_step_entry: Option<ProgramPointRef>,
+    /// The parameter point (`R.parameter(name)`) the most recent call step
+    /// recorded: a step that prepares a call proves the call's requirements
+    /// at its pre-state with this point named.
+    pub(super) last_call_parameters: Option<ProgramPointRef>,
     pub(super) path_choices: Vec<SurfacePathChoice>,
     pub(super) blocker: Option<String>,
     /// Exact facts established by ordinary checked `have` nodes on this

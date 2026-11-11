@@ -854,6 +854,7 @@ pub(in crate::surface) fn walk_written_expressions(
         | ContractExpression::CBinding(_)
         | ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. }
         | ContractExpression::ResourceWildcard
         | ContractExpression::ResourceCount(_) => {}
         ContractExpression::CUnary { operand: inner, .. }

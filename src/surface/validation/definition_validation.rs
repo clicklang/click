@@ -2338,7 +2338,9 @@ fn collect_resource_fact_reads_from_contract_expression(
 ) -> Result<(), ClickError> {
     match expression {
         ContractExpression::Resource(_) => Ok(()),
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => Ok(()),
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => Ok(()),
         ContractExpression::IntegerLiteral(_) => Ok(()),
         ContractExpression::CUnary { operand: inner, .. } | ContractExpression::Negate(inner) => {
             collect_resource_fact_reads_from_contract_expression(

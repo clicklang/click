@@ -890,7 +890,7 @@ pub(in crate::surface) fn visit_struct_field_cells(
 
 /// The element type and length of an array field, whose cells are its
 /// elements.
-fn array_field_elements(field_type: CType) -> Option<(CType, u32)> {
+pub(super) fn array_field_elements(field_type: CType) -> Option<(CType, u32)> {
     Some(match field_type {
         CType::Int8Array(length) => (CType::Int8, length),
         CType::UInt8Array(length) => (CType::UInt8, length),
@@ -2873,6 +2873,7 @@ pub(in crate::surface) fn resource_argument_to_c_expression(
         | ContractExpression::ResourceWildcard
         | ContractExpression::RegionResult(_)
         | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. }
         | ContractExpression::At { .. }
         | ContractExpression::If { .. }
         | ContractExpression::RangeFold { .. }

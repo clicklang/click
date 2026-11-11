@@ -1238,7 +1238,12 @@ fn recheck_compute_tools(contract: &str, bytes: usize) {
     } else if bytes == 1 {
         "step_until(assignment(__rust_mir_144, 0))".to_owned()
     } else {
-        format!("have __rust_mir_138_cursor == old(bytes) + {bytes}")
+        // The last tail byte's stored-iterator observation: the slice
+        // iterator has no cursor local in the library model, so the site is
+        // the remaining count after the final `next()`.
+        format!(
+            "have __rust_mir_138_remaining == 0 by solve() using {{ old(bytes.len()) == {bytes}u64; }};"
+        )
     };
     let offset = source.find(&site).unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
@@ -1361,13 +1366,13 @@ fn charon_adler2_three_byte_compute_tools_recheck_original_contract() {
 fn charon_adler2_four_byte_compute_rejects_false_stored_iterator_observations() {
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have ((__rust_mir_62_remaining as u32) as i32) == 4",
-        "have ((__rust_mir_62_remaining as u32) as i32) == 8",
+        "have (((loop(2).iter.len() * 4u64) as uint32) as int32) == 4;",
+        "have (((loop(2).iter.len() * 4u64) as uint32) as int32) == 8;",
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "have adler_lane_vectors_consumed(4, ((__rust_mir_62_remaining as u32) as i32)) == 0 by",
-        "have adler_lane_vectors_consumed(4, ((__rust_mir_62_remaining as u32) as i32)) == 1 by",
+        "have adler_lane_vectors_consumed(4, (((loop(2).iter.len() * 4u64) as uint32) as int32)) == 0 by",
+        "have adler_lane_vectors_consumed(4, (((loop(2).iter.len() * 4u64) as uint32) as int32)) == 1 by",
     );
 }
 
@@ -1488,7 +1493,7 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     for field in ["a", "b"] {
         for lane in [0, 3] {
             let bound = format!(
-                "have to_integer({field}_vec.0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, ((__rust_mir_62_remaining as u32) as i32))) by"
+                "have to_integer({field}_vec.0[{lane}]) <= adler_lane_{field}_ceiling(adler_lane_vectors_consumed(4, (((iter.len() * 4u64) as uint32) as int32))) by"
             );
             let changed = post_step.replacen(
                 &bound,
@@ -1506,8 +1511,8 @@ fn charon_adler2_four_byte_compute_rejects_false_native_step_bounds() {
     );
     reject_compute(
         FOUR_BYTE_COMPUTE,
-        "// Both actual helper results satisfy the ceiling at next()'s new state.\n       have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32)) - 4",
-        "// Both actual helper results satisfy the ceiling at next()'s new state.\n       have ((__rust_mir_62_remaining as u32) as i32) == at(lane_head, ((__rust_mir_62_remaining as u32) as i32))",
+        "// Both actual helper results satisfy the ceiling at next()'s new state.\n        have (((iter.len() * 4u64) as uint32) as int32) == at(lane_head, (((iter.len() * 4u64) as uint32) as int32)) - 4;",
+        "// Both actual helper results satisfy the ceiling at next()'s new state.\n        have (((iter.len() * 4u64) as uint32) as int32) == at(lane_head, (((iter.len() * 4u64) as uint32) as int32));",
     );
 }
 
@@ -1579,26 +1584,26 @@ fn charon_adler2_small_batch_compute_rejects_false_final_checksum() {
 fn charon_adler2_small_batch_compute_rejects_wrong_constructor_input_positions() {
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - __rust_mir_62_remaining - 4u64) by",
-        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - __rust_mir_62_remaining - 3u64) by",
+        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 4u64) by",
+        "have __rust_mir_69 == bytes + ((bytes.len() - bytes.len() % 4u64) - adler_chunk_bytes(iter.len()) - 3u64) by",
     );
     reject_compute(
         SMALL_BATCH_COMPUTE,
-        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as u32) as i32) - ((__rust_mir_62_remaining as u32) as i32)) - 4) + 3] as i32)) by",
-        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as u32) as i32) - ((__rust_mir_62_remaining as u32) as i32)) - 4) + 2] as i32)) by",
+        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - ((adler_chunk_bytes(iter.len()) as uint32) as int32)) - 4) + 3] as int32)) by",
+        "to_integer(at(vector_a, __rust_mir_68.0[3])) == to_integer((bytes[(((((bytes.len() - bytes.len() % 4u64) as uint32) as int32) - ((adler_chunk_bytes(iter.len()) as uint32) as int32)) - 4) + 2] as int32)) by",
     );
 }
 
 #[test]
 #[ignore = "nightly: original vector-prefix A recurrence and seed rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
-    let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
-    let remaining = "((__rust_mir_62_remaining as u32) as i32)";
+    let total = "(((bytes.len() - bytes.len() % 4u64) as uint32) as int32)";
+    let remaining = "((adler_chunk_bytes(iter.len()) as uint32) as int32)";
     let previous = format!("(({total} - {remaining}) - 4)");
     let representative = "adler_lane_a(to_integer(a), to_integer(a_vec.0[0]), to_integer(a_vec.0[1]), to_integer(a_vec.0[2]), to_integer(a_vec.0[3]))";
     let old_representative = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec.0[0])), to_integer(at(vector_a, a_vec.0[1])), to_integer(at(vector_a, a_vec.0[2])), to_integer(at(vector_a, a_vec.0[3])))";
     let bytes = format!(
-        "to_integer((bytes[{previous}] as i32)) + to_integer((bytes[{previous} + 1] as i32)) + to_integer((bytes[{previous} + 2] as i32)) + to_integer((bytes[{previous} + 3] as i32))"
+        "to_integer((bytes[{previous}] as int32)) + to_integer((bytes[{previous} + 1] as int32)) + to_integer((bytes[{previous} + 2] as int32)) + to_integer((bytes[{previous} + 3] as int32))"
     );
     reject_compute(
         SMALL_BATCH_COMPUTE,
@@ -1608,13 +1613,16 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
             bytes.replace(&format!("{previous} + 3"), &format!("{previous} + 2"))
         ),
     );
+    // After the loop the proof states the whole vector prefix, whose length
+    // keeps the Rust cast spelling.
+    let prefix_length = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
     reject_compute(
         SMALL_BATCH_COMPUTE,
         &format!(
-            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {total}, to_integer(a)) by"
+            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {prefix_length}, to_integer(a)) by"
         ),
         &format!(
-            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {total}, to_integer(a) + 1) by"
+            "have truncating_remainder({representative}, 65521) == adler_spec_a(bytes, {prefix_length}, to_integer(a) + 1) by"
         ),
     );
 }
@@ -1622,8 +1630,8 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_a() {
 #[test]
 #[ignore = "nightly: original vector-prefix B weights and deferred seed rejections"]
 fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
-    let total = "(((bytes.len() - bytes.len() % 4u64) as u32) as i32)";
-    let remaining = "((__rust_mir_62_remaining as u32) as i32)";
+    let total = "(((bytes.len() - bytes.len() % 4u64) as uint32) as int32)";
+    let remaining = "((adler_chunk_bytes(iter.len()) as uint32) as int32)";
     let prefix = format!("({total} - {remaining})");
     let previous = format!("({prefix} - 4)");
     let representative = format!(
@@ -1633,9 +1641,9 @@ fn charon_adler2_small_batch_compute_rejects_false_vector_prefix_b() {
         "adler_lane_b(to_integer(b) + to_integer({previous}) * to_integer(a), to_integer(at(vector_a, a_vec.0[1])), to_integer(at(vector_a, a_vec.0[2])), to_integer(at(vector_a, a_vec.0[3])), to_integer(at(vector_a, b_vec.0[0])), to_integer(at(vector_a, b_vec.0[1])), to_integer(at(vector_a, b_vec.0[2])), to_integer(at(vector_a, b_vec.0[3])))"
     );
     let old_a = "adler_lane_a(to_integer(a), to_integer(at(vector_a, a_vec.0[0])), to_integer(at(vector_a, a_vec.0[1])), to_integer(at(vector_a, a_vec.0[2])), to_integer(at(vector_a, a_vec.0[3])))";
-    let first_byte = format!("to_integer((bytes[{previous}] as i32))");
+    let first_byte = format!("to_integer((bytes[{previous}] as int32))");
     let weighted = format!(
-        "(4 * {first_byte} + 3 * to_integer((bytes[{previous} + 1] as i32)) + 2 * to_integer((bytes[{previous} + 2] as i32)) + to_integer((bytes[{previous} + 3] as i32)))"
+        "(4 * {first_byte} + 3 * to_integer((bytes[{previous} + 1] as int32)) + 2 * to_integer((bytes[{previous} + 2] as int32)) + to_integer((bytes[{previous} + 3] as int32)))"
     );
     let goal =
         format!("have {representative} == ({old_representative} + 4 * {old_a} + {weighted}) by");
@@ -1732,8 +1740,10 @@ fn charon_adler2_small_batch_compute_requires_canonical_b() {
 fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() {
     for (before, after) in [
         (
-            "have __rust_mir_62_remaining == bytes.len() - bytes.len() % 4u64;",
-            "have __rust_mir_62_remaining == (bytes.len() - bytes.len() % 4u64) + 4u64 by assumption();",
+            // The chunk iterator's initial length comes from the library
+            // contract; the false count claims one chunk more.
+            "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 by {\n      apply(chunks_exact::len_chunks_exact(Slice<u8>::Slice(bytes, bytes.len() - bytes.len() % 4u64), 4u64));\n      solve();\n     }",
+            "have loop(2).iter.len() == (bytes.len() - bytes.len() % 4u64) / 4u64 + 1u64 by assumption();",
         ),
         ("ensures self.a < 65521;", "ensures self.a < 1;"),
         ("ensures self.b < 65521;", "ensures self.b < 1;"),
@@ -1747,11 +1757,11 @@ fn charon_adler2_small_batch_compute_rejects_false_induction_and_final_bounds() 
 fn charon_adler2_small_batch_compute_rejects_false_tail_state_and_ranking() {
     for (before, after) in [
         (
-            "have __rust_mir_138_cursor == remainder by normalize();",
-            "have __rust_mir_138_cursor == remainder + 1 by assumption();",
+            "have __rust_mir_138_base == remainder by normalize();",
+            "have __rust_mir_138_base == remainder + 1 by assumption();",
         ),
         (
-            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by solve() using { __rust_mir_138_remaining == at(tail_head, __rust_mir_138_remaining) - 1u64; 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
+            "have __rust_mir_138_remaining < at(tail_head, __rust_mir_138_remaining) by solve() using { to_integer(__rust_mir_138_remaining) == to_integer(at(tail_head, __rust_mir_138_remaining) - 1u64); 1u64 <= at(tail_head, __rust_mir_138_remaining); };",
             "have at(tail_head, __rust_mir_138_remaining) < __rust_mir_138_remaining by assumption();",
         ),
     ] {
@@ -2197,6 +2207,7 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
   have defined(remaining - 22208);
   have to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208);
   have defined(remaining % 22208) by normalize();
+  have to_integer(22208) != 0 by { normalize(); }
   apply(integer::int32_remainder_to_integer(remaining, 22208)) using { defined(remaining % 22208); to_integer(22208) != 0; };
   have to_integer(remaining % 22208) == 0 by { rewrite(remaining % 22208 == 0); normalize(); }
   have truncating_remainder(to_integer(remaining), 22208) == 0 by solve() using { to_integer(remaining % 22208) == truncating_remainder(to_integer(remaining), to_integer(22208)); to_integer(remaining % 22208) == 0; };
@@ -2206,7 +2217,7 @@ theorem adler_outer_remaining_step_divisible(remaining: int32) {
   have 0 <= truncating_quotient(to_integer(remaining), 22208) - 1 by solve() using { 1 <= truncating_quotient(to_integer(remaining), 22208); };
   apply(adler_multiple_of_full_batch(truncating_quotient(to_integer(remaining), 22208) - 1)) using { 0 <= truncating_quotient(to_integer(remaining), 22208) - 1; };
   have to_integer(remaining - 22208) == (truncating_quotient(to_integer(remaining), 22208) - 1) * 22208 by solve() using { to_integer(remaining - 22208) == to_integer(remaining) - to_integer(22208); to_integer(remaining) == truncating_quotient(to_integer(remaining), 22208) * 22208 + truncating_remainder(to_integer(remaining), 22208); truncating_remainder(to_integer(remaining), 22208) == 0; };
-  have defined((remaining - 22208) % 22208) by normalize() using { defined(remaining - 22208); };
+  have defined((remaining - 22208) % 22208) by solve() using { defined(remaining - 22208); };
   apply(integer::int32_remainder_to_integer(remaining - 22208, 22208)) using { defined((remaining - 22208) % 22208); to_integer(22208) != 0; };
   have to_integer((remaining - 22208) % 22208) == 0 by {
    rewrite(to_integer((remaining - 22208) % 22208) == truncating_remainder(to_integer(remaining - 22208), to_integer(22208)));
@@ -3351,10 +3362,14 @@ fn adler_deferred_batch_b_rejects_false_transitions() {
             "to_integer(pos + 4) * to_integer(a)",
             "to_integer(pos + 3) * to_integer(a)",
         ),
+        // The B guard over the mathematical sum implies the A guard, since
+        // `b0` is unsigned; removing the A guard alone leaves a true theorem.
+        // Without it the B guard can only bound the wrapped `a0 + v0`, which
+        // does not exclude the A overflow.
         (
             "adler_native_deferred_b_step",
-            "requires to_integer(a0) + to_integer(v0) <= 4294967295;",
-            "",
+            "requires to_integer(a0) + to_integer(v0) <= 4294967295;\n requires to_integer(b0) + (to_integer(a0) + to_integer(v0)) <= 4294967295;",
+            "requires to_integer(b0) + to_integer(a0 + v0) <= 4294967295;",
         ),
         (
             "adler_native_deferred_b_step",
@@ -3439,7 +3454,9 @@ fn adler_native_vector_prefix_tools_expand_and_reverify() {
     // Profile verifies the complete original input; the final CLI verify below
     // checks the expanded proofs. Avoid a duplicate original verification.
     assert_cli(&p, &["profile"]);
-    let offset = source.find("have total - remaining <= 2147483643").unwrap();
+    let offset = source
+        .find("have to_integer(total - remaining) <= 2147483643")
+        .unwrap();
     let line = source[..offset].bytes().filter(|&b| b == b'\n').count() + 1;
     let cursor = format!("{}:{line}:2", p.root.join("borrow.click").display());
     let audit = Command::new(env!("CARGO_BIN_EXE_click"))

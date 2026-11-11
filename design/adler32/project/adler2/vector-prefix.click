@@ -62,6 +62,10 @@ theorem adler_native_four_lane_a_prefix_step(bytes: uint8[], n: int32, a_seed: I
   have to_integer(a1 + v1) == to_integer(a1) + to_integer(v1);
   have to_integer(a2 + v2) == to_integer(a2) + to_integer(v2);
   have to_integer(a3 + v3) == to_integer(a3) + to_integer(v3);
+  have 0 <= to_integer(a0) by normalize();
+  have 0 <= to_integer(a1) by normalize();
+  have 0 <= to_integer(a2) by normalize();
+  have 0 <= to_integer(a3) by normalize();
   apply(adler_four_lane_a_prefix_step(bytes, n, a_seed, a, to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3)));
   rewrite(to_integer(a0 + v0) == to_integer(a0) + to_integer(v0));
   rewrite(to_integer(a1 + v1) == to_integer(a1) + to_integer(v1));
@@ -166,6 +170,14 @@ theorem adler_native_four_lane_prefix_step(bytes: uint8[], n: int32, a_seed: Int
   have to_integer(a3 + v3) == to_integer(a3) + to_integer(v3);
   have to_integer(b3) + to_integer(a3 + v3) <= 4294967295 by { rewrite(to_integer(a3 + v3) == to_integer(a3) + to_integer(v3)); assumption(); }
   have to_integer(b3 + (a3 + v3)) == to_integer(b3) + to_integer((a3 + v3));
+  have 0 <= to_integer(a0) by normalize();
+  have 0 <= to_integer(a1) by normalize();
+  have 0 <= to_integer(a2) by normalize();
+  have 0 <= to_integer(a3) by normalize();
+  have 0 <= to_integer(b0) by normalize();
+  have 0 <= to_integer(b1) by normalize();
+  have 0 <= to_integer(b2) by normalize();
+  have 0 <= to_integer(b3) by normalize();
   apply(adler_four_lane_prefix_step(bytes, n, a_seed, b_seed, a, b, to_integer(a0), to_integer(a1), to_integer(a2), to_integer(a3), to_integer(b0), to_integer(b1), to_integer(b2), to_integer(b3)));
   rewrite(to_integer(b0 + (a0 + v0)) == to_integer(b0) + to_integer(a0 + v0));
   rewrite(to_integer(b1 + (a1 + v1)) == to_integer(b1) + to_integer(a1 + v1));

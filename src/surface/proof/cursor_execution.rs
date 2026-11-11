@@ -3415,6 +3415,19 @@ fn execute_step_from_frontier_position_selecting_path(
             .presentation
             .recorded_snapshots
             .record_read_events(statement_index, &execution_pure_facts);
+        if let Some(parameters) = &transition.call_parameters {
+            record_statement_program_snapshot_state(
+                &mut execution.presentation.recorded_snapshots,
+                function_block,
+                statement_index,
+                ProgramPointKind::Parameters,
+                parameters.state().clone(),
+            );
+            execution.presentation.surface_record.last_call_parameters = Some(ProgramPointRef {
+                region: CodeRegionRef::Region(statement_index),
+                kind: ProgramPointKind::Parameters,
+            });
+        }
         if matches!(outcome, CStatementOutcome::Normal(_))
             && let Some(result) = &transition.call_result
         {

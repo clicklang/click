@@ -1180,7 +1180,11 @@ impl SourceExecutionLayout {
                 .flat_map(|(_, regions)| regions)
                 .min()
                 .expect("a statement that exists has a region")),
-            ProgramPointKind::Exit => Ok(self.source_statement_exit(&path)),
+            // A call's parameters are bound at its own region, as its
+            // `.result` is read at its exit.
+            ProgramPointKind::Exit | ProgramPointKind::Parameters => {
+                Ok(self.source_statement_exit(&path))
+            }
         }
     }
 

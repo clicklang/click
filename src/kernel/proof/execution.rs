@@ -11581,6 +11581,7 @@ impl ExecutionProofCore {
             ));
             drop(premises);
             paths.push(crate::kernel::SymbolicCExecutionPath {
+                call_parameters: None,
                 completion_origin: Some(candidate.outcome().clone()),
                 call_result: None,
                 assumptions: assumptions.clone(),

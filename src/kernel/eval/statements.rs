@@ -3368,6 +3368,7 @@ pub(in crate::kernel) fn execute_statement_paths(
             judgment,
         )? {
             let CStatementExecutionPath {
+                call_parameters: _,
                 loop_invariant_correspondence: _,
                 call_result: _,
                 outcome,
@@ -3399,6 +3400,7 @@ pub(in crate::kernel) fn execute_statement_paths(
                 | CStatementOutcome::VerificationDiverges
                 | CStatementOutcome::UndefinedBehavior(_)
                 | CStatementOutcome::RuntimeError(_)) => paths.push(CStatementExecutionPath {
+                    call_parameters: None,
                     loop_invariant_correspondence: Default::default(),
                     call_result: None,
                     outcome,
@@ -3478,6 +3480,7 @@ pub(in crate::kernel) fn execute_statement_paths_with_prefix(
             assumptions,
         )?;
         Some(CStatementExecutionPath {
+            call_parameters: None,
             loop_invariant_correspondence: Default::default(),
             call_result: None,
             outcome: path.outcome,
@@ -4166,6 +4169,7 @@ fn execute_c_statement_leaf_paths(
                 {
                     if thrown_state.locals.bindings.contains_key(binding) {
                         paths.push(CStatementExecutionPath {
+                            call_parameters: None,
                             loop_invariant_correspondence: Default::default(),
                             call_result: None,
                             outcome: CStatementOutcome::RuntimeError(

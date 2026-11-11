@@ -106,7 +106,9 @@ fn fixed_measure_state(expression: &ContractExpression) -> Option<FixedMeasureSt
     };
     match expression {
         ContractExpression::Resource(_) => None,
-        ContractExpression::RegionResult(_) | ContractExpression::RegionAllocation(_) => None,
+        ContractExpression::RegionResult(_)
+        | ContractExpression::RegionAllocation(_)
+        | ContractExpression::RegionParameter { .. } => None,
         ContractExpression::Old(_) => Some(FixedMeasureState::Old),
         ContractExpression::At { selector, .. } => Some(FixedMeasureState::At(selector.clone())),
         ContractExpression::IntegerLiteral(_)
@@ -6138,6 +6140,9 @@ impl AnnotationLowerer<'_> {
         expression: &ContractExpression,
         environment: &SpecElaborationContext,
     ) -> Result<SpecExpression, String> {
+        if let Some((region, name, accesses)) = region_parameter_read(expression) {
+            return self.lower_region_parameter_read(region, name, &accesses, environment);
+        }
         match expression {
             ContractExpression::Resource(_) => Err("a Resource descriptor is not a C value".into()),
             ContractExpression::CUnary { operand, lowered } => {
@@ -6614,6 +6619,11 @@ impl AnnotationLowerer<'_> {
                     snapshots.region_result_value(region)?,
                 ))
             }
+            ContractExpression::RegionParameter { region, name } => Err(format!(
+                "`{}.parameter({name})` is the call's copy of an aggregate argument; read a field of it, as `{}.parameter({name}).field`",
+                diagnostics::describe_code_region_ref(region),
+                diagnostics::describe_code_region_ref(region),
+            )),
 
             ContractExpression::Old(expression) => {
                 let old_environment =
@@ -8133,6 +8143,106 @@ impl AnnotationLowerer<'_> {
         }))
     }
 
+    /// `R.parameter(name).field[i]`: the scalar the call at `R` read from
+    /// its copy of an aggregate argument. The copy's layout is the one the
+    /// call bound, recorded at `R`'s parameter point, so the read is the
+    /// typed load at that field (and element) of the copy, at that point.
+    fn lower_region_parameter_read(
+        &mut self,
+        region: &CodeRegionRef,
+        name: &str,
+        accesses: &[RegionParameterAccess<'_>],
+        environment: &SpecElaborationContext,
+    ) -> Result<SpecExpression, String> {
+        let spelled = || {
+            format!(
+                "{}.parameter({name})",
+                diagnostics::describe_code_region_ref(region)
+            )
+        };
+        let snapshots = self.snapshots.ok_or_else(|| {
+            format!(
+                "`{}` names a call of a function body being executed",
+                spelled()
+            )
+        })?;
+        let index = snapshots
+            .result_region_index(region)
+            .map_err(|error| format!("`{}`: {error}", spelled()))?;
+        let point = ProgramPointRef {
+            region: CodeRegionRef::Region(index),
+            kind: ProgramPointKind::Parameters,
+        };
+        let bound = snapshots.get(&point).ok_or_else(|| {
+            format!(
+                "`{}` names a by-value aggregate argument of a call, and no call at `{}` has been prepared or stepped with one",
+                spelled(),
+                diagnostics::describe_code_region_ref(region)
+            )
+        })?;
+        let layout = bound.locals().aggregate_layout(name).ok_or_else(|| {
+            format!(
+                "the call at `{}` has no by-value aggregate parameter `{name}`",
+                diagnostics::describe_code_region_ref(region)
+            )
+        })?;
+        let [RegionParameterAccess::Field(field_name), rest @ ..] = accesses else {
+            return Err(format!("read a field of `{}`", spelled()));
+        };
+        let field = layout
+            .fields()
+            .iter()
+            .find(|field| {
+                field.name() == *field_name || field.name().strip_prefix('_') == Some(*field_name)
+            })
+            .ok_or_else(|| format!("`{}` has no field `{field_name}`", spelled()))?;
+        let (offset, value_type) = match rest {
+            [] => (field.offset_bytes(), field.c_type()),
+            [RegionParameterAccess::Index(index)] => {
+                let (element, length) =
+                    super::resource_lowering::array_field_elements(field.c_type())
+                        .ok_or_else(|| format!("`{}.{field_name}` is not an array", spelled()))?;
+                let position = literal_element_index(index).ok_or_else(|| {
+                    format!(
+                        "an element of `{}.{field_name}` is selected by a literal index",
+                        spelled()
+                    )
+                })?;
+                if position >= length {
+                    return Err(format!(
+                        "`{}.{field_name}` has {length} elements",
+                        spelled()
+                    ));
+                }
+                (
+                    field.offset_bytes() + position * element.byte_width(),
+                    element,
+                )
+            }
+            _ => {
+                return Err(format!(
+                    "`{}` is read one field, or one element of an array field, at a time",
+                    spelled()
+                ));
+            }
+        };
+        if super::resource_lowering::array_field_elements(value_type).is_some() {
+            return Err(format!("read an element of `{}.{field_name}`", spelled()));
+        }
+        let read = ContractExpression::CFragment(CExpression::TypedLoad {
+            pointer: Box::new(crate::kernel::c_pointer_offset_bytes(
+                CExpression::Variable(name.to_string()),
+                offset,
+            )),
+            value_type,
+            volatile: false,
+            pointee_constant: false,
+            access_class: None,
+            source: Default::default(),
+        });
+        self.lower_at_expression_to_spec(&SnapshotSelector::ProgramPoint(point), &read, environment)
+    }
+
     fn lower_at_expression_to_spec(
         &mut self,
         selector: &SnapshotSelector,
@@ -8217,6 +8327,9 @@ impl AnnotationLowerer<'_> {
         }
         let region = self.resolve_code_region_ref(&program_point.region)?;
         match (region, program_point.kind) {
+            (CodeRegion::Function | CodeRegion::Loop(_), ProgramPointKind::Parameters) => {
+                Err("`.parameter(name)` names a by-value parameter of a call's region".to_string())
+            }
             (CodeRegion::Function, ProgramPointKind::Entry) => {
                 Ok(ResolvedProgramPoint::FunctionEntry)
             }
@@ -9774,4 +9887,65 @@ pub(in crate::surface) fn opaque_contract_refusal_suffix(function: &str) -> Stri
             .map(|reason| format!(": {reason}"))
             .unwrap_or_default()
     })
+}
+
+/// One step of a read through a call's parameter, `R.parameter(v).f[i]`.
+#[derive(Clone, Copy, Debug)]
+pub(in crate::surface) enum RegionParameterAccess<'a> {
+    Field(&'a str),
+    Index(&'a ContractExpression),
+}
+
+/// The call region, parameter and accesses of `expression` when it reads
+/// through `R.parameter(v)`: a chain of fields and indexes rooted there.
+pub(in crate::surface) fn region_parameter_read(
+    expression: &ContractExpression,
+) -> Option<(&CodeRegionRef, &str, Vec<RegionParameterAccess<'_>>)> {
+    if !matches!(
+        expression,
+        ContractExpression::Field { .. }
+            | ContractExpression::Index(..)
+            | ContractExpression::ArrayIndex { .. }
+    ) {
+        return None;
+    }
+    let mut accesses = Vec::new();
+    let mut current = expression;
+    loop {
+        match current {
+            ContractExpression::Field { base, field, .. } => {
+                accesses.push(RegionParameterAccess::Field(field.as_str()));
+                current = base;
+            }
+            ContractExpression::Index(base, index) => {
+                accesses.push(RegionParameterAccess::Index(index));
+                current = base;
+            }
+            ContractExpression::ArrayIndex { base, indexes, .. } => {
+                accesses.extend(indexes.iter().rev().map(RegionParameterAccess::Index));
+                current = base;
+            }
+            ContractExpression::RegionParameter { region, name } => {
+                accesses.reverse();
+                return Some((region, name.as_str(), accesses));
+            }
+            _ => return None,
+        }
+    }
+}
+
+/// A literal element index, as written or as a C constant.
+fn literal_element_index(index: &ContractExpression) -> Option<u32> {
+    match index {
+        ContractExpression::IntegerLiteral(value) => value.parse().ok(),
+        ContractExpression::CFragment(CExpression::Value(
+            CValue::Int32(term) | CValue::UInt32(term) | CValue::Int64(term) | CValue::UInt64(term),
+        )) => match term {
+            crate::kernel::bits32_constant!(bits)
+            | crate::kernel::int64_constant!(bits)
+            | crate::kernel::uint64_constant!(bits) => u32::try_from(*bits).ok(),
+            _ => None,
+        },
+        _ => None,
+    }
 }

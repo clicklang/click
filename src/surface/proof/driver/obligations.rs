@@ -131,7 +131,9 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // A successful preparation is conditional on every recorded requirement.
         // Keep it private while those requirements are proved at `self`, never
         // in the candidate's post-state. A refusal is not a resumable result.
-        probe.as_ref().map_err(Clone::clone)?;
+        let prepared_frontier =
+            driver_proof.with_prepared_call_parameters(probe.as_ref().map_err(Clone::clone)?);
+        let driver_proof = &prepared_frontier;
         let refusals = recorded.refusals;
         let recorded_requirements = recorded.recorded;
         let open = distinct_requirements(recorded_requirements.clone());
@@ -296,7 +298,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         // An obligation the implicit `solve` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
         let (probe, recorded) = driver_proof.prepare_step(&step);
-        probe.as_ref().map_err(Clone::clone)?;
+        let prepared_frontier =
+            driver_proof.with_prepared_call_parameters(probe.as_ref().map_err(Clone::clone)?);
         if recorded.recorded.is_empty() {
             if probe.as_ref().is_ok_and(|candidate| {
                 candidate
@@ -308,6 +311,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // With nothing recorded, the probe ran the ordinary checked step.
             return probe;
         }
+        let driver_proof = &prepared_frontier;
         let refusals = recorded.refusals;
         if implicit_solve_disabled() {
             return Err(unproved_step_requirement(

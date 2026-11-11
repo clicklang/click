@@ -3620,6 +3620,10 @@ id = "language.region-allocation"
 path = "reference/language/index.md#at"
 
 [[item]]
+id = "language.region-parameter"
+path = "reference/language/index.md#at"
+
+[[item]]
 id = "library.theorem.separation::restrict"
 path = "reference/library/index.md#separationrestrict"
 

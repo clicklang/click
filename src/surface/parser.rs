@@ -14462,6 +14462,9 @@ impl Parser {
         &mut self,
         mut expression: ContractExpression,
     ) -> Result<ContractExpression, ClickError> {
+        if let ContractExpression::RegionParameter { .. } = &expression {
+            return self.parse_region_parameter_suffix(expression);
+        }
         expression = self.resolve_reference_parameter(expression)?;
         let mut struct_name = match &expression {
             ContractExpression::CUnary {
@@ -14923,6 +14926,46 @@ impl Parser {
         }
     }
 
+    /// The fields and elements read through `R.parameter(name)`. The
+    /// parameter's layout is the one the call binds, so its fields are
+    /// resolved when the read is lowered at the call's parameter point; the
+    /// chain keeps them by name. Its `lowered` form names no C object, so a
+    /// lowering that bypasses that resolution refuses it.
+    fn parse_region_parameter_suffix(
+        &mut self,
+        mut expression: ContractExpression,
+    ) -> Result<ContractExpression, ClickError> {
+        let unresolved = |expression: &ContractExpression| {
+            CExpression::Variable(format!(
+                "<{} read at its call>",
+                crate::surface::diagnostics::describe_contract_expression(expression)
+            ))
+        };
+        loop {
+            match self.peek() {
+                Some(Token::Dot) => {
+                    self.position += 1;
+                    let field = self.expect_field_name()?;
+                    let lowered = unresolved(&expression);
+                    expression = ContractExpression::Field {
+                        pointee_struct: None,
+                        base: Box::new(expression),
+                        field,
+                        lowered,
+                        offset_bytes: 0,
+                    };
+                }
+                Some(Token::LBracket) => {
+                    self.position += 1;
+                    let index = self.parse_contract_expression()?;
+                    self.expect(Token::RBracket)?;
+                    expression = ContractExpression::Index(Box::new(expression), Box::new(index));
+                }
+                _ => return Ok(expression),
+            }
+        }
+    }
+
     fn contract_bracket_is_range(&self) -> bool {
         if self.peek() != Some(&Token::LBracket) {
             return false;
@@ -15024,7 +15067,7 @@ impl Parser {
         let start = self.position;
         let found = self.parse_code_region_ref().is_ok()
             && self.peek() == Some(&Token::Dot)
-            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "result" || name == "allocation");
+            && matches!(self.peek_next(), Some(Token::Ident(name)) if name == "result" || name == "allocation" || name == "parameter");
         self.position = start;
         found
     }
@@ -15096,7 +15139,16 @@ impl Parser {
         if self.looks_like_region_result() {
             let region = self.parse_code_region_ref()?;
             let allocation = self.peek_next() == Some(&Token::Ident("allocation".to_string()));
+            let parameter = self.peek_next() == Some(&Token::Ident("parameter".to_string()));
             self.position += 2;
+            // `.parameter(name)` is a call's copy of a by-value aggregate
+            // argument: an object whose layout the call bound.
+            if parameter {
+                self.expect(Token::LParen)?;
+                let name = self.expect_ident("parameter name")?;
+                self.expect(Token::RParen)?;
+                return Ok(ContractExpression::RegionParameter { region, name });
+            }
             return Ok(if allocation {
                 ContractExpression::RegionAllocation(region)
             } else {
