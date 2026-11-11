@@ -27,8 +27,8 @@ without changing its behavior. The frozen
 [dependency inventory](../build_support/proof_search_edges.tsv) records existing
 callers and separates operation dependencies from the explicit `ProofDriver`
 and mixed callers classified in the [caller audit](../design/proof-boundary-classification.md). The driver owns proof interpretation and the
-choice between explicit obligation proofs and implicit solving. Its 8
-operation-to-driver reference records remain a separate migration list;
+choice between explicit obligation proofs and implicit solving. The remaining
+operation-to-driver reference records form a separate migration list;
 implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
 Existing test names below identify evidence to retain and inspect, not new
 measurements. The contract lives in [Verifier design](../docs/internals/verifier-design.md)
