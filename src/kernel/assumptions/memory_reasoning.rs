@@ -3438,8 +3438,9 @@ impl PureFactContext {
     }
 
     /// Project one selected separation from the live ownership partition.
-    /// Each operand must be fully contained in a different owned member;
-    /// views and two slices of the same member provide no such evidence.
+    /// Each operand must be a different exact owned member, or a memory
+    /// range fully contained in a different owned member; views and two
+    /// slices of the same member provide no such evidence.
     /// Member lookup uses exact resources or the queried bases and aliases,
     /// without publishing or scanning the whole frame.
     pub(crate) fn proves_held_resources_separate(
@@ -3448,12 +3449,12 @@ impl PureFactContext {
         left: &CResource,
         right: &CResource,
     ) -> bool {
-        let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right) else {
-            return false;
-        };
         if left == right || self.resource_separation_conflicts_with_equalities(left, right) {
             return false;
         }
+        // Two different resources the state owns exactly are separate,
+        // whatever kind each is: a folded instance beside a cell as much as
+        // two cells.
         if resources
             .exact_resource_facts(left)
             .iter()
@@ -3465,6 +3466,10 @@ impl PureFactContext {
         {
             return true;
         }
+        // Finding an operand inside a larger owned member is a memory rule.
+        let (CResource::Memory(left_range), CResource::Memory(right_range)) = (left, right) else {
+            return false;
+        };
         let (Some((left_entry, left_owner)), Some((right_entry, right_owner))) = (
             self.held_member_covering_range(resources, left_range),
             self.held_member_covering_range(resources, right_range),
