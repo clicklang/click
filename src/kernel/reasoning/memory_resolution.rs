@@ -1304,6 +1304,7 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
     right: &PointerOffsetTerm,
     assumptions: &PureFactContext,
 ) -> Option<bool> {
+    use crate::kernel::assumptions::{wide_index_binary, wide_index_comparison};
     if left == right {
         return Some(true);
     }
@@ -1362,13 +1363,23 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
                 return Some(false);
             }
             // A value the equalities pin to a constant is that constant.
-            if let Some(pinned) = assumptions.wide_constant_from_equalities(value) {
+            if let Some(pinned) =
+                assumptions.wide_constant_from_equalities_view(value.operand_view())
+            {
                 return Some(pinned == (bytes / byte_width) as u64);
             }
             let index = MachineTerm::uint64_constant((bytes / byte_width) as u64);
             let stated = [
-                ConditionTerm::uint64_equal(value.as_ref().clone(), index.clone()),
-                ConditionTerm::uint64_equal(index, value.as_ref().clone()),
+                wide_index_comparison(
+                    CompareRelation::Equal,
+                    value.operand_view(),
+                    MachineOperandView::Legacy(&index),
+                ),
+                wide_index_comparison(
+                    CompareRelation::Equal,
+                    MachineOperandView::Legacy(&index),
+                    value.operand_view(),
+                ),
             ];
             if let Some(equal) = stated.iter().find_map(|equality| {
                 assumptions
@@ -1414,19 +1425,22 @@ pub(in crate::kernel) fn pointer_offsets_equal_for_memory_resolution(
             continue;
         }
         let elements = (bytes / *byte_width) as u64;
-        let advanced = MachineTerm::uint64_add(
-            index.as_ref().clone(),
-            MachineTerm::uint64_constant(elements),
+        let advanced = wide_index_binary(
+            MachineBinaryOp::Add,
+            index.operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(elements)),
         );
-        let same = advanced == **whole_index
-            || assumptions.decide(&ConditionTerm::uint64_equal(
-                advanced,
-                whole_index.as_ref().clone(),
+        let same = advanced == *whole_index
+            || assumptions.decide(&wide_index_comparison(
+                CompareRelation::Equal,
+                advanced.operand_view(),
+                whole_index.operand_view(),
             )) == Some(true);
         if same
-            && assumptions.decide(&ConditionTerm::uint64_less_equal(
-                index.as_ref().clone(),
-                MachineTerm::uint64_constant(u64::MAX - elements),
+            && assumptions.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - elements)),
             )) == Some(true)
         {
             return Some(true);
@@ -5421,5 +5435,111 @@ mod retained_run_access_tests {
             );
             assert_eq!(KernelTermExport::machine_export_count(), exports);
         }
+    }
+}
+
+#[cfg(test)]
+mod retained_wide_offset_tests {
+    use super::*;
+    use crate::kernel::assumptions::{wide_index_binary, wide_index_comparison};
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, VerificationSession,
+    };
+
+    #[test]
+    fn wide_offset_equality_retains_indices_and_requires_no_wrap() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018701));
+        let index = MachineOperandView::Shared(&root).retain(ty);
+        let advanced = wide_index_binary(
+            MachineBinaryOp::Add,
+            index.operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+        );
+        let scaled = |value| PointerOffsetTerm::Int64Scaled {
+            value,
+            byte_width: 8,
+            unsigned: true,
+        };
+        let stepped = PointerOffsetTerm::Add(
+            Box::new(scaled(index.clone())),
+            Box::new(PointerOffsetTerm::Constant(8)),
+        );
+        let whole = scaled(advanced);
+        let empty = PureFactContext::new();
+        let bounded = empty.clone().assume_condition(
+            wide_index_comparison(
+                CompareRelation::LessEqual,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - 1)),
+            ),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        for (left, right) in [(&stepped, &whole), (&whole, &stepped)] {
+            assert_eq!(
+                pointer_offsets_equal_for_memory_resolution(left, right, &bounded),
+                Some(true)
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        assert_ne!(
+            pointer_offsets_equal_for_memory_resolution(&stepped, &whole, &empty),
+            Some(true)
+        );
+        let wraps = empty.assume_condition(
+            wide_index_comparison(
+                CompareRelation::Equal,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX)),
+            ),
+            true,
+        );
+        assert_ne!(
+            pointer_offsets_equal_for_memory_resolution(&stepped, &whole, &wraps),
+            Some(true)
+        );
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn wide_offset_pinning_keeps_the_high_word_without_export() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::UInt64;
+        let root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018702));
+        let index = MachineOperandView::Shared(&root).retain(ty);
+        let scaled = PointerOffsetTerm::Int64Scaled {
+            value: index.clone(),
+            byte_width: 8,
+            unsigned: true,
+        };
+        let big = (1u64 << 40) + 2;
+        let facts = PureFactContext::new().assume_condition(
+            wide_index_comparison(
+                CompareRelation::Equal,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(big)),
+            ),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        for (offset, expected) in [
+            (big as i64 * 8, true),
+            (16, false),
+            (-8, false),
+            (17, false),
+        ] {
+            for (left, right) in [
+                (&scaled, &PointerOffsetTerm::Constant(offset)),
+                (&PointerOffsetTerm::Constant(offset), &scaled),
+            ] {
+                assert_eq!(
+                    pointer_offsets_equal_for_memory_resolution(left, right, &facts),
+                    Some(expected)
+                );
+            }
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

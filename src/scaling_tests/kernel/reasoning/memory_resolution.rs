@@ -366,3 +366,75 @@ fn run_access_retains_cold_shared_index_dags() {
         }
     }
 }
+
+#[test]
+fn wide_offset_step_retains_dags_and_ignores_unrelated_facts() {
+    use crate::kernel::assumptions::{wide_index_binary, wide_index_comparison};
+    use crate::kernel::{
+        KernelTerm, KernelTermExport, KernelType, MachineBinaryOp, MachineOperandView,
+    };
+    let ty = MachineIntegerType::UInt64;
+    for size in [16, 64, 256] {
+        let mut samples = Vec::new();
+        for unrelated in [0, size] {
+            let _session = crate::kernel::VerificationSession::enter();
+            let mut root = KernelTerm::variable(KernelType::C(ty.c_type()), Variable(1018703));
+            for _ in 0..size {
+                root = KernelTerm::machine_binary_shared(
+                    ty,
+                    MachineBinaryOp::Add,
+                    [root.clone(), root],
+                );
+            }
+            let index = MachineOperandView::Shared(&root).retain(ty);
+            let advanced = wide_index_binary(
+                MachineBinaryOp::Add,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(1)),
+            );
+            let scaled = |value| PointerOffsetTerm::Int64Scaled {
+                value,
+                byte_width: 8,
+                unsigned: true,
+            };
+            let stepped = PointerOffsetTerm::Add(
+                Box::new(scaled(index.clone())),
+                Box::new(PointerOffsetTerm::Constant(8)),
+            );
+            let whole = scaled(advanced);
+            let mut facts = PureFactContext::new().assume_condition(
+                wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    index.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::uint64_constant(u64::MAX - 1)),
+                ),
+                true,
+            );
+            for extra in 0..unrelated {
+                facts = facts.assume_condition(
+                    ConditionTerm::equal(
+                        MachineTerm::Variable(Variable(1019000 + extra as u64)),
+                        MachineTerm::constant(3),
+                    ),
+                    true,
+                );
+            }
+            let _scope = facts.enter_id_scope();
+            let exports = KernelTermExport::machine_export_count();
+            let (answer, work) = crate::instrumentation::measure_deterministic_work(|| {
+                pointer_offsets_equal_for_memory_resolution(&stepped, &whole, &facts)
+            });
+            assert_eq!(answer, Some(true));
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            assert!(
+                work <= 128 * size + 256,
+                "size={size}, unrelated={unrelated}, work={work}"
+            );
+            samples.push(work);
+        }
+        assert!(
+            samples[1] <= 2 * samples[0] + 32,
+            "size={size}: {samples:?}"
+        );
+    }
+}
