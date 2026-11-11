@@ -291,6 +291,174 @@ fn cast(
     }
 }
 
+/// The framed-transport walker uses raw 32-bit operators and the existing
+/// checked constructors for other widths and casts, just like its native path.
+fn transport_binary(format: T, op: O, left: KernelTerm, right: KernelTerm) -> KernelTerm {
+    if matches!(format, T::Int32 | T::UInt32) {
+        return KernelTerm::machine_binary_shared(
+            format,
+            op,
+            [restyle(format, left), restyle(format, right)],
+        );
+    }
+    // Explicit native leaves are already bounded by the selected input. This
+    // also preserves constant readings of opaque addresses without exporting
+    // shared parents.
+    if let (Some(a), Some(b)) = (leaf(&left), leaf(&right)) {
+        return retained(format, &MachineTerm::machine_binary(format, op, a, b));
+    }
+    if format == T::Int64
+        && op == O::Subtract
+        && crate::kernel::shared_machine_syntax_equal(&left, &right)
+    {
+        return constant(format, 0);
+    }
+    let number = |node: &KernelTerm| match format {
+        T::Int64 => MachineOperandView::Shared(node)
+            .int64_constant()
+            .map(|v| v as u64),
+        T::UInt64 => MachineOperandView::Shared(node).uint64_constant(),
+        _ => None,
+    };
+    let (a, b) = (number(&left), number(&right));
+    if matches!(format, T::Int64 | T::UInt64)
+        && matches!(op, O::ShiftLeft | O::ShiftRight)
+        && let (Some(a), Some(count)) = (a, literal(&right))
+    {
+        let result =
+            MachineTerm::machine_binary(format, op, literal(&constant(format, a)).unwrap(), count);
+        if matches!(result, MachineTerm::Constant { .. }) {
+            return retained(format, &result);
+        }
+        return KernelTerm::machine_binary_shared(format, op, [left, right]);
+    }
+    if op == O::Multiply {
+        match (a, b) {
+            (_, Some(1)) => return left,
+            (Some(1), _) => return right,
+            (Some(0), _) | (_, Some(0)) => return constant(format, 0),
+            _ => {}
+        }
+    }
+    if matches!(format, T::Int64 | T::UInt64) && a.is_some() && b.is_some() {
+        // Shift constructors require an actual literal count. Other wide
+        // operators read cached constants, including opaque native leaves.
+        if !matches!(op, O::ShiftLeft | O::ShiftRight) {
+            let a = literal(&constant(format, a.unwrap())).unwrap();
+            let b = literal(&constant(format, b.unwrap())).unwrap();
+            return retained(format, &MachineTerm::machine_binary(format, op, a, b));
+        }
+    }
+    if format == T::UInt64 {
+        match op {
+            O::BitwiseAnd => {
+                if a == Some(0) || b == Some(0) {
+                    return constant(format, 0);
+                }
+                if let Some(mask) = b {
+                    for inner_op in [O::BitwiseAnd, O::BitwiseOr] {
+                        if let Some([x, y]) = binary_parts(&left, format, inner_op) {
+                            let selected = match (number(x), number(y)) {
+                                (None, Some(c)) => Some((x, c)),
+                                (Some(c), None) => Some((y, c)),
+                                _ => None,
+                            };
+                            if let Some((base, c)) = selected {
+                                if inner_op == O::BitwiseAnd {
+                                    return transport_binary(
+                                        format,
+                                        op,
+                                        base.clone(),
+                                        constant(format, c & mask),
+                                    );
+                                }
+                                let masked = transport_binary(
+                                    format,
+                                    op,
+                                    base.clone(),
+                                    constant(format, mask),
+                                );
+                                return transport_binary(
+                                    format,
+                                    O::BitwiseOr,
+                                    masked,
+                                    constant(format, c & mask),
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            O::BitwiseOr => {
+                if let Some(c) = b
+                    && let Some([x, y]) = binary_parts(&left, format, O::BitwiseAnd)
+                    && let Some(mask) = number(x).or_else(|| number(y))
+                    && mask & !c == 0
+                {
+                    return constant(format, c);
+                }
+                if a == Some(0) {
+                    return right;
+                }
+                if b == Some(0) {
+                    return left;
+                }
+            }
+            _ => {}
+        }
+    }
+    binary(format, op, left, right)
+}
+
+pub(in crate::kernel) fn transport_node(
+    node: &KernelTerm,
+    children: &[KernelTerm],
+) -> Option<KernelTerm> {
+    Some(
+        match node.node() {
+            KernelTermNode::MachineBinary {
+                format, operator, ..
+            } => {
+                let [left, right] = children else { return None };
+                transport_binary(*format, *operator, left.clone(), right.clone())
+            }
+            KernelTermNode::MachineUnary {
+                format, operator, ..
+            } => {
+                let operand = children.first()?;
+                if !matches!(format, T::Int32 | T::UInt32)
+                    && let Some(native) = leaf(operand)
+                {
+                    retained(
+                        *format,
+                        &MachineTerm::machine_unary(*format, *operator, native),
+                    )
+                } else {
+                    unary(*format, *operator, operand.clone())
+                }
+            }
+            KernelTermNode::MachineCast {
+                encoding,
+                source,
+                destination,
+                ..
+            } => {
+                let operand = children.first()?;
+                if let Some(native) = leaf(operand) {
+                    retained(
+                        *destination,
+                        &encoding.unary(*source, *destination).build(native),
+                    )
+                } else {
+                    cast(*encoding, *source, *destination, operand.clone())
+                }
+            }
+            _ => return None,
+        }
+        .with_machine_observation_type(format(node)),
+    )
+}
+
 /// Existing load canonicalization over a retained carrier. Operator rebuilding
 /// is raw, except generic casts, exactly as in the native canonical walk.
 fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64, bool>)> {
