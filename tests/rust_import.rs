@@ -1031,6 +1031,11 @@ fn charon_chunk_project() -> Project {
     fs::write(p.root.join("borrow.click"), CHARON_CHUNK_SIDECAR).unwrap();
     p
 }
+/// The imports and the slice spelling a claim about a library iterator
+/// cites the `chunks_exact` contract with.
+const LIBRARY_CHUNKS: &str = "import click::rust::slice; import click::rust::chunks_exact;";
+const BYTES_SLICE: &str = "Slice<u8>::Slice(bytes, bytes.len())";
+
 #[test]
 #[ignore = "nightly: 12 s, over the gate's per-test budget (2026-10-06)"]
 fn charon_chunks_check_boundaries_authority_and_false_claims() {
@@ -1047,23 +1052,35 @@ fn charon_chunks_check_boundaries_authority_and_false_claims() {
         (7, u64::MAX),
         (7, 4294967296),
     ] {
+        // Each claim cites the contract: what `chunks_exact` builds for the
+        // remainder, the count and the first chunk.
         let claim = format!(
-            "verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }}",
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail(bytes: &[u8], size: usize) -> usize {{ requires bytes.len() == {length}u64; requires size == {size}u64; ensures result == {}u64; }} by {{ have size != 0u64; step_until(function.exit); apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, size)); solve(); }}",
             length % size
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
     for length in [0u64, 3, 4, 7, 8] {
         let result = if length < 4 { 0 } else { 4 };
+        let proof = if length < 4 {
+            format!(
+                "apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); step_until(assignment(chunks, 0)); step(); have chunks_exact::len(chunks) == 0u64; step_until(function.exit); solve();"
+            )
+        } else {
+            format!(
+                "have 0u64 < bytes.len() / 4u64; apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); apply(chunks_exact::nth_chunks_exact({BYTES_SLICE}, 4u64, 0u64)); step_until(function.exit); solve();"
+            )
+        };
         let claim = format!(
-            "verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {result}u64; }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn next_len(bytes: &[u8]) -> usize {{ requires bytes.len() == {length}u64; ensures result == {result}u64; }} by {{ {proof} }}"
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
     for length in [1u64, 3, 5, 7] {
         let offset = length - length % 4;
+        let tail = length % 4;
         let claim = format!(
-            "verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() - bytes.len() % 4u64 == {offset}u64 by {{ rewrite(bytes.len() == {length}u64); solve(); }} step_until(function.exit); solve(); }}"
+            "{LIBRARY_CHUNKS} verifying \"chunks.rs\"; fn tail_byte(bytes: &[u8]) -> u8 {{ requires bytes.len() == {length}u64; views bytes[0..{length}]; ensures result == old(bytes[{offset}]); }} by {{ have bytes.len() % 4u64 == {tail}u64; have bytes.len() - bytes.len() % 4u64 == {offset}u64; apply(chunks_exact::remainder_chunks_exact({BYTES_SLICE}, 4u64)); step_until(assignment(tail_len, 0)); step(); have tail_len == {tail}u64; have tail == bytes + {offset}u64; step_until(function.exit); solve(); }}"
         );
         C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
     }
@@ -1612,8 +1629,8 @@ fn charon_chunk_view_loop_reborrows_shared_subslices_at_symbolic_heads() {
         ("views bytes[0..16];", ""),
         ("views bytes[0..4];", "views bytes[0..17];"),
         (
-            "invariant __rust_mir_6_cursor == bytes + (16u64 - __rust_mir_6_remaining);",
-            "invariant __rust_mir_6_cursor == bytes + (17u64 - __rust_mir_6_remaining);",
+            "invariant to_integer(iter.len()) + iterations == to_integer(bytes.len() / 4u64);",
+            "invariant to_integer(iter.len()) + iterations + 1 == to_integer(bytes.len() / 4u64);",
         ),
         ("ensures result == 0u32;", "ensures result == 1u32;"),
     ] {
@@ -1755,7 +1772,7 @@ fn charon_loop_array_copy_empty_input_never_reads_uninitialized_storage() {
         .expect("the sidecar states `walk` after its helper")
         .0;
     let claim = format!(
-        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }}"
+        "{helper} fn quad::walk(bytes: &[u8]) -> u32 {{ requires bytes.len() == 0u64; ensures result == 0u32; }} by {{ step_until(loop(0)); apply(chunks_exact::len_chunks_exact({BYTES_SLICE}, 4u64)); have loop(0).iter.len() == 0u64; step_until(function.exit); solve(); }}"
     );
     C0VerificationSession::new_program_prepared(&claim, &prepared).unwrap();
 }

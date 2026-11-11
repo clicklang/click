@@ -8215,6 +8215,11 @@ pub(crate) fn note_ambient_source_tactic(claim_label: &str, source_index: usize)
     });
 }
 
+/// Contract certification belongs to the declaration, not its last proof step.
+pub(crate) fn clear_ambient_source_tactic() {
+    AMBIENT_PROOF_SOURCE.with(|ambient| ambient.borrow_mut().tactic = None);
+}
+
 pub(crate) fn clear_ambient_proof_source() {
     proof_diagnostics::render::clear_ambient_naming();
     AMBIENT_PROOF_SOURCE.with(|ambient| *ambient.borrow_mut() = AmbientProofSource::default());
