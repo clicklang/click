@@ -10790,6 +10790,17 @@ fn volatile_read_results_use_selected_event_indexes() {
 
 #[test]
 fn entry_separation_of_an_unconditional_resource_scales_with_the_owned_clauses() {
+    // Run on the CLI's eight-megabyte stack, as `click verify` does.
+    std::thread::Builder::new()
+        .name("entry-separation-scaling".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(entry_separation_samples)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn entry_separation_samples() {
     // The contract entry states the held resources as owned members beside
     // the members their unconditional bodies expand to. One selected
     // separation must not pay for the other owned clauses pairwise.
