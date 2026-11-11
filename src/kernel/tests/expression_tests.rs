@@ -4246,7 +4246,7 @@ fn index_observation_follows_machine_arithmetic() {
         )
         .unwrap();
         assert_eq!(paths.len(), 1);
-        let CValue::Pointer(value) = &paths[0].value else {
+        let CValue::Pointer(value) = &paths[0].value.clone().into_native() else {
             panic!("pointer result")
         };
         assert_eq!(value.pointer().offset, PointerOffsetTerm::Constant(bytes));
@@ -4292,7 +4292,7 @@ fn tag_clearing_lowering_keeps_the_written_word_under_bounds() {
             )
             .unwrap();
             assert_eq!(paths.len(), 1);
-            assert_eq!(paths[0].value, expected);
+            assert_eq!(paths[0].value.clone().into_native(), expected);
         }
     }
 }

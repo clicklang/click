@@ -2466,7 +2466,7 @@ fn pure_ranking_measure_term(
             paths.len()
         ));
     };
-    let Some(value) = RankingMachineTerm::from_value(&path.value) else {
+    let Some(value) = RankingMachineTerm::from_value(&path.value.native()) else {
         return Err(RANKING_MEASURE_TYPE_MESSAGE.into());
     };
     reader.reads.obligations.extend(path.obligations.clone());

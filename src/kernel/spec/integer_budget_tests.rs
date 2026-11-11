@@ -892,7 +892,7 @@ fn integer_to_machine_converts_exact_boundaries_without_wrapping() {
         )
         .expect("representable Integer constants should convert");
         assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0].value, expected);
+        assert_eq!(paths[0].value.clone().into_native(), expected);
     }
 }
 
@@ -987,7 +987,7 @@ fn integer_to_machine_symbolic_values_keep_carrier_and_range_obligations() {
         assert_eq!(paths.len(), 1);
         assert!(paths[0].facts.is_empty());
         assert!(matches!(
-            &paths[0].value,
+            &paths[0].value.clone().into_native(),
             CValue::Int8(MachineTerm::IntegerToMachine { destination: d, .. }) | CValue::Int16(MachineTerm::IntegerToMachine { destination: d, .. })
                 | CValue::Int32(MachineTerm::IntegerToMachine { destination: d, .. })
                 | CValue::UInt8(MachineTerm::IntegerToMachine { destination: d, .. })

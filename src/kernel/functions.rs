@@ -13510,7 +13510,7 @@ pub(super) fn bind_composite_witnesses_with_held(
                 let [path] = paths.as_slice() else {
                     return None;
                 };
-                match &path.value {
+                match path.value.native().as_ref() {
                     CValue::UInt64(term) | CValue::Int64(term) => Some(term.clone()),
                     _ => None,
                 }
@@ -18603,7 +18603,7 @@ fn resolve_retained_aggregate_fields(
         if let [path] = paths.as_slice()
             && path.obligations.is_empty()
         {
-            *expression = CExpression::Value(path.value.clone());
+            *expression = CExpression::Value(path.value.clone().into_native());
             return Ok(());
         }
     }

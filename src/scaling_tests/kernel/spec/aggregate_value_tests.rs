@@ -52,7 +52,7 @@ fn logical_fields_are_bounded_and_do_not_grant_pointer_access() {
             crate::instrumentation::measure_deterministic_work(|| evaluate(&projection));
         assert_eq!(values.len(), 1);
         assert_eq!(
-            crate::kernel::eval::read_over_write_c_value(&values[0].value),
+            crate::kernel::eval::read_over_write_c_value(&values[0].value.clone().into_native()),
             int32(7)
         );
         assert!(values[0].obligations.is_empty());

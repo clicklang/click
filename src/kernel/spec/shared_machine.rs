@@ -1,11 +1,99 @@
 //! Shared arithmetic producers, with definedness kept outside the term.
 //! Complete same-format arithmetic trees retain their operands in obligations.
-//! Deferred and mixed-format operands retain their existing evaluator.
+//! Deferred paths use the same constructor after evaluating both operands.
+//! Mixed-format and other unmigrated operations keep explicit native boundaries.
 use super::*;
 
 pub(super) struct PreparedExpression {
     pub(super) value: KernelTerm,
     pub(super) obligations: Vec<ProofObligation>,
+}
+
+pub(super) fn operator(expression: &SpecExpression) -> Option<MachineBinaryOp> {
+    Some(match expression {
+        SpecExpression::Add(..) => MachineBinaryOp::Add,
+        SpecExpression::Subtract(..) => MachineBinaryOp::Subtract,
+        SpecExpression::Multiply(..) => MachineBinaryOp::Multiply,
+        SpecExpression::Divide(..) => MachineBinaryOp::Divide,
+        SpecExpression::Remainder(..) => MachineBinaryOp::Remainder,
+        SpecExpression::ShiftLeft(..) => MachineBinaryOp::ShiftLeft,
+        SpecExpression::ShiftRight(..) => MachineBinaryOp::ShiftRight,
+        _ => return None,
+    })
+}
+
+/// Retain evaluated scalar operands when the native operator has the same
+/// format on both sides. Other promotion rules stay at the native boundary.
+pub(super) fn apply_values(
+    operator: Option<MachineBinaryOp>,
+    left: &SpecValue,
+    right: &SpecValue,
+    budget: &SpecEvaluation<'_>,
+) -> Option<PreparedExpression> {
+    if budget.machine_result_production_disabled {
+        return None;
+    }
+    let operator = operator?;
+    // Deferred count conversions still need the native shift-domain shape
+    // for narrowing/upper-bound checking. Available-tree preparation already
+    // has its separate retained-domain contract.
+    if matches!(
+        operator,
+        MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+    ) {
+        return None;
+    }
+    let (a, left) = left.machine()?;
+    let (b, right) = right.machine()?;
+    if a != b
+        || !matches!(
+            a,
+            MachineIntegerType::Int32
+                | MachineIntegerType::UInt32
+                | MachineIntegerType::Int64
+                | MachineIntegerType::UInt64
+        )
+    {
+        return None;
+    }
+    let left = retained_operand(a, left);
+    let right = retained_operand(b, right);
+    // Deferred opaque/read payloads still owe native domain propositions:
+    // their producer-specific observation identity is not a Surface identity.
+    // Keep those partial producers at the compatibility boundary until the
+    // payload family migrates. Total unsigned arithmetic has no such debts.
+    let has_domain = a.format().is_signed()
+        || matches!(
+            operator,
+            MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight
+        )
+        || (matches!(
+            operator,
+            MachineBinaryOp::Divide | MachineBinaryOp::Remainder
+        ) && SpecDivision::of(budget) == SpecDivision::CDefined);
+    if has_domain
+        && (left.has_opaque_observation_boundary() || right.has_opaque_observation_boundary())
+    {
+        return None;
+    }
+    Some(apply(a, operator, left, right, budget))
+}
+
+fn retained_operand(format: MachineIntegerType, value: MachineOperandView<'_>) -> KernelTerm {
+    match value {
+        MachineOperandView::Shared(value) => value.with_machine_observation_type(format),
+        MachineOperandView::Legacy(value) => {
+            // Native 32-bit operators read the low word and use the result
+            // format's literal spelling. Normalize at this input boundary,
+            // never by exporting a previously produced shared prefix.
+            let value = if format.format().bits() == 32 {
+                MachineTerm::operand32(format, value.clone())
+            } else {
+                value.clone()
+            };
+            KernelTerm::retained_native_machine_operand(format, &value)
+        }
+    }
 }
 
 pub(super) fn prepare(
@@ -85,118 +173,121 @@ pub(super) fn prepare(
     }
     let mut values = Vec::new();
     let mut obligations = Vec::new();
-    let mut importer = KernelTermImport::default();
     for step in prepared {
         budget.consume_expression_step()?;
         match step {
             Prepared::Value(format, value) => {
-                // Match the existing 32-bit word convention at the input
-                // boundary; subsequent operations retain shared children.
-                let value = if format.format().bits() == 32 {
-                    MachineTerm::operand32(format, value.clone())
-                } else {
-                    value.clone()
-                };
-                // Use the machine-observation boundary, not the general term
-                // importer: available bool/pure/binder payloads must retain
-                // their native observation identity beneath shared arithmetic.
-                values.push(KernelTerm::retained_native_machine_operand(format, &value));
+                values.push(retained_operand(format, MachineOperandView::Legacy(value)));
             }
             Prepared::Binary(format, op) => {
                 let right = values.pop().unwrap();
                 let left = values.pop().unwrap();
-                let left_view = MachineOperandView::Shared(&left);
-                let right_view = MachineOperandView::Shared(&right);
-                let mut domain = Vec::new();
-                let shift = matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
-                if shift {
-                    let constant = |n: u64| {
-                        crate::kernel::machine_integer::range::constant_word(format, &n.into())
-                            .unwrap()
-                    };
-                    let compare = |value, relation, n| {
-                        crate::kernel::machine_integer::comparison::condition_for_operand_views(
-                            format,
-                            relation,
-                            [value, MachineOperandView::Legacy(&constant(n))],
-                        )
-                    };
-                    let mut require_false = |condition| {
-                        if PureFactContext::decide_intrinsically(&condition) != Some(false) {
-                            domain.push(Proposition::ConditionIs(condition, false));
-                        }
-                    };
-                    if format.format().is_signed() {
-                        require_false(compare(right_view, CompareRelation::LessThan, 0));
-                    }
-                    require_false(compare(
-                        right_view,
-                        CompareRelation::GreaterEqual,
-                        u64::from(format.format().bits()),
-                    ));
-                    if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
-                        require_false(compare(left_view, CompareRelation::LessThan, 0));
-                        domain.push(Proposition::ConditionIs(
-                            ConditionTerm::signed_shift_result_fits_views(
-                                format, left_view, right_view,
-                            ),
-                            true,
-                        ));
-                    }
-                } else if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
-                    if SpecDivision::of(budget) == SpecDivision::CDefined {
-                        let zero =
-                            crate::kernel::machine_integer::range::constant_word(format, &0.into())
-                                .unwrap();
-                        domain.push(Proposition::ConditionIs(
-                            crate::kernel::machine_integer::comparison::condition_for_operand_views(
-                                format,
-                                CompareRelation::Equal,
-                                [right_view, MachineOperandView::Legacy(&zero)],
-                            ),
-                            false,
-                        ));
-                    }
-                    if format.format().is_signed() {
-                        domain.push(Proposition::signed_division_exclusion_views(
-                            format, left_view, right_view,
-                        ));
-                    }
-                } else if format.format().is_signed() {
-                    domain.push(Proposition::signed_arithmetic_domain_views(
-                        format, op, left_view, right_view,
-                    ));
-                }
-                if let Some(domain) = Proposition::arithmetic_domain(domain) {
-                    obligations.push(ProofObligation::evaluation_domain(domain).with_context(
-                        if shift {
-                            "shift expression is defined"
-                        } else {
-                            "arithmetic expression is defined"
-                        },
-                    ));
-                }
-                // Preserve the existing evaluator's literal-only folding.
-                // Shared node construction itself is always structural.
-                let term =
-                    if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
-                        (left.node(), right.node())
-                    {
-                        let a = a.legacy_term();
-                        let b = b.legacy_term();
-                        let value = MachineTerm::logical_machine_binary(format, op, a, b);
-                        let value = wrap(format, value);
-                        importer.argument(&PureFunctionArgument::Value(value))
-                    } else {
-                        KernelTerm::machine_binary_shared(format, op, [left, right])
-                    };
-                values.push(term);
+                let result = apply(format, op, left, right, budget);
+                obligations.extend(result.obligations);
+                values.push(result.value);
             }
         }
     }
     Ok(values
         .pop()
         .map(|value| PreparedExpression { value, obligations }))
+}
+
+/// Construct one result and its domain from already evaluated operands. Both
+/// eager preparation and deferred path evaluation use this operation.
+pub(super) fn apply(
+    format: MachineIntegerType,
+    op: MachineBinaryOp,
+    left: KernelTerm,
+    right: KernelTerm,
+    budget: &SpecEvaluation<'_>,
+) -> PreparedExpression {
+    let mut obligations = Vec::new();
+    let mut importer = KernelTermImport::default();
+    let left_view = MachineOperandView::Shared(&left);
+    let right_view = MachineOperandView::Shared(&right);
+    let mut domain = Vec::new();
+    let shift = matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight);
+    if shift {
+        let constant = |n: u64| {
+            crate::kernel::machine_integer::range::constant_word(format, &n.into()).unwrap()
+        };
+        let compare = |value, relation, n| {
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                relation,
+                [value, MachineOperandView::Legacy(&constant(n))],
+            )
+        };
+        let mut require_false = |condition| {
+            if PureFactContext::decide_intrinsically(&condition) != Some(false) {
+                domain.push(Proposition::ConditionIs(condition, false));
+            }
+        };
+        if format.format().is_signed() {
+            require_false(compare(right_view, CompareRelation::LessThan, 0));
+        }
+        require_false(compare(
+            right_view,
+            CompareRelation::GreaterEqual,
+            u64::from(format.format().bits()),
+        ));
+        if op == MachineBinaryOp::ShiftLeft && format.format().is_signed() {
+            require_false(compare(left_view, CompareRelation::LessThan, 0));
+            domain.push(Proposition::ConditionIs(
+                ConditionTerm::signed_shift_result_fits_views(format, left_view, right_view),
+                true,
+            ));
+        }
+    } else if matches!(op, MachineBinaryOp::Divide | MachineBinaryOp::Remainder) {
+        if SpecDivision::of(budget) == SpecDivision::CDefined {
+            let zero =
+                crate::kernel::machine_integer::range::constant_word(format, &0.into()).unwrap();
+            domain.push(Proposition::ConditionIs(
+                crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                    format,
+                    CompareRelation::Equal,
+                    [right_view, MachineOperandView::Legacy(&zero)],
+                ),
+                false,
+            ));
+        }
+        if format.format().is_signed() {
+            domain.push(Proposition::signed_division_exclusion_views(
+                format, left_view, right_view,
+            ));
+        }
+    } else if format.format().is_signed() {
+        domain.push(Proposition::signed_arithmetic_domain_views(
+            format, op, left_view, right_view,
+        ));
+    }
+    if let Some(domain) = Proposition::arithmetic_domain(domain) {
+        obligations.push(
+            ProofObligation::evaluation_domain(domain).with_context(if shift {
+                "shift expression is defined"
+            } else {
+                "arithmetic expression is defined"
+            }),
+        );
+    }
+    // Preserve the existing evaluator's literal-only folding.
+    // Shared node construction itself is always structural.
+    let term = if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
+        (left.node(), right.node())
+    {
+        let a = a.legacy_term();
+        let b = b.legacy_term();
+        let value = MachineTerm::logical_machine_binary(format, op, a, b);
+        let value = wrap(format, value);
+        importer.argument(&PureFunctionArgument::Value(value))
+    } else {
+        KernelTerm::machine_binary_shared(format, op, [left, right])
+    };
+    PreparedExpression {
+        value: term,
+        obligations,
+    }
 }
 
 fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
@@ -213,6 +304,28 @@ fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
 mod tests {
     use super::*;
 
+    fn boxed_domain(value: &Proposition) -> Proposition {
+        match value {
+            Proposition::And(a, b) => Proposition::And(Box::new(boxed_domain(a)), Box::new(boxed_domain(b))),
+            Proposition::ConditionIs(condition, truth) => {
+                crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *truth)
+                    .map(|(condition, truth)| Proposition::ConditionIs(condition, truth))
+                    .unwrap_or_else(|| value.clone())
+            }
+            _ => value.clone(),
+        }
+    }
+
+    fn native_results(paths: Vec<SpecExpressionPath>) -> Vec<SpecExpressionPath> {
+        paths
+            .into_iter()
+            .map(|mut path| {
+                path.value = path.value.into_native().into();
+                path
+            })
+            .collect()
+    }
+
     fn evaluate(expression: &SpecExpression, legacy: bool) -> Vec<SpecExpressionPath> {
         evaluate_with_assumptions(expression, legacy, &PureFactContext::new())
     }
@@ -225,13 +338,16 @@ mod tests {
         let mut execution = ExecutionBudget::new();
         let mut budget = SpecEvaluation::logical(&mut execution);
         budget.machine_preparation_disabled = legacy;
-        evaluate_spec_expression_paths_with_algebraic_bindings_in(
-            SpecScope::unbound(&CState::new(), None),
-            expression,
-            assumptions,
-            &mut budget,
+        budget.machine_result_production_disabled = legacy;
+        native_results(
+            evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                SpecScope::unbound(&CState::new(), None),
+                expression,
+                assumptions,
+                &mut budget,
+            )
+            .unwrap(),
         )
-        .unwrap()
     }
 
     #[test]
@@ -280,13 +396,16 @@ mod tests {
                             let mut budget = SpecEvaluation::logical(&mut execution);
                             budget.c_definedness = defined;
                             budget.machine_preparation_disabled = disabled;
-                            evaluate_spec_expression_paths_with_algebraic_bindings_in(
-                                SpecScope::unbound(&CState::new(), None),
-                                &expression,
-                                &PureFactContext::new(),
-                                &mut budget,
+                            budget.machine_result_production_disabled = disabled;
+                            native_results(
+                                evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                                    SpecScope::unbound(&CState::new(), None),
+                                    &expression,
+                                    &PureFactContext::new(),
+                                    &mut budget,
+                                )
+                                .unwrap(),
                             )
-                            .unwrap()
                         };
                         assert_eq!(
                             run(false),
@@ -304,17 +423,6 @@ mod tests {
         // Storage differs deliberately: the shared result-bound comparison
         // keeps its operands, while the old producer emits a boxed Compare.
         // Export only in this parity oracle and compare the exact native trees.
-        fn boxed_domain(value: &Proposition) -> Proposition {
-            match value {
-                Proposition::And(a, b) => Proposition::And(Box::new(boxed_domain(a)), Box::new(boxed_domain(b))),
-                Proposition::ConditionIs(condition, truth) => {
-                    crate::kernel::machine_integer::comparison::structural_native_comparison_of_integer_observation(condition, *truth)
-                        .map(|(condition, truth)| Proposition::ConditionIs(condition, truth))
-                        .unwrap_or_else(|| value.clone())
-                }
-                _ => value.clone(),
-            }
-        }
         let native_paths = |mut paths: Vec<SpecExpressionPath>| {
             for path in &mut paths {
                 for obligation in &mut path.obligations {
@@ -621,6 +729,121 @@ mod tests {
                     };
                     assert_eq!(evaluate(&expression, false), evaluate(&expression, true));
                     assert!(evaluate(&expression, false)[0].obligations.is_empty());
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn result_observations_preserve_opaque_native_identity() {
+        for format in [MachineIntegerType::Int32, MachineIntegerType::UInt64] {
+            let leaf = MachineTerm::opaque_conversion(
+                "result_identity",
+                MachineTerm::Variable(Variable(992220)),
+            );
+            let expression = SpecExpression::Subtract(
+                Box::new(SpecExpression::Value(wrap(format, leaf))),
+                Box::new(SpecExpression::Value(wrap(
+                    format,
+                    crate::kernel::machine_integer::range::constant_word(format, &1.into())
+                        .unwrap(),
+                ))),
+            );
+            let mut execution = ExecutionBudget::new();
+            let prepared = prepare(&expression, &mut SpecEvaluation::logical(&mut execution))
+                .unwrap()
+                .unwrap();
+            assert!(prepared.value.has_opaque_observation_boundary());
+            let result = SpecValue::Shared(prepared.value);
+            let legacy = evaluate(&expression, true).remove(0).value;
+            assert_eq!(result.observe(), legacy.observe());
+        }
+    }
+
+    #[test]
+    fn deferred_requirements_preserve_results_domains_and_order() {
+        for format in [
+            MachineIntegerType::Int32,
+            MachineIntegerType::UInt32,
+            MachineIntegerType::Int64,
+            MachineIntegerType::UInt64,
+        ] {
+            let operand = |id| {
+                Box::new(SpecExpression::Requires {
+                    requirement: Box::new(SpecProposition::Comparison {
+                        left: SpecExpression::Value(wrap(
+                            format,
+                            MachineTerm::Variable(Variable(id)),
+                        )),
+                        operator: CComparisonOperator::NotEqual,
+                        right: SpecExpression::Value(wrap(
+                            format,
+                            crate::kernel::machine_integer::range::constant_word(format, &0.into())
+                                .unwrap(),
+                        )),
+                    }),
+                    value: Box::new(SpecExpression::Value(wrap(
+                        format,
+                        MachineTerm::Variable(Variable(id)),
+                    ))),
+                })
+            };
+            for op in [
+                MachineBinaryOp::Add,
+                MachineBinaryOp::Subtract,
+                MachineBinaryOp::Multiply,
+                MachineBinaryOp::Divide,
+                MachineBinaryOp::Remainder,
+                MachineBinaryOp::ShiftLeft,
+                MachineBinaryOp::ShiftRight,
+            ] {
+                let a = operand(992210);
+                let b = operand(992211);
+                let expression = match op {
+                    MachineBinaryOp::Add => SpecExpression::Add(a, b),
+                    MachineBinaryOp::Subtract => SpecExpression::Subtract(a, b),
+                    MachineBinaryOp::Multiply => SpecExpression::Multiply(a, b),
+                    MachineBinaryOp::Divide => SpecExpression::Divide(a, b),
+                    MachineBinaryOp::Remainder => SpecExpression::Remainder(a, b),
+                    MachineBinaryOp::ShiftLeft => SpecExpression::ShiftLeft(a, b),
+                    MachineBinaryOp::ShiftRight => SpecExpression::ShiftRight(a, b),
+                    _ => unreachable!(),
+                };
+                for held in [false, true] {
+                    let assumptions = if held {
+                        PureFactContext::new().assume_held_resource_domains()
+                    } else {
+                        PureFactContext::new()
+                    };
+                    let mut execution = ExecutionBudget::new();
+                    let exports = KernelTermExport::machine_export_count();
+                    let paths = evaluate_spec_expression_paths_with_algebraic_bindings_in(
+                        SpecScope::unbound(&CState::new(), None),
+                        &expression,
+                        &assumptions,
+                        &mut SpecEvaluation::logical(&mut execution),
+                    )
+                    .unwrap();
+                    assert_eq!(paths.len(), 1);
+                    assert_eq!(
+                        matches!(paths[0].value, SpecValue::Shared(_)),
+                        !matches!(op, MachineBinaryOp::ShiftLeft | MachineBinaryOp::ShiftRight)
+                    );
+                    assert_eq!(KernelTermExport::machine_export_count(), exports);
+                    let legacy = evaluate_with_assumptions(&expression, true, &assumptions);
+                    let mut paths = native_results(paths);
+                    let mut legacy = legacy;
+                    for path in paths.iter_mut().chain(&mut legacy) {
+                        for obligation in &mut path.obligations {
+                            obligation.proposition = boxed_domain(obligation.proposition());
+                        }
+                    }
+                    assert_eq!(paths, legacy, "{format:?} {op:?}, held={held}");
+                    assert!(paths[0].obligations.len() >= 2);
+                    for (a, b) in paths[0].obligations.iter().zip(&legacy[0].obligations) {
+                        assert_eq!(a.evaluation_domain, b.evaluation_domain);
+                        assert_eq!(a.assumable, b.assumable);
+                    }
                 }
             }
         }

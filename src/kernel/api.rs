@@ -3636,7 +3636,7 @@ pub(crate) fn c_evaluate_spec_expression_with_checked_obligations(
     let [path] = paths.as_slice() else {
         return Err(no_single_path_message("evaluation", &paths, &budget));
     };
-    Ok((path.value.clone(), path.obligations.clone()))
+    Ok((path.value.clone().into_native(), path.obligations.clone()))
 }
 
 pub(crate) fn c_evaluate_spec_resource_expression_with_checked_obligations(
@@ -3662,7 +3662,7 @@ pub(crate) fn c_evaluate_spec_resource_expression_with_checked_obligations(
     let [path] = paths.as_slice() else {
         return Err(no_single_path_message("evaluation", &paths, &budget));
     };
-    Ok((path.value.clone(), path.obligations.clone()))
+    Ok((path.value.clone().into_native(), path.obligations.clone()))
 }
 
 /// Freeze protocols before evaluating an independent contract's assumed guard
@@ -6406,7 +6406,8 @@ pub fn checked_owned_resource_count_lower_bound(
         for fact in &path.facts {
             checked_facts = checked_facts.assume_proposition(fact.proposition().clone());
         }
-        let CValue::Int32(value) = &path.value else {
+        let native = path.value.native();
+        let CValue::Int32(value) = native.as_ref() else {
             return None;
         };
         value.clone()
@@ -7514,7 +7515,8 @@ pub fn prove_population_member_count_zero(
         }) {
             return None;
         }
-        let CValue::Int32(value) = &path.value else {
+        let native = path.value.native();
+        let CValue::Int32(value) = native.as_ref() else {
             return None;
         };
         Some(value.clone())

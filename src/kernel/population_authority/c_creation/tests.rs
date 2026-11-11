@@ -1666,7 +1666,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let mut retired_control = folded.clone();
     Arc::make_mut(&mut retired_control.population_effects).creation = Some(retired.clone());
     assert_eq!(
-        evaluate_count(&retired_control).unwrap()[0].value,
+        evaluate_count(&retired_control).unwrap()[0]
+            .value
+            .clone()
+            .into_native(),
         CValue::Int32(MachineTerm::constant(0))
     );
     let mut nested_control = folded.clone();
@@ -1692,7 +1695,7 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     assert_eq!(paths[0].value, folded_paths[0].value);
     assert_eq!(paths.len(), 1);
     assert!(matches!(
-        paths[0].value,
+        paths[0].value.clone().into_native(),
         CValue::Int32(MachineTerm::MemoryLoad(_, _, _))
     ));
     // A population entry in the ledger is insufficient without current
@@ -1721,7 +1724,10 @@ fn checked_control_import_observes_only_its_exact_entry_population() {
     let mut retired_state = projected.clone();
     Arc::make_mut(&mut retired_state.population_effects).creation = Some(retired);
     assert_eq!(
-        evaluate_count(&retired_state).unwrap()[0].value,
+        evaluate_count(&retired_state).unwrap()[0]
+            .value
+            .clone()
+            .into_native(),
         CValue::Int32(MachineTerm::constant(0))
     );
     assert!(
@@ -2467,11 +2473,11 @@ fn opaque_numeric_count_observation_uses_exact_magnitude_and_overflow_guard() {
             .0;
     }
     assert_eq!(
-        evaluate(born)[0].value,
+        evaluate(born)[0].value.clone().into_native(),
         CValue::Int32(MachineTerm::constant(9))
     );
     assert_eq!(
-        evaluate(spent)[0].value,
+        evaluate(spent)[0].value.clone().into_native(),
         CValue::Int32(MachineTerm::constant(5))
     );
     let mut overflow = import((i32::MAX - 1) as u32);
@@ -2539,7 +2545,10 @@ fn count_uses_its_written_anchor_not_a_proven_alias() {
         )
     };
     assert_eq!(
-        evaluate(&state, &anchor_count, &PureFactContext::new()).unwrap()[0].value,
+        evaluate(&state, &anchor_count, &PureFactContext::new()).unwrap()[0]
+            .value
+            .clone()
+            .into_native(),
         CValue::Int32(MachineTerm::constant(7))
     );
     assert!(

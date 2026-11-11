@@ -479,7 +479,8 @@ pub(super) fn selected_instance_resource_load_values(
                     if !path.obligations.is_empty() {
                         return None;
                     }
-                    let CValue::Pointer(address) = &path.value else {
+                    let native = path.value.native();
+                    let CValue::Pointer(address) = native.as_ref() else {
                         return None;
                     };
                     resource_context_has_read(
