@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `0ddd7c65a`, including merged PR #2574.
+Baseline for this revision: `b39c43d1a`, including merged PR #2580.
 
 Already landed:
 
@@ -399,7 +399,7 @@ The remaining locations divide into these concrete groups:
 | --- | --- | --- |
 | Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` framed transport and exact-load normalization are closed below | Live checker migration; shared outer arithmetic does not eliminate native address children |
 | Wide indices and shallow pointer checks | Wide access reconstruction, strided-region membership, offset transport and fold-read summaries are closed below; snapshot equivalence and `pointer_block_bounds` remain | Retain width, signedness and exactness rules while closing the remaining callers |
-| Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_keys`, `fact_reasoning`, pointer-offset substitution and execution facts | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
+| Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_reasoning`, pointer-offset substitution and execution facts; snapshot-blind and alpha pointer-index fact keys are closed below | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
 | Resource and snapshot construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
 | Native outputs and Surface tools | final `CValue`/`CMemoryRange` bounds, Surface synthesis/certificates, diagnostic renderers, planner segment indices | Explicit output or frontend/tool boundaries; remove only with their corresponding payload migration |
 
@@ -757,6 +757,36 @@ nightly suite were not run locally; PR CI and the merge queue run the full gate.
 The remaining compiler-audit inventory, producers, legacy families, and final
 Surface/Kernel boundary remain open; this closes pointer-index normalization,
 not the whole migration.
+
+#### Retained pointer-index fact keys — closed
+
+Snapshot-blind pointer-offset keys consume the retained machine operand view,
+using the existing interned syntax keys instead of exporting an index tree.
+Both narrow and wide scaled offsets preserve their stride and unsigned reading.
+These keys still select candidates only: erasing a read snapshot never supplies
+proof authority.
+
+Alpha pointer-offset keys now retain the existing compact machine-key DAG,
+including exact proposition identities and quantified candidate keys. Selected
+native leaves keep their existing binder, load-kind, registry and snapshot rules.
+Binders introduced inside an opaque machine leaf use leaf-local ordinals: a
+repeated DAG child and repeated native syntax agree, while outer binders,
+shadowing and free variables remain distinct. No load answer or binder-context
+result is cached across queries.
+
+Validation: all 1,796 selected tests passed, including every nonignored scaling
+test, proof fact/key/reasoning tests, equality/term rewriting, transport API,
+documentation and search-boundary checks. Seven new regressions cover native
+syntax parity, repeated opaque binders, shadowing/free-variable distinctions,
+stride/signedness, snapshot/kind authority, and actual fact-store hit/miss and
+branch behavior. Cold 16/64/256-node DAGs and growing snapshot-key prefixes have
+near-linear deterministic work with zero exports; lookup work stays bounded
+beside 16/64/256 unrelated facts. Compilation took 1m36s and tests took 110s
+(two slow notices), using the gate's existing 8 MiB test-thread stack.
+Formatting and documentation rendering passed. The full integration gate and
+nightly suite were not run locally; PR CI and the merge queue run the full gate.
+The remaining checker inventory, producer migrations, legacy term families and
+final common boundary remain open.
 
 #### Classified boundaries and retained coverage
 

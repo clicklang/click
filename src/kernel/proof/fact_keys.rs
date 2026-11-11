@@ -575,7 +575,7 @@ fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlin
         ),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             SnapshotBlindPointerOffsetKey::Int32Scaled {
-                value: snapshot_blind_bitvector_key(value),
+                value: snapshot_operands::operand(value.operand_view()),
                 byte_width: *byte_width,
             }
         }
@@ -584,7 +584,7 @@ fn snapshot_blind_pointer_offset_key(offset: &PointerOffsetTerm) -> SnapshotBlin
             byte_width,
             unsigned,
         } => SnapshotBlindPointerOffsetKey::Int64Scaled {
-            value: snapshot_blind_bitvector_key(value),
+            value: snapshot_operands::operand(value.operand_view()),
             byte_width: *byte_width,
             unsigned: *unsigned,
         },
@@ -966,11 +966,11 @@ enum AlphaPointerOffsetKey {
     Add(Box<Self>, Box<Self>),
     RegisteredLoad(AlphaRegisteredLoadId),
     Int32Scaled {
-        value: Box<AlphaBitvectorKey>,
+        value: AlphaMachineKey,
         byte_width: i64,
     },
     Int64Scaled {
-        value: Box<AlphaBitvectorKey>,
+        value: AlphaMachineKey,
         byte_width: i64,
         unsigned: bool,
     },
@@ -1267,6 +1267,11 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
             if let Some((format, operator, operand)) = unary {
                 AlphaMachineNode::Unary(format, operator, child(operand)?)
             } else {
+                // Binders introduced inside an opaque machine leaf are local
+                // to that leaf. Reuse their ordinals across sibling leaves so
+                // a repeated DAG child and repeated native syntax have the
+                // same key; neither may advance the enclosing binder scope.
+                let outer_next_binder = *next_binder;
                 let leaf = match view {
                     V::Legacy(term) => alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
                         term,
@@ -1300,6 +1305,7 @@ fn alpha_machine_key<const ALLOW_LOADS: bool>(
                         )?
                     }
                 };
+                *next_binder = outer_next_binder;
                 AlphaMachineNode::Leaf(leaf)
             }
         };
@@ -1992,11 +1998,11 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
         ),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
             AlphaPointerOffsetKey::Int32Scaled {
-                value: Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                    value,
+                value: alpha_machine_key::<ALLOW_LOADS>(
+                    value.operand_view(),
                     bindings,
                     next_binder,
-                )?),
+                )?,
                 byte_width: *byte_width,
             }
         }
@@ -2005,11 +2011,7 @@ fn alpha_pointer_offset_key_with_bindings<const ALLOW_LOADS: bool>(
             byte_width,
             unsigned,
         } => AlphaPointerOffsetKey::Int64Scaled {
-            value: Box::new(alpha_bitvector_key_with_bindings::<ALLOW_LOADS>(
-                value,
-                bindings,
-                next_binder,
-            )?),
+            value: alpha_machine_key::<ALLOW_LOADS>(value.operand_view(), bindings, next_binder)?,
             byte_width: *byte_width,
             unsigned: *unsigned,
         },
@@ -4991,3 +4993,6 @@ mod machine_quantifier_identity_tests {
         assert!(!propositions_are_alpha_equal(&wide, &unsigned));
     }
 }
+
+#[cfg(test)]
+mod pointer_index_tests;
