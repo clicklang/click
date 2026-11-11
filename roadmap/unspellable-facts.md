@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `cb7e1b77c`, including merged PR #2570.
+Baseline for this revision: `2b1200ebc`, including merged PR #2571.
 
 Already landed:
 
@@ -626,6 +626,32 @@ scaling and zero-export checks. No nightly run.
 
 The distinct cumulative pointer-index producer, framed transport, exact-load
 normalization and the remaining compiler-audit groups are still open.
+
+#### Retained snapshot-equivalent pointer indices
+
+The snapshot-equivalence route for 32-bit scaled indices now retains operand
+views. Its shared syntax correspondence is cached separately from proof
+authority: every selected read pair is checked under the current context.
+The existing native rule remains the reference: exact syntax matches, and
+changed read snapshots may be framed only through same-format 32-bit sums,
+differences and products. Casts, other operations and wide arithmetic retain
+exact-syntax matching but do not gain framing of changed reads. Variables do
+not acquire registered-load semantics in this route.
+
+The snapshot source index shares the native/shared operand fingerprint walker.
+Its policy omits read addresses and snapshots only along those same permitted
+paths, while the existing memory-blind fingerprint retains its own policy.
+This also aligns the source-index shape with the existing unsigned 32-bit ring
+comparison rule; previously the shape recognized only signed ring operations.
+These fingerprints select candidates, never prove equality.
+
+Validation: four focused tests pass, including native/shared and mixed parity,
+source lookup in both orientations, withdrawn/missing premises, branch-context
+authority and deterministic 16/64/256-prefix growth with zero exports.
+`scripts/check.sh --no-fail-fast` passed with 7,154 unit/API tests, 58 example
+projects and 5,180 mdtests. Its precompiled-binary run took 10m04s and emitted
+the ten-minute budget warning, versus 9m49s for the preceding checkpoint;
+no limits were changed and no nightly suite was run.
 
 #### Classified boundaries and retained coverage
 
