@@ -1165,6 +1165,7 @@ thread_local! {
 /// Empties this module's memo tables at a verification boundary (ids keep
 /// counting, so a later entry cannot alias an old id).
 pub(crate) fn clear_assumption_memos() {
+    crate::kernel::equality_graph::EqualityGraph::clear_constant_query_memos();
     OPERAND_FINGERPRINTS.with(|memo| memo.borrow_mut().clear());
     INTRINSIC_CONTEXT.with(|context| *context.borrow_mut() = None);
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
@@ -5184,35 +5185,55 @@ impl PureFactContext {
         value: bool,
         insert: bool,
     ) {
-        let (ConditionTerm::Compare {
-            format: MachineIntegerType::Int32 | MachineIntegerType::UInt32,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }
-        | ConditionTerm::Compare {
-            format: MachineIntegerType::Int64,
-            relation: CompareRelation::Equal,
-            left,
-            right,
-        }) = condition
-        else {
+        use crate::kernel::machine_integer::{
+            Relation,
+            comparison::{comparison_view, structural_native_comparison_view},
+        };
+        // This index names the written operand, including its exact casts.
+        // Value-reading simplifications belong to checking, not source keys.
+        let view = if matches!(condition, ConditionTerm::Compare { .. }) {
+            comparison_view(condition, value)
+        } else {
+            structural_native_comparison_view(condition, value)
+        };
+        let Some(view) = view.filter(|view| {
+            view.relation == Relation::Equal
+                && matches!(
+                    view.format,
+                    MachineIntegerType::Int32
+                        | MachineIntegerType::UInt32
+                        | MachineIntegerType::Int64
+                        | MachineIntegerType::UInt64
+                )
+                // Native uint64 equality is spelled by the int64 bitwise
+                // equality constructor. Keep the old native admission set.
+                && !(view.format == MachineIntegerType::UInt64
+                    && matches!(condition, ConditionTerm::Compare { .. }))
+        }) else {
             return;
         };
-        if !value {
-            return;
-        }
-        let mut filed = vec![(left.as_ref(), exact_equality_constant(right))];
-        if left != right {
-            filed.push((right.as_ref(), exact_equality_constant(left)));
-        }
-        for (term, constant) in filed {
+        let [left, right] = view
+            .operands
+            .each_ref()
+            .map(|operand| operand.operand_view());
+        let mut previous = None;
+        for (term, constant) in [
+            (left, exact_equality_constant(right)),
+            (right, exact_equality_constant(left)),
+        ] {
             let Some(constant) = constant else {
                 continue;
             };
+            let key = checked_scalar_facts::ScalarOperandKey::new(term);
+            if previous.as_ref() == Some(&key) {
+                continue;
+            }
+            previous = Some(key.clone());
             let facts = self
                 .equality_graph
-                .exact_literal_sources(term)
+                .admitted
+                .exact_constant_equalities
+                .get(&key)
                 .cloned()
                 .unwrap_or_default();
             let facts = if insert {
@@ -5224,19 +5245,12 @@ impl PureFactContext {
                 self.equality_graph
                     .admitted
                     .exact_constant_equalities
-                    .without_key(&checked_scalar_facts::ScalarOperandKey::new(
-                        MachineOperandView::Legacy(term),
-                    ))
+                    .without_key(&key)
             } else {
                 self.equality_graph
                     .admitted
                     .exact_constant_equalities
-                    .with_inserted(
-                        checked_scalar_facts::ScalarOperandKey::new(MachineOperandView::Legacy(
-                            term,
-                        )),
-                        facts,
-                    )
+                    .with_inserted(key, facts)
             };
         }
     }
@@ -9773,7 +9787,11 @@ fn pointer_offsets_match_by_shallow_fact_graph(
                 value: right,
                 byte_width: right_width,
             },
-        ) => left_width == right_width && assumptions.int32_values_known_equal(left, right),
+        ) => {
+            left_width == right_width
+                && assumptions
+                    .int32_values_known_equal_views(left.operand_view(), right.operand_view())
+        }
         _ => false,
     }
 }
@@ -9917,14 +9935,16 @@ pub(in crate::kernel) fn exact_signed_constant_view(
 /// The constant an exact equality's other side names, read the way
 /// [`exact_signed_constant`] reads it: signed 32-bit, then 64-bit signed,
 /// then 64-bit unsigned when it fits.
-fn exact_equality_constant(candidate: &MachineTerm) -> Option<i64> {
-    signed_bitvector_constant(candidate).or_else(|| {
-        candidate.int64_as_const().or_else(|| {
+fn exact_equality_constant(candidate: MachineOperandView<'_>) -> Option<i64> {
+    candidate
+        .word32_constant()
+        .map(|value| i64::from(value as i32))
+        .or_else(|| candidate.int64_constant())
+        .or_else(|| {
             candidate
-                .uint64_as_const()
+                .uint64_constant()
                 .and_then(|value| i64::try_from(value).ok())
         })
-    })
 }
 
 /// [`exact_signed_constant`] for a term whose *sixty-four-bit* value is the

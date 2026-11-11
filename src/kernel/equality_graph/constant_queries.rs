@@ -9,6 +9,19 @@ use crate::kernel::{
 use crate::kernel::{constant_i64, constant_u64, int64_constant, uint64_constant};
 use std::collections::{BTreeMap, BTreeSet};
 
+// Completed misses are stable only within the fact context and logical-read
+// generation. Evidence capture has a separate namespace: a graph annotation
+// may know a value whose explicit source path has not been selected.
+thread_local! {
+    static SHARED_WIDE_CONSTANT_MISSES: std::cell::RefCell<std::collections::HashSet<(u64, u64, bool)>> = Default::default();
+}
+
+impl EqualityGraph {
+    pub(in crate::kernel) fn clear_constant_query_memos() {
+        SHARED_WIDE_CONSTANT_MISSES.with(|memo| memo.borrow_mut().clear());
+    }
+}
+
 impl EqualityGraph {
     pub(in crate::kernel) fn wide_constant(
         &self,
@@ -29,10 +42,27 @@ impl EqualityGraph {
             active: &mut BTreeSet<(bool, u64)>,
             memo: &mut BTreeMap<(bool, u64), Option<u64>>,
         ) -> Option<u64> {
+            let epoch = crate::kernel::assumptions::incomplete_reasoning_epoch();
             if !crate::kernel::assumptions::implicit_reasoning_provenance_capturing()
                 && let Some(value) = context.equality_graph.uint64_constant_view(term)
             {
                 return Some(value);
+            }
+            let miss_key = match term {
+                V::Shared(term) => crate::kernel::assumptions::ambient_assumptions_memo_id(context)
+                    .map(|id| {
+                        (
+                            id,
+                            term.id(),
+                            crate::kernel::assumptions::implicit_reasoning_provenance_capturing(),
+                        )
+                    }),
+                V::Legacy(_) => None,
+            };
+            if miss_key.is_some_and(|key| {
+                SHARED_WIDE_CONSTANT_MISSES.with(|memo| memo.borrow().contains(&key))
+            }) {
+                return None;
             }
             let identity = match term {
                 V::Legacy(term) => (false, term as *const MachineTerm as usize as u64),
@@ -43,6 +73,7 @@ impl EqualityGraph {
             }
             // Preserve the existing contextual evaluator's bounded recursion.
             if active.len() >= 128 || !active.insert(identity) {
+                crate::kernel::assumptions::note_incomplete_reasoning();
                 return None;
             }
             crate::instrumentation::record_deterministic_work(1);
@@ -173,8 +204,22 @@ impl EqualityGraph {
             }
             active.remove(&identity);
             memo.insert(identity, value);
+            if value.is_none()
+                && epoch == crate::kernel::assumptions::incomplete_reasoning_epoch()
+                && let Some(key) = miss_key
+            {
+                SHARED_WIDE_CONSTANT_MISSES.with(|memo| {
+                    let mut memo = memo.borrow_mut();
+                    // Match the bounded lifetime of ordinary decision memos.
+                    if memo.len() >= 500_000 {
+                        memo.clear();
+                    }
+                    memo.insert(key);
+                });
+            }
             value
         }
+        let _scope = crate::kernel::assumptions::PureFactContextIdScope::enter(context);
         evaluate(context, term, &mut BTreeSet::new(), &mut BTreeMap::new())
     }
 }
@@ -224,6 +269,14 @@ mod tests {
                 context.wide_constant_from_equalities_view(query.operand_view())
             })
         };
+        assert_eq!(
+            parent.wide_constant_from_equalities_view(query.operand_view()),
+            None
+        );
+        assert_eq!(
+            child.wide_constant_from_equalities_view(query.operand_view()),
+            Some(14)
+        );
         assert_eq!(read(&parent), None);
         let (value, premises) = collect_reasoning_provenance(|| read(&child));
         assert_eq!(value, Some(14));

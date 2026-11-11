@@ -1873,7 +1873,18 @@ impl PureFactContext {
         left: &MachineTerm,
         right: &MachineTerm,
     ) -> bool {
-        left == right || self.equality_graph.are_int32_equal(left, right)
+        self.int32_values_known_equal_views(
+            MachineOperandView::Legacy(left),
+            MachineOperandView::Legacy(right),
+        )
+    }
+
+    pub(in crate::kernel) fn int32_values_known_equal_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> bool {
+        self.equality_graph.are_int32_equal_views(left, right)
     }
 
     /// The other terms exact equality facts join to `term`: its equality
