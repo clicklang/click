@@ -2007,6 +2007,22 @@ fn solve_in_a_refuted_match_arm_bridge_expands_and_reverifies() {
             "Tag::A => { have x == x by ".len(),
         );
         assert!(!expanded.contains("have x == x by solve();"), "{expanded}");
+        let (source, sources) = mdtest_sources(relative);
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, "id").unwrap();
+        assert!(
+            expanded.contains("contradiction(r.model == Tag::A())"),
+            "{expanded}"
+        );
+        with_proof_trace("id", || {
+            without_implicit_solve_for_claim("id.contract", || {
+                verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap_or_else(|error| panic!("{relative}: {error}"));
+        });
     }
 }
 
@@ -18826,7 +18842,7 @@ fn a_loop_phase_expands_by_label_over_a_prepared_c_import() {
 
 #[test]
 #[ignore = "nightly: 0.5s in the parallel gate"]
-fn early_return_arms_transport_result_goals_from_function_exit() {
+fn early_return_arms_expand_to_explicit_result_proofs() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("mdtests/byte_representation_roundtrip.md");
     let fixture = crate::cli::read_mdtest(&path).unwrap();
@@ -18837,14 +18853,12 @@ fn early_return_arms_transport_result_goals_from_function_exit() {
         .map(|(name, source)| (name.as_str(), source.as_str()))
         .collect::<Vec<_>>();
     let expanded = expand_function_proof_source(source, &sources, "f").unwrap();
-    // `result` does not exist at function entry. Each failure arm states
-    // its `result` goal at function exit, where the arm has returned.
+    // `result` does not exist at function entry. Each return arm must
+    // establish its result claim explicitly, whether by direct closure or
+    // transport from function exit.
     assert!(!expanded.contains("at(function.entry"), "{expanded}");
-    assert!(
-        expanded.contains("transport(at(function.exit, result == 18 or result == -1)"),
-        "{expanded}"
-    );
-    verify_c0_sources(&expanded, &sources).unwrap();
+    without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
+        .expect("every return arm must replay without implicit solving");
 }
 
 #[test]

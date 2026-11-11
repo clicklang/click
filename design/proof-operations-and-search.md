@@ -73,8 +73,9 @@ For statement obligations:
    returning the existing conditional candidate and recorded requirements.
 2. The driver proves those requirements at the original frontier, using the
    supplied `by`/`requires` blocks or implicit search when no block was written.
-3. `Proof::finish_prepared_step` resumes with the proved requirements using the
-   existing candidate/retry behavior. The candidate cannot prove its own inputs.
+3. `Proof::finish_prepared_step` publishes the retained candidate after the
+   requirements are proved. It never reruns the primitive. Failed preparation
+   is a final refusal; the candidate cannot prove its own inputs.
 
 Obligation generation is intended to be fast; implicit solving is legitimately
 slow and expandable. An omitted obligation proof invokes the same
@@ -85,8 +86,11 @@ schedules the remaining C and outstanding goals; it is not another solver.
 Step preparation retains emitted prerequisites even when already known,
 and fold body facts use the same obligation driver. The driver handles every
 unwritten slot through ordinary solve. The raw fold operation no longer
-re-enters the driver. Failed statement preparations and folds still use the
-existing recovery retry after their obligations are proved.
+re-enters the driver. Named, population/authority, operational wrapper and
+legacy outcome folds retain their result through obligation proofs, including
+post-return folds. Completion uses retained path endpoints, not backward history
+recovery or a speculative whole-path certification probe. Arithmetic evaluator
+obligation generation remains a separate migration.
 
 ## Dependency inventory and enforcement
 
@@ -111,10 +115,11 @@ Roles distinguish the work remaining:
 | `mixed` | Drivers and auxiliary planners; semantic roles are recorded in the caller audit. |
 | `import` | Named import, not a runtime invocation. |
 
-The current inventory after step/fold obligation dispatch contains 613 records: 7 legacy bridges, 22 kernel callers,
-14 Surface operation dependencies, 8 operation-to-driver dependencies,
-110 driver records, 1 other dispatch record, 6 presentation records,
-424 search-internal records, 19 mixed records and 2 imports. These are reference
+The inventory after diagnostic stepping removal, match-arm dispatch relocation
+and signed-definedness/unsigned-order search extraction contains 617 records: 7 legacy bridges, 22 kernel callers,
+14 Surface operation dependencies, 4 operation-to-driver dependencies,
+111 driver records, 1 other dispatch record, 6 presentation records,
+431 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
@@ -162,8 +167,10 @@ requirements; it does not acquire a driver or schedule their proofs.
 lowering-obligation probe, invokes the shared obligation solver when needed,
 and opens the scope with the resulting facts. Strict replay takes the direct
 operation path. No new obligation format or proof rechecker is introduced.
-The existing probe/retry behavior is preserved; this change does not claim to
-remove repeated preparation or the separate separation-observation costs.
+This lowering adapter still probes and invokes `begin_have` again after proving
+its lowering requirements. It is separate from the removed step/fold completion
+retry. Its cost and the separation-observation setup costs need their own bounds;
+the existence of a second invocation alone does not demonstrate bad scaling.
 
 The source boundary rejects driver and registered search references inside
 `begin_have`. The primitive regression leaves implicit solving enabled and
@@ -208,9 +215,9 @@ checker or rebuilt proof state.
 ## Detailed caller classification
 
 The [caller audit](proof-boundary-classification.md) classifies the current 19 mixed and
-8 operation-to-driver records by why they invoke search or interpretation.
+4 operation-to-driver records by why they invoke search or interpretation.
 It distinguishes expected dispatch from hidden obligation callbacks, declaration
-validation, diagnostic execution, and the remaining primitive search dependencies.
+validation and the remaining primitive search dependencies.
 The proposed enforcement changes are for design review; no behavior changes or
 new scaling measurements accompany that classification.
 

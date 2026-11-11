@@ -211,9 +211,7 @@ src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_pl
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::plan_invariant_bundle_closure	driver	1
-src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::unfinished_callback_diagnostic	driver	1
 src/surface/proof/proof_object/fixed_state_steps.rs	operation	Proof::apply_pure_transport_using	derive_atomic_proposition	1
-src/surface/proof/proof_object/match_cases.rs	operation-to-driver	Proof::exclude_execution_match_arm_after_bridge	driver	1
 src/surface/proof/proof_object/resource_steps.rs	operation-to-driver	Proof::solve_open_for_missing_resource	driver	1
 src/surface/proof/proof_object/step_application.rs	presentation	Proof::record_spellability_census	resolve_solve_premises	1
 src/surface/proof/proof_object/trace_surface.rs	presentation	Proof::trace_pointer_pair	available_surface_fact	3
@@ -276,7 +274,7 @@ src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_premise_
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_single_rewrite_closure	available_rewrite_equality	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_single_rewrite_closure	driver	2
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_wide_equality_through_integer	try_machine_goal_through_integer_for	1
-src/surface/proof/signed_definedness.rs	operation-to-driver	Proof::apply_signed_definedness_certificate	driver	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_certificate	driver	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	driver	5
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_direct_logical_closure	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_signed_definedness_closure	1
@@ -288,7 +286,7 @@ src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_de
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	signed_operand_bound_premises	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	try_solve_closure	1
 src/surface/proof/smart_closures.rs	import	::	plan_solve_certificate	1
-src/surface/proof/smart_closures.rs	operation-to-driver	Proof::unsigned_strict_fact	driver	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_strict_fact	driver	1
 src/surface/proof/smart_closures.rs	presentation	Proof::spell_refutation	resolve_solve_premises	1
 src/surface/proof/smart_closures.rs	presentation	Proof::spelled_goal_for_search	available_surface_fact	2
 src/surface/proof/smart_closures.rs	presentation	Proof::unsigned_surface_fact	available_surface_fact	4
@@ -612,3 +610,8 @@ src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_if_within	
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_within	driver	2
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::apply_expanded_execution_if	driver	1
+src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	driver	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	try_signed_definedness_certificate	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	try_signed_definedness_certificate	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricted_signed_definedness_closure	try_signed_definedness_certificate	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_unsigned_order_step_from	try_unsigned_strict_fact	4

@@ -1254,3 +1254,82 @@ fn branch_primitives_cannot_interpret_scripts_or_schedule_search() {
         );
     }
 }
+
+#[test]
+fn callback_error_reporting_cannot_reenter_the_driver() {
+    let path = "src/surface/proof/proof_object/execution_statements.rs";
+    let source = r#"impl Proof {
+        fn unfinished_callback_script_error(&self) {
+            let mut pending = self.clone();
+            for _ in 0..6 {
+                pending = pending.driver().apply_step(ProofStep::Step);
+            }
+        }
+    }"#;
+    let file = syn::parse_file(source).unwrap();
+    let records = proof_search_boundary::inventory(path, &file);
+    assert!(
+        records
+            .keys()
+            .any(|key| key.contains("unfinished_callback_script_error"))
+    );
+    assert!(proof_search_boundary::check(path, &file).is_err());
+}
+
+#[test]
+fn match_arm_exclusion_primitives_cannot_dispatch_steps() {
+    let path = "src/surface/proof/proof_object/match_cases.rs";
+    for name in [
+        "prepare_execution_match_arm_exclusion",
+        "finish_execution_match_arm_exclusion",
+    ] {
+        let source = format!(
+            "impl Proof {{ fn {name}(&self) {{ self.driver().apply_step_at(step, source_index); }} }}"
+        );
+        let file = syn::parse_file(&source).unwrap();
+        let errors = proof_search_boundary::check(path, &file).unwrap_err();
+        assert!(
+            errors.iter().any(
+                |error| error.starts_with("unreviewed proof-search dependency:")
+                    && error.contains(name)
+            ),
+            "{errors:?}"
+        );
+    }
+}
+
+#[test]
+fn signed_definedness_certificate_attempts_stay_in_search() {
+    let path = "src/surface/proof/signed_definedness.rs";
+    for source in [
+        "impl Proof { fn try_signed_definedness_certificate(&self) {} }",
+        "impl Proof { fn apply_signed_definedness_certificate(&self) { self.driver().apply_step(certificate); } }",
+        "impl Proof { fn apply_certificate(&self) { ProofSearch::try_signed_definedness_certificate(self, width, premises); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert!(
+            proof_search_boundary::check(path, &file).is_err(),
+            "{source}"
+        );
+    }
+}
+
+#[test]
+fn unsigned_order_fact_restatement_stays_in_search() {
+    let path = "src/surface/proof/smart_closures.rs";
+    for source in [
+        "impl Proof { fn try_unsigned_strict_fact(&self) {} }",
+        "impl Proof { fn unsigned_strict_fact(&self) { self.driver().have_by_integer_arithmetic(goal, premises); } }",
+        "impl Proof { fn use_order(&self) { ProofSearch::try_unsigned_strict_fact(self, lower, upper, facts); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        let errors = proof_search_boundary::check(path, &file).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("search method must not return")
+                    || error.starts_with("unreviewed proof-search dependency:")),
+            "{errors:?}"
+        );
+    }
+}

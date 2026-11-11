@@ -1477,7 +1477,7 @@ fn try_check_flat_function_proof_inner<'a>(
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
         if remaining.is_empty()
-            && let Some(error) = proof.unfinished_callback_diagnostic()?
+            && let Some(error) = proof.unfinished_callback_script_error()
         {
             return Err(error);
         }
@@ -2228,7 +2228,7 @@ fn try_check_structural_function_proof_inner<'a>(
     check_verification_deadline()?;
     if !proof.is_at_function_exit() {
         if remaining.is_empty()
-            && let Some(error) = proof.unfinished_callback_diagnostic()?
+            && let Some(error) = proof.unfinished_callback_script_error()
         {
             return Err(error);
         }
@@ -3704,13 +3704,13 @@ fn advance_prepared_execution_match<'a>(
             *capture = bridged;
         }
         let scoped = scoped.at_source_tactic(last.source_index);
-        scoped.exclude_execution_match_arm_after_bridge(
-            &mut plan,
-            index,
-            &entered,
-            surface,
-            last.source_index,
-        )?;
+        let partition = scoped.prepare_execution_match_arm_exclusion(&plan, index, surface)?;
+        // Dispatch belongs to the driver: retain the ordinary contradiction's
+        // source attribution, trace and certificate before publishing the arm.
+        let closed = scoped
+            .driver()
+            .apply_step_at(ProofStep::Contradiction(surface.clone()), last.source_index)?;
+        closed.finish_execution_match_arm_exclusion(&mut plan, index, &entered, partition)?;
     }
     if plan.live_cases().is_empty() {
         return Err(ClickError::new(

@@ -58,33 +58,6 @@ impl<'a> Proof<'a> {
             _ => None,
         }
     }
-
-    fn apply_signed_definedness_certificate(
-        &self,
-        width: SignedDefinedWidth,
-        premises: Vec<ClickProposition>,
-    ) -> Result<Option<Self>, ClickError> {
-        let Some(surface_goal) = self.surface_goal() else {
-            return Ok(None);
-        };
-        let certificate = ArithmeticCertificate::special(SpecialArithmeticCertificate {
-            nodes: vec![SpecialArithmeticNode::SignedDefined {
-                width,
-                bounds: (0..premises.len()).collect(),
-                result: surface_goal.clone(),
-            }],
-            premises,
-            conclusion: 0,
-        });
-        let Some(proof) = attempt::candidate_outcome(
-            self.driver()
-                .apply_step(ProofStep::ArithmeticCertificate(certificate)),
-        )?
-        else {
-            return Ok(None);
-        };
-        Ok(proof.focused_discharged().then_some(proof))
-    }
 }
 
 /// Spell one constant bound fact of `width` on `term` with `term`'s spelling

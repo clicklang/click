@@ -585,26 +585,17 @@ impl<'a> Proof<'a> {
         Ok(plan)
     }
 
-    /// Excludes the arm this proof stands in, after the arm's own bridging
-    /// `have`s, by the `contradiction` that ends it.
-    ///
-    /// `self` is the arm entered with [`Self::enter_execution_match_arm`] and
-    /// advanced by those `have`s; `entered` is the checkpoint taken on entry.
-    /// The arm closes by the `contradiction` step exactly as a written one
-    /// closes a branch, the kernel partition excludes the constructor from
-    /// the facts the arm reached, and the arm's certificate is its `have`s
-    /// and that step.
-    pub(in crate::surface::proof) fn exclude_execution_match_arm_after_bridge(
+    /// Constructs the partition excluding this arm from its explicit
+    /// contradiction, using the facts established by the arm's bridge.
+    /// The driver retains this result while applying the written step.
+    pub(in crate::surface::proof) fn prepare_execution_match_arm_exclusion(
         &self,
-        plan: &mut ExecutionMatchPlan,
+        plan: &ExecutionMatchPlan,
         index: usize,
-        entered: &ProofCheckpoint<'a>,
         surface: &ClickProposition,
-        source_index: usize,
-    ) -> Result<(), ClickError> {
+    ) -> Result<Arc<CheckedProofCasePartition>, ClickError> {
         let fact = self.lower_surface_proposition(surface, "constructor-arm contradiction")?;
-        let partition = plan
-            .partition
+        plan.partition
             .excluding_constructor_case_in(plan.case_indices[index], self.facts(), fact)
             .ok_or_else(|| {
                 self.step_error(format!(
@@ -613,12 +604,21 @@ impl<'a> Proof<'a> {
                     plan.source.arms[index].variant,
                     crate::surface::diagnostics::describe_click_proposition(surface)
                 ))
-            })?;
-        let closed = self
-            .driver()
-            .apply_step_at(ProofStep::Contradiction(surface.clone()), source_index)?;
-        plan.excluded[index] = Some(closed.execution_match_arm_certificate(entered)?);
-        closed.record_execution_match_arm_trace(plan, index, entered);
+            })
+    }
+
+    /// Publishes the retained partition and the closed arm's certificate.
+    /// `self` is the successor of the bridge and its written contradiction;
+    /// `entered` is the checkpoint taken on entry to that arm.
+    pub(in crate::surface::proof) fn finish_execution_match_arm_exclusion(
+        &self,
+        plan: &mut ExecutionMatchPlan,
+        index: usize,
+        entered: &ProofCheckpoint<'a>,
+        partition: Arc<CheckedProofCasePartition>,
+    ) -> Result<(), ClickError> {
+        plan.excluded[index] = Some(self.execution_match_arm_certificate(entered)?);
+        self.record_execution_match_arm_trace(plan, index, entered);
         plan.partition = partition;
         Ok(())
     }

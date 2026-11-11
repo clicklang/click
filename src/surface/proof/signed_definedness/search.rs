@@ -1,6 +1,36 @@
 //! Discovery adapters over the existing persistent proof.
 use super::*;
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// Build and try the selected signed-definedness certificate inside search.
+    /// The driver applies the same explicit certificate primitive used by replay.
+    fn try_signed_definedness_certificate(
+        search_input: &Proof<'a>,
+        width: SignedDefinedWidth,
+        premises: Vec<ClickProposition>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let Some(surface_goal) = search_input.surface_goal() else {
+            return Ok(None);
+        };
+        let certificate = ArithmeticCertificate::special(SpecialArithmeticCertificate {
+            nodes: vec![SpecialArithmeticNode::SignedDefined {
+                width,
+                bounds: (0..premises.len()).collect(),
+                result: surface_goal.clone(),
+            }],
+            premises,
+            conclusion: 0,
+        });
+        let Some(proof) = attempt::candidate_outcome(
+            search_input
+                .driver()
+                .apply_step(ProofStep::ArithmeticCertificate(certificate)),
+        )?
+        else {
+            return Ok(None);
+        };
+        Ok(proof.focused_discharged().then_some(proof))
+    }
+
     /// `solve` on an `int32` or `int64` definedness goal: cite the constant
     /// bounds the context indexes under each operand.
     pub(in crate::surface::proof) fn try_signed_definedness_closure(
@@ -40,7 +70,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             width,
             [(left, surface_left), (right, surface_right)],
         );
-        if let Some(closed) = search_input.apply_signed_definedness_certificate(width, premises)? {
+        if let Some(closed) =
+            Self::try_signed_definedness_certificate(search_input, width, premises)?
+        {
             return Ok(Some(closed));
         }
         crate::kernel::search::ProofSearch::try_signed_definedness_after_operand_substitution(
@@ -111,7 +143,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             proof = scope.join()?;
             premises.push(defined);
         }
-        proof.apply_signed_definedness_certificate(width, premises)
+        Self::try_signed_definedness_certificate(&proof, width, premises)
     }
 
     /// An operand whose summands are fixed by exact constant equalities,
@@ -220,6 +252,6 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             })
             .map(|(_, surface)| surface.clone())
             .collect::<Vec<_>>();
-        search_input.apply_signed_definedness_certificate(width, premises)
+        Self::try_signed_definedness_certificate(search_input, width, premises)
     }
 }

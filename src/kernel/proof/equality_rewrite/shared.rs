@@ -459,6 +459,9 @@ pub(in crate::kernel) fn transport_node(
     )
 }
 
+mod exact_normalization;
+pub(in crate::kernel) use exact_normalization::normalize_node;
+
 /// Existing load canonicalization over a retained carrier. Operator rebuilding
 /// is raw, except generic casts, exactly as in the native canonical walk.
 fn canonical(root: &KernelTerm) -> Option<(HashMap<u64, KernelTerm>, HashMap<u64, bool>)> {
