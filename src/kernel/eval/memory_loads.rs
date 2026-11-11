@@ -1953,12 +1953,28 @@ fn complete_loaded_word(value: CValue, memory: &CMemory, address: &Pointer) -> C
         return value;
     }
     let bits = crate::kernel::spec::c_value_bitvector_term(&value).expect("LP64 word");
-    let pointer = CPointerValue::from_read(
-        Pointer::integer_address(bits),
-        CType::VoidPointer,
-        &crate::kernel::intern_c_memory_ref(memory),
-        address,
-    );
+    // The word's provenance is that of the read its value names: one read
+    // has one name, whichever later state loads it. A value that is not a
+    // complete read of a cell is named at this load.
+    let named = match &bits {
+        MachineTerm::MemoryLoad(_, _, LoadKind::Bits64) => Some(bits.clone()),
+        MachineTerm::Variable(variable) => registered_load_term_for_variable(variable),
+        _ => None,
+    };
+    let pointer = match named {
+        Some(MachineTerm::MemoryLoad(snapshot, cell, LoadKind::Bits64)) => CPointerValue::from_read(
+            Pointer::integer_address(bits),
+            CType::VoidPointer,
+            &snapshot,
+            &cell,
+        ),
+        _ => CPointerValue::from_read(
+            Pointer::integer_address(bits),
+            CType::VoidPointer,
+            &crate::kernel::intern_c_memory_ref(memory),
+            address,
+        ),
+    };
     CValue::PointerInteger(PointerIntegerValue {
         numeric: Box::new(value),
         pointer: Box::new(pointer),
