@@ -1486,7 +1486,9 @@ premises with `have` first.
 An explicit `have separate(...)` can use the live ownership partition
 immediately after `unfold`, including fixed-size fields fully contained in
 different owned objects; it checks complete byte coverage and grants no new
-ownership. `split()`, `left()` and `right()` were folded into this tactic and
+ownership. It also selects two different resources of any kind that the
+state owns exactly as written, for example a just-folded resource instance
+and a cell owned beside it. `split()`, `left()` and `right()` were folded into this tactic and
 are refused with that advice.
 
 Lookup also accepts certified identity of a resource separation. It performs

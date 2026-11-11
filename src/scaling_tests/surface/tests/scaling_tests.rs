@@ -10898,3 +10898,70 @@ fn instance_separation_samples() {
         );
     }
 }
+
+#[test]
+fn separation_of_a_folded_instance_scales_with_owned_clauses_and_folds() {
+    // Run on the CLI's eight-megabyte stack, as `click verify` does.
+    std::thread::Builder::new()
+        .name("folded-instance-separation-scaling".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(folded_instance_separation_samples)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn folded_instance_separation_samples() {
+    // One selected separation of a just-folded instance from an owned cell,
+    // read from the state's own resources. `clauses` grows the instances
+    // owned beside it; `folds` grows how many of them the proof refolds
+    // first, so the state holds that many other folded instances.
+    let fixture = |clauses: usize, folds: usize| {
+        let parameters = (0..clauses)
+            .map(|i| format!("struct node *p{i}, "))
+            .collect::<String>();
+        let c = format!(
+            "struct node {{ struct node *next; }};\n\
+             void caller({parameters}int *slot) {{ }}\n"
+        );
+        let click_parameters = (0..clauses)
+            .map(|i| format!("struct node* p{i}, "))
+            .collect::<String>();
+        let owned = (0..clauses)
+            .map(|i| format!("    owns b{i}: box(p{i});\n    requires b{i}.tag == 0;\n"))
+            .collect::<String>();
+        let refolded = (0..folds)
+            .map(|i| format!("unfold(b{i}); let d{i} = fold(box(p{i}), {{ tag: 0 }});\n"))
+            .collect::<String>();
+        let source = format!(
+            "verifying \"owned.c\";\n\
+             resource box(p: struct node*) {{ field tag: int32; owns p->next; }}\n\
+             void caller({click_parameters}int32* slot) {{\n{owned}    owns *slot;\n}} by {{\n\
+             {refolded}\
+             have separate(d0, memory(*slot)) by {{ assumption(); }}\n}}\n"
+        );
+        (c, source)
+    };
+    for (label, sizes) in [
+        ("owned clauses", [(4, 1), (8, 1), (16, 1)]),
+        ("folded instances", [(16, 4), (16, 8), (16, 16)]),
+    ] {
+        let mut samples = Vec::new();
+        for (clauses, folds) in sizes {
+            let (c, source) = fixture(clauses, folds);
+            let sources = [("owned.c", c.as_str())];
+            let size = if label == "owned clauses" {
+                clauses
+            } else {
+                folds
+            };
+            let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &sources));
+            result.expect("a folded instance is separate from another owned cell");
+            samples.push(sample);
+        }
+        assert_near_linear_scaling_at_sampled_sizes(
+            &format!("separation of a folded instance: {label}"),
+            &samples,
+        );
+    }
+}

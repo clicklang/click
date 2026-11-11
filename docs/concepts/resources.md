@@ -1792,8 +1792,12 @@ Click implements:
 - visible owned resources imply `separate(...)` facts; provably overlapping
   visible writes are rejected. A `have separate(memory(...), memory(...))`
   can select two distinct owned fields exposed by independent named-resource
-  unfolds from the current ownership partition. A viewed field or two
-  references to the same owned field cannot justify that separation,
+  unfolds from the current ownership partition. The same `have` selects
+  any two different resources the state owns exactly as written, such as
+  a resource instance the proof just folded and a cell owned beside it;
+  only a memory operand may instead lie inside a larger owned range. A
+  viewed field or two references to the same owned field cannot justify
+  that separation,
 - composite resources project direct `contains(parent, child)` facts for owned
   contained resources and direct `separate(child1, child2)` facts for owned
   sibling resources without exposing the hidden owned resource facts,
