@@ -132,66 +132,22 @@ impl<'a> Proof<'a> {
         })
     }
 
-    /// Refuses an exhausted script at its actual frontier. A disposable
-    /// descendant checks at most six straight-line operations, enough for
-    /// the next two callback statements, solely to name a concrete missing
-    /// view or contract. It never completes or publishes the source proof.
-    pub(in crate::surface::proof) fn unfinished_callback_diagnostic(
-        &self,
-    ) -> Result<Option<ClickError>, ClickError> {
+    /// Reports an exhausted callback script at its actual frontier. Error
+    /// reporting must not execute later operations or solve their obligations.
+    pub(in crate::surface::proof) fn unfinished_callback_script_error(&self) -> Option<ClickError> {
         let ProofContext::Execution(context) = self.context.as_ref() else {
-            return Ok(None);
+            return None;
         };
-        let sources = context.parsed_function.callback_statement_sources();
-        if sources.is_empty() {
-            return Ok(None);
+        if context
+            .parsed_function
+            .callback_statement_sources()
+            .is_empty()
+        {
+            return None;
         }
-        let unfinished = "the proof stops before function exit; finish the remaining C operations with `step()` or `step_until(function.exit)`, or end the script so its implicit tail runs them";
-        let mut pending = self.clone();
-        for _ in 0..6 {
-            check_verification_deadline()?;
-            let Some(execution) = pending.execution() else {
-                break;
-            };
-            let remaining = match &execution.core.frontier.position {
-                FrontierPosition::FunctionEntry => context.function.body(),
-                FrontierPosition::StatementEntry { remaining } => remaining.as_ref(),
-                _ => break,
-            };
-            let Ok((statement, _)) = split_next_source_operation(remaining) else {
-                break;
-            };
-            let carrier = match &statement {
-                CStatement::Declare { name, .. } | CStatement::Assign { name, .. } => Some(name),
-                CStatement::Call { function_name, .. }
-                | CStatement::CallAssign { function_name, .. } => Some(function_name),
-                _ => break,
-            };
-            let is_callback = carrier.is_some_and(|name| sources.contains_key(name));
-            match pending.driver().apply_step(ProofStep::Step) {
-                Ok(next) => pending = next,
-                Err(error) => {
-                    check_verification_deadline()?;
-                    if error.kind() != ClickErrorKind::Proof {
-                        return Err(error);
-                    }
-                    if is_callback {
-                        let prefix = "the proof stops before this callback; continuing its checked operations would fail";
-                        let mut error = error.with_context(prefix);
-                        if let Some(diagnostic) = &mut error.diagnostic {
-                            let diagnostic = std::sync::Arc::make_mut(diagnostic);
-                            diagnostic.reason = diagnostics::bound_error_message(format!(
-                                "{prefix}: {}",
-                                diagnostic.reason
-                            ));
-                        }
-                        return Ok(Some(error));
-                    }
-                    break;
-                }
-            }
-        }
-        Ok(Some(self.step_error(unfinished)))
+        Some(self.step_error(
+            "the proof stops before function exit; finish the remaining C operations with `step()` or `step_until(function.exit)`, or end the script so its implicit tail runs them",
+        ))
     }
 
     /// Closes the back-edge bundle as `close_invariants() by { ... }` with

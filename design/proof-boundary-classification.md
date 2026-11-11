@@ -1,13 +1,15 @@
 # Proof boundary classification
 
-Source reconciliation at `e9222a222` (2026-11-09), updated for resource-scope
-obligation, branch-interpreter, and step/fold obligation extraction. This
-classifies all 19 `mixed` and 8 `operation-to-driver` reference records in
-`build_support/proof_search_edges.tsv`, and groups the remaining operation
-references below. The extraction preserves proof behavior and removes the
-scope-to-driver reference from the machine inventory.
-A classified call is not a complexity proof for its callee. No new scaling
-measurements were made for this audit.
+Source reconciliation at `c53645952` (2026-11-11), the completed head of
+PR #2520. Queue/merge status is separate from this source baseline. This
+classifies all 19 `mixed` and 7 `operation-to-driver` records in
+`build_support/proof_search_edges.tsv` and groups the operation references.
+A record is one caller/target pair, not one runtime call or one slow walk.
+A classified call is not a complexity proof for its callee. This documentation
+pass adds no measurements; preparation evidence below is from the completed
+implementation's tests. The subsequent diagnostic cleanup removes one
+operation-to-driver record: an exhausted callback script now reports its actual
+frontier without speculative execution or solving.
 
 ## Current boundary
 
@@ -28,13 +30,38 @@ branch successor through `with_completed_execution_if`. This preserves their
 parent-identity checks and retained history. It does not establish a complexity
 bound for every existing split/join helper.
 
+Step/fold preparation now retains a conditional successor and obligations.
+`ProofDriver::apply_bare_statement_step` and `apply_execution_statement_step`
+prove them at the original input; `Proof::finish_prepared_step` publishes the
+retained result without re-executing the primitive. Failed preparation is a
+final refusal. Named, population/authority, operational wrapper, completed-return
+and legacy definition-law folds use this boundary. Return folds retain path
+endpoints; legacy folds no longer test whole-path certification to select a
+fallback exchange. These are closed preparation tasks, not outstanding adapters.
+
+Scoped evidence: twelve named preparation controls passed on this baseline,
+including constructor counts at 1/8/32, missing-premise refusals, and expansion
+and cold replay. Snapshot-pointer and arithmetic-field regressions preserve the
+meaning of generated obligations. This establishes the selected routes, not a
+cost bound for every evaluator, observation, join or final certification.
+
+Two separate limits remain:
+
+- Arithmetic evaluation still decides some safety conditions before emitting
+  obligations. Driver-owned solving does not make that generation work fast.
+- `ProofDriver::with_proved_lowering_requirements` still probes and invokes its
+  operation again after proving lowering requirements. Its callers include
+  have/claim opening and explicit unfolds. This is not the removed step/fold retry
+  and not hidden solving inside `begin_have`/`begin_contract_claim`. Establish
+  a complete-operation cost violation before treating bounded repeated lowering
+  as a bad-scaling defect.
+
 ## Findings
 
 The old categories describe code placement, not the reason search runs. Most
-ambiguous references are expected orchestration or discovery helpers. Three
+ambiguous references are expected orchestration or discovery helpers. Two
 other concerns need separate treatment: remaining orchestration adapters on
-operations, declaration validation that searches outside proof scripts, and
-failure diagnostics that execute more operations.
+operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
 not eliminate the seven kernel bridges, their 22 caller records, or the 14
@@ -72,7 +99,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 8 operation-to-driver reference records
+## The 7 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
@@ -85,10 +112,8 @@ Methods below are on `Proof`.
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
-| `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
-Totals: 6 search/support adapters, 1 specific-operation dispatch adapter, and 1 diagnostic
-execution callback. Some categories overlap semantically; each record is counted
+Totals: 6 search/support adapters and 1 specific-operation dispatch adapter. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible
@@ -123,8 +148,9 @@ No second checker or producer/rechecker layer is needed.
 
 - Primitive operations return a successor or outstanding obligations. They
   cannot acquire a driver or invoke a proof script. The outer driver executes
-  supplied proofs, invokes solve when omitted, and resumes the operation.
-  Have/claim opening and resource-scope completion now follow this rule;
+  supplied proofs, invokes solve when omitted, and publishes the retained result.
+  Have/claim opening and resource-scope completion delegate solving; step/fold
+  completion also retains its prepared result without re-execution;
   move the identified script/search adapters out of the primitive interface.
 - Make search access explicit at every discovery entry, including compatibility
   wrappers: a driver-owned access capability passed to search, never stored in
@@ -148,8 +174,9 @@ No second checker or producer/rechecker layer is needed.
 Have/claim opening and resource-scope completion no longer schedule proofs
 from the primitive interface. Branch script interpretation now also lives in the driver, including the
 proof-level `if` path that formerly ran script callbacks inside a primitive.
-The other adapters above remain to extract. Definition-validation proof support and normal diagnostic search
-need separate design review; this audit does not authorize behavior changes.
+The other adapters above remain to extract. Definition-validation proof support
+needs separate design review. Callback failure reporting now uses the actual
+frontier; it performs no speculative continuation.
 
 ## Reconciled operation dependencies
 
@@ -173,9 +200,8 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
 
 ## Evidence and ownership
 
-- **Confirmed boundary problems:** legacy simple transport can access search;
-  normal failure diagnostics speculatively execute driver steps. These are
-  source-established architectural findings, not newly measured scaling curves.
+- **Confirmed boundary problems:** legacy simple transport can access search.
+  This is a source-established architectural finding, not a newly measured scaling curve.
 - **Known cost violation:** T5 reconstructs transition assumptions using
   `assume_proposition_uncharged`. Ordinary transport expansions cover selected
   cases but do not make the surviving legacy route bounded.
