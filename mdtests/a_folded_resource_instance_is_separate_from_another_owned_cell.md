@@ -16,9 +16,9 @@ resource box(p: struct node*) {
     owns p->next;
 }
 void caller(struct node* child, int32* slot) {
-    owns b: box(child);
+    consumes b: box(child);
     owns *slot;
-    requires b.tag == 0;
+    produces d: box(child);
 } by {
     unfold(b);
     let d = fold(box(child), { tag: 0 });

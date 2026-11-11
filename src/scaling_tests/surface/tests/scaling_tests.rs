@@ -10928,7 +10928,13 @@ fn folded_instance_separation_samples() {
             .map(|i| format!("struct node* p{i}, "))
             .collect::<String>();
         let owned = (0..clauses)
-            .map(|i| format!("    owns b{i}: box(p{i});\n    requires b{i}.tag == 0;\n"))
+            .map(|i| {
+                if i < folds {
+                    format!("    consumes b{i}: box(p{i});\n    produces d{i}: box(p{i});\n")
+                } else {
+                    format!("    owns b{i}: box(p{i});\n")
+                }
+            })
             .collect::<String>();
         let refolded = (0..folds)
             .map(|i| format!("unfold(b{i}); let d{i} = fold(box(p{i}), {{ tag: 0 }});\n"))
