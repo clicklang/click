@@ -2556,7 +2556,7 @@ fn pointer_offset_by_elements_paths(
     let membership =
         held_range_membership(state, assumptions, &facts, &pointer, &checked, byte_width);
     if !matches!(membership, HeldRangeMembership::Inside) {
-        let Some(bounds) = pointer_block_bounds(state, &checked, byte_width) else {
+        let Some(bounds) = pointer_block_bounds(state, &checked, byte_width, assumptions) else {
             return Vec::new();
         };
         guards.extend(bounds);
@@ -2707,7 +2707,7 @@ pub(in crate::kernel) fn pointer_offset_by_bytes_paths(
         }];
     }
     let result = pointer.offset_by_bytes(bytes);
-    let Some(mut guards) = pointer_block_bounds(state, &result, 1) else {
+    let Some(mut guards) = pointer_block_bounds(state, &result, 1, assumptions) else {
         return Vec::new();
     };
     match subobject_formation_guards(
@@ -2885,6 +2885,7 @@ fn pointer_block_bounds(
     state: &CState,
     pointer: &Pointer,
     byte_width: u32,
+    assumptions: &PureFactContext,
 ) -> Option<Vec<PointerFormationGuard>> {
     // The block's byte count is read through its extent kind: a 32-bit
     // extent (in `0..=INT32_MAX`) zero extends into the 64-bit comparisons
@@ -2911,6 +2912,12 @@ fn pointer_block_bounds(
             }]);
         }
         return Some(Vec::new());
+    }
+
+    if extent.kind() == HeapExtentKind::UInt64
+        && let Some(guards) = wide_element_block_bounds(&pointer.offset, &extent, assumptions)
+    {
+        return Some(guards);
     }
 
     if let PointerOffsetTerm::Int64Scaled {
@@ -3037,6 +3044,65 @@ fn pointer_block_bounds(
             value: true,
         },
     ])
+}
+
+/// The formation bound of an address in a block with a 64-bit extent `n *
+/// k` (a constant `k`), stated over its elements: a constant byte offset `c`
+/// is `ceil(c / k) <= n` (`c <= bytes` for another extent), and `i * k + c`
+/// with `0 <= c < k` (a field of element `i` of a struct array,
+/// [`scaled_element_offset`]) is `0 <= i` and `i <= n` when `c == 0`, else
+/// `i < n` ([`wide_index_bound_conditions`]).
+///
+/// The byte spelling `offset <= n * k` compares with the wrapping `uint64`
+/// product, which the facts about `n` do not decide. The element spelling is
+/// equivalent because the extent was admitted with `n <= PTRDIFF_MAX / k`
+/// decided (`uint64_heap_extent_bytes_are_exact` in `eval/statements.rs`),
+/// so `n * k` is the mathematical byte count, as [`HeapExtent::element_count`]
+/// reads it; then `0 <= i <= n` also rules out overflow of an `int64`
+/// product `i * k`. `None` for another offset or extent shape, which the
+/// caller compares in bytes.
+///
+/// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
+/// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
+fn wide_element_block_bounds(
+    offset: &PointerOffsetTerm,
+    extent: &HeapExtent,
+    assumptions: &PureFactContext,
+) -> Option<Vec<PointerFormationGuard>> {
+    let guard = |condition| PointerFormationGuard {
+        condition,
+        value: true,
+    };
+    if let PointerOffsetTerm::Constant(bytes) = offset {
+        let bytes = u64::try_from(*bytes).ok()?;
+        let (count, bound) =
+            crate::kernel::reasoning::uint64_extent_in_elements(extent.bytes(), bytes);
+        return Some(vec![guard(ConditionTerm::uint64_less_equal(
+            bound,
+            count.clone(),
+        ))]);
+    }
+    if matches!(offset, PointerOffsetTerm::Int32Scaled { .. }) {
+        // A bare 32-bit index keeps its own rule.
+        return None;
+    }
+    let element = crate::kernel::reasoning::scaled_element_offset(offset)?;
+    if !(0..element.stride).contains(&element.field) {
+        return None;
+    }
+    let count = extent.element_count(u32::try_from(element.stride).ok()?)?;
+    Some(
+        crate::kernel::reasoning::wide_index_bound_conditions(
+            &element.index,
+            element.signed,
+            &count,
+            element.field != 0,
+            assumptions,
+        )
+        .into_iter()
+        .map(guard)
+        .collect(),
+    )
 }
 
 /// The formation bound of a pointer with a 32-bit offset into a block with a

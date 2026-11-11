@@ -1662,7 +1662,10 @@ impl AllocationSize {
     fn less_than(&self, bytes: u32) -> ConditionTerm {
         match (self.kind, self.unsigned) {
             (HeapExtentKind::UInt64, _) => {
-                let (count, bound) = uint64_extent_in_elements(&self.term, u64::from(bytes));
+                let (count, bound) = crate::kernel::reasoning::uint64_extent_in_elements(
+                    &self.term,
+                    u64::from(bytes),
+                );
                 ConditionTerm::uint64_less_than(count.clone(), bound)
             }
             (HeapExtentKind::Int32, true) => {
@@ -1680,27 +1683,8 @@ impl AllocationSize {
 /// the comparison is `ceil(bytes / k) <= n` over its element count, which
 /// the facts about `n` decide where the wrapping product would not.
 fn uint64_extent_at_least(extent: &MachineTerm, bytes: u64) -> ConditionTerm {
-    let (count, bound) = uint64_extent_in_elements(extent, bytes);
+    let (count, bound) = crate::kernel::reasoning::uint64_extent_in_elements(extent, bytes);
     ConditionTerm::uint64_less_equal(bound, count.clone())
-}
-
-/// An admitted 64-bit extent and a byte count `bytes` in the extent's
-/// elements: `(n, ceil(bytes / k))` for `n * k` with a constant `k`, else
-/// `(extent, bytes)`. Then `bytes <= extent` iff `ceil(bytes / k) <= n`, and
-/// `extent < bytes` iff `n < ceil(bytes / k)`.
-fn uint64_extent_in_elements(extent: &MachineTerm, bytes: u64) -> (&MachineTerm, MachineTerm) {
-    if let binary_term!(UInt64, Multiply, left, right) = extent {
-        match (left.uint64_as_const(), right.uint64_as_const()) {
-            (_, Some(width)) if width > 0 => {
-                return (left, MachineTerm::uint64_constant(bytes.div_ceil(width)));
-            }
-            (Some(width), _) if width > 0 => {
-                return (right, MachineTerm::uint64_constant(bytes.div_ceil(width)));
-            }
-            _ => {}
-        }
-    }
-    (extent, MachineTerm::uint64_constant(bytes))
 }
 
 /// The constant zeroed prefix of a reallocated block: the smaller of the old

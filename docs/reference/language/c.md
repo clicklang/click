@@ -2724,8 +2724,28 @@ message, even for a count the facts fix where the product would wrap
 count is evaluated, so `calloc(count, sizeof(struct T))` has a 32-bit extent
 for an `int` count
 (`mdtests/a_struct_calloc_with_an_int_count_allocates_a_32_bit_block.md`) and
-a 64-bit one for a `size_t` count; a field access into a 64-bit struct-array
-block is not supported yet.
+a 64-bit one for a `size_t` count.
+
+A 64-bit struct-array block, from `malloc(n * sizeof(struct T))` with a
+`size_t` or `int` `n` (the product is a `size_t`) or from
+`calloc(n, sizeof(struct T))` with a `size_t` `n`, is owned as bytes, and
+`p[i].field` is checked over the element count: the address of a field of
+`p[i]` needs `i < n` (`i <= n` for `&p[i]` itself), so `p[i].field` and
+`p[n - 1].field` are read and written where the facts decide that, and a
+field of `p[n]` is refused
+(`mdtests/a_size_t_struct_array_malloc_block_writes_and_reads_its_fields.md`,
+`mdtests/an_int_count_struct_array_malloc_block_writes_and_reads_its_fields.md`,
+`mdtests/a_size_t_struct_array_calloc_block_writes_and_reads_its_fields.md`,
+`mdtests/a_size_t_struct_array_calloc_block_reads_zero_fields.md`,
+`mdtests/a_field_past_a_size_t_struct_array_block_is_refused.md`,
+`mdtests/a_field_at_an_unbounded_index_of_a_size_t_struct_array_block_is_refused.md`).
+Its `allocation(p, n * 8u64)` token crosses a call as any 64-bit token does
+(`mdtests/a_size_t_struct_array_block_is_accessed_after_a_call_taking_its_allocation.md`),
+but its memory does not yet cross a clause that counts structs: `owns p[0..n]`
+for a struct pointer with a `size_t` `n` names `n` struct elements, which the
+block's byte range does not supply, so such a call requirement or loop
+`owns` clause is refused as missing (a loop without an `owns` clause keeps
+the block), and a callee holding `p[0..n]` cannot access its fields.
 
 `realloc` resizes a 64-bit block, and resizes any block to a 64-bit size,
 under the same proof as `malloc`: `realloc(data, n * w)` with a 64-bit `n`

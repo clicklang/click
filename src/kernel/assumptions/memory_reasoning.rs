@@ -4384,20 +4384,9 @@ impl PureFactContext {
         })
     }
 
-    /// Whether an access of `byte_width` bytes at `pointer` lies in the wide
-    /// range `base[start..end]` of `element_width`-byte elements.
-    ///
-    /// The access must be one whole element at an exact offset `i *
-    /// element_width` from the base, where `i` is an unsigned 64-bit index
-    /// (or a constant), with `start <= i`, `i < end` and `end <= i64::MAX /
-    /// element_width` decided as 64-bit unsigned comparisons. The last is
-    /// the object-size limit: under it `i * element_width` does not exceed
-    /// `i64::MAX`, so the offset term is the mathematical offset and the
-    /// two comparisons place the access. No 32-bit reading of an index or a
-    /// bound takes part.
     /// [`Self::pointer_access_in_range`] or [`Self::pointer_access_in_wide_range`],
     /// as `range`'s index kind requires. A wide range places whole-element
-    /// accesses only.
+    /// accesses, and fields of a struct-array byte range.
     pub(in crate::kernel) fn pointer_access_in_held_range(
         &self,
         pointer: &Pointer,
@@ -4417,6 +4406,106 @@ impl PureFactContext {
         )
     }
 
+    /// Whether an access of `byte_width` bytes at `pointer` lies in a wide
+    /// byte range `base[0..m * k]` holding `m` structs of `k` bytes, for an
+    /// access inside one struct: a constant byte offset `c` with
+    /// `ceil((c + byte_width) / k) <= m`, or a field of element `i`,
+    /// `i * k + c` ([`scaled_element_offset`]) with `c + byte_width <= k`,
+    /// with `0 <= i < m` ([`wide_index_bound_conditions`]). False when the
+    /// range or the offset has another shape or a comparison is not decided;
+    /// the caller then tries the whole-element rule.
+    ///
+    /// The byte comparison `offset + byte_width <= m * k` reads the wrapping
+    /// `uint64` product, which the facts about `m` do not decide. The element
+    /// comparisons are equivalent once `m <= i64::MAX / k` is decided, which
+    /// this rule decides itself: then `m * k` is the mathematical byte count
+    /// and at most `i64::MAX`, the object-size limit the whole-element rule
+    /// asks of its end. (A heap block's range ends at its extent, which was
+    /// admitted with that bound decided.)
+    ///
+    /// [`scaled_element_offset`]: crate::kernel::reasoning::scaled_element_offset
+    /// [`wide_index_bound_conditions`]: crate::kernel::reasoning::wide_index_bound_conditions
+    fn field_access_in_wide_struct_array(
+        &self,
+        pointer: &Pointer,
+        byte_width: u32,
+        range: &CMemoryRange,
+    ) -> bool {
+        let Some((start, end)) = range.wide_bounds() else {
+            return false;
+        };
+        if range.element_width() != 1 || byte_width == 0 || start.uint64_as_const() != Some(0) {
+            return false;
+        }
+        let binary_term!(UInt64, Multiply, left, right) = end else {
+            return false;
+        };
+        let (count, stride) = match (left.uint64_as_const(), right.uint64_as_const()) {
+            (None, Some(stride)) => (left.as_ref(), stride),
+            (Some(stride), None) => (right.as_ref(), stride),
+            _ => return false,
+        };
+        let Some(stride) = i64::try_from(stride).ok().filter(|stride| *stride >= 2) else {
+            return false;
+        };
+        let bytes = i64::from(byte_width);
+        let holds = |condition: ConditionTerm| self.decide(&condition) == Some(true);
+        let exact = || {
+            holds(ConditionTerm::uint64_less_equal(
+                count.clone(),
+                MachineTerm::uint64_constant((i64::MAX / stride) as u64),
+            ))
+        };
+        let Some(offset) = pointer.offset_from_base(range.base()) else {
+            return false;
+        };
+        if let PointerOffsetTerm::Constant(field) = offset {
+            let Some(last) = field
+                .checked_add(bytes)
+                .and_then(|last| u64::try_from(last).ok())
+            else {
+                return false;
+            };
+            let (count, bound) = crate::kernel::reasoning::uint64_extent_in_elements(end, last);
+            return exact() && holds(ConditionTerm::uint64_less_equal(bound, count.clone()));
+        }
+        let Some(element) = crate::kernel::reasoning::scaled_element_offset(&offset) else {
+            return false;
+        };
+        if element.stride != stride
+            || element.field < 0
+            || element
+                .field
+                .checked_add(bytes)
+                .is_none_or(|last| last > stride)
+        {
+            return false;
+        }
+        exact()
+            && crate::kernel::reasoning::wide_index_bound_conditions(
+                &element.index,
+                element.signed,
+                count,
+                true,
+                self,
+            )
+            .into_iter()
+            .all(holds)
+    }
+
+    /// Whether an access of `byte_width` bytes at `pointer` lies in the wide
+    /// range `base[start..end]` of `element_width`-byte elements.
+    ///
+    /// A field of a struct in a byte range `base[0..m * k]` is placed over
+    /// the struct count ([`Self::field_access_in_wide_struct_array`]).
+    /// Otherwise the access must be one whole element at an exact offset `i *
+    /// element_width` from the base, where `i` is an unsigned 64-bit index
+    /// (or a constant), with `start <= i`, `i < end` and `end <= i64::MAX /
+    /// element_width` decided as 64-bit unsigned comparisons. The last is
+    /// the object-size limit: under it `i * element_width` does not exceed
+    /// `i64::MAX`, so the offset term is the mathematical offset and the
+    /// two comparisons place the access. No 32-bit reading of an index or a
+    /// bound takes part.
     pub(in crate::kernel) fn pointer_access_in_wide_range(
         &self,
         pointer: &Pointer,
@@ -4428,7 +4517,8 @@ impl PureFactContext {
         };
         let base = range.base();
         let element_width = range.element_width();
-        if byte_width != element_width {
+        // Only a byte range places a narrower or wider access, as a field.
+        if byte_width != element_width && element_width != 1 {
             return false;
         }
         let resolved = if pointer == base || self.pointers_known_equal(pointer, base) {
@@ -4438,6 +4528,12 @@ impl PureFactContext {
                 .pointer_at_base(pointer, base)
                 .unwrap_or_else(|| pointer.clone())
         };
+        if self.field_access_in_wide_struct_array(&resolved, byte_width, range) {
+            return true;
+        }
+        if byte_width != element_width {
+            return false;
+        }
         let Some(index) = self.shared_wide_element_index_of_access(&resolved, base, element_width)
         else {
             return false;

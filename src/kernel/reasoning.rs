@@ -21,8 +21,9 @@ pub(super) use path_facts::forall_int32;
 pub(super) use path_facts::{ExactElementDelta, exact_element_delta_from_offset};
 pub use path_facts::{LoweringIntroduction, LoweringIntroductions};
 pub(super) use path_facts::{
-    PreparedExecutionPath, add_condition_path_fact, add_internal_condition_path_fact,
-    add_path_fact, add_pointer_offset_equality_execution_pure_facts, add_proof_obligation,
+    PreparedExecutionPath, ScaledElementOffset, add_condition_path_fact,
+    add_internal_condition_path_fact, add_path_fact,
+    add_pointer_offset_equality_execution_pure_facts, add_proof_obligation,
     add_proof_obligation_with_context, add_required_proof_obligation_with_context,
     add_required_proof_obligation_without_search, append_required_proof_obligations,
     append_required_proof_obligations_under_path_context,
@@ -33,10 +34,11 @@ pub(super) use path_facts::{
     int32_element_count_from_bytes, memory_effect_execution_facts, memory_range_still_available,
     merge_execution_pure_facts_and_obligations, merge_execution_pure_facts_and_obligations_under,
     merge_facts, merge_obligations, merge_prepared_execution_path, public_execution_pure_facts,
-    required_obligation_is_exactly_discharged, shared_byte_offset_from_pointer_offset,
-    shared_element_index_from_offset, shared_element_index_from_offset_with_facts,
-    shared_pointer_byte_offset_from_base, single_scaled_index_equal_to_constant,
-    solve_builtin_prop, uint64_element_count_from_bytes, wrap_path_context,
+    required_obligation_is_exactly_discharged, scaled_element_offset,
+    shared_byte_offset_from_pointer_offset, shared_element_index_from_offset,
+    shared_element_index_from_offset_with_facts, shared_pointer_byte_offset_from_base,
+    single_scaled_index_equal_to_constant, solve_builtin_prop, uint64_element_count_from_bytes,
+    uint64_extent_in_elements, wide_index_bound_conditions, wrap_path_context,
     wrap_path_context_with_introductions, wrap_proof_facts,
 };
 pub(crate) use substitution::*;
