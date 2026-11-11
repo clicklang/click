@@ -210,6 +210,9 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             verify_c0_sources(&selected, &sources).expect("selected live arm expansion");
         }
     }
+    // The live arm's solve may reconstruct the omitted resource fold.
+    verify_c0_sources(&source.replace("            fold(c);", ""), &sources)
+        .expect("the live arm may refold implicitly");
     for bad in [
         source.replace("    requires c.model != Maybe::None;", ""),
         source.replace(
@@ -224,7 +227,10 @@ fn proof_match_closes_impossible_constructor_without_executing_c() {
             "Maybe::None => { contradiction(c.model == Maybe::None); },",
             "",
         ),
-        source.replace("            fold(c);", ""),
+        source.replace(
+            "            fold(c);",
+            "            let c = fold(cell(p), { model: Maybe::None }, {});",
+        ),
         source.replace("have result == value", "have result == value + 1"),
     ] {
         assert!(
@@ -269,6 +275,11 @@ int id(int x) {
 fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
     verify_c0_sources(SOURCE, &[("read.c", C)])
         .expect("arbitrary scoped field and return-state fold");
+    verify_c0_sources(
+        &SOURCE.replace("            fold(c);", ""),
+        &[("read.c", C)],
+    )
+    .expect("solve may refold the Some resource from its retained body");
     for (label, bad) in [
         (
             "payload",
@@ -307,7 +318,13 @@ fn proof_match_checks_arbitrary_payload_and_rejects_invalid_arms() {
             "missing unfold",
             SOURCE.replacen("unfold(c); step_until(function.exit); fold(c)", "step_until(function.exit); fold(c)", 1),
         ),
-        ("missing fold", SOURCE.replace("            fold(c);", "")),
+        (
+            "wrong fold model",
+            SOURCE.replace(
+                "            fold(c);",
+                "            let c = fold(cell(p), { model: Maybe::None }, {});",
+            ),
+        ),
         (
             "sibling scope",
             SOURCE.replace(
