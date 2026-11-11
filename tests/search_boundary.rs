@@ -1340,3 +1340,20 @@ fn unsigned_order_fact_restatement_stays_in_search() {
         );
     }
 }
+
+#[test]
+fn invariant_bundle_solving_belongs_to_the_driver() {
+    for owner in ["Proof", "ProofScope"] {
+        let file = syn::parse_file(&format!(
+            "impl {owner} {{ fn plan_invariant_bundle_closure(&self) {{}} }}"
+        ))
+        .unwrap();
+        let errors = proof_search_boundary::check("src/new_operation.rs", &file).unwrap_err();
+        assert!(
+            errors
+                .iter()
+                .any(|error| error.contains("driver method must not return")),
+            "{errors:?}"
+        );
+    }
+}

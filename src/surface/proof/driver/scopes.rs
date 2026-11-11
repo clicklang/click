@@ -3,6 +3,20 @@ use super::*;
 use crate::surface::proof::driver::ProofDriver;
 
 impl<'p, 'a> ProofDriver<'p, ProofScope<'a>> {
+    /// Runs the loop-bundle member planner inside the owned nested body, so a
+    /// pivot arm proved under `have` retains the same checked descendant the
+    /// bundle root would have retained for it.
+    pub(in crate::surface::proof) fn plan_invariant_bundle_closure(
+        &self,
+    ) -> Result<Option<ProofScope<'a>>, ClickError> {
+        let Some(body) = self.proof.body.driver().plan_invariant_bundle_closure()? else {
+            return Ok(None);
+        };
+        let mut next = self.proof.clone();
+        next.body = body;
+        Ok(Some(next))
+    }
+
     /// Interpret an expanded branch, then retain its direct checked successor.
     pub(in crate::surface::proof) fn apply_expanded_execution_if(
         &self,

@@ -67,9 +67,9 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 ## Reconciled status and ownership
 
 The frozen inventory has **617 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 14 operation references, 4 operation-to-driver references,
-19 mixed references, 111 driver references, 431 search references, 6 presentation
-references, 1 dispatch and 2 imports. These are neither independent walks nor
+of those bridges, 14 operation references, 3 operation-to-driver references,
+19 mixed references, 113 driver references, 431 search references, 6 presentation
+references and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 14
 operation references. Registering the signed-definedness and unsigned-order
@@ -102,7 +102,7 @@ helpers exposes four existing search-only caller records; it adds no runtime wor
 Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. Four operation-to-driver records remain.
+do not run arm-script callbacks. Three operation-to-driver records remain.
 For a new scaling experiment, L1 through an actual write remains a bounded
 candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a named T1–T5 route and its retirement criterion,
@@ -357,7 +357,7 @@ authorize a new primitive or a verifier behavior change.
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
 legacy transport T1–T5 remain separate design tracks; preparation completion did
-not remove either. The four remaining operation/driver records are search/support
+not remove either. The three remaining operation/driver records are search/support
 adapters on the wrong interface, not six newly measured hidden solver bugs.
 
 For whichever slice is selected:

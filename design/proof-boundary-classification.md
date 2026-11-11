@@ -2,7 +2,7 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` and 4 `operation-to-driver` records in
+classifies all 19 `mixed` and 3 `operation-to-driver` records in
 `build_support/proof_search_edges.tsv` and groups the operation references.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
@@ -16,7 +16,9 @@ and completion publishes the retained partition and closed-arm certificate.
 The relocated match reference is driver-owned. Signed-definedness certificate
 attempts and unsigned strict-fact restatement now live on `ProofSearch`;
 primitive certificate application is unchanged. Registering these helpers exposes
-existing search-only callers without adding runtime work.
+existing search-only callers without adding runtime work. Invariant-bundle
+closure, its scope wrapper and member solve dispatch now live on the driver;
+selected-obligation diagnostics and explicit Both/Intro certificates are preserved.
 
 ## Current boundary
 
@@ -106,18 +108,17 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 4 operation-to-driver reference records
+## The 3 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
 | Caller | Classification and action |
 | --- | --- |
-| `plan_invariant_bundle_closure` | Search/orchestration adapter on the wrong interface: forwards to the driver planner and records the missed member. Used by invariant-closing orchestration. |
 | `solve_open_for_missing_resource` | Search helper on the wrong interface: selects a resource to unfold, called from smart retry. |
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
 
-Totals: 4 search/support adapters. Some categories overlap semantically; each record is counted
+Totals: 3 search/support adapters. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible
