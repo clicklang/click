@@ -1165,7 +1165,7 @@ thread_local! {
 /// Empties this module's memo tables at a verification boundary (ids keep
 /// counting, so a later entry cannot alias an old id).
 pub(crate) fn clear_assumption_memos() {
-    MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow_mut().clear());
+    OPERAND_FINGERPRINTS.with(|memo| memo.borrow_mut().clear());
     INTRINSIC_CONTEXT.with(|context| *context.borrow_mut() = None);
     DECIDE_MEMO.with(|memo| memo.borrow_mut().clear());
     ASSUMPTIONS_MEMO_IDS.with(|ids| ids.borrow_mut().clear());
@@ -1778,81 +1778,125 @@ fn hash_memory_blind_pointer_offset<H: std::hash::Hasher>(
 }
 
 thread_local! {
-    // Syntax only: no facts, registry identities, or snapshot contents.
-    static MEMORY_BLIND_INDEX_HASHES: RefCell<std::collections::HashMap<u64, u64>> =
+    // Syntax only: no cached proof authority or registry interpretation.
+    static OPERAND_FINGERPRINTS: RefCell<std::collections::HashMap<(OperandFingerprintPolicy, u64), u64>> =
         RefCell::new(std::collections::HashMap::new());
 }
 
 // Child fingerprints keep repeated shared subexpressions compact. The same
 // operand-view encoding is used for native and shared index syntax; snapshots
-// remain absent from leaf hashes as in the native memory-blind fingerprint.
+// are omitted only along the paths allowed by the selected policy.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum OperandFingerprintPolicy {
+    MemoryBlind,
+    Snapshot(bool),
+}
+impl OperandFingerprintPolicy {
+    fn without_frame(self) -> Self {
+        match self {
+            Self::MemoryBlind => self,
+            Self::Snapshot(_) => Self::Snapshot(false),
+        }
+    }
+}
 fn memory_blind_operand_fingerprint(root: MachineOperandView<'_>) -> u64 {
+    operand_fingerprint(root, OperandFingerprintPolicy::MemoryBlind)
+}
+fn operand_fingerprint(root: MachineOperandView<'_>, policy: OperandFingerprintPolicy) -> u64 {
     use std::hash::{Hash, Hasher};
-    let key = |value: MachineOperandView<'_>| match value {
-        MachineOperandView::Shared(term) => (true, term.id()),
-        MachineOperandView::Legacy(term) => (false, term as *const MachineTerm as usize as u64),
+    let key = |policy, value: MachineOperandView<'_>| match value {
+        MachineOperandView::Shared(term) => (policy, true, term.id()),
+        MachineOperandView::Legacy(term) => {
+            (policy, false, term as *const MachineTerm as usize as u64)
+        }
     };
     let mut values = std::collections::HashMap::new();
-    let mut pending = vec![(root, false)];
-    while let Some((value, finish)) = pending.pop() {
+    let mut pending = vec![(policy, root, false)];
+    while let Some((policy, value, finish)) = pending.pop() {
         crate::instrumentation::record_deterministic_work(1);
-        if values.contains_key(&key(value)) {
+        if values.contains_key(&key(policy, value)) {
             continue;
         }
         if let MachineOperandView::Shared(term) = value
             && let Some(hash) =
-                MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow().get(&term.id()).copied())
+                OPERAND_FINGERPRINTS.with(|memo| memo.borrow().get(&(policy, term.id())).copied())
         {
-            values.insert(key(value), hash);
+            values.insert(key(policy, value), hash);
             continue;
         }
         let mut hash = std::collections::hash_map::DefaultHasher::new();
-        let children = if let Some((format, op, args)) = value.binary() {
+        let (child_policy, children) = if let Some((format, op, args)) = value.binary() {
             0u8.hash(&mut hash);
             format.hash(&mut hash);
             op.hash(&mut hash);
-            args.to_vec()
+            let child_policy = match policy {
+                OperandFingerprintPolicy::MemoryBlind => policy,
+                OperandFingerprintPolicy::Snapshot(frame) => OperandFingerprintPolicy::Snapshot(
+                    frame
+                        && format.format().bits() == 32
+                        && matches!(
+                            op,
+                            crate::kernel::MachineBinaryOp::Add
+                                | crate::kernel::MachineBinaryOp::Subtract
+                                | crate::kernel::MachineBinaryOp::Multiply
+                        ),
+                ),
+            };
+            (child_policy, args.to_vec())
         } else if let Some((format, op, arg)) = value.unary() {
             1u8.hash(&mut hash);
             format.hash(&mut hash);
             op.hash(&mut hash);
-            vec![arg]
+            (policy.without_frame(), vec![arg])
         } else if let Some((encoding, source, destination, arg)) = value.cast() {
             2u8.hash(&mut hash);
             encoding.hash(&mut hash);
             source.hash(&mut hash);
             destination.hash(&mut hash);
-            vec![arg]
+            (policy.without_frame(), vec![arg])
         } else {
             3u8.hash(&mut hash);
-            if let Some(literal) = value.literal() {
-                hash_memory_blind_bitvector(&literal, &mut hash);
-            } else {
-                let leaf = value.read_source().expect("retained machine leaf");
-                hash_memory_blind_bitvector(&leaf, &mut hash);
+            let leaf = value
+                .literal()
+                .map(std::borrow::Cow::Owned)
+                .unwrap_or_else(|| value.read_source().expect("retained machine leaf"));
+            match (policy, leaf.as_ref()) {
+                (OperandFingerprintPolicy::MemoryBlind, _) => {
+                    hash_memory_blind_bitvector(&leaf, &mut hash)
+                }
+                (OperandFingerprintPolicy::Snapshot(true), MachineTerm::MemoryLoad(_, _, kind)) => {
+                    kind.hash(&mut hash)
+                }
+                (OperandFingerprintPolicy::Snapshot(_), _) => leaf.hash(&mut hash),
             }
             let hash = hash.finish();
-            values.insert(key(value), hash);
+            values.insert(key(policy, value), hash);
             if let MachineOperandView::Shared(term) = value {
-                MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow_mut().insert(term.id(), hash));
+                OPERAND_FINGERPRINTS
+                    .with(|memo| memo.borrow_mut().insert((policy, term.id()), hash));
             }
             continue;
         };
         if !finish {
-            pending.push((value, true));
-            pending.extend(children.into_iter().map(|child| (child, false)));
+            pending.push((policy, value, true));
+            pending.extend(
+                children
+                    .into_iter()
+                    .map(|child| (child_policy, child, false)),
+            );
         } else {
             for child in children {
-                values[&key(child)].hash(&mut hash);
+                values[&key(child_policy, child)].hash(&mut hash);
             }
             let hash = hash.finish();
-            values.insert(key(value), hash);
+            values.insert(key(policy, value), hash);
             if let MachineOperandView::Shared(term) = value {
-                MEMORY_BLIND_INDEX_HASHES.with(|memo| memo.borrow_mut().insert(term.id(), hash));
+                OPERAND_FINGERPRINTS
+                    .with(|memo| memo.borrow_mut().insert((policy, term.id()), hash));
             }
         }
     }
-    values[&key(root)]
+    values[&key(policy, root)]
 }
 
 fn hash_memory_blind_condition<H: std::hash::Hasher>(condition: &ConditionTerm, hasher: &mut H) {
@@ -13285,28 +13329,17 @@ impl OrderFactsByLower {
 /// share one too; the shape only narrows the facts to check.
 pub(in crate::kernel) fn offset_snapshot_shape(offset: &PointerOffsetTerm) -> u64 {
     use std::hash::{Hash, Hasher};
-    fn term_shape(term: &MachineTerm) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        match term {
-            MachineTerm::MemoryLoad(_, _, kind) => (0u8, kind).hash(&mut hasher),
-            binary_term!(Int32, Add, left, right) => {
-                (1u8, term_shape(left), term_shape(right)).hash(&mut hasher)
-            }
-            binary_term!(Int32, Subtract, left, right) => {
-                (2u8, term_shape(left), term_shape(right)).hash(&mut hasher)
-            }
-            binary_term!(Int32, Multiply, left, right) => {
-                (3u8, term_shape(left), term_shape(right)).hash(&mut hasher)
-            }
-            other => (4u8, other).hash(&mut hasher),
-        }
-        hasher.finish()
-    }
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     match offset {
-        PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            (0u8, byte_width, term_shape(value)).hash(&mut hasher)
-        }
+        PointerOffsetTerm::Int32Scaled { value, byte_width } => (
+            0u8,
+            byte_width,
+            operand_fingerprint(
+                value.operand_view(),
+                OperandFingerprintPolicy::Snapshot(true),
+            ),
+        )
+            .hash(&mut hasher),
         PointerOffsetTerm::Add(left, right) => {
             let (left, right) = (offset_snapshot_shape(left), offset_snapshot_shape(right));
             (1u8, left.min(right), left.max(right)).hash(&mut hasher)
