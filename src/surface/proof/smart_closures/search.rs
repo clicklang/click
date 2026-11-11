@@ -6181,7 +6181,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
         crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure_excluding(
-            &(search_input),
+            search_input,
             false,
             true,
         )
@@ -7363,7 +7363,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
     ) -> Option<Proof<'a>> {
         crate::kernel::search::ProofSearch::try_indexed_forall_instantiation_with_surfaces(
-            &(search_input),
+            search_input,
             &[],
         )
     }
@@ -9093,10 +9093,9 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
     pub(in crate::surface::proof) fn try_statement_step(
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
-        crate::kernel::search::ProofSearch::try_statement_step_with_apply(
-            &(search_input),
-            |proof| proof.driver().apply_step(ProofStep::Step),
-        )
+        crate::kernel::search::ProofSearch::try_statement_step_with_apply(search_input, |proof| {
+            proof.driver().apply_step(ProofStep::Step)
+        })
     }
 
     pub(in crate::surface::proof) fn try_smart_statement_step(
