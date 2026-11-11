@@ -3630,10 +3630,19 @@ fn simplify_c_int32_add_operand(assumptions: &PureFactContext, term: &MachineTer
         return simplified;
     }
     assumptions
-        .recorded_equality_class(term)
+        .recorded_equality_class_view(crate::kernel::MachineOperandView::Legacy(term))
         .into_iter()
-        .map(|member| assumptions.simplify_bitvector_under_assumptions(&member))
-        .find(|member| member.as_const().is_some())
+        .find_map(|member| {
+            let view = member
+                .retained_written_operand()
+                .map(crate::kernel::MachineOperandView::Legacy)
+                .unwrap_or_else(|| member.operand_view());
+            assumptions
+                .simplify_machine_operand_under_assumptions(view, MachineIntegerType::Int32)
+                .operand_view()
+                .word32_constant()
+                .map(MachineTerm::constant)
+        })
         .unwrap_or(simplified)
 }
 

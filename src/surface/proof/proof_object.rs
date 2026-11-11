@@ -1505,10 +1505,9 @@ fn diagnostic_value_variable(value: &CValue) -> Option<Variable> {
             // in element units. An added displacement is composite and does
             // not identify the pointer local itself.
             PointerOffsetTerm::Int32Scaled { value, .. }
-            | PointerOffsetTerm::Int64Scaled { value, .. } => match value.as_ref() {
-                MachineTerm::Variable(variable) => Some(*variable),
-                _ => None,
-            },
+            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                value.operand_view().variable().copied()
+            }
             _ => None,
         },
         CValue::Void => None,

@@ -246,11 +246,22 @@ impl EqualityGraph {
             })
     }
 
+    #[cfg(test)]
     pub(in crate::kernel) fn scalar_evidence_class(&self, term: &MachineTerm) -> Vec<MachineTerm> {
+        self.scalar_evidence_class_view(MachineOperandView::Legacy(term))
+            .into_iter()
+            .map(|term| term.value().clone())
+            .collect()
+    }
+
+    pub(in crate::kernel) fn scalar_evidence_class_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> Vec<SharedMachineIntegerTerm> {
         if self.admitted.scalar_evidence_inputs.is_empty() {
             return Vec::new();
         }
-        let start = evidence_key(MachineOperandView::Legacy(term));
+        let start = evidence_key(term);
         if !self.admitted.scalar_evidence_inputs.contains_key(&start) {
             return Vec::new();
         }
@@ -268,14 +279,20 @@ impl EqualityGraph {
             }
         }
         seen.remove(&start);
-        seen.remove(&MachineOperandView::Legacy(term).retain(MachineIntegerType::Int32));
+        seen.remove(&term.retain(MachineIntegerType::Int32));
         // This legacy search API orders candidates by native syntax, not by
         // the allocation order of retained handles.
-        seen.into_iter()
-            .map(|term| term.value().clone())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect()
+        fn written(term: &SharedMachineIntegerTerm) -> MachineOperandView<'_> {
+            term.retained_written_operand()
+                .map(MachineOperandView::Legacy)
+                .unwrap_or_else(|| term.operand_view())
+        }
+        let mut members: Vec<_> = seen.into_iter().collect();
+        members.sort_by(|a, b| crate::kernel::machine_operand_syntax_cmp(written(a), written(b)));
+        members.dedup_by(|a, b| {
+            crate::kernel::machine_operand_syntax_cmp(written(a), written(b)).is_eq()
+        });
+        members
     }
 
     /// The pointers joined to `pointer` by a chain of recorded cross-block

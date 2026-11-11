@@ -1896,11 +1896,12 @@ impl PureFactContext {
     /// the whole fact set once the graph is built, so an index keyed by
     /// syntactic endpoints can also look an endpoint up under the spellings
     /// the premises make equal to it.
-    pub(in crate::kernel) fn bitvector_equality_class(
+    pub(in crate::kernel) fn bitvector_equality_class_view(
         &self,
         term: &MachineTerm,
-    ) -> Vec<MachineTerm> {
-        self.equality_graph.scalar_evidence_class(term)
+    ) -> Vec<SharedMachineIntegerTerm> {
+        self.equality_graph
+            .scalar_evidence_class_view(MachineOperandView::Legacy(term))
     }
 
     /// Retain one deterministic path made only from exact int32 equality

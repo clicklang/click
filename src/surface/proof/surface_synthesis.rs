@@ -1020,14 +1020,14 @@ fn bitvector_term_exceeds_depth_limit(root: &MachineTerm) -> bool {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
                 {
-                    pending.push((value, depth + 1));
+                    pending.push((value.structural_value(), depth + 1));
                 }
             }
             MachineTerm::PointerAddress(pointer, _) => {
                 if let PointerOffsetTerm::Int32Scaled { value, .. }
                 | PointerOffsetTerm::Int64Scaled { value, .. } = &pointer.offset
                 {
-                    pending.push((value, depth + 1));
+                    pending.push((value.structural_value(), depth + 1));
                 }
             }
             MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
@@ -2012,7 +2012,7 @@ fn is_one_element_byte_count(bytes: &MachineTerm) -> bool {
 fn int32_scaled_value(offset: &PointerOffsetTerm, width: i64) -> Option<MachineTerm> {
     match offset {
         PointerOffsetTerm::Int32Scaled { value, byte_width } if *byte_width == width => {
-            Some(value.as_ref().clone())
+            Some(value.structural_value().clone())
         }
         _ => None,
     }
@@ -3418,7 +3418,7 @@ pub(super) fn synthesize_surface_pointer_offset(
                             bound_variables,
                         )?)?;
                     let index = contract_expression_to_c_fragment(&synthesize_surface_bitvector(
-                        index,
+                        index.structural_value(),
                         parameter_binding,
                         state,
                         bound_variables,
@@ -3434,7 +3434,12 @@ pub(super) fn synthesize_surface_pointer_offset(
                 .or_else(|| dynamically_indexed_pointer(right, left))
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } if matches!(*byte_width, 1 | 4) => {
-            synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)
+            synthesize_surface_bitvector(
+                value.structural_value(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )
         }
         PointerOffsetTerm::Constant(_)
         | PointerOffsetTerm::Variable(_)
@@ -4449,12 +4454,12 @@ fn synthesize_parameter_field_indexed_int32_load(
         };
         // The field's value is its load, or the load variable naming that
         // load at this state.
-        let named_load = match value.as_ref() {
+        let named_load = match value.structural_value() {
             MachineTerm::Variable(variable) => registered_load_in_state(variable, state),
             _ => None,
         };
         let MachineTerm::MemoryLoad(_, field_pointer, _) =
-            named_load.as_ref().unwrap_or(value.as_ref())
+            named_load.as_ref().unwrap_or(value.structural_value())
         else {
             return None;
         };
@@ -4469,7 +4474,12 @@ fn synthesize_parameter_field_indexed_int32_load(
             Some(PointerOffsetTerm::Int32Scaled {
                 value,
                 byte_width: 4,
-            }) => synthesize_surface_bitvector(value, parameter_binding, state, bound_variables)?,
+            }) => synthesize_surface_bitvector(
+                value.structural_value(),
+                parameter_binding,
+                state,
+                bound_variables,
+            )?,
             Some(PointerOffsetTerm::Constant(bytes)) if bytes % 4 == 0 => {
                 ContractExpression::CFragment(CExpression::Value(int32(
                     u32::try_from(bytes / 4).ok()?,
@@ -4751,7 +4761,7 @@ pub(super) fn bitvector_term_is_load_free(term: &MachineTerm) -> bool {
         match term {
             MachineTerm::MemoryLoad(_, _, _) => return false,
             MachineTerm::PointerAddress(pointer, _) => {
-                pending.extend(pointer.offset.scaled_values());
+                pending.extend(pointer.offset.native_scaled_values_for_output());
             }
             MachineTerm::Constant { .. } | MachineTerm::Variable(_) => {}
             crate::kernel::binary_bitvector32_term!(left, right) => {
@@ -5156,9 +5166,9 @@ fn synthesis_element_index(
             // uint32 indexing observes the value by exact unsigned widening.
             // Recover the original expression, whose re-lowering restores it.
             // This is a structural inverse, never a fact-based narrowing.
-            match (unsigned, value.as_ref()) {
+            match (unsigned, value.structural_value()) {
                 (true, cast_term!(UInt64From32, index)) => Some(index.as_ref().clone()),
-                _ => Some(value.as_ref().clone()),
+                _ => Some(value.structural_value().clone()),
             }
         }
         _ => None,

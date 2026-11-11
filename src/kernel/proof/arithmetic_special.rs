@@ -12,6 +12,7 @@ use super::super::{
     MachineTerm, Pointer, PointerBlock, PointerOffsetTerm, Proposition, SignedDefinedWidth,
 };
 use crate::kernel::MachineIntegerType;
+#[cfg(test)]
 use crate::kernel::binary_node;
 use crate::kernel::binary_term;
 use crate::kernel::{CompareRelation, OverflowOperation};
@@ -75,7 +76,7 @@ fn pointer_offset_payload(root: &PointerOffsetTerm) -> Option<usize> {
             }
             PointerOffsetTerm::Int32Scaled { value, .. }
             | PointerOffsetTerm::Int64Scaled { value, .. } => {
-                payload = payload.checked_add(bitvector_payload(value)?)?;
+                payload = payload.checked_add(pointer_index_payload(value.operand_view())?)?;
             }
         }
         if payload > MAX_TERM_PAYLOAD {
@@ -83,6 +84,46 @@ fn pointer_offset_payload(root: &PointerOffsetTerm) -> Option<usize> {
         }
     }
     Some(payload)
+}
+
+// Preserve the certificate's occurrence budget and supported native syntax.
+// The bounded walk never materializes the potentially much larger native tree.
+fn pointer_index_payload(root: crate::kernel::MachineOperandView<'_>) -> Option<usize> {
+    use crate::kernel::{MachineCastSpelling as E, MachineOperandView as V};
+    let mut pending = vec![root];
+    let mut total = 0usize;
+    while let Some(view) = pending.pop() {
+        if let Some(leaf) = view
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| view.read_source())
+        {
+            total = total.checked_add(bitvector_payload(&leaf)?)?;
+        } else if let Some((format, op, operands)) = view.binary() {
+            if !operand_identity::binary_supported(format, op) {
+                return None;
+            }
+            total = total.checked_add(1)?;
+            pending.extend(operands);
+        } else if let Some((encoding, _, _, operand)) = view.cast() {
+            if !matches!(
+                encoding,
+                E::Generic | E::Int64FromUInt32 | E::UInt64From32 | E::UInt32From64
+            ) {
+                return None;
+            }
+            total = total.checked_add(1)?;
+            pending.push(operand);
+        } else if let V::Legacy(term) = view {
+            total = total.checked_add(bitvector_payload(term)?)?;
+        } else {
+            return None;
+        }
+        if total > MAX_TERM_PAYLOAD {
+            return None;
+        }
+    }
+    Some(total)
 }
 
 fn bitvector_payload(root: &MachineTerm) -> Option<usize> {
@@ -232,6 +273,50 @@ fn pointer_block_equal(left: &PointerBlock, right: &PointerBlock) -> bool {
     }
 }
 
+fn pointer_index_equal(
+    left: crate::kernel::MachineOperandView<'_>,
+    right: crate::kernel::MachineOperandView<'_>,
+) -> bool {
+    if !pointer_index_payload(left).is_some_and(charge_payload)
+        || !pointer_index_payload(right).is_some_and(charge_payload)
+    {
+        return false;
+    }
+    let mut pending = vec![(left, right)];
+    while let Some((left, right)) = pending.pop() {
+        let a = left
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| left.read_source());
+        let b = right
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| right.read_source());
+        if let (Some(a), Some(b)) = (a, b) {
+            if !legacy_bitvector_equal_after_payload_check(&a, &b) {
+                return false;
+            }
+        } else if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
+            (left.binary(), right.binary())
+        {
+            if (af, ao) != (bf, bo) || !operand_identity::binary_supported(af, ao) {
+                return false;
+            }
+            pending.push((al, bl));
+            pending.push((ar, br));
+        } else if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) = (left.cast(), right.cast())
+        {
+            if (ae, af, at) != (be, bf, bt) {
+                return false;
+            }
+            pending.push((av, bv));
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
 fn pointer_offset_equal(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
@@ -263,7 +348,7 @@ fn pointer_offset_equal(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> 
                     byte_width: right_width,
                 },
             ) if left_width == right_width => {
-                if !bitvector_equal(left, right) {
+                if !pointer_index_equal(left.operand_view(), right.operand_view()) {
                     return false;
                 }
             }
@@ -279,7 +364,7 @@ fn pointer_offset_equal(left: &PointerOffsetTerm, right: &PointerOffsetTerm) -> 
                     unsigned: right_unsigned,
                 },
             ) if left_width == right_width && left_unsigned == right_unsigned => {
-                if !bitvector_equal(left, right) {
+                if !pointer_index_equal(left.operand_view(), right.operand_view()) {
                     return false;
                 }
             }
@@ -313,6 +398,10 @@ fn legacy_bitvector_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
     if !charge_bitvector(left) || !charge_bitvector(right) {
         return false;
     }
+    legacy_bitvector_equal_after_payload_check(left, right)
+}
+
+fn legacy_bitvector_equal_after_payload_check(left: &MachineTerm, right: &MachineTerm) -> bool {
     let mut pending = vec![(left, right)];
     while let Some((left, right)) = pending.pop() {
         match (left, right) {
@@ -1919,9 +2008,9 @@ fn unsigned64_bounds(premises: &[&Proposition]) -> Option<BTreeMap<MachineTerm, 
 
 enum OffsetPart<'a> {
     Offset(&'a PointerOffsetTerm),
-    Scaled(&'a MachineTerm, i64),
+    Scaled(crate::kernel::MachineOperandView<'a>, i64),
     /// An unsigned 64-bit index scaled by an element width.
-    Scaled64(&'a MachineTerm, i64),
+    Scaled64(crate::kernel::MachineOperandView<'a>, i64),
 }
 
 /// Check Integer rule node `index` against the Integer readings of the
@@ -2069,42 +2158,49 @@ fn pointer_translation(
     let Some(wide_bounds) = unsigned64_bounds(&wide_bounds) else {
         return false;
     };
-    let wide_range = |value: &MachineTerm| match value.uint64_as_const() {
+    use crate::kernel::MachineOperandView as V;
+    // The original maps are sorted by native syntax. Binary search preserves
+    // that exact matching rule while retaining the queried shared operand.
+    let bounds: Vec<_> = bounds.into_iter().collect();
+    let wide_bounds: Vec<_> = wide_bounds.into_iter().collect();
+    fn lookup<T: Copy>(bounds: &[(MachineTerm, T)], value: V<'_>) -> Option<T> {
+        bounds
+            .binary_search_by(|(term, _)| {
+                crate::kernel::machine_operand_syntax_cmp(V::Legacy(term), value)
+            })
+            .ok()
+            .map(|index| bounds[index].1)
+    }
+    let wide_range = |value: V<'_>| match value.uint64_constant() {
         Some(value) => (value, value),
-        None => wide_bounds.get(value).copied().unwrap_or((0, u64::MAX)),
+        None => lookup(&wide_bounds, value).unwrap_or((0, u64::MAX)),
     };
-    // `x + y` over `uint64` is the sum of its operands when it cannot wrap.
-    let wide_sum_is_exact = |x: &MachineTerm, y: &MachineTerm| {
-        if !charge_bitvector(x) || !charge_bitvector(y) {
+    let wide_sum_is_exact = |x: V<'_>, y: V<'_>| {
+        if !pointer_index_payload(x).is_some_and(charge_payload)
+            || !pointer_index_payload(y).is_some_and(charge_payload)
+        {
             return false;
         }
         u128::from(wide_range(x).1) + u128::from(wide_range(y).1) <= u128::from(u64::MAX)
     };
-    let atom_range = |value: &MachineTerm| match value {
-        bits32_constant!(value) => {
-            let value = i64::from(constant_u32(*value) as i32);
-            Some((value, value))
+    let atom_range = |value: V<'_>| {
+        if let Some(bits) = value.word32_constant() {
+            let value = i64::from(bits as i32);
+            return Some((value, value));
         }
-        MachineTerm::Variable(_) => Some(
-            bounds
-                .get(value)
-                .copied()
-                .unwrap_or((SIGNED_MIN, SIGNED_MAX)),
-        ),
-        // A compound operand remains opaque. Only an explicitly cited bound
-        // supplies its interval; do not recursively infer or scan for one.
-        _ => {
-            let payload = bitvector_payload(value)?;
-            let comparisons = (usize::BITS - bounds.len().max(1).leading_zeros()) as usize;
-            if crate::instrumentation::deadline_exceeded_with_work(
-                payload.saturating_mul(comparisons).max(1),
-            ) {
-                return None;
-            }
-            bounds.get(value).copied()
+        if value.variable().is_some() {
+            return Some(lookup(&bounds, value).unwrap_or((SIGNED_MIN, SIGNED_MAX)));
         }
+        let payload = pointer_index_payload(value)?;
+        let comparisons = (usize::BITS - bounds.len().max(1).leading_zeros()) as usize;
+        if crate::instrumentation::deadline_exceeded_with_work(
+            payload.saturating_mul(comparisons).max(1),
+        ) {
+            return None;
+        }
+        lookup(&bounds, value)
     };
-    let sum_is_defined = |x: &MachineTerm, y: &MachineTerm| {
+    let sum_is_defined = |x: V<'_>, y: V<'_>| {
         let (Some((xmin, xmax)), Some((ymin, ymax))) = (atom_range(x), atom_range(y)) else {
             return false;
         };
@@ -2134,58 +2230,63 @@ fn pointer_translation(
                     continue;
                 }
                 OffsetPart::Offset(PointerOffsetTerm::Int32Scaled { value, byte_width }) => {
-                    pending.push(OffsetPart::Scaled(value, *byte_width));
-                    continue;
-                }
-                OffsetPart::Scaled(int32_constant!(value), width) => {
-                    let value = i128::from(constant_u32(*value) as i32) * i128::from(width);
-                    let Some(next) = constant.checked_add(sign * value) else {
-                        return false;
-                    };
-                    constant = next;
-                    continue;
-                }
-                OffsetPart::Scaled(binary_term!(Int32, Add, left, right), width)
-                    if sum_is_defined(left, right) =>
-                {
-                    pending.push(OffsetPart::Scaled(left, width));
-                    pending.push(OffsetPart::Scaled(right, width));
+                    pending.push(OffsetPart::Scaled(value.operand_view(), *byte_width));
                     continue;
                 }
                 OffsetPart::Scaled(value, width) => {
-                    PointerOffsetTerm::scaled_int32_node(value.clone(), width)
+                    if let Some(int32_constant!(bits)) = value.literal() {
+                        let value = i128::from(constant_u32(bits) as i32) * i128::from(width);
+                        let Some(next) = constant.checked_add(sign * value) else {
+                            return false;
+                        };
+                        constant = next;
+                        continue;
+                    }
+                    if let Some((MachineIntegerType::Int32, MachineBinaryOp::Add, [left, right])) =
+                        value.binary()
+                    {
+                        if sum_is_defined(left, right) {
+                            pending.push(OffsetPart::Scaled(left, width));
+                            pending.push(OffsetPart::Scaled(right, width));
+                            continue;
+                        }
+                    }
+                    PointerOffsetTerm::Int32Scaled {
+                        value: value.retain(MachineIntegerType::Int32),
+                        byte_width: width,
+                    }
                 }
                 OffsetPart::Offset(PointerOffsetTerm::Int64Scaled {
                     value,
                     byte_width,
                     unsigned: true,
                 }) => {
-                    pending.push(OffsetPart::Scaled64(value, *byte_width));
-                    continue;
-                }
-                OffsetPart::Scaled64(uint64_constant!(value), width) => {
-                    let value = i128::from(constant_u64(*value)) * i128::from(width);
-                    let Some(next) = constant.checked_add(sign * value) else {
-                        return false;
-                    };
-                    constant = next;
-                    continue;
-                }
-                OffsetPart::Scaled64(
-                    MachineTerm::Binary {
-                        format: MachineIntegerType::UInt64,
-                        op: MachineBinaryOp::Add,
-                        left,
-                        right,
-                    },
-                    width,
-                ) if wide_sum_is_exact(left, right) => {
-                    pending.push(OffsetPart::Scaled64(left, width));
-                    pending.push(OffsetPart::Scaled64(right, width));
+                    pending.push(OffsetPart::Scaled64(value.operand_view(), *byte_width));
                     continue;
                 }
                 OffsetPart::Scaled64(value, width) => {
-                    PointerOffsetTerm::scaled_int64_node(value.clone(), width, true)
+                    if let Some(bits) = value.uint64_constant() {
+                        let value = i128::from(bits) * i128::from(width);
+                        let Some(next) = constant.checked_add(sign * value) else {
+                            return false;
+                        };
+                        constant = next;
+                        continue;
+                    }
+                    if let Some((MachineIntegerType::UInt64, MachineBinaryOp::Add, [left, right])) =
+                        value.binary()
+                    {
+                        if wide_sum_is_exact(left, right) {
+                            pending.push(OffsetPart::Scaled64(left, width));
+                            pending.push(OffsetPart::Scaled64(right, width));
+                            continue;
+                        }
+                    }
+                    PointerOffsetTerm::Int64Scaled {
+                        value: value.retain(MachineIntegerType::Int64),
+                        byte_width: width,
+                        unsigned: true,
+                    }
                 }
                 OffsetPart::Offset(value) => value.clone(),
             };
@@ -2329,21 +2430,22 @@ fn drop_aligned_scaled_addends(
             other => parts.push(other.clone()),
         }
     }
-    fn constant_factor(term: &MachineTerm) -> Option<i64> {
-        match term {
-            binary_term!(Int32, Multiply, left, right) => left
-                .as_const()
-                .map(|constant| i64::from(constant as i32))
-                .or_else(|| right.as_const().map(|constant| i64::from(constant as i32))),
-            _ => None,
-        }
+    fn constant_factor(term: crate::kernel::MachineOperandView<'_>) -> Option<i64> {
+        let (MachineIntegerType::Int32, MachineBinaryOp::Multiply, [left, right]) =
+            term.binary()?
+        else {
+            return None;
+        };
+        left.word32_constant()
+            .or_else(|| right.word32_constant())
+            .map(|value| i64::from(value as i32))
     }
     let divisible = |part: &PointerOffsetTerm| match part {
         PointerOffsetTerm::Int32Scaled { value, byte_width }
         | PointerOffsetTerm::Int64Scaled {
             value, byte_width, ..
         } => {
-            let scale = constant_factor(value)
+            let scale = constant_factor(value.operand_view())
                 .and_then(|factor| factor.checked_mul(*byte_width))
                 .unwrap_or(*byte_width);
             scale != 0 && scale % alignment == 0
@@ -2639,6 +2741,44 @@ fn bounded_uint64_constants(roots: &[&MachineTerm]) -> HashMap<usize, Option<u64
     values
 }
 
+fn pointer_index_hash(view: crate::kernel::MachineOperandView<'_>) -> Option<u64> {
+    if let Some(leaf) = view
+        .literal()
+        .map(std::borrow::Cow::Owned)
+        .or_else(|| view.read_source())
+    {
+        return bounded_term_hash(&leaf);
+    }
+    let (format, op, [left, right]) = view.binary()?;
+    use MachineBinaryOp as O;
+    use MachineIntegerType as T;
+    if !matches!(
+        (format, op),
+        (
+            T::Int32,
+            O::Add | O::Subtract | O::BitwiseAnd | O::BitwiseOr
+        ) | (
+            T::UInt64,
+            O::Add | O::Subtract | O::BitwiseAnd | O::BitwiseOr
+        )
+    ) {
+        return None;
+    }
+    // Called only after the occurrence/depth-bounded pointer payload check.
+    let header = MachineTerm::Binary {
+        format,
+        op,
+        left: Box::new(MachineTerm::constant(0)),
+        right: Box::new(MachineTerm::constant(0)),
+    };
+    let mut hash = DefaultHasher::new();
+    std::mem::discriminant(&header).hash(&mut hash);
+    (format, op).hash(&mut hash);
+    pointer_index_hash(left)?.hash(&mut hash);
+    pointer_index_hash(right)?.hash(&mut hash);
+    Some(hash.finish())
+}
+
 fn pointer_identity_hash(pointer: &Pointer) -> Option<u64> {
     let payload = pointer_payload(pointer)?;
     if crate::instrumentation::deadline_exceeded_with_work(payload.max(1)) {
@@ -2665,7 +2805,7 @@ fn pointer_identity_hash(pointer: &Pointer) -> Option<u64> {
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
                 3u8.hash(&mut hasher);
                 byte_width.hash(&mut hasher);
-                bounded_term_hash(value)?.hash(&mut hasher);
+                pointer_index_hash(value.operand_view())?.hash(&mut hasher);
             }
             PointerOffsetTerm::Int64Scaled { .. } => return None,
         }
@@ -3553,6 +3693,55 @@ fn float_reflexive(finite: &Proposition, result: &Proposition) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_pointer_certificate_identity_preserves_payload_and_hash() {
+        use crate::kernel::{
+            KernelTerm, KernelTermExport, MachineOperandView as V, SharedMachineIntegerTerm as S,
+            VerificationSession,
+        };
+        let _session = VerificationSession::enter();
+        let x = MachineTerm::Variable(crate::kernel::Variable(1081201));
+        let mut native = x.clone();
+        let mut root =
+            KernelTerm::retained_machine_operand(MachineIntegerType::Int32, V::Legacy(&x));
+        for depth in 0..9 {
+            let index = S::from_shared(MachineIntegerType::Int32, root.clone()).unwrap();
+            let pointer = Pointer {
+                block: PointerBlock::ExternalArgument,
+                offset: PointerOffsetTerm::Int32Scaled {
+                    value: index.clone(),
+                    byte_width: 4,
+                },
+            };
+            let exports = KernelTermExport::machine_export_count();
+            assert_eq!(
+                pointer_index_payload(index.operand_view()),
+                bitvector_payload(&native),
+                "depth {depth}"
+            );
+            if bitvector_payload(&native).is_some() {
+                assert_eq!(
+                    pointer_index_hash(index.operand_view()),
+                    bounded_term_hash(&native)
+                );
+            }
+            let equal = pointer_offset_equal(&pointer.offset, &pointer.offset);
+            assert_eq!(equal, bitvector_payload(&native).is_some());
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            root = KernelTerm::machine_binary_shared(
+                MachineIntegerType::Int32,
+                MachineBinaryOp::Add,
+                [root.clone(), root],
+            );
+            native = MachineTerm::Binary {
+                format: MachineIntegerType::Int32,
+                op: MachineBinaryOp::Add,
+                left: Box::new(native.clone()),
+                right: Box::new(native),
+            };
+        }
+    }
 
     #[test]
     fn signed_domain_query_views_match_legacy_interval_shapes() {

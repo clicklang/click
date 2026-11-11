@@ -225,7 +225,7 @@ fn registered_load_rewrite_keeps_branching_pointer_dag_compact() {
                 .1
         );
         assert_eq!(snapshot, &memory);
-        assert!(pointer.offset.scaled_values().iter().all(
+        assert!(pointer.offset.native_scaled_values_for_output().iter().all(
             |value| matches!(value, MachineTerm::MemoryLoad(snapshot, _, _) if snapshot == &memory)
         ));
         last_load = Some(load);

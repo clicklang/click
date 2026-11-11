@@ -30,10 +30,29 @@ pub(super) fn normalize_exact_index(
     )
 }
 
-fn map_index(
+/// Native syntax equality without materializing a shared arithmetic tree.
+pub(in crate::kernel) fn index_syntax_equal(
+    left: &SharedMachineIntegerTerm,
+    right: &SharedMachineIntegerTerm,
+) -> bool {
+    let left = KernelTerm::retained_machine_operand(left.ty(), left.operand_view());
+    let right = KernelTerm::retained_machine_operand(right.ty(), right.operand_view());
+    crate::kernel::shared_machine_syntax_equal(&left, &right)
+}
+
+pub(in crate::kernel) fn map_index(
     value: &SharedMachineIntegerTerm,
     map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
     rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
+) -> Option<SharedMachineIntegerTerm> {
+    map_index_with_descent(value, map_leaf, rebuild, |_| true)
+}
+
+pub(in crate::kernel) fn map_index_with_descent(
+    value: &SharedMachineIntegerTerm,
+    map_leaf: impl Fn(&MachineTerm) -> Option<MachineTerm>,
+    rebuild: impl Fn(&KernelTerm, &[KernelTerm]) -> Option<KernelTerm>,
+    descend: impl Fn(&KernelTerm) -> bool,
 ) -> Option<SharedMachineIntegerTerm> {
     let Some(root) = value.shared_operand() else {
         return Some(SharedMachineIntegerTerm::index(
@@ -58,6 +77,10 @@ fn map_index(
             | KernelTermNode::MachineCast { operand, .. } => vec![operand],
             _ => vec![],
         };
+        if !children.is_empty() && !descend(node) {
+            results.insert(node.id(), node.clone());
+            continue;
+        }
         if !finish && !children.is_empty() {
             pending.push((node, true));
             pending.extend(children.into_iter().rev().map(|child| (child, false)));
@@ -95,7 +118,7 @@ fn map_index(
 // Preserve scale_int32/scale_int64's literal and signed-extension rules.
 // The destination already accepts a retained operand; it is not a native
 // output boundary.
-pub(super) fn transported_scaled_index(
+pub(in crate::kernel) fn transported_scaled_index(
     value: SharedMachineIntegerTerm,
     byte_width: i64,
     wide: Option<bool>,

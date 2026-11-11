@@ -1263,7 +1263,7 @@ pre-rewrite snapshot ({base_arena},{base_id}), {version_note}"
     );
     let embedded: Vec<String> = pointer
         .offset
-        .scaled_values()
+        .native_scaled_values_for_output()
         .iter()
         .take(2)
         .map(|term| truncate_debug(term, 120))
@@ -1271,7 +1271,7 @@ pre-rewrite snapshot ({base_arena},{base_id}), {version_note}"
     if !embedded.is_empty() {
         detail.push_str(&format!(
             "; pointer embeds {} scaled value(s) such as {} — if that inner load's version drifted, this outer name drifts too",
-            pointer.offset.scaled_values().len(),
+            pointer.offset.native_scaled_values_for_output().len(),
             embedded.join(", "),
         ));
     }

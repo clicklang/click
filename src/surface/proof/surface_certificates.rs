@@ -3893,7 +3893,7 @@ fn pointer_int32_scaled_value(offset: &PointerOffsetTerm) -> Option<MachineTerm>
     let PointerOffsetTerm::Int32Scaled { value, byte_width } = offset else {
         return None;
     };
-    (*byte_width == 4).then(|| value.as_ref().clone())
+    (*byte_width == 4).then(|| value.structural_value().clone())
 }
 
 pub(super) fn plan_explicit_ge_and_not_gt_implies_eq(

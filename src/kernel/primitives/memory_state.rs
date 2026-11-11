@@ -293,7 +293,9 @@ fn write_havoc_identity(mut identity: String, mut tasks: Vec<HavocIdentityTask>)
                             PointerOffsetTerm::Constant(byte_width),
                         ));
                         tasks.push(HavocIdentityTask::Text(","));
-                        tasks.push(HavocIdentityTask::Bitvector(value.as_ref().clone()));
+                        tasks.push(HavocIdentityTask::Bitvector(
+                            value.structural_value().clone(),
+                        ));
                     }
                 }
             }
@@ -6325,7 +6327,11 @@ impl CMemory {
         if *scale <= 0 {
             return false;
         }
-        let Some((low, high)) = assumptions.signed_interval(value) else {
+        let interval = match value.operand_view().read_source() {
+            Some(leaf) => assumptions.signed_interval(&leaf),
+            None => assumptions.signed_interval_view(value.operand_view()),
+        };
+        let Some((low, high)) = interval else {
             return false;
         };
         let (Some(start), Some(end)) = (

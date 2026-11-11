@@ -286,7 +286,11 @@ fn checked_conditions_cannot_restore_alias_enumeration() {
     ] {
         for method in [
             "bitvector_equality_class",
+            "bitvector_equality_class_view",
             "scalar_evidence_class",
+            "scalar_evidence_class_view",
+            "recorded_equality_class",
+            "recorded_equality_class_view",
             "exact_offset_aliases",
             "condition_match_keys_for_spellings",
         ] {
@@ -407,6 +411,9 @@ fn direct_literal_and_store_checks_reject_alias_walks() {
             &[
                 "scalar_evidence_inputs",
                 "scalar_evidence_class",
+                "scalar_evidence_class_view",
+                "recorded_equality_class",
+                "recorded_equality_class_view",
                 "scalar_evidence_derivation",
             ][..],
         ),

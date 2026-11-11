@@ -76,7 +76,7 @@ pub(crate) fn memory_access_element_bound(
             | PointerOffsetTerm::Int64Scaled {
                 value, byte_width, ..
             } => {
-                let value = match value.as_ref() {
+                let value = match value.structural_value() {
                     cast_term!(UInt64From32, index) => index,
                     value => value,
                 };

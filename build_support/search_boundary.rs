@@ -502,7 +502,12 @@ impl Boundary<'_> {
             && self.function == "direct_scalar_constant"
             && matches!(
                 name,
-                "scalar_evidence_inputs" | "scalar_evidence_class" | "scalar_evidence_derivation"
+                "scalar_evidence_inputs"
+                    | "scalar_evidence_class"
+                    | "scalar_evidence_class_view"
+                    | "recorded_equality_class"
+                    | "recorded_equality_class_view"
+                    | "scalar_evidence_derivation"
             ))
             || (self.path == "src/kernel/assumptions/memory_reasoning.rs"
                 && matches!(
@@ -614,7 +619,11 @@ impl Boundary<'_> {
         if matches!(
             name,
             "bitvector_equality_class"
+                | "bitvector_equality_class_view"
                 | "scalar_evidence_class"
+                | "scalar_evidence_class_view"
+                | "recorded_equality_class"
+                | "recorded_equality_class_view"
                 | "exact_offset_aliases"
                 | "condition_match_keys_for_spellings"
         ) && matches!(

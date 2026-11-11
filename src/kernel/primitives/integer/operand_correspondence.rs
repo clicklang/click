@@ -212,3 +212,89 @@ fn shared_operand_leaf_pairs_with_policy(
         pairs[&(format, policy, left.id(), right.id())].clone()
     })
 }
+
+/// Native syntax order over retained operands. Used only where an existing
+/// explicit candidate list promises native ordering; never as a hot index key.
+pub(crate) fn machine_operand_syntax_cmp(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> std::cmp::Ordering {
+    use MachineOperandView as V;
+    use std::cmp::Ordering;
+    fn header(view: V<'_>) -> MachineTerm {
+        let zero = || Box::new(MachineTerm::constant(0));
+        if let Some((format, op, _)) = view.binary() {
+            MachineTerm::Binary {
+                format,
+                op,
+                left: zero(),
+                right: zero(),
+            }
+        } else if let Some((format, op, _)) = view.unary() {
+            MachineTerm::Unary {
+                format,
+                op,
+                operand: zero(),
+            }
+        } else if let Some((spelling, from, to, _)) = view.cast() {
+            MachineTerm::Cast {
+                spelling,
+                from,
+                to,
+                value: zero(),
+            }
+        } else {
+            view.literal().unwrap_or_else(|| {
+                view.read_source()
+                    .expect("retained native leaf")
+                    .into_owned()
+            })
+        }
+    }
+    enum Task<'a, 'b> {
+        Pair(V<'a>, V<'b>),
+        Order(Ordering),
+    }
+    let mut pending = vec![Task::Pair(left, right)];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(task) = pending.pop() {
+        let (a, b) = match task {
+            Task::Order(order) if !order.is_eq() => return order,
+            Task::Order(_) => continue,
+            Task::Pair(a, b) => (a, b),
+        };
+        crate::instrumentation::record_deterministic_work(1);
+        if let (V::Legacy(a), V::Legacy(b)) = (a, b) {
+            let order = a.cmp(b);
+            if !order.is_eq() {
+                return order;
+            }
+            continue;
+        }
+        if let (V::Shared(a), V::Shared(b)) = (a, b) {
+            if a == b || !seen.insert((a.id(), b.id())) {
+                continue;
+            }
+        }
+        if let (Some((ae, af, at, av)), Some((be, bf, bt, bv))) = (a.cast(), b.cast()) {
+            let order = ae.cmp(&be);
+            if !order.is_eq() {
+                return order;
+            }
+            pending.push(Task::Order(af.cmp(&bf).then(at.cmp(&bt))));
+            pending.push(Task::Pair(av, bv));
+            continue;
+        }
+        let order = header(a).cmp(&header(b));
+        if !order.is_eq() {
+            return order;
+        }
+        if let (Some((_, _, [al, ar])), Some((_, _, [bl, br]))) = (a.binary(), b.binary()) {
+            pending.push(Task::Pair(ar, br));
+            pending.push(Task::Pair(al, bl));
+        } else if let (Some((_, _, av)), Some((_, _, bv))) = (a.unary(), b.unary()) {
+            pending.push(Task::Pair(av, bv));
+        }
+    }
+    Ordering::Equal
+}

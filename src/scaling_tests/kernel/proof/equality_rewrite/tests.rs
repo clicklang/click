@@ -1202,3 +1202,52 @@ fn shared_vacuous_sign_cast_equalities_only_inspect_roots() {
         "{samples:?}"
     );
 }
+
+#[test]
+fn retained_pointer_index_rewrite_scales_with_distinct_nodes() {
+    let mut costs = Vec::new();
+    for size in [16, 64, 256] {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = MachineTerm::Variable(Variable(1081301));
+        let y = MachineTerm::Variable(Variable(1081302));
+        let mut root = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&x));
+        for _ in 0..size {
+            root =
+                KernelTerm::machine_binary_shared(ty, MachineBinaryOp::Add, [root.clone(), root]);
+        }
+        let index = SharedMachineIntegerTerm::from_shared(ty, root).unwrap();
+        let pointer = Pointer {
+            block: PointerBlock::ExternalArgument,
+            offset: PointerOffsetTerm::Int32Scaled {
+                value: index.clone(),
+                byte_width: 4,
+            },
+        };
+        let goal = Proposition::ConditionIs(
+            ConditionTerm::pointer_equal(pointer.clone(), Pointer::symbolic(Variable(1081303))),
+            true,
+        );
+        let equality = Proposition::ConditionIs(ConditionTerm::equal(x, y.clone()), true);
+        let facts = ProofFacts::default().with_fact(equality.clone());
+        let exports = KernelTermExport::machine_export_count();
+        let (rewritten, work) = crate::instrumentation::measure_deterministic_work(|| {
+            facts.check_equality_rewrite(&goal, &equality)
+        });
+        assert_ne!(rewritten.unwrap().proposition(), &goal);
+        let (substituted, substitution_work) =
+            crate::instrumentation::measure_deterministic_work(|| {
+                crate::kernel::reasoning::substitute_bitvector_variable_in_pointer(
+                    &pointer,
+                    Variable(1081301),
+                    &y,
+                )
+            });
+        assert_ne!(substituted, pointer);
+        assert!(!index.has_boxed_operand());
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+        costs.push(work + substitution_work);
+    }
+    assert!(costs[1] <= costs[0] * 5 + 100, "{costs:?}");
+    assert!(costs[2] <= costs[1] * 5 + 100, "{costs:?}");
+}

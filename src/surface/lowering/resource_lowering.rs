@@ -196,10 +196,7 @@ fn input_pointer_identity(pointer: &crate::kernel::CPointerValue) -> Option<Vari
         return None;
     }
     match &pointer.pointer().offset {
-        PointerOffsetTerm::Int32Scaled { value, .. } => match value.as_ref() {
-            MachineTerm::Variable(variable) => Some(*variable),
-            _ => None,
-        },
+        PointerOffsetTerm::Int32Scaled { value, .. } => value.operand_view().variable().copied(),
         _ => None,
     }
 }

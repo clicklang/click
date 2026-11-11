@@ -1699,6 +1699,8 @@ pub(crate) struct TermRewrite<'a> {
     cited_conditions: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     cited_comparison_context: Option<&'a PureFactContext>,
     bounded_uint64_indices: Option<std::collections::HashSet<BoundedIndexKey>>,
+    pointer_association_conditions:
+        Option<HashMap<(u64, u64), Vec<(MachineTerm, MachineTerm, bool)>>>,
     equality_graph: Option<&'a crate::kernel::equality_graph::EqualityGraph>,
     pointer_context: Option<&'a PureFactContext>,
     collected_conditions: Option<Vec<ConditionTerm>>,
@@ -1979,6 +1981,7 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             cited_comparison_context: None,
             bounded_uint64_indices: None,
+            pointer_association_conditions: None,
             equality_graph: None,
             pointer_context: None,
             pointer_addresses_only: false,
@@ -2079,6 +2082,7 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             cited_comparison_context: None,
             bounded_uint64_indices: None,
+            pointer_association_conditions: None,
             equality_graph: None,
             pointer_context: None,
             pointer_addresses_only: false,
@@ -2254,6 +2258,7 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             cited_comparison_context: None,
             bounded_uint64_indices: None,
+            pointer_association_conditions: None,
             equality_graph: None,
             pointer_context: None,
             pointer_addresses_only: false,
@@ -2399,6 +2404,7 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             cited_comparison_context: None,
             bounded_uint64_indices: None,
+            pointer_association_conditions: None,
             equality_graph: None,
             pointer_context: None,
             pointer_addresses_only: false,
@@ -2493,6 +2499,7 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             cited_comparison_context: None,
             bounded_uint64_indices: None,
+            pointer_association_conditions: None,
             equality_graph: None,
             pointer_context: None,
             pointer_addresses_only: false,
@@ -2681,6 +2688,7 @@ impl<'a> TermRewrite<'a> {
             cited_conditions: None,
             cited_comparison_context: None,
             bounded_uint64_indices: None,
+            pointer_association_conditions: None,
             equality_graph: None,
             pointer_context: None,
             pointer_addresses_only: false,
@@ -5682,15 +5690,78 @@ impl<'a> TermRewrite<'a> {
                 right.as_ref().clone(),
             );
         }
-        if let Some(guard) = result.pointer_offset_association_guard() {
+        if let Some([left, right]) = result.pointer_offset_association_guard() {
             if let Some(conditions) = &mut self.collected_conditions {
-                conditions.push(guard.clone());
+                // Planner output: the public guard carrier still owns native
+                // operands. Checking below never constructs this output.
+                conditions.push(ConditionTerm::signed_add_overflows(
+                    left.structural_value().clone(),
+                    right.structural_value().clone(),
+                ));
             }
-            if guard == ConditionTerm::Constant(false)
-                || self
-                    .conditions
-                    .is_some_and(|conditions| conditions.get(&guard) == Some(&false))
-            {
+            let leaf = |value: &SharedMachineIntegerTerm| {
+                value.operand_view().literal().or_else(|| {
+                    value
+                        .operand_view()
+                        .read_source()
+                        .map(|leaf| leaf.into_owned())
+                })
+            };
+            let known_false = if let (Some(a), Some(b)) = (leaf(&left), leaf(&right)) {
+                let guard = ConditionTerm::signed_add_overflows(a, b);
+                guard == ConditionTerm::Constant(false)
+                    || self
+                        .conditions
+                        .is_some_and(|conditions| conditions.get(&guard) == Some(&false))
+            } else if let Some(conditions) = self.conditions {
+                let fingerprint = crate::kernel::assumptions::machine_syntax_fingerprint;
+                let index = self.pointer_association_conditions.get_or_insert_with(|| {
+                    let mut index = HashMap::<_, Vec<_>>::new();
+                    for (condition, value) in conditions {
+                        crate::instrumentation::record_deterministic_work(1);
+                        if let ConditionTerm::Overflows {
+                            format: MachineIntegerType::Int32,
+                            op: crate::kernel::OverflowOperation::Add,
+                            left,
+                            right,
+                        } = condition
+                        {
+                            let key = (
+                                fingerprint(MachineOperandView::Legacy(left)),
+                                fingerprint(MachineOperandView::Legacy(right)),
+                            );
+                            index.entry(key).or_default().push((
+                                left.as_ref().clone(),
+                                right.as_ref().clone(),
+                                *value,
+                            ));
+                        }
+                    }
+                    index
+                });
+                let key = (
+                    fingerprint(left.operand_view()),
+                    fingerprint(right.operand_view()),
+                );
+                index.get(&key).is_some_and(|bucket| {
+                    bucket.iter().any(|(a, b, value)| {
+                        !value
+                            && crate::kernel::machine_operand_syntax_cmp(
+                                left.operand_view(),
+                                MachineOperandView::Legacy(a),
+                            )
+                            .is_eq()
+                            && crate::kernel::machine_operand_syntax_cmp(
+                                right.operand_view(),
+                                MachineOperandView::Legacy(b),
+                            )
+                            .is_eq()
+                    })
+                })
+            } else {
+                false
+            };
+            if known_false {
                 return ConditionTerm::Constant(true);
             }
         }
@@ -6892,7 +6963,7 @@ mod tests {
         assert!(matches!(
             rewritten,
             Term::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
-                if matches!(value.as_ref(), MachineTerm::IntegerToMachine {
+                if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if value.as_ref().as_const().and_then(|value| value.to_i64())
@@ -6919,7 +6990,7 @@ mod tests {
         assert!(matches!(
             rewritten,
             Term::PointerOffset(PointerOffsetTerm::Int32Scaled { value, .. })
-                if matches!(value.as_ref(), MachineTerm::IntegerToMachine {
+                if matches!(value.structural_value(), MachineTerm::IntegerToMachine {
                     value,
                     destination: MachineIntegerType::Int32,
                 } if matches!(value.as_ref(), IntegerTerm::Variable(variable) if *variable == Variable(3_103_903)))
@@ -8994,5 +9065,54 @@ mod comparison_read_batch_tests {
             ),
             Some(input)
         );
+    }
+}
+
+#[cfg(test)]
+mod pointer_association_boundary_tests {
+    use super::*;
+
+    #[test]
+    fn shared_pointer_association_requires_exact_nonoverflow_source() {
+        let _session = VerificationSession::enter();
+        let ty = MachineIntegerType::Int32;
+        let x = MachineTerm::Variable(Variable(1081801));
+        let y = MachineTerm::Variable(Variable(1081802));
+        let z = MachineTerm::Variable(Variable(1081803));
+        let native = MachineTerm::add(x, y);
+        let left = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&native));
+        let right = KernelTerm::retained_machine_operand(ty, MachineOperandView::Legacy(&z));
+        let sum = KernelTerm::machine_binary_shared(
+            ty,
+            MachineBinaryOp::Add,
+            [left.clone(), right.clone()],
+        );
+        let scaled = |root| PointerOffsetTerm::Int32Scaled {
+            value: SharedMachineIntegerTerm::from_shared(ty, root).unwrap(),
+            byte_width: 4,
+        };
+        let condition = ConditionTerm::PointerOffsetEqual(
+            Box::new(PointerOffsetTerm::Add(
+                Box::new(scaled(left)),
+                Box::new(scaled(right)),
+            )),
+            Box::new(scaled(sum)),
+        );
+        let guard = ConditionTerm::signed_add_overflows(native, z);
+        let present = HashMap::from([(guard.clone(), false)]);
+        let opposite = HashMap::from([(guard, true)]);
+        let absent = HashMap::new();
+        let exports = KernelTermExport::machine_export_count();
+        assert_eq!(
+            TermRewrite::for_conditions(&present).condition(&condition),
+            ConditionTerm::Constant(true)
+        );
+        for conditions in [&absent, &opposite] {
+            assert_ne!(
+                TermRewrite::for_conditions(conditions).condition(&condition),
+                ConditionTerm::Constant(true)
+            );
+        }
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
     }
 }

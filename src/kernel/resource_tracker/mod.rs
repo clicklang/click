@@ -1272,7 +1272,7 @@ fn collect_term_reads(term: &Term, reads: &mut Vec<ResourceRead>) {
         Term::Integer(term) => collect_integer_term_reads(term, reads),
         Term::PointerOffset(offset) => collect_offset_reads(offset, reads),
         Term::Algebraic(term) => {
-            term.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
+            term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
         Term::CValue(value) => collect_value_reads(value, reads),
         _ => {}
@@ -1351,8 +1351,8 @@ fn collect_condition_reads(condition: &ConditionTerm, reads: &mut Vec<ResourceRe
         }
 
         ConditionTerm::AlgebraicEqual(left, right) => {
-            left.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
-            right.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
+            left.for_each_machine_operand(|term| collect_operand_reads(term, reads));
+            right.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
         crate::kernel::integer_comparison_condition!(left, right) => {
             collect_integer_reads(left, reads);
@@ -1412,8 +1412,56 @@ fn collect_pointer_reads(pointer: &Pointer, reads: &mut Vec<ResourceRead>) {
 }
 
 fn collect_offset_reads(offset: &PointerOffsetTerm, reads: &mut Vec<ResourceRead>) {
-    for value in offset.scaled_values() {
-        collect_bitvector_reads(value, reads);
+    let mut pending = vec![offset];
+    while let Some(offset) = pending.pop() {
+        match offset {
+            PointerOffsetTerm::Add(left, right) => {
+                pending.push(left);
+                pending.push(right);
+            }
+            PointerOffsetTerm::Int32Scaled { value, .. }
+            | PointerOffsetTerm::Int64Scaled { value, .. } => {
+                collect_operand_reads(value.operand_view(), reads)
+            }
+            _ => {}
+        }
+    }
+}
+
+fn collect_operand_reads(
+    root: crate::kernel::MachineOperandView<'_>,
+    reads: &mut Vec<ResourceRead>,
+) {
+    use crate::kernel::{MachineIntegerType as T, MachineOperandView as V, MachineUnaryOp as U};
+    let mut pending = vec![root];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(view) = pending.pop() {
+        if let V::Shared(node) = view {
+            if !seen.insert(node.id()) {
+                continue;
+            }
+            crate::instrumentation::record_deterministic_work(1);
+        }
+        if let Some(leaf) = view.read_source() {
+            collect_bitvector_reads(&leaf, reads);
+        } else if let Some((T::Int32 | T::UInt32, _, operands)) = view.binary() {
+            pending.extend(operands);
+        } else if let Some((T::Int32 | T::UInt32, U::BitwiseNot, operand)) = view.unary() {
+            pending.push(operand);
+        } else if let Some((encoding, _, _, operand)) = view.cast() {
+            if matches!(
+                encoding,
+                MachineCastSpelling::Generic
+                    | MachineCastSpelling::Int64From32
+                    | MachineCastSpelling::UInt64From32
+                    | MachineCastSpelling::UInt32From64
+                    | MachineCastSpelling::Int64FromUInt32
+                    | MachineCastSpelling::UInt64FromInt32
+                    | MachineCastSpelling::UInt64FromInt64
+            ) {
+                pending.push(operand);
+            }
+        }
     }
 }
 
@@ -1454,7 +1502,7 @@ fn collect_integer_node_reads(
     crate::instrumentation::record_deterministic_work(1);
     match term {
         IntegerTerm::Machine(machine) => {
-            collect_bitvector_reads(machine.value(), reads);
+            collect_operand_reads(machine.operand_view(), reads);
         }
         IntegerTerm::Negate(inner) => collect_shared_integer_reads(inner, reads, seen),
         crate::kernel::binary_integer_term!(left, right) => {
@@ -1505,7 +1553,7 @@ fn collect_argument_reads(argument: &PureFunctionArgument, reads: &mut Vec<Resou
         }
         PureFunctionArgument::Integer(term) => collect_integer_reads(term, reads),
         PureFunctionArgument::Algebraic(term) => {
-            term.for_each_bitvector_term(|term| collect_bitvector_reads(term, reads));
+            term.for_each_machine_operand(|term| collect_operand_reads(term, reads));
         }
         PureFunctionArgument::Value(value) => collect_value_reads(value, reads),
     }

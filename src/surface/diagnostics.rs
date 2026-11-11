@@ -2376,9 +2376,9 @@ fn pointer_offset_bytes(offset: &PointerOffsetTerm) -> Option<MachineTerm> {
             Some(MachineTerm::constant(i32::try_from(*bytes).ok()? as u32))
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => Some(match byte_width {
-            1 => value.as_ref().clone(),
+            1 => value.structural_value().clone(),
             width => super::lowering::bitvector32_multiply(
-                value.as_ref().clone(),
+                value.structural_value().clone(),
                 MachineTerm::constant(i32::try_from(*width).ok()? as u32),
             ),
         }),
@@ -2659,7 +2659,7 @@ fn describe_indexed_base_range(
         | PointerOffsetTerm::Int32Scaled { value, byte_width }
             if *byte_width == width =>
         {
-            value.as_ref()
+            value.structural_value()
         }
         _ => return None,
     };
@@ -5028,7 +5028,7 @@ fn describe_parameter_struct_field_pointer(
             let PointerOffsetTerm::Int32Scaled { value, byte_width } = &pointer.offset else {
                 return None;
             };
-            let loaded_at = match value.as_ref() {
+            let loaded_at = match value.structural_value() {
                 MachineTerm::MemoryLoad(_, loaded_at, _) => loaded_at.as_ref().clone(),
                 MachineTerm::Variable(variable) => {
                     crate::kernel::registered_load_for_variable(variable)?.1
@@ -5111,7 +5111,9 @@ fn describe_struct_member_from(
             PointerOffsetTerm::Int32Scaled { value, byte_width }
             | PointerOffsetTerm::Int64Scaled {
                 value, byte_width, ..
-            } if *byte_width == size && element.is_none() => element = Some(value),
+            } if *byte_width == size && element.is_none() => {
+                element = Some(value.structural_value())
+            }
             _ => return None,
         }
     }
@@ -5295,7 +5297,7 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
         PointerOffsetTerm::Int32Scaled {
             value,
             byte_width: actual_width,
-        } if *actual_width == byte_width => Some(value.as_ref().clone()),
+        } if *actual_width == byte_width => Some(value.structural_value().clone()),
         // An index widened to 64 bits before scaling (a `uint32` index, or
         // an `int32` one on a wide address) is still the index the source
         // wrote. The widening decides the address, not the element's name.
@@ -5303,7 +5305,7 @@ pub(super) fn diagnostic_element_index_from_pointer_offset(
             value,
             byte_width: actual_width,
             ..
-        } if *actual_width == byte_width => Some(match value.as_ref() {
+        } if *actual_width == byte_width => Some(match value.structural_value() {
             // These widenings keep the value, so the element is named by
             // the narrow index, as a signed 32-bit index names it.
             cast_term!(Int64From32, narrow)
@@ -6049,7 +6051,7 @@ fn loaded_pointer_split(address: &Pointer) -> Option<(Pointer, MachineTerm)> {
         }
     }
     let loaded = |summand: &PointerOffsetTerm| match summand {
-        PointerOffsetTerm::Int32Scaled { value, .. } => match value.as_ref() {
+        PointerOffsetTerm::Int32Scaled { value, .. } => match value.structural_value() {
             MachineTerm::Variable(variable)
                 if crate::kernel::is_load_variable(variable)
                     && crate::kernel::registered_load_for_variable(variable).is_some() =>
@@ -6151,7 +6153,7 @@ fn describe_loaded_pointer_range(
         return is_place_spelling(&name).then(|| {
             format!(
                 "{name}[{}]",
-                describe_bitvector_with_context(value, parameter_binding)
+                describe_bitvector_with_context(value.structural_value(), parameter_binding)
             )
         });
     }
@@ -7571,7 +7573,7 @@ fn describe_pointer_offset_with_context(
         ),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => format!(
             "{} * {byte_width}",
-            describe_bitvector_with_context(value, parameter_binding)
+            describe_bitvector_with_context(value.structural_value(), parameter_binding)
         ),
         PointerOffsetTerm::Int64Scaled {
             value,
@@ -7581,7 +7583,7 @@ fn describe_pointer_offset_with_context(
             let signedness = if *unsigned { "uint64" } else { "int64" };
             format!(
                 "{signedness}({}) * {byte_width}",
-                describe_bitvector_with_context(value, parameter_binding)
+                describe_bitvector_with_context(value.structural_value(), parameter_binding)
             )
         }
         PointerOffsetTerm::Constant(_) | PointerOffsetTerm::Variable(_) => {
@@ -7646,7 +7648,10 @@ pub(super) fn describe_pointer_offset(offset: &PointerOffsetTerm) -> String {
             describe_pointer_offset(right)
         ),
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            format!("{} * {byte_width}", describe_bitvector(value))
+            format!(
+                "{} * {byte_width}",
+                describe_bitvector(value.structural_value())
+            )
         }
         PointerOffsetTerm::Int64Scaled {
             value,
@@ -7654,7 +7659,10 @@ pub(super) fn describe_pointer_offset(offset: &PointerOffsetTerm) -> String {
             unsigned,
         } => {
             let signedness = if *unsigned { "uint64" } else { "int64" };
-            format!("{signedness}({}) * {byte_width}", describe_bitvector(value))
+            format!(
+                "{signedness}({}) * {byte_width}",
+                describe_bitvector(value.structural_value())
+            )
         }
     }
 }

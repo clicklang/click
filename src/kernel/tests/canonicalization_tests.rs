@@ -144,7 +144,7 @@ fn collect_offset_load_variables_from_offset(
         }
         PointerOffsetTerm::Int32Scaled { value, .. }
         | PointerOffsetTerm::Int64Scaled { value, .. } => {
-            assert_scaled_index_free_of_raw_loads(value, load_variables);
+            assert_scaled_index_free_of_raw_loads(value.structural_value(), load_variables);
         }
     }
 }
@@ -166,7 +166,7 @@ fn assert_scaled_index_free_of_raw_loads(
             panic!("production pointer offset contains a raw memory load: {term:?}")
         }
         MachineTerm::PointerAddress(pointer, _) => {
-            for value in pointer.offset.scaled_values() {
+            for value in pointer.offset.native_scaled_values_for_output() {
                 assert_scaled_index_free_of_raw_loads(value, load_variables);
             }
         }
@@ -281,7 +281,7 @@ fn index_loaded_from_an_opaque_cell_takes_a_canonical_offset() {
         let CValue::Pointer(pointer) = value else {
             panic!("indexing should return a pointer");
         };
-        for index in pointer.offset.scaled_values() {
+        for index in pointer.offset.native_scaled_values_for_output() {
             let MachineTerm::MemoryLoad(_, address, kind) = index else {
                 panic!("the produced index must retain its structural read");
             };
@@ -764,7 +764,7 @@ fn canonical_offset_term_is_complete_and_idempotent_at_multiple_depths() {
             matches!(
                 leaf,
                 PointerOffsetTerm::Int32Scaled { value, .. }
-                    if value.as_ref() == &unresolved_canonicalization_test_load()
+                    if value.structural_value() == &unresolved_canonicalization_test_load()
             ),
             "the deepest scaled index should retain its read at depth {depth}: {leaf:?}",
         );

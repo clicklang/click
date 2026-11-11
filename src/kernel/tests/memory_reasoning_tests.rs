@@ -413,7 +413,7 @@ fn byte_range_containment_expands_constant_stride_arithmetic() {
     let index_is_nonnegative = PureFactContext::new().assume_condition(
         ConditionTerm::signed_less_equal(
             MachineTerm::constant(0),
-            pointer.offset.scaled_values()[0].clone(),
+            pointer.offset.native_scaled_values_for_output()[0].clone(),
         ),
         true,
     );

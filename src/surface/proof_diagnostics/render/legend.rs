@@ -104,7 +104,10 @@ impl SnapshotLabels {
                 self.legend_offset(right, depth - 1)
             ),
             PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-                format!("int32({}) * {byte_width} bytes", self.legend_bits(value))
+                format!(
+                    "int32({}) * {byte_width} bytes",
+                    self.legend_bits(value.structural_value())
+                )
             }
             PointerOffsetTerm::Int64Scaled {
                 value,
@@ -112,7 +115,10 @@ impl SnapshotLabels {
                 unsigned,
             } => {
                 let kind = if *unsigned { "uint64" } else { "int64" };
-                format!("{kind}({}) * {byte_width} bytes", self.legend_bits(value))
+                format!(
+                    "{kind}({}) * {byte_width} bytes",
+                    self.legend_bits(value.structural_value())
+                )
             }
         }
     }

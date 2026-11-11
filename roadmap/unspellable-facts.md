@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `b39c43d1a`, including merged PR #2580.
+Baseline for this revision: `1dcc52be1`, including merged PR #2581.
 
 Already landed:
 
@@ -58,9 +58,9 @@ Already landed:
 - Volatile observation result names (#2492), with typed value retention and
   branch/indexing controls. Specification reads no longer emit C access events.
 
-**The split is not complete.** The compiler-assisted cleanup audit finds
-remaining scaled-index checker exports; the remaining execution-producer
-inventory and generic legacy payloads also remain. Nested signed arithmetic
+**The split is not complete.** The remaining checker boundaries in the
+compiler-assisted inventory are closed below. Execution producers, generic
+legacy payloads and the common raise/lower boundary remain. Nested signed arithmetic
 construction is enabled, as recorded in step 2.
 These are concrete migration boundaries,
 not a count of every remaining defect in the verifier.
@@ -72,15 +72,17 @@ be treated as a current to-do list. The detailed evidence is preserved in
 
 ## Ordered closure checklist
 
-### 1. Close the remaining checker boundaries — next
+### 1. Close the remaining checker boundaries — closed
 
 Finish the checker consumers before enabling the remaining shared producers.
 The original bounded caller audit was recorded at `fe8c6d931` (PR #2500).
-Its specific R1–R7 reproductions are closed, but its coverage was incomplete:
-removing the implicit native conversions at `b247d7499` (PR #2517) exposes
-additional live checker callers. Step 1 remains open. Do not treat this as
-only dead-code deletion or enable producers on the strength of R1–R7 alone.
-A textual accessor occurrence alone is not evidence of a checker dependency.
+Its specific R1–R7 reproductions were insufficient: disabling the implicit
+native conversions at `b247d7499` (PR #2517) exposed additional live callers.
+The final pass removes both `SharedMachineIntegerTerm` native conversion traits
+permanently, migrates their checker consumers, and makes the remaining output
+conversions explicit. Production compilation therefore enforces this boundary.
+The closure is the finite checker inventory, not every producer or legacy term
+family. A textual accessor occurrence alone is not evidence of a checker dependency.
 
 | Route/group | Evidence and required closure |
 | --- | --- |
@@ -98,12 +100,64 @@ A textual accessor occurrence alone is not evidence of a checker dependency.
 - [x] Close R4 modular equality projection with retained residue operands.
 - [x] Close R7 pointer-index dependency, scope, comparison and fingerprint walkers.
 - [x] Close R5/R6 with parity, refusal, no-export and deterministic scaling regressions.
-- [ ] Remove the obsolete checker adapters and retain no-export regressions.
+- [x] Remove the obsolete checker adapters and retain no-export regressions.
 
 **Done when:** no checker exports a shared expression to a boxed tree to inspect
 it or decide a premise; native/shared rule parity, missing-premise controls and
 multi-size scaling checks pass. Explicit output conversion belongs to step 4.
 Do not turn this step into another open-ended census repair pass.
+
+#### Final retained checker boundary pass
+
+The starting audit at `fe3690b72` produced 106 diagnostics with native
+`Deref`/`AsRef` disabled. Both traits are now removed, and production compilation
+passes. Native output callers explicitly request structural output; the old
+`scaled_values` traversal is named `native_scaled_values_for_output` and has no
+checker callers.
+
+The remaining scaled-index consumers retain operands through:
+
+- Selected-read, root-variable, initialized-byte and guarded-cell inspections;
+  signed/unsigned element-bound guards and exact unsigned range membership.
+- Scalar and pointer equality rewriting, canonical base-root construction,
+  binder substitution, shallow load expansion and equality-fact atom indexing.
+- Algebraic scalar-payload traversal, resource-read collection and load
+  footprints. Footprints memoize shared nodes by depth, preserving the existing
+  depth refusal and source-snapshot/checked-width requirements.
+- Arithmetic certificate payload, identity, hashing, translation and alignment
+  checks. Occurrence budgets and unsupported-operator refusals remain unchanged;
+  a compact DAG does not admit a formerly oversized certificate.
+- Wide range-normalization coordinates and candidate keys. Snapshot-sensitive
+  memoized fingerprints replace exported endpoint trees; candidates still go
+  through the ordinary merge rule. The selected coverage cursor keeps a wide
+  displacement without constructing a temporary native range.
+- Recorded equality-class input and members. The existing enumeration is
+  unchanged, including native source ordering and duplicate handling; it is
+  **not** newly classified as a bounded fast lookup. Only its native reference
+  adapter remains test-only. Resource-normalization candidate lookup also keeps
+  equality-class members retained through its byte/element coordinate keys. Existing scan bans also reject the retained APIs.
+- Pointer reassociation: the exact nonoverflow premise is indexed from the
+  explicitly cited conditions, with collision verification and no ambient
+  lookup. Guard collection still constructs native planner outputs explicitly.
+
+Remaining explicit output boundaries include diagnostic/rendering and Surface
+synthesis, native planner segment and instantiation arguments, comparison
+prefilter outputs, and the havoc write-set identity producer. These are not
+permission to export within a checker; their payload migrations belong to
+steps 2–4. Bounded planner comparisons and source-capability inspection also
+retain shared operands before applying their existing refusal limits.
+
+Regression coverage includes native/shared behavior, missing and opposite
+premises, source withdrawal, certificate size refusal, snapshot and width
+checks, and cold repeated-child DAGs at 16/64/256 nodes with no machine exports.
+The full local gate passed 7,198 unit/integration tests and all four fixture
+harnesses in 11m42s (over the ten-minute target). A subsequent production-only
+compile exposed one remaining native equality-class adapter caller in resource
+normalization; that caller is migrated above. The final production build passed;
+all 1,520 selected normalization, boundary and nonignored scaling tests passed,
+as did all 42 documentation tests. Before/after `transport_wide_viewable`
+fact-stability runs both passed with zero fact-dependent lowerings. The final
+adapter follow-up received these focused checks rather than a second full gate.
 
 #### Checker route inventory
 
@@ -413,7 +467,8 @@ production uses the shared helper. The conservative `integer_carrier_in_integer`
 query already uses operand views and has no-export coverage; the distinct
 `integer_carrier_in_pointer_offset` query remains in the compiler inventory.
 
-The residual traits cannot yet be removed. Nested signed construction below
+At that checkpoint the residual traits could not yet be removed; the final
+retained checker pass above removes them. Nested signed construction below
 is independently guarded by zero-export and growth tests: its arithmetic and
 obligations retain shared roots, with one final native value output at the
 existing evaluator boundary. This does not declare step 1 or the complete

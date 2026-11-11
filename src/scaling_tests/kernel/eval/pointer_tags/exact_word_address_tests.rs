@@ -85,7 +85,7 @@ fn compound_word_address_lookup_skips_unrelated_equalities() {
             });
             let form = form.expect("the exact address equation names the original pointer");
             assert_eq!(form.pointer, pointer);
-            assert_eq!(form.tag.uint64_as_const(), Some(0));
+            assert_eq!(form.tag.operand_view().uint64_constant(), Some(0));
             assert!(used.complete);
             assert_eq!(used.premises, vec![fact.clone()]);
             let mut obligations = Vec::new();

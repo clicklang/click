@@ -336,11 +336,11 @@ fn element_index_from_pointer_offset(
         PointerOffsetTerm::Int32Scaled { value, byte_width }
             if *byte_width == i64::from(element_width) =>
         {
-            Some(value.as_ref().clone())
+            Some(value.structural_value().clone())
         }
         PointerOffsetTerm::Int64Scaled {
             value, byte_width, ..
-        } if *byte_width == i64::from(element_width) => Some(value.as_ref().clone()),
+        } if *byte_width == i64::from(element_width) => Some(value.structural_value().clone()),
         PointerOffsetTerm::Add(left, right) if left.as_ref() == &PointerOffsetTerm::Constant(0) => {
             element_index_from_pointer_offset(right, element_width)
         }

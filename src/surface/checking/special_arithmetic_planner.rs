@@ -585,7 +585,7 @@ fn bounded_pointer_equal(left: &crate::kernel::Pointer, right: &crate::kernel::P
                     byte_width: bw,
                 },
             ) => {
-                if aw != bw || !bounded_term_equal(a, b) {
+                if aw != bw || !bounded_index_equal(a, b) {
                     return false;
                 }
             }
@@ -601,7 +601,7 @@ fn bounded_pointer_equal(left: &crate::kernel::Pointer, right: &crate::kernel::P
                     ..
                 },
             ) => {
-                if aw != bw || !bounded_term_equal(a, b) {
+                if aw != bw || !bounded_index_equal(a, b) {
                     return false;
                 }
             }
@@ -861,7 +861,7 @@ fn bounded_offset_work(root: &crate::kernel::PointerOffsetTerm) -> bool {
             }
             crate::kernel::PointerOffsetTerm::Int32Scaled { value, .. }
             | crate::kernel::PointerOffsetTerm::Int64Scaled { value, .. }
-                if !bounded_term_work(value) =>
+                if !bounded_index_work(value) =>
             {
                 return false;
             }
@@ -872,11 +872,14 @@ fn bounded_offset_work(root: &crate::kernel::PointerOffsetTerm) -> bool {
 }
 
 fn bounded_term_work(root: &MachineTerm) -> bool {
+    bounded_term_work_count(root, &mut 0)
+}
+
+fn bounded_term_work_count(root: &MachineTerm, count: &mut usize) -> bool {
     let mut pending = vec![root];
-    let mut count = 0usize;
     while let Some(term) = pending.pop() {
-        count = count.saturating_add(1);
-        if count > 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
+        *count = count.saturating_add(1);
+        if *count > 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
             return false;
         }
         match term {
@@ -933,12 +936,114 @@ fn bounded_pointer_block_work(block: &crate::kernel::PointerBlock) -> bool {
     size <= 256 && !crate::instrumentation::deadline_exceeded_with_work(size.max(1))
 }
 
-fn bounded_term_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
-    let mut pending = vec![(left, right)];
+fn bounded_index_work(root: &crate::kernel::SharedMachineIntegerTerm) -> bool {
+    let mut pending = vec![root.operand_view()];
+    let mut count = 0usize;
+    while let Some(view) = pending.pop() {
+        if let Some(leaf) = view
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| view.read_source())
+        {
+            if !bounded_term_work_count(&leaf, &mut count) {
+                return false;
+            }
+            continue;
+        }
+        count += 1;
+        if count > 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
+            return false;
+        }
+        if let Some((format, op, operands)) = view.binary() {
+            use MachineBinaryOp::*;
+            if matches!(
+                (format, op),
+                (
+                    MachineIntegerType::Int32 | MachineIntegerType::UInt32,
+                    Add | Subtract | Multiply
+                ) | (
+                    MachineIntegerType::UInt64,
+                    Add | Subtract | Multiply | Divide | Remainder | BitwiseAnd | BitwiseOr
+                )
+            ) {
+                pending.extend(operands);
+            }
+        } else if let Some((crate::kernel::MachineCastSpelling::UInt32From64, _, _, operand)) =
+            view.cast()
+        {
+            pending.push(operand);
+        }
+    }
+    true
+}
+
+fn bounded_index_equal(
+    left: &crate::kernel::SharedMachineIntegerTerm,
+    right: &crate::kernel::SharedMachineIntegerTerm,
+) -> bool {
+    let mut pending = vec![(left.operand_view(), right.operand_view())];
     let mut count = 0usize;
     while let Some((left, right)) = pending.pop() {
-        count = count.saturating_add(1);
+        let a = left
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| left.read_source());
+        let b = right
+            .literal()
+            .map(std::borrow::Cow::Owned)
+            .or_else(|| right.read_source());
+        if let (Some(a), Some(b)) = (a, b) {
+            if !bounded_term_equal_count(&a, &b, &mut count) {
+                return false;
+            }
+            continue;
+        }
+        count += 1;
         if count > 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
+            return false;
+        }
+        if let (
+            Some((crate::kernel::MachineCastSpelling::UInt32From64, _, _, a)),
+            Some((crate::kernel::MachineCastSpelling::UInt32From64, _, _, b)),
+        ) = (left.cast(), right.cast())
+        {
+            pending.push((a, b));
+            continue;
+        }
+        if let (Some((af, ao, [al, ar])), Some((bf, bo, [bl, br]))) =
+            (left.binary(), right.binary())
+        {
+            use MachineBinaryOp::*;
+            if (af, ao) != (bf, bo)
+                || !matches!(
+                    (af, ao),
+                    (MachineIntegerType::Int32, Add | Subtract | Multiply)
+                        | (
+                            MachineIntegerType::UInt64,
+                            Add | Subtract | Multiply | BitwiseAnd | BitwiseOr
+                        )
+                )
+            {
+                return false;
+            }
+            pending.push((al, bl));
+            pending.push((ar, br));
+        } else {
+            return false;
+        }
+    }
+    true
+}
+
+fn bounded_term_equal(left: &MachineTerm, right: &MachineTerm) -> bool {
+    bounded_term_equal_count(left, right, &mut 0)
+}
+
+fn bounded_term_equal_count(left: &MachineTerm, right: &MachineTerm, count: &mut usize) -> bool {
+    let mut pending = vec![(left, right)];
+    while let Some((left, right)) = pending.pop() {
+        *count = count.saturating_add(1);
+        if *count > 256 || crate::instrumentation::deadline_exceeded_with_work(1) {
             return false;
         }
         match (left, right) {

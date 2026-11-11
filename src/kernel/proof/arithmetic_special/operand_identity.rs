@@ -4,7 +4,7 @@
 use super::*;
 use crate::kernel::{MachineCastSpelling as Encoding, MachineOperandView as View};
 
-fn binary_supported(format: MachineIntegerType, op: MachineBinaryOp) -> bool {
+pub(super) fn binary_supported(format: MachineIntegerType, op: MachineBinaryOp) -> bool {
     use MachineBinaryOp::*;
     matches!(
         (format, op),

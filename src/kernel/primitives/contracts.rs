@@ -2601,8 +2601,9 @@ impl CMemoryRange {
         guard: &Proposition,
         element_width: u32,
     ) -> Option<Self> {
-        let is_variable =
-            |term: &MachineTerm| matches!(term, MachineTerm::Variable(found) if *found == variable);
+        let is_variable = |term: &crate::kernel::SharedMachineIntegerTerm| {
+            term.operand_view().variable() == Some(&variable)
+        };
         let (base_offset, scaled) = match &pointer.offset {
             PointerOffsetTerm::Add(base, scaled) => (base.as_ref().clone(), scaled.as_ref()),
             scaled => (PointerOffsetTerm::Constant(0), scaled),
@@ -2659,7 +2660,9 @@ impl CMemoryRange {
                             left: lo,
                             right: v,
                         },
-                    ) if is_variable(v) => lower = Some(lo.as_ref().clone()),
+                    ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
+                        lower = Some(lo.as_ref().clone())
+                    }
                     (
                         RangeIndexKind::Int32,
                         ConditionTerm::Compare {
@@ -2677,7 +2680,9 @@ impl CMemoryRange {
                             left: v,
                             right: hi,
                         },
-                    ) if is_variable(v) => upper = Some(hi.as_ref().clone()),
+                    ) if matches!(v.as_ref(), MachineTerm::Variable(actual) if *actual == variable) => {
+                        upper = Some(hi.as_ref().clone())
+                    }
                     _ => {}
                 },
                 _ => {}

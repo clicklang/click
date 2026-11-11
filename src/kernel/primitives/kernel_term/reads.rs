@@ -352,11 +352,11 @@ mod tests {
                 KernelTermNode::MemoryLoad { .. }
             ));
             crate::kernel::eval::clear_load_variable_registry();
-            assert_eq!(value.as_ref(), &descriptor);
+            assert_eq!(value.structural_value(), &descriptor);
             let restored = if wide {
-                PointerOffsetTerm::scaled_int64_node(value.as_ref().clone(), 4, true)
+                PointerOffsetTerm::scaled_int64_node(value.structural_value().clone(), 4, true)
             } else {
-                PointerOffsetTerm::scaled_int32_node(value.as_ref().clone(), 4)
+                PointerOffsetTerm::scaled_int32_node(value.structural_value().clone(), 4)
             };
             assert_eq!(offset, restored);
         }
@@ -412,7 +412,7 @@ mod tests {
                 unreachable!()
             };
             assert!(value.shared_operand().is_none());
-            let MachineTerm::PointerAddress(_, actual) = value.as_ref() else {
+            let MachineTerm::PointerAddress(_, actual) = value.structural_value() else {
                 panic!("address payload")
             };
             assert_eq!(actual.class(), expected);
