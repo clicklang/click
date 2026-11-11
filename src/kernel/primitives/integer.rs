@@ -21,7 +21,6 @@ use num_bigint::BigInt;
 use num_traits::ToPrimitive;
 use num_traits::{One, Zero};
 pub(crate) use operand_correspondence::shared_operand_leaf_pairs;
-use std::collections::hash_map::DefaultHasher;
 use std::collections::{HashMap, VecDeque};
 use std::fmt;
 use std::hash::{Hash, Hasher};
@@ -134,7 +133,7 @@ impl PureApplicationInterner {
         arguments: Vec<PureFunctionArgument>,
     ) -> SharedPureApplication {
         crate::instrumentation::record_deterministic_work(arguments.len().saturating_add(1));
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         name.hash(&mut hasher);
         arguments.hash(&mut hasher);
         let key = hasher.finish();
@@ -906,7 +905,7 @@ static MACHINE_INTEGER_INTERNER: OnceLock<Mutex<MachineIntegerInterner>> = OnceL
 
 impl MachineIntegerInterner {
     fn find(&self, key: &MachineIntegerKey) -> Option<SharedMachineIntegerTerm> {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         key.hash(&mut hasher);
         self.values
             .get(&hasher.finish())?
@@ -922,7 +921,7 @@ impl MachineIntegerInterner {
         if self.find(&key).is_some() {
             return;
         }
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         key.hash(&mut hasher);
         let fingerprint = hasher.finish();
         self.values
@@ -953,7 +952,7 @@ impl MachineIntegerInterner {
                 }
             }
         }
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = crate::id_hash::FingerprintHasher::default();
         key.hash(&mut hasher);
         let fingerprint = hasher.finish();
         if let Some(bucket) = self.values.get(&fingerprint) {
@@ -1694,7 +1693,7 @@ impl IntegerInterner {
 }
 
 fn integer_key_fingerprint(key: &IntegerShallowKey) -> u64 {
-    let mut hasher = DefaultHasher::new();
+    let mut hasher = crate::id_hash::FingerprintHasher::default();
     key.hash(&mut hasher);
     hasher.finish()
 }
