@@ -44,7 +44,7 @@ Preserve these rules throughout the migration:
 
 ## Current position
 
-Baseline for this revision: `d5150195b`, including merged PR #2565.
+Baseline for this revision: `cb7e1b77c`, including merged PR #2570.
 
 Already landed:
 
@@ -591,6 +591,41 @@ and the complete regular examples/mdtests. The cold run took 14m07s, including
 documentation build was stopped after it competed with the fixture phase;
 rendering and lint had completed. The unit phase took 276s versus 273s in the
 previous gate. No limits changed and no nightly suite ran.
+
+#### Retained pointer-formation bounds
+
+Recorded-block formation checks retain scaled indices through signed/unsigned
+wide comparisons and the signed extension of a 32-bit coordinate. Exact byte
+coordinate reconstruction retains intermediate sums and products. Its signed
+range requirements are ordinary Integer upper/lower bounds; unsigned indices
+still need the full-width maximum-index guard before signed interpretation.
+Opaque byte-offset variables and negative unsigned strides keep their refusals.
+The coordinate constructors preserve native constant-reading and product
+zero/one rules; they do not apply comparison-only simplifications to values.
+
+A native/shared parity test exposed extension constant metadata that folded a
+computed narrow operand where the native reader accepts only a literal of that
+width. Shared metadata now preserves those literal requirements, including the
+signed-to-unsigned wide extension. Retained native leaves supply their existing
+constant reading once on introduction, including literal-conditioned native
+conditionals; shared parents reuse the result. This is checking metadata, not a
+change to structural lowering. Controls cover exact constructor shapes,
+overflowing and full-width coordinates, missing bounds, read snapshots and
+growing DAG prefixes.
+
+The full gate exposed a common comparison-reader gap: removing an exact
+extension could leave different observation formats and lose the original
+common-format comparison. The reader now retains that written view when the
+value reading cannot form a machine comparison. The existing mixed `int` /
+`size_t` allocation-index fixture verifies unchanged, with zero fact-stability
+differences; a unit regression covers separate bounds and missing premises.
+Validation: `scripts/check.sh --no-fail-fast` passed in 9m49s with the
+precompiled test binary: 7,150 unit/API tests, 58 example projects and 5,180
+mdtests. The focused eight-test run includes deterministic 16/64/256-prefix
+scaling and zero-export checks. No nightly run.
+
+The distinct cumulative pointer-index producer, framed transport, exact-load
+normalization and the remaining compiler-audit groups are still open.
 
 #### Classified boundaries and retained coverage
 

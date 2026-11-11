@@ -397,6 +397,7 @@ pub(crate) fn native_comparison_view(
         crate::kernel::proof::integer_arithmetic::literal_integer_value(term)
             .map(|value| IntegerTerm::constant(value).into())
     };
+    let written = condition;
     let condition = match condition {
         ConditionTerm::IntegerLessThan(left, right) => {
             ConditionTerm::IntegerLessThan(operand(left)?, operand(right)?)
@@ -418,7 +419,12 @@ pub(crate) fn native_comparison_view(
         }
         _ => return None,
     };
+    // Reading an exact extension can expose different operand formats (for
+    // example int32 i beside int64 n). Keep the written common-format view
+    // available to the order checker in that case. This selects two roots;
+    // it neither exports a shared subtree nor consults facts.
     structural_native_comparison_view(&condition, value)
+        .or_else(|| structural_native_comparison_view(written, value))
 }
 
 pub(crate) fn structural_native_comparison_of_integer_observation(
