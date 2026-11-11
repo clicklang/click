@@ -1,5 +1,15 @@
 # Unchanged adler2 crate adapter trial
 
+> **Status (library iterator port in progress).** The three Rust units import
+> `chunks_exact` through the library contracts (`"iterators": "library"`,
+> [`design/rust-iterators.md`](../../../rust-iterators.md)). `helpers.click`
+> and the empty, one-, two- and three-byte `compute` proofs are ported and
+> verify. `four-byte-compute.click` and `small-batch-compute.click` are ported
+> but stop at the `add_assign` call: the prerequisite of a by-value struct
+> argument has no spelling yet. `general-compute.click` still has its
+> hidden-state proof text and does not verify. Sections below that describe
+> iterator cursors and stored remaining counts describe the old model.
+
 Click imports the complete selection rooted at `adler2::adler32_slice` and
 proves the four-lane helper bodies and the unchanged general computation.
 For every input length from any canonical initial state, `Adler32::compute`

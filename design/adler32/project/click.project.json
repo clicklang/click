@@ -53,7 +53,8 @@
           "src/lib.rs",
           "src/algo.rs"
         ]
-      }
+      },
+      "iterators": "library"
     },
     "adler_incremental": {
       "language": "rust",
@@ -75,7 +76,8 @@
           "vendor/adler2-2.0.1/src/lib.rs",
           "vendor/adler2-2.0.1/src/algo.rs"
         ]
-      }
+      },
+      "iterators": "library"
     },
     "adler_resumed": {
       "language": "rust",
@@ -97,7 +99,8 @@
           "vendor/adler2-2.0.1/src/lib.rs",
           "vendor/adler2-2.0.1/src/algo.rs"
         ]
-      }
+      },
+      "iterators": "library"
     }
   }
 }
