@@ -102,7 +102,60 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(node->__rb_parent_color == address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1) == 0); normalize();
             }
-            step(); step(); step(); step();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            have p->rb_right == node by { assumption(); }
+            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { assumption(); }
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            mark m0; step();
+            have p->rb_right == at(m0, p->rb_right) by solve();
+            have p->rb_right == node by { assumption(); }
+            have *((&p->__rb_parent_color) as (int32 **)) == at(m0, *((&p->__rb_parent_color) as (int32 **))) by solve();
+            have *((&g->__rb_parent_color) as (int32 **)) == at(m0, *((&g->__rb_parent_color) as (int32 **))) by solve();
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have p->rb_left == at(m0, p->rb_left) by solve();
+            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { assumption(); }
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m1; step();
+            have p->rb_right == at(m1, p->rb_right) by solve();
+            have p->rb_right == node by { assumption(); }
+            have *((&p->__rb_parent_color) as (int32 **)) == at(m1, *((&p->__rb_parent_color) as (int32 **))) by solve();
+            have *((&g->__rb_parent_color) as (int32 **)) == at(m1, *((&g->__rb_parent_color) as (int32 **))) by solve();
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have p->rb_left == at(m1, p->rb_left) by solve();
+            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { assumption(); }
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m2; step();
+            have p->rb_right == at(m2, p->rb_right) by solve();
+            have p->rb_right == node by { assumption(); }
+            have *((&p->__rb_parent_color) as (int32 **)) == at(m2, *((&p->__rb_parent_color) as (int32 **))) by solve();
+            have *((&g->__rb_parent_color) as (int32 **)) == at(m2, *((&g->__rb_parent_color) as (int32 **))) by solve();
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have p->rb_left == at(m2, p->rb_left) by solve();
+            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { assumption(); }
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+            mark m3; step();
+            have p->rb_right == at(m3, p->rb_right) by solve();
+            have p->rb_right == node by { assumption(); }
+            have *((&p->__rb_parent_color) as (int32 **)) == at(m3, *((&p->__rb_parent_color) as (int32 **))) by solve();
+            have *((&g->__rb_parent_color) as (int32 **)) == at(m3, *((&g->__rb_parent_color) as (int32 **))) by solve();
+            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
+            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == 0 by { assumption(); }
+            have p->rb_left == at(m3, p->rb_left) by solve();
+            have p->rb_left != p by { assumption(); }
+            have p->rb_right != p by { assumption(); }
+            have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
+            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
             unfold(n_left); unfold(n_right);
             have node->rb_left == 0 by { assumption(); }
             have node->rb_right == 0 by { assumption(); }
@@ -172,8 +225,12 @@ void __rb_insert(struct rb_node* node, struct rb_root* root,
                     have separate(memory(node->__rb_parent_color), memory(parent->rb_right));
                     have separate(memory(node->__rb_parent_color), memory(node->rb_left));
                     have separate(memory(node->__rb_parent_color), memory(parent->__rb_parent_color));
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
                     mark before_inner_stores;
-                    step(); step(); step();
+                    step();
+                    have *((&node->__rb_parent_color) as (int32 **)) == at(before_inner_stores, *((&node->__rb_parent_color) as (int32 **))) by solve();
+                    have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
+                    step(); step();
                     have node->rb_left == parent by { assumption(); }
                     have separate(memory(node->rb_left), memory(parent->__rb_parent_color));
                     mark after_inner_left_write;
