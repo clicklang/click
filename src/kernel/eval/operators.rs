@@ -2805,80 +2805,171 @@ fn pointer_offset_contains_int64_scaled(offset: &PointerOffsetTerm) -> bool {
     }
 }
 
+/// Build the selected exact byte-coordinate operation and its ordinary range
+/// obligations. This is checking reconstruction, never Surface lowering.
+fn exact_offset_operation(
+    operation: crate::kernel::machine_integer::Operation,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+    guards: &mut Vec<PointerFormationGuard>,
+) -> SharedMachineIntegerTerm {
+    use crate::kernel::machine_integer::{Operation, definedness::OverflowQueryView};
+    let ty = MachineIntegerType::Int64;
+    // A wide coordinate uses signed bits after its unsigned maximum-index
+    // guard. Keep literal observations in that format too; the stored operand
+    // retains its written unsigned spelling.
+    let signed_literal = |value: MachineOperandView<'_>| {
+        value
+            .literal()?
+            .int64_as_const()
+            .map(MachineTerm::int64_constant)
+    };
+    let a_literal = signed_literal(left);
+    let b_literal = signed_literal(right);
+    let observed = [
+        a_literal
+            .as_ref()
+            .map(MachineOperandView::Legacy)
+            .unwrap_or(left),
+        b_literal
+            .as_ref()
+            .map(MachineOperandView::Legacy)
+            .unwrap_or(right),
+    ];
+    let (a, b) = (left.int64_constant(), right.int64_constant());
+    let bounds = if let (Some(a), Some(b)) = (a, b) {
+        // Native overflow constructors decide two constant readings directly.
+        // Retain that cheap decision as ordinary constant range propositions.
+        let (a, b) = (IntegerTerm::constant_i64(a), IntegerTerm::constant_i64(b));
+        let exact = match operation {
+            Operation::Add => IntegerTerm::add(a, b),
+            Operation::Multiply => IntegerTerm::multiply(a, b),
+            Operation::Subtract => unreachable!("coordinate construction uses sum and scale"),
+        };
+        crate::kernel::machine_integer::definedness::ordinary_bounds(ty, exact)
+    } else {
+        OverflowQueryView::from_operands(ty, operation, observed)
+            .expect("signed coordinate operation")
+            .bounds()
+    };
+    for bound in bounds {
+        let Proposition::ConditionIs(condition, value) = bound else {
+            unreachable!("ordinary range bound");
+        };
+        guards.push(PointerFormationGuard { condition, value });
+    }
+    let op = match operation {
+        Operation::Add => MachineBinaryOp::Add,
+        Operation::Multiply => MachineBinaryOp::Multiply,
+        Operation::Subtract => unreachable!("coordinate construction uses sum and scale"),
+    };
+    // Match the native signed-wide constructors: recursive constant readings,
+    // and the zero/one product identities, but no symbolic add-zero folding.
+    if operation == Operation::Multiply {
+        if b == Some(1) {
+            return left.retain(ty);
+        }
+        if a == Some(1) {
+            return right.retain(ty);
+        }
+        if a == Some(0) || b == Some(0) {
+            return SharedMachineIntegerTerm::intern(ty, MachineTerm::int64_constant(0));
+        }
+    }
+    if let (Some(a), Some(b)) = (a, b) {
+        return SharedMachineIntegerTerm::intern(
+            ty,
+            MachineTerm::machine_binary(
+                ty,
+                op,
+                MachineTerm::int64_constant(a),
+                MachineTerm::int64_constant(b),
+            ),
+        );
+    }
+    let result = KernelTerm::machine_binary_shared(
+        ty,
+        op,
+        [left, right].map(|value| KernelTerm::retained_machine_operand(ty, value)),
+    );
+    MachineOperandView::Shared(&result).retain(ty)
+}
+
 fn exact_pointer_offset_i64_with_guards(
     offset: &PointerOffsetTerm,
     guards: &mut Vec<PointerFormationGuard>,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
+    use crate::kernel::machine_integer::Operation;
+    use MachineIntegerType as T;
+    use MachineOperandView as V;
     match offset {
-        PointerOffsetTerm::Constant(value) => Some(MachineTerm::int64_constant(*value)),
+        PointerOffsetTerm::Constant(value) => Some(SharedMachineIntegerTerm::intern(
+            T::Int64,
+            MachineTerm::int64_constant(*value),
+        )),
         PointerOffsetTerm::Variable(_) => None,
         PointerOffsetTerm::Add(left, right) => {
             let left = exact_pointer_offset_i64_with_guards(left, guards)?;
             let right = exact_pointer_offset_i64_with_guards(right, guards)?;
-            guards.push(PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_add_overflows(left.clone(), right.clone()),
-                value: false,
-            });
-            Some(MachineTerm::int64_add(left, right))
+            Some(exact_offset_operation(
+                Operation::Add,
+                left.operand_view(),
+                right.operand_view(),
+                guards,
+            ))
         }
         PointerOffsetTerm::Int32Scaled { value, byte_width } => {
-            let left = MachineTerm::int64_from_32(value.as_ref().clone());
-            let right = MachineTerm::int64_constant(*byte_width);
-            guards.push(PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_multiply_overflows(
-                    left.clone(),
-                    right.clone(),
-                ),
-                value: false,
-            });
-            Some(MachineTerm::int64_multiply(left, right))
+            let left = value
+                .operand_view()
+                .retain(T::Int32)
+                .checking_cast_operand(T::Int64);
+            Some(exact_offset_operation(
+                Operation::Multiply,
+                left.operand_view(),
+                V::Legacy(&MachineTerm::int64_constant(*byte_width)),
+                guards,
+            ))
         }
-        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => {
-            Some(MachineTerm::int64_constant(0))
-        }
+        PointerOffsetTerm::Int64Scaled { byte_width: 0, .. } => Some(
+            SharedMachineIntegerTerm::intern(T::Int64, MachineTerm::int64_constant(0)),
+        ),
         PointerOffsetTerm::Int64Scaled {
             value,
             byte_width,
-            unsigned: false,
+            unsigned,
         } => {
-            let left = value.as_ref().clone();
-            let right = MachineTerm::int64_constant(*byte_width);
-            guards.push(PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_multiply_overflows(
-                    left.clone(),
-                    right.clone(),
-                ),
-                value: false,
-            });
-            Some(MachineTerm::int64_multiply(left, right))
+            if *unsigned {
+                let width = u64::try_from(*byte_width).ok().filter(|width| *width > 0)?;
+                guards.push(PointerFormationGuard {
+                    condition: crate::kernel::assumptions::wide_index_comparison(
+                        CompareRelation::LessEqual,
+                        value.operand_view(),
+                        V::Legacy(&MachineTerm::uint64_constant(i64::MAX as u64 / width)),
+                    ),
+                    value: true,
+                });
+            }
+            Some(exact_offset_operation(
+                Operation::Multiply,
+                value.operand_view(),
+                V::Legacy(&MachineTerm::int64_constant(*byte_width)),
+                guards,
+            ))
         }
-        PointerOffsetTerm::Int64Scaled {
-            value,
-            byte_width,
-            unsigned: true,
-        } if *byte_width > 0 => {
-            let width = u64::try_from(*byte_width).ok()?;
-            let maximum_index = (i64::MAX as u64) / width;
-            guards.push(PointerFormationGuard {
-                condition: ConditionTerm::uint64_less_equal(
-                    value.as_ref().clone(),
-                    MachineTerm::uint64_constant(maximum_index),
-                ),
-                value: true,
-            });
-            let left = value.as_ref().clone();
-            let right = MachineTerm::int64_constant(*byte_width);
-            guards.push(PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_multiply_overflows(
-                    left.clone(),
-                    right.clone(),
-                ),
-                value: false,
-            });
-            Some(MachineTerm::int64_multiply(left, right))
-        }
-        PointerOffsetTerm::Int64Scaled { .. } => None,
     }
+}
+
+fn formation_comparison(
+    format: MachineIntegerType,
+    relation: CompareRelation,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> ConditionTerm {
+    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        format,
+        relation,
+        [left, right],
+    )
 }
 
 fn pointer_block_bounds(
@@ -2959,19 +3050,26 @@ fn pointer_block_bounds(
         let mut guards = Vec::new();
         if !*unsigned {
             guards.push(PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_greater_equal(
-                    value.as_ref().clone(),
-                    MachineTerm::int64_constant(0),
+                condition: formation_comparison(
+                    MachineIntegerType::Int64,
+                    CompareRelation::GreaterEqual,
+                    value.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
                 ),
                 value: true,
             });
         }
         guards.push(PointerFormationGuard {
-            condition: if *unsigned {
-                ConditionTerm::uint64_less_equal(value.as_ref().clone(), limit)
-            } else {
-                ConditionTerm::int64_signed_less_equal(value.as_ref().clone(), limit)
-            },
+            condition: formation_comparison(
+                if *unsigned {
+                    MachineIntegerType::UInt64
+                } else {
+                    MachineIntegerType::Int64
+                },
+                CompareRelation::LessEqual,
+                value.operand_view(),
+                MachineOperandView::Legacy(&limit),
+            ),
             value: true,
         });
         return Some(guards);
@@ -2987,14 +3085,21 @@ fn pointer_block_bounds(
         };
         guards.extend([
             PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_greater_equal(
-                    offset.clone(),
-                    MachineTerm::int64_constant(0),
+                condition: formation_comparison(
+                    MachineIntegerType::Int64,
+                    CompareRelation::GreaterEqual,
+                    offset.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
                 ),
                 value: true,
             },
             PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_less_equal(offset, extent.int64_bytes()),
+                condition: formation_comparison(
+                    MachineIntegerType::Int64,
+                    CompareRelation::LessEqual,
+                    offset.operand_view(),
+                    MachineOperandView::Legacy(&extent.int64_bytes()),
+                ),
                 value: true,
             },
         ]);
@@ -3129,16 +3234,24 @@ fn wide_block_bounds_of_32_bit_offset(
         };
         return Some(vec![
             PointerFormationGuard {
-                condition: ConditionTerm::signed_greater_equal(
-                    value.as_ref().clone(),
-                    MachineTerm::constant(0),
+                condition: formation_comparison(
+                    MachineIntegerType::Int32,
+                    CompareRelation::GreaterEqual,
+                    value.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::constant(0)),
                 ),
                 value: true,
             },
             PointerFormationGuard {
-                condition: ConditionTerm::int64_signed_less_equal(
-                    MachineTerm::int64_from_32(value.as_ref().clone()),
-                    limit,
+                condition: formation_comparison(
+                    MachineIntegerType::Int64,
+                    CompareRelation::LessEqual,
+                    value
+                        .operand_view()
+                        .retain(MachineIntegerType::Int32)
+                        .checking_cast_operand(MachineIntegerType::Int64)
+                        .operand_view(),
+                    MachineOperandView::Legacy(&limit),
                 ),
                 value: true,
             },
@@ -3148,14 +3261,21 @@ fn wide_block_bounds_of_32_bit_offset(
     let offset = exact_pointer_offset_i64_with_guards(offset, &mut guards)?;
     guards.extend([
         PointerFormationGuard {
-            condition: ConditionTerm::int64_signed_greater_equal(
-                offset.clone(),
-                MachineTerm::int64_constant(0),
+            condition: formation_comparison(
+                MachineIntegerType::Int64,
+                CompareRelation::GreaterEqual,
+                offset.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
             ),
             value: true,
         },
         PointerFormationGuard {
-            condition: ConditionTerm::int64_signed_less_equal(offset, extent.int64_bytes()),
+            condition: formation_comparison(
+                MachineIntegerType::Int64,
+                CompareRelation::LessEqual,
+                offset.operand_view(),
+                MachineOperandView::Legacy(&extent.int64_bytes()),
+            ),
             value: true,
         },
     ]);
@@ -5961,3 +6081,7 @@ mod held_range_scaling_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "operators/retained_formation_tests.rs"]
+mod retained_formation_tests;
