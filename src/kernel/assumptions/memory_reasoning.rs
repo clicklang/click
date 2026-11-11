@@ -3271,22 +3271,24 @@ impl PureFactContext {
             if left.element_width() != right.element_width() {
                 return true;
             }
-            let bounds = |range: &CMemoryRange| match range.wide_bounds() {
-                Some((start, end)) => Some((start.clone(), end.clone())),
-                None => Some((
-                    crate::kernel::primitives::checked_native_range_endpoint(range.start(), self)?,
-                    crate::kernel::primitives::checked_native_range_endpoint(range.end(), self)?,
-                )),
+            let bounds = |range: &CMemoryRange| {
+                crate::kernel::primitives::shared_wide_range_bounds(range, self)
             };
             let (Some((left_start, left_end)), Some((right_start, right_end))) =
                 (bounds(left), bounds(right))
             else {
                 return true;
             };
-            return !(self.decide(&ConditionTerm::uint64_less_equal(left_end, right_start))
-                == Some(true)
-                || self.decide(&ConditionTerm::uint64_less_equal(right_end, left_start))
-                    == Some(true));
+            return !(self.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                left_end.operand_view(),
+                right_start.operand_view(),
+            )) == Some(true)
+                || self.decide(&wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    right_end.operand_view(),
+                    left_start.operand_view(),
+                )) == Some(true));
         }
         if left.element_width() == right.element_width()
             && (self.decide(&ConditionTerm::signed_less_equal(

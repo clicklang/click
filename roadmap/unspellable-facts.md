@@ -487,6 +487,33 @@ with zero fact-stability entries. The strictness counterexample and the missing
 shared bound both failed before the common-rule fix and pass afterward.
 No nightly suite ran.
 
+#### Retained wide endpoint checks
+
+The native endpoint/rebasing adapters listed above are removed.
+`shared_wide_range_bounds` and `shared_rebased_wide_bounds` retain their
+coordinates through same-base coverage, alias-overlap checks, pointer formation,
+and split/merge decisions. Translated-window checking receives the selected base,
+width and retained bounds directly; it does not need a temporary resource
+containing exported endpoints.
+
+Split and merge convert endpoints only when constructing their final
+`CMemoryRange` outputs, preserving the original range carrier metadata. Native
+endpoint storage and native normalization/fact keys remain separate boundaries;
+this does not classify those consumers as migrated. Controls cover complete
+versus truncated bounds, 64-bit split/merge outputs, and cold rebasing DAGs.
+
+Validation: all 46 focused tests passed. `scripts/check.sh --no-fail-fast`
+exited 0 in 9m14s: 7,128 unit/API tests, 58 example projects and 5,160 mdtests
+passed. No nightly suite ran.
+
+The production compiler audit after this increment reports 157 primary error
+locations with the two implicit conversion traits disabled, versus 178 at the
+previous checkpoint. These are caller locations, not distinct checker defects;
+output, diagnostics and native payload construction also depend on the traits.
+The traits were restored after the audit. Remaining checker examples include
+cell-run access indices, stepped wide offset equality, read-address/snapshot
+reasoning, pointer fact keys and native range normalization.
+
 #### Classified boundaries and retained coverage
 
 - `variable_collection::visit_machine_carrier_leaves`, ordinary shared Integer

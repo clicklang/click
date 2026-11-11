@@ -10172,13 +10172,7 @@ pub(in crate::kernel) fn pointer_formation_in_range(
     };
     // Re-spell only checked nonnegative endpoints. This does not
     // truncate a native index or a native range into 32 bits.
-    let wide = if range.wide_bounds().is_some() {
-        Some(range.clone())
-    } else {
-        checked_native_range_endpoint(range.start(), assumptions)
-            .zip(checked_native_range_endpoint(range.end(), assumptions))
-            .map(|(start, end)| CMemoryRange::new_wide(range.base().clone(), start, end, width))
-    };
+    let wide = shared_wide_range_bounds(range, assumptions);
     let narrow = if range.wide_bounds().is_none() {
         Some(range.clone())
     } else {
@@ -10195,22 +10189,40 @@ pub(in crate::kernel) fn pointer_formation_in_range(
         })
     };
     let wide_window = |base: &Pointer, start: u64, end: u64| {
-        wide.as_ref().is_some_and(|range| {
-            let (_, limit) = range.wide_bounds().expect("wide spelling");
-            assumptions.decide(&ConditionTerm::uint64_less_equal(
-                limit.clone(),
-                MachineTerm::uint64_constant(i64::MAX as u64 / u64::from(width)),
-            )) == Some(true)
-                && wide_memory_range_covers(
-                    range,
-                    &CMemoryRange::new_wide(
-                        base.clone(),
-                        MachineTerm::uint64_constant(start),
-                        MachineTerm::uint64_constant(end),
-                        width,
-                    ),
+        wide.as_ref().is_some_and(|(first, limit)| {
+            if assumptions.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                limit.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::uint64_constant(
+                    i64::MAX as u64 / u64::from(width),
+                )),
+            )) != Some(true)
+            {
+                return false;
+            }
+            let start = MachineTerm::uint64_constant(start);
+            let end = MachineTerm::uint64_constant(end);
+            let bounds = [first.operand_view(), limit.operand_view()];
+            if range.base() == base
+                || pointers_proven_equal_for_memory_resolution(range.base(), base, assumptions)
+            {
+                wide_bounds_cover(
+                    bounds,
+                    [
+                        MachineOperandView::Legacy(&start),
+                        MachineOperandView::Legacy(&end),
+                    ],
                     assumptions,
                 )
+            } else {
+                wide_memory_range_covers_window(
+                    range.base(),
+                    width,
+                    bounds,
+                    &CMemoryRange::new_wide(base.clone(), start, end, width),
+                    assumptions,
+                )
+            }
         })
     };
     let narrow_contains = |position: &Pointer, bytes| {
@@ -10413,22 +10425,6 @@ fn memory_range_covers_with_separation(
 /// Interpret a signed endpoint as a native coordinate only when its complete
 /// value survives truncation. Addition commutes modulo 2^32; the native upper
 /// bound below rules out both truncation and crossing the signed high bit.
-pub(in crate::kernel) fn checked_native_range_endpoint(
-    term: &MachineTerm,
-    assumptions: &PureFactContext,
-) -> Option<MachineTerm> {
-    checked_shared_native_range_endpoint(MachineOperandView::Legacy(term), assumptions).map(
-        |value| {
-            value
-                .operand_view()
-                .literal()
-                .unwrap_or_else(|| value.structural_value().clone())
-        },
-    )
-}
-
-/// The same exact-coordinate judgment over a retained operand. Only the
-/// selected root and one addition/cast layer are inspected.
 pub(in crate::kernel) fn checked_shared_native_range_endpoint(
     term: MachineOperandView<'_>,
     assumptions: &PureFactContext,
@@ -10517,25 +10513,47 @@ pub(in crate::kernel) fn wide_memory_range_covers(
             assumptions,
         ))
     {
-        return wide_memory_range_covers_window(available, required, assumptions);
+        let Some((start, end)) = available.wide_bounds() else {
+            return false;
+        };
+        return wide_memory_range_covers_window(
+            available.base(),
+            available.element_width(),
+            [
+                MachineOperandView::Legacy(start),
+                MachineOperandView::Legacy(end),
+            ],
+            required,
+            assumptions,
+        );
     }
-    let bounds = |range: &CMemoryRange| match range.wide_bounds() {
-        Some((start, end)) => Some((start.clone(), end.clone())),
-        None => Some((
-            checked_native_range_endpoint(range.start(), assumptions)?,
-            checked_native_range_endpoint(range.end(), assumptions)?,
-        )),
-    };
-    let (Some((available_start, available_end)), Some((required_start, required_end))) =
-        (bounds(available), bounds(required))
-    else {
+    let (Some((available_start, available_end)), Some((required_start, required_end))) = (
+        shared_wide_range_bounds(available, assumptions),
+        shared_wide_range_bounds(required, assumptions),
+    ) else {
         return false;
     };
-    let holds = |lower: MachineTerm, upper: MachineTerm| {
-        lower == upper
-            || assumptions.decide(&ConditionTerm::uint64_less_equal(lower, upper)) == Some(true)
+    wide_bounds_cover(
+        [available_start.operand_view(), available_end.operand_view()],
+        [required_start.operand_view(), required_end.operand_view()],
+        assumptions,
+    )
+}
+
+fn wide_bounds_cover(
+    available: [MachineOperandView<'_>; 2],
+    required: [MachineOperandView<'_>; 2],
+    assumptions: &PureFactContext,
+) -> bool {
+    let holds = |lower: MachineOperandView<'_>, upper: MachineOperandView<'_>| {
+        lower.retain(MachineIntegerType::UInt64) == upper.retain(MachineIntegerType::UInt64)
+            || assumptions.decide(&wide_index_comparison(
+                CompareRelation::LessEqual,
+                lower,
+                upper,
+            )) == Some(true)
     };
-    holds(available_start, required_start) && holds(required_end, available_end)
+    holds(available[0], required[0]) && holds(required[1], available[1])
 }
 
 /// Coverage of a window at another base, with native uint64 bounds or
@@ -10543,13 +10561,12 @@ pub(in crate::kernel) fn wide_memory_range_covers(
 /// guards to avoid wrapping. A suffix `(whole - count)[0..count]` additionally
 /// transports a checked observer value to the available endpoint.
 fn wide_memory_range_covers_window(
-    available: &CMemoryRange,
+    available_base: &Pointer,
+    available_width: u32,
+    available_bounds: [MachineOperandView<'_>; 2],
     required: &CMemoryRange,
     assumptions: &PureFactContext,
 ) -> bool {
-    let Some((start, end)) = available.wide_bounds() else {
-        return false;
-    };
     let (first, last) = match required.wide_bounds() {
         Some((first, last)) => (first.clone(), last.clone()),
         None => {
@@ -10577,8 +10594,7 @@ fn wide_memory_range_covers_window(
                 upper,
             )) == Some(true)
     };
-    let start_view = MachineOperandView::Legacy(start);
-    let end_view = MachineOperandView::Legacy(end);
+    let [start_view, end_view] = available_bounds;
     let first_view = MachineOperandView::Legacy(&first);
     let last_view = MachineOperandView::Legacy(&last);
     // Native translated windows require a non-wrapping byte extent. Keep
@@ -10587,7 +10603,7 @@ fn wide_memory_range_covers_window(
         && !holds(
             end_view,
             MachineOperandView::Legacy(&MachineTerm::uint64_constant(
-                i64::MAX as u64 / u64::from(available.element_width()),
+                i64::MAX as u64 / u64::from(available_width),
             )),
         )
     {
@@ -10606,7 +10622,7 @@ fn wide_memory_range_covers_window(
         return false;
     }
     let aligned = assumptions
-        .pointer_at_known_base_with_wide_index(&selected, available.base())
+        .pointer_at_known_base_with_wide_index(&selected, available_base)
         .unwrap_or_else(|| selected.clone());
     let covers_index = |index: SharedMachineIntegerTerm| {
         let index = index.operand_view();
@@ -10649,7 +10665,7 @@ fn wide_memory_range_covers_window(
     // The supplied address can already carry the complete native coordinate.
     // Use it before alignment can choose another spelling of the same address.
     if assumptions
-        .shared_wide_element_index_of_access(&selected, available.base(), available.element_width())
+        .shared_wide_element_index_of_access(&selected, available_base, available_width)
         .is_some_and(&covers_index)
     {
         return true;
@@ -10666,11 +10682,7 @@ fn wide_memory_range_covers_window(
                 return false;
             }
             assumptions
-                .shared_wide_element_index_of_access(
-                    &candidate,
-                    available.base(),
-                    available.element_width(),
-                )
+                .shared_wide_element_index_of_access(&candidate, available_base, available_width)
                 .is_some_and(&covers_index)
         })
 }
@@ -11105,7 +11117,7 @@ fn native_wide_normalization_key(
 /// one would not invalidate a load through the other.
 /// The wide normalization spelling of a range: its base with any trailing
 /// unsigned 64-bit element index moved into the bounds, `(x + i)[s..e]` as
-/// `x[i + s..i + e]`, with the sums formed as [`wide_range_rebased`] forms
+/// `x[i + s..i + e]`, with the sums formed as [`shared_rebased_wide_bounds`] forms
 /// them so two pieces that abut meet at one term. An `Int32` range takes
 /// part only at such a base and with nonnegative constant bounds. The form is
 /// a lookup key; the merge it proposes is checked by [`merge_memory_ranges`].
@@ -11154,57 +11166,74 @@ pub(super) fn wide_normalization_form(
     Some((root, shifted(start), shifted(end)))
 }
 
-/// A range's bounds as unsigned 64-bit values: a wide range's own, and an
-/// `Int32` range's when each is shown to lie in `0..=INT_MAX`.
-fn wide_range_bound_pair(
+/// A range's bounds as retained unsigned 64-bit values. Signed endpoints
+/// participate only when their complete values fit in `0..=INT_MAX`.
+pub(in crate::kernel) fn shared_wide_range_bounds(
     range: &CMemoryRange,
     assumptions: &PureFactContext,
-) -> Option<(MachineTerm, MachineTerm)> {
+) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
+    let retain = |value: &MachineTerm| {
+        let view = MachineOperandView::Legacy(value);
+        if view.literal().is_some() || view.variable().is_some() {
+            let root =
+                KernelTerm::retained_native_machine_operand(MachineIntegerType::UInt64, value);
+            MachineOperandView::Shared(&root).retain(MachineIntegerType::UInt64)
+        } else {
+            view.retain(MachineIntegerType::UInt64)
+        }
+    };
     match range.wide_bounds() {
-        Some((start, end)) => Some((start.clone(), end.clone())),
+        Some((start, end)) => Some((retain(start), retain(end))),
         None => Some((
-            checked_native_range_endpoint(range.start(), assumptions)?,
-            checked_native_range_endpoint(range.end(), assumptions)?,
+            checked_shared_native_range_endpoint(
+                MachineOperandView::Legacy(range.start()),
+                assumptions,
+            )?,
+            checked_shared_native_range_endpoint(
+                MachineOperandView::Legacy(range.end()),
+                assumptions,
+            )?,
         )),
     }
 }
 
-/// `range` restated as a wide range at `base`, when its own base is `base`
-/// advanced by an unsigned 64-bit element index `i`
-/// ([`PureFactContext::shared_wide_element_index_of_access`]): `(base + i)[s..e]`
-/// is `base[i + s..i + e]`. The sums do not wrap for a range the context
-/// holds: `i` and `e` are each at most `i64::MAX / width`, the extent guard
-/// of a held wide range, so their sum is below 2^64.
-fn wide_range_rebased(
+/// Rebase only the coordinates: `(base + i)[s..e]` becomes `[i+s..i+e]`.
+/// Held wide ranges bound each summand by `i64::MAX / width`, so the
+/// additions do not wrap. No temporary native range is constructed for a check.
+fn shared_rebased_wide_bounds(
     range: &CMemoryRange,
     base: &Pointer,
     assumptions: &PureFactContext,
-) -> Option<CMemoryRange> {
-    let width = range.element_width();
-    let index = assumptions.shared_wide_element_index_of_access(range.base(), base, width)?;
-    let (start, end) = wide_range_bound_pair(range, assumptions)?;
-    let shifted = |bound: MachineTerm| {
-        let shifted = if bound.uint64_as_const() == Some(0) {
+) -> Option<(SharedMachineIntegerTerm, SharedMachineIntegerTerm)> {
+    let index = assumptions.shared_wide_element_index_of_access(
+        range.base(),
+        base,
+        range.element_width(),
+    )?;
+    let (start, end) = shared_wide_range_bounds(range, assumptions)?;
+    let shifted = |bound: SharedMachineIntegerTerm| {
+        if bound.operand_view().uint64_constant() == Some(0) {
             index.clone()
         } else if index.operand_view().uint64_constant() == Some(0) {
-            return bound;
+            bound
         } else {
             wide_index_binary(
                 MachineBinaryOp::Add,
                 index.operand_view(),
-                MachineOperandView::Legacy(&bound),
+                bound.operand_view(),
             )
-        };
-        // CMemoryRange still owns native endpoints; export only this output.
-        shifted
-            .operand_view()
-            .literal()
-            .unwrap_or_else(|| shifted.structural_value().clone())
+        }
     };
-    Some(
-        CMemoryRange::new_wide(base.clone(), shifted(start), shifted(end), width)
-            .with_carrier_of(range),
-    )
+    Some((shifted(start), shifted(end)))
+}
+
+/// CMemoryRange still owns native endpoints. Convert only a final output;
+/// neither range checks nor coordinate reconstruction call this adapter.
+fn wide_endpoint_output(endpoint: SharedMachineIntegerTerm) -> MachineTerm {
+    endpoint
+        .operand_view()
+        .literal()
+        .unwrap_or_else(|| endpoint.structural_value().clone())
 }
 
 pub(in crate::kernel) fn split_memory_range(
@@ -11216,7 +11245,7 @@ pub(in crate::kernel) fn split_memory_range(
         if available.element_width() != required.element_width() {
             return None;
         }
-        let (start, end) = wide_range_bound_pair(available, assumptions)?;
+        let (start, end) = shared_wide_range_bounds(available, assumptions)?;
         // A window at another spelling of the base, `(bytes + index)[0..4]`
         // inside `bytes[0..length]`, is restated at the available base. Its
         // coverage is what bounds `index + 4` by the available end.
@@ -11226,21 +11255,19 @@ pub(in crate::kernel) fn split_memory_range(
             assumptions,
         );
         let (first, last) = if same_base {
-            wide_range_bound_pair(required, assumptions)?
+            shared_wide_range_bounds(required, assumptions)?
         } else {
             if !memory_range_covers(available, required, assumptions) {
                 return None;
             }
-            wide_range_bound_pair(
-                &wide_range_rebased(required, available.base(), assumptions)?,
-                assumptions,
-            )?
+            shared_rebased_wide_bounds(required, available.base(), assumptions)?
         };
-        let holds = |lower: &MachineTerm, upper: &MachineTerm| {
+        let holds = |lower: &SharedMachineIntegerTerm, upper: &SharedMachineIntegerTerm| {
             lower == upper
-                || assumptions.decide(&ConditionTerm::uint64_less_equal(
-                    lower.clone(),
-                    upper.clone(),
+                || assumptions.decide(&wide_index_comparison(
+                    CompareRelation::LessEqual,
+                    lower.operand_view(),
+                    upper.operand_view(),
                 )) == Some(true)
         };
         // Coverage of a rebased window already placed it inside the available
@@ -11248,18 +11275,21 @@ pub(in crate::kernel) fn split_memory_range(
         if same_base && (!holds(&start, &first) || !holds(&first, &last) || !holds(&last, &end)) {
             return None;
         }
-        let equal = |left: &MachineTerm, right: &MachineTerm| {
+        let equal = |left: &SharedMachineIntegerTerm, right: &SharedMachineIntegerTerm| {
             left == right
-                || assumptions.decide(&ConditionTerm::uint64_equal(left.clone(), right.clone()))
-                    == Some(true)
+                || assumptions.decide(&wide_index_comparison(
+                    CompareRelation::Equal,
+                    left.operand_view(),
+                    right.operand_view(),
+                )) == Some(true)
         };
         let mut residues = Vec::new();
         if !equal(&start, &first) {
             residues.push(
                 CMemoryRange::new_wide(
                     available.base().clone(),
-                    start,
-                    first,
+                    wide_endpoint_output(start),
+                    wide_endpoint_output(first),
                     available.element_width(),
                 )
                 .with_carrier_of(available),
@@ -11269,8 +11299,8 @@ pub(in crate::kernel) fn split_memory_range(
             residues.push(
                 CMemoryRange::new_wide(
                     available.base().clone(),
-                    last,
-                    end,
+                    wide_endpoint_output(last),
+                    wide_endpoint_output(end),
                     available.element_width(),
                 )
                 .with_carrier_of(available),
@@ -12046,35 +12076,49 @@ fn merge_abutting_memory_ranges(
         }
         // A piece at another spelling of the base, a window a call returned,
         // is restated at the left piece's base before the endpoints meet.
-        let (left, right) = if left.base() == right.base() {
-            (left.clone(), right.clone())
-        } else if let Some(right) = wide_range_rebased(right, left.base(), assumptions) {
-            (left.clone(), right)
+        let (base, (first, middle), (next, last)) = if left.base() == right.base() {
+            (
+                left.base(),
+                shared_wide_range_bounds(left, assumptions)?,
+                shared_wide_range_bounds(right, assumptions)?,
+            )
+        } else if let Some(right_bounds) =
+            shared_rebased_wide_bounds(right, left.base(), assumptions)
+        {
+            (
+                left.base(),
+                shared_wide_range_bounds(left, assumptions)?,
+                right_bounds,
+            )
         } else {
             (
-                wide_range_rebased(left, right.base(), assumptions)?,
-                right.clone(),
+                right.base(),
+                shared_rebased_wide_bounds(left, right.base(), assumptions)?,
+                shared_wide_range_bounds(right, assumptions)?,
             )
         };
-        let left = &left;
-        let (first, middle) = wide_range_bound_pair(left, assumptions)?;
-        let (next, last) = wide_range_bound_pair(&right, assumptions)?;
-        let equal = |a: &MachineTerm, b: &MachineTerm| {
+        let equal = |a: &SharedMachineIntegerTerm, b: &SharedMachineIntegerTerm| {
             a == b
-                || assumptions.decide(&ConditionTerm::uint64_equal(a.clone(), b.clone()))
-                    == Some(true)
+                || assumptions.decide(&wide_index_comparison(
+                    CompareRelation::Equal,
+                    a.operand_view(),
+                    b.operand_view(),
+                )) == Some(true)
+        };
+        let output = |start, end| {
+            CMemoryRange::new_wide(
+                base.clone(),
+                wide_endpoint_output(start),
+                wide_endpoint_output(end),
+                left.element_width(),
+            )
+            .with_carrier_of(left)
         };
         if equal(&middle, &next) {
-            return Some(
-                CMemoryRange::new_wide(left.base().clone(), first, last, left.element_width())
-                    .with_carrier_of(left),
-            );
+            return Some(output(first, last));
         }
         if equal(&last, &first) {
-            return Some(
-                CMemoryRange::new_wide(left.base().clone(), next, middle, left.element_width())
-                    .with_carrier_of(left),
-            );
+            return Some(output(next, middle));
         }
         return None;
     }
@@ -12756,3 +12800,95 @@ pub(crate) fn take_whole_normalization_facts() -> usize {
 mod read_definition_index_tests;
 
 mod legacy_search;
+
+#[cfg(test)]
+mod shared_wide_bound_tests {
+    use super::*;
+    use crate::kernel::{KernelTermExport, KernelType, VerificationSession};
+
+    #[test]
+    fn mixed_endpoint_coverage_needs_the_complete_bound_without_export() {
+        let _session = VerificationSession::enter();
+        let base = Pointer {
+            block: "shared_wide_bound".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let length = MachineTerm::Variable(Variable(1018501));
+        let low = MachineTerm::uint32_from_64(length.clone());
+        let narrow = CMemoryRange::new_with_element_width(
+            base.clone(),
+            MachineTerm::constant(0),
+            MachineTerm::add(low.clone(), MachineTerm::constant(1)),
+            1,
+        );
+        let wide = CMemoryRange::new_wide(
+            base.clone(),
+            MachineTerm::uint64_constant(0),
+            MachineTerm::uint64_add(length.clone(), MachineTerm::uint64_constant(1)),
+            1,
+        );
+        let empty = PureFactContext::new();
+        let complete = empty.clone().assume_condition(
+            ConditionTerm::uint64_less_equal(
+                length.clone(),
+                MachineTerm::uint64_constant(i32::MAX as u64 - 1),
+            ),
+            true,
+        );
+        let truncated = empty.clone().assume_condition(
+            ConditionTerm::unsigned_less_equal(low, MachineTerm::constant(i32::MAX as u32 - 1)),
+            true,
+        );
+        let exports = KernelTermExport::machine_export_count();
+        assert!(wide_memory_range_covers(&narrow, &wide, &complete));
+        assert!(wide_memory_range_covers(&wide, &narrow, &complete));
+        assert!(!wide_memory_range_covers(&narrow, &wide, &empty));
+        assert!(!wide_memory_range_covers(&narrow, &wide, &truncated));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+
+        let pointer = Pointer {
+            block: base.block.clone(),
+            offset: PointerOffsetTerm::scale_int64(length, 1, true),
+        };
+        let exports = KernelTermExport::machine_export_count();
+        assert!(pointer_formation_in_range(
+            &pointer, &base, &wide, &complete
+        ));
+        assert!(!pointer_formation_in_range(&pointer, &base, &wide, &empty));
+        assert_eq!(KernelTermExport::machine_export_count(), exports);
+    }
+
+    #[test]
+    fn wide_split_and_merge_keep_full_width_output_endpoints() {
+        let _session = VerificationSession::enter();
+        let base = Pointer {
+            block: "wide_bound_outputs".into(),
+            offset: PointerOffsetTerm::Constant(0),
+        };
+        let big = 1u64 << 40;
+        let range = |start, end| {
+            CMemoryRange::new_wide(
+                base.clone(),
+                MachineTerm::uint64_constant(start),
+                MachineTerm::uint64_constant(end),
+                1,
+            )
+        };
+        let facts = PureFactContext::new();
+        let whole = range(0, big + 3);
+        let taken = range(big, big + 1);
+        let residues = split_memory_range(&whole, &taken, &facts).unwrap();
+        assert_eq!(residues, vec![range(0, big), range(big + 1, big + 3)]);
+        let prefix = merge_abutting_memory_ranges(&residues[0], &taken, &facts).unwrap();
+        assert_eq!(
+            merge_abutting_memory_ranges(&prefix, &residues[1], &facts),
+            Some(whole)
+        );
+        assert!(merge_abutting_memory_ranges(&residues[0], &residues[1], &facts).is_none());
+    }
+
+    mod scaling_tests {
+        use super::*;
+        include!("../../scaling_tests/kernel/primitives/resource_algebra/shared_wide_bounds.rs");
+    }
+}
