@@ -116,17 +116,17 @@ Roles distinguish the work remaining:
 | `import` | Named import, not a runtime invocation. |
 
 The inventory after diagnostic stepping removal, match-arm dispatch relocation
-and signed-definedness/unsigned-order search extraction contains 632 records: 7 legacy bridges, 22 kernel callers,
-12 Surface operation dependencies, 0 operation-to-driver dependencies,
-120 driver records, 6 presentation records,
-444 search-internal records, 19 mixed records and 2 imports. These are reference
+and signed-definedness/unsigned-order search extraction contains 634 records: 7 legacy bridges, 22 kernel callers,
+9 Surface operation dependencies, 0 operation-to-driver dependencies,
+121 driver records, 6 presentation records,
+448 search-internal records, 19 mixed records and 2 imports. These are reference
 records, not individual invocation counts or independent performance defects.
 
 Do not add all these rows and call the result a count of slow bugs. Several
 callers reach the same traversal; dispatch and search-to-search calls are
 expected. The `operation`, `operation-to-driver` and legacy rows are the migration list;
 `mixed` rows have caller-level roles in the linked audit; classification does
-not certify their callees as fast. Four of the operation records belong to explicit tactic/theorem handlers now implemented
+not certify their callees as fast. One operation record belongs to theorem application implemented
 on `ProofDriver`: moving dispatch must not hide those search dependencies or
 reclassify them as legitimate implicit solving. Driver placement alone is not
 an efficiency guarantee.

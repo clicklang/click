@@ -3,7 +3,7 @@
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
 classifies all 19 `mixed` records in `build_support/proof_search_edges.tsv`
-and groups the 12 operation references. The operation-to-driver list is empty.
+and groups the 9 operation references. The operation-to-driver list is empty.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
 pass adds no measurements; preparation evidence below is from the completed
@@ -76,7 +76,7 @@ other concerns need separate treatment: remaining orchestration adapters on
 operations and declaration validation that searches outside proof scripts.
 
 The known direct operation/search dependencies remain: this classification does
-not eliminate the seven kernel bridges, their 22 caller records, or the 12
+not eliminate the seven kernel bridges, their 22 caller records, or the 9
 Surface operation/search records. In particular, explicit premises are not an
 explicit derivation: `transport(...) using {...}` is classified Simple in
 `src/surface.rs`, but its application can still call `derive_atomic_proposition`.
@@ -184,11 +184,11 @@ frontier; it performs no speculative continuation.
 
 ## Reconciled operation dependencies
 
-The 12 `operation` records are not 12 independent slow walks:
+The 9 `operation` records are not 9 independent slow walks:
 
 | Group | Records | Current interpretation and remaining evidence |
 | --- | ---: | --- |
-| Explicit tactic/theorem handlers on `ProofDriver` | 4 | `apply_step_without_outcome_wrapping` calls disequality refutation, unsigned order and wide arithmetic; `apply_theorem_application` selects an application. Driver placement does not make explicit tactic checking search-free. Audit each selected-input bound and expansion route. |
+| Theorem application on `ProofDriver` | 1 | `apply_theorem_application` selects an application. Driver placement does not make explicit tactic checking search-free. Audit its selected-input bound and obligation/expansion route. ArithmeticUsing is already a smart step; its strategy sequence is now behind one explicit search dispatch. |
 | Legacy explicit transport checking | 3 | `certified_fact_transport_reaches`, `check_fixed_state_fact_transport_using_facts_inner`, and `apply_pure_transport_using` call atomic derivation. Confirmed search access from the explicit transport route; migrate/retire under T1–T5, not a new independent bug per record. |
 | Transition, branch-path and initializer handling | 3 | `certified_transitions_from_execution`, `surface_branch_path_for_outcome`, and `capture_resource_field_initializer` need caller-specific input/cost and reachability evidence. Do not infer a measured violation merely from `derive_atomic_proposition` or `proves`. |
 | Definition validation | 2 | `symbolic_segment_covers_index` and `symbolic_segment_covers_range` join the mixed `segment_contains_pointer` record in one declaration-validation concern. There is no ordinary user obligation/expansion boundary established for these checks. |
@@ -222,7 +222,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 632 reference records, not 632 obligations to remove.
+The inventory contains 634 reference records, not 634 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this
