@@ -685,7 +685,6 @@ struct rb_root* root, int32 color) {
                     solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
-            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by solve();
             step(); step();
             have parent == id;
             have ctx_node_is(d.model, parent) == 1 by {
@@ -694,10 +693,7 @@ struct rb_root* root, int32 color) {
                 unfold(ctx_node_is(Context::Left(id, above, pc, sibling, up), id));
                 normalize();
             }
-            mark copied;
-            step();
-            mark tagged;
-            step();
+            step(); step();
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color == (address(new) | color));
                 if color == 0 { rewrite(color == 0); normalize(); } else {
@@ -705,24 +701,6 @@ struct rb_root* root, int32 color) {
                     rewrite(color == 1);
                     solve() using { aligned(new, 8); };
                 }
-            }
-            have at(copied, ((old->__rb_parent_color & ~3) as (struct rb_node *)) == id) by solve();
-            have at(tagged, new->__rb_parent_color == at(copied, old->__rb_parent_color)) by solve();
-            have at(tagged, ((new->__rb_parent_color & ~3) as (struct rb_node *)) == id) by {
-                rewrite(new->__rb_parent_color == at(copied, old->__rb_parent_color)); assumption();
-            }
-            have separate(statement(2).footprint, memory(new->__rb_parent_color)) by {
-                normalize() using { separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)); };
-            }
-            have new->__rb_parent_color == at(tagged, new->__rb_parent_color) by {
-                transport_certificate {
-                    premise 0: separate(statement(2).footprint, memory(new->__rb_parent_color)) => separate(statement(2).footprint, memory(new->__rb_parent_color));
-                    preserve 0 => new->__rb_parent_color == at(tagged, new->__rb_parent_color);
-                    conclusion 1;
-                }
-            }
-            have ((new->__rb_parent_color & ~3) as (struct rb_node *)) == id by {
-                rewrite(new->__rb_parent_color == at(tagged, new->__rb_parent_color)); assumption();
             }
             mark words;
             let { after: after } = step(__rb_change_child, { before: d });
@@ -753,7 +731,6 @@ struct rb_root* root, int32 color) {
                     solve() using { old->__rb_parent_color == address(id) + 1; aligned(id, 8); };
                 }
             }
-            have separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)) by solve();
             step(); step();
             have parent == id;
             have ctx_node_is(d.model, parent) == 1 by {
@@ -762,10 +739,7 @@ struct rb_root* root, int32 color) {
                 unfold(ctx_node_is(Context::Right(id, above, pc, sibling, up), id));
                 normalize();
             }
-            mark copied;
-            step();
-            mark tagged;
-            step();
+            step(); step();
             have old->__rb_parent_color == address(new) + color by {
                 rewrite(old->__rb_parent_color == (address(new) | color));
                 if color == 0 { rewrite(color == 0); normalize(); } else {
@@ -773,24 +747,6 @@ struct rb_root* root, int32 color) {
                     rewrite(color == 1);
                     solve() using { aligned(new, 8); };
                 }
-            }
-            have at(copied, ((old->__rb_parent_color & ~3) as (struct rb_node *)) == id) by solve();
-            have at(tagged, new->__rb_parent_color == at(copied, old->__rb_parent_color)) by solve();
-            have at(tagged, ((new->__rb_parent_color & ~3) as (struct rb_node *)) == id) by {
-                rewrite(new->__rb_parent_color == at(copied, old->__rb_parent_color)); assumption();
-            }
-            have separate(statement(2).footprint, memory(new->__rb_parent_color)) by {
-                normalize() using { separate(memory(old->__rb_parent_color), memory(new->__rb_parent_color)); };
-            }
-            have new->__rb_parent_color == at(tagged, new->__rb_parent_color) by {
-                transport_certificate {
-                    premise 0: separate(statement(2).footprint, memory(new->__rb_parent_color)) => separate(statement(2).footprint, memory(new->__rb_parent_color));
-                    preserve 0 => new->__rb_parent_color == at(tagged, new->__rb_parent_color);
-                    conclusion 1;
-                }
-            }
-            have ((new->__rb_parent_color & ~3) as (struct rb_node *)) == id by {
-                rewrite(new->__rb_parent_color == at(tagged, new->__rb_parent_color)); assumption();
             }
             mark words;
             let { after: after } = step(__rb_change_child, { before: d });
@@ -1402,8 +1358,6 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                     have (sid->__rb_parent_color & 1) == 1 by {
                                         rewrite((sid->__rb_parent_color & 1) == color_bit(Color::Black)); unfold(color_bit(Color::Black)); normalize();
                                     }
-                                    have sibling == sid by solve();
-                                    have (sibling->__rb_parent_color & 1) == 1 by { rewrite(sibling == sid); assumption(); }
                                     step(); step(); // Skip the red-sibling rotation.
                                     step(); // Read the sibling's left child.
                                     if rb_root_black(srm) == 1 {
@@ -1469,25 +1423,7 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                             have rb_inorder(plug(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um), nt.model)) == rb_inorder(plug(old(c.model), RbTree::Empty)) by {
                                                 rewrite(Context::Right(id, above, pc, RbTree::Node(sid, id, Color::Black, srm, slm), um) == at(iteration, c.model)); rewrite(nt.model == at(focus_split, t.model)); assumption();
                                             }
-                                            have (id->__rb_parent_color & 1) == color_bit(pc) by { assumption(); }
-                                            have id->__rb_parent_color == address(above) + (id->__rb_parent_color & 1) by { assumption(); }
-                                            have separate(memory(sibling->__rb_parent_color), memory(id->__rb_parent_color)) by solve();
-                                            have id->__rb_parent_color == at(iteration, id->__rb_parent_color) by solve();
-                                            mark sibling_recolor;
                                             step(); // Recolor the sibling red, preserving its parent.
-                                            have separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(id->__rb_parent_color)) by {
-                                                normalize() using { separate(memory(sibling->__rb_parent_color), memory(id->__rb_parent_color)); };
-                                            }
-                                            have id->__rb_parent_color == at(sibling_recolor, id->__rb_parent_color) by {
-                                                transport_certificate {
-                                                    premise 0: separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(id->__rb_parent_color)) => separate(statement(1).statement(1).statement(14).statement(1).statement(0).footprint, memory(id->__rb_parent_color));
-                                                    preserve 0 => id->__rb_parent_color == at(sibling_recolor, id->__rb_parent_color);
-                                                    conclusion 1;
-                                                }
-                                            }
-                                            have (id->__rb_parent_color & 1) == color_bit(pc) by { rewrite(id->__rb_parent_color == at(sibling_recolor, id->__rb_parent_color)); assumption(); }
-                                            have id->__rb_parent_color == at(iteration, id->__rb_parent_color) by { rewrite(id->__rb_parent_color == at(sibling_recolor, id->__rb_parent_color)); assumption(); }
-                                            have id->__rb_parent_color == address(above) + (id->__rb_parent_color & 1) by { rewrite(id->__rb_parent_color == at(sibling_recolor, id->__rb_parent_color)); assumption(); }
                                             have sid->__rb_parent_color == address(id) by { rewrite(id == parent); solve(); }
                                             have (sid->__rb_parent_color & 1) == 0 by { rewrite(sid->__rb_parent_color == address(id)); solve() using { aligned(id, 8); }; }
                                             have (sid->__rb_parent_color & 1) == color_bit(Color::Red) by { unfold(color_bit(Color::Red)); assumption(); }
@@ -1513,12 +1449,9 @@ void (*augment_rotate)(struct rb_node* old, struct rb_node* new)) {
                                                     have parent->__rb_parent_color == address(above) by {
                                                         rewrite(parent->__rb_parent_color == address(above) + (parent->__rb_parent_color & 1)); rewrite((parent->__rb_parent_color & 1) == 0); normalize();
                                                     }
-                                                    have parent->__rb_parent_color == at(iteration, id->__rb_parent_color) by { rewrite(parent == id); assumption(); }
-                                                    have at(iteration, id->__rb_parent_color) == address(above) by { rewrite(at(iteration, id->__rb_parent_color) == parent->__rb_parent_color); assumption(); }
                                                     mark red_flip;
                                                     have at(red_flip, parent->__rb_parent_color) == address(above) by assumption();
                                                     step(); step(); // Select the red parent and blacken it.
-                                                    have parent->__rb_parent_color == address(above) + 1 by { assumption(); }
                                                     have parent->__rb_parent_color == at(red_flip, parent->__rb_parent_color) + 1;
                                                     have parent->__rb_parent_color == address(above) + 1 by { rewrite(parent->__rb_parent_color == at(red_flip, parent->__rb_parent_color) + 1); rewrite(at(red_flip, parent->__rb_parent_color) == address(above)); normalize(); }
                                                     have (parent->__rb_parent_color & 1) == 1 by { rewrite(parent->__rb_parent_color == address(above) + 1); solve() using { aligned(above, 8); }; }

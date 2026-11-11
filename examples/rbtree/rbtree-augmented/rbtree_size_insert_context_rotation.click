@@ -108,55 +108,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                 rewrite(node->__rb_parent_color == address(p) + (node->__rb_parent_color & 1));
                 rewrite((node->__rb_parent_color & 1) == 0); normalize();
             }
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-            have p->rb_left == node by { assumption(); }
-            have p->rb_right != p by { assumption(); }
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-            mark m0; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m0, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-            have p->rb_left == at(m0, p->rb_left) by solve();
-            have p->rb_left == node by { rewrite(p->rb_left == at(m0, p->rb_left)); assumption(); }
-            have p->rb_right == at(m0, p->rb_right) by solve();
-            have p->rb_right != p by { rewrite(p->rb_right == at(m0, p->rb_right)); assumption(); }
-            have *((&p->__rb_parent_color) as (int32 **)) == at(m0, *((&p->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have *((&g->__rb_parent_color) as (int32 **)) == at(m0, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-            mark m1; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m1, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-            have p->rb_left == at(m1, p->rb_left) by solve();
-            have p->rb_left == node by { rewrite(p->rb_left == at(m1, p->rb_left)); assumption(); }
-            have p->rb_right == at(m1, p->rb_right) by solve();
-            have p->rb_right != p by { rewrite(p->rb_right == at(m1, p->rb_right)); assumption(); }
-            have *((&p->__rb_parent_color) as (int32 **)) == at(m1, *((&p->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have *((&g->__rb_parent_color) as (int32 **)) == at(m1, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-            mark m2; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m2, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-            have p->rb_left == at(m2, p->rb_left) by solve();
-            have p->rb_left == node by { rewrite(p->rb_left == at(m2, p->rb_left)); assumption(); }
-            have p->rb_right == at(m2, p->rb_right) by solve();
-            have p->rb_right != p by { rewrite(p->rb_right == at(m2, p->rb_right)); assumption(); }
-            have *((&p->__rb_parent_color) as (int32 **)) == at(m2, *((&p->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have *((&g->__rb_parent_color) as (int32 **)) == at(m2, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-            mark m3; step();
-            have *((&node->__rb_parent_color) as (int32 **)) == at(m3, *((&node->__rb_parent_color) as (int32 **))) by solve();
-            have ((node->__rb_parent_color & ~3) as (struct rb_node *)) == p by { assumption(); }
-            have p->rb_left == at(m3, p->rb_left) by solve();
-            have p->rb_left == node by { rewrite(p->rb_left == at(m3, p->rb_left)); assumption(); }
-            have p->rb_right == at(m3, p->rb_right) by solve();
-            have p->rb_right != p by { rewrite(p->rb_right == at(m3, p->rb_right)); assumption(); }
-            have *((&p->__rb_parent_color) as (int32 **)) == at(m3, *((&p->__rb_parent_color) as (int32 **))) by solve();
-            have ((p->__rb_parent_color & ~3) as (struct rb_node *)) == g by { assumption(); }
-            have *((&g->__rb_parent_color) as (int32 **)) == at(m3, *((&g->__rb_parent_color) as (int32 **))) by solve();
-            have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+            step(); step(); step(); step();
             unfold(n_left); unfold(n_right);
             have node->rb_left == 0 by { assumption(); }
             have node->rb_right == 0 by { assumption(); }
@@ -209,43 +161,7 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                         rewrite((g->__rb_parent_color & 1) == color_bit(Color::Black));
                         rewrite(color_bit(Color::Black) == 1); normalize();
                     }
-                    have p->rb_left == node by { assumption(); }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l0; step();
-                    have p->rb_left == at(l0, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l0, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l0, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l1; step();
-                    have p->rb_left == at(l1, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l1, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l1, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l2; step();
-                    have p->rb_left == at(l2, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l2, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l2, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l3; step();
-                    have p->rb_left == at(l3, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l3, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l3, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l4; step();
-                    have p->rb_left == at(l4, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l4, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l4, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l5; step();
-                    have p->rb_left == at(l5, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l5, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l5, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark l6; step();
-                    have p->rb_left == at(l6, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(l6, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(l6, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    step(); step(); step(); step(); step(); step(); step();
                     have gparent == g by { assumption(); }
                     have parent == p by { assumption(); }
                     have parent->rb_left == node by { assumption(); }
@@ -253,101 +169,14 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     have at(before_link_writes, ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above) by assumption();
                     have at(before_link_writes, parent->rb_left == node) by { assumption(); }
                     have at(before_link_writes, g->rb_left) == parent by { assumption(); }
-                    have p->rb_left == node by { assumption(); }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark k0; step();
-                    have p->rb_left == at(k0, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k0, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k0, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark k1; step();
-                    have p->rb_left == at(k1, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k1, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k1, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark k2; step();
-                    have p->rb_left == at(k2, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k2, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k2, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    step(); step(); step();
                     have tmp == 0 by { assumption(); }
                     have node != 0 by { assumption(); }
-                    mark k3; step();
-                    have p->rb_left == at(k3, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k3, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k3, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark k4; step();
-                    have p->rb_left == at(k4, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k4, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k4, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    have separate(memory(g->rb_left->rb_right), memory(p->rb_left)) by solve();
-                    have separate(memory(g->rb_left->rb_right), memory(g->__rb_parent_color)) by solve();
-                    mark k5;
-                    have at(k5, separate(memory(g->rb_left->rb_right), memory(p->rb_left))) by { assumption(); }
-                    have at(k5, separate(memory(g->rb_left->rb_right), memory(g->__rb_parent_color))) by { assumption(); }
-                    step();
-                    have separate(memory(gparent->rb_left), memory(p->rb_left)) by solve();
-                    have separate(statement(1).statement(4).statement(3).footprint, memory(p->rb_left)) by {
-                        normalize() using { separate(memory(gparent->rb_left), memory(p->rb_left)); };
-                    }
-                    have p->rb_left == at(k5, p->rb_left) by {
-                        transport_certificate {
-                            premise 0: separate(statement(1).statement(4).statement(3).footprint, memory(p->rb_left)) => separate(statement(1).statement(4).statement(3).footprint, memory(p->rb_left));
-                            preserve 0 => p->rb_left == at(k5, p->rb_left);
-                            conclusion 1;
-                        }
-                    }
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k5, p->rb_left)); assumption(); }
-                    have separate(memory(gparent->rb_left), memory(g->__rb_parent_color)) by solve();
-                    have separate(statement(1).statement(4).statement(3).footprint, memory(g->__rb_parent_color)) by {
-                        normalize() using { separate(memory(gparent->rb_left), memory(g->__rb_parent_color)); };
-                    }
-                    have g->__rb_parent_color == at(k5, g->__rb_parent_color) by {
-                        transport_certificate {
-                            premise 0: separate(statement(1).statement(4).statement(3).footprint, memory(g->__rb_parent_color)) => separate(statement(1).statement(4).statement(3).footprint, memory(g->__rb_parent_color));
-                            preserve 0 => g->__rb_parent_color == at(k5, g->__rb_parent_color);
-                            conclusion 1;
-                        }
-                    }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { rewrite(g->__rb_parent_color == at(k5, g->__rb_parent_color)); assumption(); }
+                    step(); step(); step();
                     mark after_left_write;
                     have at(after_left_write, g->rb_left == 0) by { assumption(); }
                     have separate(memory(g->rb_left), memory(parent->rb_right)) by { assumption(); }
-                    mark k6; step();
-                    have separate(statement(1).statement(4).statement(4).footprint, memory(p->rb_left)) by {
-                        normalize() using { at(k5, separate(memory(g->rb_left->rb_right), memory(p->rb_left))); };
-                    }
-                    have p->rb_left == at(k6, p->rb_left) by {
-                        transport_certificate {
-                            premise 0: separate(statement(1).statement(4).statement(4).footprint, memory(p->rb_left)) => separate(statement(1).statement(4).statement(4).footprint, memory(p->rb_left));
-                            preserve 0 => p->rb_left == at(k6, p->rb_left);
-                            conclusion 1;
-                        }
-                    }
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k6, p->rb_left)); assumption(); }
-                    have separate(statement(1).statement(4).statement(4).footprint, memory(g->__rb_parent_color)) by {
-                        normalize() using { at(k5, separate(memory(g->rb_left->rb_right), memory(g->__rb_parent_color))); };
-                    }
-                    have g->__rb_parent_color == at(k6, g->__rb_parent_color) by {
-                        transport_certificate {
-                            premise 0: separate(statement(1).statement(4).statement(4).footprint, memory(g->__rb_parent_color)) => separate(statement(1).statement(4).statement(4).footprint, memory(g->__rb_parent_color));
-                            preserve 0 => g->__rb_parent_color == at(k6, g->__rb_parent_color);
-                            conclusion 1;
-                        }
-                    }
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { rewrite(g->__rb_parent_color == at(k6, g->__rb_parent_color)); assumption(); }
-                    mark k7; step();
-                    have p->rb_left == at(k7, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k7, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k7, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
-                    mark k8; step();
-                    have p->rb_left == at(k8, p->rb_left) by solve();
-                    have p->rb_left == node by { rewrite(p->rb_left == at(k8, p->rb_left)); assumption(); }
-                    have *((&g->__rb_parent_color) as (int32 **)) == at(k8, *((&g->__rb_parent_color) as (int32 **))) by solve();
-                    have ((g->__rb_parent_color & ~3) as (struct rb_node *)) == above by { assumption(); }
+                    step(); step(); step();
                     have gparent->__rb_parent_color == address(above) + 1 by { solve(); }
                     unfold(g_size);
                     have sized_context_parent_word(link.model, g->__rb_parent_color) == 1 by {
@@ -376,20 +205,8 @@ void insert::__rb_insert(struct rb_node* node, struct rb_root* root,
                     let { after: link } = step(insert::__rb_rotate_set_parents, { c: link });
                     let g_size = fold(size_metadata(g), { value: 3 });
                     transport(at(before_parent_update, g->rb_left == 0), g->rb_left == 0);
-                    have g->rb_left == at(before_parent_update, g->rb_left) by solve();
-                    have defined(g->rb_left) by {
-                        transport(defined(at(before_parent_update, g->rb_left)), defined(g->rb_left)) using {
-                            g->rb_left == at(before_parent_update, g->rb_left);
-                        };
-                    }
                     let p_right = fold(sized_at(g->rb_left), { model: SizedTree::Empty });
                     have g->rb_right == 0 by { solve(); }
-                    have g->rb_right == at(before_parent_update, g->rb_right) by solve();
-                    have defined(g->rb_right) by {
-                        transport(defined(at(before_parent_update, g->rb_right)), defined(g->rb_right)) using {
-                            g->rb_right == at(before_parent_update, g->rb_right);
-                        };
-                    }
                     let g_right = fold(sized_at(g->rb_right), { model: SizedTree::Empty });
                     let demoted = fold(sized_recompute_at(g), {
                         model: SizedTree::Node(g, p, Color::Red, 3, SizedTree::Empty, SizedTree::Empty)
