@@ -8212,18 +8212,34 @@ pub(super) fn loop_effect_segment_contains_range(
     }
     let Some(base_index) = range
         .base()
-        .element_index_from_base_with_width(&segment.base, segment.element_width)
+        .shared_element_index_from_base_with_width(&segment.base, segment.element_width)
     else {
         return false;
     };
-    let range_start = MachineTerm::add(base_index.clone(), range.start().clone());
-    let range_end = MachineTerm::add(base_index, range.end().clone());
+    let range_start = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        base_index.operand_view(),
+        MachineOperandView::Legacy(range.start()),
+    );
+    let range_end = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        base_index.operand_view(),
+        MachineOperandView::Legacy(range.end()),
+    );
     condition_is_decided_true(
         assumptions,
-        &ConditionTerm::signed_less_equal(segment.start.clone(), range_start),
+        &crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&segment.start),
+            range_start.operand_view(),
+        ),
     ) && condition_is_decided_true(
         assumptions,
-        &ConditionTerm::signed_less_equal(range_end, segment.end.clone()),
+        &crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            range_end.operand_view(),
+            MachineOperandView::Legacy(&segment.end),
+        ),
     )
 }
 
@@ -9437,10 +9453,13 @@ fn range_extent_refusal(
     let Some(offset) = respelled
         .as_ref()
         .and_then(|respelled| {
-            crate::kernel::reasoning::pointer_byte_offset_from_base(respelled, &extent.start)
+            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(respelled, &extent.start)
         })
         .or_else(|| {
-            crate::kernel::reasoning::pointer_byte_offset_from_base(base.pointer(), &extent.start)
+            crate::kernel::reasoning::shared_pointer_byte_offset_from_base(
+                base.pointer(),
+                &extent.start,
+            )
         })
     else {
         return refusal();
@@ -9450,7 +9469,14 @@ fn range_extent_refusal(
     };
     let element_width = i64::from(element_width);
     let proves = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
-    let offset = MachineTerm::int64_from_32(offset);
+    let offset = offset.checking_cast_operand(MachineIntegerType::Int64);
+    let compare = |left: MachineOperandView<'_>, right: MachineOperandView<'_>| {
+        crate::kernel::machine_integer::comparison::condition_for_operand_views(
+            MachineIntegerType::Int64,
+            CompareRelation::LessEqual,
+            [left, right],
+        )
+    };
     match kind {
         RangeIndexKind::Int32 => {
             let start = MachineTerm::int64_from_32(start.clone());
@@ -9462,24 +9488,35 @@ fn range_extent_refusal(
                 return None;
             }
             let byte = |index: MachineTerm| {
-                MachineTerm::int64_add(
-                    offset.clone(),
-                    MachineTerm::int64_multiply(index, MachineTerm::int64_constant(element_width)),
-                )
+                let product =
+                    MachineTerm::int64_multiply(index, MachineTerm::int64_constant(element_width));
+                let root = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+                    MachineIntegerType::Int64,
+                    MachineBinaryOp::Add,
+                    crate::kernel::KernelTerm::retained_machine_operand(
+                        MachineIntegerType::Int64,
+                        offset.operand_view(),
+                    ),
+                    crate::kernel::KernelTerm::retained_machine_operand(
+                        MachineIntegerType::Int64,
+                        MachineOperandView::Legacy(&product),
+                    ),
+                );
+                MachineOperandView::Shared(&root).retain(MachineIntegerType::Int64)
             };
-            let inside = proves(ConditionTerm::int64_signed_less_equal(
-                MachineTerm::int64_constant(0),
-                byte(start),
-            )) && proves(ConditionTerm::int64_signed_less_equal(
-                byte(end),
-                MachineTerm::int64_constant(width),
+            let inside = proves(compare(
+                MachineOperandView::Legacy(&MachineTerm::int64_constant(0)),
+                byte(start).operand_view(),
+            )) && proves(compare(
+                byte(end).operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::int64_constant(width)),
             ));
             (!inside).then(refusal).flatten()
         }
         // An unsigned 64-bit range is inside when its constant offset leaves
         // room for its end; its start is never below zero.
         RangeIndexKind::UInt64 => {
-            let offset = offset.int64_as_const()?.max(0);
+            let offset = offset.operand_view().int64_constant()?.max(0);
             let room = u64::try_from((width - offset) / element_width.max(1)).ok()?;
             let inside = proves(ConditionTerm::uint64_less_equal(
                 end.clone(),

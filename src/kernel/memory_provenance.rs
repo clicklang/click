@@ -2261,7 +2261,7 @@ pub(super) fn with_extended_dag_bridging<T>(body: impl FnOnce() -> T) -> T {
 pub(in crate::kernel) fn forward_range_offset_from_pointer(
     range: &CMemoryRange,
     pointer: &Pointer,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
     if range.base.block != pointer.block {
         return None;
     }
@@ -2269,9 +2269,9 @@ pub(in crate::kernel) fn forward_range_offset_from_pointer(
         return None;
     };
     if pointer.offset == **left {
-        element_index_from_offset(right, range.element_width())
+        shared_element_index_from_offset(right, range.element_width())
     } else if pointer.offset == **right {
-        element_index_from_offset(left, range.element_width())
+        shared_element_index_from_offset(left, range.element_width())
     } else {
         None
     }
@@ -2300,7 +2300,9 @@ pub(in crate::kernel) fn direct_constant_element_index(
     if element_width <= 0 {
         return None;
     }
-    let bytes = signed_bitvector_constant(&pointer_byte_offset_from_base(pointer, base)?)?;
+    let bytes = crate::kernel::assumptions::signed_index_constant(
+        shared_pointer_byte_offset_from_base(pointer, base)?.operand_view(),
+    )?;
     (bytes % element_width == 0).then_some(bytes / element_width)
 }
 
@@ -2448,8 +2450,12 @@ pub(in crate::kernel) fn typed_range_disjoint_from_pointer_evidence(
         return None;
     }
     let offset = forward_range_offset_from_pointer(range, pointer)?;
-    let range_start = MachineTerm::add(offset.clone(), range.start().clone());
-    let positive = PositiveTermEvidence::for_term(&range_start, assumptions)?;
+    let range_start = crate::kernel::assumptions::index_binary(
+        MachineBinaryOp::Add,
+        offset.operand_view(),
+        MachineOperandView::Legacy(range.start()),
+    );
+    let positive = PositiveTermEvidence::for_view(range_start.operand_view(), assumptions)?;
     Some(RangeDisjointFromPointerEvidence::ForwardOffset { offset, positive })
 }
 
@@ -4444,7 +4450,7 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
     // from `p` while being the second byte a four-byte read there returns.
     // `1a3b2701` put the byte question in front of the three sibling
     // comparisons; this is the fourth, and the constant-offset arm —
-    // `pointer_byte_offset_from_base(...) != 0` — is the plainest statement of
+    // `shared_pointer_byte_offset_from_base(...) != 0` — is the plainest statement of
     // the confusion, calling a cell four bytes into an eight-byte read
     // separate from it.
     let load_bytes = crate::kernel::load_access_width_or_widest(
@@ -4458,8 +4464,8 @@ pub(in crate::kernel) fn memories_directly_match_for_pointer_load(
                 && (cell.blocks_proven_distinct(pointer)
                 || pointer_offsets_with_common_base_proven_distinct(&cell, pointer, assumptions)
                 || pointers_proven_distinct_for_memory_resolution(&cell, pointer, assumptions)
-                || pointer_byte_offset_from_base(&cell, pointer)
-                    .and_then(|offset| offset.as_const())
+                || shared_pointer_byte_offset_from_base(&cell, pointer)
+                    .and_then(|offset| offset.operand_view().word32_constant())
                     .is_some_and(|offset| offset != 0)
                 || assumptions.ranges_directly_disjoint_from_pointer(
                     &[CMemoryRange::new(

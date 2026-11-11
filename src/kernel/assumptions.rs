@@ -4035,16 +4035,19 @@ impl PureFactContext {
                 relation: CompareRelation::Equal,
                 left,
                 right,
-            } => (left.as_ref(), right.as_ref()),
+            } => (
+                MachineOperandView::Legacy(left),
+                MachineOperandView::Legacy(right),
+            ),
             condition if condition.true_pointer_offset_sides().is_some() => {
                 let (left, right) = condition.true_pointer_offset_sides().expect("offset view");
-                let Some(pair) = int32_element_index_from_offset(left)
-                    .zip(int32_element_index_from_offset(right))
+                let Some(pair) = shared_element_index_from_offset(left, 4)
+                    .zip(shared_element_index_from_offset(right, 4))
                 else {
                     return;
                 };
                 derived = pair;
-                (&derived.0, &derived.1)
+                (derived.0.operand_view(), derived.1.operand_view())
             }
             _ => return,
         };
@@ -4052,11 +4055,16 @@ impl PureFactContext {
         // raw MemoryLoad payloads. Raw interning can compare whole snapshots
         // across verification arenas. Counts preserve independent spellings
         // that canonicalize to the same edge when one premise is withdrawn.
+        let atom = |view: MachineOperandView<'_>| match view {
+            MachineOperandView::Legacy(term) => {
+                super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(term))
+            }
+            MachineOperandView::Shared(_) => {
+                super::equality_graph::MachineAtom::from_operand(MachineIntegerType::Int32, view)
+            }
+        };
         let edge = if insert {
-            let edge = (
-                super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(left)),
-                super::equality_graph::MachineAtom::int32(crate::kernel::canonical_term(right)),
-            );
+            let edge = (atom(left), atom(right));
             self.equality_graph
                 .admitted
                 .int32_input_edges
@@ -4090,7 +4098,7 @@ impl PureFactContext {
                 .admitted
                 .int32_graph_equalities
                 .insert(edge, count + 1);
-            self.equality_graph.add_int32_equality(left, right);
+            self.equality_graph.add_int32_equality_views(left, right);
         } else if count > 1 {
             self.equality_graph
                 .admitted
@@ -5170,12 +5178,19 @@ impl PureFactContext {
                 self.equality_graph
                     .admitted
                     .exact_constant_equalities
-                    .without_key(term)
+                    .without_key(&checked_scalar_facts::ScalarOperandKey::new(
+                        MachineOperandView::Legacy(term),
+                    ))
             } else {
                 self.equality_graph
                     .admitted
                     .exact_constant_equalities
-                    .with_inserted(term.clone(), facts)
+                    .with_inserted(
+                        checked_scalar_facts::ScalarOperandKey::new(MachineOperandView::Legacy(
+                            term,
+                        )),
+                        facts,
+                    )
             };
         }
     }
@@ -8150,7 +8165,7 @@ impl PureFactContext {
             crate::kernel::proof::term_rewrite::TermRewrite::conditional_guards(proposition)
                 .into_iter()
                 .filter_map(|condition| {
-                    let value = self.rewrite_guard_value(&condition)?;
+                    let value = self.selected_comparison_value(&condition)?;
                     Some((condition, value))
                 })
                 .collect::<std::collections::HashMap<_, _>>();
@@ -9209,7 +9224,7 @@ pub(in crate::kernel) fn memory_range_shallowly_contained(
 /// * `offset` is the base delta plus `sext(range.start) - sext(parent.start)`.
 ///   The delta comes from [`Pointer::exact_element_delta_from_base`] as an
 ///   exact `i64` constant beside at most one symbolic index; the subtraction
-///   comes from [`exact_affine_index_difference`]. Because only one symbolic
+///   comes from [`exact_affine_index_difference_views`]. Because only one symbolic
 ///   index may appear, whichever of the two ranges is rebased must carry a
 ///   constant start — which is what the shapes that reach here do: a child at
 ///   the parent's own base, or a child `[0..k]` at a pointer into the parent.
@@ -9286,7 +9301,10 @@ fn memory_range_contained_by_exact_arithmetic(
     // whole rule exists to stop trusting.
     let translate = |endpoint: &MachineTerm| {
         if base_delta.is_constant() {
-            Some((endpoint.clone(), base_delta.constant))
+            Some((
+                MachineOperandView::Legacy(endpoint).retain(MachineIntegerType::Int32),
+                base_delta.constant,
+            ))
         } else {
             signed_bitvector_constant(endpoint)
                 .and_then(|endpoint| base_delta.constant.checked_add(endpoint))
@@ -9296,9 +9314,12 @@ fn memory_range_contained_by_exact_arithmetic(
     let Some((start_term, start_constant)) = translate(range.start()) else {
         return false;
     };
-    let Some(offset) = exact_affine_index_difference(&start_term, parent.start(), assumptions)
-        .and_then(|difference| difference.checked_add(start_constant))
-    else {
+    let Some(offset) = exact_affine_index_difference_views(
+        start_term.operand_view(),
+        MachineOperandView::Legacy(parent.start()),
+        assumptions,
+    )
+    .and_then(|difference| difference.checked_add(start_constant)) else {
         return false;
     };
     if offset < 0 {
@@ -9316,9 +9337,12 @@ fn memory_range_contained_by_exact_arithmetic(
     let Some((end_term, end_constant)) = translate(range.end()) else {
         return false;
     };
-    let Some(slack) = exact_affine_index_difference(parent.end(), &end_term, assumptions)
-        .and_then(|difference| difference.checked_sub(end_constant))
-    else {
+    let Some(slack) = exact_affine_index_difference_views(
+        MachineOperandView::Legacy(parent.end()),
+        end_term.operand_view(),
+        assumptions,
+    )
+    .and_then(|difference| difference.checked_sub(end_constant)) else {
         return false;
     };
     let Some(reach) = offset.checked_add(slack) else {
@@ -9778,9 +9802,14 @@ fn pointer_in_range_for_memory_resolution(
         "explicit range arms",
         "range membership: index in range",
         || {
-            indexes
-                .iter()
-                .any(|index| bitvector_index_in_range_shallow(index, start, end, assumptions))
+            indexes.iter().any(|index| {
+                bitvector_index_in_range_shallow_views(
+                    index.operand_view(),
+                    MachineOperandView::Legacy(start),
+                    MachineOperandView::Legacy(end),
+                    assumptions,
+                )
+            })
         },
     )
 }
@@ -9796,7 +9825,14 @@ pub(in crate::kernel) fn exact_signed_constant(
     term: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> Option<i64> {
-    if let Some(value) = signed_bitvector_constant(term) {
+    exact_signed_constant_view(MachineOperandView::Legacy(term), assumptions)
+}
+
+pub(in crate::kernel) fn exact_signed_constant_view(
+    term: MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> Option<i64> {
+    if let Some(value) = signed_index_constant(term) {
         return Some(value);
     }
     // The first true equality, in fact order, that pins `term` to a
@@ -9804,7 +9840,7 @@ pub(in crate::kernel) fn exact_signed_constant(
     crate::instrumentation::record_deterministic_work(1);
     let (_, constant) = assumptions
         .equality_graph
-        .exact_literal_sources(term)?
+        .exact_literal_sources_view(term)?
         .iter()
         .next()?;
     #[cfg(test)]
@@ -9908,23 +9944,34 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
     end: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let recorded_exact_order_path = |left: &MachineTerm, right: &MachineTerm, strict: bool| {
-        let Some(path) = assumptions.exact_signed_order_source_path(
-            MachineOperandView::Legacy(left),
-            MachineOperandView::Legacy(right),
-            strict,
-        ) else {
-            return false;
+    bitvector_index_in_range_shallow_views(
+        MachineOperandView::Legacy(index),
+        MachineOperandView::Legacy(start),
+        MachineOperandView::Legacy(end),
+        assumptions,
+    )
+}
+
+pub(in crate::kernel) fn bitvector_index_in_range_shallow_views(
+    index: MachineOperandView<'_>,
+    start: MachineOperandView<'_>,
+    end: MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    let recorded_exact_order_path =
+        |left: MachineOperandView<'_>, right: MachineOperandView<'_>, strict: bool| {
+            let Some(path) = assumptions.exact_signed_order_source_path(left, right, strict) else {
+                return false;
+            };
+            for step in path {
+                record_implicit_reasoning_provenance(assumptions, &step.premise);
+            }
+            true
         };
-        for step in path {
-            record_implicit_reasoning_provenance(assumptions, &step.premise);
-        }
-        true
-    };
     if let (Some(index), Some(start), Some(end)) = (
-        signed_bitvector_constant(index),
-        signed_bitvector_constant(start),
-        signed_bitvector_constant(end),
+        signed_index_constant(index),
+        signed_index_constant(start),
+        signed_index_constant(end),
     ) {
         return start <= index && index < end;
     }
@@ -9933,38 +9980,32 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
     // to constants without any non-exact condition reasoning. Success only:
     // an unresolved or unsatisfied triple falls through to the other arms.
     if let (Some(index), Some(start), Some(end)) = (
-        exact_signed_constant(index, assumptions),
-        exact_signed_constant(start, assumptions),
-        exact_signed_constant(end, assumptions),
+        exact_signed_constant_view(index, assumptions),
+        exact_signed_constant_view(start, assumptions),
+        exact_signed_constant_view(end, assumptions),
     ) && start <= index
         && index < end
     {
         return true;
     }
-    let lower_bound_is_exact = assumptions.exact_condition_value(
-        &ConditionTerm::signed_less_equal(start.clone(), index.clone()),
+    let lower_bound_is_exact = assumptions.selected_comparison_value(
+        &index_comparison(CompareRelation::LessEqual, start, index),
     ) == Some(true)
         // Canonical-keyed bound lookup before any searching arm: indexed
         // and deterministic, so check sees the same answer.
-        || assumptions.canonical_bound_holds(start, index, false)
+        || assumptions.canonical_bound_holds_views(start, index, false)
         || recorded_exact_order_path(start, index, false)
         || assumptions.should_defer_non_exact_condition_reasoning()
-            && assumptions.difference_graph_proves_order(start, index, false)
-        || start == &MachineTerm::constant(0)
-            && index.add_const_parts().is_some_and(|(base, increment)| {
+            && assumptions.difference_graph_proves_order_views(start, index, false)
+        || start.word32_constant() == Some(0)
+            && index.int32_add_const_parts().is_some_and(|(base, increment)| {
                 (increment as i32) > 0
-                    && (recorded_exact_order_path(start, &base, false)
+                    && (recorded_exact_order_path(start, base, false)
                         || assumptions.should_defer_non_exact_condition_reasoning()
                             && assumptions
-                                .difference_graph_proves_order(start, &base, false))
-                    && (assumptions.exact_condition_value(&ConditionTerm::signed_add_overflows(
-                        base.clone(),
-                        MachineTerm::constant(increment),
-                    )) == Some(false)
-                        || assumptions.exact_condition_value(&ConditionTerm::signed_add_overflows(
-                            MachineTerm::constant(increment),
-                            base.clone(),
-                        )) == Some(false)
+                                .difference_graph_proves_order_views(start, base, false))
+                    && (held_index_add_nonoverflow(assumptions, base, MachineOperandView::Legacy(&MachineTerm::constant(increment)))
+                        || held_index_add_nonoverflow(assumptions, MachineOperandView::Legacy(&MachineTerm::constant(increment)), base)
                         // A recorded strict signed upper bound (`base < y`)
                         // pins `base < INT_MAX`, so `base + 1` cannot
                         // overflow. Exact facts only; extended-bridging
@@ -9972,15 +10013,17 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
                         // answers byte-identical to the pre-arc path.
                         || increment == 1
                             && super::api::extended_dag_bridging_active()
-                            && assumptions.has_exact_strict_upper_bound(&base))
+                            && assumptions.has_exact_strict_upper_bound_view(base))
             });
-    let upper_bound_is_exact = assumptions
-        .exact_condition_value(&ConditionTerm::signed_less_than(index.clone(), end.clone()))
-        == Some(true)
-        || assumptions.canonical_bound_holds(index, end, true)
+    let upper_bound_is_exact = assumptions.selected_comparison_value(&index_comparison(
+        CompareRelation::LessThan,
+        index,
+        end,
+    )) == Some(true)
+        || assumptions.canonical_bound_holds_views(index, end, true)
         || recorded_exact_order_path(index, end, true)
         || assumptions.should_defer_non_exact_condition_reasoning()
-            && assumptions.difference_graph_proves_order(index, end, true);
+            && assumptions.difference_graph_proves_order_views(index, end, true);
     if lower_bound_is_exact && upper_bound_is_exact {
         // The bounds were read off exact facts along some indexed path; a
         // provenance collection wants the facts behind them, whichever arm
@@ -9988,23 +10031,23 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
         record_implicit_reasoning_provenance(
             assumptions,
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_equal(start.clone(), index.clone()),
+                index_comparison(CompareRelation::LessEqual, start, index),
                 true,
             ),
         );
         record_implicit_reasoning_provenance(
             assumptions,
             &Proposition::ConditionIs(
-                ConditionTerm::signed_less_than(index.clone(), end.clone()),
+                index_comparison(CompareRelation::LessThan, index, end),
                 true,
             ),
         );
         return true;
     }
 
-    element_delta_in_range_by_affine_arithmetic(
+    element_delta_in_range_by_affine_arithmetic_views(
         &ExactElementDelta {
-            index: index.clone(),
+            index: index.retain(MachineIntegerType::Int32),
             constant: 0,
         },
         start,
@@ -10027,7 +10070,7 @@ pub(in crate::kernel) fn bitvector_index_in_range_shallow(
 /// difference of modular terms is the true one only modulo `2^32`. An
 /// "outside" conclusion survives that reduction — a residue past the count is
 /// outside whichever way the terms wrapped — and "inside" does not, so the
-/// offset here is the real one ([`exact_affine_index_difference`]) and the
+/// offset here is the real one ([`exact_affine_index_difference_views`]) and the
 /// length is the real element count ([`affine_range_element_count`]), or this
 /// concludes nothing. The remaining arm compares the offset against the
 /// range's length as a *term*, which is a signed order over that term's value
@@ -10038,39 +10081,54 @@ pub(in crate::kernel) fn element_delta_in_range_by_affine_arithmetic(
     end: &MachineTerm,
     assumptions: &PureFactContext,
 ) -> bool {
-    let recorded_exact_order_path = |left: &MachineTerm, right: &MachineTerm, strict: bool| {
-        let Some(path) = assumptions.exact_signed_order_source_path(
-            MachineOperandView::Legacy(left),
-            MachineOperandView::Legacy(right),
-            strict,
-        ) else {
-            return false;
+    element_delta_in_range_by_affine_arithmetic_views(
+        delta,
+        MachineOperandView::Legacy(start),
+        MachineOperandView::Legacy(end),
+        assumptions,
+    )
+}
+
+pub(in crate::kernel) fn element_delta_in_range_by_affine_arithmetic_views(
+    delta: &ExactElementDelta,
+    start: MachineOperandView<'_>,
+    end: MachineOperandView<'_>,
+    assumptions: &PureFactContext,
+) -> bool {
+    let recorded_exact_order_path =
+        |left: MachineOperandView<'_>, right: MachineOperandView<'_>, strict: bool| {
+            let Some(path) = assumptions.exact_signed_order_source_path(left, right, strict) else {
+                return false;
+            };
+            for step in path {
+                record_implicit_reasoning_provenance(assumptions, &step.premise);
+            }
+            true
         };
-        for step in path {
-            record_implicit_reasoning_provenance(assumptions, &step.premise);
-        }
-        true
-    };
-    let Some(offset) = exact_affine_index_difference(&delta.index, start, Some(assumptions))
-        .and_then(|difference| difference.checked_add(delta.constant))
+    let Some(offset) =
+        exact_affine_index_difference_views(delta.index.operand_view(), start, Some(assumptions))
+            .and_then(|difference| difference.checked_add(delta.constant))
     else {
         return false;
     };
     if offset < 0 {
         return false;
     }
-    if let Some(count) = affine_range_element_count(start, end) {
+    if let Some(count) = affine_range_element_count_views(start, end) {
         return offset < count;
     }
     i32::try_from(offset).is_ok_and(|offset| {
-        affine_bitvector_difference_atom(end, start).is_some_and(|length| {
-            recorded_exact_order_path(&MachineTerm::constant(offset as u32), &length, true)
-                || assumptions.should_defer_non_exact_condition_reasoning()
-                    && assumptions.difference_graph_proves_order(
-                        &MachineTerm::constant(offset as u32),
-                        &length,
-                        true,
-                    )
+        affine_bitvector_difference_atom_views(end, start).is_some_and(|length| {
+            recorded_exact_order_path(
+                MachineOperandView::Legacy(&MachineTerm::constant(offset as u32)),
+                length.operand_view(),
+                true,
+            ) || assumptions.should_defer_non_exact_condition_reasoning()
+                && assumptions.difference_graph_proves_order_views(
+                    MachineOperandView::Legacy(&MachineTerm::constant(offset as u32)),
+                    length.operand_view(),
+                    true,
+                )
         })
     })
 }
@@ -10134,105 +10192,6 @@ pub(in crate::kernel) fn affine_range_element_count(
     (residue < (1i64 << 31)).then_some(residue)
 }
 
-/// Whether an affine constant difference between two element-index terms is
-/// their true difference in `i64`, and not merely that difference modulo
-/// `2^32`.
-///
-/// This is the premise every *positive* membership conclusion needs and no
-/// negative one does, and it is the whole difference between the two. Write
-/// `D = sext(index) - sext(start)` for the true difference and `r` for the
-/// residue the affine walk yields. Both terms are `int32`, so `D` lies in
-/// `(-2^32, 2^32)`, and `D ≡ r (mod 2^32)` pins it to `D ∈ {r, r - 2^32}`.
-///
-/// "Outside" needs no more: `r - 2^32` is negative, so below the start, and `r`
-/// above the count is past the end — outside under either reading, which is
-/// what [`affine_offset_from_start_is_outside`] uses. "Inside" needs `D = r`
-/// outright, because `D = r - 2^32` is *outside*. `i + 1` is one element above
-/// `i` only while the add does not wrap; at `i == i32::MAX` it is `2^32 - 1`
-/// elements below.
-///
-/// Three routes rule the wrapped reading out, and each is checked before any
-/// fact lookup.
-///
-/// * `r == 0`. Then `D` is `0` or `-2^32`, and `-2^32` is out of reach, so the
-///   two terms name the same element. This is the route that carries the
-///   ordinary shapes — a child range starting where its parent does, a pointer
-///   at a range's own start — with no context at all.
-/// * `r` in the upper half is refused. `D = r >= 2^31` would need the index
-///   `2^31` elements above the start, and a range that reaches that far fails
-///   its valid-extent guard, so a membership caller cannot want it; refusing
-///   costs nothing and keeps the argument below to the low half.
-/// * Otherwise `D = r - 2^32 <= -2^31 - 1`, which forces `sext(index) < 0` and
-///   `sext(start) > 0` together: with `sext(index) >= 0` the difference is at
-///   least `-sext(start) > -2^31`, and with `sext(start) <= 0` it is at least
-///   `sext(index) >= -2^31`. So *either* `0 <= index` *or* `start <= 0`
-///   excludes it. A constant endpoint settles its own side without consulting
-///   anything, which is why a range over `p[0..n]` and a constant index need no
-///   facts; otherwise the order comes from the same exact routes a stated
-///   extent guard is checked by.
-///
-/// Default-deny: a caller with no context gets the fact-free routes only.
-/// Whether an element-index term is known nonnegative, by exact routes only:
-/// its own constant value, or the same order routes a stated extent guard is
-/// checked by. This is the premise that keeps a 32-bit subtraction of two
-/// indices inside `int32`, which several conclusions below need and none may
-/// assume.
-pub(in crate::kernel) fn element_index_is_nonnegative(
-    term: &MachineTerm,
-    assumptions: Option<&PureFactContext>,
-) -> bool {
-    signed_bitvector_constant(term).is_some_and(|value| 0 <= value)
-        || assumptions.is_some_and(|assumptions| {
-            assumptions.proves_element_endpoint_order(&MachineTerm::constant(0), term)
-        })
-}
-
-fn affine_index_difference_is_exact(
-    index: &MachineTerm,
-    start: &MachineTerm,
-    difference: i64,
-    assumptions: Option<&PureFactContext>,
-) -> bool {
-    let residue = difference.rem_euclid(1i64 << 32);
-    if residue == 0 {
-        return true;
-    }
-    if residue >= (1i64 << 31) {
-        return false;
-    }
-    if element_index_is_nonnegative(index, assumptions) {
-        return true;
-    }
-    signed_bitvector_constant(start).is_some_and(|start| start <= 0)
-        || assumptions.is_some_and(|assumptions| {
-            assumptions.proves_element_endpoint_order(start, &MachineTerm::constant(0))
-        })
-}
-
-/// The true `i64` difference `sext(index) - sext(start)` of two element-index
-/// terms, when an affine constant difference determines it.
-///
-/// Two constants answer outright, difference and sign included. Otherwise the
-/// answer is the residue, and only once [`affine_index_difference_is_exact`]
-/// has ruled out the wrapped reading of it — so a symbolic answer is always in
-/// `0..2^31`, and a caller that needs a *negative* difference between symbolic
-/// terms gets `None` rather than a residue standing in for one.
-pub(in crate::kernel) fn exact_affine_index_difference(
-    index: &MachineTerm,
-    start: &MachineTerm,
-    assumptions: Option<&PureFactContext>,
-) -> Option<i64> {
-    if let (Some(index), Some(start)) = (
-        signed_bitvector_constant(index),
-        signed_bitvector_constant(start),
-    ) {
-        return Some(index - start);
-    }
-    let difference = affine_bitvector_difference_constant(index, start)?;
-    affine_index_difference_is_exact(index, start, difference, assumptions)
-        .then(|| difference.rem_euclid(1i64 << 32))
-}
-
 /// Whether a range's element count is a real count and not a residue standing
 /// for a negative span — `0 <= end - start`, the forward half of the one
 /// valid-byte-extent condition, which is all this needs and the width limit is
@@ -10292,30 +10251,32 @@ fn affine_offset_from_end_is_outside(difference: i64, count_bound: i64) -> bool 
     difference.rem_euclid(1i64 << 32) < (1i64 << 32) - count_bound
 }
 
-fn bitvector_index_outside_range_shallow(
-    index: &MachineTerm,
+fn bitvector_index_outside_range_shallow_view(
+    index: MachineOperandView<'_>,
     start: &MachineTerm,
     end: &MachineTerm,
     element_width: u32,
     assumptions: &PureFactContext,
 ) -> bool {
     if let (Some(index), Some(start), Some(end)) = (
-        signed_bitvector_constant(index),
+        signed_index_constant(index),
         signed_bitvector_constant(start),
         signed_bitvector_constant(end),
     ) {
         return index < start || end <= index;
     }
-    if assumptions.exact_condition_value(&ConditionTerm::signed_less_than(
-        index.clone(),
-        start.clone(),
+    if assumptions.selected_comparison_value(&index_comparison(
+        CompareRelation::LessThan,
+        index,
+        MachineOperandView::Legacy(start),
     )) == Some(true)
-        || assumptions.has_exact_order_path(index, start, true)
-        || assumptions.exact_condition_value(&ConditionTerm::signed_less_equal(
-            end.clone(),
-            index.clone(),
+        || assumptions.has_exact_order_path_views(index, MachineOperandView::Legacy(start), true)
+        || assumptions.selected_comparison_value(&index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(end),
+            index,
         )) == Some(true)
-        || assumptions.has_exact_order_path(end, index, false)
+        || assumptions.has_exact_order_path_views(MachineOperandView::Legacy(end), index, false)
     {
         return true;
     }
@@ -10328,9 +10289,9 @@ fn bitvector_index_outside_range_shallow(
     else {
         return false;
     };
-    affine_bitvector_difference_constant(index, start)
+    affine_bitvector_difference_constant_views(index, MachineOperandView::Legacy(start))
         .is_some_and(|offset| affine_offset_from_start_is_outside(offset, count_bound))
-        || affine_bitvector_difference_constant(index, end)
+        || affine_bitvector_difference_constant_views(index, MachineOperandView::Legacy(end))
             .is_some_and(|offset| affine_offset_from_end_is_outside(offset, count_bound))
 }
 
@@ -10344,7 +10305,7 @@ fn bitvector_index_outside_range_shallow(
 /// Each of the three pieces is read exactly:
 /// [`Pointer::exact_element_delta_from_base`] for `delta`, so a folded sum of
 /// byte offsets cannot pass off a residue as one;
-/// [`exact_affine_index_difference`] for the subtraction, which is where the
+/// [`exact_affine_index_difference_views`] for the subtraction, which is where the
 /// wrap that `p[i..i + 1]` hides at `i == i32::MAX` would be; and
 /// [`affine_range_element_count`] for the count.
 fn pointer_in_range_shallow(
@@ -10370,8 +10331,16 @@ fn pointer_in_range_shallow(
         && assumptions
             .established_range_element_count_bound(start, end, element_width)
             .is_some()
-        && let Some(lower) = assumptions.exact_direct_order_step(start, &delta.index, false)
-        && let Some(upper) = assumptions.exact_direct_order_step(&delta.index, end, true)
+        && let Some(lower) = assumptions.exact_direct_order_source_step(
+            MachineOperandView::Legacy(start),
+            delta.index.operand_view(),
+            false,
+        )
+        && let Some(upper) = assumptions.exact_direct_order_source_step(
+            delta.index.operand_view(),
+            MachineOperandView::Legacy(end),
+            true,
+        )
     {
         record_implicit_reasoning_provenance(assumptions, &lower.premise);
         record_implicit_reasoning_provenance(assumptions, &upper.premise);
@@ -10380,9 +10349,12 @@ fn pointer_in_range_shallow(
     let Some(count) = affine_range_element_count(start, end) else {
         return false;
     };
-    let Some(offset) = exact_affine_index_difference(&delta.index, start, assumptions)
-        .and_then(|difference| difference.checked_add(delta.constant))
-    else {
+    let Some(offset) = exact_affine_index_difference_views(
+        delta.index.operand_view(),
+        MachineOperandView::Legacy(start),
+        assumptions,
+    )
+    .and_then(|difference| difference.checked_add(delta.constant)) else {
         return false;
     };
     0 <= offset && offset < count
@@ -10414,22 +10386,6 @@ pub(in crate::kernel) fn affine_bitvector_single_atom(
     }
     let (atom, coefficient) = terms.into_iter().next()?;
     Some((atom, coefficient, constant))
-}
-
-fn affine_bitvector_difference_atom(
-    left: &MachineTerm,
-    right: &MachineTerm,
-) -> Option<MachineTerm> {
-    let mut terms = BTreeMap::new();
-    let mut constant = 0i64;
-    collect_affine_bitvector_terms(left, 1, &mut terms, &mut constant)?;
-    collect_affine_bitvector_terms(right, -1, &mut terms, &mut constant)?;
-    terms.retain(|_, coefficient| *coefficient != 0);
-    if constant != 0 || terms.len() != 1 {
-        return None;
-    }
-    let (term, coefficient) = terms.into_iter().next()?;
-    (coefficient == 1).then_some(term)
 }
 
 fn collect_affine_bitvector_terms(
@@ -14210,4 +14166,269 @@ mod pointer_index_walk_tests {
         use super::*;
         include!("../scaling_tests/kernel/assumptions/pointer_index_walks.rs");
     }
+}
+
+pub(in crate::kernel) fn signed_index_constant(view: MachineOperandView<'_>) -> Option<i64> {
+    view.word32_constant().map(|word| i64::from(word as i32))
+}
+
+pub(in crate::kernel) fn index_comparison(
+    relation: CompareRelation,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> ConditionTerm {
+    crate::kernel::machine_integer::comparison::condition_for_operand_views(
+        MachineIntegerType::Int32,
+        relation,
+        [left, right],
+    )
+}
+
+pub(in crate::kernel) fn index_binary(
+    op: MachineBinaryOp,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> SharedMachineIntegerTerm {
+    if let (Some(left), Some(right)) = (left.word32_constant(), right.word32_constant()) {
+        return SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            MachineTerm::machine_binary(
+                MachineIntegerType::Int32,
+                op,
+                MachineTerm::constant(left),
+                MachineTerm::constant(right),
+            ),
+        );
+    }
+    if op == MachineBinaryOp::Subtract
+        && let (MachineOperandView::Shared(a), MachineOperandView::Shared(b)) = (left, right)
+        && a == b
+    {
+        return SharedMachineIntegerTerm::intern(
+            MachineIntegerType::Int32,
+            MachineTerm::constant(0),
+        );
+    }
+    let root = crate::kernel::proof::term_rewrite::TermRewrite::machine_binary_reading(
+        MachineIntegerType::Int32,
+        op,
+        KernelTerm::retained_machine_operand(MachineIntegerType::Int32, left),
+        KernelTerm::retained_machine_operand(MachineIntegerType::Int32, right),
+    );
+    MachineOperandView::Shared(&root).retain(MachineIntegerType::Int32)
+}
+
+/// Walk each retained node once, then propagate coefficients in DAG order.
+/// Atom keys use the same fact-free canonical reading as the native affine walk.
+fn affine_index_terms_views(
+    inputs: &[(MachineOperandView<'_>, i64)],
+) -> Option<(BTreeMap<checked_scalar_facts::ScalarOperandKey, i64>, i64)> {
+    use MachineIntegerType::Int32;
+    let roots: Vec<_> = inputs.iter().map(|(v, c)| (v.retain(Int32), *c)).collect();
+    let mut pending: Vec<_> = roots.iter().map(|(v, _)| (v.clone(), false)).collect();
+    let mut seen = BTreeSet::new();
+    let mut order = Vec::new();
+    let mut edges = BTreeMap::new();
+    while let Some((term, finish)) = pending.pop() {
+        if finish {
+            order.push(term);
+            continue;
+        }
+        if !seen.insert(term.clone()) {
+            continue;
+        }
+        crate::instrumentation::record_deterministic_work(1);
+        let children = match term.operand_view().binary() {
+            Some((Int32, MachineBinaryOp::Add, [a, b])) => {
+                vec![(a.retain(Int32), 1), (b.retain(Int32), 1)]
+            }
+            Some((Int32, MachineBinaryOp::Subtract, [a, b])) => {
+                vec![(a.retain(Int32), 1), (b.retain(Int32), -1)]
+            }
+            Some((Int32, MachineBinaryOp::Multiply, [a, b])) => {
+                if let Some(c) = signed_index_constant(a) {
+                    vec![(b.retain(Int32), c)]
+                } else {
+                    vec![(a.retain(Int32), signed_index_constant(b)?)]
+                }
+            }
+            _ => vec![],
+        };
+        pending.push((term.clone(), true));
+        pending.extend(children.iter().map(|(child, _)| (child.clone(), false)));
+        edges.insert(term, children);
+    }
+    let mut coefficients = BTreeMap::<SharedMachineIntegerTerm, i64>::new();
+    for (root, coefficient) in roots {
+        let entry = coefficients.entry(root).or_default();
+        *entry = entry.checked_add(coefficient)?;
+    }
+    let mut atoms = BTreeMap::<checked_scalar_facts::ScalarOperandKey, i64>::new();
+    let mut constant = 0i64;
+    for term in order.into_iter().rev() {
+        let coefficient = coefficients.remove(&term).unwrap_or(0);
+        if coefficient == 0 {
+            continue;
+        }
+        let children = edges.remove(&term)?;
+        if !children.is_empty() {
+            for (child, scale) in children {
+                let entry = coefficients.entry(child).or_default();
+                *entry = entry.checked_add(coefficient.checked_mul(scale)?)?;
+            }
+        } else if let Some(value) = signed_index_constant(term.operand_view()) {
+            constant = constant.checked_add(coefficient.checked_mul(value)?)?;
+        } else {
+            let key = checked_scalar_facts::ScalarOperandKey::canonical(Int32, term.operand_view());
+            let entry = atoms.entry(key).or_default();
+            *entry = entry.checked_add(coefficient)?;
+        }
+    }
+    atoms.retain(|_, coefficient| *coefficient != 0);
+    Some((atoms, constant))
+}
+
+pub(in crate::kernel) fn affine_bitvector_difference_constant_views(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> Option<i64> {
+    // Fixed-size inputs need no DAG allocation or import. In particular,
+    // literal bounds are queried once per cached cell during a store.
+    if let (Some(left), Some(right)) = (signed_index_constant(left), signed_index_constant(right)) {
+        return Some(left - right);
+    }
+    match (left.variable(), right.variable()) {
+        (Some(left), Some(right)) => return (left == right).then_some(0),
+        (Some(_), None) if signed_index_constant(right).is_some() => return None,
+        (None, Some(_)) if signed_index_constant(left).is_some() => return None,
+        _ => {}
+    }
+    if let (MachineOperandView::Shared(left), MachineOperandView::Shared(right)) = (left, right)
+        && left == right
+    {
+        return Some(0);
+    }
+    let (atoms, constant) = affine_index_terms_views(&[(left, 1), (right, -1)])?;
+    atoms.is_empty().then_some(constant)
+}
+
+/// Whether an element-index term is known nonnegative, by exact routes only:
+/// its own constant value, or the same order routes a stated extent guard is
+/// checked by. This is the premise that keeps a 32-bit subtraction of two
+/// indices inside `int32`, which several conclusions below need and none may
+/// assume.
+pub(in crate::kernel) fn element_index_is_nonnegative_view(
+    term: MachineOperandView<'_>,
+    assumptions: Option<&PureFactContext>,
+) -> bool {
+    signed_index_constant(term).is_some_and(|value| value >= 0)
+        || assumptions.is_some_and(|a| {
+            a.proves_element_endpoint_order_views(
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                term,
+            )
+        })
+}
+
+/// Whether an affine constant difference between two element-index terms is
+/// their true difference in `i64`, and not merely that difference modulo
+/// `2^32`.
+///
+/// This is the premise every *positive* membership conclusion needs and no
+/// negative one does, and it is the whole difference between the two. Write
+/// `D = sext(index) - sext(start)` for the true difference and `r` for the
+/// residue the affine walk yields. Both terms are `int32`, so `D` lies in
+/// `(-2^32, 2^32)`, and `D ≡ r (mod 2^32)` pins it to `D ∈ {r, r - 2^32}`.
+///
+/// "Outside" needs no more: `r - 2^32` is negative, so below the start, and `r`
+/// above the count is past the end — outside under either reading, which is
+/// what [`affine_offset_from_start_is_outside`] uses. "Inside" needs `D = r`
+/// outright, because `D = r - 2^32` is *outside*. `i + 1` is one element above
+/// `i` only while the add does not wrap; at `i == i32::MAX` it is `2^32 - 1`
+/// elements below.
+///
+/// Three routes rule the wrapped reading out, and each is checked before any
+/// fact lookup.
+///
+/// * `r == 0`. Then `D` is `0` or `-2^32`, and `-2^32` is out of reach, so the
+///   two terms name the same element. This is the route that carries the
+///   ordinary shapes — a child range starting where its parent does, a pointer
+///   at a range's own start — with no context at all.
+/// * `r` in the upper half is refused. `D = r >= 2^31` would need the index
+///   `2^31` elements above the start, and a range that reaches that far fails
+///   its valid-extent guard, so a membership caller cannot want it; refusing
+///   costs nothing and keeps the argument below to the low half.
+/// * Otherwise `D = r - 2^32 <= -2^31 - 1`, which forces `sext(index) < 0` and
+///   `sext(start) > 0` together: with `sext(index) >= 0` the difference is at
+///   least `-sext(start) > -2^31`, and with `sext(start) <= 0` it is at least
+///   `sext(index) >= -2^31`. So *either* `0 <= index` *or* `start <= 0`
+///   excludes it. A constant endpoint settles its own side without consulting
+///   anything, which is why a range over `p[0..n]` and a constant index need no
+///   facts; otherwise the order comes from the same exact routes a stated
+///   extent guard is checked by.
+///
+/// Default-deny: a caller with no context gets the fact-free routes only.
+/// Two constant endpoints also determine a negative difference directly.
+pub(in crate::kernel) fn exact_affine_index_difference_views(
+    index: MachineOperandView<'_>,
+    start: MachineOperandView<'_>,
+    assumptions: Option<&PureFactContext>,
+) -> Option<i64> {
+    if let (Some(index), Some(start)) = (signed_index_constant(index), signed_index_constant(start))
+    {
+        return Some(index - start);
+    }
+    let residue = affine_bitvector_difference_constant_views(index, start)?.rem_euclid(1i64 << 32);
+    if residue == 0 {
+        return Some(0);
+    }
+    if residue >= 1i64 << 31 {
+        return None;
+    }
+    (element_index_is_nonnegative_view(index, assumptions)
+        || signed_index_constant(start).is_some_and(|s| s <= 0)
+        || assumptions.is_some_and(|a| {
+            a.proves_element_endpoint_order_views(
+                start,
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            )
+        }))
+    .then_some(residue)
+}
+
+fn held_index_add_nonoverflow(
+    a: &PureFactContext,
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> bool {
+    if let (Some(l), Some(r)) = (left.word32_constant(), right.word32_constant()) {
+        return !(l as i32).overflowing_add(r as i32).1;
+    }
+    let query = crate::kernel::machine_integer::definedness::OverflowQueryView::from_operands(
+        MachineIntegerType::Int32,
+        crate::kernel::machine_integer::Operation::Add,
+        [left, right],
+    )
+    .expect("int32 addition");
+    a.contains_known_overflow_query(&query, false)
+}
+
+fn affine_range_element_count_views(
+    start: MachineOperandView<'_>,
+    end: MachineOperandView<'_>,
+) -> Option<i64> {
+    let residue = affine_bitvector_difference_constant_views(end, start)?.rem_euclid(1i64 << 32);
+    (residue < (1i64 << 31)).then_some(residue)
+}
+
+fn affine_bitvector_difference_atom_views(
+    left: MachineOperandView<'_>,
+    right: MachineOperandView<'_>,
+) -> Option<SharedMachineIntegerTerm> {
+    let (atoms, constant) = affine_index_terms_views(&[(left, 1), (right, -1)])?;
+    if constant != 0 || atoms.len() != 1 {
+        return None;
+    }
+    let (atom, coefficient) = atoms.into_iter().next()?;
+    (coefficient == 1).then(|| atom.operand_view().retain(MachineIntegerType::Int32))
 }

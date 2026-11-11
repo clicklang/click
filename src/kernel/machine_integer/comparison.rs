@@ -113,9 +113,11 @@ pub(crate) fn condition_for_operand_views(
 ) -> ConditionTerm {
     use crate::kernel::{CompareRelation as R, MachineOperandView as V};
     let atoms = operands.map(|operand| match operand {
-        V::Shared(_) => operand
-            .literal()
-            .or_else(|| operand.variable().copied().map(MachineTerm::Variable)),
+        V::Shared(root) => root
+            .machine_constant_reading()
+            .map(|literal| literal.legacy_term())
+            .or_else(|| operand.variable().copied().map(MachineTerm::Variable))
+            .or_else(|| root.machine_read_leaf().cloned()),
         V::Legacy(_) => None,
     });
     let operands: [V<'_>; 2] = std::array::from_fn(|index| {

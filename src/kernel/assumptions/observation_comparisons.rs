@@ -798,9 +798,58 @@ mod scaling_tests {
 }
 
 impl PureFactContext {
-    /// Read the selected guard of a conditional rewrite, retaining its exact
+    /// Select a written int32 equality directly from retained endpoints.
+    /// No intermediate Integer proposition is built for a Boolean query.
+    pub(in crate::kernel) fn exact_int32_equality_value_views(
+        &self,
+        left: MachineOperandView<'_>,
+        right: MachineOperandView<'_>,
+    ) -> Option<bool> {
+        if let (MachineOperandView::Legacy(a), MachineOperandView::Legacy(b)) = (left, right) {
+            return self.exact_condition_value(&ConditionTerm::equal(a.clone(), b.clone()));
+        }
+        let mut operands = [left, right].map(|operand| {
+            if let Some(value) = operand.word32_constant() {
+                OperandKey::Constant(u128::from(value))
+            } else {
+                OperandKey::Term(ScalarOperandKey::new(operand))
+            }
+        });
+        if operands[1] < operands[0] {
+            operands.swap(0, 1);
+        }
+        for (truth, relation) in [(true, 0), (false, 1)] {
+            let key = Key::Comparison(MachineIntegerType::Int32, relation, operands.clone());
+            if let Some(source) = self
+                .observation_comparisons
+                .sources
+                .get(&key)
+                .or_else(|| {
+                    self.observation_comparisons
+                        .selected_native_equalities
+                        .get(&key)
+                })
+                .and_then(|sources| sources.iter().next())
+            {
+                record_implicit_reasoning_provenance(self, source);
+                return Some(truth);
+            }
+        }
+        None
+    }
+
+    /// Read a selected comparison (a rewrite guard or range check), retaining its exact
     /// supporting premise. General condition decision keeps its own lookup.
-    pub(in crate::kernel) fn rewrite_guard_value(&self, condition: &ConditionTerm) -> Option<bool> {
+    pub(in crate::kernel) fn selected_comparison_value(
+        &self,
+        condition: &ConditionTerm,
+    ) -> Option<bool> {
+        if let ConditionTerm::Constant(value) = condition {
+            return Some(*value);
+        }
+        if matches!(condition, ConditionTerm::Compare { .. }) {
+            return self.exact_condition_value(condition);
+        }
         for truth in [true, false] {
             if let Some(source) = self.selected_comparison_source(condition, truth) {
                 record_implicit_reasoning_provenance(self, source);
@@ -814,7 +863,7 @@ impl PureFactContext {
     /// admission. Shared order queries reuse the retained endpoint index;
     /// native equalities use their selected endpoint pairs. Neither enters
     /// the general observation source index. This is for an
-    /// explicitly selected rewrite guard, not general condition decision:
+    /// explicitly selected comparison, not general condition decision:
     /// exposing these aliases globally changes unrelated automatic search.
     pub(in crate::kernel) fn selected_comparison_source(
         &self,

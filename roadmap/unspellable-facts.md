@@ -334,13 +334,10 @@ simple steps pass on retained operands; the previous implicit closure exhausted
 its unchanged work budget after the comparison representation changed. The C
 program and claims are unchanged; no search fallback or budget increase was added.
 
-The native-output adapters remain live in memory resolution and range checks;
-they are **not** classified as completed checker migrations. Next migrate those
-consumers together with shallow scalar comparison/exact-constant queries, and
-migrate `ExactElementDelta`'s native index field. The Integer carrier scope call
-in `spec.rs` also remains. Keep legitimate native output boundaries explicit;
-do not replace a hidden export inside a checker with an explicit export merely
-to compile.
+At this checkpoint the native-output adapters remained live in memory resolution
+and range checks, together with shallow scalar comparison/exact-constant queries
+and `ExactElementDelta`'s native index field. The following increment migrates
+those routes. The Integer carrier scope call in `spec.rs` remains separate work.
 
 Validation: `scripts/check.sh --no-fail-fast` passed: 7,094 unit/API tests,
 58 example projects, and 5,130 mdtests, including the scaling regressions.
@@ -348,6 +345,46 @@ Focused coverage includes missing/withdrawn full-width bounds, low-word-only
 refusal, overflow refusal, and zero-export growing-DAG checks. The gate took
 10m08s and emitted its ten-minute-budget warning; no limits were increased.
 No nightly suite was run.
+
+**Memory-resolution and range-index increment:**
+`ExactElementDelta.index` and its single-index projection now retain shared int32
+operands; the separate exact `i64` constant and the refusal to combine two
+symbolic indices remain. Membership, exclusion, shifted-range coverage,
+byte-gap checks, and exact rebuild comparisons consume operand views. The
+literal-source index accepts retained input keys and preserves original premise
+order. Affine index comparison visits a shared DAG once, propagating coefficients
+without exporting or expanding repeated subexpressions.
+
+Resource coordinate keys, selected range evidence, pointer-formation bounds,
+and contract/loop range checks keep those operands. Range splitting retains
+shared intermediate endpoints through its checks and exports only when creating
+native `CMemoryRange` output bounds. Snapshot comparisons still enter the native
+memory machinery only through selected read leaves. The unused native byte-offset
+adapter and several obsolete checker wrappers are removed. Native pointer-index
+output APIs still serve native resource/value producers and Surface tools; this
+increment does not claim to remove every native carrier in the kernel.
+
+Shared scalar equality admission retains its own replayable graph input rather
+than reconstructing the equality through Integer observations. Read-equality
+deltas preserve those inputs too. Selected comparisons reuse original native
+bound sources; atomic read leaves enter their existing scalar comparison route.
+Empty bounds indexes return immediately, and pointer-distinctness queries share
+their existing resolution memo across the nested scalar checks.
+
+The negative branch-interface fixture now explicitly rewrites its established
+`k == 0` before combining the preserved-cell bounds. Its C, claims, and expected
+definedness rejection are unchanged; the original omitted proof reached its
+unchanged smart-search budget. No search fallback or limit increase was added.
+
+Validation after rebasing onto current master: `scripts/check.sh --no-fail-fast`
+passed: 7,109 unit/API tests, 58 example projects, and 5,146 mdtests. New tests cover exact-delta retention,
+missing and withdrawn bounds, large constants and wrap refusals, zero-export
+shared-DAG growth, and scalar-input replay with read-equality deltas. Existing
+scaling tests compare fresh verification sessions at each size, retaining their
+original limits. Focused fact-stability runs for the vector-prefix and negative
+branch-interface fixtures passed with zero report entries. The rebased gate took
+9m53s, within the ten-minute budget. No limits were increased and no nightly
+suite was run.
 
 #### Classified boundaries and retained coverage
 

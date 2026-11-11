@@ -434,7 +434,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
     if element_width == 0 {
         return None;
     }
-    let constant = |n: u32| S::index(T::Int32, MachineTerm::constant(n));
+    let constant = |n: u32| S::intern(T::Int32, MachineTerm::constant(n));
     let root = |v: &S| KernelTerm::retained_machine_operand(T::Int32, v.operand_view());
     match offset {
         PointerOffsetTerm::Add(a, b) => {
@@ -481,12 +481,6 @@ pub(in crate::kernel) fn shared_element_index_from_offset(
         }
         _ => None,
     }
-}
-
-pub(in crate::kernel) fn int32_element_index_from_offset(
-    offset: &PointerOffsetTerm,
-) -> Option<MachineTerm> {
-    element_index_from_offset(offset, 4)
 }
 
 /// [`element_index_from_offset`] for a caller holding facts, which is the one
@@ -627,7 +621,7 @@ pub(in crate::kernel) fn shared_element_index_from_offset_with_facts(
 pub(in crate::kernel) struct ExactElementDelta {
     /// The one symbolic element index in the delta, or `Constant(0)` when the
     /// delta is wholly constant. Its *signed* value is part of the delta.
-    pub(in crate::kernel) index: MachineTerm,
+    pub(in crate::kernel) index: SharedMachineIntegerTerm,
     /// The exact constant part, in elements. Not reduced to `i32`: a delta far
     /// outside `i32` is still an exact delta, and refusing it here would be a
     /// silent truncation.
@@ -638,7 +632,8 @@ impl ExactElementDelta {
     /// The delta of a wholly constant number of elements.
     fn constant(constant: i64) -> Self {
         Self {
-            index: MachineTerm::constant(0),
+            index: MachineOperandView::Legacy(&MachineTerm::constant(0))
+                .retain(MachineIntegerType::Int32),
             constant,
         }
     }
@@ -648,26 +643,27 @@ impl ExactElementDelta {
         Self::constant(0)
     }
 
-    /// This delta as one `MachineTerm` whose *signed* value is the delta,
+    /// This delta as one retained int32 term whose *signed* value is the delta,
     /// for a caller that states it as an ordinary index bound. `None` when the
     /// two parts cannot be joined without a modular add, which a symbolic index
     /// beside a nonzero constant cannot.
-    pub(in crate::kernel) fn as_index_term(&self) -> Option<MachineTerm> {
+    pub(in crate::kernel) fn as_index_term(&self) -> Option<SharedMachineIntegerTerm> {
         if self.constant == 0 {
             return Some(self.index.clone());
         }
         if !self.is_constant() {
             return None;
         }
-        i32::try_from(self.constant)
-            .ok()
-            .map(|constant| MachineTerm::constant(constant as u32))
+        i32::try_from(self.constant).ok().map(|constant| {
+            MachineOperandView::Legacy(&MachineTerm::constant(constant as u32))
+                .retain(MachineIntegerType::Int32)
+        })
     }
 
     /// Whether this delta names no symbolic index, so its `i64` value is the
     /// whole of it.
     pub(in crate::kernel) fn is_constant(&self) -> bool {
-        self.index == MachineTerm::constant(0)
+        self.index.operand_view().word32_constant() == Some(0)
     }
 
     /// The two deltas added, when at most one of them is symbolic. Two
@@ -691,7 +687,7 @@ impl ExactElementDelta {
     /// Two indices cancel only when their difference is the true one and not a
     /// residue — `4 * i + 3` is three elements above `i + i + i + i` only while
     /// the scaling does not wrap — so the cancellation goes through the same
-    /// [`crate::kernel::assumptions::exact_affine_index_difference`] every other
+    /// [`crate::kernel::assumptions::exact_affine_index_difference_views`] every other
     /// membership conclusion uses, and answers `None` without the premise it
     /// needs.
     pub(in crate::kernel) fn subtract(
@@ -706,9 +702,9 @@ impl ExactElementDelta {
                 constant,
             });
         }
-        if let Some(difference) = crate::kernel::assumptions::exact_affine_index_difference(
-            &self.index,
-            &other.index,
+        if let Some(difference) = crate::kernel::assumptions::exact_affine_index_difference_views(
+            self.index.operand_view(),
+            other.index.operand_view(),
             assumptions,
         ) {
             return difference.checked_add(constant).map(Self::constant);
@@ -719,10 +715,19 @@ impl ExactElementDelta {
         // subtraction is the subtraction. That is the premise a range restated
         // in another base's coordinates as `b - a` needs, and without it the
         // restated start and the real delta can sit `2^32` elements apart.
-        (crate::kernel::assumptions::element_index_is_nonnegative(&self.index, assumptions)
-            && crate::kernel::assumptions::element_index_is_nonnegative(&other.index, assumptions))
+        (crate::kernel::assumptions::element_index_is_nonnegative_view(
+            self.index.operand_view(),
+            assumptions,
+        ) && crate::kernel::assumptions::element_index_is_nonnegative_view(
+            other.index.operand_view(),
+            assumptions,
+        ))
         .then(|| Self {
-            index: MachineTerm::subtract(self.index, other.index),
+            index: crate::kernel::assumptions::index_binary(
+                MachineBinaryOp::Subtract,
+                self.index.operand_view(),
+                other.index.operand_view(),
+            ),
             constant,
         })
     }
@@ -746,7 +751,7 @@ pub(in crate::kernel) fn exact_element_delta_from_offset(
             if *byte_width == i64::from(element_width) =>
         {
             Some(ExactElementDelta {
-                index: value.as_ref().clone(),
+                index: value.clone(),
                 constant: 0,
             })
         }
@@ -793,18 +798,20 @@ pub(in crate::kernel) fn common_pointer_offset_element_width(
     }
 }
 
-pub(in crate::kernel) fn pointer_byte_offset_from_base(
+pub(in crate::kernel) fn shared_pointer_byte_offset_from_base(
     pointer: &Pointer,
     base: &Pointer,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
     if pointer.block != base.block {
         return None;
     }
     if pointer.offset == base.offset {
-        return Some(MachineTerm::constant(0));
+        return Some(
+            MachineOperandView::Legacy(&MachineTerm::constant(0)).retain(MachineIntegerType::Int32),
+        );
     }
     if base.offset == PointerOffsetTerm::Constant(0) {
-        return byte_offset_from_pointer_offset(&pointer.offset);
+        return shared_byte_offset_from_pointer_offset(&pointer.offset);
     }
 
     // Pointer arithmetic is represented as a binary tree. A field access
@@ -817,28 +824,31 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
     fn offset_from_nested_base(
         offset: &PointerOffsetTerm,
         base: &PointerOffsetTerm,
-    ) -> Option<MachineTerm> {
+    ) -> Option<SharedMachineIntegerTerm> {
         if offset == base {
-            return Some(MachineTerm::constant(0));
+            return Some(
+                MachineOperandView::Legacy(&MachineTerm::constant(0))
+                    .retain(MachineIntegerType::Int32),
+            );
         }
         let PointerOffsetTerm::Add(left, right) = offset else {
             return None;
         };
         if left.as_ref() == base {
-            return byte_offset_from_pointer_offset(right);
+            return shared_byte_offset_from_pointer_offset(right);
         }
         if right.as_ref() == base {
-            return byte_offset_from_pointer_offset(left);
+            return shared_byte_offset_from_pointer_offset(left);
         }
         if let Some(left_offset) = offset_from_nested_base(left, base) {
-            return Some(MachineTerm::add(
+            return Some(shared_offset_sum(
                 left_offset,
-                byte_offset_from_pointer_offset(right)?,
+                shared_byte_offset_from_pointer_offset(right)?,
             ));
         }
         if let Some(right_offset) = offset_from_nested_base(right, base) {
-            return Some(MachineTerm::add(
-                byte_offset_from_pointer_offset(left)?,
+            return Some(shared_offset_sum(
+                shared_byte_offset_from_pointer_offset(left)?,
                 right_offset,
             ));
         }
@@ -846,9 +856,13 @@ pub(in crate::kernel) fn pointer_byte_offset_from_base(
     }
 
     offset_from_nested_base(&pointer.offset, &base.offset).or_else(|| {
-        let pointer_offset = byte_offset_from_pointer_offset(&pointer.offset)?;
-        let base_offset = byte_offset_from_pointer_offset(&base.offset)?;
-        Some(MachineTerm::subtract(pointer_offset, base_offset))
+        let pointer_offset = shared_byte_offset_from_pointer_offset(&pointer.offset)?;
+        let base_offset = shared_byte_offset_from_pointer_offset(&base.offset)?;
+        Some(crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Subtract,
+            pointer_offset.operand_view(),
+            base_offset.operand_view(),
+        ))
     })
 }
 

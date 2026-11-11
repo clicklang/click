@@ -61,8 +61,6 @@
 
 #[cfg(test)]
 use crate::kernel::MachineTerm;
-use crate::kernel::binary_term;
-use crate::kernel::bits32_constant;
 use crate::kernel::{Pointer, PointerOffsetTerm, PureFactContext};
 
 /// The widest cell there is: no `CValue` is wider, and a cell holding
@@ -226,11 +224,17 @@ pub(in crate::kernel) fn anchor_is_normal(
 /// constant, and not a difference the constant could cancel), so the
 /// `subtract` rule for two sums with one base cancels `T`.
 fn anchor_byte_form_cancels(anchor: &PointerOffsetTerm) -> bool {
-    super::path_facts::byte_offset_from_pointer_offset(anchor).is_some_and(|form| {
-        !matches!(
-            form,
-            bits32_constant!(_) | binary_term!(Int32, Subtract, ..)
-        )
+    super::path_facts::shared_byte_offset_from_pointer_offset(anchor).is_some_and(|form| {
+        let view = form.operand_view();
+        view.word32_constant().is_none()
+            && !matches!(
+                view.binary(),
+                Some((
+                    crate::kernel::MachineIntegerType::Int32,
+                    crate::kernel::MachineBinaryOp::Subtract,
+                    _
+                ))
+            )
     })
 }
 

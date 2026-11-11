@@ -3005,12 +3005,12 @@ fn pointer_block_bounds(
     }
 
     let (offset, size) = if byte_width == 1 {
-        let Some(offset) = byte_offset_from_pointer_offset(&pointer.offset) else {
+        let Some(offset) = shared_byte_offset_from_pointer_offset(&pointer.offset) else {
             return Some(Vec::new());
         };
         (offset, block_size)
     } else {
-        let Some(offset) = element_index_from_offset(&pointer.offset, byte_width) else {
+        let Some(offset) = shared_element_index_from_offset(&pointer.offset, byte_width) else {
             return Some(Vec::new());
         };
         let Some(size) = element_count_from_bytes(&block_size, byte_width) else {
@@ -3021,14 +3021,19 @@ fn pointer_block_bounds(
 
     Some(vec![
         PointerFormationGuard {
-            condition: ConditionTerm::signed_greater_equal(
-                offset.clone(),
-                MachineTerm::constant(0),
+            condition: crate::kernel::assumptions::index_comparison(
+                CompareRelation::GreaterEqual,
+                offset.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
             ),
             value: true,
         },
         PointerFormationGuard {
-            condition: ConditionTerm::signed_less_equal(offset, size),
+            condition: crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessEqual,
+                offset.operand_view(),
+                MachineOperandView::Legacy(&size),
+            ),
             value: true,
         },
     ])
@@ -3125,15 +3130,24 @@ fn strided_block_bounds(
     }
     let count = element_count_from_bytes(block_size, u32::try_from(stride).ok()?)?;
     let upper = if field == 0 {
-        ConditionTerm::signed_less_equal(index.as_ref().clone(), count)
+        crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            index.operand_view(),
+            MachineOperandView::Legacy(&count),
+        )
     } else {
-        ConditionTerm::signed_less_than(index.as_ref().clone(), count)
+        crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            index.operand_view(),
+            MachineOperandView::Legacy(&count),
+        )
     };
     Some(vec![
         PointerFormationGuard {
-            condition: ConditionTerm::signed_greater_equal(
-                index.as_ref().clone(),
-                MachineTerm::constant(0),
+            condition: crate::kernel::assumptions::index_comparison(
+                CompareRelation::GreaterEqual,
+                index.operand_view(),
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
             ),
             value: true,
         },
@@ -3197,21 +3211,28 @@ impl HeldRangeSurvey {
         &mut self,
         assumptions: &PureFactContext,
         facts: &(impl ExecutionFactSource + ?Sized),
-        start: MachineTerm,
-        index: MachineTerm,
-        end: MachineTerm,
+        start: MachineOperandView<'_>,
+        index: MachineOperandView<'_>,
+        end: MachineOperandView<'_>,
         judge: bool,
         from_operand: bool,
         guard_source: bool,
         wide: bool,
     ) -> bool {
         // A wide range orders its unsigned 64-bit bounds and index.
-        let order = if wide {
-            ConditionTerm::uint64_less_equal
+        let format = if wide {
+            MachineIntegerType::UInt64
         } else {
-            ConditionTerm::signed_less_equal
+            MachineIntegerType::Int32
         };
-        let lower = order(start, index.clone());
+        let order = |left, right| {
+            crate::kernel::machine_integer::comparison::condition_for_operand_views(
+                format,
+                CompareRelation::LessEqual,
+                [left, right],
+            )
+        };
+        let lower = order(start, index);
         let upper = order(index, end);
         match (
             decide_with_facts(assumptions, facts, &lower),
@@ -3318,9 +3339,9 @@ fn held_range_membership(
                 if survey.consider(
                     assumptions,
                     facts,
-                    start.clone(),
-                    index,
-                    end.clone(),
+                    MachineOperandView::Legacy(start),
+                    MachineOperandView::Legacy(&index),
+                    MachineOperandView::Legacy(end),
                     range.base().object_base() == object,
                     range.base() == operand,
                     true,
@@ -3335,7 +3356,7 @@ fn held_range_membership(
             // to fit.
             let Some(index) =
                 pointer_index_from_base(pointer, range.base(), byte_width).or_else(|| {
-                    crate::kernel::reasoning::element_index_from_offset_with_facts(
+                    crate::kernel::reasoning::shared_element_index_from_offset_with_facts(
                         &pointer.offset_from_base(range.base())?,
                         byte_width,
                         assumptions,
@@ -3347,9 +3368,9 @@ fn held_range_membership(
             if survey.consider(
                 assumptions,
                 facts,
-                range.start().clone(),
-                index,
-                range.end().clone(),
+                MachineOperandView::Legacy(range.start()),
+                index.operand_view(),
+                MachineOperandView::Legacy(range.end()),
                 range.base().object_base() == object,
                 range.base() == operand,
                 true,
@@ -3377,15 +3398,15 @@ fn held_range_membership(
         ) {
             continue;
         }
-        let Some(offset) = pointer_byte_offset_from_base(pointer, base) else {
+        let Some(offset) = shared_pointer_byte_offset_from_base(pointer, base) else {
             continue;
         };
         if survey.consider(
             assumptions,
             facts,
-            MachineTerm::constant(0),
-            offset,
-            bytes.clone(),
+            MachineOperandView::Legacy(&MachineTerm::constant(0)),
+            offset.operand_view(),
+            MachineOperandView::Legacy(bytes),
             true,
             false,
             false,
@@ -3401,11 +3422,11 @@ fn pointer_index_from_base(
     pointer: &Pointer,
     base: &Pointer,
     byte_width: u32,
-) -> Option<MachineTerm> {
+) -> Option<SharedMachineIntegerTerm> {
     match byte_width {
         0 => None,
-        1 => pointer_byte_offset_from_base(pointer, base),
-        width => pointer.element_index_from_base_with_width(base, width),
+        1 => shared_pointer_byte_offset_from_base(pointer, base),
+        width => pointer.shared_element_index_from_base_with_width(base, width),
     }
 }
 
@@ -5411,16 +5432,26 @@ fn subobject_extent_guards(
     extent: &SubobjectExtent,
     bytes: u32,
 ) -> Option<Vec<PointerFormationGuard>> {
-    let offset = pointer_byte_offset_from_base(pointer, &extent.start)?;
+    let offset = shared_pointer_byte_offset_from_base(pointer, &extent.start)?;
     Some(vec![
         PointerFormationGuard {
-            condition: ConditionTerm::signed_less_equal(MachineTerm::constant(0), offset.clone()),
+            condition: crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessEqual,
+                MachineOperandView::Legacy(&MachineTerm::constant(0)),
+                offset.operand_view(),
+            ),
             value: true,
         },
         PointerFormationGuard {
-            condition: ConditionTerm::signed_less_equal(
-                MachineTerm::add(offset, MachineTerm::constant(bytes)),
-                extent.width.clone(),
+            condition: crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessEqual,
+                crate::kernel::assumptions::index_binary(
+                    MachineBinaryOp::Add,
+                    offset.operand_view(),
+                    MachineOperandView::Legacy(&MachineTerm::constant(bytes)),
+                )
+                .operand_view(),
+                MachineOperandView::Legacy(&extent.width),
             ),
             value: true,
         },

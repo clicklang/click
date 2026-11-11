@@ -1145,19 +1145,29 @@ fn candidate_memory_ranges_proven_separate(
         crate::instrumentation::record_deterministic_work(1);
         let Some(base_delta) = other
             .base()
-            .element_index_from_base_with_width(anchor.base(), anchor.element_width())
+            .shared_element_index_from_base_with_width(anchor.base(), anchor.element_width())
         else {
             return false;
         };
-        let other_start = MachineTerm::add(base_delta.clone(), other.start().clone());
-        let other_end = MachineTerm::add(base_delta, other.end().clone());
-        assumptions.decide(&ConditionTerm::signed_less_equal(
-            anchor.end().clone(),
-            other_start,
+        let other_start = crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Add,
+            base_delta.operand_view(),
+            MachineOperandView::Legacy(other.start()),
+        );
+        let other_end = crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Add,
+            base_delta.operand_view(),
+            MachineOperandView::Legacy(other.end()),
+        );
+        assumptions.decide(&crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&anchor.end()),
+            other_start.operand_view(),
         )) == Some(true)
-            || assumptions.decide(&ConditionTerm::signed_less_equal(
-                other_end,
-                anchor.start().clone(),
+            || assumptions.decide(&crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessEqual,
+                other_end.operand_view(),
+                MachineOperandView::Legacy(&anchor.start()),
             )) == Some(true)
     };
     separate_in_frame(left, right) || separate_in_frame(right, left)
@@ -7225,16 +7235,18 @@ fn storage_write_within_owned_elements(
     // constant computed exactly: a constant outside the int32 range is
     // decided by the range itself.
     let index_at_least = |bound: i64| match i32::try_from(bound) {
-        Ok(bound) => holds(ConditionTerm::signed_less_equal(
-            MachineTerm::constant(bound as u32),
-            index.clone(),
+        Ok(bound) => holds(crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessEqual,
+            MachineOperandView::Legacy(&MachineTerm::constant(bound as u32)),
+            index.operand_view(),
         )),
         Err(_) => bound < i64::from(i32::MIN),
     };
     let index_below = |bound: i64| match i32::try_from(bound) {
-        Ok(bound) => holds(ConditionTerm::signed_less_than(
-            index.clone(),
-            MachineTerm::constant(bound as u32),
+        Ok(bound) => holds(crate::kernel::assumptions::index_comparison(
+            CompareRelation::LessThan,
+            index.operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::constant(bound as u32)),
         )),
         Err(_) => bound > i64::from(i32::MAX),
     };
@@ -7246,9 +7258,10 @@ fn storage_write_within_owned_elements(
             .is_some_and(index_at_least),
         None => {
             delta.constant == 0
-                && holds(ConditionTerm::signed_less_equal(
-                    range.start().clone(),
-                    index.clone(),
+                && holds(crate::kernel::assumptions::index_comparison(
+                    CompareRelation::LessEqual,
+                    MachineOperandView::Legacy(range.start()),
+                    index.operand_view(),
                 ))
         }
     };
@@ -7261,19 +7274,32 @@ fn storage_write_within_owned_elements(
             .checked_sub(delta.constant)
             .and_then(|end| end.checked_sub(elements - 1))
             .is_some_and(index_below),
-        None if delta.constant == 0 && elements == 1 => holds(ConditionTerm::signed_less_than(
-            index.clone(),
-            range.end().clone(),
-        )),
+        None if delta.constant == 0 && elements == 1 => {
+            holds(crate::kernel::assumptions::index_comparison(
+                CompareRelation::LessThan,
+                index.operand_view(),
+                MachineOperandView::Legacy(range.end()),
+            ))
+        }
         None if delta.constant == 0 => {
             let last = MachineTerm::constant((elements - 1) as u32);
-            assumptions.decide(&ConditionTerm::signed_add_overflows(
-                index.clone(),
-                last.clone(),
-            )) == Some(false)
-                && holds(ConditionTerm::signed_less_than(
-                    MachineTerm::add(index.clone(), last),
-                    range.end().clone(),
+            assumptions.decide_overflow_query(
+                &crate::kernel::machine_integer::definedness::OverflowQueryView::from_operands(
+                    MachineIntegerType::Int32,
+                    crate::kernel::machine_integer::Operation::Add,
+                    [index.operand_view(), MachineOperandView::Legacy(&last)],
+                )
+                .expect("int32 addition"),
+            ) == Some(false)
+                && holds(crate::kernel::assumptions::index_comparison(
+                    CompareRelation::LessThan,
+                    crate::kernel::assumptions::index_binary(
+                        MachineBinaryOp::Add,
+                        index.operand_view(),
+                        MachineOperandView::Legacy(&last),
+                    )
+                    .operand_view(),
+                    MachineOperandView::Legacy(range.end()),
                 ))
         }
         None => false,

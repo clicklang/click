@@ -962,7 +962,7 @@ pub(super) struct MemoryFactCandidates {
 fn memory_candidate_coordinate(
     range: &CMemoryRange,
     bound: &MachineTerm,
-) -> Option<(Pointer, MachineTerm)> {
+) -> Option<(Pointer, SharedMachineIntegerTerm)> {
     let base = range.base().object_base();
     let delta = range
         .base()
@@ -970,9 +970,15 @@ fn memory_candidate_coordinate(
     let constant = i32::try_from(delta.constant).ok()? as u32;
     Some((
         base,
-        MachineTerm::add(
-            MachineTerm::add(delta.index, bound.clone()),
-            constant.into(),
+        crate::kernel::assumptions::index_binary(
+            MachineBinaryOp::Add,
+            crate::kernel::assumptions::index_binary(
+                MachineBinaryOp::Add,
+                delta.index.operand_view(),
+                MachineOperandView::Legacy(bound),
+            )
+            .operand_view(),
+            MachineOperandView::Legacy(&MachineTerm::constant(constant)),
         ),
     ))
 }
@@ -984,7 +990,7 @@ pub(super) struct MemoryFactEntries {
     range: CMemoryRange,
     owned: bool,
     assumptions: PureFactContext,
-    bound_coordinates: Option<(Pointer, MachineTerm)>,
+    bound_coordinates: Option<(Pointer, SharedMachineIntegerTerm)>,
 }
 impl MemoryFactEntries {
     /// Nominate one whole-range supplier. Fragment starts, fragment chains,
@@ -1178,7 +1184,7 @@ impl MemoryFactEntries {
             && let Some((bound_base, bound_start)) = &self.bound_coordinates
             // Shared literals (especially zero) have unrelated bound neighbors.
             // Constant queries use geometric indexes, never that neighborhood.
-            && crate::kernel::eval::canonical_term(bound_start).as_const().is_none()
+            && bound_start.operand_view().word32_constant().is_none()
         {
             // An indexed lower-bound premise names a possible residual start.
             // i < j selects the unique start at i+1; i+1 <= j names it directly.
@@ -1186,16 +1192,11 @@ impl MemoryFactEntries {
             // spellings or a block's holdings. Coverage still checks authority.
             streams.push(Box::new(
                 self.assumptions
-                    .signed_order_bound_views(crate::kernel::MachineOperandView::Legacy(
-                        bound_start,
-                    ))
+                    .signed_order_bound_views(bound_start.operand_view())
                     .filter_map(move |(endpoint, lower, strict, forward)| {
                         crate::instrumentation::record_deterministic_work(1);
                         if forward
-                            || !graph.are_int32_equal_views(
-                                endpoint,
-                                crate::kernel::MachineOperandView::Legacy(bound_start),
-                            )
+                            || !graph.are_int32_equal_views(endpoint, bound_start.operand_view())
                         {
                             return None;
                         }
@@ -1227,10 +1228,12 @@ impl MemoryFactEntries {
             // the range's own start and end pointers for a wide one.
             let (mut cursor, target) = match range.int32_bounds() {
                 Some((start, end)) => (
-                    memory_candidate_coordinate(range, start)
-                        .map(|(base, start)| base.offset_by_elements(start, range.element_width())),
-                    memory_candidate_coordinate(range, end)
-                        .map(|(base, end)| base.offset_by_elements(end, range.element_width())),
+                    memory_candidate_coordinate(range, start).map(|(base, start)| {
+                        base.offset_by_shared_elements(start, range.element_width())
+                    }),
+                    memory_candidate_coordinate(range, end).map(|(base, end)| {
+                        base.offset_by_shared_elements(end, range.element_width())
+                    }),
                 ),
                 None => (Some(range.start_pointer()), Some(range.end_pointer())),
             };
@@ -1282,7 +1285,9 @@ impl MemoryFactEntries {
                         )
                     } else {
                         memory_candidate_coordinate(available, available.end()).map(
-                            |(base, end)| base.offset_by_elements(end, available.element_width()),
+                            |(base, end)| {
+                                base.offset_by_shared_elements(end, available.element_width())
+                            },
                         )
                     };
                 }
