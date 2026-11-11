@@ -564,7 +564,7 @@ impl std::hash::Hash for SharedMachineIntegerTerm {
 thread_local! {
     // Reuse explicit boxed imports within one verification, but never make a
     // later verification's work depend on an earlier session's warm interner.
-    static MACHINE_OBSERVATION_IMPORTS: std::cell::RefCell<std::collections::HashMap<u64, SharedMachineIntegerTerm>> = Default::default();
+    static MACHINE_OBSERVATION_IMPORTS: std::cell::RefCell<crate::id_hash::U64Map<SharedMachineIntegerTerm>> = Default::default();
 }
 
 pub(super) fn clear_machine_observation_memo() {
@@ -898,7 +898,7 @@ impl MachineIntegerKey {
 #[derive(Default)]
 struct MachineIntegerInterner {
     next_id: u64,
-    values: HashMap<u64, Vec<(MachineIntegerKey, Weak<SharedMachineIntegerNode>)>>,
+    values: crate::id_hash::U64Map<Vec<(MachineIntegerKey, Weak<SharedMachineIntegerNode>)>>,
     cleanup_queue: VecDeque<(u64, usize)>,
 }
 
@@ -1611,7 +1611,7 @@ pub(crate) fn machine_value_reading(
 
 struct IntegerInterner {
     next_id: u64,
-    nodes: HashMap<u64, Vec<(IntegerShallowKey, Weak<SharedIntegerNode>)>>,
+    nodes: crate::id_hash::U64Map<Vec<(IntegerShallowKey, Weak<SharedIntegerNode>)>>,
     cleanup_queue: VecDeque<(u64, usize)>,
 }
 
@@ -1621,7 +1621,7 @@ fn integer_interner() -> &'static Mutex<IntegerInterner> {
     INTEGER_INTERNER.get_or_init(|| {
         Mutex::new(IntegerInterner {
             next_id: 0,
-            nodes: HashMap::new(),
+            nodes: Default::default(),
             cleanup_queue: VecDeque::new(),
         })
     })
