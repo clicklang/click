@@ -2196,7 +2196,7 @@ fn conditional_heap_free_is_checked_as_a_guarded_lifetime_join() {
         before: before.memory().clone(),
         after: freed.memory().clone(),
         allocation_base: allocation_base.clone(),
-        bytes: MachineTerm::constant(16),
+        bytes: crate::kernel::HeapExtent::int32(MachineTerm::constant(16)),
     });
     let mut freed_core = parent.clone();
     freed_core.state = freed.clone().into();

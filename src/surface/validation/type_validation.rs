@@ -3039,7 +3039,7 @@ pub(in crate::surface) fn click_types_compatible(actual: C0Type, expected: C0Typ
 /// [`click_argument_types_compatible`]: a character pointer is passed as
 /// `uint8` bytes, so `cstr_at(s, n)` takes a C `char *s`.
 /// A resource argument of the wrong type. The heap `allocation` extent
-/// says why a 64-bit size is refused, and which spelling is accepted.
+/// names the two byte-count formats it takes.
 fn resource_argument_type_message(
     name: &str,
     index: usize,
@@ -3047,26 +3047,32 @@ fn resource_argument_type_message(
     actual: C0Type,
     context: &str,
 ) -> String {
-    let mut message = format!(
+    if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
+        return format!(
+            "resource `{name}` argument {index} expects int32 or uint64, got {} in {context}: \
+             the byte count is a heap block's extent, a 32-bit `int32` or a 64-bit `uint64` \
+             (`size_t`) one; a signed 64-bit size is stated through its `size_t` conversion, \
+             such as `allocation(result, bytes as uint64)`",
+            describe_c0_type(actual)
+        );
+    }
+    format!(
         "resource `{name}` argument {index} expects {}, got {} in {context}",
         describe_c0_type(expected),
         describe_c0_type(actual)
-    );
-    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
-        && index == 1
-        && matches!(actual, C0Type::Int64(_) | C0Type::UInt64(_))
-    {
-        message.push_str(
-            ": the byte count is a heap block's extent, which Click models as a checked 32-bit \
-             value; it does not narrow a 64-bit size into it. Under a requirement that bounds \
-             the size, state the extent as its `as int32` conversion, such as \
-             `allocation(result, bytes as int32)`",
-        );
-    }
-    message
+    )
 }
 
+/// Argument 1 of `allocation` is the heap block's extent: declared `int32`,
+/// it also takes a 64-bit `uint64` (`size_t`) byte count, the extent of a
+/// block whose size is a symbolic `size_t` (`design/heap-extents.md`, D4).
 fn resource_types_compatible(name: &str, index: usize, actual: C0Type, expected: C0Type) -> bool {
+    if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+        && index == 1
+        && matches!(actual, C0Type::UInt64(_))
+    {
+        return true;
+    }
     if name == CResourceFact::ALLOCATION_RESOURCE_NAME
         && index == 0
         && expected == C0Type::Int32Pointer

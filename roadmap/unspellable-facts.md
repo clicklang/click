@@ -224,7 +224,7 @@ unchanged origins and intervening writes. Multi-size cold mismatch controls
 refuse without exporting or walking the shared arithmetic DAG. Existing
 read-evidence tests still recheck authority after syntax-cache reuse.
 
-#### Cleanup compiler audit — open
+#### Cleanup compiler audit — remaining conversions inventoried
 
 Temporarily removing `SharedMachineIntegerTerm`'s `Deref<Target = MachineTerm>`
 and `AsRef<MachineTerm>` implementations exposes implicit conversions that
@@ -386,6 +386,68 @@ branch-interface fixtures passed with zero report entries. The rebased gate took
 9m53s, within the ten-minute budget. No limits were increased and no nightly
 suite was run.
 
+#### Boundary audit after the memory/range increment
+
+Repeating the production-library compiler audit with both implicit
+`SharedMachineIntegerTerm` native traits disabled reports **178 diagnostics**
+(previous checkpoint: 194). The temporary change was restored byte-for-byte.
+This completes the inventory pass, **not** removal of every checker boundary.
+The remaining locations divide into these concrete groups:
+
+| Group | Remaining routes | Disposition |
+| --- | --- | --- |
+| Read/address checking | `memory_resolution` offset matching, exact-index materialization and selected read payloads; `memory_provenance` offset evidence and framed transport | Live checker migration; shared outer arithmetic does not eliminate native address children |
+| Wide indices and shallow pointer checks | `wide_element_index_of_access`, strided-region membership, offset transport/snapshot equivalence, `pointer_block_bounds`, fold-read summaries | Live checker/producer migration; retain width, signedness and exactness rules |
+| Pointer fact/rewrite payloads | `arithmetic_special`, `equality_rewrite`, `fact_keys`, `fact_reasoning`, pointer-offset substitution and execution facts | Mixed construction/checking boundaries; migrate expression children without changing pointer semantics |
+| Resource and snapshot construction | quantified cells, memory-base roots, initialized-byte spelling, havoc identity, memory-load range collection | Mixed producer/checker boundaries, not merely printing |
+| Native outputs and Surface tools | final `CValue`/`CMemoryRange` bounds, Surface synthesis/certificates, diagnostic renderers, planner segment indices | Explicit output or frontend/tool boundaries; remove only with their corresponding payload migration |
+
+`scalar_evidence_class` is still a native syntax-sorted alias enumeration API.
+Its callers include selected stored-value recovery, memory-base/root matching,
+C operand simplification and a test-only reference inconsistency scan. It is
+not a general shared arithmetic decision API, and must not be relabelled as
+printer-only. `single_scaled_index_equal_to_constant`, in contrast, now returns
+a retained index. `element_index_from_offset_with_facts` has only test callers;
+production uses the shared helper. The conservative `integer_carrier_in_integer`
+query already uses operand views and has no-export coverage; the distinct
+`integer_carrier_in_pointer_offset` query remains in the compiler inventory.
+
+The residual traits cannot yet be removed. Nested signed construction below
+is independently guarded by zero-export and growth tests: its arithmetic and
+obligations retain shared roots, with one final native value output at the
+existing evaluator boundary. This does not declare step 1 or the complete
+KernelTerm/SurfaceTerm split finished.
+
+#### Retained pointer-index checks
+
+Strided-region field checks pass operand views to their existing bound checker,
+including the range-evidence caller; they no longer construct a native index
+between selecting a stride and checking its bounds. Parameter partition roots,
+open-side classification, and pointer-offset Integer carrier scope checks inspect
+only the retained root. Pointer-offset transport uses the existing shared
+transport checker. Mixed signed-word/unsigned-wide offset equality observes its
+retained operands directly, and unsigned-wide index equality constructs a shared
+comparison.
+
+Fold-read offset summaries retain shared int32/int64 atoms and return a shared
+scaled index. Their membership/exclusion checks use the existing selected exact
+comparison source index, preserving strictness and missing-bound refusals. This
+removes the native index storage from the summary itself; native interval bounds
+remain input/output boundaries. Cold index DAGs at 16, 64 and 256 nodes have
+constant summary-query work and zero exports. Focused controls cover stated and
+missing bounds, both bounds of a strided field, and existing frame/refusal rules.
+
+This increment closes those named consumers, not wide access reconstruction,
+read-address payload normalization, snapshot-equivalence recursion, or the
+remaining native pointer rewrite/fact-key families. The implicit native traits
+remain until those callers migrate.
+
+Validation: all 39 focused tests passed, then `scripts/check.sh --no-fail-fast`
+exited 0 with 7,115 unit/API tests, 58 example projects and 5,149 mdtests. The
+gate took 9m29s, within budget. Existing fold-read transport fixtures passed
+before and after with zero fact-stability entries. No limits changed and no
+nightly suite ran.
+
 #### Classified boundaries and retained coverage
 
 - `variable_collection::visit_machine_carrier_leaves`, ordinary shared Integer
@@ -432,19 +494,38 @@ passed 1,404 scaling/focused tests and the full gate: 7,729 unit/API tests,
 58 example projects and 5,123 mdtests. The gate exited successfully in 10m48s
 with its existing ten-minute budget warning; no limits were changed.
 
-**Delivery order:** finish the live checker routes found by the cleanup audit,
-remove the implicit adapters, then proceed to producers. Keep
+**Delivery order:** finish the live checker routes found by the cleanup audit
+and remove the implicit adapters. Producer increments may proceed when their
+own shared construction/obligation paths have zero-export and growth controls;
+this does not close unrelated pointer/address checker routes. Keep
 one coherent PR open at a time. R1/R2 reuse the exact native-leaf boundary
 introduced for tagged addresses; no opaque term-family redesign was required.
 
 ### 2. Finish expression producers
 
-The concrete starting point is `kernel/spec/shared_machine/signed.rs`: it
-currently prepares one signed operation over available values and declines nested
-signed expressions. `shared_machine.rs` also retains deferred evaluator paths.
+`kernel/spec/shared_machine.rs` constructs complete same-format trees of signed
+and unsigned addition, subtraction and multiplication. One iterative selection
+pass rejects deferred/mixed trees before imports; one construction pass retains
+shared children and signed range obligations in left-to-right evaluation order.
+Literal folding remains evaluator-only. The single-operation signed module is
+removed. Available machine leaves use the existing retained-machine boundary,
+so opaque Boolean, pure-function and binder payloads preserve their observation
+identity beneath shared arithmetic. The general term importer is not a substitute
+for that machine boundary. The final `SpecExpressionPath` still requires one
+native `CValue` export.
 
-- [ ] Enable nested signed construction with shared obligation operands, after
-  step 1's checker boundary is closed.
+Validation: the final `scripts/check.sh --no-fail-fast` exited 0: 7,111 unit/API
+tests, 58 example projects and 5,146 mdtests passed. This includes cold nested
+production at 16, 64 and 256 operations, zero intermediate exports, obligation
+order, retained inner overflow, held-resource metadata, opaque machine leaves,
+and the unchanged Rust integer-language example. Signed-fixture fact-stability
+runs passed before and after with zero entries. The full gate took 13m41s,
+including a 3m45s rebuild, and emitted its ten-minute-budget warning. No existing
+limits were raised and no nightly suite ran.
+
+- [x] Enable nested signed construction with shared obligation operands. This
+  producer's zero-export contract is separate from the residual address/pointer
+  boundaries inventoried above.
 - [ ] Inventory the remaining deferred/partial operations and C/Rust execution
   producers in the existing evaluator, and migrate those still rebuilding
   shared expressions through legacy trees.

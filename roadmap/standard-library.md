@@ -19,8 +19,8 @@ own soundness argument and regressions.
 ## Status (2026-11-09)
 
 Done: delivery steps 1 to 4, the qualified-name steps of step 5 except
-generic width-free names, step 6, and the generic `permutation::count` of
-step 7; Integer-default specification arithmetic; machine-integer Stages 0
+generic width-free names, step 6, and the generic `permutation::count` and
+`size_t` `allocation` byte counts of step 7; Integer-default specification arithmetic; machine-integer Stages 0
 to 3, and Stage 4's front ends. The library's own proof check runs in the
 gate. Of the library's 153 theorems, 111 have checked proofs and 42 are
 kernel standard theorems.
@@ -32,8 +32,6 @@ Open:
   generic `T: intn` library mechanism; the kernel rules are stated once
   over a format and `src/surface/tests/width_uniformity.rs` guards width
   uniformity ([One machine-integer design](#one-machine-integer-design)).
-- `size_t` byte counts for `allocation`, after a 64-bit heap-block extent
-  in the kernel ([step 7](#delivery-order)).
 - Rust names for the lemmas a Rust proof applies
   ([below](#rust-names-for-the-surviving-lemmas)).
 - One convention for the language library models: where the C library,
@@ -100,7 +98,8 @@ inconsistencies:
   `permutation::permutation` stays over `int32[]`, a documented limit (step
   7 below).
 - `allocation(base: int32*, bytes: int32)` states its byte count as `int32`,
-  while `malloc` takes a `size_t`. Open (step 7 below).
+  while `malloc` takes a `size_t`. Done: the byte count also accepts a
+  `uint64` (step 7 below).
 - Names follow several patterns (`int32_less_equal_and_not_equal_implies_less_than`,
   `uint32_less_than_implies_reversed_greater_than`,
   `integer_positive_divisor_quotient_strict_lower`), with no documented rule.
@@ -300,17 +299,16 @@ Each step is a separate PR that leaves every example verifying:
      parameter ("quantifier type must be a concrete C, Integer, or
      algebraic type"). The library reference states the limit; a byte
      permutation is a file predicate over the generic count.
-   - Open: `size_t` sizes for `allocation`. Design and staged plan:
+   - Done: `size_t` sizes for `allocation`. Design:
      [`design/heap-extents.md`](../design/heap-extents.md) (a tagged
-     32/64-bit extent chosen by the size's C type; accepted 2026-11-10).
-     Kernel stages 1 and 2 are done: inside one C function, `malloc` of a
-     symbolic `size_t` size proved to fit `PTRDIFF_MAX` makes a 64-bit block
-     with a `uint64` token and a wide range, which `free` consumes
-     (`mdtests/a_bounded_size_t_element_count_allocates_a_64_bit_block.md`).
-     Still open: stage 3, `allocation`'s byte count as `uint64` in a sidecar
-     or contract (so a 64-bit block can cross a call), which closes this
-     item and its intended regression; stage 4, `calloc` and `realloc` of a
-     64-bit size.
+     32/64-bit extent chosen by the size's C type; accepted 2026-11-10),
+     stages 1 to 3. `malloc` of a symbolic `size_t` size proved to fit
+     `PTRDIFF_MAX` makes a 64-bit block with a `uint64` token and a wide
+     range, and a sidecar states that token with a `uint64` byte count, so
+     the block crosses calls
+     (`mdtests/an_extern_allocator_states_a_size_t_extent.md`,
+     `mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`). `calloc` and
+     `realloc` of a 64-bit size are the design's stage 4, outside this item.
    - Done, by decision (maintainer, 2026-11-09): the width-lemma
      families are not restated over a format. The width-uniformity fixture
      checks each family at every format; its gaps stay open
@@ -623,7 +621,9 @@ an unsigned-only law at a signed one, where each is false.
   sibling (positive), `stdlib_permutation_count_rejects_mixed_element_types.md`
   (negative), and the nightly `_over_bytes_rejects_overwrite` refusal.
 - An `allocation` client whose byte count comes from a `size_t` expression,
-  with no narrowing to `int32`. Open, with the 64-bit heap extent.
+  with no narrowing to `int32`. Done:
+  `mdtests/a_callee_frees_a_64_bit_block_it_consumes.md` and
+  `mdtests/an_extern_allocator_states_a_size_t_extent.md`.
 - `mdtests/stdlib_every_symbol.md` and `docs/reference/inventory.toml` stay
   complete across the reorganization. The documentation gate already
   enforces this.

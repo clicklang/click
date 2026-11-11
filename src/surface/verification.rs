@@ -5857,8 +5857,9 @@ pub(in crate::surface) fn build_function_environment(
             })
             .ok_or_else(|| {
                 ClickError::new(format!(
-                    "named contract `{}` cannot be applied opaquely",
-                    definition.name()
+                    "named contract `{}` cannot be applied opaquely{}",
+                    definition.name(),
+                    crate::surface::lowering::opaque_contract_refusal_suffix(definition.name())
                 ))
             })?;
         let proof_parameters = definition
@@ -6138,8 +6139,11 @@ pub(in crate::surface) fn build_function_environment(
         let mut rule =
             crate::kernel::c_external_function_rule(function.clone()).ok_or_else(|| {
                 ClickError::new(format!(
-                    "external function `{}` has a contract that cannot be applied opaquely",
-                    function_block.signature().name()
+                    "external function `{}` has a contract that cannot be applied opaquely{}",
+                    function_block.signature().name(),
+                    crate::surface::lowering::opaque_contract_refusal_suffix(
+                        function_block.signature().name()
+                    )
                 ))
             })?;
         // A crate trait method's interface is also the named contract its
@@ -6147,7 +6151,10 @@ pub(in crate::surface) fn build_function_environment(
         if interfaces.contains(name) {
             let contract = CFunctionContract::new(name, function.clone()).ok_or_else(|| {
                 ClickError::new(format!(
-                    "trait method interface `{name}` has a contract that cannot be applied opaquely"
+                    "trait method interface `{name}` has a contract that cannot be applied opaquely{}",
+                    crate::surface::lowering::opaque_contract_refusal_suffix(
+                        function_block.signature().name()
+                    )
                 ))
             })?;
             environment = environment.with_function_contract(contract);

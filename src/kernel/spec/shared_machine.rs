@@ -1,8 +1,7 @@
 //! Shared arithmetic producers, with definedness kept outside the term.
-//! Deferred operands and nested signed operations retain their old evaluator.
+//! Complete same-format arithmetic trees retain their operands in obligations.
+//! Deferred and mixed-format operands retain their existing evaluator.
 use super::*;
-
-mod signed;
 
 pub(super) struct PreparedExpression {
     pub(super) value: KernelTerm,
@@ -13,21 +12,6 @@ pub(super) fn prepare(
     expression: &SpecExpression,
     budget: &mut SpecEvaluation<'_>,
 ) -> ExecutionResult<Option<PreparedExpression>> {
-    if let Some(prepared) = signed::prepare(expression, budget)? {
-        return Ok(Some(prepared));
-    }
-    Ok(
-        prepare_unsigned(expression, budget)?.map(|value| PreparedExpression {
-            value,
-            obligations: Vec::new(),
-        }),
-    )
-}
-
-fn prepare_unsigned(
-    expression: &SpecExpression,
-    budget: &mut SpecEvaluation<'_>,
-) -> ExecutionResult<Option<KernelTerm>> {
     enum Step<'a> {
         Enter(&'a SpecExpression),
         Binary(MachineBinaryOp),
@@ -49,6 +33,14 @@ fn prepare_unsigned(
                     return Err(ExecutionLimit::Deadline);
                 }
                 match expression {
+                    SpecExpression::Value(CValue::Int32(value)) => {
+                        formats.push(MachineIntegerType::Int32);
+                        prepared.push(Prepared::Value(MachineIntegerType::Int32, value));
+                    }
+                    SpecExpression::Value(CValue::Int64(value)) => {
+                        formats.push(MachineIntegerType::Int64);
+                        prepared.push(Prepared::Value(MachineIntegerType::Int64, value));
+                    }
                     SpecExpression::Value(CValue::UInt32(value)) => {
                         formats.push(MachineIntegerType::UInt32);
                         prepared.push(Prepared::Value(MachineIntegerType::UInt32, value));
@@ -84,6 +76,7 @@ fn prepare_unsigned(
         }
     }
     let mut values = Vec::new();
+    let mut obligations = Vec::new();
     let mut importer = KernelTermImport::default();
     for step in prepared {
         budget.consume_expression_step()?;
@@ -91,46 +84,67 @@ fn prepare_unsigned(
             Prepared::Value(format, value) => {
                 // Match the existing 32-bit word convention at the input
                 // boundary; subsequent operations retain shared children.
-                let value = if format == MachineIntegerType::UInt32 {
-                    CValue::UInt32(MachineTerm::operand32(format, value.clone()))
+                let value = if format.format().bits() == 32 {
+                    MachineTerm::operand32(format, value.clone())
                 } else {
-                    CValue::UInt64(value.clone())
+                    value.clone()
                 };
-                values.push(importer.argument(&PureFunctionArgument::Value(value)));
+                // Use the machine-observation boundary, not the general term
+                // importer: available bool/pure/binder payloads must retain
+                // their native observation identity beneath shared arithmetic.
+                values.push(KernelTerm::retained_native_machine_operand(format, &value));
             }
             Prepared::Binary(format, op) => {
                 let right = values.pop().unwrap();
                 let left = values.pop().unwrap();
+                if matches!(
+                    format,
+                    MachineIntegerType::Int32 | MachineIntegerType::Int64
+                ) && let Some(domain) =
+                    Proposition::arithmetic_domain([Proposition::signed_arithmetic_domain_views(
+                        format,
+                        op,
+                        MachineOperandView::Shared(&left),
+                        MachineOperandView::Shared(&right),
+                    )])
+                {
+                    obligations.push(
+                        ProofObligation::evaluation_domain(domain)
+                            .with_context("arithmetic expression is defined"),
+                    );
+                }
                 // Preserve the existing evaluator's literal-only folding.
                 // Shared node construction itself is always structural.
-                let term = if matches!(left.node(), KernelTermNode::MachineLiteral(_))
-                    && matches!(right.node(), KernelTermNode::MachineLiteral(_))
-                {
-                    let mut export = KernelTermExport::default();
-                    let bits = |value| match value {
-                        PureFunctionArgument::Value(
-                            CValue::UInt32(bits) | CValue::UInt64(bits),
-                        ) => bits,
-                        _ => unreachable!(),
-                    };
-                    let a = bits(export.argument(&left).map_err(|_| ExecutionLimit::Paths)?);
-                    let b = bits(export.argument(&right).map_err(|_| ExecutionLimit::Paths)?);
-                    let value = MachineTerm::logical_machine_binary(format, op, a, b);
-                    let value = if format == MachineIntegerType::UInt32 {
-                        CValue::UInt32(value)
+                let term =
+                    if let (KernelTermNode::MachineLiteral(a), KernelTermNode::MachineLiteral(b)) =
+                        (left.node(), right.node())
+                    {
+                        let a = a.legacy_term();
+                        let b = b.legacy_term();
+                        let value = MachineTerm::logical_machine_binary(format, op, a, b);
+                        let value = wrap(format, value);
+                        importer.argument(&PureFunctionArgument::Value(value))
                     } else {
-                        CValue::UInt64(value)
+                        KernelTerm::arithmetic_binary(format, op, [left, right])
+                            .map_err(|_| ExecutionLimit::Paths)?
                     };
-                    importer.argument(&PureFunctionArgument::Value(value))
-                } else {
-                    KernelTerm::arithmetic_binary(format, op, [left, right])
-                        .map_err(|_| ExecutionLimit::Paths)?
-                };
                 values.push(term);
             }
         }
     }
-    Ok(values.pop())
+    Ok(values
+        .pop()
+        .map(|value| PreparedExpression { value, obligations }))
+}
+
+fn wrap(format: MachineIntegerType, value: MachineTerm) -> CValue {
+    match format {
+        MachineIntegerType::Int32 => CValue::Int32(value),
+        MachineIntegerType::Int64 => CValue::Int64(value),
+        MachineIntegerType::UInt32 => CValue::UInt32(value),
+        MachineIntegerType::UInt64 => CValue::UInt64(value),
+        _ => unreachable!("prepared arithmetic format"),
+    }
 }
 
 #[cfg(test)]
@@ -223,6 +237,135 @@ mod tests {
                         assert_eq!(paths[0].obligations.len(), 1);
                     }
                 }
+            }
+        }
+    }
+
+    #[test]
+    fn nested_signed_operations_preserve_obligations_in_evaluation_order() {
+        for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+            let leaf = |n| {
+                Box::new(SpecExpression::Value(wrap(
+                    format,
+                    MachineTerm::Variable(Variable(n)),
+                )))
+            };
+            for expression in [
+                SpecExpression::Multiply(
+                    Box::new(SpecExpression::Add(leaf(990010), leaf(990011))),
+                    Box::new(SpecExpression::Subtract(leaf(990012), leaf(990013))),
+                ),
+                SpecExpression::Subtract(
+                    leaf(990010),
+                    Box::new(SpecExpression::Multiply(leaf(990011), leaf(990012))),
+                ),
+            ] {
+                assert_eq!(evaluate(&expression, false), evaluate(&expression, true));
+            }
+            let maximum = if format == MachineIntegerType::Int32 {
+                MachineTerm::constant(i32::MAX as u32)
+            } else {
+                MachineTerm::int64_constant(i64::MAX)
+            };
+            let one = if format == MachineIntegerType::Int32 {
+                MachineTerm::constant(1)
+            } else {
+                MachineTerm::int64_constant(1)
+            };
+            let zero = if format == MachineIntegerType::Int32 {
+                MachineTerm::constant(0)
+            } else {
+                MachineTerm::int64_constant(0)
+            };
+            let expression = SpecExpression::Multiply(
+                Box::new(SpecExpression::Add(
+                    Box::new(SpecExpression::Value(wrap(format, maximum))),
+                    Box::new(SpecExpression::Value(wrap(format, one))),
+                )),
+                Box::new(SpecExpression::Value(wrap(format, zero))),
+            );
+            let paths = evaluate(&expression, false);
+            assert_eq!(paths, evaluate(&expression, true));
+            assert!(
+                !paths[0].obligations.is_empty(),
+                "zero result must retain inner overflow debt"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_signed_arithmetic_retains_opaque_machine_leaves() {
+        // The old evaluator observes a whole native composite; the shared
+        // producer observes a DAG containing retained opaque leaves. Compare
+        // their exact arithmetic payloads, not those different bridge IDs.
+        fn same_integer(left: &IntegerTerm, right: &IntegerTerm) {
+            match (left, right) {
+                (IntegerTerm::Machine(a), IntegerTerm::Machine(b)) => {
+                    assert_eq!(a.ty(), b.ty());
+                    assert_eq!(a.structural_value(), b.structural_value());
+                }
+                (IntegerTerm::Add(a, b), IntegerTerm::Add(c, d))
+                | (IntegerTerm::Multiply(a, b), IntegerTerm::Multiply(c, d)) => {
+                    same_integer(a, c);
+                    same_integer(b, d);
+                }
+                _ => assert_eq!(left, right),
+            }
+        }
+        fn same_domain(left: &Proposition, right: &Proposition) {
+            match (left, right) {
+                (Proposition::And(a, b), Proposition::And(c, d)) => {
+                    same_domain(a, c);
+                    same_domain(b, d);
+                }
+                (Proposition::ConditionIs(a, av), Proposition::ConditionIs(b, bv)) => {
+                    assert_eq!(av, bv);
+                    match (a, b) {
+                        (
+                            ConditionTerm::IntegerLessEqual(a, b),
+                            ConditionTerm::IntegerLessEqual(c, d),
+                        )
+                        | (
+                            ConditionTerm::IntegerGreaterEqual(a, b),
+                            ConditionTerm::IntegerGreaterEqual(c, d),
+                        ) => {
+                            same_integer(a, c);
+                            same_integer(b, d);
+                        }
+                        _ => assert_eq!(a, b),
+                    }
+                }
+                _ => assert_eq!(left, right),
+            }
+        }
+        for format in [MachineIntegerType::Int32, MachineIntegerType::Int64] {
+            let opaque = MachineTerm::BoolCast {
+                to: format,
+                value: Box::new(ConditionTerm::signed_less_than(
+                    MachineTerm::Variable(Variable(990020)),
+                    MachineTerm::constant(0),
+                )),
+            };
+            let leaf = || Box::new(SpecExpression::Value(wrap(format, opaque.clone())));
+            let expression =
+                SpecExpression::Multiply(Box::new(SpecExpression::Add(leaf(), leaf())), leaf());
+            let exports = KernelTermExport::machine_export_count();
+            let mut execution = ExecutionBudget::new();
+            let prepared = prepare(&expression, &mut SpecEvaluation::logical(&mut execution))
+                .unwrap()
+                .unwrap();
+            assert_eq!(prepared.obligations.len(), 2);
+            assert_eq!(KernelTermExport::machine_export_count(), exports);
+            let shared = evaluate(&expression, false);
+            let legacy = evaluate(&expression, true);
+            assert_eq!(shared.len(), legacy.len());
+            assert_eq!(shared[0].value, legacy[0].value);
+            assert_eq!(shared[0].facts, legacy[0].facts);
+            assert_eq!(shared[0].obligations.len(), legacy[0].obligations.len());
+            for (a, b) in shared[0].obligations.iter().zip(&legacy[0].obligations) {
+                same_domain(a.proposition(), b.proposition());
+                assert_eq!(a.evaluation_domain, b.evaluation_domain);
+                assert_eq!(a.assumable, b.assumable);
             }
         }
     }

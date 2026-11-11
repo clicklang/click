@@ -1357,7 +1357,7 @@ fn walk_proposition<S: VariableSubstitution + ?Sized>(
             before: s.memory(before),
             after: s.memory(after),
             allocation_base: s.pointer(allocation_base),
-            bytes: s.bitvector(bytes),
+            bytes: bytes.map_bytes(|bytes| s.bitvector(bytes)),
         },
         Proposition::And(left, right) => Proposition::And(
             Box::new(walk_proposition(left, s)),
@@ -2425,7 +2425,7 @@ fn collect_proposition_bound_variables_one(
             collect_memory_bound_variables(before, variables);
             collect_memory_bound_variables(after, variables);
             collect_pointer_bound_variables(allocation_base, variables);
-            collect_bitvector_bound_variables(bytes, variables);
+            collect_bitvector_bound_variables(bytes.bytes(), variables);
         }
         Proposition::And(left, right)
         | Proposition::Or(left, right)

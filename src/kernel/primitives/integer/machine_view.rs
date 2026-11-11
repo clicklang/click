@@ -10,9 +10,9 @@ use crate::kernel::{constant_i64, int64_constant};
 // resolved by each collector against its current registry, never cached here.
 thread_local! {
     static SHARED_MACHINE_READ_USES: std::cell::RefCell<HashMap<(u64, Option<u32>), crate::persistent::PersistentMap<(u64, Option<u32>), KernelTerm>>> = Default::default();
-    static SHARED_MACHINE_READS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
-    static SHARED_MACHINE_CONVERSIONS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
-    static SHARED_MACHINE_CARRIERS: std::cell::RefCell<HashMap<u64, crate::persistent::PersistentSet<Variable>>> = Default::default();
+    static SHARED_MACHINE_READS: std::cell::RefCell<crate::id_hash::U64Map<crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
+    static SHARED_MACHINE_CONVERSIONS: std::cell::RefCell<crate::id_hash::U64Map<crate::persistent::PersistentMap<u64, KernelTerm>>> = Default::default();
+    static SHARED_MACHINE_CARRIERS: std::cell::RefCell<crate::id_hash::U64Map<crate::persistent::PersistentSet<Variable>>> = Default::default();
 }
 
 pub(crate) fn clear_shared_machine_variable_cache() {
@@ -136,7 +136,7 @@ pub(crate) fn shared_machine_read_leaves(
 }
 
 type SharedLeafCache =
-    std::cell::RefCell<HashMap<u64, crate::persistent::PersistentMap<u64, KernelTerm>>>;
+    std::cell::RefCell<crate::id_hash::U64Map<crate::persistent::PersistentMap<u64, KernelTerm>>>;
 fn shared_machine_selected_leaves(
     root: &KernelTerm,
     cache: &'static std::thread::LocalKey<SharedLeafCache>,

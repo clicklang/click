@@ -4482,7 +4482,13 @@ impl PureFactContext {
                     value: right,
                     byte_width: right_width,
                 },
-            ) => left_width == right_width && self.bitvector_terms_equal_for_transport(left, right),
+            ) => {
+                left_width == right_width
+                    && self.bitvector_terms_equal_for_transport_views(
+                        left.operand_view(),
+                        right.operand_view(),
+                    )
+            }
             (PointerOffsetTerm::Add(left_a, left_b), PointerOffsetTerm::Add(right_a, right_b)) => {
                 self.pointer_offset_terms_equal_for_transport(left_a, right_a)
                     && self.pointer_offset_terms_equal_for_transport(left_b, right_b)

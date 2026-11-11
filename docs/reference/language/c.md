@@ -2151,12 +2151,33 @@ uses the returned pointer's logical element width. The declaration therefore
 also works for any modeled data pointer, pointer-to-pointer, or supported
 struct pointer result when the byte extent and owned range match that type.
 This is a contract for a compatible allocator boundary, not a general
-`void*`/`size_t` allocator interface. The `allocation` byte count is that
-32-bit extent, so a `size_t bytes` parameter is refused there, with the
-reason; state the extent as `bytes as int32` under a requirement that bounds
-`bytes`
-(`mdtests/an_extern_allocator_with_a_64_bit_extent_names_the_32_bit_heap_extent.md`,
-`mdtests/an_extern_allocator_states_a_bounded_64_bit_extent_as_int32.md`).
+`void*` allocator interface. The `allocation` byte count is the block's
+extent, an `int32` or a `uint64`. An allocator that takes a `size_t` states
+its block's 64-bit extent with that count, and owns the block with 64-bit
+indices:
+
+<!-- verified-example: mdtests/an_extern_allocator_states_a_size_t_extent.md -->
+```click
+extern uint8_t* external_alloc(size_t bytes) {
+    requires 0u64 < bytes;
+    ensures result != 0;
+    produces allocation(result, bytes);
+    produces result[0..bytes];
+}
+```
+
+A caller assuming the returned token must have facts that make it fit a heap
+block, here `1 <= n <= PTRDIFF_MAX` for its argument `n`, and for
+`allocation(result, n * 4u64)` `1 <= n <= PTRDIFF_MAX / 4`; otherwise the
+call is refused
+(`mdtests/an_extern_size_t_extent_whose_product_may_wrap_is_refused.md`;
+[Heap allocation](#heap-allocation) has the rule). The form
+`allocation(result, bytes as int32)` under a requirement that bounds `bytes`
+stays legal and states a 32-bit block
+(`mdtests/an_extern_allocator_states_a_bounded_64_bit_extent_as_int32.md`).
+A signed 64-bit (`long`) count is refused; it is stated through its
+`size_t` conversion
+(`mdtests/a_signed_64_bit_allocation_byte_count_is_refused.md`).
 
 ## Undefined behavior
 
@@ -2696,9 +2717,45 @@ an interior free, and a use after free are refused as for any block.
 64-bit block are not supported yet and are refused with the same message
 (`mdtests/a_symbolic_size_t_calloc_count_is_refused.md`,
 `mdtests/a_realloc_of_a_64_bit_block_is_refused.md`); `realloc(NULL, n)` is
-`malloc(n)`. A sidecar `allocation` byte count is still `int32`, so a 64-bit
-block cannot yet be returned to a caller or passed to a callee that frees
-it: it must be freed in the function that allocates it.
+`malloc(n)`.
+
+A sidecar states a 64-bit block's token with a `uint64` byte count:
+`allocation(p, n * 4u64)` for `malloc(n * sizeof(uint32_t))` with a `size_t`
+`n`, or `allocation(p, bytes)` for `malloc(bytes)`. So a 64-bit block crosses
+calls like any other: a function returns it inside a resource
+(`mdtests/a_function_returns_a_bounded_64_bit_malloc_block.md`), a callee that
+`consumes` it frees it
+(`mdtests/a_callee_frees_a_64_bit_block_it_consumes.md`,
+`mdtests/a_store_after_a_callee_frees_a_64_bit_block_is_refused.md`), and a
+callee that `owns` it gives it back
+(`mdtests/a_callee_keeps_a_64_bit_block_its_caller_frees.md`). A `uint64`
+byte count is a 64-bit extent only under the decision `malloc` makes: at
+least 1 and at most `PTRDIFF_MAX`, and for a product with a constant `k`,
+`1 <= n <= PTRDIFF_MAX / k`, because the heap reads `n * k` bytes back as `n`
+elements and a `size_t` product may wrap; a product of two symbolic counts
+is refused. The facts decide it wherever a token is formed: at a call that
+requires one, at a function's exit that produces one, and where a caller
+assumes one an opaque or `extern` call returns
+(`mdtests/a_call_naming_a_64_bit_extent_with_an_unbounded_count_is_refused.md`).
+A contract's own entry clause, and the body of a held resource, are assumed
+instead: every caller, or the fold, decided them
+(`mdtests/a_64_bit_allocation_requirement_is_assumed_at_entry.md`). The
+refusal says
+``resource `allocation` has a 64-bit byte count not proved to fit a heap block``.
+A `uint64` constant that fits a 32-bit extent, such as `16u64`, states the
+32-bit extent `16`, as `malloc` of that constant makes it.
+
+The two formats never name one block: an `allocation` spelling of the other
+format than the block's token, `allocation(p, m * 4)` with an `int32` count
+for a 64-bit block or `allocation(p, n * 4u64)` for a 32-bit one, is refused
+naming both
+(`mdtests/a_32_bit_allocation_spelling_of_a_64_bit_block_is_refused.md`,
+`mdtests/a_64_bit_allocation_spelling_of_a_32_bit_block_is_refused.md`). A
+call that consumes an allocation of one format and returns one of the other
+that may be the same block is refused, since its extents cannot be compared
+(`mdtests/a_returned_allocation_of_the_other_extent_format_is_refused.md`).
+A `size_t` count the facts fix to a constant makes a 32-bit block, so its
+token is stated with that constant, not the `uint64` product.
 
 A 32-bit extent is signed: a `uint32` byte count must also be bounded by
 `INT32_MAX`, and a `uint32` element count by `INT32_MAX` divided by the

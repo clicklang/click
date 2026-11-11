@@ -2297,6 +2297,8 @@ fn lower_resource_clause_with_values_mode_at_entry(
                 let matches_type = if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 0
                 {
                     c_value_matches_allocation_pointer(&value)
+                } else if name == CResourceFact::ALLOCATION_RESOURCE_NAME && index == 1 {
+                    c_value_matches_allocation_extent(&value)
                 } else {
                     c_value_matches_click_type(&value, *parameter_type)
                 };

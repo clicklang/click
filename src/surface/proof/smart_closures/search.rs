@@ -2490,28 +2490,53 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         {
             return Ok(Some(anchored));
         }
-        if let Some(rewritten) = crate::instrumentation::measure_operation(
+        // One indexed rewrite can close the goal at once. The search over
+        // chains of connected equalities costs a closure attempt per
+        // rewritten goal, each over the goal's whole connected component, so
+        // it waits until arithmetic from selected premises has had the goal:
+        // a linear claim that one stated fact decides is not searched for
+        // through every equality that mentions its atoms.
+        let direct_rewrite = crate::instrumentation::measure_operation(
             "surface",
             "solve closure",
             "solve closure: goal equality rewrite",
             || {
-                crate::kernel::search::ProofSearch::try_goal_equality_rewrite_closure_excluding(
-                    search_input,
-                    exclude_exact_goal,
-                    allow_function_unfold,
+                Ok::<_, ClickError>(
+                    crate::kernel::search::ProofSearch::try_indexed_direct_equality_rewrite(
+                        search_input,
+                        exclude_exact_goal,
+                    ),
                 )
             },
-        )? {
-            return Ok(Some(rewritten));
-        }
+        )?;
+        let chain_rewrites = match direct_rewrite {
+            std::ops::ControlFlow::Break(Some(rewritten)) => return Ok(Some(rewritten)),
+            std::ops::ControlFlow::Break(None) => false,
+            std::ops::ControlFlow::Continue(()) => true,
+        };
         // An arithmetic goal the cheap derivations above missed goes to
-        // `arithmetic` from premises it selects, before the unfold and
-        // transport strategies below spend their work in the context's
+        // `arithmetic` from premises it selects, before the rewrite, unfold
+        // and transport strategies below spend their work in the context's
         // facts.
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_arithmetic_with_selected_premises(search_input)?
         {
             return Ok(Some(proof));
+        }
+        if chain_rewrites
+            && let Some(rewritten) = crate::instrumentation::measure_operation(
+                "surface",
+                "solve closure",
+                "solve closure: goal equality rewrite",
+                || {
+                    crate::kernel::search::ProofSearch::try_connected_goal_equality_chain_closure(
+                        search_input,
+                        allow_function_unfold,
+                    )
+                },
+            )?
+        {
+            return Ok(Some(rewritten));
         }
         // Indexed rewrite planning uses Option for an ordinary candidate
         // miss; preserve an exhausted budget before trying another closer.
@@ -6184,6 +6209,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         .flatten()
     }
 
+    #[cfg(test)]
     pub(in crate::surface::proof) fn try_goal_equality_rewrite_closure_excluding(
         search_input: &Proof<'a>,
         exclude_goal_fact: bool,
@@ -6206,6 +6232,23 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 )
             }
         }
+    }
+
+    /// The chain half of [`Self::try_goal_equality_rewrite_closure_excluding`]:
+    /// the search over rewrites by the equalities connected to the goal.
+    pub(in crate::surface::proof) fn try_connected_goal_equality_chain_closure(
+        search_input: &Proof<'a>,
+        allow_function_unfold: bool,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::ConnectedFacts) else {
+            return Ok(None);
+        };
+        crate::kernel::search::ProofSearch::try_connected_equality_chain_closure(
+            search_input,
+            RewriteClosers::GoalLocal {
+                allow_function_unfold,
+            },
+        )
     }
 
     /// One indexed rewrite followed by direct closure of an algebraic

@@ -1844,7 +1844,34 @@ fn uint64_allocation_size_is_exact(
     if element_count {
         return positive(&size.term) && at_most(&size.term, u64::from(element_width.max(1)));
     }
-    match &size.term {
+    uint64_heap_extent_bytes_are_exact(&size.term, assumptions)
+}
+
+/// Whether `bytes`, a `uint64` byte count, is a 64-bit heap extent: positive
+/// and at most `PTRDIFF_MAX`, and, when it is a top-level product with a
+/// constant factor `k`, with its other factor decided at most
+/// `PTRDIFF_MAX / k`, so the product is exact and reads back as its elements
+/// ([`crate::kernel::reasoning::uint64_element_count_from_bytes`]). A product
+/// of two symbolic factors is not one. `malloc` and a contract's
+/// `allocation(p, bytes)` admit a 64-bit extent only under this decision.
+pub(in crate::kernel) fn uint64_heap_extent_bytes_are_exact(
+    bytes: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> bool {
+    let holds = |condition: ConditionTerm| assumptions.decide(&condition) == Some(true);
+    let at_most = |term: &MachineTerm, width: u64| {
+        holds(ConditionTerm::uint64_less_equal(
+            term.clone(),
+            MachineTerm::uint64_constant(i64::MAX as u64 / width),
+        ))
+    };
+    let positive = |term: &MachineTerm| {
+        holds(ConditionTerm::uint64_greater_than(
+            term.clone(),
+            MachineTerm::uint64_constant(0),
+        ))
+    };
+    match bytes {
         // `1 <= n <= PTRDIFF_MAX / k` makes `n * k` exact, so it is also
         // positive and at most `PTRDIFF_MAX`.
         binary_term!(UInt64, Multiply, left, right) => {
@@ -2674,7 +2701,7 @@ fn execute_c_heap_free_paths(
                 before: before_free,
                 after: memory.clone(),
                 allocation_base: pointer.pointer().clone(),
-                bytes: bytes.bytes().clone(),
+                bytes: bytes.clone(),
             },
         ));
         let mut next = state

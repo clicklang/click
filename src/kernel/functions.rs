@@ -1356,6 +1356,8 @@ enum VerifiedAllocationDeltaError {
 enum AllocationContinuity {
     Same,
     Distinct,
+    /// The blocks may be one, but the extents have different formats (D5).
+    CrossKind,
     Undecided(ConditionTerm),
     Inconsistent,
 }
@@ -9232,19 +9234,43 @@ fn add_verified_function_ensure_facts_selected_with_interface<'a>(
 /// No fixture in either harness reaches the refutation below; the kernel
 /// test `continuity_requires_both_the_allocation_base_and_size` pins it, and
 /// fails when the route is denied.
+///
+/// The two extents are compared in their common format. Extents of
+/// different formats are never the same allocation's (D5): a pair whose
+/// bases are not proven distinct is [`AllocationContinuity::CrossKind`].
 fn allocation_continuity(
     input_base: &Pointer,
-    input_bytes: &MachineTerm,
+    input_extent: &HeapExtent,
     output_base: &Pointer,
-    output_bytes: &MachineTerm,
+    output_extent: &HeapExtent,
     assumptions: &PureFactContext,
 ) -> AllocationContinuity {
+    if input_extent.kind() != output_extent.kind() {
+        return if pointers_proven_distinct_for_memory_resolution(
+            input_base,
+            output_base,
+            assumptions,
+        ) {
+            AllocationContinuity::Distinct
+        } else {
+            AllocationContinuity::CrossKind
+        };
+    }
+    let (input_bytes, output_bytes) = (input_extent.bytes(), output_extent.bytes());
     if pointers_proven_equal_for_memory_resolution(input_base, output_base, assumptions) {
-        if int32_values_proven_equal_for_memory_resolution(input_bytes, output_bytes, assumptions) {
+        let format = match input_extent.kind() {
+            HeapExtentKind::Int32 => MachineIntegerType::Int32,
+            HeapExtentKind::UInt64 => MachineIntegerType::UInt64,
+        };
+        if c_values_proven_equal_for_memory_resolution(
+            &input_extent.token_value(),
+            &output_extent.token_value(),
+            assumptions,
+        ) {
             return AllocationContinuity::Same;
         }
         let condition = ConditionTerm::Compare {
-            format: MachineIntegerType::Int32,
+            format,
             relation: CompareRelation::Equal,
             left: Box::new(input_bytes.clone()),
             right: Box::new(output_bytes.clone()),
@@ -9465,8 +9491,8 @@ fn apply_verified_heap_allocation_delta(
         .facts()
         .iter()
         .chain(preserved.facts())
-        .filter_map(CResourceFact::allocation)
-        .map(|(base, bytes)| (base.clone(), bytes.clone()))
+        .filter_map(CResourceFact::allocation_extent)
+        .map(|(base, bytes)| (base.pointer().clone(), bytes))
         .collect::<Vec<_>>();
 
     for (fact, base, bytes) in input_allocations {
@@ -9497,7 +9523,7 @@ fn apply_verified_heap_allocation_delta(
             for (output_base, output_bytes) in candidates {
                 match allocation_continuity(
                     &base,
-                    bytes.bytes(),
+                    &bytes,
                     output_base,
                     output_bytes,
                     &allocation_assumptions,
@@ -9507,6 +9533,17 @@ fn apply_verified_heap_allocation_delta(
                     AllocationContinuity::Undecided(_) => continuity_is_undecided = true,
                     AllocationContinuity::Inconsistent => {
                         return Err(VerifiedAllocationDeltaError::InconsistentReturnedAllocation);
+                    }
+                    AllocationContinuity::CrossKind => {
+                        return Err(VerifiedAllocationDeltaError::Runtime(
+                            CRuntimeError::FunctionContract(format!(
+                                "the call consumes an allocation with {} byte count and returns \
+                                 one that may be the same block with {} byte count; a heap \
+                                 block's extent keeps one format",
+                                heap_extent_kind_spelling(bytes.kind()),
+                                heap_extent_kind_spelling(output_bytes.kind()),
+                            )),
+                        ));
                     }
                 }
             }
@@ -9600,7 +9637,7 @@ fn apply_verified_heap_allocation_delta(
                 before: before_free,
                 after: memory.clone(),
                 allocation_base: base,
-                bytes: bytes.bytes().clone(),
+                bytes: bytes.clone(),
             },
         ));
     }
@@ -10931,16 +10968,66 @@ fn prepare_contract_resource_transfer(
     )?;
     // Memory a live mutex's initialization consumed is missing because the
     // mutex holds it; name the mutex rather than the bytes.
+    // An allocation the caller holds only in the other extent format is
+    // named with both formats (D5).
     Ok(transfer.map_err(|error| match &error {
         CRuntimeError::MissingResource { resource } => match resource.as_ref() {
             CResourceFact::Own(CResource::Memory(range), _) => {
                 super::mutexes::consumed_storage_refusal(caller_state, range, assumptions)
                     .unwrap_or(error)
             }
+            fact if fact.allocation().is_some() => {
+                allocation_extent_kind_refusal(&caller_state.resources, fact, assumptions)
+                    .unwrap_or(error)
+            }
             _ => error,
         },
         _ => error,
     }))
+}
+
+/// The refusal for a required `allocation(base, bytes)` whose block the
+/// context holds with a byte count of the other format: a 32-bit (`int32`)
+/// spelling of a 64-bit (`uint64`) block's extent, or the reverse. Tokens of
+/// different formats never match (`design/heap-extents.md`, D5), so the
+/// ordinary refusal would only report the token missing. The held token is
+/// found by base through the context's argument index, as `free` finds it.
+pub(in crate::kernel) fn allocation_extent_kind_refusal(
+    resources: &ResourceContext,
+    required: &CResourceFact,
+    assumptions: &PureFactContext,
+) -> Option<CRuntimeError> {
+    let (required_base, required_extent) = required.allocation_extent()?;
+    let query =
+        CResourceFact::own_designated_allocation(required_base.clone(), &HeapExtent::int32(0));
+    let held_kind = resources
+        .direct_match_candidates_for(&query, assumptions)
+        .into_iter()
+        .filter_map(CResourceFact::allocation_extent)
+        .find(|(base, extent)| {
+            extent.kind() != required_extent.kind()
+                && crate::kernel::resource_arguments_proven_equal(
+                    &CValue::Pointer((*base).clone().with_type(CType::Int32Pointer)).into(),
+                    &CValue::Pointer(required_base.clone().with_type(CType::Int32Pointer)).into(),
+                    assumptions,
+                )
+        })
+        .map(|(_, extent)| extent.kind())?;
+    Some(CRuntimeError::FunctionContract(format!(
+        "`allocation` states {} byte count, but the block's allocation token holds {} one: \
+         a heap block's extent keeps the format of its size's C type, and an `allocation` of \
+         the other format does not name it; state the byte count in the block's format",
+        heap_extent_kind_spelling(required_extent.kind()),
+        heap_extent_kind_spelling(held_kind),
+    )))
+}
+
+/// How a diagnostic names an extent format.
+pub(in crate::kernel) fn heap_extent_kind_spelling(kind: HeapExtentKind) -> &'static str {
+    match kind {
+        HeapExtentKind::Int32 => "a 32-bit (`int32`)",
+        HeapExtentKind::UInt64 => "a 64-bit (`uint64`, `size_t`)",
+    }
 }
 
 fn prepare_contract_resource_transfer_unexplained(
@@ -19431,7 +19518,25 @@ fn evaluate_function_declared_resource_spec(
         let accepts_allocation_pointer = name == CResourceFact::ALLOCATION_RESOURCE_NAME
             && index == 0
             && matches!(&value, CValue::Pointer(pointer) if pointer.c_type().pointee_type().is_some());
-        if !accepts_allocation_pointer && !parameter_type.accepts(&value) {
+        let value = if name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            && index == 1
+            && let CValue::UInt64(bytes) = value.numeric_value()
+        {
+            match uint64_allocation_extent_argument(bytes, assumptions) {
+                Ok(value) => value,
+                Err(error) => return Ok(Err(error)),
+            }
+        } else {
+            value
+        };
+        // A 64-bit `allocation` byte count is a `uint64` extent (D4).
+        let accepts_allocation_extent = name == CResourceFact::ALLOCATION_RESOURCE_NAME
+            && index == 1
+            && matches!(&value, CValue::UInt64(_));
+        if !accepts_allocation_pointer
+            && !accepts_allocation_extent
+            && !parameter_type.accepts(&value)
+        {
             return Ok(Err(CRuntimeError::FunctionContract(format!(
                 "resource `{name}` argument {index} has the wrong type"
             ))));
@@ -19474,6 +19579,47 @@ fn evaluate_function_declared_resource_spec(
         CResourceAccessMode::Own => CResourceFact::own(resource),
         CResourceAccessMode::View => CResourceFact::View(resource),
     }))
+}
+
+/// The `allocation` token argument a contract's `uint64` (`size_t`) byte
+/// count states (`design/heap-extents.md`, D4).
+///
+/// A constant that fits a 32-bit extent is one, as `malloc` of a constant
+/// `size_t` size makes it (D2). Any other value is a 64-bit extent, admitted
+/// under the decision `malloc` makes for one
+/// ([`crate::kernel::eval::uint64_heap_extent_bytes_are_exact`]): at most
+/// `PTRDIFF_MAX` and positive, and a product with a constant factor `k` only
+/// with its other factor decided at most `PTRDIFF_MAX / k`. A `size_t`
+/// product may wrap, and the heap reads `n * k` bytes back as `n` elements,
+/// so a token whose product could have wrapped is never formed.
+///
+/// A clause someone else established is assumed, not decided again: a
+/// contract's own entry clauses, which every caller establishes by
+/// evaluating them under this decision, and the body of a held composite,
+/// which its fold established (`assume_entry_clause_extents`). Every other
+/// evaluation decides: a requirement at a call, a clause a function produces
+/// at its exit, and one an opaque or extern call returns to its caller.
+fn uint64_allocation_extent_argument(
+    bytes: &MachineTerm,
+    assumptions: &PureFactContext,
+) -> Result<CValue, CRuntimeError> {
+    if let Some(constant) = bytes.uint64_as_const() {
+        if (1..=i32::MAX as u64).contains(&constant) {
+            return Ok(int32(MachineTerm::constant(constant as u32)));
+        }
+    }
+    if assumptions.should_assume_entry_clause_extents()
+        || crate::kernel::eval::uint64_heap_extent_bytes_are_exact(bytes, assumptions)
+    {
+        Ok(CValue::UInt64(bytes.clone()))
+    } else {
+        Err(CRuntimeError::FunctionContract(
+            "resource `allocation` has a 64-bit byte count not proved to fit a heap block: \
+             it needs `1 <= bytes <= PTRDIFF_MAX`, and a product `n * k` with a constant `k` \
+             needs `1 <= n <= PTRDIFF_MAX / k`"
+                .to_string(),
+        ))
+    }
 }
 
 fn resource_fact_transfer_priority(resource: &CResourceFact) -> u8 {
