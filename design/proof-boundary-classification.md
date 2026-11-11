@@ -2,7 +2,7 @@
 
 Source reconciliation at `c53645952` (2026-11-11), the completed head of
 PR #2520. Queue/merge status is separate from this source baseline. This
-classifies all 19 `mixed` and 3 `operation-to-driver` records in
+classifies all 19 `mixed` and 2 `operation-to-driver` records in
 `build_support/proof_search_edges.tsv` and groups the operation references.
 A record is one caller/target pair, not one runtime call or one slow walk.
 A classified call is not a complexity proof for its callee. This documentation
@@ -19,6 +19,8 @@ primitive certificate application is unchanged. Registering these helpers expose
 existing search-only callers without adding runtime work. Invariant-bundle
 closure, its scope wrapper and member solve dispatch now live on the driver;
 selected-obligation diagnostics and explicit Both/Intro certificates are preserved.
+Resource-opening candidate selection now lives on `ProofSearch`; explicit
+unfold and statement operations are unchanged.
 
 ## Current boundary
 
@@ -108,17 +110,16 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 3 operation-to-driver reference records
+## The 2 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
 | Caller | Classification and action |
 | --- | --- |
-| `solve_open_for_missing_resource` | Search helper on the wrong interface: selects a resource to unfold, called from smart retry. |
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
 
-Totals: 3 search/support adapters. Some categories overlap semantically; each record is counted
+Totals: 2 search/support adapters. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 
 ## Why accidental search remains possible
@@ -223,7 +224,7 @@ and grow irrelevant state. See the [operation ledger](../roadmap/smart-tactics.m
   Memory-history coverage M1 belongs with `roadmap/fact-aware-frame-walks.md`;
   scaling lifecycle E1 and quantifier Q1 retain their existing deferred owners.
 
-The inventory contains 617 reference records, not 617 obligations to remove.
+The inventory contains 618 reference records, not 618 obligations to remove.
 The classified mixed records are no longer an unknown pile. What remains
 unknown is complete-operation cost on the named routes, and whether the
 unreviewed parts of the verifier contain additional routes. Consequently this

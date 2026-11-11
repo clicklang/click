@@ -1357,3 +1357,19 @@ fn invariant_bundle_solving_belongs_to_the_driver() {
         );
     }
 }
+
+#[test]
+fn resource_opening_selection_stays_in_search() {
+    let path = "src/surface/proof/proof_object/resource_steps.rs";
+    for source in [
+        "impl Proof { fn try_open_for_missing_resource(&self) {} }",
+        "impl Proof { fn solve_open_for_missing_resource(&self) { self.driver().apply_step(open); } }",
+        "impl Proof { fn open(&self) { ProofSearch::try_open_for_missing_resource(self, missing); } }",
+    ] {
+        let file = syn::parse_file(source).unwrap();
+        assert!(
+            proof_search_boundary::check(path, &file).is_err(),
+            "{source}"
+        );
+    }
+}
