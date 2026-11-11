@@ -5395,18 +5395,34 @@ fn rust_slice_iter_reference_sum_verifies_and_expands() {
 fn rust_chunks_exact_remainder_metadata_and_bytes() {
     let source = "pub fn tail_len(bytes: &[u8], size: usize) -> usize { let chunks = bytes.chunks_exact(size); let tail = chunks.remainder(); tail.len() }
     pub fn tail_byte(bytes: &[u8]) -> u8 { let chunks = bytes.chunks_exact(2); let tail = chunks.remainder(); tail[0] }";
-    let p = Project::new(source);
+    let p = Project::with_library_iterators(source);
     p.refresh().unwrap();
     let prepared = p.prepared().unwrap();
-    let sidecar = "verifying \"borrow.rs\";
+    let sidecar = "import click::rust::slice;
+    import click::rust::chunks_exact;
+    verifying \"borrow.rs\";
     fn tail_len(bytes: &[u8], size: usize) -> usize {
         requires size != 0u64;
         ensures result == bytes.len() % size;
+    } by {
+        step_until(function.exit);
+        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), size));
+        solve();
     }
     fn tail_byte(bytes: &[u8]) -> u8 {
         requires bytes.len() == 5u64; views bytes[0..5];
         ensures result == bytes[4];
-    } by { have bytes.len() - bytes.len() % 2u64 == 4u64 by { rewrite(bytes.len() == 5u64); normalize(); } step_until(function.exit); solve(); }";
+    } by {
+        have bytes.len() % 2u64 == 1u64;
+        have bytes.len() - bytes.len() % 2u64 == 4u64;
+        apply(chunks_exact::remainder_chunks_exact(Slice<u8>::Slice(bytes, bytes.len()), 2u64));
+        step_until(assignment(tail_len, 0));
+        step();
+        have tail_len == 1u64;
+        have tail == bytes + 4u64;
+        step_until(function.exit);
+        solve();
+    }";
     C0VerificationSession::new_program_prepared(sidecar, &prepared).unwrap();
     for invalid in [
         sidecar.replace("requires size != 0u64;", ""),
