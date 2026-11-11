@@ -149,7 +149,7 @@ impl EqualityGraph {
             classes.add_pointer_value_equality(left, right);
         }
         for ((left, right), _) in self.admitted.int32_graph_equalities.iter() {
-            classes.add_int32_equality(left.value(), right.value());
+            classes.add_int32_equality_views(left.operand_view(), right.operand_view());
         }
         for (_, definitions) in self.admitted.typed_pointer_read_definitions.iter() {
             for ((_, address), (value, memory)) in definitions.iter() {
@@ -243,7 +243,16 @@ impl EqualityGraph {
         &self,
         term: &MachineTerm,
     ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
-        self.admitted.exact_constant_equalities.get(term)
+        self.exact_literal_sources_view(crate::kernel::MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn exact_literal_sources_view(
+        &self,
+        term: crate::kernel::MachineOperandView<'_>,
+    ) -> Option<&crate::persistent::PersistentMap<ConditionTerm, i64>> {
+        self.admitted
+            .exact_constant_equalities
+            .get(&crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey::new(term))
     }
 }
 

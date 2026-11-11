@@ -47,7 +47,7 @@ pub(in crate::kernel) struct InputData {
     >,
     /// Exact literal-pinning source premises, in deterministic source order.
     pub(in crate::kernel) exact_constant_equalities: crate::persistent::PersistentMap<
-        MachineTerm,
+        crate::kernel::assumptions::checked_scalar_facts::ScalarOperandKey,
         crate::persistent::PersistentMap<ConditionTerm, i64>,
     >,
     /// Exact alignment premises, including their numeric address annotations.

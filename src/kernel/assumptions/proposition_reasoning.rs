@@ -2815,23 +2815,6 @@ impl PureFactContext {
             })
     }
 
-    /// Whether one recorded order fact bounds `lower` by `upper` (strictly
-    /// when `strict`), joining both endpoints by canonical form through the
-    /// dual-keyed bounds index. Indexed and deterministic: a cheap answer
-    /// for range checks before any searching arm runs.
-    pub(in crate::kernel) fn canonical_bound_holds(
-        &self,
-        lower: &MachineTerm,
-        upper: &MachineTerm,
-        strict: bool,
-    ) -> bool {
-        self.canonical_bound_holds_views(
-            MachineOperandView::Legacy(lower),
-            MachineOperandView::Legacy(upper),
-            strict,
-        )
-    }
-
     pub(in crate::kernel) fn canonical_bound_holds_views(
         &self,
         lower: MachineOperandView<'_>,

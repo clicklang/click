@@ -6869,7 +6869,7 @@ mod membership_needs_an_unwrapped_difference {
 
         let index = MachineTerm::Variable(Variable(93_955));
         let delta = |term: MachineTerm, constant: i64| ExactElementDelta {
-            index: term,
+            index: MachineOperandView::Legacy(&term).retain(MachineIntegerType::Int32),
             constant,
         };
         let start = index.clone();

@@ -1010,7 +1010,14 @@ impl PureFactContext {
     /// `term < INT_MAX`, which is what discharges `term + 1` overflow
     /// is checked from exact facts alone.
     pub(in crate::kernel) fn has_exact_strict_upper_bound(&self, term: &MachineTerm) -> bool {
-        self.checked_order_bounds.strict_upper(term).is_some()
+        self.has_exact_strict_upper_bound_view(MachineOperandView::Legacy(term))
+    }
+
+    pub(in crate::kernel) fn has_exact_strict_upper_bound_view(
+        &self,
+        term: MachineOperandView<'_>,
+    ) -> bool {
+        self.checked_order_bounds.strict_upper_view(term).is_some()
     }
 
     /// Whether the difference graph of these facts proves `left < right`
