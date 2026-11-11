@@ -548,9 +548,16 @@ fn dynamic_body_fact_dependency(
                 }
                 Ok(())
             }
-            Proposition::CMemoryLoadable { bytes, .. }
-            | Proposition::CHeapAllocationFreed { bytes, .. } => walk_term(
+            Proposition::CMemoryLoadable { bytes, .. } => walk_term(
                 &Term::Bitvector32(bytes.clone()),
+                state,
+                assumptions,
+                temporary_views,
+                binder,
+                selected,
+            ),
+            Proposition::CHeapAllocationFreed { bytes, .. } => walk_term(
+                &Term::Bitvector32(bytes.bytes().clone()),
                 state,
                 assumptions,
                 temporary_views,

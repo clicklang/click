@@ -912,7 +912,7 @@ fn execution_effect_diagnostics_omit_raw_memory_snapshots() {
             before,
             after,
             allocation_base: pointer,
-            bytes: MachineTerm::constant(4),
+            bytes: crate::kernel::HeapExtent::int32(MachineTerm::constant(4)),
         }),
     ];
 

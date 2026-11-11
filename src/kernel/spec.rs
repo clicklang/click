@@ -2991,7 +2991,7 @@ fn proposition_mentions_integer_variable(proposition: &Proposition, variable: Va
             bytes,
             ..
         } => {
-            integer_carrier_in_bitvector(bytes, variable)
+            integer_carrier_in_bitvector(bytes.bytes(), variable)
                 || integer_carrier_in_pointer(allocation_base, variable)
         }
         Proposition::And(left, right)

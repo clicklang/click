@@ -933,7 +933,7 @@ fn heap_free_deallocates_the_complete_block_and_rejects_double_free() {
             ..
         }] if after == freed.memory()
             && allocation_base == pointer.pointer()
-            && *bytes == MachineTerm::constant(16)
+            && *bytes == HeapExtent::int32(MachineTerm::constant(16))
     ));
     let derivation = intern_c_memory_ref(freed.memory())
         .derivation()
