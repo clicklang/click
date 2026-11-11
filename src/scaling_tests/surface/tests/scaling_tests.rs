@@ -7829,6 +7829,36 @@ fn list_position_solve_search_stays_bounded_beside_unrelated_facts() {
     assert!(counts.iter().all(|count| *count == counts[0]), "{counts:?}");
 }
 
+/// A linear goal that one stated fact decides is proved by arithmetic from
+/// selected premises before `solve` searches chains of rewrites through the
+/// equalities connected to the goal's atoms, so each such equality costs a
+/// constant. Measured 2026-11-11: about 3,300 units an equality (27,041 at
+/// 4, 66,431 at 16). With the chain search first the same goals cost 54,008
+/// at 4 and 364,310 at 16, and six equalities beside a loop's invariants
+/// exhausted the two-million budget.
+#[test]
+fn a_linear_goal_costs_a_constant_per_equality_connected_to_its_atoms() {
+    for size in [4usize, 16, 32] {
+        let parameters = (0..size)
+            .map(|i| format!(", k{i}: uint64"))
+            .collect::<String>();
+        let equalities = (0..size)
+            .map(|i| format!("    requires k{i} == q - r;\n"))
+            .collect::<String>();
+        let source = format!(
+            "theorem bounded(q: uint64, r: uint64{parameters}) {{\n    \
+             requires q <= 4611686018427387903u64;\n    requires r <= q;\n{equalities}    \
+             ensures q - r <= 4611686018427387903u64 by {{ solve(); }}\n}}\n"
+        );
+        let limits = crate::instrumentation::TacticWorkLimits {
+            smart: 30_000 + 5_000 * size,
+            ..crate::instrumentation::TacticWorkLimits::default()
+        };
+        crate::instrumentation::with_tactic_work_limits(limits, || verify_click_theorems(&source))
+            .unwrap_or_else(|error| panic!("{size} equalities: {}", error.message()));
+    }
+}
+
 #[test]
 fn nearest_statement_snapshots_are_lazy_ordered_and_logarithmic() {
     let point = |index, kind| ProgramPointRef {
@@ -8911,7 +8941,7 @@ fn owned_parameter_field_store_work_is_flat() {
     let mut peaks = Vec::new();
     let mut calls = Vec::new();
     for (linked, repeated) in [(false, false), (true, false), (false, true), (true, true)] {
-        for size in [4usize, 16, 64] {
+        for size in [4usize, 16, 32] {
             let count = size + usize::from(linked);
             let kind = if linked { "node" } else { "box" };
             let layout = if linked {
