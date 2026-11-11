@@ -20523,6 +20523,77 @@ fn machine_subtraction_fact_bridges_expand_without_implicit_search() {
     }
 }
 
+/// Expand one function's proof and replay it with that claim's implicit
+/// search off. `claim` is the label of the expanded claim.
+fn store_index_separation_replays(fixture: &str, function: &str, claim: &str) {
+    let (source, c_sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+    let sources = c_sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, function)
+        .unwrap_or_else(|error| panic!("{fixture} {function}: {}", error.report()));
+    without_implicit_solve_for_claim(claim, || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap_or_else(|error| panic!("{fixture} {function}: {error}\n{expanded}"));
+}
+
+// The implicit tail proves a store's index disequality before the store and
+// retains it as a `have`; the expanded proof keeps the cell with no search.
+#[test]
+fn store_index_separation_expands_and_replays() {
+    store_index_separation_replays(
+        "a_store_at_the_last_heap_element_keeps_the_first",
+        "read_first",
+        "read_first.ensures_0",
+    );
+}
+
+#[test]
+#[ignore = "nightly: store index separation variants expand and cold replay"]
+fn store_index_separation_variants_expand_and_replay() {
+    for (fixture, function, claim) in [
+        (
+            "a_store_at_another_symbolic_element_keeps_a_cached_one",
+            "at_parameter",
+            "at_parameter.ensures_0",
+        ),
+        (
+            "a_store_at_another_symbolic_element_keeps_a_cached_one",
+            "before_last",
+            "before_last.ensures_0",
+        ),
+        (
+            "a_store_at_another_symbolic_element_keeps_a_cached_one",
+            "read_last",
+            "read_last.ensures_0",
+        ),
+        (
+            "a_store_at_another_symbolic_element_keeps_a_cached_one",
+            "on_the_stack",
+            "on_the_stack.ensures_0",
+        ),
+        (
+            "a_store_index_fact_may_be_the_integer_or_the_word",
+            "required_integer",
+            "required_integer.ensures_0",
+        ),
+        (
+            "a_store_index_fact_may_be_the_integer_or_the_word",
+            "stated_integer",
+            "stated_integer.contract",
+        ),
+        (
+            "separation_elements_index_word_from_an_integer_fact",
+            "read_first",
+            "read_first.contract",
+        ),
+    ] {
+        store_index_separation_replays(fixture, function, claim);
+    }
+}
+
 #[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_86")]
 fn single_store_definedness_transport_expands_and_replays() {

@@ -64,6 +64,8 @@ Keep these expansion/replay checks passing:
 - `pointer_rejection_prefixes_expand_and_replay`
 - `charon_stack_transport_repairs_expand_and_replay`
 - `separation_history_repairs_expand_and_replay`
+- `store_index_separation_expands_and_replays` and
+  `store_index_separation_variants_expand_and_replay`
 
 The recursive witness proof now selects the call's containment, applies
 `separation::restrict`, and preserves the complete pointer read. It needs no

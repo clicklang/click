@@ -381,6 +381,20 @@ in this helper. Growing same-block separation buckets leave cold and repeated
 miss work unchanged, while written index disequality still respects access
 widths.
 
+The implicit tail supplies that direct evidence in the slow part, not the
+store. After a smart statement step (`try_statement_step_with_retries`),
+`retry_statement_keeping_store_cells` diffs the statement's input and output
+cell maps (`kernel::search::store_separation`, proportional to the changed
+cells, at most 64 pairs compared), pairs each dropped cell with a written cell
+of the same array, and spells the index disequality the store-time check
+reads. It proves at most four with `solve` at the pre-state, retains them as
+`have`s and reruns the statement; expansion writes those `have`s and the
+expanded proof searches nothing. `solve`'s last strategy,
+`try_disequality_by_refuted_equality`, proves a disequality from a connected
+one by cases on the goal's equality, so the Integer fact `m - 1 != 0` gives
+the word fact where the word cannot wrap. Regression:
+`store_index_separation_search_scales_with_unrelated_stores_and_facts`.
+
 Automatic store byte-gap eligibility reads an exact stated endpoint order;
 it does not follow recorded order chains or invoke general condition decision.
 For an order that follows transitively, write the endpoint bound before the

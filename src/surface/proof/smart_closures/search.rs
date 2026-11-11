@@ -1810,7 +1810,10 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 Some(proof) => Some(proof),
                 None => match crate::kernel::search::ProofSearch::try_connected_fact_closure(search_input)? {
                     Some(proof) => Some(proof),
-                    None => crate::kernel::search::ProofSearch::try_late_arithmetic_with_selected_premises(search_input)?,
+                    None => match crate::kernel::search::ProofSearch::try_late_arithmetic_with_selected_premises(search_input)? {
+                        Some(proof) => Some(proof),
+                        None => crate::kernel::search::ProofSearch::try_disequality_by_refuted_equality(search_input)?,
+                    },
                 },
             },
         };
@@ -1818,6 +1821,158 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
             scope.succeed();
         }
         Ok(result)
+    }
+
+    /// Proves a disequality `a != b` from an available disequality `p != q`
+    /// that `a == b` contradicts, such as the `int32` word fact
+    /// `((m - 1) as int32) != 0` from the Integer fact `m - 1 != 0` where the
+    /// facts keep `m - 1` in range, or the converse. Arithmetic reads no
+    /// disequality premise, so the proof is by cases on `a == b`: that arm
+    /// states `p == q`, which `solve` proves from `a == b`, and `assumption`
+    /// closes it on the contradictory pair; the other arm holds the goal. The
+    /// certificate is an ordinary proof `if`.
+    ///
+    /// It runs only after every other strategy has missed, on a disequality
+    /// goal, over at most [`MAX_REFUTED_EQUALITY_PREMISES`] disequalities
+    /// connected to the goal. The goals it states are equalities, and the
+    /// strategy does not nest inside itself.
+    pub(in crate::surface::proof) fn try_disequality_by_refuted_equality(
+        search_input: &Proof<'a>,
+    ) -> Result<Option<Proof<'a>>, ClickError> {
+        /// The equality a kernel disequality denies.
+        fn denied(proposition: &Proposition) -> Option<Proposition> {
+            match proposition {
+                Proposition::ConditionIs(ConditionTerm::IntegerNotEqual(left, right), true) => {
+                    Some(Proposition::ConditionIs(
+                        ConditionTerm::IntegerEqual(left.clone(), right.clone()),
+                        true,
+                    ))
+                }
+                Proposition::ConditionIs(
+                    condition @ (ConditionTerm::IntegerEqual(..)
+                    | ConditionTerm::Compare {
+                        relation: CompareRelation::Equal,
+                        ..
+                    }),
+                    false,
+                ) => Some(Proposition::ConditionIs(condition.clone(), true)),
+                _ => None,
+            }
+        }
+        /// The equality a written disequality denies, under its snapshot.
+        fn denied_surface(surface: &ClickProposition) -> Option<ClickProposition> {
+            match surface {
+                ClickProposition::At {
+                    selector,
+                    proposition,
+                } => Some(ClickProposition::At {
+                    selector: selector.clone(),
+                    proposition: Box::new(denied_surface(proposition)?),
+                }),
+                ClickProposition::Comparison {
+                    operator: ComparisonOperator::NotEqual,
+                    ..
+                } => Some(negate_click_proposition(surface)),
+                ClickProposition::Not(body)
+                    if matches!(
+                        body.as_ref(),
+                        ClickProposition::Comparison {
+                            operator: ComparisonOperator::Equal,
+                            ..
+                        }
+                    ) =>
+                {
+                    Some(body.as_ref().clone())
+                }
+                _ => None,
+            }
+        }
+        let (Some(goal), Some(surface_goal)) = (search_input.goal(), search_input.surface_goal())
+        else {
+            return Ok(None);
+        };
+        if denied(goal).is_none() {
+            return Ok(None);
+        }
+        let Some(equal) = denied_surface(surface_goal) else {
+            return Ok(None);
+        };
+        let Some(_scope) = SolveFallbackScope::enter(SolveFallback::RefutedEquality) else {
+            return Ok(None);
+        };
+        let Some(connected) =
+            crate::kernel::search::proposition_search::arithmetic_connected_premises(
+                search_input.facts().assumptions(),
+                goal,
+            )
+        else {
+            return Ok(None);
+        };
+        check_verification_deadline()?;
+        let premises = connected
+            .into_iter()
+            .filter(|fact| fact != goal)
+            .filter_map(|fact| denied(&fact))
+            .take(MAX_REFUTED_EQUALITY_PREMISES)
+            .collect::<Vec<_>>();
+        if premises.is_empty() {
+            return Ok(None);
+        }
+        let Some((split_proof, split, ids)) =
+            attempt::candidate_outcome(search_input.split_focused_if(equal.clone()))?
+        else {
+            return Ok(None);
+        };
+        let marker = split_proof.checkpoint();
+        let equal_arm = split_proof.focus_branch(ids[0])?;
+        let introduced = [equal.clone()];
+        for contradicted in premises {
+            // The denied equality is spelled by construction at this state,
+            // as a requirement is; a missing spelling is the candidate's miss.
+            let requirement = UnresolvedRequirement {
+                proposition: contradicted,
+                context: None,
+                introductions: Default::default(),
+                call_site: None,
+                assertion_condition: None,
+                surface: None,
+            };
+            let Some(Some(spelling)) = attempt::candidate_outcome(
+                equal_arm.requirement_surface(&requirement, &ProofStep::Step),
+            )?
+            else {
+                continue;
+            };
+            let Some(scope) =
+                attempt::candidate_outcome(equal_arm.driver().open_have(spelling.surface))?
+            else {
+                continue;
+            };
+            let Some(stated) = scope
+                .driver()
+                .try_solve_closure_with_surfaces(&introduced)?
+            else {
+                continue;
+            };
+            let Some(refuted) = attempt::candidate_outcome(stated.join())? else {
+                continue;
+            };
+            let Some(equal_done) =
+                attempt::candidate_outcome(refuted.driver().apply_step(ProofStep::Assumption))?
+            else {
+                continue;
+            };
+            let other_arm = equal_done.focus_branch(ids[1])?;
+            let Some(other_done) =
+                attempt::candidate_outcome(other_arm.driver().apply_step(ProofStep::Assumption))?
+            else {
+                return Ok(None);
+            };
+            return other_done
+                .join_focused_if(&marker, split, ids, equal)
+                .map(Some);
+        }
+        Ok(None)
     }
 
     /// A goal that reads stored cells, proved over the values stored there:
@@ -8982,12 +9137,82 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         // Use the same checked-step entry point as written `step()` so
         // smart execution retains its fact deltas in the opt-in trace too.
         let initial = search_input.driver().apply_step(step.clone());
-        crate::kernel::search::ProofSearch::retry_statement_after_refusal(
+        let stepped = crate::kernel::search::ProofSearch::retry_statement_after_refusal(
             search_input,
-            step,
+            step.clone(),
             retried_requirements,
             initial,
+        )?;
+        crate::kernel::search::ProofSearch::retry_statement_keeping_store_cells(
+            search_input,
+            step,
+            stepped,
         )
+    }
+
+    /// A store into an array forgets each cached cell of that array unless a
+    /// fact states that the two element indices differ: the store-time check
+    /// reads that exact fact and derives nothing. When the statement just run
+    /// forgot such a cell, prove the index disequality at the statement's
+    /// pre-state with `solve`, retain it as a `have`, and run the same
+    /// statement again, which now keeps the cell. The certificate records the
+    /// `have` before the step, so expansion writes it and the expanded proof
+    /// searches nothing. A disequality `solve` cannot prove leaves the
+    /// statement as it first ran; the later read reports the store.
+    pub(in crate::surface::proof) fn retry_statement_keeping_store_cells(
+        search_input: &Proof<'a>,
+        step: ProofStep,
+        stepped: Proof<'a>,
+    ) -> Result<Proof<'a>, ClickError> {
+        let (Some(before), Some(after)) = (search_input.execution(), stepped.execution()) else {
+            return Ok(stepped);
+        };
+        let candidates = crate::kernel::search::store_separation::cells_forgotten_beside_stores(
+            before.core.state.memory(),
+            after.core.state.memory(),
+            MAX_STORE_SEPARATIONS_PER_STATEMENT,
+        );
+        if candidates.is_empty() {
+            return Ok(stepped);
+        }
+        let mut proof = search_input.clone();
+        let mut proved = 0usize;
+        for candidate in &candidates {
+            let requirement = UnresolvedRequirement {
+                proposition: candidate.indices_differ.clone(),
+                context: None,
+                introductions: Default::default(),
+                call_site: None,
+                assertion_condition: None,
+                surface: None,
+            };
+            // The disequality is spelled by construction from its indices;
+            // a missing spelling is reported as the candidate's miss.
+            let Some(Some(spelling)) =
+                attempt::candidate_outcome(proof.requirement_surface(&requirement, &step))?
+            else {
+                continue;
+            };
+            let Some(have) =
+                attempt::candidate_outcome(proof.driver().open_have(spelling.surface))?
+            else {
+                continue;
+            };
+            let Some(closed) = have.driver().try_solve_closure()? else {
+                continue;
+            };
+            let Some(joined) = attempt::candidate_outcome(closed.join())? else {
+                continue;
+            };
+            proof = joined;
+            proved += 1;
+        }
+        if proved == 0 {
+            return Ok(stepped);
+        }
+        // The statement runs again with proved facts only; it can keep more
+        // cells than its first run, never fewer.
+        Ok(attempt::candidate_outcome(proof.driver().apply_step(step))?.unwrap_or(stepped))
     }
 
     /// `solve`'s automatic opening (design/proof-reuse.md R4): a C operation

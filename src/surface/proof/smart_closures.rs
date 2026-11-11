@@ -3641,6 +3641,14 @@ impl<'a> Proof<'a> {
 /// and each opening must hold one of them.
 const MAX_AUTO_OPENINGS_PER_STATEMENT: usize = 4;
 
+/// How many forgotten cells the implicit tail tries to keep across one C
+/// statement's stores. Each costs one `solve` of an index disequality.
+const MAX_STORE_SEPARATIONS_PER_STATEMENT: usize = 4;
+
+/// How many available disequalities `solve` tries, in turn, as the fact an
+/// assumed equality of its disequality goal contradicts.
+const MAX_REFUTED_EQUALITY_PREMISES: usize = 4;
+
 /// How many variables solve's bound selection visits from a goal's own
 /// variables before it stops following bounds to further variables.
 const MAX_BOUND_VARIABLES: usize = 8;
@@ -3656,6 +3664,7 @@ enum SolveFallback {
     ArithmeticSubgoal = 8,
     StoredValue = 16,
     MatchArithmetic = 32,
+    RefutedEquality = 64,
 }
 
 /// A candidate can try the other fallback and descend through logical

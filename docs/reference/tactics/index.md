@@ -196,6 +196,23 @@ at function exit. A written `step()` never opens a resource. See
 and
 [`a_written_step_does_not_open_a_folded_resource.md`](https://github.com/clicklang/click/blob/master/mdtests/a_written_step_does_not_open_a_folded_resource.md).
 
+A C store into an array keeps a cached element of that array only on a
+stated disequality of the two `int32` index words (see
+[Verifier design](../../internals/verifier-design.md)); otherwise it drops the
+element. When a statement the implicit tail or `step_until` runs drops such
+an element, the tail spells that disequality, `((m - 1) as int32) != 0` say,
+proves it with `solve` at the statement's pre-state, retains it as a `have`,
+and runs the statement again, which then keeps the element. It tries at most
+four dropped elements per statement. Bounds such as `2 <= m` or `1 <= j`, or
+the Integer fact `m - 1 != 0`, suffice. Expansion writes the `have` before the
+statement's `step()`. A disequality `solve` misses leaves the statement as it
+ran, and a later read of the element reports the store
+([`a_store_at_the_last_heap_element_keeps_the_first.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_the_last_heap_element_keeps_the_first.md),
+[`a_store_at_another_symbolic_element_keeps_a_cached_one.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_another_symbolic_element_keeps_a_cached_one.md),
+[`a_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_at_an_index_that_may_be_the_cached_one_overwrites_it.md)).
+A `size_t` or other 64-bit index is not covered: the store-time check reads
+only `int32` index words.
+
 A failed `have P` that the implicit closer proves names the written `P`,
 rather than an internal search step or subgoal. Exhausted verification
 budgets keep their budget diagnostic. See
@@ -1881,6 +1898,20 @@ proves from the listed premises and the equality. `k < j` gives `k != j`
 `solve` proves `a < b`, or else `b < a`, by selected-premise arithmetic,
 which a linear refutation of `a == b` always leaves, and refutes the equality
 from it; its expansion writes that `have`, `intro()` and the certificate.
+
+Arithmetic reads no disequality premise, so a disequality goal that only
+another disequality gives is proved by cases. When every other strategy
+misses, `solve` splits on `a == b` and, in that arm, proves `p == q` for an
+available `p != q` connected to the goal (at most four, in turn), which
+`assumption()` closes against the stated fact; the other arm holds the goal.
+This carries the Integer fact `m - 1 != 0` to the `int32` word fact
+`((m - 1) as int32) != 0` where the facts keep `m - 1` in range, and back.
+It refuses where the word may wrap: `u + 1 != 0` over a `uint32` `u` does not
+give `((u + 1) as uint32) != 0`
+([`a_store_index_fact_may_be_the_integer_or_the_word.md`](https://github.com/clicklang/click/blob/master/mdtests/a_store_index_fact_may_be_the_integer_or_the_word.md),
+[`an_integer_disequality_does_not_give_a_wrapping_word_one.md`](https://github.com/clicklang/click/blob/master/mdtests/an_integer_disequality_does_not_give_a_wrapping_word_one.md)).
+Expansion writes the proof `if`, the `have p == q` with its certificate, and
+the two `assumption()` steps.
 
 **Failure, checking, and tools:**
 

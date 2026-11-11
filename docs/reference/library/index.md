@@ -6582,6 +6582,14 @@ an interval or inspecting memory history. These are logical resource descriptors
 the law grants no ownership or permission to read or write either element.
 Executable pointer arithmetic and accesses retain their normal definedness checks.
 
+The premise is the disequality of the index values at type `I`. For an
+`int32` index `m - 1` that is `((m - 1) as int32) != 0`, not the
+mathematical Integer fact `m - 1 != 0`, which `apply ... using` refuses as a
+different fact. State the word fact with `have ((m - 1) as int32) != 0 by
+solve();`, which `solve` proves from the Integer fact where the facts keep
+`m - 1` in range, and cite `defined(m - 1)` for the argument expression
+([`separation_elements_index_word_from_an_integer_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_index_word_from_an_integer_fact.md)).
+
 **Verified use:** [`mdtests/separation_elements.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements.md) and [`mdtests/separation_elements_types.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_types.md). Signed indices and preservation are checked by [`mdtests/separation_elements_signed.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed.md) and [`mdtests/separation_elements_signed_store.md`](https://github.com/clicklang/click/blob/master/mdtests/separation_elements_signed_store.md).
 
 ### `separation::subrange`

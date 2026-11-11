@@ -781,3 +781,52 @@ void make(int32* p, int32 n) {
     })
     .unwrap();
 }
+
+/// The implicit tail proves a store's index disequality before the store, so
+/// the store keeps the cell it would otherwise forget. Its search reads only
+/// the cells the statement changed and solves at most a fixed number of
+/// disequalities, so its work grows with unrelated stores and facts as the
+/// statements themselves do. A miss, where the index may equal the cell's,
+/// must stay as prompt: the false claim is refused at every size.
+#[test]
+fn store_index_separation_search_scales_with_unrelated_stores_and_facts() {
+    for hit in [true, false] {
+        let mut samples = Vec::new();
+        for size in [2, 4, 8, 16] {
+            let parameters = (0..size).map(|k| format!(", int x{k}")).collect::<String>();
+            let stores = (0..size)
+                .map(|k| format!("    b[{k}] = x{k};\n    q[{}] = {k};\n", k + 1))
+                .collect::<String>();
+            let c = format!(
+                "int read_first(int m, int j{parameters}) {{\n    int b[{size}];\n    int *q = malloc(m * sizeof(int));\n    if (q == 0) {{\n        return 7;\n    }}\n    q[0] = 7;\n{stores}    q[j] = 1;\n    int r = q[0];\n    free(q);\n    return r;\n}}\n"
+            );
+            let click_parameters = (0..size)
+                .map(|k| format!(", int32 x{k}"))
+                .collect::<String>();
+            let facts = (0..size)
+                .map(|k| format!("    requires x{k} <= {k};\n"))
+                .collect::<String>();
+            let lower = if hit { 1 } else { 0 };
+            let click = format!(
+                "verifying \"probe.c\";\nint32 read_first(int32 m, int32 j{click_parameters}) {{\n    requires {} <= m;\n    requires m <= 1000;\n    requires {lower} <= j;\n    requires j < m;\n{facts}    ensures result == 7;\n}}\n",
+                size + 2
+            );
+            let (result, work) = crate::instrumentation::measure_deterministic_work(|| {
+                verify_c0_sources(&click, &[("probe.c", &c)])
+            });
+            match (hit, result) {
+                (true, Err(error)) => panic!("size {size}: {}\n{click}\n{c}", error.report()),
+                (false, Ok(_)) => panic!("size {size}: a store that may hit q[0] kept it"),
+                _ => {}
+            }
+            // The first size also pays one-time setup.
+            if size != 2 {
+                samples.push((size, work));
+            }
+        }
+        eprintln!("store index separation (hit: {hit}): {samples:?}");
+        for pair in samples.windows(2) {
+            assert!(pair[1].1 <= pair[0].1 * 3, "hit: {hit}: {samples:?}");
+        }
+    }
+}
