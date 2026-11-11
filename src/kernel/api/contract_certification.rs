@@ -1981,6 +1981,20 @@ fn c_function_contract_entry_facts(
             proposition,
         );
     }
+    // Expansion replaces an unconditional composite by its body members, so
+    // the composition above no longer names that composite. A proof still
+    // holds the composite as one owner beside the other entry resources;
+    // state that partition too, so its separation from them is available.
+    for proposition in entry_state
+        .resources()
+        .observable_facts_assuming_valid(&assumptions)
+    {
+        assumptions = entry_facts.assume(
+            assumptions,
+            CContractEntryFactOrigin::Observable,
+            proposition,
+        );
+    }
     entry_state = entry_state.with_resource_context(entry_resources.clone());
     // The contract-entry publication: the arms the requirements refute and
     // the facts of the arm they leave, which a proof starts from as part of
