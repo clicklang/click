@@ -5675,6 +5675,24 @@ int32 arena_pipeline(
         };
     }
     let { live: framed_live, capacity: framed_capacity } = unfold(s0);
+    have at(region(22).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
+        have arena->occupied == at(region(22).entry, arena->occupied) by assumption();
+        have arena->data == at(region(22).entry, arena->data) by assumption();
+        rewrite(arena->occupied == at(region(22).entry, arena->occupied));
+        rewrite(arena->data == at(region(22).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by {
+        have arena->data == at(region(22).entry, arena->data) by assumption();
+        rewrite(arena->data == at(region(22).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by {
+        have arena->occupied == at(region(22).entry, arena->occupied) by assumption();
+        rewrite(arena->occupied == at(region(22).entry, arena->occupied));
+        assumption();
+    }
     let { start: framed_start, end: framed_end } = unfold(r1);
     let r1 = fold(arena_region(first), { start: framed_start, end: framed_end });
     let s0 = fold(arena_state(arena), { live: framed_live, capacity: framed_capacity });
@@ -5728,6 +5746,24 @@ int32 arena_pipeline(
     let s0 = fold(arena_state(arena), { live: kept_live, capacity: kept_capacity });
     step(arena_read, { r: r1, st: s0 });
     let { live: returned_live, capacity: returned_capacity } = unfold(s0);
+    have at(region(23).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
+        have arena->occupied == at(region(23).entry, arena->occupied) by assumption();
+        have arena->data == at(region(23).entry, arena->data) by assumption();
+        rewrite(arena->occupied == at(region(23).entry, arena->occupied));
+        rewrite(arena->data == at(region(23).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by {
+        have arena->data == at(region(23).entry, arena->data) by assumption();
+        rewrite(arena->data == at(region(23).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by {
+        have arena->occupied == at(region(23).entry, arena->occupied) by assumption();
+        rewrite(arena->occupied == at(region(23).entry, arena->occupied));
+        assumption();
+    }
     let {  } = unfold(kept);
     let s0 = fold(arena_state(arena), { live: returned_live, capacity: returned_capacity });
     have r1.start == at(m3, r1.start) by {
