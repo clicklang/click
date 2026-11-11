@@ -50,9 +50,18 @@ int32 spend_token(int32 key) {
     ensures result == key;
 }
 
+theorem inspect_token_satisfies_Inspect() {
+    ensures Inspect(&inspect_token) by {
+        unfold(Inspect);
+        solve();
+    }
+}
+
 int32 borrow_then_spend(int32 key) {
     consumes permit(key);
     ensures result == key;
+} by {
+    apply(inspect_token_satisfies_Inspect());
 }
 ```
 

@@ -42,6 +42,6 @@ int32 invoke(int32 (*callback)()) {
 ```
 
 ```expect
-fail: precondition
+fail: unproved obligation: `k.revision < 2147483647`
 ```
 

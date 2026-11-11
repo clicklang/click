@@ -32,7 +32,7 @@ void caller(struct node *root, struct node *p, struct node *q) {
     owns p->right;
     ensures p->left == old(root->left->left);
 } by {
-    let s = fold(saved(&p->left), { model: Link::Link(root->left->left) });
+    let s = fold(saved(&p->left), { model: Link::Link(p->left) });
     step();
     step();
     fold(right_link(p, q));

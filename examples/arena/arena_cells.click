@@ -2714,7 +2714,6 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                         &arena->occupied[k] == old(&arena->occupied[k]);
                     };
                 }
-                let w = fold(arena_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), { next: i });
                 have to_integer(i) == (to_integer(at(opened, i)) + 1) by {
                     have -2147483648 <= (to_integer(at(opened, i)) + 1) by {
                         arithmetic_certificate {
@@ -2778,6 +2777,13 @@ int32 arena_alloc(struct arena* arena, int32 count, struct region* region) {
                     }
                     assumption();
                 }
+                have start <= i by {
+                    solve() using { start <= at(opened, i); to_integer(i) == to_integer(at(opened, i)) + 1; };
+                }
+                have i <= end by {
+                    solve() using { at(opened, i) < end; to_integer(i) == to_integer(at(opened, i)) + 1; };
+                }
+                let w = fold(arena_window(old(arena->data), old(arena->occupied), old(arena->capacity), start, end), { next: i });
                 have 0 <= (to_integer(end) - to_integer(i)) by {
                     arithmetic_certificate {
                         premise 0: to_integer(i) <= to_integer(end) => 0 <= (to_integer(end) -
@@ -4526,6 +4532,8 @@ void arena_write(struct region* region, int32 index, int32 value) {
         memory(*region),
         memory(*(region->arena->data + (region->start + index)))
     );
+    have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by solve();
+    have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by solve();
     mark w;
     step();
     have separate(statement(0).footprint, memory(region->arena)) by { normalize() using {}; }
@@ -4581,7 +4589,18 @@ void arena_write(struct region* region, int32 index, int32 value) {
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena)));
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->data)));
     have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->occupied)));
+    have at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity)));
     step();
+    have separate(statement(2).footprint, memory(region->arena->capacity)) by {
+        normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena->capacity))); };
+    }
+    have region->arena->capacity == at(before_access, region->arena->capacity) by {
+        transport_certificate {
+            premise 0: separate(statement(2).footprint, memory(region->arena->capacity)) => separate(statement(2).footprint, memory(region->arena->capacity));
+            preserve 0 => region->arena->capacity == at(before_access, region->arena->capacity);
+            conclusion 1;
+        }
+    }
     have separate(statement(2).footprint, memory(region->arena)) by { normalize() using { at(before_access, separate(memory(region->arena->data[region->start + index]), memory(region->arena))); }; }
     have region->arena == at(before_access, region->arena) by {
         transport_certificate {
@@ -4627,6 +4646,26 @@ void arena_write(struct region* region, int32 index, int32 value) {
             separate(memory(region->arena->occupied[0..region->arena->capacity]),
                 memory(region->arena->data[0..region->arena->capacity]));
         };
+        assumption();
+    }
+    have region->arena->capacity == old(region->arena->capacity) by solve();
+    have separate(memory(*region->arena), memory(region->arena->data[0..region->arena->capacity])) by {
+        rewrite(region->arena->capacity == old(region->arena->capacity));
+        rewrite(region->arena->data == old(region->arena->data));
+        rewrite(region->arena == old(region->arena));
+        assumption();
+    }
+    have region->arena->occupied == old(region->arena->occupied) by solve();
+    have separate(memory(*region->arena), memory(region->arena->occupied[0..region->arena->capacity])) by {
+        rewrite(region->arena->capacity == old(region->arena->capacity));
+        rewrite(region->arena->occupied == old(region->arena->occupied));
+        rewrite(region->arena == old(region->arena));
+        assumption();
+    }
+    have separate(memory(region->arena->occupied[0..region->arena->capacity]), memory(region->arena->data[0..region->arena->capacity])) by {
+        rewrite(region->arena->capacity == old(region->arena->capacity));
+        rewrite(region->arena->occupied == old(region->arena->occupied));
+        rewrite(region->arena->data == old(region->arena->data));
         assumption();
     }
     let r = fold(arena_region(region), { start: s, end: e });
@@ -5304,17 +5343,21 @@ int32 arena_pipeline(
         assumption();
     }
     mark w1;
-    step(arena_write, { r: r1, st: s0 }) by {
-        both {
-            normalize();
-        } and {
-            arithmetic_certificate {
-                negated_goal => to_integer(r1.end) <= (to_integer(r1.start) + to_integer(0));
-                premise 0: to_integer(r1.start) < to_integer(r1.end) => to_integer(r1.start) <
-                    to_integer(r1.end);
-                add 0, 1 => (to_integer(r1.end) + to_integer(r1.start)) < (to_integer(r1.start) +
-                    to_integer(0) + to_integer(r1.end));
-                conclusion 2;
+    step(arena_write, { r: r1, st: s0 }) {
+        requires 0 <= 0 by normalize();
+        requires r1.end <= s0.capacity by assumption();
+        requires defined(r1.start + 0) and (to_integer(r1.start) + to_integer(0)) < to_integer(r1.end) by {
+            both {
+                normalize();
+            } and {
+                arithmetic_certificate {
+                    negated_goal => to_integer(r1.end) <= (to_integer(r1.start) + to_integer(0));
+                    premise 0: to_integer(r1.start) < to_integer(r1.end) => to_integer(r1.start) <
+                        to_integer(r1.end);
+                    add 0, 1 => (to_integer(r1.end) + to_integer(r1.start)) < (to_integer(r1.start) +
+                        to_integer(0) + to_integer(r1.end));
+                    conclusion 2;
+                }
             }
         }
     }
@@ -5458,17 +5501,21 @@ int32 arena_pipeline(
         assumption();
     }
     mark w2;
-    step(arena_write, { r: r2, st: s0 }) by {
-        both {
-            normalize();
-        } and {
-            arithmetic_certificate {
-                negated_goal => to_integer(r2.end) <= (to_integer(r2.start) + to_integer(0));
-                premise 0: to_integer(r2.start) < to_integer(r2.end) => to_integer(r2.start) <
-                    to_integer(r2.end);
-                add 0, 1 => (to_integer(r2.end) + to_integer(r2.start)) < (to_integer(r2.start) +
-                    to_integer(0) + to_integer(r2.end));
-                conclusion 2;
+    step(arena_write, { r: r2, st: s0 }) {
+        requires 0 <= 0 by normalize();
+        requires r2.end <= s0.capacity by assumption();
+        requires defined(r2.start + 0) and (to_integer(r2.start) + to_integer(0)) < to_integer(r2.end) by {
+            both {
+                normalize();
+            } and {
+                arithmetic_certificate {
+                    negated_goal => to_integer(r2.end) <= (to_integer(r2.start) + to_integer(0));
+                    premise 0: to_integer(r2.start) < to_integer(r2.end) => to_integer(r2.start) <
+                        to_integer(r2.end);
+                    add 0, 1 => (to_integer(r2.end) + to_integer(r2.start)) < (to_integer(r2.start) +
+                        to_integer(0) + to_integer(r2.end));
+                    conclusion 2;
+                }
             }
         }
     }
@@ -5628,6 +5675,24 @@ int32 arena_pipeline(
         };
     }
     let { live: framed_live, capacity: framed_capacity } = unfold(s0);
+    have at(region(22).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
+        have arena->occupied == at(region(22).entry, arena->occupied) by assumption();
+        have arena->data == at(region(22).entry, arena->data) by assumption();
+        rewrite(arena->occupied == at(region(22).entry, arena->occupied));
+        rewrite(arena->data == at(region(22).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by {
+        have arena->data == at(region(22).entry, arena->data) by assumption();
+        rewrite(arena->data == at(region(22).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by {
+        have arena->occupied == at(region(22).entry, arena->occupied) by assumption();
+        rewrite(arena->occupied == at(region(22).entry, arena->occupied));
+        assumption();
+    }
     let { start: framed_start, end: framed_end } = unfold(r1);
     let r1 = fold(arena_region(first), { start: framed_start, end: framed_end });
     let s0 = fold(arena_state(arena), { live: framed_live, capacity: framed_capacity });
@@ -5681,6 +5746,24 @@ int32 arena_pipeline(
     let s0 = fold(arena_state(arena), { live: kept_live, capacity: kept_capacity });
     step(arena_read, { r: r1, st: s0 });
     let { live: returned_live, capacity: returned_capacity } = unfold(s0);
+    have at(region(23).entry, separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity]))) by assumption();
+    have separate(memory(arena->occupied[0..arena->capacity]), memory(arena->data[0..arena->capacity])) by {
+        have arena->occupied == at(region(23).entry, arena->occupied) by assumption();
+        have arena->data == at(region(23).entry, arena->data) by assumption();
+        rewrite(arena->occupied == at(region(23).entry, arena->occupied));
+        rewrite(arena->data == at(region(23).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->data[0..arena->capacity])) by {
+        have arena->data == at(region(23).entry, arena->data) by assumption();
+        rewrite(arena->data == at(region(23).entry, arena->data));
+        assumption();
+    }
+    have separate(memory(*arena), memory(arena->occupied[0..arena->capacity])) by {
+        have arena->occupied == at(region(23).entry, arena->occupied) by assumption();
+        rewrite(arena->occupied == at(region(23).entry, arena->occupied));
+        assumption();
+    }
     let {  } = unfold(kept);
     let s0 = fold(arena_state(arena), { live: returned_live, capacity: returned_capacity });
     have r1.start == at(m3, r1.start) by {

@@ -22,5 +22,5 @@ int32 caller(int32 n) {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 2 of `read`)
+fail: unproved obligation: `separate(memory(a[0..n]), memory(b[0..1]))`
 ```

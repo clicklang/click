@@ -4251,25 +4251,6 @@ pub fn c_function_contract_entry_state(
     }
 }
 
-/// Whether `state` holds `required` by its definition alone, the law
-/// contract certification applies to a returned resource: held directly, or
-/// assembled from pieces only where every assembled composite's body facts
-/// hold under `assumptions`.
-pub(crate) fn c_resource_definitionally_established(
-    state: &CState,
-    required: &CResourceFact,
-    definitions: &[CCompositeResourceDefinition],
-    assumptions: &PureFactContext,
-) -> bool {
-    super::functions::resource_context_satisfies_definitional_fact(
-        state.resources(),
-        required,
-        definitions,
-        state.memory(),
-        assumptions,
-    )
-}
-
 /// Whether a body outcome establishes every resource the contract returns,
 /// by the rule contract certification applies to a `produces` claim. A proof
 /// consults this before reading the outcome through the contract's resource
@@ -5724,9 +5705,7 @@ pub(in crate::kernel) fn proof_evidence_initial_state<'e>(
 /// proof object assumes on each path; no restatement of the cases from outside
 /// the traces is consulted.
 pub(in crate::kernel) fn proof_case_partitions_are_exhaustive(
-    evidence: &[crate::kernel::proof::PersistentSequence<
-        crate::kernel::proof::CheckedExecutionEvent,
-    >],
+    evidence: &[crate::kernel::proof::ExecutionEvidence],
 ) -> bool {
     use crate::kernel::proof::CheckedExecutionEvent;
 

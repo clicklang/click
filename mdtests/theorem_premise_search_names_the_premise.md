@@ -76,7 +76,7 @@ int read_parent_value(struct node* n) {
             unfold(t);
             step();
             step();
-            let u = fold(tree_at(n), { model: old(t.model) });
+            let u = fold(tree_at(n), { model: Tree::Node(identity, node_parent, value) });
             step_until(function.exit);
             solve();
         },

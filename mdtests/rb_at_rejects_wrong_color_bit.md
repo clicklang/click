@@ -99,5 +99,5 @@ void set_parent_black(struct rb_node* node, struct rb_node* old_parent, struct r
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields: fact 6 of 6 of arm `Node` is not established
+fail: unproved obligation: `(node->__rb_parent_color & 1) == color_bit(Color::Red())`
 ```

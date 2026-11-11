@@ -30,5 +30,5 @@ int32 fill_too_many_second_fields() {
 ```
 
 ```expect
-fail: could not show `i >= 0 && i < 4`
+fail: array subobject index must be at least 0 and less than 4
 ```

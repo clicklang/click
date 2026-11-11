@@ -2644,6 +2644,35 @@ pub(crate) fn arithmetic_comparison_form(proposition: &Proposition) -> Option<Pr
     .or(resolved)
 }
 
+/// One read-over-write reduction, using only the read's defining store.
+/// A cached value at a later snapshot is not this evidence. Never follow a
+/// predecessor, alias, or another pointer read here. A read projection has
+/// one retained source endpoint; looking up that endpoint is not a history walk.
+pub(crate) fn pointer_read_over_immediate_store(pointer: &Pointer) -> Option<Pointer> {
+    crate::instrumentation::record_deterministic_work(1);
+    let read = pointer.as_loaded_value()?;
+    if read.displacement != PointerOffsetTerm::Constant(0) {
+        return None;
+    }
+    let source = crate::kernel::prelude::canonical_load_projection_source(
+        &read.defining_memory,
+        &read.defining_address,
+    );
+    let derivation = source
+        .as_ref()
+        .unwrap_or(&read.defining_memory)
+        .derivation()?;
+    let CMemoryDerivation::Store {
+        pointer: written,
+        value: CValue::Pointer(value),
+        ..
+    } = derivation.as_ref()
+    else {
+        return None;
+    };
+    (written == &read.defining_address).then(|| value.pointer().clone())
+}
+
 /// The read-over-write authority for a pointer read: the pointer stored at
 /// the read's address in the snapshot it reads, as a cell or as the pointer
 /// view of a union cell, when that snapshot records one. A cell holding the

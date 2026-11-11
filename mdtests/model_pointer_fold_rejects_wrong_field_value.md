@@ -44,5 +44,5 @@ void recombine(struct node *p) {
 ```
 
 ```expect
-fail: fact 2 of 2 of arm `At` is not established
+fail: unproved obligation: `qid->left == pid`
 ```

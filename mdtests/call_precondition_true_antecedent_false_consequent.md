@@ -31,5 +31,5 @@ int32 use_five(int32* p) {
 ```
 
 ```expect
-fail: precondition clause 2 of `window`
+fail: unproved obligation: `5 != 7u64 implies 5 <= 3`
 ```

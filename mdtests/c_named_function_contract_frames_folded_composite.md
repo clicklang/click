@@ -53,10 +53,19 @@ int32 apply_bundle(
     ensures result == key;
 }
 
+theorem keep_first_bundle_satisfies_PreserveBundles() {
+    ensures PreserveBundles(&keep_first_bundle) by {
+        unfold(PreserveBundles);
+        solve();
+    }
+}
+
 int32 framed_bundle_caller(int32 key, int32 spare) {
     owns bundle(key);
     owns bundle(spare);
     ensures result == key;
+} by {
+    apply(keep_first_bundle_satisfies_PreserveBundles());
 }
 ```
 

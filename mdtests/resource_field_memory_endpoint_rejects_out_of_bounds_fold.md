@@ -32,5 +32,5 @@ void make(int32* data, int32 capacity) {
 ```
 
 ```expect
-fail: fact 2 of 2 of the resource body is not established
+fail: unproved obligation: `((capacity + 1) as int32) <= capacity`
 ```

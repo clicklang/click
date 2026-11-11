@@ -28,10 +28,13 @@ int caller::(lambda#0)(int y) {
     requires 0 <= y and y <= 1000;
     ensures result == y + y;
 }
+theorem lambda_doubles() {
+    ensures Doubling(&caller::(lambda#0)) by { unfold(Doubling); solve(); }
+}
 int caller(int x) {
     requires 0 <= x and x <= 1000;
     ensures result == x + x;
-}
+} by { apply(lambda_doubles()); }
 ```
 
 ```expect

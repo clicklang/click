@@ -36,8 +36,14 @@ int32 apply(int32 (*callback)(int32), int32 x) {
     ensures 0 == 0;
 }
 
+theorem spin_has_Unary() {
+    ensures Unary(&spin) by { unfold(Unary); solve(); }
+}
+
 int32 spin(int32 x) {
     ensures 0 == 0;
+} by {
+    apply(spin_has_Unary());
 }
 ```
 

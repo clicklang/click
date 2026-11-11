@@ -466,16 +466,21 @@ void use(struct root* root) {
         expanded.contains("have whole.model == old(cell.model) by"),
         "the expansion should read the unfolded child through the produced binder: {expanded}"
     );
-    crate::surface::proof::without_implicit_solve(|| verify_c0_sources(&expanded, &sources))
-        .unwrap();
+    crate::surface::proof::without_implicit_solve_for_claim("use.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
     assert!(
-        crate::surface::proof::without_implicit_solve(|| verify_c0_sources(
-            &expanded.replace(
-                "ensures whole.model == old(cell.model);",
-                "ensures whole.model == old(cell.model) + 1;"
-            ),
-            &sources,
-        ))
+        crate::surface::proof::without_implicit_solve_for_claim("use.contract", || {
+            verify_c0_sources(
+                &expanded.replace(
+                    "ensures whole.model == old(cell.model);",
+                    "ensures whole.model == old(cell.model) + 1;",
+                ),
+                &sources,
+            )
+            .map_err(|error| error.report())
+        })
         .is_err()
     );
 }
@@ -1020,7 +1025,7 @@ theorem reflexive(xs: TestList<int32>) {
     let expanded = expand_c0_tactic_source_at(click_source, &[], position.line, position.column)
         .expect("a smart tactic in an induction arm should expand");
     assert!(expanded.contains("TestList::Nil => {\n                normalize();"));
-    assert!(expanded.contains("TestList::Cons(head, tail) => {\n                normalize();"));
+    assert!(expanded.contains("TestList::Cons(head, tail) => {\n                assumption();"));
     verify_c0_sources(&expanded, &[]).expect("the expanded structural proof should re-verify");
 }
 
@@ -1586,9 +1591,9 @@ int32 caller(int32 x) {
     let expanded =
         expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
             .expect("the call should expand with its consumed precondition");
-    // Both statements run in the whole context; the call's precondition is
-    // proved from it and the expansion names no premise.
-    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
+    // The call retains an explicit proof of its known precondition.
+    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c0_sources(&expanded, &sources).expect("the call steps should check");
 }
 
@@ -1624,9 +1629,9 @@ int32 caller(struct box* p, int32 x) {
     let expanded =
         expand_top_level_tactic_for_test(click_source, &sources, "caller", CProofClaim::Grouped, 0)
             .expect("the memory-reading precondition should expand");
-    // Both statements run in the whole context; the call's memory-reading
-    // precondition is proved from it and the expansion names no premise.
-    assert_eq!(expanded.matches("step();").count(), 3, "{expanded}");
+    // The memory-reading prerequisite retains its explicit proof.
+    assert_eq!(expanded.matches("step();").count(), 2, "{expanded}");
+    assert_eq!(expanded.matches("step() by {").count(), 1, "{expanded}");
     verify_c0_sources(&expanded, &sources)
         .expect("the condition and its ambient view should verify normally");
 }

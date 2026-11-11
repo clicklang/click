@@ -39,12 +39,21 @@ int32 apply_token(int32 (*callback)(int32), int32 key) {
     ensures result == key;
 }
 
+theorem proposed_claims_token_contract() {
+    ensures BorrowToken(&claims_token) by {
+        unfold(BorrowToken);
+        solve();
+    }
+}
+
 int32 token_ownership_from_view_caller(int32 key) {
     views permit(key);
     ensures result == key;
+} by {
+    apply(proposed_claims_token_contract());
 }
 ```
 
 ```expect
-fail: function `claims_token` does not satisfy named contract `BorrowToken`
+fail: contract-refinement proof does not establish `BorrowToken(&claims_token)`
 ```

@@ -116,7 +116,8 @@ fn c_branch_condition_at_frontier(
 }
 
 impl<'a> Proof<'a> {
-    /// Run the selected operation while retaining its unresolved obligations.
+    /// Prepare the selected operation with all its required obligations,
+    /// including prerequisites already present in the input fact index.
     /// The candidate is conditional until the driver proves those obligations
     /// at this original frontier and calls `finish_prepared_step`.
     pub(in crate::surface::proof) fn prepare_step(
@@ -126,7 +127,9 @@ impl<'a> Proof<'a> {
         Result<Self, ClickError>,
         crate::surface::proof::execution_planning::OpenObligationProbe,
     ) {
-        probe_open_obligations(|| self.apply_fast_simple_step(step))
+        crate::surface::proof::execution_planning::probe_step_obligations(|| {
+            self.apply_primitive_step(step)
+        })
     }
 
     /// Refuses an exhausted script at its actual frontier. A disposable
@@ -749,6 +752,10 @@ impl<'a> Proof<'a> {
             let mut bindings = BTreeMap::new();
             for binding in transport.binders().iter().chain(transport.produced()) {
                 crate::instrumentation::record_deterministic_work(1);
+                crate::kernel::model_fields::register_instance_spelling(
+                    binding.identity(),
+                    binding.instance(),
+                );
                 if bindings
                     .insert(binding.binder_identity(), binding.identity())
                     .is_some()
@@ -1228,33 +1235,37 @@ impl<'a> Proof<'a> {
             .map_err(|error| self.execution_update_error("`mark`", error))
     }
 
-    /// Publish a completed conditional statement after its caller has proved
+    /// Publish a prepared operation after its caller has proved
     /// every recorded obligation at this original frontier. The candidate must
-    /// never be used as the context for those proofs. A failed preparation (for
-    /// example pending loan recovery) has no successor and still needs retry.
+    /// never be used as the context for those proofs. A refused operation has
+    /// no retained successor and cannot be completed by re-executing it.
     fn finish_prepared_step(
         &self,
         prepared: Result<Self, ClickError>,
         proved: &Self,
-        step: &ProofStep,
+        discharged: &[UnresolvedRequirement],
     ) -> Result<Self, ClickError> {
-        // Folds also use obligation probing, but have their own resource-scope
-        // publication rather than a statement frontier.
-        if matches!(step, ProofStep::FoldResource(_)) {
-            return proved.apply_fast_simple_step(step);
-        }
-        let mut candidate = match prepared {
-            Ok(candidate) => candidate,
-            Err(_) => return proved.apply_fast_simple_step(step),
-        };
-        let introduced = proved
+        let mut candidate = prepared?;
+        // Every successful fold retains either its exchange or its outcome
+        // definition-law presentation while the driver proves its premises.
+        let prepared_fold = candidate
+            .execution()
+            .is_some_and(|execution| execution.core.has_prepared_fold());
+        let mut introduced = proved
             .facts()
             .introduced_since(self.facts())
             .expect("obligation proofs extend their original fact context");
-        let mut facts = candidate.facts().clone();
-        for fact in &introduced {
-            facts = facts.with_kernel_checked_fact(fact.clone());
-        }
+        // A call precondition can already belong to the input context. Its
+        // proof still supplies evidence to the execution path, whose retained
+        // facts are separate from the frontier's persistent input context.
+        // Other obligation adapters (notably assertion false-path goals)
+        // retain the facts their proofs actually introduce above.
+        introduced.extend(
+            discharged
+                .iter()
+                .filter(|requirement| requirement.call_site.is_some())
+                .map(|requirement| requirement.proposition.clone()),
+        );
         let original = self
             .execution()
             .expect("statement preparation has a frontier");
@@ -1265,6 +1276,20 @@ impl<'a> Proof<'a> {
             .execution()
             .expect("prepared statement has a successor")
             .clone();
+        let facts = if execution.core.has_prepared_return_fold() {
+            execution
+                .core
+                .finish_prepared_return_fold(&proven.core, proved.facts())
+                .map_err(|error| self.step_error(error))?
+        } else if prepared_fold {
+            execution.core.finish_prepared_instance_fold(proved.facts())
+        } else {
+            introduced
+                .iter()
+                .fold(candidate.facts().clone(), |facts, fact| {
+                    facts.with_kernel_checked_fact(fact.clone())
+                })
+        };
         // `have` publication keeps its source spelling and certificate facts
         // beside the logical context. Carry only the appended suffix, preserving
         // the candidate's new call bindings, snapshots, and typed read evidence.
@@ -1287,6 +1312,22 @@ impl<'a> Proof<'a> {
                 .surface_record
                 .retained_have_facts
                 .with_kernel_checked_fact(fact);
+        }
+        if prepared_fold {
+            candidate.state = candidate
+                .state
+                .publish_checked_focused_transition(
+                    candidate
+                        .focused_obligation()
+                        .expect("prepared fold retains its goal")
+                        .clone(),
+                    facts,
+                    Some(Arc::new(execution)),
+                    candidate.state().added_facts().to_vec(),
+                    candidate.state().checked_facts().to_vec(),
+                )
+                .map_err(|_| self.step_error("prepared fold lost its selected goal"))?;
+            return Ok(candidate);
         }
         // A completing statement also saved its conditional obligations in
         // the function outcome. Publish the proved input delta on those new
@@ -1355,14 +1396,12 @@ impl<'a> Proof<'a> {
         Ok(candidate)
     }
 
-    /// A simple tactic's fast path: a statement step under the `Fast`
-    /// policy, or a `fold`, whose body checks are exact. Either refuses an
-    /// obligation it cannot close exactly, or records it while probed.
-    fn apply_fast_simple_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
+    /// Construct one primitive transition. Preparation collects its required
+    /// propositions; only the driver supplies their proofs and publishes the
+    /// retained successor. A refusal is returned without re-execution.
+    fn apply_primitive_step(&self, step: &ProofStep) -> Result<Self, ClickError> {
         match step {
-            ProofStep::FoldResource(_) => {
-                without_implicit_solve(|| self.driver().apply_step(step.clone()))
-            }
+            ProofStep::FoldResource(resource) => self.apply_primitive_fold(resource),
             _ => self.apply_execution_statement_step_with_policy(
                 step.clone(),
                 StatementPrerequisitePolicy::Fast,

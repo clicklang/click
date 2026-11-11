@@ -7230,6 +7230,8 @@ impl CMemory {
     /// ignores changed block extents or allocation retirement metadata.
     pub(in crate::kernel) fn read_region_identity(&self, base: &Pointer) -> ReadRegionIdentity {
         crate::instrumentation::record_deterministic_work(1);
+        let stored = crate::kernel::eval::pointer_read_over_immediate_store(base);
+        let base = stored.as_ref().unwrap_or(base);
         ReadRegionIdentity {
             block_size: self.block_extent(&base.block).cloned(),
             local_lifetime_ended: self.forgotten.ended_local_blocks.contains(&base.block),

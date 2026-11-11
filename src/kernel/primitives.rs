@@ -9104,9 +9104,16 @@ impl CMemorySnapshotIdentity {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallRequirementSite {
     pub(crate) callee: String,
+    /// Original indirect invocation, distinct from the selected concrete target.
+    pub(crate) source_callee: Option<std::sync::Arc<str>>,
+    pub(crate) value_arguments: std::sync::Arc<[(String, CValue)]>,
+    pub(crate) resource_arguments: std::sync::Arc<[(String, Variable, Variable)]>,
     pub(crate) interface: std::sync::Arc<str>,
     pub(crate) candidate_ordinal: usize,
     pub(crate) source_arguments: std::sync::Arc<Vec<CExpression>>,
+    /// Enclosing runtime invocation when this requirement belongs to its
+    /// worker. `source_arguments` still names the worker's actual arguments.
+    pub(crate) source_invocation_arguments: Option<std::sync::Arc<Vec<CExpression>>>,
     pub(crate) source_snapshot: CMemorySnapshotIdentity,
 }
 
@@ -9124,9 +9131,13 @@ impl CallRequirementSite {
         });
         Self {
             callee: callee.into(),
+            source_callee: None,
+            value_arguments: std::sync::Arc::from([]),
+            resource_arguments: std::sync::Arc::from([]),
             interface: std::sync::Arc::from(interface),
             candidate_ordinal,
             source_arguments: std::sync::Arc::new(source_arguments.to_vec()),
+            source_invocation_arguments: None,
             source_snapshot: CMemorySnapshotIdentity::of(source_memory),
         }
     }
@@ -13864,6 +13875,7 @@ impl ReasoningPolicy {
     pub(super) const ASSUME_ENTRY_CLAUSE_EXTENTS: Self = Self(1 << 8);
     /// A held resource carries the arithmetic domains established by its fold.
     pub(super) const ASSUME_HELD_RESOURCE_DOMAINS: Self = Self(1 << 9);
+    pub(super) const RETAIN_REQUIRED_OBLIGATIONS: Self = Self(1 << 10);
 
     pub(super) fn contains(self, choice: Self) -> bool {
         self.0 & choice.0 != 0
@@ -14237,6 +14249,9 @@ pub struct ProofObligation {
     /// a contract precondition assumed at function entry. Its caller must
     /// establish this same obligation before applying the contract.
     pub(super) evaluation_domain: bool,
+    /// Producer metadata: emitted on the false arm of a C assertion.
+    /// This tags the existing truthiness obligation, not a new proposition.
+    pub(super) assertion_failure: bool,
     /// Source identity for a required call precondition, when this
     /// obligation was emitted while applying a selected callee contract.
     /// This is planning metadata only and is excluded from obligation

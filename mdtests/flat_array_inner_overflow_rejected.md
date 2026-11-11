@@ -18,5 +18,5 @@ int32 c() {
 ```
 
 ```expect
-fail: array subobject index
+fail: unproved obligation: `5 >= 0 and 5 < 3`
 ```

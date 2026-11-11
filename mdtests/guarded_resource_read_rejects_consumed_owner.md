@@ -45,7 +45,8 @@ int32 f(struct cell* root) {
             separate(memory((root->base.left as (void *) as (struct cell *))->value), memory(root->value));
         };
     }
-    fold(child); step(); step(); solve();
+    let restored = fold(child_value(root->base.left), { number: old(child.number) });
+    step(); step(); solve();
 }
 ```
 

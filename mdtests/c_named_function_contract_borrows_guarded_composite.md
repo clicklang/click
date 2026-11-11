@@ -55,9 +55,18 @@ int32 apply_guarded_inspect(
     }
 }
 
+theorem inspect_guarded_satisfies_InspectGuarded() {
+    ensures InspectGuarded(&inspect_guarded) by {
+        unfold(InspectGuarded);
+        solve();
+    }
+}
+
 int32 guarded_borrow_caller(int32* cell) {
     owns maybe_cell(1, cell);
     ensures result == 1;
+} by {
+    apply(inspect_guarded_satisfies_InspectGuarded());
 }
 ```
 

@@ -78,6 +78,7 @@ trait ResourcePureFacts {
 struct ProofResourcePureFacts {
     facts: ProofFacts,
     added: Vec<Proposition>,
+    published: Vec<Proposition>,
 }
 
 impl ProofResourcePureFacts {
@@ -85,6 +86,7 @@ impl ProofResourcePureFacts {
         Self {
             facts,
             added: Vec::new(),
+            published: Vec::new(),
         }
     }
 }
@@ -103,6 +105,7 @@ impl ResourcePureFacts for ProofResourcePureFacts {
     }
 
     fn insert(&mut self, fact: Proposition) -> bool {
+        self.published.push(fact.clone());
         if self.facts.contains_top_level(&fact) {
             return false;
         }
@@ -912,6 +915,17 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
             );
         }
     }
+    let instance_name =
+        crate::kernel::model_fields::registered_instance_spelling(instance.identity())
+            .ok_or_else(|| ClickError::new("resource body clause instance has no source name"))?;
+    let instance_renames = BTreeMap::from([(
+        "__body".to_owned(),
+        crate::surface::lowering::InstanceRename {
+            name: instance_name.to_string(),
+            identity: Variable(u64::MAX),
+            target_identity: Some(instance.identity()),
+        },
+    )]);
     let mut paired = Vec::with_capacity(records.len());
     for record in records {
         if record.arm.as_deref() != Some(variant) {
@@ -938,8 +952,14 @@ pub(in crate::surface) fn pair_instance_body_clause_presentations(
                 "resource body clause lost its quantifier binder",
             ));
         }
-        let source =
-            substitute_click_proposition(source, &substitutions).map_err(ClickError::new)?;
+        let source = crate::surface::lowering::substitute_click_proposition_in(
+            source,
+            &crate::surface::lowering::ContractSubstitutions::with_instance_renames(
+                &substitutions,
+                &instance_renames,
+            ),
+        )
+        .map_err(ClickError::new)?;
         paired.push(ResourceClausePresentation {
             source,
             checked: record.clone(),
@@ -3053,6 +3073,8 @@ fn resource_value_substitutions_with_witnesses(
 }
 
 pub(super) struct CheckedResourceUnfold {
+    /// Facts this unfold publishes, including facts already known locally.
+    pub(super) published_facts: Vec<Proposition>,
     pub(super) state: CState,
     pub(super) facts: ProofFacts,
     pub(super) added_facts: Vec<Proposition>,
@@ -3149,6 +3171,7 @@ fn unfold_composite_resource_for_proof_with_access(
         materialize_memory,
     )?;
     Ok(CheckedResourceUnfold {
+        published_facts: facts.published,
         state: unfolded.state,
         facts: facts.facts,
         added_facts: facts.added,
@@ -4334,6 +4357,7 @@ fn fold_composite_resources_on_outcome_with_facts(
             pure_facts.assumptions(),
         )
         .with_opened_owner(opened_owner);
+        let collecting = crate::surface::proof::execution_planning::collecting_step_requirements();
         for fact in body_facts {
             let source_fact = fact;
             let fact = substitute_click_proposition(fact, &substitutions).map_err(|message| {
@@ -4366,7 +4390,10 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     ))
                 })?;
-                unfold_predicates_in_proposition(
+                if collecting {
+                    lowered
+                } else {
+                    unfold_predicates_in_proposition(
                     spec_definitions,
                     unfolded_predicates,
                     &lowered,
@@ -4378,6 +4405,7 @@ fn fold_composite_resources_on_outcome_with_facts(
                         describe_resource_clause(resource)
                     ))
                 })?
+                }
             };
             if let Some(binding) = dynamic_body_fact_dependency(
                 &required,
@@ -4416,9 +4444,9 @@ fn fold_composite_resources_on_outcome_with_facts(
             // The kernel's condition decision settles a condition body fact
             // as it settles a step's: the difference graph, then the
             // decision's checked rules (a tagged pointer word's low bits, say).
-            let exactly_available = pure_facts
-                .exact_available_across_effects(&required, execution_pure_facts)
-                || decided_by_kernel_condition_decision(&body_assumptions, &required);
+            let exactly_available = !collecting
+                && (pure_facts.exact_available_across_effects(&required, execution_pure_facts)
+                    || decided_by_kernel_condition_decision(&body_assumptions, &required));
             // A body fact the exact checks miss is a requirement of this
             // `fold`, spelled as the definition's fact over the arguments as
             // written; the fold never searches the proof context for it. A
@@ -4426,12 +4454,13 @@ fn fold_composite_resources_on_outcome_with_facts(
             // folds again.
             // A body fact reading a stored cell can hold by evaluation of the
             // value stored there (the read-over-write authority).
-            let open = !exactly_available
-                && !matches!(
-                    normalize_proposition(&required),
-                    NormalizedProposition::True
-                )
-                && !crate::kernel::holds_by_read_over_write(&required);
+            let open = collecting
+                || (!exactly_available
+                    && !matches!(
+                        normalize_proposition(&required),
+                        NormalizedProposition::True
+                    )
+                    && !crate::kernel::holds_by_read_over_write(&required));
             // A witness the proof cannot name has no source expression, so
             // its body fact has no requirement spelling and the fold refuses
             // it. A fact read in the projected authority state is spelled as
@@ -4488,6 +4517,24 @@ fn fold_composite_resources_on_outcome_with_facts(
             } else {
                 None
             };
+            if collecting {
+                let spelled = spelled.ok_or_else(|| {
+                    ClickError::new("fold body requirement has no source spelling")
+                })?;
+                refuse_or_record_open_obligation(
+                    ClickError::new(format!(
+                        "`{claim_label}` path {path_index}: `fold({})` requires {}",
+                        describe_resource_clause(spelling_resource),
+                        crate::surface::printing::source_click_proposition(&spelled),
+                    ))
+                    .with_spelled_requirement(
+                        required,
+                        spelled,
+                        "fold body fact".to_owned(),
+                    ),
+                )?;
+                continue;
+            }
             if open {
                 let available_pure_facts = pure_facts.materialize();
                 let resources = match &outcome {

@@ -671,7 +671,7 @@ fn declared_contract_parameter_spellings(
 /// The contract and concrete target of a named-contract fact over an exact
 /// function address, which is the shape automatic formation refuses and the
 /// shape a missing-fact report has to explain rather than blame.
-fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, &str)> {
+pub(super) fn concrete_named_contract_fact(fact: &Proposition) -> Option<(&str, &str)> {
     let Proposition::Predicate { name, arguments } = fact else {
         return None;
     };

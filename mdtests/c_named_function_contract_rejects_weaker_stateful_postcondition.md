@@ -40,13 +40,22 @@ void apply_step(void (*step)(int32*), int32* cell) {
     ensures old(cell[0]) < cell[0];
 }
 
+theorem proposed_maybe_progress_contract() {
+    ensures Progress(&maybe_progress) by {
+        unfold(Progress);
+        solve();
+    }
+}
+
 void weak_stateful_refinement_caller(int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
+} by {
+    apply(proposed_maybe_progress_contract());
 }
 ```
 
 ```expect
-fail: function `maybe_progress` does not satisfy named contract `Progress`
+fail: contract-refinement proof does not establish `Progress(&maybe_progress)`
 ```

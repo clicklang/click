@@ -28,5 +28,5 @@ int32 distance_nulls() {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 1 of `distance`)
+fail: precondition clause 1 of `distance`
 ```

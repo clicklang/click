@@ -283,9 +283,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         }
         // A bare `fold` is checked as a bare step is: its fast path, then the
         // implicit `solve` for each body fact it leaves open.
-        if matches!(step, ProofStep::FoldResource(_))
-            && !super::execution_statements::implicit_solve_disabled()
-        {
+        if matches!(step, ProofStep::FoldResource(_)) {
             return driver_proof.driver().apply_bare_statement_step(step);
         }
         if let ProofStep::StepProved { step: inner, proof } = &step {
@@ -505,35 +503,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 let resource = &driver_proof.resolve_proof_resource_arguments(resource)?;
                 driver_proof.apply_execution_resource_unfold_naming_witnesses(resource, names)
             }
-            ProofStep::FoldResource(resource) => {
-                // Resolve proof bindings before either the execution or
-                // outcome path interprets ordinary resource arguments.
-                let source_resource = resource;
-                let resource = &driver_proof.resolve_proof_resource_arguments(resource)?;
-                // A body fact over a witness an unfold named is spelled with
-                // that name.
-                let named_values = driver_proof
-                    .state()
-                    .locals()
-                    .values
-                    .iter()
-                    .filter_map(|(name, value)| match value {
-                        ContractExpression::CFragment(CExpression::Value(value)) => {
-                            Some((value.clone(), name.clone()))
-                        }
-                        _ => None,
-                    })
-                    .collect();
-                crate::surface::proof::surface_synthesis::with_proof_local_value_names(
-                    named_values,
-                    || {
-                        if driver_proof.focused_outcome_data().is_some() {
-                            driver_proof.apply_outcome_resource_fold(resource)
-                        } else {
-                            driver_proof.apply_execution_resource_fold(resource, source_resource)
-                        }
-                    },
-                )
+            ProofStep::FoldResource(_) => {
+                unreachable!("fold was routed through obligation generation")
             }
             ProofStep::ConstructResource(resource) => {
                 if driver_proof.focused_outcome_data().is_some() {

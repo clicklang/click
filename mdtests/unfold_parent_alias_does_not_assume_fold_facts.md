@@ -47,5 +47,5 @@ void probe(struct node *p, struct node *q) {
 ```
 
 ```expect
-fail: fold requires the instance body facts
+fail: unproved obligation: `p == (q as (void *))`
 ```

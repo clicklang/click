@@ -37,12 +37,21 @@ int32 apply_read(int32 (*read)(int32*), int32* cell) {
     ensures result == cell[0];
 }
 
+theorem proposed_claims_ownership_contract() {
+    ensures BorrowedRead(&claims_ownership) by {
+        unfold(BorrowedRead);
+        solve();
+    }
+}
+
 int32 ownership_from_view_caller(int32* cell) {
     views cell[0..1];
     ensures result == cell[0];
+} by {
+    apply(proposed_claims_ownership_contract());
 }
 ```
 
 ```expect
-fail: function `claims_ownership` does not satisfy named contract `BorrowedRead`
+fail: contract-refinement proof does not establish `BorrowedRead(&claims_ownership)`
 ```

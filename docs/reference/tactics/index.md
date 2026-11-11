@@ -408,7 +408,8 @@ context. One `step()` executes exactly one of these:
   selected case to its `break`.
 
 The diagnostic `the frontier is at statement N, ...` names the next statement,
-and `click expand` on the implicit tail prints one `step();` per statement.
+and `click expand` on the implicit tail prints one `step` per statement,
+with explicit prerequisite proofs where needed.
 
 The context decides a condition when the kernel refutes the other path from
 the facts. It uses exact facts, the conjuncts of an `and` fact, the condition
@@ -416,17 +417,17 @@ of the enclosing proof `if` or `cases` arm, constants and assigned values, and
 linear bounds it combines: `x > y` and `y > 3` decide `x > 3`, and
 `x > 10` and `x < 100` decide `x * 2 > 3`.
 
-A statement's requirements are of two kinds:
+Call preconditions and emitted verification conditions become obligations at the
+step's pre-state. Each obligation is proved by a written `step() by { ... }`
+body or ordinary implicit `solve()`, even if the fact is already available.
+An exact known precondition normally expands to `step() by { assumption(); }`.
+This solving is smart and may miss; for example, it can prove a callee's
+`requires a > 0` from `requires x == 5 or x == 7`.
 
-- Definedness of arithmetic (signed overflow, division by zero, shift range),
-  call preconditions, and asserted conditions (a global-array bound, a Rust
-  overflow `assert`) are checked against facts that state them exactly and
-  against kernel decisions. Any that this fast check leaves open is proved by
-  the implicit closer at the step's pre-state, or by a written
-  `step() by { ... }` body. **That part is smart**: it may miss. For example,
-  `requires x == 5 or x == 7` meets a callee's `requires a > 0`, and the
-  definedness of `x + 1`, through it. A definedness requirement is the
-  defined path's condition, such as `s >= 0 and s < 32` for `x << s`.
+Arithmetic evaluation still decides some safety conditions before generating
+an obligation; migrating those decisions is separate remaining work. An emitted
+definedness requirement states the defined path's condition, such as
+`s >= 0 and s < 32` for `x << s`.
 
 The step produces one successor state:
 
@@ -480,8 +481,8 @@ by: the implicit closer that proves this statement's requirements` is a smart
 miss. Prove
 the printed `goal:` with `have` before the step, or prove it with
 `step() by { ... }`. When the implicit closer cannot spell or prove an obligation, the
-step is refused at it with the fast path's diagnostic. The fast path itself
-never searches the proof context for an obligation.
+step is refused at that obligation. Requirement generation does not invoke
+proof search; the driver runs the implicit closer.
 
 An `assert`'s false-path obligation (as a Rust overflow check lowers to) is
 spelled as the asserted condition at the pre-state, less any disjunct an exact
@@ -968,8 +969,10 @@ Expansion reprints the map and pattern unchanged.
 **Expansion output.** `click expand` writes it; by hand, write it only to give
 an obligation a different proof than the implicit closer. Any `step` form,
 including `let` and call forms, followed by the proof of the one obligation its
-fast path leaves open. The fast path checks each requirement against facts that
-state it exactly and local kernel decisions, with no search.
+primitive generates. Emitted verification conditions and call preconditions
+remain obligations even when known: their ordinary `solve()` proof is usually
+`assumption()`. Arithmetic evaluation still has safety decisions that precede
+obligation generation; those are not yet migrated.
 
 The body proves that obligation at the step's pre-state, as a `have` would, and
 the step then runs with it stated. The body is one tactic call, such as
@@ -977,7 +980,7 @@ the step then runs with it stated. The body is one tactic call, such as
 
 **Failure, checking, and tools:**
 
-Refused when the fast path leaves no obligation open (superfluous) or more than
+Refused when the operation generates no obligation (superfluous) or more than
 one; the second refusal spells every open obligation as a `requires` entry to
 copy. The default `step()` already invokes the implicit closer for open obligations, so
 write `step()` rather than a `by` that only repeats it. Expansion keeps the
@@ -995,7 +998,7 @@ linear script and in a `branch` arm
 several open obligations their own proofs. Any `step` form followed by one
 `requires [label:] P by ...;` entry per obligation it proves. Each `P` is
 written at the step's pre-state over the caller's locals and the call's
-arguments, must state exactly one obligation the fast path leaves open, and is
+arguments, must state exactly one generated obligation, and is
 proved there as a `have`.
 
 Entries may appear in any order. An obligation no entry writes is checked as a
@@ -1003,8 +1006,7 @@ bare `step()` checks it.
 
 **Failure, checking, and tools:**
 
-An entry that states no open obligation, including one the fast path already
-closes, or that repeats an earlier entry's obligation, fails where it is written
+An entry that states no generated obligation, or that repeats an earlier entry's obligation, fails where it is written
 and lists the open obligations. Expansion keeps each entry and prints its body's
 checked steps. Like the `by` form, it is checked in a `branch` arm.
 
@@ -3693,12 +3695,11 @@ execution frontier, or at a function outcome after the C has returned) or in a
   child resource; the iterated ownership fact with nothing taken out. Arguments
   match up to equality by current facts: under `requires p == q;`,
   `fold(cell(q))` consumes `p`'s cells.
-- Each body `fact` is an available fact, normalizes to true without context,
-  or is a condition the kernel's condition decision settles (`p[0] >= 0`
-  from `p[0] == 3`). These are the fold's fast path.
+- Each body `fact` is proved by its written obligation proof or by ordinary
+  implicit `solve()`. An already-known fact is still an obligation.
 
 It consumes the clauses' facts and adds the folded resource; the pure facts
-stay. A body fact the fast path leaves open goes to the implicit closer
+stay. Each body fact without a written proof goes to the implicit closer
 described below, which is smart: its miss is not a `fold` bug.
 
 **Outside it**, with what to write instead:
@@ -3716,10 +3717,9 @@ described below, which is smart: its miss is not a `fold` bug.
 
 **Failure, checking, and tools:**
 
-A body fact no fact states exactly is left open and proved by the implicit
-closer as the fold's `by`, which expansion prints; one the implicit closer
-cannot prove fails, naming it. Before that, the kernel's condition decision settles a body
-fact that is a condition, as a step's fast path does.
+Every body fact is an obligation, including exactly available and trivially
+true facts. The driver uses its written proof or ordinary `solve()`, and
+expansion retains that proof. A failed proof names the body fact.
 
 A body fact over a witness the proof cannot name has no requirement spelling, so
 the fold is refused at it; the fold never searches. A missing body member, false
@@ -3739,7 +3739,7 @@ a body fact, and profiling charges its body.
 
 **Expansion output.** `click expand` writes it; by hand, write it only to give
 an open body fact a different proof than the implicit closer. Any `fold` form
-followed by the proof of the one body fact its fast path leaves open, written as
+followed by the proof of its one body fact, written as
 the resource's body fact over the fold's arguments and proved at the fold, as a
 `have` would.
 
@@ -3747,12 +3747,12 @@ The body is one tactic call, such as `solve();`, or a block.
 
 **Failure, checking, and tools:**
 
-Refused when the fast path leaves no body fact open (superfluous) or more than
+Refused when the selected body has no fact obligation (superfluous) or more than
 one; the second refusal spells each as a `requires` entry to copy. `fold(...) by
 auto` is a syntax error: it means `fold(...)`. Expansion keeps the `by` and
 prints the body's checked steps.
 
-**Checked examples:** [`fold_by_proves_its_one_open_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_proves_its_one_open_body_fact.md), [`fold_by_with_no_open_body_fact_is_superfluous.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_with_no_open_body_fact_is_superfluous.md)
+**Checked examples:** [`fold_by_proves_its_one_open_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_proves_its_one_open_body_fact.md), [`fold_by_proves_an_already_known_body_fact.md`](https://github.com/clicklang/click/blob/master/mdtests/fold_by_proves_an_already_known_body_fact.md)
 
 ### Folding with several obligations
 
@@ -3761,7 +3761,7 @@ prints the body's checked steps.
 **Expansion output.** `click expand` writes it; by hand, write it only to give
 several open body facts their own proofs. Any `fold` form followed by one
 `requires [label:] P by ...;` entry per body fact it proves. Each `P` states
-exactly one body fact the fast path leaves open; one no entry writes goes to the
+exactly one body fact; one no entry writes goes to the
 implicit closer.
 
 **Failure, checking, and tools:**

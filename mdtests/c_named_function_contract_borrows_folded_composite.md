@@ -54,9 +54,18 @@ int32 spend_bundle(int32 key) {
     ensures result == key;
 }
 
+theorem inspect_bundle_satisfies_InspectBundle() {
+    ensures InspectBundle(&inspect_bundle) by {
+        unfold(InspectBundle);
+        solve();
+    }
+}
+
 int32 borrow_then_spend_bundle(int32 key) {
     consumes bundle(key);
     ensures result == key;
+} by {
+    apply(inspect_bundle_satisfies_InspectBundle());
 }
 ```
 

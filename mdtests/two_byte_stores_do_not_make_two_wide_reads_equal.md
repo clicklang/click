@@ -44,5 +44,5 @@ int32 two_reads(int16* q, int16 y) {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 1 of `same`)
+fail: unproved obligation: `d1 == d2`
 ```

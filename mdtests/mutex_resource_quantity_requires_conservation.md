@@ -75,5 +75,5 @@ void* increment_counter(void* argument) {
 ```
 
 ```expect
-fail: fact 2 of 4 of the resource body is not established
+fail: unproved obligation: `((n + 1) as int32) <= 2`
 ```

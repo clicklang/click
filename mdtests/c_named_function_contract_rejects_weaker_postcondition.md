@@ -47,11 +47,20 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
     ensures result == input + 1;
 }
 
+theorem proposed_increasing_contract() {
+    ensures PositiveStep(&increasing) by {
+        unfold(PositiveStep);
+        solve();
+    }
+}
+
 int32 weak_postcondition_caller() {
     ensures result == 42;
+} by {
+    apply(proposed_increasing_contract());
 }
 ```
 
 ```expect
-fail: function `increasing` does not satisfy named contract `PositiveStep`
+fail: contract-refinement proof does not establish `PositiveStep(&increasing)`
 ```

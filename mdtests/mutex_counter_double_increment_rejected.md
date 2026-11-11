@@ -116,7 +116,9 @@ void* increment_counter(void* argument) {
     unfold(credit(counter));
     fold(contribution(counter));
     step();
-    let restored = fold(counter_control(counter), { done: done + 1, slack: slack - 1 });
+    let restored = fold(counter_control(counter), { done: done + 1, slack: slack - 1 }) {
+        requires to_integer(counter->value) == to_integer(done + 1) by assumption();
+    }
     step(pthread_mutex_unlock, {
         access: access, guard: guard, state: restored
     });
@@ -205,5 +207,5 @@ int32 increment_twice(struct mutex_counter* counter) {
 ```
 
 ```expect
-fail: fact 1 of 4 of the resource body is not established
+fail: `have` failed for `to_integer(counter->value) == to_integer((done + 1))`
 ```

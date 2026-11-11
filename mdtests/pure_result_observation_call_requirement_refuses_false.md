@@ -27,5 +27,5 @@ int32 native_comparison() {
 ```
 
 ```expect
-fail: precondition
+fail: unproved obligation: `to_integer(click::format::decimal_length((123u32 as uint64))) <= 2`
 ```

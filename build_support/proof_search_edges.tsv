@@ -208,7 +208,6 @@ src/surface/proof/proof_object/execution_joins/search.rs	search	ProofSearch::try
 src/surface/proof/proof_object/execution_statements.rs	dispatch	Proof::close_bundle_member_by_solve	try_solve_closure	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_fact_transport_inner	derive_proposition	1
 src/surface/proof/proof_object/execution_statements.rs	operation	Proof::apply_planned_outcome_fact_transport	derive_proposition	1
-src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_fast_simple_step	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_fact_transport_inner	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::apply_planned_outcome_fact_transport	driver	1
 src/surface/proof/proof_object/execution_statements.rs	operation-to-driver	Proof::plan_invariant_bundle_closure	driver	1
@@ -516,7 +515,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_structural_solve_closure_with_surfaces	2
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_unsigned_order_step	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_upper_bound_split_closure	1
-src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	driver	2
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	driver	3
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	scalar_equality_goal_is_refuted	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_cell_frame_transport_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_connected_fact_closure	2
@@ -530,6 +529,7 @@ src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_solve_closure_after_direct	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_after_direct_with_surfaces_and_function_unfold	try_stored_value_goal	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_strategies	try_zero_witness_closure	1
+src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_with_surfaces	driver	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_with_surfaces	try_direct_logical_closure	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_with_surfaces	try_direct_structural_closure_under_binders	1
 src/surface/proof/smart_closures/search.rs	search	ProofSearch::try_solve_closure_with_surfaces	try_solve_closure_after_direct_with_surfaces	1

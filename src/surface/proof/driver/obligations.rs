@@ -55,8 +55,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
     /// Check the written proof immediately against the exact lowered goals.
     /// The kernel owns the scope and retains its completed proof as bound
     /// closure evidence; finalization validates it without reproving it.
-    /// Applies `step` with explicit proofs of the obligations its fast path
-    /// leaves open. A plain `by` (`entries` is
+    /// Applies `step` with explicit proofs of its generated obligations.
+    /// A plain `by` (`entries` is
     /// `None`) proves the one open obligation; `requires` entries each prove
     /// the open obligation their proposition states. `prove` checks one proof
     /// as a `have` at this pre-state, through whichever driver reads the
@@ -86,10 +86,8 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         let (probe, recorded) = driver_proof.prepare_step(&step);
         // A successful preparation is conditional on every recorded requirement.
         // Keep it private while those requirements are proved at `self`, never
-        // in the candidate's post-state. A failed preparation needs recovery.
-        if recorded.recorded.is_empty() {
-            probe.as_ref().map_err(Clone::clone)?;
-        }
+        // in the candidate's post-state. A refusal is not a resumable result.
+        probe.as_ref().map_err(Clone::clone)?;
         let refusals = recorded.refusals;
         let recorded_requirements = recorded.recorded;
         let open = distinct_requirements(recorded_requirements.clone());
@@ -127,7 +125,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                 let [requirement] = open.as_slice() else {
                     if open.is_empty() {
                         return Err(driver_proof.step_error(format!(
-                            "{this}'s `by` is superfluous: its fast path leaves no obligation open; write it without `by`",
+                            "{this}'s `by` is superfluous: it generates no obligation; write it without `by`",
                         )));
                     }
                     let entries = open
@@ -173,7 +171,7 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                             format!("it leaves open {}", open_list()?)
                         };
                         return Err(driver_proof.step_error(format!(
-                            "`requires {written}` matches no obligation {this} leaves open: its fast path already closes it or it does not require it; {open_now}"
+                            "`requires {written}` matches no obligation {this} leaves open: it does not require it; {open_now}"
                         )));
                     };
                     if let Some(earlier) = claimed[slot] {
@@ -198,14 +196,6 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                     .zip(&claimed)
                     .filter(|(_, claimed)| claimed.is_none())
                     .map(|(requirement, _)| requirement)
-                    // A written entry can also establish another slot as an
-                    // exact fact (for example by proving a conjunction).
-                    .filter(|requirement| {
-                        !current
-                            .facts()
-                            .assumptions()
-                            .states_required_goal(&requirement.proposition)
-                    })
                     .collect::<Vec<_>>();
                 if !unwritten.is_empty() {
                     let result = if implicit_solve_disabled() {
@@ -232,7 +222,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
                                     )
                                 })
                                 .expect("an open requirement came from preparation");
-                            return Err(refusals[position].clone());
+                            return Err(unproved_step_requirement(
+                                driver_proof,
+                                &step,
+                                unwritten[missed],
+                                refusals[position].clone(),
+                            )?);
                         }
                     }
                 }
@@ -240,12 +235,12 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             }
         };
         // Both written and unwritten obligation slots have been discharged.
-        let stepped = driver_proof.finish_prepared_step(probe, &current, &step)?;
+        let stepped = driver_proof.finish_prepared_step(probe, &current, &recorded_requirements)?;
         Ok(driver_proof.step_proved_successor(stepped, step, proof))
     }
 
-    /// A bare step: the fast path, then the
-    /// implicit `solve` for each obligation it leaves open, recorded so that
+    /// A bare step: generate obligations, then run ordinary implicit `solve`
+    /// for each one, recording the proofs so that
     /// expansion prints the step with a `by` or `requires` entries. A step
     /// never searches the proof context: when the implicit `solve` cannot spell
     /// or prove an obligation, the fast path refuses the step at it.
@@ -254,18 +249,30 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         step: ProofStep,
     ) -> Result<Proof<'a>, ClickError> {
         let driver_proof = self.proof;
-        if implicit_solve_disabled() {
-            return driver_proof.apply_fast_simple_step(&step);
-        }
         // An obligation the implicit `solve` cannot spell or prove refuses the
         // step with the fast path's own diagnostic, naming that obligation.
-        let refused = || driver_proof.apply_fast_simple_step(&step);
         let (probe, recorded) = driver_proof.prepare_step(&step);
+        probe.as_ref().map_err(Clone::clone)?;
         if recorded.recorded.is_empty() {
+            if probe.as_ref().is_ok_and(|candidate| {
+                candidate
+                    .execution()
+                    .is_some_and(|execution| execution.core.has_prepared_fold())
+            }) {
+                return driver_proof.finish_prepared_step(probe, driver_proof, &[]);
+            }
             // With nothing recorded, the probe ran the ordinary checked step.
             return probe;
         }
         let refusals = recorded.refusals;
+        if implicit_solve_disabled() {
+            return Err(unproved_step_requirement(
+                driver_proof,
+                &step,
+                &recorded.recorded[0],
+                refusals[0].clone(),
+            )?);
+        }
         let recorded = recorded.recorded;
         let open = distinct_requirements(recorded.clone());
         let open = open.iter().collect::<Vec<_>>();
@@ -278,42 +285,24 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
             // the fast path's own diagnostic for it; another open
             // obligation it did prove is not what is wrong.
             Err(missed) => {
-                let refused = match recorded.iter().position(|requirement| {
-                    crate::kernel::proof::propositions_are_alpha_equal(
-                        &requirement.proposition,
-                        &open[missed].proposition,
-                    )
-                }) {
-                    Some(position) if position > 0 => Err(refusals[position].clone()),
-                    _ => refused(),
-                };
-                return refused.map_err(|error| {
-                    // The numeric count carrier can also be a C field
-                    // read. Name the authoritative source requirement.
-                    let Ok(Some(spelling)) = driver_proof.requirement_surface(open[missed], &step)
-                    else {
-                        return error;
-                    };
-                    if matches!(
-                        &spelling.surface,
-                        ClickProposition::Comparison {
-                            left: ContractExpression::ResourceCount(_),
-                            ..
-                        } | ClickProposition::Comparison {
-                            right: ContractExpression::ResourceCount(_),
-                            ..
-                        }
-                    ) {
-                        error.with_missing_tactic_requirement(
-                            crate::surface::printing::authored_click_proposition(&spelling.surface),
+                let position = recorded
+                    .iter()
+                    .position(|requirement| {
+                        crate::kernel::proof::propositions_are_alpha_equal(
+                            &requirement.proposition,
+                            &open[missed].proposition,
                         )
-                    } else {
-                        error
-                    }
-                });
+                    })
+                    .expect("a missed obligation came from preparation");
+                return Err(unproved_step_requirement(
+                    driver_proof,
+                    &step,
+                    open[missed],
+                    refusals[position].clone(),
+                )?);
             }
         };
-        let stepped = driver_proof.finish_prepared_step(probe, &proved, &step)?;
+        let stepped = driver_proof.finish_prepared_step(probe, &proved, &recorded)?;
         let proof = if entries.len() == 1 {
             StepProofCertificate::By(Box::new(entries.pop().expect("one entry").proof))
         } else {
@@ -1013,4 +1002,56 @@ impl<'p, 'a> ProofDriver<'p, Proof<'a>> {
         proof.validate_loop_invariant_bundle(invariant_checks, ranking_measures)?;
         Ok(Some(proof))
     }
+}
+
+fn unproved_step_requirement(
+    proof: &Proof<'_>,
+    step: &ProofStep,
+    requirement: &UnresolvedRequirement,
+    error: ClickError,
+) -> Result<ClickError, ClickError> {
+    // Assertion obligations describe the rejected path internally. On failure,
+    // retain the assertion's positive source goal, just as direct execution
+    // diagnostics do. This rendering runs only after obligation solving fails.
+    if let Some(condition) = &requirement.assertion_condition
+        && let Some(execution) = proof.execution()
+        && let Some(goal) = crate::surface::proof::fact_reasoning::asserted_condition_goal(
+            &execution.core.state,
+            condition,
+        )
+    {
+        let spelling = crate::surface::diagnostics::describe_stated_fact_over_locals(
+            &goal,
+            &execution.core.state,
+        );
+        return Ok(error
+            .with_rewritten_place(|reason| {
+                let (head, rest) = reason.split_once('\n').unwrap_or((reason, ""));
+                Some(if rest.is_empty() {
+                    format!("{head}; could not show `{spelling}`")
+                } else {
+                    format!("{head}; could not show `{spelling}`\n{rest}")
+                })
+            })
+            .with_reported_assertion_goal(Some(goal)));
+    }
+    // Keep the existing concrete-refinement diagnostic when the ordinary
+    // obligation solver cannot establish a named callback contract.
+    if crate::surface::diagnostics::concrete_named_contract_fact(&requirement.proposition).is_some()
+        && let ProofContext::Execution(context) = proof.context.as_ref()
+    {
+        let description = crate::surface::diagnostics::describe_pure_fact_with_environment(
+            &requirement.proposition,
+            context.parameter_binding(),
+            context.function_environment,
+            Some(context.spec_definitions.predicates),
+        );
+        return Ok(error.with_rewritten_place(|reason| Some(format!("{reason}; {description}"))));
+    }
+    let Some(spelling) = proof.requirement_surface(requirement, step)? else {
+        return Ok(error);
+    };
+    let goal = crate::surface::printing::source_click_proposition(&spelling.surface);
+    Ok(error
+        .with_rewritten_place(|reason| Some(format!("{reason}\n  unproved obligation: `{goal}`"))))
 }

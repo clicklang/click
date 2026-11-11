@@ -44,5 +44,5 @@ void clear(struct pair* p) {
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields
+fail: unproved obligation: `p->n == (c.v as int32)`
 ```

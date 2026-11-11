@@ -19,5 +19,5 @@ int32 quotient(int32 x, int32 y) {
 ```
 
 ```expect
-fail: undefined behavior: signed overflow (INT_MIN / -1
+fail: requires proof excluding signed overflow (INT_MIN / -1
 ```

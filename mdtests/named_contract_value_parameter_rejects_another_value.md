@@ -43,12 +43,16 @@ int32 apply(int32 (*f)(int32), int32 x, int32 k) {
     ensures to_integer(result) == to_integer(x + k);
 }
 
+theorem add3_is_adds_three() {
+    ensures Adds(&add3, { amount: 3 }) by { unfold(Adds); solve(); }
+}
+
 int32 caller(int32 x) {
     requires 0 <= x and x <= 1000;
     ensures to_integer(result) == to_integer(x + 4);
-}
+} by { apply(add3_is_adds_three()); }
 ```
 
 ```expect
-fail: precondition clause 1 of `apply`
+fail: unproved obligation: `Adds(&add3, 4)`
 ```

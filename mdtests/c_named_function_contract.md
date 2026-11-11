@@ -54,8 +54,17 @@ int32 apply(int32 (*callback)(int32, int32), int32 left, int32 right) {
     ensures result == left - right;
 }
 
+theorem compare_is_comparator() {
+    ensures Comparator(&compare) by {
+        unfold(Comparator);
+        solve();
+    }
+}
+
 int32 caller() {
     ensures result == 38;
+} by {
+    apply(compare_is_comparator());
 }
 ```
 

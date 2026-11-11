@@ -50,12 +50,21 @@ int32 apply_bundle(
     ensures result == key;
 }
 
+theorem proposed_use_other_bundle_contract() {
+    ensures UseBundle(&use_other_bundle) by {
+        unfold(UseBundle);
+        solve();
+    }
+}
+
 int32 different_bundle_caller(int32 key, int32 other) {
     owns bundle(key);
     ensures result == key;
+} by {
+    apply(proposed_use_other_bundle_contract());
 }
 ```
 
 ```expect
-fail: function `use_other_bundle` does not satisfy named contract `UseBundle`
+fail: contract-refinement proof does not establish `UseBundle(&use_other_bundle)`
 ```

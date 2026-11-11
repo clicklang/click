@@ -37,5 +37,5 @@ int32 caller(int16* q) {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 1 of `need7`)
+fail: unproved obligation: `d == 7`
 ```

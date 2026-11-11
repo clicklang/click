@@ -43,12 +43,21 @@ int32 apply_bundle(int32 (*callback)(int32), int32 key) {
     ensures result == key;
 }
 
+theorem proposed_consume_bundle_contract() {
+    ensures PreserveBundle(&consume_bundle) by {
+        unfold(PreserveBundle);
+        solve();
+    }
+}
+
 int32 consumed_bundle_caller(int32 key) {
     owns bundle(key);
     ensures result == key;
+} by {
+    apply(proposed_consume_bundle_contract());
 }
 ```
 
 ```expect
-fail: function `consume_bundle` does not satisfy named contract `PreserveBundle`
+fail: contract-refinement proof does not establish `PreserveBundle(&consume_bundle)`
 ```

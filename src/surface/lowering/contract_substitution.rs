@@ -1997,9 +1997,34 @@ fn substitute_resource_subject(
             None => Ok(resource.clone()),
         },
         ResourceSubject::Captured { .. } => Ok(resource.clone()),
-        ResourceSubject::Memory(segment) => Ok(ResourceSubject::Memory(
-            substitute_contract_segment(segment, substitutions)?,
-        )),
+        ResourceSubject::Memory(segment) => {
+            if let Some((base, start, end)) = segment.surface_range() {
+                let base = substitute_contract_expression_in(base, substitutions)?;
+                let start = substitute_contract_expression_in(start, substitutions)?;
+                let end = substitute_contract_expression_in(end, substitutions)?;
+                if [&base, &start, &end]
+                    .iter()
+                    .any(|value| contract_expression_as_c_fragment(value).is_none())
+                {
+                    // Snapshot-valued arguments are Surface expressions, not
+                    // C fragments. Retain them in the same resource form used
+                    // by written `memory(old(p)[lo..hi])` facts.
+                    let at_state = |value| match segment.state {
+                        ContractSegmentState::Current => value,
+                        ContractSegmentState::Old => ContractExpression::Old(Box::new(value)),
+                    };
+                    return Ok(ResourceSubject::SavedMemory {
+                        base: at_state(base),
+                        start: at_state(start),
+                        end: Some(at_state(end)),
+                    });
+                }
+            }
+            Ok(ResourceSubject::Memory(substitute_contract_segment(
+                segment,
+                substitutions,
+            )?))
+        }
         ResourceSubject::SavedMemory { base, start, end } => Ok(ResourceSubject::SavedMemory {
             base: substitute_contract_expression_in(base, substitutions)?,
             start: substitute_contract_expression_in(start, substitutions)?,
@@ -3067,6 +3092,7 @@ pub(in crate::surface) struct ContractSubstitutions<'a> {
     /// Whether a scalar field of the resource body being defined is replaced
     /// by the C name the kernel binds it to (see `resource_body_c_fragment`).
     body_fields_as_c_names: bool,
+    body_field_values: Option<&'a BTreeMap<String, ContractExpression>>,
     contract_result_only: bool,
     current_c_values: bool,
 }
@@ -3078,6 +3104,7 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(&NO_INSTANCE_RENAMES),
             body_fields_as_c_names: false,
+            body_field_values: None,
             contract_result_only: false,
             current_c_values: false,
         }
@@ -3132,8 +3159,22 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Borrowed(values),
             instance_renames: Cow::Borrowed(instance_renames),
             body_fields_as_c_names: false,
+            body_field_values: None,
             contract_result_only: false,
             current_c_values: false,
+        }
+    }
+
+    /// Instantiate the body of an explicit fold with its written field
+    /// initializers. These are definition-bound fields, not reads of a
+    /// newly constructed (and not yet owned) instance.
+    pub(in crate::surface) fn for_fold_body(
+        values: &'a BTreeMap<String, ContractExpression>,
+        instance_renames: &'a BTreeMap<String, InstanceRename>,
+    ) -> Self {
+        Self {
+            body_field_values: Some(values),
+            ..Self::with_instance_renames(values, instance_renames)
         }
     }
 
@@ -3197,6 +3238,7 @@ impl<'a> ContractSubstitutions<'a> {
             values: Cow::Owned(values),
             instance_renames,
             body_fields_as_c_names: self.body_fields_as_c_names,
+            body_field_values: self.body_field_values,
             contract_result_only: self.contract_result_only,
             current_c_values: self.current_c_values,
         }
@@ -3501,7 +3543,15 @@ pub(in crate::surface) fn contract_c_unary(
     operand: ContractExpression,
     lowered: CExpression,
 ) -> ContractExpression {
-    if contract_expression_has_explicit_c_result_reference(&operand) {
+    // Keep member syntax through casts so later instantiation can substitute
+    // a snapshot value such as old(p) into the authoritative Surface base.
+    // A flattened C fragment cannot represent that substitution.
+    if contract_expression_has_explicit_c_result_reference(&operand)
+        || matches!(
+            &operand,
+            ContractExpression::Field { .. } | ContractExpression::CUnary { .. }
+        )
+    {
         ContractExpression::CUnary {
             operand: Box::new(operand),
             lowered,
@@ -3618,6 +3668,19 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         }
 
         ContractExpression::IntegerLiteral(_) => Ok(expression.clone()),
+        ContractExpression::ResourceField(access)
+            if let Some(fields) = substitutions.body_field_values
+                && access.identity == Variable(u64::MAX)
+                && access.owner == "__body"
+                && access.children.is_empty() =>
+        {
+            fields.get(&access.field).cloned().ok_or_else(|| {
+                format!(
+                    "fold body field `{}` has no written initializer",
+                    access.field
+                )
+            })
+        }
         ContractExpression::ResourceField(_)
             if substitutions.body_fields_as_c_names
                 && let Some(name) = resource_body_c_fragment(expression) =>
@@ -3757,19 +3820,30 @@ pub(in crate::surface) fn substitute_contract_expression_in(
             lowered,
             offset_bytes,
             pointee_struct,
-        } => Ok(ContractExpression::Field {
-            pointee_struct: pointee_struct.clone(),
-            base: Box::new(substitute_contract_expression_in(base, substitutions)?),
-            field: field.clone(),
-            lowered: if substitutions.is_contract_result_binding()
-                && contract_expression_has_explicit_c_result_base(base)
-            {
-                lowered.clone()
-            } else {
-                substitute_c_fragment_in(lowered, substitutions)?
-            },
-            offset_bytes: *offset_bytes,
-        }),
+        } => {
+            let substituted_base = substitute_contract_expression_in(base, substitutions)?;
+            // Snapshot field lowering uses the Surface base and only the
+            // operation/type shape of `lowered`. An `old(...)` base cannot
+            // be embedded in the cached C fragment.
+            let snapshot_base = matches!(
+                &substituted_base,
+                ContractExpression::Old(_) | ContractExpression::At { .. }
+            );
+            Ok(ContractExpression::Field {
+                pointee_struct: pointee_struct.clone(),
+                base: Box::new(substituted_base),
+                field: field.clone(),
+                lowered: if snapshot_base
+                    || (substitutions.is_contract_result_binding()
+                        && contract_expression_has_explicit_c_result_base(base))
+                {
+                    lowered.clone()
+                } else {
+                    substitute_c_fragment_in(lowered, substitutions)?
+                },
+                offset_bytes: *offset_bytes,
+            })
+        }
         ContractExpression::Old(_) | ContractExpression::At { .. }
             if substitutions.contract_result_only =>
         {
@@ -3839,9 +3913,11 @@ pub(in crate::surface) fn substitute_contract_expression_in(
         ContractExpression::BitwiseNot(expression) => Ok(ContractExpression::BitwiseNot(Box::new(
             substitute_contract_expression_in(expression, substitutions)?,
         ))),
-        ContractExpression::Index(base, index) => Ok(ContractExpression::Index(
-            Box::new(substitute_contract_expression_in(base, substitutions)?),
-            Box::new(substitute_contract_expression_in(index, substitutions)?),
+        ContractExpression::Index(base, index) => Ok(substituted_index(
+            substitute_contract_expression_in(base, substitutions)?,
+            substitute_contract_expression_in(index, substitutions)?,
+            substitutions,
+            !array_reference_selects_snapshot(base),
         )),
         ContractExpression::If {
             condition,
@@ -3950,6 +4026,24 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
                 ContractExpression::Negate(Box::new(literal))
             } else {
                 literal
+            })
+        }
+        CExpression::Cast {
+            expression: operand,
+            ..
+        } => {
+            let operand =
+                substitute_c_fragment_as_contract_with_numerals_in(operand, substitutions, false)?;
+            Ok(match contract_expression_as_c_fragment(&operand) {
+                Some(fragment) => {
+                    ContractExpression::CFragment(c_unary_with_operand(expression, fragment))
+                }
+                None => ContractExpression::CUnary {
+                    operand: Box::new(operand),
+                    // The authoritative operand carries the snapshot. The
+                    // cached C operation supplies only its cast metadata.
+                    lowered: expression.clone(),
+                },
             })
         }
         CExpression::Value(_) => Ok(ContractExpression::CFragment(expression.clone())),
@@ -4108,23 +4202,59 @@ fn substitute_c_fragment_as_contract_with_numerals_in(
                 contextual_numerals,
             )?,
         ))),
-        CExpression::Index(base, index) => Ok(ContractExpression::Index(
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+        CExpression::Index(base, index) => Ok(substituted_index(
+            substitute_c_fragment_as_contract_with_numerals_in(
                 base,
                 substitutions,
                 contextual_numerals,
-            )?),
-            Box::new(substitute_c_fragment_as_contract_with_numerals_in(
+            )?,
+            substitute_c_fragment_as_contract_with_numerals_in(
                 index,
                 substitutions,
                 contextual_numerals,
-            )?),
+            )?,
+            substitutions,
+            true,
         )),
         _ => Ok(ContractExpression::CFragment(substitute_c_fragment_in(
             expression,
             substitutions,
         )?)),
     }
+}
+
+fn array_reference_selects_snapshot(expression: &ContractExpression) -> bool {
+    match expression {
+        ContractExpression::Old(_) | ContractExpression::At { .. } => true,
+        ContractExpression::Add(left, right) => {
+            array_reference_selects_snapshot(left) || array_reference_selects_snapshot(right)
+        }
+        ContractExpression::Subtract(left, _) => array_reference_selects_snapshot(left),
+        _ => false,
+    }
+}
+
+// A fold parameter supplies a pointer value, not an array snapshot. For
+// example, substituting old(p) in the body's p[k] must read current memory
+// through that value; Index(Old(p), k) would instead read the old array.
+// An ordinary let expression keeps that distinction writable and replayable.
+fn substituted_index(
+    base: ContractExpression,
+    index: ContractExpression,
+    substitutions: &ContractSubstitutions<'_>,
+    current_read: bool,
+) -> ContractExpression {
+    let base = if current_read && substitutions.body_field_values.is_some() {
+        ContractExpression::Let {
+            name: "read_pointer".to_owned(),
+            click_type: None,
+            value: Box::new(base),
+            body: Box::new(ContractExpression::Binding("read_pointer".to_owned())),
+        }
+    } else {
+        base
+    };
+    ContractExpression::Index(Box::new(base), Box::new(index))
 }
 
 pub(in crate::surface) fn substitute_c_fragment<'a>(

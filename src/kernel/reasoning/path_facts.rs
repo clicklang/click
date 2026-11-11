@@ -17,6 +17,10 @@ pub(in crate::kernel) fn memory_range_still_available(
     base: &Pointer,
     assumptions: &PureFactContext,
 ) -> bool {
+    // A pointer read's synthetic block is not the storage it designates.
+    // Use its one defining store, when present, for the lifetime comparison.
+    let stored = crate::kernel::eval::pointer_read_over_immediate_store(base);
+    let base = stored.as_ref().unwrap_or(base);
     range_memory == current_memory
         || range_memory.has_block(&base.block) == current_memory.has_block(&base.block)
             && range_memory.is_ended_local_address(base)
@@ -232,9 +236,10 @@ pub(crate) fn solve_builtin_prop(proposition: &Proposition) -> bool {
             base,
             bytes,
             wide: false,
-        } => bytes
-            .as_const()
-            .is_some_and(|bytes| memory.access_in_bounds(base, bytes)),
+        } => bytes.as_const().is_some_and(|bytes| {
+            let written = crate::kernel::eval::pointer_read_over_immediate_store(base);
+            memory.access_in_bounds(written.as_ref().unwrap_or(base), bytes)
+        }),
         Proposition::CResourceSeparate { .. } | Proposition::CResourceContains { .. } => false,
         Proposition::CMemoryCanStore {
             memory,
@@ -1559,7 +1564,9 @@ fn add_required_proof_obligation_with_context_and_site(
     // memory/resource checkers. A required verification condition with
     // logical structure is emitted for an ordinary Surface tactic to
     // discharge.
-    if required_obligation_is_exactly_discharged(assumptions, &proposition) {
+    if !assumptions.retains_required_obligations()
+        && required_obligation_is_exactly_discharged(assumptions, &proposition)
+    {
         return;
     }
     let mut obligation = ProofObligation::verification_condition(proposition)
@@ -1624,7 +1631,7 @@ fn add_required_proof_obligation_without_search_and_site(
     introductions: Option<&std::sync::Arc<LoweringIntroductions>>,
     call_site: Option<&std::sync::Arc<CallRequirementSource>>,
 ) {
-    if assumptions.proves_exact(&proposition) {
+    if !assumptions.retains_required_obligations() && assumptions.proves_exact(&proposition) {
         return;
     }
     let mut obligation = ProofObligation::new(proposition).with_shared_introductions(introductions);

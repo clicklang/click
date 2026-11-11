@@ -62,5 +62,5 @@ int32 walk(int32 n) {
 ```
 
 ```expect
-fail: `level(n)` decreases at the recursive call
+fail: unproved obligation: `level(n) < level(n)`
 ```

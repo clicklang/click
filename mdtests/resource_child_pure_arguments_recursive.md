@@ -38,7 +38,7 @@ int32 read_left(int32* p, int32* left, int32* right) {
     unfold(l);
     step_until(function.exit);
     let l = fold(cache(left), { model: Tree::Leaf(left, 2) });
-    let root = fold(cache(p), { model: old(root.model) }, { left: l, right: r });
+    let root = fold(cache(p), { model: Tree::Branch(p, Tree::Leaf(left, 2), Tree::Leaf(right, 3)) }, { left: l, right: r });
     solve();
 }
 ```

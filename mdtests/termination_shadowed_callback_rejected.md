@@ -58,9 +58,15 @@ int32 f(int32 (*helper)(int32), int32 n) {
     ensures result == 1;
 }
 
+theorem spin_has_One() {
+    ensures One(&spin) by { unfold(One); solve(); }
+}
+
 int32 caller(int32 n) {
     decreases n;
     ensures result == 1;
+} by {
+    apply(spin_has_One());
 }
 ```
 

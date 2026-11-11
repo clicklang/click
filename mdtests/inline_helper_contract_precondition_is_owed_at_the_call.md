@@ -41,5 +41,5 @@ int32 add_one(int32 value) {
 ```
 
 ```expect
-fail: precondition clause 1 of `add_one#inline:inline_helper_contract_precondition_is_owed_at_the_call.c`
+fail: unproved obligation: `value < 100`
 ```

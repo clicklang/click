@@ -18,5 +18,5 @@ uint32 quotient(uint32 a, uint32 b) {
 ```
 
 ```expect
-fail: undefined behavior: division by zero
+fail: requires proof excluding division by zero
 ```

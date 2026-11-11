@@ -29,7 +29,7 @@ struct node* unpack(struct node* node) {
     owns packed(node);
     ensures address(result) == (node->word & ~1);
 } by {
-    unfold(packed(node));
+    let { next: saved_next } = unfold(packed(node));
     step_until(function.exit);
     have address(result) == (node->word & ~1) by {
         solve() using {

@@ -19,5 +19,5 @@ int32 self_order(int32* pointer) {
 ```
 
 ```expect
-fail: undefined behavior: pointer arithmetic left the pointed-to object
+fail: requires proof excluding pointer arithmetic left the pointed-to object
 ```

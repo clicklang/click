@@ -22,5 +22,5 @@ int32 spill(struct rec* r) {
 ```
 
 ```expect
-fail: array subobject index
+fail: unproved obligation: `2 >= 0 and 2 < 2`
 ```

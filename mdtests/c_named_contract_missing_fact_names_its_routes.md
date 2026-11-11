@@ -2,9 +2,8 @@
 
 `Hooked` claims that `clear_cell` satisfies `SetsZero`, so folding it needs a
 `SetsZero(&clear_cell)` fact. Nothing refused that claim here: `arm` simply
-never established it. The diagnostic says the fact is absent and names the two
-routes that establish it, instead of reporting the implementation as failing
-the contract, which is what a refused refinement means.
+never established it. The diagnostic reports that exact unproved obligation;
+it does not report a refused refinement of the implementation.
 
 ```c filename=named_contract_missing_fact.c
 void clear_cell(int32* cell) {
@@ -45,5 +44,5 @@ void arm(int32* cell) {
 ```
 
 ```expect
-fail: missing pure fact: no `SetsZero(&clear_cell)` fact is available; apply a refinement theorem or pass `&clear_cell` where `SetsZero` is required
+fail: function `clear_cell` does not satisfy named contract `SetsZero` automatically
 ```

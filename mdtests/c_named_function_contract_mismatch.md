@@ -58,11 +58,20 @@ int32 apply_difference(int32 (*callback)(int32, int32), int32 left, int32 right)
     ensures result == left - right;
 }
 
+theorem proposed_sum_contract() {
+    ensures Difference(&sum) by {
+        unfold(Difference);
+        solve();
+    }
+}
+
 int32 bad_caller() {
     ensures result == 38;
+} by {
+    apply(proposed_sum_contract());
 }
 ```
 
 ```expect
-fail: function `sum` does not satisfy named contract `Difference`
+fail: contract-refinement proof does not establish `Difference(&sum)`
 ```

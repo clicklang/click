@@ -811,9 +811,10 @@ fn recover_candidate_stable_view_resources(
     // Do not use the path assumptions to decide this: they intentionally
     // include the obligation list for later proof discharge, which would
     // make an unresolved return condition appear already proved. Candidate
-    // recovery is therefore fail-closed until the return path has no pending
-    // obligations at all.
-    if !obligations.is_empty() {
+    // recovery remains fail-closed for ordinary calls. Preparation alone may
+    // retain a conditional successor: its obligations stay attached, and the
+    // proof driver cannot publish it until it has proved every one at input.
+    if !obligations.is_empty() && !assumptions.retains_required_obligations() {
         return Err(CRuntimeError::PendingCallObligations(obligations.into()));
     }
     // Escaping borrows (step 7). Every viewed piece a produced or returned
@@ -2483,7 +2484,7 @@ pub(super) fn suspend_verified_worker(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
-) -> ExecutionResult<Result<super::threads::WorkerCompletion, String>> {
+) -> ExecutionResult<Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String>> {
     if !rule
         .function
         .contract_interface()
@@ -2527,8 +2528,8 @@ pub(super) fn suspend_verified_worker(
 
 pub(super) fn unique_worker_completion(
     no_failure_paths: bool,
-    mut completions: Vec<super::threads::WorkerCompletion>,
-) -> Result<super::threads::WorkerCompletion, String> {
+    mut completions: Vec<(super::threads::WorkerCompletion, Vec<ProofObligation>)>,
+) -> Result<(super::threads::WorkerCompletion, Vec<ProofObligation>), String> {
     if !no_failure_paths || completions.len() != 1 {
         return Err("worker application must produce exactly one checked completion".to_string());
     }
@@ -2971,7 +2972,7 @@ fn execute_verified_function_applications_with_suspension(
     assumptions: &PureFactContext,
     environment: &CExecutionEnvironment,
     budget: &mut ExecutionBudget,
-    mut suspended: Option<&mut Vec<super::threads::WorkerCompletion>>,
+    mut suspended: Option<&mut Vec<(super::threads::WorkerCompletion, Vec<ProofObligation>)>>,
 ) -> ExecutionResult<Vec<CFunctionPath>> {
     if applications.is_empty() {
         return Ok(vec![CFunctionPath::new(
@@ -3116,13 +3117,18 @@ fn execute_verified_function_applications_with_suspension(
         let mut first_failure = None;
         let mut selected_position = None;
         for (index, application) in applications.iter().enumerate() {
+            // The written selector fixes the transition before its premises
+            // are proved. Other interfaces must establish applicability at
+            // entry; they cannot borrow the selected call's pending premises.
+            let retain_selected =
+                assumptions.retains_required_obligations() && selected_contract == Some(index);
             let prepared = prepare_verified_function_call(
                 caller_state,
                 *application,
                 index,
                 arguments,
                 arguments_path.clone(),
-                applications.len() > 1 || selected_contract.is_some(),
+                (applications.len() > 1 || selected_contract.is_some()) && !retain_selected,
                 assumptions,
                 environment,
                 budget,
@@ -4513,7 +4519,10 @@ fn execute_verified_function_applications_with_suspension(
             // checked partition and loan plan still conserve the authority
             // that a worker receives, and the storage checks below keep the
             // parent's implicit stack/global accesses out of that transfer.
-            let supported = obligations.is_empty()
+            // In preparation, the parent statement retains these prerequisites
+            // and the driver proves them before publishing either create outcome.
+            let supported = (obligations.is_empty()
+                || effective_assumptions.retains_required_obligations())
                 && transfer
                     .stable_view_plan
                     .as_ref()
@@ -4571,14 +4580,17 @@ fn execute_verified_function_applications_with_suspension(
                     deferred: deferred_exchange.clone(),
                 })
             };
-            completions.push(super::threads::WorkerCompletion::checked(
-                plan,
-                output_resources,
-                post_state.memory.clone(),
-                worker_effects,
-                facts,
-                post_state.mutex_ledger.clone(),
-                creation,
+            completions.push((
+                super::threads::WorkerCompletion::checked(
+                    plan,
+                    output_resources,
+                    post_state.memory.clone(),
+                    worker_effects,
+                    facts,
+                    post_state.mutex_ledger.clone(),
+                    creation,
+                ),
+                obligations,
             ));
             // The internal caller checks there is exactly one completion.
             // No worker guarantee or ownership is published as a call return.
@@ -5824,13 +5836,31 @@ fn prepare_verified_function_call<'a>(
             }
             let site = call_requirement_site
                 .get_or_insert_with(|| {
-                    std::sync::Arc::new(CallRequirementSite::for_requirement(
+                    let mut site = CallRequirementSite::for_requirement(
                         application.name,
                         application.interface_name,
                         candidate_ordinal,
                         source_arguments,
                         &caller_state.memory,
-                    ))
+                    );
+                    site.value_arguments = contract_interface
+                        .value_parameters()
+                        .iter()
+                        .zip(application_value_arguments)
+                        .map(|(parameter, value)| (parameter.name().to_owned(), value.clone()))
+                        .collect();
+                    if let Some(selected) = resource_application {
+                        site.resource_arguments = selected
+                            .parameters
+                            .iter()
+                            .filter_map(|parameter| {
+                                let identity = parameter.binding_identity()?;
+                                let actual = selected.bindings.get(&identity)?;
+                                Some((parameter.binding_name()?.to_owned(), identity, *actual))
+                            })
+                            .collect();
+                    }
+                    std::sync::Arc::new(site)
                 })
                 .clone();
             let source = std::sync::Arc::new(CallRequirementSource::new(
@@ -5912,16 +5942,19 @@ fn prepare_verified_function_call<'a>(
                 // as it is at the callee's own entry. Only load-shaped
                 // conditions are judged this way; the state check answers
                 // nothing about any other proposition.
-                let load_condition_is_justified = loadability_obligation_shape(
-                    path_obligation.proposition(),
-                )
+                let load_condition_is_justified = !assumptions.retains_required_obligations()
+                    && loadability_obligation_shape(path_obligation.proposition())
                     && super::api::contract_certification::c_state_justifies_loadability_obligation(
                         &precondition_state,
                         &guarded,
                         requirement_assumptions,
                     );
-                if load_condition_is_justified
-                    || required_obligation_is_exactly_discharged(requirement_assumptions, &guarded)
+                if !assumptions.retains_required_obligations()
+                    && (load_condition_is_justified
+                        || required_obligation_is_exactly_discharged(
+                            requirement_assumptions,
+                            &guarded,
+                        ))
                 {
                     super::assumptions::record_reasoning_provenance(
                         requirement_assumptions,
@@ -5938,14 +5971,15 @@ fn prepare_verified_function_call<'a>(
                 }
                 established_requirements.push(guarded);
             }
-            let contract_requirement_is_proven = function_contract_requirement_is_proven(
-                &requirement_path.proposition,
-                &path_assumptions,
-                environment,
-                budget,
-            )?;
-            let requirement_is_proven = super::assumptions::capture_implicit_reasoning_provenance(
-                || {
+            let contract_requirement_is_proven = !assumptions.retains_required_obligations()
+                && function_contract_requirement_is_proven(
+                    &requirement_path.proposition,
+                    &path_assumptions,
+                    environment,
+                    budget,
+                )?;
+            let requirement_is_proven = !assumptions.retains_required_obligations()
+                && super::assumptions::capture_implicit_reasoning_provenance(|| {
                     if contract_requirement_is_proven {
                         return true;
                     }
@@ -5981,8 +6015,7 @@ fn prepare_verified_function_call<'a>(
                         }
                         proposition => path_assumptions.proves_exact(proposition),
                     }
-                },
-            );
+                });
             if requirement_is_proven {
                 super::assumptions::record_reasoning_provenance(
                     &path_assumptions,
@@ -6005,10 +6038,12 @@ fn prepare_verified_function_call<'a>(
                 // Same rule as the guard above: exact routes, then an
                 // emitted required verification condition. The general
                 // prover decides no precondition.
-                if required_obligation_is_exactly_discharged(
-                    requirement_assumptions,
-                    &guarded_requirement,
-                ) {
+                if !assumptions.retains_required_obligations()
+                    && required_obligation_is_exactly_discharged(
+                        requirement_assumptions,
+                        &guarded_requirement,
+                    )
+                {
                     super::assumptions::record_reasoning_provenance(
                         requirement_assumptions,
                         &guarded_requirement,
@@ -6027,10 +6062,14 @@ fn prepare_verified_function_call<'a>(
             // Publishing evidence from that context would let a call prove
             // its own prerequisites. Only the incoming checked context can
             // independently establish an input fact for the continuation.
-            if super::reasoning::path_facts::call_input_fact_is_already_known(
-                assumptions,
-                &guarded_requirement,
-            ) {
+            // Prepared steps publish their input proof delta in the driver.
+            // They must not rediscover or republish that evidence here.
+            if !assumptions.retains_required_obligations()
+                && super::reasoning::path_facts::call_input_fact_is_already_known(
+                    assumptions,
+                    &guarded_requirement,
+                )
+            {
                 retained_requirements.push(guarded_requirement.clone());
             }
             established_requirements.push(guarded_requirement);
@@ -13730,6 +13769,13 @@ pub(crate) struct ResourceBodyClauseRecord {
     pub(crate) introductions: LoweringIntroductions,
 }
 
+impl ResourceBodyClauseRecord {
+    pub(crate) fn obligation(&self) -> ProofObligation {
+        ProofObligation::verification_condition(self.proposition.clone())
+            .with_introductions(self.introductions.clone())
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ResourceInstanceRewriteResult {
     /// The body guard case checked by this rewrite. Unknown guards refuse the rewrite.
@@ -13931,6 +13977,7 @@ fn lower_selected_resource_body_clauses(
             context = context.assume_proposition(condition.clone());
         }
         if let Some(established) = established_assumptions
+            && !established.retains_required_obligations()
             && !resource_body_fact_is_established(established, &path.proposition)
         {
             return Err(ResourceRewriteRefusal::BodyFactNotEstablished {
@@ -14261,6 +14308,13 @@ pub(crate) fn rewrite_resource_instance_selecting_children(
     unfold: bool,
     selected_children: Option<&[(String, Variable)]>,
 ) -> Result<ResourceInstanceRewriteResult, ResourceRewriteRefusal> {
+    let _timing = (!unfold).then(|| {
+        crate::instrumentation::OperationTiming::new(
+            instance.name(),
+            "resource fold",
+            "resource instance: construct fold",
+        )
+    });
     rewrite_resource_instance_selecting_children_unspelled(
         state,
         instance,

@@ -50,7 +50,10 @@ void keep(struct node* h) {
         Cell::At(id) => {
             let { child: c } = unfold(g);
             unfold(c);
-            let c = fold(cell_at(id), { model: Cell::At(id) });
+            let c = fold(cell_at(id), { model: Cell::At(id) }) {
+                requires id != 0 by solve();
+                requires id == id by normalize();
+            }
             let g = fold(holder_at(h), { model: Cell::At(id) }, { child: c });
             step_until(function.exit);
             solve();

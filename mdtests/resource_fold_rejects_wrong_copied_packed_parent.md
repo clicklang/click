@@ -93,7 +93,9 @@ void inspect(struct node* parent) {
                     have model->tag == at(rotation, parent->tag) by { rewrite(model->tag == sibling->tag); assumption(); }
                     have model->tag == address(pid) + (model->tag & 1) by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }
                     have (model->tag & 1) == 1 by { rewrite(model->tag == at(rotation, parent->tag)); assumption(); }
-                    let packed = fold(tagged_at(model), {model: Tagged::At(model, 0)});
+                    let packed = fold(tagged_at(model), {model: Tagged::At(model, 0)}) {
+                        requires model->tag == address(0) + (model->tag & 1) by assumption();
+                    }
                     step(); step();
                 },
             }
@@ -105,5 +107,5 @@ void inspect(struct node* parent) {
 ```
 
 ```expect
-fail: fold requires the instance body facts
+fail: `have` failed for `model->tag == (address(0) + (model->tag & 1))`
 ```

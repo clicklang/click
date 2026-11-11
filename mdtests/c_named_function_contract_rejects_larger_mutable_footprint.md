@@ -42,14 +42,23 @@ void apply_step(void (*step)(int32*), int32* cells) {
     ensures old(cells[0]) < cells[0];
 }
 
+theorem proposed_broadly_mutable_contract() {
+    ensures Progress(&broadly_mutable) by {
+        unfold(Progress);
+        solve();
+    }
+}
+
 void larger_footprint_caller(int32* cells) {
     requires cells[0] < 100;
     views cells[1..2];
     owns cells[0..1];
     ensures old(cells[0]) < cells[0];
+} by {
+    apply(proposed_broadly_mutable_contract());
 }
 ```
 
 ```expect
-fail: function `broadly_mutable` does not satisfy named contract `Progress`
+fail: contract-refinement proof does not establish `Progress(&broadly_mutable)`
 ```

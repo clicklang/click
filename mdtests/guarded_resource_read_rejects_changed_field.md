@@ -37,5 +37,5 @@ int32 f(struct cell* root) {
 ```
 
 ```expect
-fail: fold requires the instance body facts
+fail: unproved obligation: `at(statement(4).exit, selected->value) == old(child.number)`
 ```

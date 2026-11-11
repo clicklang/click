@@ -312,7 +312,10 @@ fn transport_certificate_resource_descriptors_follow_call_bindings() {
             owns *p;
             owns other: model();
             requires separate(memory(*p), other);
-        } by { step(); step(); }
+        } by {
+            step() { requires separate(memory(*p), other) by assumption(); }
+            step();
+        }
     "#
     );
     let c = format!("{}\nvoid call_keep(int *p) {{ keep(p); }}", sources[0].1);

@@ -35,5 +35,5 @@ int32 caller() {
 ```
 
 ```expect
-fail: missing pure fact: One(old(table#file-static:inline_wrong.c[0]))
+fail: unproved obligation: `One(table.run)`
 ```

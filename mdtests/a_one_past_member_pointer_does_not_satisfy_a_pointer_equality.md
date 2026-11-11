@@ -40,5 +40,5 @@ int32 caller(struct Pair *pair, struct holder *h) {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 3 of `update`)
+fail: unproved obligation: `h->value == &load_int32(byte_offset(pair, 4))`
 ```

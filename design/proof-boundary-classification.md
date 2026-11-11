@@ -1,8 +1,8 @@
 # Proof boundary classification
 
 Source reconciliation at `e9222a222` (2026-11-09), updated for resource-scope
-obligation and branch-interpreter extraction. This classifies all 19
-`mixed` and 9 `operation-to-driver` reference records in
+obligation, branch-interpreter, and step/fold obligation extraction. This
+classifies all 19 `mixed` and 8 `operation-to-driver` reference records in
 `build_support/proof_search_edges.tsv`, and groups the remaining operation
 references below. The extraction preserves proof behavior and removes the
 scope-to-driver reference from the machine inventory.
@@ -72,7 +72,7 @@ Totals: 11 interpreter/obligation-dispatch records, 7 discovery/support records
 These roles should eventually replace the ambiguous labels after review; this
 audit deliberately does not silently regenerate the enforced inventory.
 
-## The 9 operation-to-driver reference records
+## The 8 operation-to-driver reference records
 
 Methods below are on `Proof`.
 
@@ -84,11 +84,10 @@ Methods below are on `Proof`.
 | `apply_signed_definedness_certificate` | Search-support adapter: called by signed-definedness search; constructs an explicit arithmetic certificate and dispatches it. Separate the generator from direct certificate application; do not count this edge alone as a hidden ambient scan. |
 | `apply_planned_fact_transport_inner` | Bare-transport search adapter, not a primitive despite its location. Plans premises, then dispatches `TransportUsing`. |
 | `apply_planned_outcome_fact_transport` | The same bare-transport adapter at a completed execution outcome. |
-| `apply_fast_simple_step` | Compatibility adapter: folds re-enter `apply_step` under `without_implicit_solve`. This suppresses implicit solving, not all discovery. Extract the direct fold operation rather than granting general driver access. |
 | `exclude_execution_match_arm_after_bridge` | Dispatch adapter for a specific explicit contradiction step, with source-site/certificate recording. No search selection at this call; use direct operation plus recording instead of the general driver. |
 | `unfinished_callback_diagnostic` | Failure-path execution. On an incomplete script, speculatively runs up to six ordinary driver steps to improve the error. Each can invoke implicit solving. Six steps is not a work bound; this is ordinary error reporting, not opt-in tracing. |
 
-Totals: 6 search/support adapters, 2 specific-operation dispatch adapters, and 1 diagnostic
+Totals: 6 search/support adapters, 1 specific-operation dispatch adapter, and 1 diagnostic
 execution callback. Some categories overlap semantically; each record is counted
 once here according to why this particular driver call exists.
 

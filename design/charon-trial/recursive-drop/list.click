@@ -381,6 +381,13 @@ impl recursive_drop::Stack {
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
+                        have old(self.head.next).next == at(region(107).exit, old(self.head.next).next) by {
+                            transport(at(region(107).exit, old(self.head.next).next) == at(region(107).exit, old(self.head.next).next), old(self.head.next).next == at(region(107).exit, old(self.head.next).next));
+                        }
+                        have self.head.next == old(self.head.next).next by {
+                            rewrite(self.head == old(self.head.next));
+                            assumption();
+                        }
                         have self.head.value == w by {
                             rewrite(self.head == old(self.head.next));
                             assumption();

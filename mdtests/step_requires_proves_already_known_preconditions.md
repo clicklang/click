@@ -1,10 +1,8 @@
-# a step's `requires` entry for an obligation the fast path closes is refused
+# a known step prerequisite still accepts an explicit proof
 
-After `have a > 0 or b > 0`, the first precondition is stated exactly, so the
-fast path closes it and an entry for it is stale. It is refused, and the step
-must be written with only the obligation that remains open.
+An earlier have establishes one precondition. The step still generates both preconditions and accepts a proof entry for each.
 
-```c filename=step_requires_rejects_an_entry_the_fast_path_closes.c
+```c filename=step_requires_proves_already_known_preconditions.c
 int32 first(int32 x, int32 y) {
     return x;
 }
@@ -15,7 +13,7 @@ int32 caller(int32 a, int32 b) {
 ```
 
 ```click
-verifying "step_requires_rejects_an_entry_the_fast_path_closes.c";
+verifying "step_requires_proves_already_known_preconditions.c";
 
 int32 first(int32 x, int32 y) {
     requires x > 0 or y > 0;
@@ -38,5 +36,5 @@ int32 caller(int32 a, int32 b) {
 ```
 
 ```expect
-fail: `requires a > 0 or b > 0` matches no obligation this step leaves open: its fast path already closes it
+pass
 ```

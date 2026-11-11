@@ -83,6 +83,7 @@ pub(in crate::surface) struct OpenObligationProbe {
     pub(in crate::surface) recorded: Vec<UnresolvedRequirement>,
     /// The refusal each recorded requirement stood for, in the same order.
     pub(in crate::surface) refusals: Vec<ClickError>,
+    collect_step_requirements: bool,
 }
 
 thread_local! {
@@ -110,8 +111,30 @@ pub(in crate::surface) fn without_open_obligation_probe<R>(operation: impl FnOnc
 /// not a checked step. A caller may retain it privately and publish it only
 /// after proving every recorded obligation against the original input state.
 /// It must never use the candidate's facts to discharge those obligations.
-/// Failed preparations have no successor to retain and may require recovery.
+/// Failed preparations have no successor to retain and are final refusals.
 pub(in crate::surface) fn probe_open_obligations<R>(
+    operation: impl FnOnce() -> R,
+) -> (R, OpenObligationProbe) {
+    probe_obligations(false, operation)
+}
+
+pub(in crate::surface) fn probe_step_obligations<R>(
+    operation: impl FnOnce() -> R,
+) -> (R, OpenObligationProbe) {
+    probe_obligations(true, operation)
+}
+
+pub(in crate::surface) fn collecting_step_requirements() -> bool {
+    OPEN_OBLIGATION_PROBE.with(|probe| {
+        probe
+            .borrow()
+            .as_ref()
+            .is_some_and(|probe| probe.collect_step_requirements)
+    })
+}
+
+fn probe_obligations<R>(
+    collect_step_requirements: bool,
     operation: impl FnOnce() -> R,
 ) -> (R, OpenObligationProbe) {
     struct Restore(Option<OpenObligationProbe>);
@@ -121,8 +144,12 @@ pub(in crate::surface) fn probe_open_obligations<R>(
             OPEN_OBLIGATION_PROBE.with(|probe| *probe.borrow_mut() = previous);
         }
     }
-    let previous = OPEN_OBLIGATION_PROBE
-        .with(|probe| probe.borrow_mut().replace(OpenObligationProbe::default()));
+    let previous = OPEN_OBLIGATION_PROBE.with(|probe| {
+        probe.borrow_mut().replace(OpenObligationProbe {
+            collect_step_requirements,
+            ..OpenObligationProbe::default()
+        })
+    });
     let restore = Restore(previous);
     let result = operation();
     let met = OPEN_OBLIGATION_PROBE
@@ -513,6 +540,9 @@ pub(in crate::surface) fn certified_statement_transitions(
     if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
         assumptions = assumptions.defer_non_exact_condition_reasoning();
     }
+    if collecting_step_requirements() {
+        assumptions = assumptions.retaining_required_obligations();
+    }
     let mut budget = ExecutionBudget::continuing_from(*next_kernel_variable)
         .with_next_opaque_call(*next_opaque_call);
     let executed_under = assumptions.clone();
@@ -768,6 +798,19 @@ fn certified_transitions_from_execution(
                     &prerequisite_assumptions
                 };
                 let proposition = obligation.proposition();
+                if collecting_step_requirements() && !obligation.is_assumable() {
+                    let description = crate::surface::diagnostics::describe_proof_obligation_context(obligation)
+                        .map(|description| format!(" ({description})"))
+                        .unwrap_or_default();
+                    refuse_or_probe(prerequisite_policy, ClickError::new(format!(
+                        "{context_label} requires an explicit prerequisite proof{description}{}",
+                        crate::surface::diagnostics::describe_c_statement_site()
+                    )).with_unresolved_requirement(obligation)
+                        .with_assertion_condition(
+                            crate::surface::proof::fact_reasoning::asserted_condition(proposition, statement),
+                        ))?;
+                    continue;
+                }
                 let derivation = match prerequisite_policy {
                     StatementPrerequisitePolicy::Exact => {
                         // An exact conjunct is also the availability the
@@ -878,11 +921,10 @@ fn certified_transitions_from_execution(
                             )
                             || directly_matching_separation_fact(proposition, pure_facts).is_some()
                             || directly_covering_loadability_fact(proposition, pure_facts).is_some()
-                            // Stable-view recovery requires the kernel to see
-                            // the precondition already proved. A probe must
-                            // retain even a trivially true pending clause so
-                            // implicit solve proves it at the pre-state, then
-                            // retries the call with that checked evidence.
+                            // A rejected contract candidate must not erase its
+                            // pending clause merely because that clause is
+                            // trivially true. Preparation reports requirements
+                            // separately from whether a successor was produced.
                             || (matches!(normalize_proposition(proposition), NormalizedProposition::True)
                                 && !(matches!(prerequisite_policy, StatementPrerequisitePolicy::Fast)
                                     && obligation.call_requirement_site().is_some()

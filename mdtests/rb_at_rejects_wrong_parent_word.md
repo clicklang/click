@@ -91,7 +91,7 @@ void set_parent_elsewhere(struct rb_node* node, struct rb_node* old_parent,
         RbTree::Node(identity, model_parent, color, left_model, right_model) => {
             let { left: l, right: r } = unfold(t);
             step_until(function.exit);
-            let u = fold(rb_at(node), { model: old(t.model) }, { left: l, right: r });
+            let u = fold(rb_at(node), { model: RbTree::Node(identity, model_parent, color, left_model, right_model) }, { left: l, right: r });
             solve();
         },
     }
@@ -99,5 +99,5 @@ void set_parent_elsewhere(struct rb_node* node, struct rb_node* old_parent,
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields
+fail: unproved obligation: `node->__rb_parent_color == (address(model_parent) + (node->__rb_parent_color & 1))`
 ```

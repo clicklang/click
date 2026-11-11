@@ -17,5 +17,5 @@ int32 unbounded(int32 x) {
 ```
 
 ```expect
-fail: to_integer(x) + 1 <= 2147483647 and to_integer(x) + 1 >= -2147483648
+fail: unproved obligation: `(let integer_value: Integer = to_integer((x as int32)) + 1; integer_value) <= 2147483647 and (let integer_value: Integer = to_integer((x as int32)) + 1; integer_value) >= -2147483648`
 ```

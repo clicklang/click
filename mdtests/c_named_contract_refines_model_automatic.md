@@ -1,9 +1,9 @@
-# Automatic formation admits a modeled resource guarantee
+# An explicit execution theorem proves a modeled resource guarantee
 
 A named contract with a resource proof parameter promises that the callback
 preserves the instance model. The implementation declares one binder of the
 same resource family with the same arguments, so the binding between the two
-interfaces is forced and the fact forms at the call site with no theorem.
+interfaces is explicit in the theorem, which supplies the call prerequisite.
 
 ```c filename=model_cell.c
 void preserve(int32* p) { }
@@ -38,8 +38,17 @@ int32 accept(void (*step)(int32*)) {
     ensures result == 0;
 }
 
+theorem preserve_satisfies_Preserve() executes preserve(int32* p) {
+    ensures Preserve(&preserve) as { root: r } by {
+        step(preserve, { t: r });
+        solve();
+    }
+}
+
 int32 caller() {
     ensures result == 0;
+} by {
+    apply(preserve_satisfies_Preserve());
 }
 ```
 

@@ -1725,6 +1725,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         search_input: &Proof<'a>,
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let mut scope = attempt::search_scope("solve closure");
+        // A stated whole goal already has the shortest explicit proof. Do not
+        // decompose it or search for an alternative derivation.
+        if search_input
+            .goal()
+            .is_some_and(|goal| search_input.facts().contains(goal))
+        {
+            let proof = search_input.driver().apply_step(ProofStep::Assumption)?;
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_flat_solve_conjunction(search_input, &[])?
         {
@@ -2014,6 +2024,16 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         introduced_surfaces: &[ClickProposition],
     ) -> Result<Option<Proof<'a>>, ClickError> {
         let mut scope = attempt::search_scope("solve closure with surfaces");
+        // A stated whole goal already has the shortest explicit proof. Do not
+        // decompose it or search for an alternative derivation.
+        if search_input
+            .goal()
+            .is_some_and(|goal| search_input.facts().contains(goal))
+        {
+            let proof = search_input.driver().apply_step(ProofStep::Assumption)?;
+            scope.succeed();
+            return Ok(Some(proof));
+        }
         if let Some(proof) =
             crate::kernel::search::ProofSearch::try_direct_logical_closure(search_input)?
         {

@@ -44,13 +44,22 @@ void apply_step(void (*step)(int32*), int32* cell) {
     ensures old(cell[0]) < cell[0];
 }
 
+theorem proposed_increment_contract() {
+    ensures GuardedProgress(&increment) by {
+        unfold(GuardedProgress);
+        solve();
+    }
+}
+
 void unrefuted_guard_caller(int32* cell) {
     requires cell[0] < 100;
     owns cell[0..1];
     ensures old(cell[0]) < cell[0];
+} by {
+    apply(proposed_increment_contract());
 }
 ```
 
 ```expect
-fail: function `increment` does not satisfy named contract `GuardedProgress`
+fail: contract-refinement proof does not establish `GuardedProgress(&increment)`
 ```

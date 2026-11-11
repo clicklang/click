@@ -52,8 +52,32 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
     ensures 0 < result;
 }
 
+theorem increment_is_positive_step() {
+    ensures PositiveStep(&increment) by {
+        unfold(PositiveStep);
+        intro();
+        have -100 <= to_integer(input) by {
+            solve() using { 0 <= input; };
+        }
+        have input <= 1000 by {
+            solve() using { input <= 100; };
+        }
+        both {
+            assumption();
+        } and {
+            intro();
+            have 0 < result by {
+                solve() using { 0 <= input; input < result; };
+            }
+            assumption();
+        }
+    }
+}
+
 int32 refining_step_caller() {
     ensures result == 42;
+} by {
+    apply(increment_is_positive_step());
 }
 ```
 

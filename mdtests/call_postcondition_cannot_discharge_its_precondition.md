@@ -29,5 +29,5 @@ int32 caller(int32 a) {
 ```
 
 ```expect
-fail: the facts refute `a > 0`
+fail: unproved obligation: `a > 0`
 ```

@@ -54,9 +54,18 @@ int32 apply_store_step(
     ensures result == input + 1;
 }
 
+theorem store_increment_is_store_step() {
+    ensures StoreStep(&store_increment) by {
+        unfold(StoreStep);
+        solve();
+    }
+}
+
 int32 resource_refining_step_caller(int32* output) {
     owns output[0..1];
     ensures result == 42;
+} by {
+    apply(store_increment_is_store_step());
 }
 ```
 

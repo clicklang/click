@@ -29,5 +29,5 @@ void write_value(struct holder *holder, int *data) {
 ```
 
 ```expect
-fail: missing prerequisite (precondition clause 3 of `touch`): separate(data[0], holder[0..10])
+fail: unproved obligation: `separate(memory(data[0..1]), memory(holder->mu))`
 ```

@@ -73,9 +73,18 @@ void invoke_preserving(
     owns available of credit();
 }
 
+theorem keep_used_satisfies_PreserveAvailable() {
+    ensures PreserveAvailable(&keep_used) by {
+        unfold(PreserveAvailable);
+        solve();
+    }
+}
+
 void concrete_quantity_caller(int32 available, int32 used) {
     requires 0 <= used and used <= available;
     owns available of credit();
+} by {
+    apply(keep_used_satisfies_PreserveAvailable());
 }
 
 void abstract_quantity_caller(

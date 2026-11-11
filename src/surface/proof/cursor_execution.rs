@@ -2864,145 +2864,204 @@ fn execute_step_from_frontier_position_selecting_path(
         *path_cases = transitions;
         return Ok(Vec::new());
     }
-    if transitions.len() != 1 {
-        if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
-            let safe = transitions
+    // Assertion failures already supplied their obligations above. During
+    // preparation retain the unique successful arm; the driver proves the
+    // assertion at input before this conditional successor can be published.
+    if crate::surface::proof::execution_planning::collecting_step_requirements()
+        && matches!(step_statement, CStatement::Assert { .. })
+        && transitions
+            .iter()
+            .all(|transition| matches!(transition.outcome, CStatementOutcome::Normal(_)))
+    {
+        let succeeds = |transition: &CertifiedStatementTransition| {
+            !transition
+                .obligations
                 .iter()
-                .filter(|transition| {
+                .any(ProofObligation::is_assertion_failure)
+        };
+        if transitions
+            .iter()
+            .filter(|transition| succeeds(transition))
+            .count()
+            == 1
+        {
+            transitions.retain(succeeds);
+        }
+    }
+    'select_prepared: {
+        if transitions.len() != 1 {
+            if matches!(prerequisite_policy, StatementPrerequisitePolicy::Exact) {
+                let safe = transitions
+                    .iter()
+                    .filter(|transition| {
+                        matches!(
+                            transition.outcome,
+                            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                if let [safe] = safe.as_slice()
+                    && let Some(required) = safe
+                        .pure_facts
+                        .iter()
+                        .find(|fact| !exact_fact_is_available(fact, available_pure_facts))
+                {
+                    return Err(ClickError::new(format!(
+                        "`{claim_label}` tactic {tactic_index}: `{tactic_name}` is missing exact prerequisite needed to select the safe statement transition: `{}`",
+                        crate::surface::diagnostics::describe_stated_fact_over_locals(
+                            required,
+                            &current_state
+                        )
+                    )));
+                }
+            }
+            if let Some(kind) =
+                transitions
+                    .iter()
+                    .find_map(|transition| match &transition.outcome {
+                        CStatementOutcome::UndefinedBehavior(kind) => Some(kind.clone()),
+                        _ => None,
+                    })
+            {
+                // The goal is the path condition of the one defined transition
+                // that the available facts do not already state.
+                let mut defined = transitions.iter().filter(|transition| {
                     matches!(
                         transition.outcome,
                         CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
                     )
-                })
-                .collect::<Vec<_>>();
-            if let [safe] = safe.as_slice()
-                && let Some(required) = safe
-                    .pure_facts
-                    .iter()
-                    .find(|fact| !exact_fact_is_available(fact, available_pure_facts))
-            {
-                return Err(ClickError::new(format!(
-                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` is missing exact prerequisite needed to select the safe statement transition: `{}`",
-                    crate::surface::diagnostics::describe_stated_fact_over_locals(
-                        required,
-                        &current_state
-                    )
-                )));
-            }
-        }
-        if let Some(kind) = transitions
-            .iter()
-            .find_map(|transition| match &transition.outcome {
-                CStatementOutcome::UndefinedBehavior(kind) => Some(kind.clone()),
-                _ => None,
-            })
-        {
-            let site = crate::surface::diagnostics::describe_undefined_behavior_site(
-                &current_state,
-                &step_statement,
-                &context
-                    .cloned()
-                    .unwrap_or_else(|| available_pure_facts.context()),
-                &kind,
-            );
-            let required = kind.required_goal().cloned();
-            let outcome = CFunctionOutcome::UndefinedBehavior(kind);
-            let error = ClickError::new(format!(
-                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
-                describe_function_outcome(&outcome, parameter_binding),
-                crate::surface::diagnostics::describe_c_statement_site(),
-                if required.is_some() {
-                    // The structured diagnostic supplies the facts/resources
-                    // with the goal's label map. An embedded context dump
-                    // would introduce a second, conflicting set of labels.
-                    String::new()
-                } else {
-                    describe_step_proof_context(
-                        available_pure_facts,
-                        context,
-                        &current_resources,
-                        parameter_binding,
-                        &[],
-                    )
+                });
+                // One definedness check (a shift count in range) can need
+                // several of the path's facts; together they are its one goal.
+                let goal = match (defined.next(), defined.next()) {
+                    (Some(defined), None) => defined
+                        .path_facts
+                        .iter()
+                        .filter(|fact| !exact_fact_is_available(fact, available_pure_facts))
+                        .cloned()
+                        .reduce(|left, right| Proposition::And(Box::new(left), Box::new(right))),
+                    _ => None,
+                };
+                if crate::surface::proof::execution_planning::collecting_step_requirements()
+                    && transitions.iter().all(|transition| {
+                        matches!(
+                            transition.outcome,
+                            CStatementOutcome::Normal(_)
+                                | CStatementOutcome::Return { .. }
+                                | CStatementOutcome::UndefinedBehavior(_)
+                        )
+                    })
+                    && let Some(goal) = goal.as_ref()
+                {
+                    // Construct the obligation from the selected path's delta.
+                    // Failure-site diagnostics may re-evaluate expressions;
+                    // they do not belong on successful preparation.
+                    let requirement = ProofObligation::verification_condition(goal.clone());
+                    crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                        ClickError::new(format!(
+                            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires proof excluding {}{}", kind.description(), crate::surface::diagnostics::describe_c_statement_site()
+                        )).with_reported_goal(goal.clone()).with_unresolved_requirement(&requirement),
+                    )?;
+                    transitions.retain(|transition| {
+                        matches!(
+                            transition.outcome,
+                            CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
+                        )
+                    });
+                    break 'select_prepared;
                 }
-            ));
-            let error = error.with_reported_assertion_goal(required);
-            // The goal is the path condition of the one defined transition
-            // that the available facts do not already state.
-            let mut defined = transitions.iter().filter(|transition| {
-                matches!(
-                    transition.outcome,
-                    CStatementOutcome::Normal(_) | CStatementOutcome::Return { .. }
-                )
-            });
-            // One definedness check (a shift count in range) can need
-            // several of the path's facts; together they are its one goal.
-            let goal = match (defined.next(), defined.next()) {
-                (Some(defined), None) => defined
-                    .pure_facts
-                    .iter()
-                    .filter(|fact| !exact_fact_is_available(fact, available_pure_facts))
-                    .cloned()
-                    .reduce(|left, right| Proposition::And(Box::new(left), Box::new(right))),
-                _ => None,
-            };
-            let Some(goal) = goal else {
+                let site = crate::surface::diagnostics::describe_undefined_behavior_site(
+                    &current_state,
+                    &step_statement,
+                    &context
+                        .cloned()
+                        .unwrap_or_else(|| available_pure_facts.context()),
+                    &kind,
+                );
+                let required = kind.required_goal().cloned();
+                let outcome = CFunctionOutcome::UndefinedBehavior(kind);
+                let error = ClickError::new(format!(
+                    "`{claim_label}` tactic {tactic_index}: `{tactic_name}` produced {}{site}{}\n{}",
+                    describe_function_outcome(&outcome, parameter_binding),
+                    crate::surface::diagnostics::describe_c_statement_site(),
+                    if required.is_some() {
+                        // The structured diagnostic supplies the facts/resources
+                        // with the goal's label map. An embedded context dump
+                        // would introduce a second, conflicting set of labels.
+                        String::new()
+                    } else {
+                        describe_step_proof_context(
+                            available_pure_facts,
+                            context,
+                            &current_resources,
+                            parameter_binding,
+                            &[],
+                        )
+                    }
+                ));
+                let error = error.with_reported_assertion_goal(required);
+                let Some(goal) = goal else {
+                    return Err(error);
+                };
+                // Definedness is one of the statement's requirements, like a
+                // callee's precondition: a probing step records it as an open
+                // obligation, so a `step() by { ... }` body or the implicit
+                // `solve` proves it at the pre-state. Retain that already evaluated
+                // transition instead of executing the statement a second time.
+                let error = error
+                    .with_reported_goal(goal.clone())
+                    .with_unresolved_requirement(&ProofObligation::verification_condition(goal));
+                crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                    error.clone(),
+                )?;
                 return Err(error);
-            };
-            // Definedness is one of the statement's requirements, like a
-            // callee's precondition: a probing step records it as an open
-            // obligation, so a `step() by { ... }` body or the implicit
-            // `solve` proves it at the pre-state and the step reruns with it
-            // stated, which leaves the defined transition alone.
-            let error = error
-                .with_reported_goal(goal.clone())
-                .with_unresolved_requirement(&ProofObligation::verification_condition(goal));
-            crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
-                error.clone(),
-            )?;
-            return Err(error);
-        }
-        if let Some(error) = transitions
-            .iter()
-            .find_map(|transition| match &transition.outcome {
-                CStatementOutcome::RuntimeError(error) => Some(error),
-                _ => None,
-            })
-        {
-            let kind = runtime_refusal_kind(error);
-            let unsupported = kind == crate::surface::ClickErrorKind::Internal;
-            let description = if unsupported {
-                "reached an unsupported modeled operation"
-            } else {
-                "could not verify C operation"
-            };
-            let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
-                error,
-                &listed_context_pure_facts(available_pure_facts, context),
-                &current_resources,
-                parameter_binding,
-                &[],
-            )
-            .unwrap_or_else(|| {
-                format!(
-                    "{}{}",
-                    describe_runtime_error_before_statement(
-                        error,
-                        &current_state,
-                        proof_context.parsed_function,
-                        parameter_binding,
-                    ),
-                    describe_missing_range_end_note(error, &current_resources, parameter_binding)
-                )
-            });
-            if matches!(
-                error,
-                crate::kernel::CRuntimeError::UninitializedMutex { .. }
-                    | crate::kernel::CRuntimeError::UnsupportedConcurrentMutex
-            ) {
-                return Err(ClickError::new(detail).with_kind(kind));
             }
-            return Err(ClickError::new(format!(
+            if let Some(error) =
+                transitions
+                    .iter()
+                    .find_map(|transition| match &transition.outcome {
+                        CStatementOutcome::RuntimeError(error) => Some(error),
+                        _ => None,
+                    })
+            {
+                let kind = runtime_refusal_kind(error);
+                let unsupported = kind == crate::surface::ClickErrorKind::Internal;
+                let description = if unsupported {
+                    "reached an unsupported modeled operation"
+                } else {
+                    "could not verify C operation"
+                };
+                let detail = crate::surface::diagnostics::describe_unestablished_assembly_fact(
+                    error,
+                    &listed_context_pure_facts(available_pure_facts, context),
+                    &current_resources,
+                    parameter_binding,
+                    &[],
+                )
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}{}",
+                        describe_runtime_error_before_statement(
+                            error,
+                            &current_state,
+                            proof_context.parsed_function,
+                            parameter_binding,
+                        ),
+                        describe_missing_range_end_note(
+                            error,
+                            &current_resources,
+                            parameter_binding
+                        )
+                    )
+                });
+                if matches!(
+                    error,
+                    crate::kernel::CRuntimeError::UninitializedMutex { .. }
+                        | crate::kernel::CRuntimeError::UnsupportedConcurrentMutex
+                ) {
+                    return Err(ClickError::new(detail).with_kind(kind));
+                }
+                return Err(ClickError::new(format!(
                 "`{claim_label}` tactic {tactic_index}: `{tactic_name}` {description}: {}\n  C operation: {}{}{}\n{}",
                 detail,
                 describe_statement_head(&step_statement),
@@ -3017,59 +3076,60 @@ fn execute_step_from_frontier_position_selecting_path(
             ))
             .with_kind(kind)
             .with_runtime_missing_resource(error));
-        }
-        let path_case_split = statement_successors_are_path_cases(&transitions);
-        let split_condition = if path_case_split {
-            let cases = transitions
-                .iter()
-                .map(PathCase::of_statement)
-                .collect::<Vec<_>>();
-            path_case_split_condition(
-                &cases,
-                &|fact| available_pure_facts.contains(fact),
-                &current_state,
-                proof_context,
-            )
-            .map(|(_, condition)| condition)
-        } else {
-            None
-        };
-        let case_split_guidance = if path_case_split {
-            describe_path_case_split_guidance(split_condition.as_ref(), transitions.len())
-        } else {
-            String::new()
-        };
-        let error = ClickError::new(format!(
-            "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}{}\n{}{}{}{}",
-            describe_c_statement_head(&step_statement),
-            transitions.len(),
-            crate::surface::diagnostics::describe_c_statement_site(),
-            describe_undecided_statement_successors(&transitions, parameter_binding),
-            case_split_guidance,
-            describe_multiple_statement_successors_guidance(
-                &step_statement,
-                transitions.len(),
-                transitions
+            }
+            let path_case_split = statement_successors_are_path_cases(&transitions);
+            let split_condition = if path_case_split {
+                let cases = transitions
                     .iter()
-                    .filter(|transition| {
-                        matches!(transition.outcome, CStatementOutcome::Throw { .. })
-                    })
-                    .count()
-                    == 1,
-            ),
-            describe_step_proof_context(
-                available_pure_facts,
-                context,
-                &current_resources,
-                parameter_binding,
-                &[]
-            )
-        ));
-        return Err(match (path_case_split, split_condition) {
-            (true, Some(condition)) => error.with_path_case_condition(condition),
-            (true, None) => error.with_path_case_split(),
-            (false, _) => error,
-        });
+                    .map(PathCase::of_statement)
+                    .collect::<Vec<_>>();
+                path_case_split_condition(
+                    &cases,
+                    &|fact| available_pure_facts.contains(fact),
+                    &current_state,
+                    proof_context,
+                )
+                .map(|(_, condition)| condition)
+            } else {
+                None
+            };
+            let case_split_guidance = if path_case_split {
+                describe_path_case_split_guidance(split_condition.as_ref(), transitions.len())
+            } else {
+                String::new()
+            };
+            let error = ClickError::new(format!(
+                "`{claim_label}` tactic {tactic_index}: `{tactic_name}` requires exactly one statement successor for `{}`, got {}{}\n{}{}{}{}",
+                describe_c_statement_head(&step_statement),
+                transitions.len(),
+                crate::surface::diagnostics::describe_c_statement_site(),
+                describe_undecided_statement_successors(&transitions, parameter_binding),
+                case_split_guidance,
+                describe_multiple_statement_successors_guidance(
+                    &step_statement,
+                    transitions.len(),
+                    transitions
+                        .iter()
+                        .filter(|transition| {
+                            matches!(transition.outcome, CStatementOutcome::Throw { .. })
+                        })
+                        .count()
+                        == 1,
+                ),
+                describe_step_proof_context(
+                    available_pure_facts,
+                    context,
+                    &current_resources,
+                    parameter_binding,
+                    &[]
+                )
+            ));
+            return Err(match (path_case_split, split_condition) {
+                (true, Some(condition)) => error.with_path_case_condition(condition),
+                (true, None) => error.with_path_case_split(),
+                (false, _) => error,
+            });
+        }
     }
     let transition = transitions
         .into_iter()

@@ -1367,7 +1367,19 @@ fn execute_modeled_pthread_create_paths(
                         environment,
                         budget,
                     )? {
-                        Ok(prepared) => {
+                        Ok(mut prepared) => {
+                            let invocation = std::sync::Arc::new(arguments.to_vec());
+                            let worker_arguments = std::sync::Arc::new(vec![arguments[3].clone()]);
+                            for mut obligation in prepared.take_obligations() {
+                                if let Some(source) = &mut obligation.call_requirement_site {
+                                    let source = std::sync::Arc::make_mut(source);
+                                    let site = std::sync::Arc::make_mut(&mut source.site);
+                                    site.source_callee = Some("pthread_create".into());
+                                    site.source_invocation_arguments = Some(invocation.clone());
+                                    site.source_arguments = worker_arguments.clone();
+                                }
+                                path.obligations.push(obligation);
+                            }
                             let failure = prepared.failure();
                             let (success, handle, _) = prepared.success();
                             let checked_failure_value =
@@ -1793,7 +1805,22 @@ fn execute_c_indirect_call_paths(
                 let mut merged_facts = facts.clone();
                 merged_facts.extend_shared(&call_path.facts);
                 let mut merged_obligations = obligations.clone();
-                merged_obligations.extend(call_path.obligations);
+                // Target selection owns the original invocation name. Keep it
+                // on this call's output obligations, without inspecting the
+                // caller's facts or changing nested inline-call sources.
+                let source_callee: std::sync::Arc<str> = function_name.into();
+                merged_obligations.extend(call_path.obligations.into_iter().map(
+                    |mut obligation| {
+                        if let Some(source) = &mut obligation.call_requirement_site
+                            && source.site.callee == function.name()
+                        {
+                            let source = std::sync::Arc::make_mut(source);
+                            std::sync::Arc::make_mut(&mut source.site).source_callee =
+                                Some(source_callee.clone());
+                        }
+                        obligation
+                    },
+                ));
                 call_path.facts = merged_facts;
                 call_path.obligations = merged_obligations;
                 paths.push(CFunctionPath {

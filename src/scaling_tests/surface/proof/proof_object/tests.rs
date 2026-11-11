@@ -2648,3 +2648,78 @@ fn smart_goal_spelling_does_not_scan_ambient_facts_or_same_value_names() {
     assert!(samples[0] > 0);
     assert!(samples.windows(2).all(|p| p[1] <= p[0] + 32), "{samples:?}");
 }
+
+#[test]
+fn exact_goal_solve_stops_at_assumption_as_related_and_unrelated_facts_grow() {
+    let predicates = PredicateEnvironment::new(&[]);
+    let functions = ClickFunctionEnvironment::new(&[]);
+    let theorems = TheoremEnvironment::new(&[]);
+    let variable = MachineTerm::Variable(Variable(8_180_000));
+    let state = CState::new().with_local("x", CValue::Int32(variable.clone()));
+    let snapshots = RecordedSnapshots::new();
+    let surfaces = SurfacePropositionMap::default();
+    let bound = |variable: MachineTerm, limit| {
+        Proposition::ConditionIs(
+            ConditionTerm::Compare {
+                format: MachineIntegerType::Int32,
+                relation: CompareRelation::LessThan,
+                left: Box::new(variable),
+                right: Box::new(MachineTerm::constant(limit)),
+            },
+            true,
+        )
+    };
+    let goal = bound(variable.clone(), 3);
+    let surface = ClickProposition::Comparison {
+        left: ContractExpression::CFragment(CExpression::Variable("x".into())),
+        operator: ComparisonOperator::LessThan,
+        right: ContractExpression::CFragment(CExpression::Value(int32(3))),
+    };
+    for related in [false, true] {
+        let mut previous = None;
+        for size in [16_u32, 64, 256, 1024] {
+            let mut facts = (0..size)
+                .map(|index| {
+                    bound(
+                        if related {
+                            variable.clone()
+                        } else {
+                            MachineTerm::Variable(Variable(9_000_000 + u64::from(index)))
+                        },
+                        100 + index,
+                    )
+                })
+                .collect::<Vec<_>>();
+            facts.push(bound(variable.clone(), 2)); // Also offers a longer derivation.
+            facts.push(goal.clone());
+            let root = Proof::for_fixed_state_frontier(
+                "exact solve",
+                0,
+                &facts,
+                ParameterBinding::default(),
+                FixedStateFrame::new(&state, &state, None, &snapshots),
+                &surfaces,
+                SpecDefinitions::new(&predicates, &functions),
+                &theorems,
+                &[],
+                &[],
+            );
+            let scope = root.driver().open_have(surface.clone()).unwrap();
+            let (closed, work) = crate::instrumentation::measure_deterministic_work(|| {
+                scope.driver().try_solve_closure().unwrap().unwrap()
+            });
+            assert_eq!(
+                closed.body().certificate().steps(),
+                &[ProofStep::Assumption]
+            );
+            assert!(root.certificate().steps().is_empty());
+            if let Some(previous) = previous {
+                assert!(
+                    work <= previous + 128,
+                    "related={related}, size={size}: {work} after {previous}"
+                );
+            }
+            previous = Some(work);
+        }
+    }
+}

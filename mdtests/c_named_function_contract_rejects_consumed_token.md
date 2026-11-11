@@ -39,12 +39,21 @@ int32 apply_token(int32 (*callback)(int32), int32 key) {
     ensures result == key;
 }
 
+theorem proposed_consume_token_contract() {
+    ensures PreserveToken(&consume_token) by {
+        unfold(PreserveToken);
+        solve();
+    }
+}
+
 int32 consumed_token_caller(int32 key) {
     owns permit(key);
     ensures result == key;
+} by {
+    apply(proposed_consume_token_contract());
 }
 ```
 
 ```expect
-fail: function `consume_token` does not satisfy named contract `PreserveToken`
+fail: contract-refinement proof does not establish `PreserveToken(&consume_token)`
 ```

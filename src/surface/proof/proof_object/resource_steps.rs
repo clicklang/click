@@ -571,6 +571,9 @@ impl<'a> Proof<'a> {
                     })
                     .map(|(slot, name, identity)| {
                         let identity = if unfold {
+                            crate::kernel::model_fields::register_instance_spelling(
+                                *identity, name,
+                            );
                             *identity
                         } else {
                             before
@@ -600,29 +603,40 @@ impl<'a> Proof<'a> {
         };
         let instance_value = instance.clone();
         let instance = &instance_value;
-        let construct_fold = !unfold && outcome.is_none() && !definition.reaches_population();
+        let collecting =
+            !unfold && crate::surface::proof::execution_planning::collecting_step_requirements();
+        let assumptions = if collecting {
+            self.facts()
+                .assumptions()
+                .clone()
+                .retaining_required_obligations()
+        } else {
+            self.facts().assumptions().clone()
+        };
+        let construct_fold = !unfold && outcome.is_none();
         let (rewrite, produced_facts) = if let Some(goal) = outcome {
             execution
                 .core
-                .rewrite_return_resource_instance_with_children(
+                .rewrite_return_resource_instance_with_children_under(
                     context.function,
                     goal.path_index,
                     self.facts(),
-                    &goal.data.core.state,
                     instance,
                     unfold,
                     selected_children.clone(),
+                    &assumptions,
                 )
                 .map(|(rewrite, facts)| (rewrite, Some(facts)))
         } else if construct_fold {
             execution
                 .core
-                .fold_resource_instance_with_children(
+                .fold_resource_instance_with_children_under(
                     context.function,
                     context.arguments,
                     self.facts(),
                     instance,
                     selected_children.clone(),
+                    &assumptions,
                 )
                 .map(|(rewrite, facts)| (rewrite, Some(facts)))
         } else {
@@ -631,7 +645,7 @@ impl<'a> Proof<'a> {
                 instance,
                 definition,
                 context.function.composite_resource_definitions(),
-                self.facts().assumptions(),
+                &assumptions,
                 unfold,
                 selected_children.as_deref(),
             )
@@ -751,6 +765,220 @@ impl<'a> Proof<'a> {
             .then(|| Arc::new(instance.clone()));
             self.step_error_with_proposed_record(summary, comparison, requirement, proposed)
         })?;
+        if collecting {
+            // Explicit constructors already provide the source of their
+            // arguments and fields. Pair body clauses by the producer's
+            // ordinal, rather than reconstructing those values from state.
+            let mut written = BTreeMap::new();
+            let source_body = if let (Some(fields), ResourceClause::Named { resource, .. }) =
+                (&binding.fold_fields, resource)
+                && let ResourceClause::Declared {
+                    name, arguments, ..
+                } = resource.as_ref()
+                && let Some(source_definition) = context.resource_environment.get(name)
+                && let Some(body) = source_definition.composite_body()
+            {
+                written.extend(
+                    source_definition.parameters().iter().zip(arguments).map(
+                        |(parameter, argument)| (parameter.name().to_owned(), argument.clone()),
+                    ),
+                );
+                written.extend(fields.iter().cloned());
+                // A field supplies the type of a contextual literal.
+                // Preserve that type when the initializer is substituted
+                // into an independently written obligation.
+                for field in source_definition.fields() {
+                    if *field.click_type() == ClickType::Integer
+                        && let Some(value) = written.get_mut(field.name())
+                    {
+                        *value = ContractExpression::Let {
+                            name: "field_value".to_owned(),
+                            click_type: Some(ClickType::Integer),
+                            value: Box::new(value.clone()),
+                            body: Box::new(ContractExpression::Binding("field_value".to_owned())),
+                        };
+                    } else if let Some(value) = written.get_mut(field.name()) {
+                        // The kernel evaluates the initializer at the field's
+                        // declared type. Keep that same conversion in the
+                        // independently printed prerequisite: n + 1 for an
+                        // int32 field must not become Integer arithmetic.
+                        *value = crate::surface::lowering::pure_function_parameter_argument(
+                            &FunctionParameter {
+                                name: field.name().to_owned(),
+                                click_type: field.click_type().clone(),
+                                struct_name: None,
+                                function_pointer_signature: None,
+                                constant: false,
+                                pointee_constant: false,
+                                reference: false,
+                            },
+                            value,
+                        );
+                    }
+                }
+                match &body.matched {
+                    None => Some(context.resource_environment.fold_source(name)?.body.clone()),
+                    Some(matched) => match written.get(&matched.field) {
+                        Some(ContractExpression::AlgebraicConstructor {
+                            variant,
+                            arguments,
+                            ..
+                        }) => {
+                            let (bindings, arm) = context
+                                .resource_environment
+                                .fold_source(name)?
+                                .arms
+                                .get(variant)
+                                .ok_or_else(|| {
+                                    self.step_error("fold constructor has no source arm")
+                                })?;
+                            let arguments = arguments.clone();
+                            // Constructor fields have their declared types,
+                            // including the implicit object-pointer coercion
+                            // of a void* field. Preserve that conversion in
+                            // the source obligation just as constructor
+                            // lowering does in the kernel term.
+                            written.extend(bindings.iter().cloned().zip(arguments).map(
+                                |((name, click_type), argument)| {
+                                    let value = if click_type == ClickType::Integer {
+                                        ContractExpression::Let {
+                                            name: "field_value".to_owned(),
+                                            click_type: Some(ClickType::Integer),
+                                            value: Box::new(argument),
+                                            body: Box::new(ContractExpression::Binding(
+                                                "field_value".to_owned(),
+                                            )),
+                                        }
+                                    } else {
+                                        crate::surface::lowering::pure_function_parameter_argument(
+                                            &FunctionParameter {
+                                                name: name.clone(),
+                                                click_type,
+                                                struct_name: None,
+                                                function_pointer_signature: None,
+                                                constant: false,
+                                                pointee_constant: false,
+                                                reference: false,
+                                            },
+                                            &argument,
+                                        )
+                                    };
+                                    (name, value)
+                                },
+                            ));
+                            Some(arm.clone())
+                        }
+                        _ => None,
+                    },
+                }
+            } else {
+                None
+            };
+            let selected_by_name = selected_children
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .cloned()
+                .collect::<BTreeMap<_, _>>();
+            let mut child_renames = BTreeMap::new();
+            if let Some(body) = source_body.as_ref() {
+                let children = body
+                    .children
+                    .iter()
+                    .map(|child| (&child.name, child.identity))
+                    .chain(body.contains().iter().filter_map(|clause| {
+                        if let ResourceClause::Named { binding, .. } = clause {
+                            Some((&binding.name, binding.identity))
+                        } else {
+                            None
+                        }
+                    }));
+                for (child_name, child_identity) in children {
+                    let actual = selected_by_name.get(child_name).ok_or_else(|| {
+                        self.step_error("fold body child has no selected instance")
+                    })?;
+                    let name =
+                        crate::kernel::model_fields::registered_instance_spelling(*actual)
+                            .ok_or_else(|| self.step_error("fold body child has no source name"))?;
+                    child_renames.insert(
+                        child_name.clone(),
+                        crate::surface::lowering::InstanceRename {
+                            name: name.to_string(),
+                            identity: child_identity,
+                            target_identity: Some(*actual),
+                        },
+                    );
+                }
+            }
+            for clause in &rewrite.body_clauses {
+                let declared = context.resource_environment.fold_source(instance.name())?;
+                let body = match &clause.arm {
+                    None => &declared.body,
+                    Some(arm) => {
+                        &declared
+                            .arms
+                            .get(arm)
+                            .ok_or_else(|| self.step_error("fold body clause lost its source arm"))?
+                            .1
+                    }
+                };
+                let ordinal = if clause.arm.is_none() {
+                    definition
+                        .fact_source_index(clause.ordinal)
+                        .ok_or_else(|| self.step_error("fold body clause lost its source index"))?
+                } else {
+                    clause.ordinal
+                };
+                let declared_fact = body
+                    .facts()
+                    .get(ordinal)
+                    .ok_or_else(|| self.step_error("fold body clause lost its source ordinal"))?;
+                let summary = crate::kernel::ResourceRewriteRefusal::BodyFactNotEstablished {
+                    arm: clause.arm.clone(),
+                    index: ordinal,
+                    count: body.facts().len(),
+                    spelling: Some(crate::surface::printing::authored_click_proposition(
+                        declared_fact,
+                    )),
+                    proposition: Box::new(clause.proposition.clone()),
+                }
+                .describe();
+                let mut refusal =
+                    ClickError::new(summary).with_unresolved_requirement(&clause.obligation());
+                if let Some(body) = source_body.as_ref() {
+                    let source_ordinal = if clause.arm.is_none() {
+                        definition
+                            .fact_source_index(clause.ordinal)
+                            .ok_or_else(|| {
+                                self.step_error("fold body clause lost its source index")
+                            })?
+                    } else {
+                        clause.ordinal
+                    };
+                    let source = body.facts().get(source_ordinal).ok_or_else(|| {
+                        self.step_error("fold body clause lost its source ordinal")
+                    })?;
+                    let source = crate::surface::lowering::substitute_click_proposition_in(
+                        source,
+                        &crate::surface::lowering::ContractSubstitutions::for_fold_body(
+                            &written,
+                            &child_renames,
+                        ),
+                    )
+                    .map_err(ClickError::new)?;
+                    std::sync::Arc::make_mut(
+                        refusal
+                            .unresolved_requirement
+                            .as_mut()
+                            .expect("just attached"),
+                    )
+                    .surface = Some(source);
+                }
+                crate::surface::proof::execution_planning::refuse_or_record_open_obligation(
+                    refusal,
+                )?;
+            }
+        }
         crate::kernel::model_fields::register_instance_spelling(instance.identity(), &binding.name);
         let clause_presentations = if unfold {
             let source_bindings = rewrite.body_clauses.first().and_then(|clause| {
@@ -799,6 +1027,13 @@ impl<'a> Proof<'a> {
             );
         }
         for clause in clause_presentations {
+            // Keep the producer's paired declaration spelling in the exact
+            // source index as well as its binder metadata. A later fold can
+            // state this obligation without recovering proof-local names.
+            execution
+                .presentation
+                .surface_propositions
+                .record_lowering(&clause.source, &clause.checked.proposition)?;
             execution.presentation.resource_body_clauses.push(clause);
         }
         // The unfold exposed this arm's cells; name them in the snapshot so
@@ -2528,6 +2763,57 @@ impl<'a> Proof<'a> {
         })
     }
 
+    /// Construct the fold successor; the driver owns its obligation proofs.
+    pub(super) fn apply_primitive_fold(
+        &self,
+        resource: &ResourceClause,
+    ) -> Result<Self, ClickError> {
+        let _timing = crate::instrumentation::OperationTiming::new(
+            self.claim_label(),
+            "resource fold",
+            "resource fold: apply selected fold",
+        );
+        let step = ProofStep::FoldResource(resource.clone());
+        let mut transition = {
+            // Resolve proof bindings before either the execution or
+            // outcome path interprets ordinary resource arguments.
+            let source_resource = resource;
+            let resource = &self.resolve_proof_resource_arguments(resource)?;
+            // A body fact over a witness an unfold named is spelled with
+            // that name.
+            let named_values = self
+                .state()
+                .locals()
+                .values
+                .iter()
+                .filter_map(|(name, value)| match value {
+                    ContractExpression::CFragment(CExpression::Value(value)) => {
+                        Some((value.clone(), name.clone()))
+                    }
+                    _ => None,
+                })
+                .collect();
+            crate::surface::proof::surface_synthesis::with_proof_local_value_names(
+                named_values,
+                || {
+                    if self.focused_outcome_data().is_some() {
+                        self.apply_outcome_resource_fold(resource)
+                    } else {
+                        self.apply_execution_resource_fold(resource, source_resource)
+                    }
+                },
+            )
+        }?;
+        transition.clear_chosen_projection();
+        let state = self.publish_checked_transition(transition)?;
+        Ok(Self {
+            site: self.site.clone(),
+            context: self.context.clone(),
+            state,
+            node: ProofNode::step_child(&self.node, self.focused_branch_id(), Arc::new(step)),
+        })
+    }
+
     pub(super) fn apply_execution_resource_fold(
         &self,
         resource: &ResourceClause,
@@ -2596,6 +2882,7 @@ impl<'a> Proof<'a> {
                 &checked.facts,
                 None,
                 &checked.loan_holds,
+                crate::surface::proof::execution_planning::collecting_step_requirements(),
             )
             .map_err(|error| {
                 self.step_error(format!(
@@ -2688,6 +2975,8 @@ impl<'a> Proof<'a> {
                     &goal.data.core,
                     &checked.state,
                     &checked.facts,
+                    &checked.published_facts,
+                    false,
                 )
                 .map_err(|message| self.step_error(message))?;
         }
@@ -2825,31 +3114,6 @@ impl<'a> Proof<'a> {
                 }),
             _ => false,
         };
-        // Certification reads an ordinary fold's composite back from the
-        // exit's pieces by its definition law, which assembles a composite
-        // only where its body facts hold under the path's own premises. A
-        // fact this proof established after execution (a predicate it
-        // unfolded, say) is not among them. When the entry premises alone do
-        // not give the law this fold's facts, the fold is also offered as a
-        // checked return exchange, which carries the proof's post-return
-        // facts into the certified trace. The exchange is kept only when the
-        // path still certifies with it; otherwise the fold stays with the
-        // definition law, which checks its facts itself.
-        let fact_bearing_exchange = match checked.selected.resource() {
-            CResource::Composite { name, .. } => {
-                context
-                    .function
-                    .composite_resource_definition(name)
-                    .is_some_and(|definition| !definition.facts().is_empty())
-                    && !crate::kernel::c_resource_definitionally_established(
-                        &goal.data.core.state,
-                        &checked.selected,
-                        context.function.composite_resource_definitions(),
-                        &execution.core.entry_assumptions(),
-                    )
-            }
-            _ => false,
-        };
         // The checked contract transition has its own resource evidence and
         // may bind outputs to their interface identities. A later scope close
         // still checks its body law, but does not exchange that final contract
@@ -2891,29 +3155,17 @@ impl<'a> Proof<'a> {
                     &goal.data.core,
                     &state,
                     &checked.facts,
+                    &[],
+                    crate::surface::proof::execution_planning::collecting_step_requirements(),
                 )
                 .map_err(|message| self.step_error(message))?;
-        } else if retain_return_exchange && fact_bearing_exchange && *state != *goal.data.core.state
-        {
-            let mut offered = execution.clone();
-            if offered
-                .core
-                .record_return_composite_resource_rewrite(
-                    context.function,
-                    goal.path_index,
-                    self.facts(),
-                    &checked.selected,
-                    &goal.data.core,
-                    &state,
-                    &checked.facts,
-                )
-                .is_ok()
-                && offered
-                    .core
-                    .return_path_certifies(context.function, goal.path_index)
-            {
-                execution = offered;
-            }
+        }
+        if crate::surface::proof::execution_planning::collecting_step_requirements() {
+            execution.core.prepare_return_definition_fold(
+                goal.path_index,
+                self.facts(),
+                &checked.facts,
+            );
         }
         let mut data = (*goal.data).clone();
         data.core.result = Arc::new(value);

@@ -24,7 +24,7 @@ without changing its behavior. The frozen
 [dependency inventory](../build_support/proof_search_edges.tsv) records existing
 callers and separates operation dependencies from the explicit `ProofDriver`
 and mixed callers classified in the [caller audit](../design/proof-boundary-classification.md). The driver owns proof interpretation and the
-choice between explicit obligation proofs and implicit solving. Its 9
+choice between explicit obligation proofs and implicit solving. Its 8
 operation-to-driver reference records remain a separate migration list;
 implicit solving by the driver is legitimate expandable work. No new scaling measurements accompany that split.
 Existing test names below identify evidence to retain and inspect, not new
@@ -64,8 +64,8 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 ## Reconciled status and ownership
 
 The frozen inventory has **613 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 14 operation references, 9 operation-to-driver references,
-19 mixed references, 110 driver references, 423 search references, 6 presentation
+of those bridges, 14 operation references, 8 operation-to-driver references,
+19 mixed references, 110 driver references, 424 search references, 6 presentation
 references, 1 dispatch and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 14
@@ -97,11 +97,47 @@ operation references.
 Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. Nine operation-to-driver records remain.
+do not run arm-script callbacks. Eight operation-to-driver records remain.
 Next scaling experiment: L1 through an actual write.
 Transport work should target a named T1–T5 route and its retirement criterion,
 not accumulate more examples of an already-covered shape. These are separate
 work items; this reconciliation changes no behavior.
+
+### Remaining obligation generation
+
+Step preparation retains emitted verification conditions and call preconditions,
+and fold preparation retains its body facts, even when already known. The driver
+proves each obligation with a written block or ordinary `solve`. This does not
+finish evaluator migration: arithmetic operators still decide some safety
+conditions before emitting any obligation. Replacing those decisions needs
+round-trippable goals and flat generation/publication costs. The attempted
+arithmetic migration fails `struct_array_element_expands_with_its_subscript`
+(the initialized-global sum has no round-tripping overflow-goal spelling) and
+`straight_line_assignments_cost_the_same_at_every_position` (work grows from
+2765 to 2885 across twelve assignments). Retain those controls for that slice.
+Named-resource folds, including population members and authority controls,
+retain the selected exchange while the driver proves body obligations, then
+append it with the proved context. Operational composite wrapper folds retain
+their checked exchanges too. Both execution-frontier and completed-return
+paths use this completion boundary. Return paths retain their state endpoints
+as evidence is appended, so folds no longer recover them by walking history.
+Preparation must either retain a conditional successor and its obligations or
+return a final refusal. Completion must never rerun the operation. Legacy
+outcome folds retain their definition-law presentation and attach the proved
+facts to the selected return path; they do not probe whole-path certification
+to choose a fallback exchange. Keep the constructor-count and history controls
+in `prepared_legacy_outcome_fold_applies_once`,
+`prepared_view_call_does_not_retry_loan_recovery`,
+`prepared_guarded_statement_does_not_retry_execution`,
+`prepared_fold_snapshot_pointer_reads_current_memory`,
+`prepared_fold_arithmetic_field_replays`,
+`prepared_named_fold_constructs_once`,
+`prepared_named_fold_completion_does_not_walk_history`,
+`prepared_return_fold_constructs_once_without_recovering_history`, and
+`prepared_population_fold_constructs_once`. The population control covers named
+and legacy authority wrappers, before and after return, with expansion/replay
+and missing-premise/authority refusals.
+
 
 ## Operation map
 

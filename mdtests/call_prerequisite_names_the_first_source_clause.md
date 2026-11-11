@@ -27,5 +27,5 @@ int32 caller(int32 a, int32 b) {
 ```
 
 ```expect
-fail: tactic 1: `step()` is missing prerequisite (precondition clause 1 of `first`)
+fail: unproved obligation: `a > 0`
 ```

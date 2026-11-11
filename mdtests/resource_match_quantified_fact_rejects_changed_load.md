@@ -70,5 +70,5 @@ int32 write_one(struct buffer* buffer) {
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields
+fail: unproved obligation: `forall (k: int32) { 0 <= k and k < (end as int32) implies (let read_pointer = buffer->data; read_pointer)[k] == 0 }`
 ```

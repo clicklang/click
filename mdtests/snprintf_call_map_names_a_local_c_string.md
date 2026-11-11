@@ -34,6 +34,15 @@ int32 f(char buf[], int32 len) {
     owns buf[0..len as uint64];
     ensures result == 1;
 } by {
+    have 0 <= len and len <= 2147483647 by solve();
+    have to_integer(len as uint64) == to_integer(len) by {
+        arithmetic_certificate rules {
+            premise 0: 0 <= to_integer(len) => 0 <= to_integer(len);
+            premise 1: to_integer(len) <= 2147483647 => to_integer(len) <= 2147483647;
+            integer_cast_identity bounds [0, 1] => to_integer(len as uint64) == to_integer(len);
+            conclusion 0;
+        }
+    }
     step();
     step();
     have format::decimal_length(7u64) == 1u64 by {

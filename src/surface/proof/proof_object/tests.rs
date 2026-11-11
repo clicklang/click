@@ -4624,12 +4624,14 @@ fn smart_retry_retains_checked_have_and_exact_step_after_injected_refusal() {
             .is_at_function_entry()
     );
 
-    // A source-backed requirement whose authoritative source entry is
+    // A nonliteral source-backed requirement whose authoritative source entry is
     // unavailable must remain an error.  In particular, a smart execution
     // caller must not turn this structured refusal into a Planning scratch
     // descendant.  The test fixture intentionally has no source-registry
     // entry for `identity`, so the checked resolver fails closed.
-    let supported = Proposition::ConditionIs(ConditionTerm::Constant(true), true);
+    // A completely evaluated Boolean has its own complete literal spelling;
+    // use a comparison here so this continues to exercise missing call metadata.
+    let supported = indexed_fact(8);
     let site = std::sync::Arc::new(crate::kernel::CallRequirementSite::for_requirement(
         "identity",
         "identity",
@@ -6264,22 +6266,22 @@ fn pure_signed_order_solve_builds_its_certificate_with_logarithmic_local_updates
             .driver()
             .try_solve_closure()
             .expect("nested smart search must not exceed its deadline")
-            .expect("the exact goal should have an independent theorem path");
+            .expect("the exact goal should close directly by assumption");
         let allocations = fact_node_allocations() - before;
-        // Excluding the ambient goal builds a different persistent context.
-        // Measure its growth against its own smallest sample.
+        // Retaining the exact premise must also keep persistent updates local.
+        // Measure their growth against their own smallest sample.
         let (base_height, base_allocations) =
             *have_baseline.get_or_insert((logarithmic_height, allocations));
         let allocation_bound = base_allocations * logarithmic_height / base_height;
         assert!(
             allocations <= allocation_bound,
-            "size {size} exact-goal-excluding have allocated {allocations} persistent nodes (bound {allocation_bound})"
+            "size {size} exact-goal have allocated {allocations} persistent nodes (bound {allocation_bound})"
         );
         assert!(selected.body().is_complete());
-        assert!(is_one_arithmetic_certificate_over(
+        assert_eq!(
             selected.body().certificate().steps(),
-            &surfaces,
-        ));
+            &[ProofStep::Assumption],
+        );
         assert!(exact_root.certificate().steps().is_empty());
     }
 }

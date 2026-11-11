@@ -22,5 +22,5 @@ int32 caller() {
 ```
 
 ```expect
-fail: precondition clause 1 of `external_identity`
+fail: unproved obligation: `-1 >= 0`
 ```

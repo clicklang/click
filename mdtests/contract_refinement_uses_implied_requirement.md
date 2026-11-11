@@ -1,17 +1,9 @@
 # Contract refinement eliminates an implication among the target's requirements
 
-Forming a named contract for a concrete function assumes the contract's
-requirements and then checks the function's own. When one requirement is an
-implication whose antecedent is another requirement, the consequent is
-available to the refinement: `assume_contract_proposition` discharges the
-antecedent while assuming, so `n == 7` reaches the check even though only
-`flag == 1` and `flag == 1 implies n == 7` were written.
-
-Package 10(b) of `roadmap/simplify-kernel.md` restricted that discharge to the
-exact routes — the exact fact index, the frozen condition checker on a bare
-condition, and the frozen atomic memory/resource checkers. The antecedent here
-is exactly the preceding requirement, so the exact index answers it. This is
-the fixture that reaches the site: the census found no other.
+The explicit refinement theorem assumes the named contract's requirements
+and proves the implementation's requirements. Here `flag == 1` and
+`flag == 1 implies n == 7` establish `n == 7`. Applying that theorem supplies
+the callback contract as an ordinary call prerequisite.
 
 ```c filename=implied_requirement.c
 void use_seven(int32 flag, int32 n) {
@@ -47,10 +39,19 @@ void invoke_guarded(void (*callback)(int32, int32), int32 flag, int32 n) {
     ensures 0 <= n;
 }
 
+theorem use_seven_is_guarded() {
+    ensures Guarded(&use_seven) by {
+        unfold(Guarded);
+        solve();
+    }
+}
+
 void guarded_caller(int32 flag, int32 n) {
     requires flag == 1;
     requires n == 7;
     ensures 0 <= n;
+} by {
+    apply(use_seven_is_guarded());
 }
 ```
 

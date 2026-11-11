@@ -24,5 +24,5 @@ void write_global(uint32 x) {
 ```
 
 ```expect
-fail: could not show `x >= 0 && x < 4`
+fail: array subobject index must be at least 0 and less than 4
 ```

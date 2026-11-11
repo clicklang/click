@@ -47,11 +47,20 @@ int32 apply_step(int32 (*callback)(int32), int32 input) {
     ensures result == input + 1;
 }
 
+theorem proposed_increment_from_ten_contract() {
+    ensures PositiveStep(&increment_from_ten) by {
+        unfold(PositiveStep);
+        solve();
+    }
+}
+
 int32 strong_precondition_caller() {
     ensures result == 42;
+} by {
+    apply(proposed_increment_from_ten_contract());
 }
 ```
 
 ```expect
-fail: function `increment_from_ten` does not satisfy named contract `PositiveStep`
+fail: contract-refinement proof does not establish `PositiveStep(&increment_from_ten)`
 ```

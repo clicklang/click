@@ -21,5 +21,5 @@ int32 run() { ensures result == -1; }
 ```
 
 ```expect
-fail: precondition clause 1 of `helper#inline:first.c`
+fail: unproved obligation: `-1 >= 0`
 ```

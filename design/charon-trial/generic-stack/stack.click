@@ -626,6 +626,13 @@ impl<T> generic_stack::Stack<T> {
                     }
                     List::Cons(w, more) => {
                         let { tail: next } = unfold(tail);
+                        have old(self.head.next).next == at(region(121).exit, old(self.head.next).next) by {
+                            transport(at(region(121).exit, old(self.head.next).next) == at(region(121).exit, old(self.head.next).next), old(self.head.next).next == at(region(121).exit, old(self.head.next).next));
+                        }
+                        have self.head.next == old(self.head.next).next by {
+                            rewrite(self.head == old(self.head.next));
+                            assumption();
+                        }
                         let after = fold(nodes<T>(self.head), { values: List::Cons(w, more) }, { tail: next });
                         have to_integer(old(self.len) - 1u64) == to_integer(old(self.len)) - to_integer(1u64);
                         have to_integer(old(self.len) - 1u64) == length(List::Cons(w, more)) by solve() using {
@@ -655,6 +662,10 @@ impl<T> generic_stack::Stack<T> {
 fn generic_stack::round_trip(x: u32) -> Option<u32> {
     ensures result == Option<u32>::Some(x);
 } by {
+    step_until(region(18));
+    let { after: empty } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I3_new, {});
+    step_until(region(38));
+    let { after: pushed } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I4_push, { before: empty });
     step_until(region(57));
     have separate(region(50).footprint, memory(stack.head)) by { normalize() using {}; }
     have at(region(50).exit, stack.head) == at(region(50).entry, stack.head) by {
@@ -680,6 +691,7 @@ fn generic_stack::round_trip(x: u32) -> Option<u32> {
             conclusion 1;
         }
     }
+    let { after: remaining } = step(__rust_q_I13_generic_stack_T42___rust_q_I13_generic_stack_I5_Stack_A3_u32_I3_pop, { before: pushed });
     step_until(function.exit);
     unfold(first(List::Cons(x, List<u32>::Nil)));
 }

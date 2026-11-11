@@ -149,6 +149,6 @@ pub(super) use statements::{
     execute_statement_paths_with_prefix, paths_after_scope_exit, scope_declared_names,
 };
 
-pub(crate) use memory_loads::pointer_read_over_write_c_value;
+pub(crate) use memory_loads::{pointer_read_over_immediate_store, pointer_read_over_write_c_value};
 
 pub(crate) use memory_loads::loaded_pointer_stored_block;

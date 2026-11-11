@@ -15,7 +15,16 @@ int use_view(const int *(*f)(int *), int *p) {
     views p[0..1];
     ensures result == p[0];
 }
-int caller(int *p) { views p[0..1]; ensures result == p[0]; }
+theorem view_satisfies_View() {
+    ensures View(&view) by {
+        unfold(View);
+        solve();
+    }
+}
+
+int caller(int *p) { views p[0..1]; ensures result == p[0]; } by {
+    apply(view_satisfies_View());
+}
 ```
 
 ```expect

@@ -1,6 +1,85 @@
 use super::*;
 
 #[test]
+#[ignore = "nightly: constructor pointer prerequisite expansion and cold replay"]
+fn fold_constructor_pointer_obligations_expand_and_cold_replay() {
+    let (source, sources) =
+        mdtest_sources("mdtests/fresh_heap_parent_link_read_through_named_resource.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "parent_attach").unwrap();
+    without_implicit_solve_for_claim("parent_attach.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: initialized callback field prerequisite expansion and cold replay"]
+fn initialized_callback_field_obligations_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/const_callback_table_abstract.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "caller").unwrap();
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: callback prerequisite expansion and cold replay"]
+fn explicit_callback_contract_obligation_expands_and_cold_replays() {
+    let (source, sources) = mdtest_sources("mdtests/c_named_function_contract.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded =
+        expand_c0_claim_source_by_label(&source, &sources, "compare_is_comparator.ensures_0")
+            .unwrap();
+    let expanded = expand_function_proof_source(&expanded, &sources, "caller").unwrap();
+    without_implicit_solve_for_claim("caller.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: explicit alias-fold obligation expansion and cold replay"]
+fn explicit_alias_fold_obligations_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/fold_through_a_pointer_alias.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "keep").unwrap();
+    without_implicit_solve_for_claim("keep.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
+#[ignore = "nightly: named witness fold expansion and cold replay"]
+fn named_witness_fold_obligations_expand_and_cold_replay() {
+    let (source, sources) = mdtest_sources("mdtests/resource_witness_unfold_fold.md");
+    let sources = sources
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect::<Vec<_>>();
+    let expanded = expand_function_proof_source(&source, &sources, "unpack").unwrap();
+    without_implicit_solve_for_claim("unpack.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .unwrap();
+}
+
+#[test]
 #[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_00")]
 fn mirrored_implication_consequents_expand_to_checked_extraction() {
     for (ty, literal) in [
@@ -1053,7 +1132,7 @@ fn expansion_shows_a_folds_hidden_record_as_a_comment() {
     let expanded = expand_function_proof_source(source, &sources, "get")
         .expect("the hidden-record proof expands");
     assert!(
-        expanded.contains("fold(pair(p), { first: c }); // record { first.v: c.v }"),
+        expanded.contains("fold(pair(p), { first: c }) { // record { first.v: c.v }"),
         "{expanded}"
     );
     verify_c0_sources(&expanded, &sources).expect("the commented expansion verifies");
@@ -1387,7 +1466,7 @@ int32 caller(int32 x, int32 y) {
         "a simple call must not invoke planning"
     );
     assert!(
-        error.unresolved_requirement().is_some(),
+        error.message().contains("assumption"),
         "{}",
         error.message()
     );
@@ -2364,7 +2443,7 @@ fn symbolic_branch_direct_call_requirement_expands_and_checks_its_known_arm() {
     let error = verify_c0_sources(&stronger, &c_sources)
         .expect_err("a positive value alone does not establish the stronger call requirement");
     assert!(
-        error.unresolved_requirement().is_some(),
+        error.message().contains("assumption"),
         "{}",
         error.message()
     );
@@ -3470,7 +3549,7 @@ fn whole_claim_expansion_keeps_post_execution_tactics_in_their_match_arm() {
     let proof = &expanded[expanded.rfind("} by {").unwrap()..];
     let arm = proof.find("Maybe::Some(value) => {").expect("the live arm");
     let fold = proof
-        .find("let c = fold(cell(node), { model: Maybe::Some(value) });")
+        .find("let c = fold(cell(node), { model: Maybe::Some(value) }) by {")
         .expect("the arm's fold");
     let arm_end = arm + proof[arm..].find("\n        }\n").expect("the arm closes");
     assert!(arm < fold && fold < arm_end, "{proof}");
@@ -6324,7 +6403,7 @@ fn source_expander_lowers_smart_solve_inside_have() {
         ..expanded
             .find("step_until(function.exit)")
             .expect("expanded proof should retain its suffix")];
-    assert!(expanded_have.contains("normalize();"), "{expanded_have}");
+    assert!(expanded_have.contains("assumption();"), "{expanded_have}");
     assert!(!expanded_have.contains("solve();"), "{expanded_have}");
     verify_c0_sources(&expanded, &[("identity.c", c_source)])
         .expect("the expanded smart have should check");
@@ -9775,7 +9854,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
     assert_eq!(
         tactics
             .iter()
-            .filter(|tactic| matches!(tactic, ProofTactic::FoldResource(_)))
+            .filter(|tactic| matches!(tactic, ProofTactic::StepProved { step, .. } if matches!(step.as_ref(), ProofTactic::FoldResource(_))))
             .count(),
         1,
         "one source fold must produce exactly one retained step"
@@ -9790,7 +9869,7 @@ fn execution_resource_fold_is_recorded_once_and_checks() {
     assert_eq!(
         expanded
             .lines()
-            .filter(|line| line.trim() == "fold(marker(x));")
+            .filter(|line| line.trim() == "fold(marker(x)) by {")
             .count(),
         1
     );
@@ -12083,8 +12162,7 @@ fn transformed_resource_branch_interface_retains_its_common_descendant() {
         .expect("select_ready should be the final verified function")
         .expanded_proof_tactics()
         .expect("the transformed interface should retain an expansion");
-    let arm_retains_fold =
-        |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::FoldResource(_)]);
+    let arm_retains_fold = |arm: &[ProofTactic]| matches!(arm, [ProofTactic::Step, ProofTactic::StepProved { step, .. }] if matches!(step.as_ref(), ProofTactic::FoldResource(_)));
     assert!(
         matches!(
             tactics.as_slice(),
@@ -13889,8 +13967,10 @@ fn outcome_solve_transports_loadability_on_the_checked_proof() {
     let expanded = expand_function_proof_source(click_source, &sources, "use_summary")
         .expect("the retained viewability transport should expand");
     assert!(expanded.contains("transport"), "{expanded}");
-    verify_c0_sources(&expanded, &sources)
-        .expect("the retained viewability transport should check independently");
+    without_implicit_solve_for_claim("use_summary.contract", || {
+        verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+    })
+    .expect("the retained viewability transport should check without implicit solve");
 }
 
 #[test]
@@ -15652,7 +15732,7 @@ fn loop_preservation_case_before_step_expands_in_place() {
     let case = body
         .find("if flag == i")
         .expect("the proof case is retained");
-    let step = body.find("step();").expect("the body step is retained");
+    let step = body.find("step()").expect("the body step is retained");
     assert!(
         case < step,
         "the case must stay before the step it precedes: {expanded}"
@@ -20859,6 +20939,148 @@ void set(int32* p, int32* q, int32 x) {
     );
 }
 
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
+fn solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes() {
+    for goal in ["x < 3", "x < 3 and -3 < x"] {
+        let pure = format!(
+            "theorem known(x: int32) {{ requires x < 2; requires {goal}; ensures {goal} by {{ solve(); }} }}"
+        );
+        let expanded = expand_c0_claim_source_by_label(&pure, &[], "known.ensures_0").unwrap();
+        assert!(expanded.contains("assumption();"), "{expanded}");
+        assert!(
+            !expanded.contains("normalize()")
+                && !expanded.contains("have ")
+                && !expanded.contains("solve()"),
+            "{expanded}"
+        );
+        without_implicit_solve(|| verify_click_theorems(&expanded)).unwrap();
+        let missing = expanded
+            .replace(&format!("requires {goal};"), "")
+            .replace("requires x < 2;", "");
+        assert!(without_implicit_solve(|| verify_click_theorems(&missing)).is_err());
+
+        let source = format!(
+            "verifying \"known.c\"; void known(int32 x) {{ requires x < 2; requires {goal}; ensures {goal} by {{ step_until(function.exit); solve(); }} }}"
+        );
+        let sources = [("known.c", "void known(int32 x) {}")];
+        let expanded =
+            expand_c0_claim_source_by_label(&source, &sources, "known.ensures_0").unwrap();
+        assert!(expanded.contains("assumption();"), "{expanded}");
+        assert!(
+            !expanded.contains("normalize()")
+                && !expanded.contains("arithmetic_certificate")
+                && !expanded.contains("solve()"),
+            "{expanded}"
+        );
+        // Outcome expansion opens the contract claim with `have`; the
+        // selected proof inside that existing wrapper is one assumption.
+        let compact = expanded.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            compact.contains(&format!("have {goal} by {{ assumption(); }}")),
+            "{expanded}"
+        );
+        assert_eq!(expanded.matches("have ").count(), 1, "{expanded}");
+        without_implicit_solve(|| verify_c0_sources(&expanded, &sources)).unwrap();
+    }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
+fn known_step_and_fold_requirements_still_have_explicit_obligation_proofs() {
+    let sources = [(
+        "known.c",
+        "void needs(int32 x) {} void caller(int32 x) { needs(x); } void make(int32 x) {}",
+    )];
+    let source = r#"
+verifying "known.c";
+resource positive(x: int32) { fact x > 0; }
+void needs(int32 x) { requires x > 0; ensures x > 0; }
+void caller(int32 x) { requires x > 0; ensures x > 0; } by {
+    step() by { assumption(); }
+    step_until(function.exit);
+    solve();
+}
+void make(int32 x) { requires x > 0; produces positive(x); } by {
+    fold(positive(x)) by { assumption(); }
+    step_until(function.exit);
+    solve();
+}
+"#;
+    verify_c0_sources(source, &sources).expect("known requirements still accept written proofs");
+    for (name, written, bare) in [
+        ("caller", "step() by { assumption(); }", "step();"),
+        (
+            "make",
+            "fold(positive(x)) by { assumption(); }",
+            "fold(positive(x));",
+        ),
+    ] {
+        let missing = source.replacen(written, bare, 1);
+        assert!(
+            without_implicit_solve_for_claim(&format!("{name}.contract"), || {
+                verify_c0_sources(&missing, &sources).map_err(|error| error.report())
+            })
+            .is_err(),
+            "{name}: deleting a known obligation's proof must still require solve"
+        );
+    }
+    for name in ["caller", "make"] {
+        let implicit = source.replace(" by { assumption(); }", ";");
+        let expanded = expand_function_proof_source(&implicit, &sources, name).unwrap();
+        let operation = if name != "make" {
+            "step() by {"
+        } else {
+            "fold(positive(x)) by {"
+        };
+        assert!(expanded.contains(operation), "{expanded}");
+        without_implicit_solve_for_claim(&format!("{name}.contract"), || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap();
+    }
+}
+
+#[test]
+#[cfg_attr(feature = "fast-gate", ignore = "covered by expansion_batch_88")]
+fn a_named_fold_generates_its_known_body_fact_obligation() {
+    let sources = [("named.c", "void make(int32 x) {}")];
+    let source = r#"
+verifying "named.c";
+resource positive(x: int32) { field value: int32; fact value > 0; }
+void make(int32 x) { requires x > 0; produces p: positive(x); } by {
+    let p = fold(positive(x), { value: x }) by { assumption(); }
+    step_until(function.exit);
+    solve();
+}
+"#;
+    for source in [
+        source.to_string(),
+        source
+            .replace(
+                "    let p = fold",
+                "    step_until(function.exit);\n    let p = fold",
+            )
+            .replace(
+                "    step_until(function.exit);\n    solve();",
+                "    solve();",
+            ),
+    ] {
+        for source in [source.clone(), source.replace(" by { assumption(); }", ";")] {
+            verify_c0_sources(&source, &sources).expect("a named fold exposes its body fact too");
+            assert!(
+                verify_c0_sources(&source.replace("requires x > 0;", ""), &sources).is_err(),
+                "the proposed folded resource cannot prove its own body fact",
+            );
+            let expanded = expand_function_proof_source(&source, &sources, "make").unwrap();
+            without_implicit_solve_for_claim("make.contract", || {
+                verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+            })
+            .unwrap();
+        }
+    }
+}
+
 #[cfg(feature = "fast-gate")]
 test_batches! {
     file: "expansion_tests.rs",
@@ -21392,4 +21614,42 @@ test_batches! {
         structural_invariant_bundles_expand_as_ordered_member_haves,
         explicit_and_implicit_existential_requirements_expand_without_search,
     ],
+    expansion_batch_88: [
+        solve_exact_goal_expands_to_assumption_in_pure_and_outcome_scopes,
+        known_step_and_fold_requirements_still_have_explicit_obligation_proofs,
+        a_named_fold_generates_its_known_body_fact_obligation,
+    ],
+}
+
+#[test]
+#[ignore = "nightly: repaired call and fold obligations expand and cold replay"]
+fn repaired_step_fold_obligations_expand_and_cold_replay() {
+    for (fixture, function) in [
+        (
+            "symbolic_index_store_keeps_ordered_cell",
+            "set_then_read_end",
+        ),
+        ("modeled_pthread_local_job_external_output", "run"),
+        (
+            "a_linked_pointer_initializer_names_a_private_object_of_its_defining_file",
+            "main",
+        ),
+        (
+            "same_named_private_objects_behind_linked_pointers_stay_distinct",
+            "main",
+        ),
+    ] {
+        let (source, sources) = mdtest_sources(&format!("mdtests/{fixture}.md"));
+        let sources = sources
+            .iter()
+            .map(|(name, text)| (name.as_str(), text.as_str()))
+            .collect::<Vec<_>>();
+        let expanded = expand_function_proof_source(&source, &sources, function)
+            .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+        let claim = format!("{function}.contract");
+        without_implicit_solve_for_claim(&claim, || {
+            verify_c0_sources(&expanded, &sources).map_err(|error| error.report())
+        })
+        .unwrap_or_else(|error| panic!("{fixture}: {error}"));
+    }
 }

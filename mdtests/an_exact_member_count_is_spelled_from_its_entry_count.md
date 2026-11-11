@@ -32,5 +32,5 @@ void caller(struct pool* pool, struct object* object) {
 ```
 
 ```expect
-fail: old(count(item(pool, object))) >= 0 implies old(count(item(pool, object))) == 0
+fail: unproved obligation: `to_integer(count(item(pool, object))) == 0`
 ```

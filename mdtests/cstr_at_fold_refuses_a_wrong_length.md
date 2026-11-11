@@ -30,5 +30,5 @@ int32 mk(const uint8* p, uint64 n) {
 ```
 
 ```expect
-fail: requires an exact body fact
+fail: unproved obligation: `forall (k: uint64) { 0u64 <= k and k < (n + 1u64) implies p[k] != 0u8 }`
 ```

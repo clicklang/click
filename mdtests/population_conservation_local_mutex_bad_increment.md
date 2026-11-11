@@ -60,5 +60,5 @@ void contribute(struct counter* p) {
 ```
 
 ```expect
-fail: fold requires the instance body facts for the proposed fields: fact 3 of 3 of the resource body is not established
+fail: unproved obligation: `to_integer(p->value) == (3 - to_integer(count(remaining(p))))`
 ```

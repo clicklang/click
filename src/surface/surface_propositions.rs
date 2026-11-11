@@ -1094,15 +1094,22 @@ impl SurfacePropositionMap {
         )
     }
 
-    pub fn surface(&self, kernel: &Proposition) -> Result<&ClickProposition, ClickError> {
+    /// Exact source lookup without formatting the kernel term on a miss.
+    pub(in crate::surface) fn recorded_surface(
+        &self,
+        kernel: &Proposition,
+    ) -> Option<&ClickProposition> {
         self.kernel_forms(kernel)
             .and_then(|forms| forms.nodes().next_back())
             .map(|(_, surface)| surface.get())
-            .ok_or_else(|| {
-                ClickError::new(format!(
-                    "kernel proposition has no recorded Click surface form: {kernel:?}"
-                ))
-            })
+    }
+
+    pub fn surface(&self, kernel: &Proposition) -> Result<&ClickProposition, ClickError> {
+        self.recorded_surface(kernel).ok_or_else(|| {
+            ClickError::new(format!(
+                "kernel proposition has no recorded Click surface form: {kernel:?}"
+            ))
+        })
     }
 
     pub fn surfaces(&self, kernel: &Proposition) -> impl Iterator<Item = &ClickProposition> {

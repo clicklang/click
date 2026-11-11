@@ -27,5 +27,5 @@ int32 caller(int32 x, int32 y) {
 ```
 
 ```expect
-fail: precondition clause 1 of `either_positive`
+fail: unproved obligation: `x > 0 or y > 0`
 ```

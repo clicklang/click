@@ -33,11 +33,20 @@ void apply_step(void (*step)(int32*), int32* cell) {
     owns cell[0..1];
 }
 
+theorem proposed_consume_cell_contract() {
+    ensures Preserve(&consume_cell) by {
+        unfold(Preserve);
+        solve();
+    }
+}
+
 void missing_resource_return_caller(int32* cell) {
     owns cell[0..1];
+} by {
+    apply(proposed_consume_cell_contract());
 }
 ```
 
 ```expect
-fail: function `consume_cell` does not satisfy named contract `Preserve`
+fail: contract-refinement proof does not establish `Preserve(&consume_cell)`
 ```
