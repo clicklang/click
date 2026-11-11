@@ -10955,3 +10955,67 @@ fn folded_instance_separation_samples() {
         );
     }
 }
+
+#[test]
+fn consuming_call_bound_scales_with_its_transferred_inputs() {
+    // Run on the CLI's eight-megabyte stack, as `click verify` does.
+    std::thread::Builder::new()
+        .name("consuming-call-bound-scaling".into())
+        .stack_size(8 * 1024 * 1024)
+        .spawn(consuming_call_bound_samples)
+        .unwrap()
+        .join()
+        .unwrap();
+}
+
+fn consuming_call_bound_samples() {
+    // One call that consumes `size` field-bearing instances and produces as
+    // many. The bound is one pass over the transferred inputs, so the call's
+    // work grows linearly with them.
+    let mut samples = Vec::new();
+    for size in [4, 8, 16] {
+        let parameters = (0..size)
+            .map(|i| format!("struct node *p{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let arguments = (0..size)
+            .map(|i| format!("p{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let c = format!(
+            "struct node {{ struct node *next; }};\n\
+             void touch({parameters}) {{}}\n\
+             void caller({parameters}) {{ touch({arguments}); }}\n"
+        );
+        let click_parameters = (0..size)
+            .map(|i| format!("struct node* p{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let clauses = (0..size)
+            .map(|i| format!("    consumes b{i}: box(p{i});\n    produces c{i}: box(p{i});\n"))
+            .collect::<String>();
+        let refold = (0..size)
+            .map(|i| format!("    unfold(b{i}); let c{i} = fold(box(p{i}), {{ tag: 0 }});\n"))
+            .collect::<String>();
+        let bindings = (0..size)
+            .map(|i| format!("b{i}: b{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let outputs = (0..size)
+            .map(|i| format!("c{i}: c{i}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let source = format!(
+            "verifying \"consuming.c\";\n\
+             resource box(p: struct node*) {{ field tag: int32; owns p->next; }}\n\
+             void touch({click_parameters}) {{\n{clauses}}} by {{\n{refold}}}\n\
+             void caller({click_parameters}) {{\n{clauses}}} by {{\n\
+             let {{ {outputs} }} = step(touch, {{ {bindings} }});\n}}\n"
+        );
+        let sources = [("consuming.c", c.as_str())];
+        let (result, sample) = scaling_sample(size, || verify_c0_sources(&source, &sources));
+        result.expect("a consuming call with many inputs verifies");
+        samples.push(sample);
+    }
+    assert_near_linear_scaling_at_sampled_sizes("consuming call bound", &samples);
+}

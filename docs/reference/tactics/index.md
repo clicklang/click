@@ -1954,13 +1954,18 @@ conservatively include more than the exact mutated cells. Selecting it uses
 recorded region boundaries, never a memory-history search. A boundary without
 a complete recorded effect sequence is refused.
 
-For an ordinary preserving call whose mutable effect comes from full owned
-resource inputs, execution can publish `contains(R, region.footprint)` directly.
-`R` is the checked caller-side resource selected for the call input, or
-their separating conjunction in contract order. The producer retains those abstract resources without unfolding their
-bodies. This initial form requires matching resource requirements/guarantees;
-consumed inputs, non-unit quantities, construction, extra runtime effects, or
-additional unaccounted changes do not receive this bound. A one-transition
+For a call whose mutable effect comes from full owned resource inputs,
+execution can publish `contains(R, region.footprint)` directly. `R` is the
+checked caller-side resource selected for the call input, or their separating
+conjunction in contract order. The producer retains those abstract resources
+without unfolding their bodies. Borrowed and consumed inputs both count: the
+call writes only memory they hand it, and a resource it produces is made from
+them, so a produced output does not cancel the bound. After the call a
+consumed instance is no longer held; name it as it was before the call with
+`at(mark, name)`
+(`mdtests/a_consumed_field_bearing_instance_bounds_the_call_footprint_at_a_mark.md`).
+Non-unit quantities, construction, extra runtime effects such as allocation or
+release, or additional unaccounted changes do not receive this bound. A one-transition
 source selector names the same descriptor that the step published.
 
 Use `assumption()` to select the published containment, then apply
