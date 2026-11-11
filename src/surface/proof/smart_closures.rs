@@ -3302,47 +3302,6 @@ impl<'a> Proof<'a> {
         }
     }
 
-    /// The fact `lower <u upper` as a proof that has it in that spelling,
-    /// with the fact's surface and its two operands. The fact may be held
-    /// as `upper >u lower`; it is then first restated the other way round by
-    /// Integer arithmetic. Both lookups are exact: no fact is scanned.
-    fn unsigned_strict_fact(
-        &self,
-        lower: &MachineTerm,
-        upper: &MachineTerm,
-        surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
-    ) -> Option<(
-        Self,
-        ClickProposition,
-        ContractExpression,
-        ContractExpression,
-    )> {
-        let less = Proposition::ConditionIs(
-            ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
-            true,
-        );
-        if let Some(surface) = surface_fact(&less) {
-            let (lower, upper) = surface_strict_parts(&surface)?;
-            return Some((self.clone(), surface, lower, upper));
-        }
-        let greater = Proposition::ConditionIs(
-            ConditionTerm::unsigned_greater_than(upper.clone(), lower.clone()),
-            true,
-        );
-        let surface = surface_fact(&greater)?;
-        let (lower, upper) = surface_strict_parts(&surface)?;
-        let reversed = ClickProposition::Comparison {
-            left: lower.clone(),
-            operator: ComparisonOperator::LessThan,
-            right: upper.clone(),
-        };
-        let proof = self
-            .driver()
-            .have_by_integer_arithmetic(reversed.clone(), vec![surface])
-            .ok()?;
-        Some((proof, reversed, lower, upper))
-    }
-
     pub(super) fn solve_failure(&self) -> ClickError {
         // A range-loadability goal has a reason a reader can act on, in the
         // spelling they wrote it with. The lowered rendering below would show

@@ -10,6 +10,47 @@ enum SurfaceSpellingPurpose {
 }
 
 impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
+    /// The fact `lower <u upper` as a proof that has it in that spelling,
+    /// with the fact's surface and its two operands. The fact may be held
+    /// as `upper >u lower`; it is then first restated the other way round by
+    /// Integer arithmetic. Both lookups are exact: no fact is scanned.
+    fn try_unsigned_strict_fact(
+        search_input: &Proof<'a>,
+        lower: &MachineTerm,
+        upper: &MachineTerm,
+        surface_fact: &dyn Fn(&Proposition) -> Option<ClickProposition>,
+    ) -> Option<(
+        Proof<'a>,
+        ClickProposition,
+        ContractExpression,
+        ContractExpression,
+    )> {
+        let less = Proposition::ConditionIs(
+            ConditionTerm::unsigned_less_than(lower.clone(), upper.clone()),
+            true,
+        );
+        if let Some(surface) = surface_fact(&less) {
+            let (lower, upper) = surface_strict_parts(&surface)?;
+            return Some((search_input.clone(), surface, lower, upper));
+        }
+        let greater = Proposition::ConditionIs(
+            ConditionTerm::unsigned_greater_than(upper.clone(), lower.clone()),
+            true,
+        );
+        let surface = surface_fact(&greater)?;
+        let (lower, upper) = surface_strict_parts(&surface)?;
+        let reversed = ClickProposition::Comparison {
+            left: lower.clone(),
+            operator: ComparisonOperator::LessThan,
+            right: upper.clone(),
+        };
+        let proof = search_input
+            .driver()
+            .have_by_integer_arithmetic(reversed.clone(), vec![surface])
+            .ok()?;
+        Some((proof, reversed, lower, upper))
+    }
+
     /// A small shared search combinator for structural proposition closure.
     /// Every candidate is accepted only through `apply_step`; `intro` is the
     /// binder move; disjunctions open a `have` for a smaller disjunct.
@@ -7073,7 +7114,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     && amount.constant32() == Some(1)
                 {
                     if let Some((proof, premise, _, value)) =
-                        search_input.unsigned_strict_fact(&zero, &right, surface_fact)
+                        Self::try_unsigned_strict_fact(search_input, &zero, &right, surface_fact)
                     {
                         return proof.driver().close_with_unsigned_lemma(
                             "click::integer::uint32_positive_predecessor_strictly_decreases",
@@ -7085,7 +7126,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                     // because `lower <u upper`.
                     if let binary_term!(Bits32, Subtract, upper, lower) = &right
                         && let Some((proof, premise, lower, upper)) =
-                            search_input.unsigned_strict_fact(lower, upper, surface_fact)
+                            Self::try_unsigned_strict_fact(search_input, lower, upper, surface_fact)
                     {
                         // Keep this wrapping difference native when expansion
                         // reads it back in Integer specification arithmetic.
@@ -7142,8 +7183,12 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                         (left_offset.as_const(), right_offset.as_const())
                     && bound != 0
                     && lower == bound - 1
-                    && let Some((proof, premise, value, bound)) =
-                        search_input.unsigned_strict_fact(value, right_offset, surface_fact)
+                    && let Some((proof, premise, value, bound)) = Self::try_unsigned_strict_fact(
+                        search_input,
+                        value,
+                        right_offset,
+                        surface_fact,
+                    )
                 {
                     return proof.driver().close_with_unsigned_lemma(
                         "click::integer::uint32_difference_decreases_after_increment",
@@ -7161,7 +7206,7 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
                 if let binary_term!(Bits32, Add, value, amount) = &left
                     && amount.constant32() == Some(1)
                     && let Some((proof, premise, value, upper)) =
-                        search_input.unsigned_strict_fact(value, &right, surface_fact)
+                        Self::try_unsigned_strict_fact(search_input, value, &right, surface_fact)
                 {
                     return proof.driver().close_with_unsigned_lemma(
                         "click::integer::uint32_increment_upper_bound",
