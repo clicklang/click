@@ -630,7 +630,20 @@ impl<'a> crate::kernel::search::ProofSearch<Proof<'a>> {
         );
         let (values, array_refs) =
             contract_environment_at_state(&values, &array_refs, fixed_state.state);
-        let integer_values = crate::persistent::PersistentMap::default();
+        // The Integer names the arguments read, such as a loop's
+        // `iterations`, by name alone, as the algebraic ones just below.
+        let local_integer_values = search_input.local_integer_values();
+        let mut integer_values = crate::persistent::PersistentMap::default();
+        for name in application
+            .arguments
+            .iter()
+            .flat_map(contract_expression_referenced_names)
+            .collect::<BTreeSet<_>>()
+        {
+            if let Some(value) = local_integer_values.get(&name) {
+                integer_values = integer_values.with_inserted(name, value.clone());
+            }
+        }
         let algebraic_values = application
             .arguments
             .iter()
