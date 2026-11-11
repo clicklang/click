@@ -18,7 +18,8 @@ this guarantee for an operation's other routes.
 
 This operation inventory is reconciled against `c53645952` on 2026-11-11
 (the completed head of PR #2520), with the subsequent diagnostic-stepping
-removal and match-arm dispatch relocation reflected in the dependency counts below.
+removal, match-arm dispatch relocation and signed-definedness search extraction
+reflected in the dependency counts below.
 It organizes the next measurements; it is not a claim that all checking paths
 have been audited, or that every candidate below is a reproduced defect.
 The interface refactor now exposes discovery through `kernel::search::ProofSearch`
@@ -65,13 +66,14 @@ six-group estimate covered only resource/loan candidates, not the verifier.
 
 ## Reconciled status and ownership
 
-The frozen inventory has **613 reference records**: 7 legacy bridges, 22 callers
-of those bridges, 14 operation references, 6 operation-to-driver references,
-19 mixed references, 111 driver references, 425 search references, 6 presentation
+The frozen inventory has **616 reference records**: 7 legacy bridges, 22 callers
+of those bridges, 14 operation references, 5 operation-to-driver references,
+19 mixed references, 111 driver references, 429 search references, 6 presentation
 references, 1 dispatch and 2 imports. These are neither independent walks nor
 runtime invocation counts. The [caller audit](../design/proof-boundary-classification.md)
 classifies every mixed and operation-to-driver record and groups all 14
-operation references.
+operation references. Registering the signed-definedness certificate attempt
+exposes three existing search-only caller records; it adds no runtime work.
 
 - **Confirmed architectural exceptions:** explicit legacy transport invokes
   discovery.
@@ -100,7 +102,7 @@ operation references.
 Resource-scope completion now reports obligations to the driver, including
 nested opens; function-exit deferral is unchanged. C-branch and proof-case script
 interpretation now also lives in the driver; primitive split/focus/join operations
-do not run arm-script callbacks. Six operation-to-driver records remain.
+do not run arm-script callbacks. Five operation-to-driver records remain.
 For a new scaling experiment, L1 through an actual write remains a bounded
 candidate. Boundary cleanup and enforcement are alternative next slices below.
 Transport work should target a named T1–T5 route and its retirement criterion,
@@ -355,7 +357,7 @@ authorize a new primitive or a verifier behavior change.
 F2 and C1 remain subsequent measurement candidates, followed by R2, R1
 reachability, and J1/M1/lifecycle coverage. Declaration-validation search and
 legacy transport T1–T5 remain separate design tracks; preparation completion did
-not remove either. The six remaining operation/driver records are search/support
+not remove either. The five remaining operation/driver records are search/support
 adapters on the wrong interface, not six newly measured hidden solver bugs.
 
 For whichever slice is selected:

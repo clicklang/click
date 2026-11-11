@@ -274,7 +274,7 @@ src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_premise_
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_single_rewrite_closure	available_rewrite_equality	1
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_single_rewrite_closure	driver	2
 src/surface/proof/selected_arithmetic/search.rs	search	ProofSearch::try_wide_equality_through_integer	try_machine_goal_through_integer_for	1
-src/surface/proof/signed_definedness.rs	operation-to-driver	Proof::apply_signed_definedness_certificate	driver	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_certificate	driver	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	driver	5
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_direct_logical_closure	1
 src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_after_operand_substitution	try_signed_definedness_closure	1
@@ -611,3 +611,6 @@ src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_execution_branch_wit
 src/surface/proof/driver/joins.rs	driver	ProofDriver::apply_focused_expanded_execution_arm	driver	1
 src/surface/proof/driver/scopes.rs	driver	ProofDriver::apply_expanded_execution_if	driver	1
 src/surface/proof/driver/execution.rs	driver	::advance_prepared_execution_match	driver	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_closure	try_signed_definedness_certificate	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_signed_definedness_with_operand_definedness	try_signed_definedness_certificate	1
+src/surface/proof/signed_definedness/search.rs	search	ProofSearch::try_restricted_signed_definedness_closure	try_signed_definedness_certificate	1
